@@ -1,0 +1,60 @@
+# Go
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/vendor/
+
+# Buildausgabe (kompilierte Binaries)
+/server
+/migrate
+
+# Umgebungsvariablen — .env.example wird committed, .env nicht
+.env
+deploy/docker-host/.env
+
+# Generiertes CSS (wird via Tailwind CLI erzeugt)
+ui/static/css/style.css
+
+# Node.js
+node_modules/
+
+# TLS-Zertifikate
+deploy/docker-host/certs/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Structurizr Lite — generierte Exports und Workspace-Cache
+docs/architecture/*.png
+docs/architecture/*.json
+docs/architecture/.structurizr/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.sublime-project
+*.sublime-workspace
+
+# Betriebssystem
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Test- und Coverage-Ausgaben
+coverage.out
+coverage.html

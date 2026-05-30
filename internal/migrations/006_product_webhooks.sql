@@ -14,6 +14,8 @@ CREATE INDEX idx_product_webhooks ON product_webhooks(product_id, environment_id
 
 -- Widen pipeline_id to a JSON array so multiple concurrent pipelines can be tracked.
 -- Existing single IDs are wrapped: '' → [], '123' → ['123']
+-- Drop TEXT default first; PostgreSQL cannot auto-cast '' to jsonb.
+ALTER TABLE orders ALTER COLUMN pipeline_id DROP DEFAULT;
 ALTER TABLE orders
     ALTER COLUMN pipeline_id TYPE JSONB
     USING CASE
@@ -22,6 +24,7 @@ ALTER TABLE orders
     END;
 ALTER TABLE orders ALTER COLUMN pipeline_id SET DEFAULT '[]';
 
+ALTER TABLE infrastructure_elements ALTER COLUMN pipeline_id DROP DEFAULT;
 ALTER TABLE infrastructure_elements
     ALTER COLUMN pipeline_id TYPE JSONB
     USING CASE

@@ -16,6 +16,7 @@ type Brand struct {
 	PrimaryColor   string
 	SecondaryColor string
 	HasLogo        bool
+	ImprintText    string
 }
 
 type PageData struct {
@@ -84,11 +85,12 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 		Path:    r.URL.Path,
 		Lang:    lang,
 		Brand: Brand{
-			Name:           h.cfg.AppName,
-			Subtitle:       h.cfg.AppSubtitle,
+			Name:           coalesce(b.ShopName, h.cfg.AppName),
+			Subtitle:       coalesce(b.ShopSubtitle, h.cfg.AppSubtitle),
 			PrimaryColor:   b.PrimaryColor,
 			SecondaryColor: b.SecondaryColor,
 			HasLogo:        len(b.LogoData) > 0,
+			ImprintText:    b.ImprintText,
 		},
 		SupportedLangs: i18n.Supported(),
 		SearchQuery:    searchQuery,
@@ -96,6 +98,13 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 	}); err != nil {
 		slog.Error("render error", "page", page, "err", err)
 	}
+}
+
+func coalesce(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func (h *Handler) renderPartial(w http.ResponseWriter, name string, data any) {

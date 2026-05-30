@@ -202,6 +202,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /admin/branding", admin(h.adminBranding))
 	mux.Handle("POST /admin/branding", admin(h.adminBrandingSave))
 	mux.Handle("GET /branding/logo", req(http.HandlerFunc(h.serveBrandingLogo)))
+	mux.Handle("GET /impressum", req(http.HandlerFunc(h.impressum)))
 
 	mux.Handle("GET /products/{id}/image", req(http.HandlerFunc(h.productImage)))
 

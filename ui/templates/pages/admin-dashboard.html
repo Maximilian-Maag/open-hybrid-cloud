@@ -4,48 +4,50 @@
 
 {{with .Data}}
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-    <div class="stat bg-base-100 border border-base-300 rounded-box">
-        <div class="stat-title">{{t "admin.categories" $.Lang}}</div>
-        <div class="stat-value text-2xl">{{.CategoryCount}}</div>
-        <div class="stat-actions"><a href="/admin/categories" class="btn btn-xs">{{t "admin.manage" $.Lang}}</a></div>
+    <div class="bg-white border border-gray-200 rounded-lg p-4">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">{{t "admin.categories" $.Lang}}</div>
+        <div class="text-3xl font-bold text-gray-800">{{.CategoryCount}}</div>
+        <a href="/admin/categories" class="text-xs mt-2 inline-block hover:underline" style="color:var(--bp)">{{t "admin.manage" $.Lang}}</a>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-box">
-        <div class="stat-title">{{t "admin.products" $.Lang}}</div>
-        <div class="stat-value text-2xl">{{.ProductCount}}</div>
-        <div class="stat-actions"><a href="/admin/products" class="btn btn-xs">{{t "admin.manage" $.Lang}}</a></div>
+    <div class="bg-white border border-gray-200 rounded-lg p-4">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">{{t "admin.products" $.Lang}}</div>
+        <div class="text-3xl font-bold text-gray-800">{{.ProductCount}}</div>
+        <a href="/admin/products" class="text-xs mt-2 inline-block hover:underline" style="color:var(--bp)">{{t "admin.manage" $.Lang}}</a>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-box">
-        <div class="stat-title">{{t "admin.environments" $.Lang}}</div>
-        <div class="stat-value text-2xl">{{.EnvironmentCount}}</div>
-        <div class="stat-actions"><a href="/admin/environments" class="btn btn-xs">{{t "admin.manage" $.Lang}}</a></div>
+    <div class="bg-white border border-gray-200 rounded-lg p-4">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">{{t "admin.environments" $.Lang}}</div>
+        <div class="text-3xl font-bold text-gray-800">{{.EnvironmentCount}}</div>
+        <a href="/admin/environments" class="text-xs mt-2 inline-block hover:underline" style="color:var(--bp)">{{t "admin.manage" $.Lang}}</a>
     </div>
-    <div class="stat bg-base-100 border border-base-300 rounded-box">
-        <div class="stat-title">{{t "admin.users" $.Lang}}</div>
-        <div class="stat-value text-2xl">{{.UserCount}}</div>
-        <div class="stat-actions"><a href="/admin/users" class="btn btn-xs">{{t "admin.manage" $.Lang}}</a></div>
+    <div class="bg-white border border-gray-200 rounded-lg p-4">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">{{t "admin.users" $.Lang}}</div>
+        <div class="text-3xl font-bold text-gray-800">{{.UserCount}}</div>
+        <a href="/admin/users" class="text-xs mt-2 inline-block hover:underline" style="color:var(--bp)">{{t "admin.manage" $.Lang}}</a>
     </div>
 </div>
 {{end}}
 
-<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body">
-            <h3 class="card-title text-base">{{t "admin.catalog" .Lang}}</h3>
-            <ul class="space-y-1 text-sm">
-                <li><a href="/admin/categories" class="link link-hover">{{t "admin.cat_manage" .Lang}}</a></li>
-                <li><a href="/admin/products" class="link link-hover">{{t "admin.prod_manage" .Lang}}</a></li>
-            </ul>
-        </div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="bg-white border border-gray-200 rounded-lg p-5">
+        <h3 class="font-semibold text-sm text-gray-700 mb-3">{{t "admin.catalog" .Lang}}</h3>
+        <ul class="space-y-2 text-sm">
+            <li><a href="/admin/categories" class="hover:underline" style="color:var(--bp)">{{t "admin.cat_manage" .Lang}}</a></li>
+            <li><a href="/admin/products" class="hover:underline" style="color:var(--bp)">{{t "admin.prod_manage" .Lang}}</a></li>
+        </ul>
     </div>
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body">
-            <h3 class="card-title text-base">{{t "admin.infra_config" .Lang}}</h3>
-            <ul class="space-y-1 text-sm">
-                <li><a href="/admin/sources" class="link link-hover">{{t "admin.gitlab_sources" .Lang}}</a></li>
-                <li><a href="/admin/environments" class="link link-hover">{{t "admin.deploy_envs" .Lang}}</a></li>
-                <li><a href="/admin/costcenters" class="link link-hover">{{t "admin.cost_centers" .Lang}}</a></li>
-            </ul>
-        </div>
+    <div class="bg-white border border-gray-200 rounded-lg p-5">
+        <h3 class="font-semibold text-sm text-gray-700 mb-3">{{t "admin.infra_config" .Lang}}</h3>
+        <ul class="space-y-2 text-sm">
+            <li><a href="/admin/sources" class="hover:underline" style="color:var(--bp)">{{t "admin.gitlab_sources" .Lang}}</a></li>
+            <li><a href="/admin/environments" class="hover:underline" style="color:var(--bp)">{{t "admin.deploy_envs" .Lang}}</a></li>
+            <li><a href="/admin/costcenters" class="hover:underline" style="color:var(--bp)">{{t "admin.cost_centers" .Lang}}</a></li>
+        </ul>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg p-5">
+        <h3 class="font-semibold text-sm text-gray-700 mb-3">{{t "admin.branding_title" .Lang}}</h3>
+        <ul class="space-y-2 text-sm">
+            <li><a href="/admin/branding" class="hover:underline" style="color:var(--bp)">Logo, Farben &amp; Impressum</a></li>
+        </ul>
     </div>
 </div>
 {{end}}

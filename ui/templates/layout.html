@@ -169,6 +169,7 @@
             <a href="/catalog" class="nav-lnk text-xs">{{t "nav.catalog" .Lang}}</a>
             <a href="/orders" class="nav-lnk text-xs">{{t "nav.orders" .Lang}}</a>
             <a href="/projects" class="nav-lnk text-xs">{{t "nav.projects" .Lang}}</a>
+            {{if .Brand.ImprintText}}<a href="/impressum" class="nav-lnk text-xs">{{t "nav.impressum" .Lang}}</a>{{end}}
         </div>
     </div>
 </footer>

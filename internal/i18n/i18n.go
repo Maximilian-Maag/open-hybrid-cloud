@@ -348,12 +348,17 @@ var messages = map[string]map[string]string{
 	"admin.password":  {"de": "Passwort", "en": "Password"},
 
 	// Admin — branding
-	"admin.branding_title":  {"de": "Shop-Design", "en": "Shop Design"},
-	"admin.primary_color":   {"de": "Primärfarbe (Header)", "en": "Primary color (header)"},
-	"admin.secondary_color": {"de": "Akzentfarbe (Buttons)", "en": "Accent color (buttons)"},
-	"admin.upload_logo":     {"de": "Logo hochladen (PNG/SVG, max. 200px Höhe)", "en": "Upload logo (PNG/SVG, max 200px height)"},
-	"admin.save_branding":   {"de": "Design speichern", "en": "Save design"},
-	"admin.preview":         {"de": "Aktuelle Einstellungen", "en": "Current settings"},
+	"admin.branding_title":   {"de": "Shop-Design", "en": "Shop Design"},
+	"admin.primary_color":    {"de": "Primärfarbe (Header)", "en": "Primary color (header)"},
+	"admin.secondary_color":  {"de": "Akzentfarbe (Buttons)", "en": "Accent color (buttons)"},
+	"admin.upload_logo":      {"de": "Logo hochladen (PNG/SVG, max. 200px Höhe)", "en": "Upload logo (PNG/SVG, max 200px height)"},
+	"admin.save_branding":    {"de": "Design speichern", "en": "Save design"},
+	"admin.preview":          {"de": "Aktuelle Einstellungen", "en": "Current settings"},
+	"admin.shop_name":        {"de": "Shop-Name", "en": "Shop name"},
+	"admin.shop_subtitle":    {"de": "Untertitel / Claim", "en": "Subtitle / Tagline"},
+	"admin.imprint_text":     {"de": "Impressum", "en": "Legal notice / Imprint"},
+	"admin.imprint_hint":     {"de": "Wird auf der Impressums-Seite angezeigt.", "en": "Displayed on the imprint page."},
+	"nav.impressum":          {"de": "Impressum", "en": "Legal notice"},
 
 	// Search
 	"search.placeholder": {"de": "Infrastruktur suchen...", "en": "Search infrastructure..."},

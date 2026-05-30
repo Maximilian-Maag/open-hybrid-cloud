@@ -199,6 +199,9 @@ type Branding struct {
 	LogoMime       string
 	PrimaryColor   string
 	SecondaryColor string
+	ShopName       string
+	ShopSubtitle   string
+	ImprintText    string
 }
 
 // --- Audit ---

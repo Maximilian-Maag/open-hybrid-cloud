@@ -523,6 +523,9 @@ func (h *Handler) adminBrandingSave(w http.ResponseWriter, r *http.Request) {
 	if v := r.FormValue("secondary_color"); v != "" {
 		current.SecondaryColor = v
 	}
+	current.ShopName = r.FormValue("shop_name")
+	current.ShopSubtitle = r.FormValue("shop_subtitle")
+	current.ImprintText = r.FormValue("imprint_text")
 	if file, hdr, err := r.FormFile("logo"); err == nil {
 		defer file.Close()
 		current.LogoData, _ = io.ReadAll(file)
@@ -548,6 +551,12 @@ func (h *Handler) serveBrandingLogo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", b.LogoMime)
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	w.Write(b.LogoData) //nolint:errcheck
+}
+
+// ---- Impressum ----
+
+func (h *Handler) impressum(w http.ResponseWriter, r *http.Request) {
+	h.render(w, r, "impressum.html", nil)
 }
 
 // ---- Helpers ----

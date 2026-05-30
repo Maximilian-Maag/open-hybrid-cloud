@@ -51,15 +51,16 @@ type ProductTranslation struct {
 }
 
 type Parameter struct {
-	ID           int64
-	Scope        ParameterScope // global, category, product
-	ScopeID      int64          // CategoryID oder ProductID, 0 bei global
-	Name         string
-	Type         ParameterType
-	Description  string
-	DefaultValue string
-	Required     bool
-	Sensitive    bool
+	ID            int64
+	Scope         ParameterScope // global, category, product
+	ScopeID       int64          // CategoryID or ProductID, 0 for global
+	EnvironmentID int64          // 0 = applies to all environments
+	Name          string
+	Type          ParameterType
+	Description   string
+	DefaultValue  string
+	Required      bool
+	Sensitive     bool
 }
 
 type ParameterScope string
@@ -98,12 +99,25 @@ type DeploymentEnvironment struct {
 }
 
 type ProductEnvironment struct {
+	ProductID        int64
+	EnvironmentID    int64
+	Price            float64
+	Currency         string // Leitwährung
+	CostCenterMode   CostCenterMode
+	ForcedCostCenter bool
+}
+
+// ProductWebhook defines one pipeline trigger endpoint for a product+environment combination.
+// Multiple webhooks are fired in ascending ExecOrder (ties are fired concurrently).
+// If none are defined the DeploymentEnvironment.WebhookURL/Token is used as fallback.
+type ProductWebhook struct {
+	ID            int64
 	ProductID     int64
 	EnvironmentID int64
-	Price         float64
-	Currency      string // Leitwährung
-	CostCenterMode CostCenterMode
-	ForcedCostCenter bool
+	Name          string
+	WebhookURL    string
+	WebhookToken  string
+	ExecOrder     int
 }
 
 // --- Kostenstellen ---
@@ -150,18 +164,18 @@ const (
 )
 
 type Order struct {
-	ID             int64
-	ProjectID      int64
-	ProductID      int64
-	EnvironmentID  int64
-	UserID         int64
-	Status         OrderStatus
-	Parameters     map[string]string
-	CostCenterID   int64
-	RejectionNote  string
-	PipelineID     string // GitLab Pipeline ID für Polling
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID            int64
+	ProjectID     int64
+	ProductID     int64
+	EnvironmentID int64
+	UserID        int64
+	Status        OrderStatus
+	Parameters    map[string]string
+	CostCenterID  int64
+	RejectionNote string
+	PipelineIDs   []string // GitLab pipeline IDs (one per webhook) for polling
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // --- Infrastruktur ---
@@ -174,6 +188,7 @@ type InfrastructureElement struct {
 	ProductID     int64
 	Status        OrderStatus
 	Parameters    map[string]string
+	PipelineIDs   []string // GitLab pipeline IDs for polling
 	DeployedAt    time.Time
 }
 

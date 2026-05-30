@@ -1,8 +1,14 @@
 {{define "title"}}{{t "audit.title" .Lang}}{{end}}
 {{define "content"}}
-<div class="mb-6">
-    <h2 class="text-2xl font-bold">{{t "audit.title" .Lang}}</h2>
-    <p class="text-base-content/60 text-sm mt-1">{{t "audit.subtitle" .Lang}}</p>
+<div class="mb-6 flex items-center justify-between">
+    <div>
+        <h2 class="text-2xl font-bold">{{t "audit.title" .Lang}}</h2>
+        <p class="text-base-content/60 text-sm mt-1">{{t "audit.subtitle" .Lang}}</p>
+    </div>
+    <div class="flex gap-2">
+        <a href="/audit/export?format=csv" class="btn btn-ghost btn-sm">{{t "audit.export_csv" .Lang}}</a>
+        <a href="/audit/export?format=pdf" class="btn btn-ghost btn-sm">{{t "audit.export_pdf" .Lang}}</a>
+    </div>
 </div>
 
 {{with .Data}}
@@ -14,6 +20,7 @@
                 <th>{{t "audit.timestamp" $.Lang}}</th>
                 <th>{{t "audit.action" $.Lang}}</th>
                 <th>{{t "audit.entity" $.Lang}}</th>
+                <th>{{t "audit.user" $.Lang}}</th>
                 <th>{{t "audit.details" $.Lang}}</th>
             </tr>
         </thead>
@@ -23,6 +30,7 @@
             <td class="text-xs text-base-content/60 whitespace-nowrap">{{.CreatedAt.Format "02.01.2006 15:04:05"}}</td>
             <td class="font-mono text-xs">{{.Action}}</td>
             <td class="font-mono text-xs">{{.EntityID}}</td>
+            <td class="font-mono text-xs">{{.UserID}}</td>
             <td class="text-xs text-base-content/60">{{.Details}}</td>
         </tr>
         {{end}}

@@ -1,9 +1,14 @@
 package handler
 
 import (
+	"encoding/csv"
+	"io"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/go-pdf/fpdf"
+	"github.com/porr-ag/infra-webshop/internal/i18n"
 	"github.com/porr-ag/infra-webshop/internal/model"
 	"github.com/porr-ag/infra-webshop/internal/service"
 )
@@ -65,9 +70,11 @@ func (h *Handler) adminProducts(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) adminProductNew(w http.ResponseWriter, r *http.Request) {
 	cats, _ := h.categories.FindAll(r.Context())
 	envs, _ := h.environments.FindAll(r.Context())
+	sources, _ := h.gitlabSources.FindAll(r.Context())
 	h.render(w, r, "admin-product-new.html", map[string]any{
 		"Categories":   cats,
 		"Environments": envs,
+		"GitLabSources": sources,
 	})
 }
 
@@ -79,6 +86,10 @@ func (h *Handler) adminProductCreate(w http.ResponseWriter, r *http.Request) {
 	p := &model.Product{
 		CategoryID:   formInt64(r, "category_id"),
 		BaseLanguage: "de",
+	}
+	if file, _, err := r.FormFile("image"); err == nil {
+		p.Image, _ = io.ReadAll(file)
+		file.Close()
 	}
 	if err := h.products.Save(r.Context(), p); err != nil {
 		h.redirectWithFlash(w, r, "/admin/products/new", "error", "Fehler: "+err.Error())
@@ -105,24 +116,42 @@ func (h *Handler) adminProductEdit(w http.ResponseWriter, r *http.Request) {
 	penvs, _ := h.productEnvs.FindByProductID(r.Context(), id)
 	params, _ := h.parameters.FindByScope(r.Context(), "product", id)
 	translations, _ := h.translations.FindByProductID(r.Context(), id)
+
+	// Load webhooks for each environment the product is available in
+	webhooksByEnv := make(map[int64][]model.ProductWebhook)
+	for _, pe := range penvs {
+		whs, _ := h.productWebhooks.FindByProductAndEnv(r.Context(), id, pe.EnvironmentID)
+		if len(whs) > 0 {
+			webhooksByEnv[pe.EnvironmentID] = whs
+		}
+	}
+
 	h.render(w, r, "admin-product-edit.html", map[string]any{
-		"Product":      p,
-		"Categories":   cats,
-		"Environments": envs,
-		"ProductEnvs":  penvs,
-		"Parameters":   params,
-		"Translations": translations,
+		"Product":       p,
+		"Categories":    cats,
+		"Environments":  envs,
+		"ProductEnvs":   penvs,
+		"Parameters":    params,
+		"Translations":  translations,
+		"WebhooksByEnv": webhooksByEnv,
 	})
 }
 
 func (h *Handler) adminProductUpdate(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		r.ParseForm() //nolint:errcheck
+	}
 	p, _ := h.products.GetByID(r.Context(), id, "de")
 	if p == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	p.CategoryID = formInt64(r, "category_id")
+	if file, _, err := r.FormFile("image"); err == nil {
+		p.Image, _ = io.ReadAll(file)
+		file.Close()
+	}
 	if err := h.products.Update(r.Context(), p); err != nil {
 		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", "Fehler: "+err.Error())
 		return
@@ -269,6 +298,211 @@ func (h *Handler) adminUserCreate(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) auditLog(w http.ResponseWriter, r *http.Request) {
 	entries, _ := h.audit.List(r.Context(), service.AuditFilter{})
 	h.render(w, r, "audit.html", map[string]any{"Entries": entries})
+}
+
+func (h *Handler) auditExport(w http.ResponseWriter, r *http.Request) {
+	format := r.URL.Query().Get("format")
+	entries, _ := h.audit.List(r.Context(), service.AuditFilter{})
+
+	switch format {
+	case "pdf":
+		h.auditExportPDF(w, entries)
+	default:
+		h.auditExportCSV(w, entries)
+	}
+}
+
+func (h *Handler) auditExportCSV(w http.ResponseWriter, entries []model.AuditEntry) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="audit.csv"`)
+	wr := csv.NewWriter(w)
+	_ = wr.Write([]string{"timestamp", "action", "entity_id", "user_id", "details"})
+	for _, e := range entries {
+		_ = wr.Write([]string{
+			e.CreatedAt.Format(time.RFC3339),
+			string(e.Action),
+			strconv.FormatInt(e.EntityID, 10),
+			strconv.FormatInt(e.UserID, 10),
+			e.Details,
+		})
+	}
+	wr.Flush()
+}
+
+func (h *Handler) auditExportPDF(w http.ResponseWriter, entries []model.AuditEntry) {
+	pdf := fpdf.New("L", "mm", "A4", "")
+	pdf.AddPage()
+	pdf.SetFont("Arial", "B", 14)
+	pdf.Cell(0, 10, "Audit Log")
+	pdf.Ln(12)
+	pdf.SetFont("Arial", "B", 8)
+	for _, col := range []string{"Timestamp", "Action", "Entity", "User", "Details"} {
+		pdf.CellFormat(50, 7, col, "1", 0, "", false, 0, "")
+	}
+	pdf.Ln(-1)
+	pdf.SetFont("Arial", "", 7)
+	for _, e := range entries {
+		pdf.CellFormat(45, 6, e.CreatedAt.Format("02.01.2006 15:04"), "1", 0, "", false, 0, "")
+		pdf.CellFormat(60, 6, string(e.Action), "1", 0, "", false, 0, "")
+		pdf.CellFormat(20, 6, strconv.FormatInt(e.EntityID, 10), "1", 0, "", false, 0, "")
+		pdf.CellFormat(20, 6, strconv.FormatInt(e.UserID, 10), "1", 0, "", false, 0, "")
+		pdf.CellFormat(0, 6, e.Details, "1", 1, "", false, 0, "")
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", `attachment; filename="audit.pdf"`)
+	_ = pdf.Output(w)
+}
+
+// ---- Currencies ----
+
+func (h *Handler) adminCurrencies(w http.ResponseWriter, r *http.Request) {
+	var rates map[string]float64
+	if h.exchange != nil {
+		rates = h.exchange.RatesSnapshot()
+	}
+	h.render(w, r, "admin-currencies.html", map[string]any{"Rates": rates})
+}
+
+func (h *Handler) adminCurrencyRefresh(w http.ResponseWriter, r *http.Request) {
+	if h.exchange == nil {
+		h.redirectWithFlash(w, r, "/admin/currencies", "error", "Exchange rate service not configured.")
+		return
+	}
+	rates, err := h.exchange.Refresh(r.Context())
+	if err != nil {
+		h.redirectWithFlash(w, r, "/admin/currencies", "error", "Refresh failed: "+err.Error())
+		return
+	}
+	if h.exchangeRates != nil {
+		_ = h.exchangeRates.SaveAll(r.Context(), rates)
+	}
+	h.redirectWithFlash(w, r, "/admin/currencies", "success", "Exchange rates refreshed.")
+}
+
+// ---- Product Image ----
+
+func (h *Handler) productImage(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	p, _ := h.products.GetByID(r.Context(), id, "de")
+	if p == nil || len(p.Image) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", http.DetectContentType(p.Image))
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(p.Image)
+}
+
+func (h *Handler) adminProductImageUploadPage(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	p, _ := h.products.GetByID(r.Context(), id, "de")
+	if p == nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.render(w, r, "admin-product-edit.html", map[string]any{"Product": p})
+}
+
+func (h *Handler) adminProductImageUpload(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	p, _ := h.products.GetByID(r.Context(), id, "de")
+	if p == nil {
+		http.NotFound(w, r)
+		return
+	}
+	file, _, err := r.FormFile("image")
+	if err != nil {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", "No image file.")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", "Read error.")
+		return
+	}
+	p.Image = data
+	if err := h.products.Update(r.Context(), p); err != nil {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", "Save error.")
+		return
+	}
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "success", "Image uploaded.")
+}
+
+// ---- AI Translation ----
+
+func (h *Handler) adminProductTranslate(w http.ResponseWriter, r *http.Request) {
+	if h.translator == nil {
+		h.redirectWithFlash(w, r, "/admin/products", "error", "AI translation not configured.")
+		return
+	}
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	p, _ := h.products.GetByID(r.Context(), id, "de")
+	if p == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if p.BaseLanguage != "de" {
+		p, _ = h.products.GetByID(r.Context(), id, p.BaseLanguage)
+		if p == nil {
+			http.NotFound(w, r)
+			return
+		}
+	}
+	targetLangs := make([]string, 0, len(i18n.Supported()))
+	for _, l := range i18n.Supported() {
+		if l != p.BaseLanguage {
+			targetLangs = append(targetLangs, l)
+		}
+	}
+	results, err := h.translator.Translate(r.Context(), p.Name, p.Description, p.BaseLanguage, targetLangs)
+	if err != nil {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", "Translation failed: "+err.Error())
+		return
+	}
+	for lang, t := range results {
+		_ = h.translations.Upsert(r.Context(), &model.ProductTranslation{
+			ProductID:    id,
+			LanguageCode: lang,
+			Name:         t.Name,
+			Description:  t.Description,
+		})
+	}
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "success",
+		strconv.Itoa(len(results))+" translations generated.")
+}
+
+// ---- Product webhooks ----
+
+func (h *Handler) adminProductWebhookCreate(w http.ResponseWriter, r *http.Request) {
+	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	pw := &model.ProductWebhook{
+		ProductID:     productID,
+		EnvironmentID: formInt64(r, "environment_id"),
+		Name:          r.FormValue("name"),
+		WebhookURL:    r.FormValue("webhook_url"),
+		WebhookToken:  r.FormValue("webhook_token"),
+		ExecOrder:     formInt(r, "exec_order"),
+	}
+	if err := h.productWebhooks.Save(r.Context(), pw); err != nil {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		return
+	}
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Webhook gespeichert.")
+}
+
+func (h *Handler) adminProductWebhookDelete(w http.ResponseWriter, r *http.Request) {
+	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	wid, _ := strconv.ParseInt(r.PathValue("wid"), 10, 64)
+	if err := h.productWebhooks.Delete(r.Context(), wid); err != nil {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		return
+	}
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Webhook gelöscht.")
 }
 
 // ---- Helpers ----

@@ -128,14 +128,13 @@
                         </div>
                     </div>
                     <!-- Language switcher -->
-                    <div class="flex gap-1 px-2 mb-2">
-                        <form method="POST" action="/lang">
-                            <input type="hidden" name="lang" value="de" />
-                            <button type="submit" class="btn btn-xs {{if eq .Lang "de"}}btn-primary{{else}}btn-ghost text-base-content/40{{end}}">DE</button>
-                        </form>
-                        <form method="POST" action="/lang">
-                            <input type="hidden" name="lang" value="en" />
-                            <button type="submit" class="btn btn-xs {{if eq .Lang "en"}}btn-primary{{else}}btn-ghost text-base-content/40{{end}}">EN</button>
+                    <div class="px-2 mb-2">
+                        <form method="POST" action="/lang" class="flex items-center gap-1">
+                            <select name="lang" onchange="this.form.submit()" class="select select-xs select-bordered flex-1 text-xs">
+                                {{range .SupportedLangs}}
+                                <option value="{{.}}" {{if eq . $.Lang}}selected{{end}}>{{langName .}}</option>
+                                {{end}}
+                            </select>
                         </form>
                     </div>
                     <form method="POST" action="/logout">

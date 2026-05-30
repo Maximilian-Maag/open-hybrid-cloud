@@ -12,6 +12,7 @@ type UserRepository interface {
 	FindByID(ctx context.Context, id int64) (*model.User, error)
 	FindByEmail(ctx context.Context, email string) (*model.User, error)
 	FindBySSOSub(ctx context.Context, sub string) (*model.User, error)
+	FindByRole(ctx context.Context, role model.Role) ([]model.User, error)
 	FindAll(ctx context.Context) ([]model.User, error)
 	Save(ctx context.Context, user *model.User) error
 	Update(ctx context.Context, user *model.User) error
@@ -42,6 +43,7 @@ type ProductTranslationRepository interface {
 
 type ParameterRepository interface {
 	FindByScope(ctx context.Context, scope model.ParameterScope, scopeID int64) ([]model.Parameter, error)
+	FindByScopeAndEnv(ctx context.Context, scope model.ParameterScope, scopeID int64, envID int64) ([]model.Parameter, error)
 	FindByID(ctx context.Context, id int64) (*model.Parameter, error)
 	Save(ctx context.Context, p *model.Parameter) error
 	Update(ctx context.Context, p *model.Parameter) error
@@ -93,15 +95,28 @@ type OrderRepository interface {
 	Save(ctx context.Context, order *model.Order) error
 	UpdateStatus(ctx context.Context, id int64, status model.OrderStatus) error
 	UpdateRejection(ctx context.Context, id int64, note string) error
-	UpdatePipelineID(ctx context.Context, id int64, pipelineID string) error
+	AppendPipelineID(ctx context.Context, id int64, pipelineID string) error
 }
 
 type InfrastructureRepository interface {
 	FindByProjectID(ctx context.Context, projectID int64) ([]model.InfrastructureElement, error)
 	FindAll(ctx context.Context) ([]model.InfrastructureElement, error)
 	FindByID(ctx context.Context, id int64) (*model.InfrastructureElement, error)
+	FindByStatuses(ctx context.Context, statuses []model.OrderStatus) ([]model.InfrastructureElement, error)
 	Save(ctx context.Context, el *model.InfrastructureElement) error
 	UpdateStatus(ctx context.Context, id int64, status model.OrderStatus) error
+	AppendPipelineID(ctx context.Context, id int64, pipelineID string) error
+}
+
+type ProductWebhookRepository interface {
+	FindByProductAndEnv(ctx context.Context, productID, envID int64) ([]model.ProductWebhook, error)
+	Save(ctx context.Context, pw *model.ProductWebhook) error
+	Delete(ctx context.Context, id int64) error
+}
+
+type ExchangeRateRepository interface {
+	LoadAll(ctx context.Context) (map[string]float64, error)
+	SaveAll(ctx context.Context, rates map[string]float64) error
 }
 
 type AuditRepository interface {

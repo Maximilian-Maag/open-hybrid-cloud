@@ -1,11 +1,10 @@
 package impl
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/porr-ag/infra-webshop/internal/model"
 	"github.com/porr-ag/infra-webshop/internal/repository"
@@ -13,10 +12,11 @@ import (
 )
 
 type orderService struct {
-	orders     repository.OrderRepository
-	infra      repository.InfrastructureRepository
-	envs       repository.EnvironmentRepository
-	audit      service.AuditService
+	orders   repository.OrderRepository
+	infra    repository.InfrastructureRepository
+	envs     repository.EnvironmentRepository
+	webhooks repository.ProductWebhookRepository
+	audit    service.AuditService
 	httpClient *http.Client
 }
 
@@ -24,12 +24,14 @@ func NewOrderService(
 	orders repository.OrderRepository,
 	infra repository.InfrastructureRepository,
 	envs repository.EnvironmentRepository,
+	webhooks repository.ProductWebhookRepository,
 	audit service.AuditService,
 ) service.OrderService {
 	return &orderService{
 		orders:     orders,
 		infra:      infra,
 		envs:       envs,
+		webhooks:   webhooks,
 		audit:      audit,
 		httpClient: &http.Client{},
 	}
@@ -99,6 +101,8 @@ func (s *orderService) Reject(ctx context.Context, orderID, adminID int64, note 
 	return nil
 }
 
+// triggerWebhook fires one pipeline per product webhook (if configured) or the environment
+// fallback webhook. Each returned pipeline ID is appended to the order's pipeline_id array.
 func (s *orderService) triggerWebhook(ctx context.Context, o *model.Order) error {
 	env, err := s.envs.FindByID(ctx, o.EnvironmentID)
 	if err != nil {
@@ -108,28 +112,28 @@ func (s *orderService) triggerWebhook(ctx context.Context, o *model.Order) error
 		return fmt.Errorf("environment %d not found", o.EnvironmentID)
 	}
 
-	payload, err := json.Marshal(map[string]any{
-		"order_id":   o.ID,
-		"parameters": o.Parameters,
-	})
-	if err != nil {
-		return err
+	vars := buildVars(o.Parameters, "ORDER_ID", strconv.FormatInt(o.ID, 10))
+
+	productWebhooks, _ := s.webhooks.FindByProductAndEnv(ctx, o.ProductID, o.EnvironmentID)
+	if len(productWebhooks) == 0 {
+		pid, err := fireWebhook(ctx, s.httpClient, env.WebhookURL, env.WebhookToken, vars)
+		if err != nil {
+			return err
+		}
+		if pid != "" {
+			_ = s.orders.AppendPipelineID(ctx, o.ID, pid)
+		}
+		return nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, env.WebhookURL, bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Gitlab-Token", env.WebhookToken)
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("webhook call: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned %d", resp.StatusCode)
+	for _, wh := range productWebhooks {
+		pid, err := fireWebhook(ctx, s.httpClient, wh.WebhookURL, wh.WebhookToken, vars)
+		if err != nil {
+			return fmt.Errorf("webhook %s: %w", wh.Name, err)
+		}
+		if pid != "" {
+			_ = s.orders.AppendPipelineID(ctx, o.ID, pid)
+		}
 	}
 	return nil
 }

@@ -31,6 +31,17 @@ func (r *userRepo) FindBySSOSub(ctx context.Context, sub string) (*model.User, e
 		`SELECT id,email,name,role,sso_sub,password_hash,created_at FROM users WHERE sso_sub=$1`, sub)
 }
 
+func (r *userRepo) FindByRole(ctx context.Context, role model.Role) ([]model.User, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id,email,name,role,sso_sub,password_hash,created_at FROM users WHERE role=$1 ORDER BY name`,
+		string(role))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, scanUser)
+}
+
 func (r *userRepo) FindAll(ctx context.Context) ([]model.User, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id,email,name,role,sso_sub,password_hash,created_at FROM users ORDER BY name`)

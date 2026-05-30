@@ -16,7 +16,7 @@ func NewInfrastructureRepository(pool *pgxpool.Pool) repository.InfrastructureRe
 	return &infraRepo{pool}
 }
 
-const infraCols = `id,order_id,project_id,environment_id,product_id,status,parameters,deployed_at`
+const infraCols = `id,order_id,project_id,environment_id,product_id,status,parameters,pipeline_id,deployed_at`
 
 func (r *infraRepo) FindAll(ctx context.Context) ([]model.InfrastructureElement, error) {
 	rows, err := r.pool.Query(ctx,
@@ -52,6 +52,21 @@ func (r *infraRepo) FindByID(ctx context.Context, id int64) (*model.Infrastructu
 	return &el, err
 }
 
+func (r *infraRepo) FindByStatuses(ctx context.Context, statuses []model.OrderStatus) ([]model.InfrastructureElement, error) {
+	statusStrs := make([]string, len(statuses))
+	for i, s := range statuses {
+		statusStrs[i] = string(s)
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+infraCols+` FROM infrastructure_elements WHERE status = ANY($1) ORDER BY deployed_at DESC`,
+		statusStrs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, scanInfra)
+}
+
 func (r *infraRepo) Save(ctx context.Context, el *model.InfrastructureElement) error {
 	return r.pool.QueryRow(ctx,
 		`INSERT INTO infrastructure_elements(order_id,project_id,environment_id,product_id,status,parameters)
@@ -66,8 +81,16 @@ func (r *infraRepo) UpdateStatus(ctx context.Context, id int64, status model.Ord
 	return err
 }
 
+// AppendPipelineID adds a pipeline ID to the JSONB array stored in pipeline_id.
+func (r *infraRepo) AppendPipelineID(ctx context.Context, id int64, pipelineID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE infrastructure_elements SET pipeline_id = pipeline_id || to_jsonb($1::text) WHERE id=$2`,
+		pipelineID, id)
+	return err
+}
+
 func scanInfra(row pgx.CollectableRow) (model.InfrastructureElement, error) {
 	var el model.InfrastructureElement
 	return el, row.Scan(&el.ID, &el.OrderID, &el.ProjectID, &el.EnvironmentID,
-		&el.ProductID, &el.Status, &el.Parameters, &el.DeployedAt)
+		&el.ProductID, &el.Status, &el.Parameters, &el.PipelineIDs, &el.DeployedAt)
 }

@@ -77,9 +77,11 @@ func (r *orderRepo) UpdateRejection(ctx context.Context, id int64, note string) 
 	return err
 }
 
-func (r *orderRepo) UpdatePipelineID(ctx context.Context, id int64, pipelineID string) error {
+// AppendPipelineID adds a pipeline ID to the JSONB array stored in pipeline_id.
+func (r *orderRepo) AppendPipelineID(ctx context.Context, id int64, pipelineID string) error {
 	_, err := r.pool.Exec(ctx,
-		`UPDATE orders SET pipeline_id=$1,updated_at=NOW() WHERE id=$2`, pipelineID, id)
+		`UPDATE orders SET pipeline_id = pipeline_id || to_jsonb($1::text), updated_at=NOW() WHERE id=$2`,
+		pipelineID, id)
 	return err
 }
 
@@ -89,7 +91,7 @@ func scanOrder(row pgx.CollectableRow) (model.Order, error) {
 	err := row.Scan(
 		&o.ID, &o.ProjectID, &o.ProductID, &o.EnvironmentID, &o.UserID,
 		&o.Status, &o.Parameters, &ccID,
-		&o.RejectionNote, &o.PipelineID, &o.CreatedAt, &o.UpdatedAt,
+		&o.RejectionNote, &o.PipelineIDs, &o.CreatedAt, &o.UpdatedAt,
 	)
 	if ccID != nil {
 		o.CostCenterID = *ccID

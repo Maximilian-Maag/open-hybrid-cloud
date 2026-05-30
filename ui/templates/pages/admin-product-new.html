@@ -5,27 +5,110 @@
 </div>
 <h2 class="text-2xl font-bold mb-6">{{t "admin.new_product" .Lang}}</h2>
 
-<form method="POST" action="/admin/products/new" class="max-w-lg space-y-4">
-    <div class="form-control">
-        <label class="label"><span class="label-text font-medium">{{t "admin.categories" .Lang}} <span class="text-error">*</span></span></label>
-        <select name="category_id" class="select select-bordered" required>
-            <option value="">{{t "admin.choose" .Lang}}</option>
-            {{with .Data}}{{range .Categories}}
-            <option value="{{.ID}}">{{.Name}}</option>
-            {{end}}{{end}}
-        </select>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <form method="POST" action="/admin/products/new" enctype="multipart/form-data" class="space-y-4">
+        <div class="form-control">
+            <label class="label"><span class="label-text font-medium">{{t "admin.categories" .Lang}} <span class="text-error">*</span></span></label>
+            <select name="category_id" class="select select-bordered" required>
+                <option value="">{{t "admin.choose" .Lang}}</option>
+                {{with .Data}}{{range .Categories}}
+                <option value="{{.ID}}">{{.Name}}</option>
+                {{end}}{{end}}
+            </select>
+        </div>
+        <div class="form-control">
+            <label class="label"><span class="label-text font-medium">{{t "admin.name_de" .Lang}} <span class="text-error">*</span></span></label>
+            <input type="text" name="name" class="input input-bordered" required />
+        </div>
+        <div class="form-control">
+            <label class="label"><span class="label-text font-medium">{{t "admin.desc_de" .Lang}}</span></label>
+            <textarea name="description" class="textarea textarea-bordered" rows="4"></textarea>
+        </div>
+        <div class="form-control">
+            <label class="label"><span class="label-text font-medium">{{t "admin.product_image" .Lang}}</span></label>
+            <input type="file" name="image" accept="image/*" class="file-input file-input-bordered" />
+        </div>
+        <div class="flex gap-3">
+            <button type="submit" class="btn btn-primary">{{t "common.create" .Lang}}</button>
+            <a href="/admin/products" class="btn btn-ghost">{{t "common.cancel" .Lang}}</a>
+        </div>
+    </form>
+
+    {{with .Data}}
+    {{if .GitLabSources}}
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body space-y-3">
+            <h3 class="card-title text-base">{{t "admin.import_vars" .Lang}}</h3>
+            <p class="text-sm text-base-content/60">{{t "admin.import_vars_hint" $.Lang}}</p>
+            <form method="POST" action="/admin/gitlab/import-vars" class="space-y-3">
+                <input type="hidden" name="product_id" value="0" />
+                <div class="form-control">
+                    <label class="label label-text text-xs">{{t "admin.select_source" $.Lang}}</label>
+                    <select name="source" class="select select-bordered select-sm" id="gl-source"
+                        onchange="loadGLProjects(this.value)">
+                        <option value="">–</option>
+                        {{range .GitLabSources}}
+                        <option value="{{.ID}}">{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="form-control" id="gl-project-wrap" style="display:none">
+                    <label class="label label-text text-xs">{{t "admin.select_project" $.Lang}}</label>
+                    <select name="project" class="select select-bordered select-sm" id="gl-project"
+                        onchange="loadGLBranches(document.getElementById('gl-source').value, this.value)">
+                    </select>
+                </div>
+                <div class="form-control" id="gl-branch-wrap" style="display:none">
+                    <label class="label label-text text-xs">{{t "admin.select_branch" $.Lang}}</label>
+                    <select name="branch" class="select select-bordered select-sm" id="gl-branch"
+                        onchange="loadGLFiles(document.getElementById('gl-source').value, document.getElementById('gl-project').value, this.value)">
+                    </select>
+                </div>
+                <div class="form-control" id="gl-file-wrap" style="display:none">
+                    <label class="label label-text text-xs">{{t "admin.select_file" $.Lang}}</label>
+                    <select name="file" class="select select-bordered select-sm" id="gl-file"></select>
+                </div>
+                <button type="submit" class="btn btn-secondary btn-sm" id="gl-import" style="display:none">
+                    {{t "admin.import" $.Lang}}
+                </button>
+            </form>
+        </div>
     </div>
-    <div class="form-control">
-        <label class="label"><span class="label-text font-medium">{{t "admin.name_de" .Lang}} <span class="text-error">*</span></span></label>
-        <input type="text" name="name" class="input input-bordered" required />
-    </div>
-    <div class="form-control">
-        <label class="label"><span class="label-text font-medium">{{t "admin.desc_de" .Lang}}</span></label>
-        <textarea name="description" class="textarea textarea-bordered" rows="4"></textarea>
-    </div>
-    <div class="flex gap-3">
-        <button type="submit" class="btn btn-primary">{{t "common.create" .Lang}}</button>
-        <a href="/admin/products" class="btn btn-ghost">{{t "common.cancel" .Lang}}</a>
-    </div>
-</form>
+    {{end}}
+    {{end}}
+</div>
+
+<script>
+async function loadGLProjects(sourceID) {
+    if (!sourceID) return;
+    const resp = await fetch('/admin/gitlab/projects?source=' + sourceID);
+    const projects = await resp.json();
+    const sel = document.getElementById('gl-project');
+    sel.innerHTML = projects.map(p => '<option value="' + p.id + '">' + p.name + '</option>').join('');
+    document.getElementById('gl-project-wrap').style.display = '';
+    document.getElementById('gl-branch-wrap').style.display = 'none';
+    document.getElementById('gl-file-wrap').style.display = 'none';
+    document.getElementById('gl-import').style.display = 'none';
+}
+async function loadGLBranches(sourceID, projectID) {
+    const resp = await fetch('/admin/gitlab/branches?source=' + sourceID + '&project=' + projectID);
+    const branches = await resp.json();
+    const sel = document.getElementById('gl-branch');
+    sel.innerHTML = branches.map(b => '<option value="' + b.name + '">' + b.name + '</option>').join('');
+    document.getElementById('gl-branch-wrap').style.display = '';
+    loadGLFiles(sourceID, projectID, branches[0]?.name || '');
+}
+async function loadGLFiles(sourceID, projectID, branch) {
+    if (!branch) return;
+    const resp = await fetch('/admin/gitlab/files?source=' + sourceID + '&project=' + projectID + '&branch=' + branch);
+    const files = await resp.json();
+    const tfFiles = files.filter(f => f.name.endsWith('.tf'));
+    const sel = document.getElementById('gl-file');
+    sel.innerHTML = tfFiles.map(f => '<option value="' + f.path + '">' + f.path + '</option>').join('');
+    if (tfFiles.length > 0) {
+        document.getElementById('gl-file-wrap').style.display = '';
+        document.getElementById('gl-import').style.display = '';
+    }
+}
+</script>
 {{end}}

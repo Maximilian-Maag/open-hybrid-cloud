@@ -83,9 +83,3 @@ func (h *Handler) catalogProduct(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handler) lang(r *http.Request) string {
-	if sess, ok := h.sessions.Get(r); ok {
-		return sess.Lang
-	}
-	return "de"
-}

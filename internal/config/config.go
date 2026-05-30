@@ -31,6 +31,12 @@ type Config struct {
 
 	ExchangeRateAPIURL string
 	ExchangeRateAPIKey string
+	BaseCurrency       string
+
+	AIProvider string
+	AIEndpoint string
+	AIAPIKey   string
+	AIModel    string
 }
 
 func Load() *Config {
@@ -59,6 +65,12 @@ func Load() *Config {
 
 		ExchangeRateAPIURL: getEnv("EXCHANGE_RATE_API_URL", "https://api.exchangerate.host/latest"),
 		ExchangeRateAPIKey: os.Getenv("EXCHANGE_RATE_API_KEY"),
+		BaseCurrency:       getEnv("BASE_CURRENCY", "EUR"),
+
+		AIProvider: getEnv("AI_PROVIDER", "claude"),
+		AIEndpoint: os.Getenv("AI_ENDPOINT"),
+		AIAPIKey:   os.Getenv("AI_API_KEY"),
+		AIModel:    getEnv("AI_MODEL", "claude-haiku-4-5-20251001"),
 	}
 }
 

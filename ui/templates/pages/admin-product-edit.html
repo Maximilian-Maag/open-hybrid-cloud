@@ -8,7 +8,7 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <div class="space-y-6">
-        <form method="POST" action="/admin/products/{{.Product.ID}}" class="card bg-base-100 border border-base-300">
+        <form method="POST" action="/admin/products/{{.Product.ID}}" enctype="multipart/form-data" class="card bg-base-100 border border-base-300">
             <div class="card-body space-y-4">
                 <h3 class="card-title text-base">{{t "admin.general" $.Lang}}</h3>
                 <div class="form-control">
@@ -27,7 +27,25 @@
                     <label class="label"><span class="label-text text-sm">{{t "admin.desc_de" $.Lang}}</span></label>
                     <textarea name="description" class="textarea textarea-bordered textarea-sm" rows="3">{{.Product.Description}}</textarea>
                 </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text text-sm">{{t "admin.product_image" $.Lang}}</span></label>
+                    {{if .Product.Image}}
+                    <div class="mb-2">
+                        <img src="/products/{{.Product.ID}}/image" alt="product" class="h-20 rounded object-cover" />
+                        <p class="text-xs text-base-content/50 mt-1">{{t "admin.current_image" $.Lang}}</p>
+                    </div>
+                    {{end}}
+                    <input type="file" name="image" accept="image/*" class="file-input file-input-bordered file-input-sm" />
+                </div>
                 <button type="submit" class="btn btn-primary btn-sm">{{t "common.save" $.Lang}}</button>
+            </div>
+        </form>
+
+        <form method="POST" action="/admin/products/{{.Product.ID}}/translate" class="card bg-base-100 border border-base-300">
+            <div class="card-body">
+                <h3 class="card-title text-base">{{t "admin.ai_translation" $.Lang}}</h3>
+                <p class="text-sm text-base-content/60">{{t "admin.translate_hint" $.Lang}}</p>
+                <button type="submit" class="btn btn-secondary btn-sm mt-2">{{t "admin.translate_btn" $.Lang}}</button>
             </div>
         </form>
     </div>
@@ -64,7 +82,76 @@
             </div>
         </div>
         {{end}}
+
+        {{if .Parameters}}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body">
+                <h3 class="card-title text-base">{{t "admin.parameters" $.Lang}}</h3>
+                <div class="space-y-1 text-sm">
+                {{range .Parameters}}
+                <div class="flex justify-between py-1 border-b border-base-200">
+                    <span class="font-mono text-xs">{{.Name}}</span>
+                    <span class="badge badge-xs">{{.Type}}</span>
+                </div>
+                {{end}}
+                </div>
+            </div>
+        </div>
+        {{end}}
     </div>
 </div>
+
+{{if .Environments}}
+<div class="mt-6">
+    <h3 class="text-lg font-semibold mb-3">Pipeline Webhooks</h3>
+    <p class="text-sm text-base-content/60 mb-4">Override the environment's default webhook for this product. Each row triggers one pipeline in execution order. Leave empty to use the environment webhook.</p>
+    <div class="space-y-4">
+    {{range .Environments}}
+    {{$envID := .ID}}
+    {{$envName := .Name}}
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body py-3">
+            <h4 class="font-medium text-sm">{{$envName}}</h4>
+            {{$whs := index $.WebhooksByEnv $envID}}
+            {{if $whs}}
+            <div class="space-y-1 text-xs mb-3">
+            {{range $whs}}
+            <div class="flex items-center gap-2 py-1 border-b border-base-200">
+                <span class="badge badge-xs badge-ghost">{{.ExecOrder}}</span>
+                <span class="font-medium">{{.Name}}</span>
+                <span class="font-mono text-base-content/50 truncate flex-1">{{.WebhookURL}}</span>
+                <form method="POST" action="/admin/products/{{$.Product.ID}}/webhooks/{{.ID}}/delete">
+                    <button class="btn btn-xs btn-error btn-outline">delete</button>
+                </form>
+            </div>
+            {{end}}
+            </div>
+            {{end}}
+            <form method="POST" action="/admin/products/{{$.Product.ID}}/webhooks" class="flex flex-wrap gap-2 items-end">
+                <input type="hidden" name="environment_id" value="{{$envID}}" />
+                <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">Name</span></label>
+                    <input type="text" name="name" placeholder="vm-platform" class="input input-bordered input-xs w-28" required />
+                </div>
+                <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">Webhook URL</span></label>
+                    <input type="text" name="webhook_url" placeholder="https://gitlab.example.com/api/v4/projects/1/trigger/pipeline" class="input input-bordered input-xs w-80" required />
+                </div>
+                <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">Token</span></label>
+                    <input type="text" name="webhook_token" class="input input-bordered input-xs w-40" required />
+                </div>
+                <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">Order</span></label>
+                    <input type="number" name="exec_order" value="0" class="input input-bordered input-xs w-16" />
+                </div>
+                <button type="submit" class="btn btn-xs btn-primary">Add</button>
+            </form>
+        </div>
+    </div>
+    {{end}}
+    </div>
+</div>
+{{end}}
 {{end}}
 {{end}}

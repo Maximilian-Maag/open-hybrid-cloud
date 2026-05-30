@@ -27,7 +27,8 @@
             </td>
             <td class="text-sm text-base-content/60">{{.DeployedAt.Format "02.01.2006 15:04"}}</td>
             <td class="text-xs text-base-content/50">{{len .Parameters}}</td>
-            <td>
+            <td class="flex gap-1">
+                <a href="/orders/new?from_infra={{.ID}}" class="btn btn-ghost btn-xs">{{t "infra.use_template" $.Lang}}</a>
                 {{if or (eq (printf "%s" .Status) "completed") (eq (printf "%s" .Status) "provisioning")}}
                 <form method="POST" action="/infrastructure/{{.ID}}/decommission"
                       onsubmit="return confirm('{{t "infra.confirm_decomm" $.Lang}}')">

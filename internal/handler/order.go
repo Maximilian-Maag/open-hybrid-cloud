@@ -23,6 +23,16 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 	productID, _ := strconv.ParseInt(r.URL.Query().Get("product"), 10, 64)
 	envID, _ := strconv.ParseInt(r.URL.Query().Get("env"), 10, 64)
 
+	// FA-06.7: pre-fill from an existing infra element
+	prefilledParams := map[string]string{}
+	if fromInfraID, _ := strconv.ParseInt(r.URL.Query().Get("from_infra"), 10, 64); fromInfraID > 0 {
+		if el, err := h.infra.GetByID(r.Context(), fromInfraID); err == nil && el != nil {
+			productID = el.ProductID
+			envID = el.EnvironmentID
+			prefilledParams = el.Parameters
+		}
+	}
+
 	var projects interface{}
 	if sess.Role == model.RoleAdmin || sess.Role == model.RoleShopAdmin {
 		projects, _ = h.projects.ListAll(r.Context())
@@ -38,11 +48,12 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 	costCenters, _ := h.costCenters.FindAll(r.Context())
 
 	h.render(w, r, "order-new.html", map[string]any{
-		"Product":      product,
-		"Environment":  env,
-		"Projects":     projects,
-		"Parameters":   append(globalParams, params...),
-		"CostCenters":  costCenters,
+		"Product":         product,
+		"Environment":     env,
+		"Projects":        projects,
+		"Parameters":      append(globalParams, params...),
+		"CostCenters":     costCenters,
+		"PrefilledParams": prefilledParams,
 	})
 }
 
@@ -90,10 +101,16 @@ func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
 			h.redirectWithFlash(w, r, "/orders", "error", "Webhook konnte nicht ausgelöst werden: "+err.Error())
 			return
 		}
+		if h.notifier != nil {
+			_ = h.notifier.OrderCreated(r.Context(), o, sess.Email, false)
+		}
 	} else {
 		if err := h.orders.Create(r.Context(), o); err != nil {
 			h.redirectWithFlash(w, r, "/orders/new", "error", "Bestellung konnte nicht erstellt werden.")
 			return
+		}
+		if h.notifier != nil {
+			_ = h.notifier.OrderCreated(r.Context(), o, sess.Email, true)
 		}
 	}
 	h.redirectWithFlash(w, r, "/orders", "success", "Bestellung erfolgreich aufgegeben.")
@@ -146,6 +163,13 @@ func (h *Handler) approvalApprove(w http.ResponseWriter, r *http.Request) {
 		h.redirectWithFlash(w, r, "/approvals", "error", err.Error())
 		return
 	}
+	if h.notifier != nil {
+		if o, err := h.orders.GetByID(r.Context(), id); err == nil && o != nil {
+			if u, err := h.users.GetByID(r.Context(), o.UserID); err == nil && u != nil {
+				_ = h.notifier.OrderApproved(r.Context(), o, u.Email)
+			}
+		}
+	}
 	h.redirectWithFlash(w, r, "/approvals", "success", "Bestellung freigegeben.")
 }
 
@@ -164,6 +188,13 @@ func (h *Handler) approvalReject(w http.ResponseWriter, r *http.Request) {
 	if err := h.orders.Reject(r.Context(), id, sess.UserID, note); err != nil {
 		h.redirectWithFlash(w, r, "/approvals", "error", err.Error())
 		return
+	}
+	if h.notifier != nil {
+		if o, err := h.orders.GetByID(r.Context(), id); err == nil && o != nil {
+			if u, err := h.users.GetByID(r.Context(), o.UserID); err == nil && u != nil {
+				_ = h.notifier.OrderRejected(r.Context(), o, u.Email, note)
+			}
+		}
 	}
 	h.redirectWithFlash(w, r, "/approvals", "success", "Bestellung abgelehnt.")
 }

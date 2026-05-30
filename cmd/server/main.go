@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -9,22 +10,27 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/porr-ag/infra-webshop/internal/auth"
+	"github.com/porr-ag/infra-webshop/internal/aitranslation"
 	"github.com/porr-ag/infra-webshop/internal/audit"
+	"github.com/porr-ag/infra-webshop/internal/auth"
 	"github.com/porr-ag/infra-webshop/internal/config"
 	"github.com/porr-ag/infra-webshop/internal/db"
+	"github.com/porr-ag/infra-webshop/internal/exchange"
 	"github.com/porr-ag/infra-webshop/internal/handler"
 	"github.com/porr-ag/infra-webshop/internal/migrations"
 	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/internal/notification"
+	"github.com/porr-ag/infra-webshop/internal/polling"
 	pgRepo "github.com/porr-ag/infra-webshop/internal/repository/postgres"
 	"github.com/porr-ag/infra-webshop/internal/service/impl"
 	"github.com/porr-ag/infra-webshop/ui"
-	"io/fs"
 )
 
 func main() {
 	cfg := config.Load()
-	ctx := context.Background()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// Database
 	pool, err := db.New(ctx, cfg.DatabaseURL)
@@ -54,14 +60,32 @@ func main() {
 	orderRepo := pgRepo.NewOrderRepository(pool)
 	infraRepo := pgRepo.NewInfrastructureRepository(pool)
 	auditRepo := pgRepo.NewAuditRepository(pool)
+	exchangeRatesRepo := pgRepo.NewExchangeRateRepository(pool)
+	productWebhookRepo := pgRepo.NewProductWebhookRepository(pool)
 
 	// Services
 	auditSvc := audit.NewService(auditRepo)
 	userSvc := impl.NewUserService(userRepo)
 	productSvc := impl.NewProductService(productRepo, translationRepo)
-	orderSvc := impl.NewOrderService(orderRepo, infraRepo, envRepo, auditSvc)
+	orderSvc := impl.NewOrderService(orderRepo, infraRepo, envRepo, productWebhookRepo, auditSvc)
 	projectSvc := impl.NewProjectService(projectRepo)
-	infraSvc := impl.NewInfrastructureService(infraRepo, envRepo, auditSvc)
+	infraSvc := impl.NewInfrastructureService(infraRepo, envRepo, productWebhookRepo, auditSvc)
+
+	// Notification
+	notifier := notification.NewService(cfg, userRepo)
+
+	// Exchange rates
+	exchangeSvc := exchange.NewService(cfg.ExchangeRateAPIURL, cfg.ExchangeRateAPIKey)
+	if rates, err := exchangeRatesRepo.LoadAll(ctx); err == nil {
+		exchangeSvc.LoadRates(rates)
+	}
+
+	// AI translation
+	translator := aitranslation.NewTranslator(cfg.AIProvider, cfg.AIEndpoint, cfg.AIAPIKey, cfg.AIModel)
+
+	// Polling worker
+	pollingWorker := polling.NewWorker(orderRepo, infraRepo, envRepo, sourceRepo, userRepo, productWebhookRepo, notifier, pool)
+	go pollingWorker.Run(ctx)
 
 	// Bootstrap admin user
 	bootstrapAdmin(ctx, userSvc, cfg)
@@ -95,7 +119,12 @@ func main() {
 		GitLabSources: sourceRepo,
 		Parameters:    paramRepo,
 		ProductEnvs:   productEnvRepo,
-		Translations:  translationRepo,
+		Translations:    translationRepo,
+		ProductWebhooks: productWebhookRepo,
+		Notifier:        notifier,
+		Exchange:      exchangeSvc,
+		ExchangeRates: exchangeRatesRepo,
+		Translator:    translator,
 	})
 
 	staticFS, _ := fs.Sub(ui.Static, "static")
@@ -120,12 +149,11 @@ func main() {
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	<-ctx.Done()
+	stop()
 
 	slog.Info("shutting down...")
-	shutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutCtx)
 }

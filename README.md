@@ -316,3 +316,4 @@ The container image is pulled from the private DockerHub registry — an `imageP
 | Requirements | `docs/requirements/requirements.md` |
 | Webshop Admin Manual | `docs/guides/webshop-admin.md` |
 | Admin Manual | `docs/guides/admin.md` |
+| GitLab & OpenTofu Integration | `docs/guides/gitlab-opentofu-workflow.md` |

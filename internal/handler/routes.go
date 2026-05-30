@@ -9,9 +9,12 @@ import (
 	"path"
 	"strings"
 
+	"github.com/porr-ag/infra-webshop/internal/aitranslation"
 	"github.com/porr-ag/infra-webshop/internal/auth"
-	"github.com/porr-ag/infra-webshop/internal/i18n"
 	"github.com/porr-ag/infra-webshop/internal/config"
+	"github.com/porr-ag/infra-webshop/internal/exchange"
+	"github.com/porr-ag/infra-webshop/internal/i18n"
+	"github.com/porr-ag/infra-webshop/internal/notification"
 	"github.com/porr-ag/infra-webshop/internal/repository"
 	"github.com/porr-ag/infra-webshop/internal/service"
 	"github.com/porr-ag/infra-webshop/ui"
@@ -40,6 +43,12 @@ type Handler struct {
 	parameters   repository.ParameterRepository
 	productEnvs  repository.ProductEnvironmentRepository
 	translations repository.ProductTranslationRepository
+	productWebhooks repository.ProductWebhookRepository
+
+	notifier      *notification.Service
+	exchange      *exchange.Service
+	exchangeRates repository.ExchangeRateRepository
+	translator    aitranslation.Translator
 
 	pages    pages
 	partials *template.Template
@@ -60,8 +69,13 @@ type Deps struct {
 	CostCenters  repository.CostCenterRepository
 	GitLabSources repository.GitLabSourceRepository
 	Parameters   repository.ParameterRepository
-	ProductEnvs  repository.ProductEnvironmentRepository
-	Translations repository.ProductTranslationRepository
+	ProductEnvs     repository.ProductEnvironmentRepository
+	Translations    repository.ProductTranslationRepository
+	ProductWebhooks repository.ProductWebhookRepository
+	Notifier      *notification.Service
+	Exchange      *exchange.Service
+	ExchangeRates repository.ExchangeRateRepository
+	Translator    aitranslation.Translator
 }
 
 func New(d Deps) *Handler {
@@ -80,8 +94,13 @@ func New(d Deps) *Handler {
 		costCenters:   d.CostCenters,
 		gitlabSources: d.GitLabSources,
 		parameters:    d.Parameters,
-		productEnvs:   d.ProductEnvs,
-		translations:  d.Translations,
+		productEnvs:     d.ProductEnvs,
+		translations:    d.Translations,
+		productWebhooks: d.ProductWebhooks,
+		notifier:      d.Notifier,
+		exchange:      d.Exchange,
+		exchangeRates: d.ExchangeRates,
+		translator:    d.Translator,
 		pages:         mustBuildPages(),
 		partials:      mustParsePartials(),
 	}
@@ -155,7 +174,25 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /admin/users", admin(h.adminUsers))
 	mux.Handle("POST /admin/users", admin(h.adminUserCreate))
 
+	mux.Handle("GET /admin/currencies", admin(h.adminCurrencies))
+	mux.Handle("POST /admin/currencies/refresh", admin(h.adminCurrencyRefresh))
+
+	mux.Handle("POST /admin/products/{id}/translate", admin(h.adminProductTranslate))
+	mux.Handle("GET /admin/products/{id}/image", admin(h.adminProductImageUploadPage))
+	mux.Handle("POST /admin/products/{id}/image", admin(h.adminProductImageUpload))
+
+	mux.Handle("GET /admin/gitlab/projects", admin(h.gitlabProjects))
+	mux.Handle("GET /admin/gitlab/branches", admin(h.gitlabBranches))
+	mux.Handle("GET /admin/gitlab/files", admin(h.gitlabFiles))
+	mux.Handle("POST /admin/gitlab/import-vars", admin(h.gitlabImportVars))
+
+	mux.Handle("POST /admin/products/{id}/webhooks", admin(h.adminProductWebhookCreate))
+	mux.Handle("POST /admin/products/{id}/webhooks/{wid}/delete", admin(h.adminProductWebhookDelete))
+
+	mux.Handle("GET /products/{id}/image", req(http.HandlerFunc(h.productImage)))
+
 	mux.Handle("GET /audit", duAdmin(h.auditLog))
+	mux.Handle("GET /audit/export", duAdmin(h.auditExport))
 }
 
 // mustBuildPages creates one template.Template per page, each containing
@@ -208,6 +245,7 @@ func templateFuncs() template.FuncMap {
 		"statusBadgeClass": statusBadgeClass,
 		"hasPrefix":        strings.HasPrefix,
 		"t":                i18n.T,
+		"langName":         i18n.LanguageName,
 	}
 }
 

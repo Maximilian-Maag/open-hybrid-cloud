@@ -46,8 +46,9 @@ vet:
 docker-build:
 	docker build -t infra-webshop:latest .
 
-dev:
+dev: node_modules
 	-pkill -INT -f 'cmd/server' 2>/dev/null; true
+	npm run build:css
 	docker compose up -d
 	bash -c 'set -a; source .env; go run ./cmd/server'
 

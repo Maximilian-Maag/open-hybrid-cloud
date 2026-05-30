@@ -25,6 +25,7 @@ type PageData struct {
 	Lang           string
 	Brand          Brand
 	SupportedLangs []string
+	SearchQuery    string
 	Data           any
 }
 
@@ -69,6 +70,13 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 
 	b := getBrandCache()
 
+	var searchQuery string
+	if m, ok := data.(map[string]any); ok {
+		if q, ok := m["Query"].(string); ok {
+			searchQuery = q
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, "layout", PageData{
 		Session: sess,
@@ -83,6 +91,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 			HasLogo:        len(b.LogoData) > 0,
 		},
 		SupportedLangs: i18n.Supported(),
+		SearchQuery:    searchQuery,
 		Data:           data,
 	}); err != nil {
 		slog.Error("render error", "page", page, "err", err)

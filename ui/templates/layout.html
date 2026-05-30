@@ -59,7 +59,7 @@
         <!-- Search bar -->
         <div class="flex-1 max-w-2xl">
             <form method="GET" action="/catalog" class="search-bar flex items-center">
-                <input type="text" name="q" value="{{if .Data}}{{with .Data}}{{if .Query}}{{.Query}}{{end}}{{end}}{{end}}"
+                <input type="text" name="q" value="{{.SearchQuery}}"
                        placeholder="{{t "search.placeholder" .Lang}}" class="flex-1" />
                 <button type="submit" aria-label="Search">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">

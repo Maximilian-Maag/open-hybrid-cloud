@@ -47,6 +47,7 @@ docker-build:
 	docker build -t infra-webshop:latest .
 
 dev:
+	-pkill -INT -f 'cmd/server' 2>/dev/null; true
 	docker compose up -d
 	bash -c 'set -a; source .env; go run ./cmd/server'
 

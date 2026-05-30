@@ -1,0 +1,1760 @@
+{
+  "configuration" : { },
+  "description" : "Self-Service Portal zum Bestellen, Verwalten und Dekommissionieren von IT Infrastruktur. Go + HTMX, Single Container.",
+  "documentation" : { },
+  "id" : 1,
+  "lastModifiedAgent" : "structurizr-ui",
+  "lastModifiedDate" : "2026-05-30T08:16:20Z",
+  "model" : {
+    "deploymentNodes" : [ {
+      "children" : [ {
+        "description" : "HTTPS-Terminierung und Reverse Proxy",
+        "environment" : "Docker Host",
+        "id" : "82",
+        "instances" : "1",
+        "name" : "nginx",
+        "properties" : {
+          "structurizr.dsl.identifier" : "f2432edb-2cac-4967-9394-baaf9c95ca10"
+        },
+        "tags" : "Element,Deployment Node",
+        "technology" : "Docker Container / Nginx"
+      }, {
+        "containerInstances" : [ {
+          "containerId" : "10",
+          "deploymentGroups" : [ "Default" ],
+          "environment" : "Docker Host",
+          "id" : "84",
+          "instanceId" : 1,
+          "properties" : {
+            "structurizr.dsl.identifier" : "b890f34c-136e-49f1-82ab-f14986c5ee67"
+          },
+          "relationships" : [ {
+            "description" : "Liest und schreibt Daten",
+            "destinationId" : "86",
+            "id" : "87",
+            "linkedRelationshipId" : "33",
+            "sourceId" : "84",
+            "technology" : "SQL/TCP"
+          }, {
+            "description" : "OIDC Authorization Code Flow",
+            "destinationId" : "89",
+            "id" : "90",
+            "linkedRelationshipId" : "35",
+            "sourceId" : "84",
+            "technology" : "HTTPS"
+          }, {
+            "description" : "Webhooks auslösen, Repos browsen, Pipeline-Status pollen",
+            "destinationId" : "92",
+            "id" : "93",
+            "linkedRelationshipId" : "34",
+            "sourceId" : "84",
+            "technology" : "JSON/HTTPS"
+          }, {
+            "description" : "E-Mail-Versand",
+            "destinationId" : "95",
+            "id" : "96",
+            "linkedRelationshipId" : "37",
+            "sourceId" : "84",
+            "technology" : "SMTP"
+          }, {
+            "description" : "Wechselkurse abrufen",
+            "destinationId" : "98",
+            "id" : "99",
+            "linkedRelationshipId" : "38",
+            "sourceId" : "84",
+            "technology" : "JSON/HTTPS"
+          } ],
+          "tags" : "Container Instance"
+        } ],
+        "description" : "Go Webshop-Server",
+        "environment" : "Docker Host",
+        "id" : "83",
+        "instances" : "1",
+        "name" : "webshop",
+        "properties" : {
+          "structurizr.dsl.identifier" : "3d9cd5b4-467f-4f0c-a0f8-93715f689409"
+        },
+        "tags" : "Element,Deployment Node",
+        "technology" : "Docker Container"
+      }, {
+        "containerInstances" : [ {
+          "containerId" : "21",
+          "deploymentGroups" : [ "Default" ],
+          "environment" : "Docker Host",
+          "id" : "86",
+          "instanceId" : 1,
+          "properties" : {
+            "structurizr.dsl.identifier" : "0adf6233-051c-46b7-b985-8d9ede635818"
+          },
+          "tags" : "Container Instance"
+        } ],
+        "description" : "Datenbank",
+        "environment" : "Docker Host",
+        "id" : "85",
+        "instances" : "1",
+        "name" : "postgres",
+        "properties" : {
+          "structurizr.dsl.identifier" : "71a8b21b-6c67-465b-844e-88f5832753a9"
+        },
+        "tags" : "Element,Deployment Node",
+        "technology" : "Docker Container"
+      } ],
+      "description" : "Einzelner Server für lokale Entwicklung und initiales Deployment",
+      "environment" : "Docker Host",
+      "id" : "81",
+      "instances" : "1",
+      "name" : "Docker Host",
+      "properties" : {
+        "structurizr.dsl.identifier" : "fe98f857-c193-45dc-b349-5f040235b647"
+      },
+      "tags" : "Element,Deployment Node",
+      "technology" : "Docker Engine"
+    }, {
+      "environment" : "Docker Host",
+      "id" : "88",
+      "instances" : "1",
+      "name" : "Entra ID (extern)",
+      "properties" : {
+        "structurizr.dsl.identifier" : "be3d4151-c970-4db1-8d36-2502e1dea263"
+      },
+      "softwareSystemInstances" : [ {
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Docker Host",
+        "id" : "89",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "79099999-24de-4c4e-981c-9f467911e9b5"
+        },
+        "softwareSystemId" : "5",
+        "tags" : "Software System Instance"
+      } ],
+      "tags" : "Element,Deployment Node",
+      "technology" : "SaaS"
+    }, {
+      "environment" : "Docker Host",
+      "id" : "91",
+      "instances" : "1",
+      "name" : "GitLab (extern)",
+      "properties" : {
+        "structurizr.dsl.identifier" : "6faa9118-af6c-4949-b89f-912777dc805f"
+      },
+      "softwareSystemInstances" : [ {
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Docker Host",
+        "id" : "92",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "b5a9fc4e-81de-4eb5-a034-c7f0fc1838d2"
+        },
+        "softwareSystemId" : "4",
+        "tags" : "Software System Instance"
+      } ],
+      "tags" : "Element,Deployment Node",
+      "technology" : "On-Premise / SaaS"
+    }, {
+      "environment" : "Docker Host",
+      "id" : "94",
+      "instances" : "1",
+      "name" : "Mail Server (extern)",
+      "properties" : {
+        "structurizr.dsl.identifier" : "589bdcd7-29d2-4469-91e2-b821931e2cea"
+      },
+      "softwareSystemInstances" : [ {
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Docker Host",
+        "id" : "95",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "eb91b340-7acf-4b13-8b89-fe9f2fa28ed5"
+        },
+        "softwareSystemId" : "7",
+        "tags" : "Software System Instance"
+      } ],
+      "tags" : "Element,Deployment Node",
+      "technology" : "On-Premise / SaaS"
+    }, {
+      "environment" : "Docker Host",
+      "id" : "97",
+      "instances" : "1",
+      "name" : "Wechselkurs-API (extern)",
+      "properties" : {
+        "structurizr.dsl.identifier" : "2a9ff877-57a3-4383-b992-43b095463218"
+      },
+      "softwareSystemInstances" : [ {
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Docker Host",
+        "id" : "98",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "3bb3bf8f-c930-41df-aa00-d174e7fe8deb"
+        },
+        "softwareSystemId" : "8",
+        "tags" : "Software System Instance"
+      } ],
+      "tags" : "Element,Deployment Node",
+      "technology" : "SaaS"
+    }, {
+      "children" : [ {
+        "children" : [ {
+          "description" : "HTTPS-Terminierung via Let's Encrypt oder internem CA. Routet externen Traffic zum Webshop Service.",
+          "environment" : "Kubernetes",
+          "id" : "102",
+          "instances" : "1",
+          "name" : "Ingress + cert-manager",
+          "properties" : {
+            "structurizr.dsl.identifier" : "0eb02ad3-7176-489b-b468-67345043021c"
+          },
+          "tags" : "Element,Deployment Node",
+          "technology" : "Nginx Ingress / cert-manager"
+        }, {
+          "containerInstances" : [ {
+            "containerId" : "10",
+            "deploymentGroups" : [ "Default" ],
+            "environment" : "Kubernetes",
+            "id" : "104",
+            "instanceId" : 1,
+            "properties" : {
+              "structurizr.dsl.identifier" : "b6887b52-8865-40d3-8520-44eadbd98afe"
+            },
+            "relationships" : [ {
+              "description" : "Liest und schreibt Daten",
+              "destinationId" : "106",
+              "id" : "107",
+              "linkedRelationshipId" : "33",
+              "sourceId" : "104",
+              "technology" : "SQL/TCP"
+            }, {
+              "description" : "OIDC Authorization Code Flow",
+              "destinationId" : "109",
+              "id" : "110",
+              "linkedRelationshipId" : "35",
+              "sourceId" : "104",
+              "technology" : "HTTPS"
+            }, {
+              "description" : "Webhooks auslösen, Repos browsen, Pipeline-Status pollen",
+              "destinationId" : "112",
+              "id" : "113",
+              "linkedRelationshipId" : "34",
+              "sourceId" : "104",
+              "technology" : "JSON/HTTPS"
+            }, {
+              "description" : "E-Mail-Versand",
+              "destinationId" : "115",
+              "id" : "116",
+              "linkedRelationshipId" : "37",
+              "sourceId" : "104",
+              "technology" : "SMTP"
+            }, {
+              "description" : "Wechselkurse abrufen",
+              "destinationId" : "118",
+              "id" : "119",
+              "linkedRelationshipId" : "38",
+              "sourceId" : "104",
+              "technology" : "JSON/HTTPS"
+            } ],
+            "tags" : "Container Instance"
+          } ],
+          "description" : "Stateless Go Pods, horizontal skalierbar. Polling via PostgreSQL-Locks koordiniert.",
+          "environment" : "Kubernetes",
+          "id" : "103",
+          "instances" : "1",
+          "name" : "webshop Deployment",
+          "properties" : {
+            "structurizr.dsl.identifier" : "4b456651-c622-4c4c-b5c7-2acc85646b20"
+          },
+          "tags" : "Element,Deployment Node",
+          "technology" : "Kubernetes Deployment"
+        }, {
+          "containerInstances" : [ {
+            "containerId" : "21",
+            "deploymentGroups" : [ "Default" ],
+            "environment" : "Kubernetes",
+            "id" : "106",
+            "instanceId" : 1,
+            "properties" : {
+              "structurizr.dsl.identifier" : "37a8fd1a-e6ca-4a26-b245-a2207cce2414"
+            },
+            "tags" : "Container Instance"
+          } ],
+          "description" : "PostgreSQL mit persistentem Volume",
+          "environment" : "Kubernetes",
+          "id" : "105",
+          "instances" : "1",
+          "name" : "postgres StatefulSet",
+          "properties" : {
+            "structurizr.dsl.identifier" : "e5ba26b5-7838-430c-8eea-35068fdbed65"
+          },
+          "tags" : "Element,Deployment Node",
+          "technology" : "Kubernetes StatefulSet"
+        } ],
+        "description" : "Applikations-Namespace",
+        "environment" : "Kubernetes",
+        "id" : "101",
+        "instances" : "1",
+        "name" : "infra-webshop",
+        "properties" : {
+          "structurizr.dsl.identifier" : "86fbd37a-b769-496c-9a1c-3964c0b6dd73"
+        },
+        "tags" : "Element,Deployment Node",
+        "technology" : "Kubernetes Namespace"
+      } ],
+      "description" : "Produktions-Cluster",
+      "environment" : "Kubernetes",
+      "id" : "100",
+      "instances" : "1",
+      "name" : "Kubernetes Cluster",
+      "properties" : {
+        "structurizr.dsl.identifier" : "ff92661f-2790-4c51-872c-1b01842fe446"
+      },
+      "tags" : "Element,Deployment Node",
+      "technology" : "Kubernetes"
+    }, {
+      "environment" : "Kubernetes",
+      "id" : "108",
+      "instances" : "1",
+      "name" : "Entra ID (extern)",
+      "properties" : {
+        "structurizr.dsl.identifier" : "7d5cbbe5-4c89-4b76-89a2-ac842b59cd0a"
+      },
+      "softwareSystemInstances" : [ {
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Kubernetes",
+        "id" : "109",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "11bf8f4b-65da-46b8-acf0-f46f6012856b"
+        },
+        "softwareSystemId" : "5",
+        "tags" : "Software System Instance"
+      } ],
+      "tags" : "Element,Deployment Node",
+      "technology" : "SaaS"
+    }, {
+      "environment" : "Kubernetes",
+      "id" : "111",
+      "instances" : "1",
+      "name" : "GitLab (extern)",
+      "properties" : {
+        "structurizr.dsl.identifier" : "c7241a54-ce45-46b1-b4a2-e4008aaea1ab"
+      },
+      "softwareSystemInstances" : [ {
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Kubernetes",
+        "id" : "112",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "f978d6d2-4283-42f8-b063-c2d0f4335544"
+        },
+        "softwareSystemId" : "4",
+        "tags" : "Software System Instance"
+      } ],
+      "tags" : "Element,Deployment Node",
+      "technology" : "On-Premise / SaaS"
+    }, {
+      "environment" : "Kubernetes",
+      "id" : "114",
+      "instances" : "1",
+      "name" : "Mail Server (extern)",
+      "properties" : {
+        "structurizr.dsl.identifier" : "e08918d7-4f19-456c-b232-c033ff009931"
+      },
+      "softwareSystemInstances" : [ {
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Kubernetes",
+        "id" : "115",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "dd36692f-386b-41de-bfe3-42097e826e9e"
+        },
+        "softwareSystemId" : "7",
+        "tags" : "Software System Instance"
+      } ],
+      "tags" : "Element,Deployment Node",
+      "technology" : "On-Premise / SaaS"
+    }, {
+      "environment" : "Kubernetes",
+      "id" : "117",
+      "instances" : "1",
+      "name" : "Wechselkurs-API (extern)",
+      "properties" : {
+        "structurizr.dsl.identifier" : "75a463dc-4758-4c64-955a-bad59b2a8575"
+      },
+      "softwareSystemInstances" : [ {
+        "deploymentGroups" : [ "Default" ],
+        "environment" : "Kubernetes",
+        "id" : "118",
+        "instanceId" : 1,
+        "properties" : {
+          "structurizr.dsl.identifier" : "1321f502-10a5-49d4-908d-e510056196ca"
+        },
+        "softwareSystemId" : "8",
+        "tags" : "Software System Instance"
+      } ],
+      "tags" : "Element,Deployment Node",
+      "technology" : "SaaS"
+    } ],
+    "people" : [ {
+      "description" : "Administrator der Digital Unit. Kann alle Bestellungen, Projekte und Infrastruktur einsehen, direkt bestellen und Bestellungen von Projektleitern freigeben oder ablehnen.",
+      "id" : "1",
+      "location" : "Unspecified",
+      "name" : "DU Admin",
+      "properties" : {
+        "structurizr.dsl.identifier" : "du_admin"
+      },
+      "relationships" : [ {
+        "description" : "Bestellt IT Infrastruktur direkt, gibt Bestellungen frei, überwacht alle Projekte",
+        "destinationId" : "9",
+        "id" : "22",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Nutzt Weboberfläche",
+        "destinationId" : "10",
+        "id" : "30",
+        "sourceId" : "1",
+        "tags" : "Relationship",
+        "technology" : "HTTPS"
+      }, {
+        "description" : "Meldet sich per SSO an",
+        "destinationId" : "11",
+        "id" : "39",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Durchsucht Infrastruktur-Produkte",
+        "destinationId" : "12",
+        "id" : "44",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Bestellt direkt ohne Freigabe",
+        "destinationId" : "13",
+        "id" : "47",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Prüft und entscheidet über offene Bestellungen",
+        "destinationId" : "14",
+        "id" : "53",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Sieht alle Projekte und Infrastruktur",
+        "destinationId" : "15",
+        "id" : "58",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Verfolgt Deployment-Status",
+        "destinationId" : "16",
+        "id" : "64",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Einsicht und Export des Audit-Logs",
+        "destinationId" : "17",
+        "id" : "67",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person"
+    }, {
+      "description" : "Verwaltet Produktkatalog, Systemkonfiguration und lokale Benutzeraccounts. Sieht alle Projekte und Infrastruktur. Nutzt lokalen Account.",
+      "id" : "2",
+      "location" : "Unspecified",
+      "name" : "Webshop Admin",
+      "properties" : {
+        "structurizr.dsl.identifier" : "shop_admin"
+      },
+      "relationships" : [ {
+        "description" : "Verwaltet Produktkatalog, Systemkonfiguration und Benutzer",
+        "destinationId" : "9",
+        "id" : "23",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Verwaltet Shop",
+        "destinationId" : "10",
+        "id" : "31",
+        "sourceId" : "2",
+        "tags" : "Relationship",
+        "technology" : "HTTPS"
+      }, {
+        "description" : "Meldet sich mit lokalem Account an",
+        "destinationId" : "11",
+        "id" : "41",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Sieht alle Projekte und Infrastruktur",
+        "destinationId" : "15",
+        "id" : "59",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Einsicht und Export des Audit-Logs",
+        "destinationId" : "17",
+        "id" : "68",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Verwaltet Katalog, Konfiguration und Benutzer",
+        "destinationId" : "19",
+        "id" : "72",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person"
+    }, {
+      "description" : "Kann Bestellungen aufgeben (Freigabe durch DU Admin erforderlich), eigene Infrastruktur dekommissionieren und Projekte verwalten. Sieht ausschließlich eigene Projekte, Bestellungen und Infrastruktur.",
+      "id" : "3",
+      "location" : "Unspecified",
+      "name" : "Projektleiter",
+      "properties" : {
+        "structurizr.dsl.identifier" : "project_leader"
+      },
+      "relationships" : [ {
+        "description" : "Bestellt und verwaltet eigene IT Infrastruktur",
+        "destinationId" : "9",
+        "id" : "24",
+        "sourceId" : "3",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Nutzt Weboberfläche",
+        "destinationId" : "10",
+        "id" : "32",
+        "sourceId" : "3",
+        "tags" : "Relationship",
+        "technology" : "HTTPS"
+      }, {
+        "description" : "Meldet sich per SSO an",
+        "destinationId" : "11",
+        "id" : "40",
+        "sourceId" : "3",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Durchsucht Infrastruktur-Produkte",
+        "destinationId" : "12",
+        "id" : "45",
+        "sourceId" : "3",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Bestellt, Bestellung wartet auf Freigabe",
+        "destinationId" : "13",
+        "id" : "48",
+        "sourceId" : "3",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Sieht nur eigene Projekte und Infrastruktur",
+        "destinationId" : "15",
+        "id" : "60",
+        "sourceId" : "3",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Verfolgt Status eigener Deployments",
+        "destinationId" : "16",
+        "id" : "65",
+        "sourceId" : "3",
+        "tags" : "Relationship"
+      } ],
+      "tags" : "Element,Person"
+    } ],
+    "softwareSystems" : [ {
+      "description" : "Mehrere konfigurierbare GitLab-Instanzen als Quellen für OpenTofu Module. Empfängt Provisioning- und Destroy-Webhooks, führt OpenTofu Workflows aus und stellt API für Repo-Browser und Pipeline-Status bereit.",
+      "documentation" : { },
+      "id" : "4",
+      "location" : "Unspecified",
+      "name" : "GitLab",
+      "properties" : {
+        "structurizr.dsl.identifier" : "gitlab"
+      },
+      "tags" : "Element,Software System,Existing System"
+    }, {
+      "description" : "SSO Identity Provider (OIDC) für die Authentifizierung von DU Admins und Projektleitern.",
+      "documentation" : { },
+      "id" : "5",
+      "location" : "Unspecified",
+      "name" : "Microsoft Entra ID",
+      "properties" : {
+        "structurizr.dsl.identifier" : "oidc_provider"
+      },
+      "tags" : "Element,Software System,Existing System"
+    }, {
+      "description" : "Konfigurierbarer KI-Anbieter für die Übersetzung von Produktinhalten in alle EU-Sprachen und Russisch. Cloud: Claude, OpenAI, Azure OpenAI. On-Premise: Ollama, LocalAI. Optional — ohne Konfiguration wird die Funktion ausgeblendet.",
+      "documentation" : { },
+      "id" : "6",
+      "location" : "Unspecified",
+      "name" : "KI-Übersetzungsservice",
+      "properties" : {
+        "structurizr.dsl.identifier" : "ai_translation"
+      },
+      "tags" : "Element,Software System,Existing System"
+    }, {
+      "description" : "SMTP-Server für transaktionale E-Mails: Bestellbestätigung, Freigabe-Anfrage, Freigabe/Ablehnung, Deployment-Abschluss und Fehlermeldungen.",
+      "documentation" : { },
+      "id" : "7",
+      "location" : "Unspecified",
+      "name" : "Mail Server",
+      "properties" : {
+        "structurizr.dsl.identifier" : "smtp"
+      },
+      "tags" : "Element,Software System,Existing System"
+    }, {
+      "description" : "Externe API für aktuelle Wechselkurse. Basis für die Umrechnung von der konfigurierten Leitwährung in die Anzeigewährung je Benutzer-Locale.",
+      "documentation" : { },
+      "id" : "8",
+      "location" : "Unspecified",
+      "name" : "Wechselkurs-API",
+      "properties" : {
+        "structurizr.dsl.identifier" : "exchange_rate_api"
+      },
+      "tags" : "Element,Software System,Existing System"
+    }, {
+      "containers" : [ {
+        "components" : [ {
+          "description" : "OIDC-Login via Entra ID (Authorization Code Flow) für DU Admins und Projektleiter. Lokale Account-Anmeldung für Webshop Admin. Verwaltet Sessions und Rollen in verschlüsseltem HttpOnly-Cookie.",
+          "documentation" : { },
+          "id" : "11",
+          "name" : "Authentifizierung",
+          "properties" : {
+            "structurizr.dsl.identifier" : "auth"
+          },
+          "relationships" : [ {
+            "description" : "Authorization Code Flow",
+            "destinationId" : "5",
+            "id" : "42",
+            "sourceId" : "11",
+            "tags" : "Relationship",
+            "technology" : "OIDC/HTTPS"
+          }, {
+            "description" : "Liest Benutzer und Rollen, schreibt Sessions",
+            "destinationId" : "21",
+            "id" : "43",
+            "sourceId" : "11",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Zeigt Infrastruktur-Produkte nach Kategorie mit Bild, mehrsprachiger Beschreibung und Preis. Preisanzeige in der Locale-Währung des Benutzers — Umrechnung aus der Leitwährung anhand gespeicherter Wechselkurse. Beim Bestellen: Auswahl der verfügbaren Deployment-Umgebung, Anzeige der umgebungsspezifischen Parameter.",
+          "documentation" : { },
+          "id" : "12",
+          "name" : "Produktkatalog",
+          "properties" : {
+            "structurizr.dsl.identifier" : "catalog"
+          },
+          "relationships" : [ {
+            "description" : "Liest Produkte, Kategorien, Preise und Wechselkurse",
+            "destinationId" : "21",
+            "id" : "46",
+            "sourceId" : "12",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Bestellformular mit dynamisch generierten Parametern aus globalen, Kategorie- und Produkt-Parametersets sowie umgebungsspezifischen Parametern. Projektzuordnung und Kostenstellen-Zuordnung je Position. DU Admins deployen direkt via Provisioning-Webhook. Projektleiter-Bestellungen warten auf Freigabe.",
+          "documentation" : { },
+          "id" : "13",
+          "name" : "Bestellung",
+          "properties" : {
+            "structurizr.dsl.identifier" : "order"
+          },
+          "relationships" : [ {
+            "description" : "Speichert Bestellung mit Parametern, Projektzuordnung und Kostenstellen",
+            "destinationId" : "21",
+            "id" : "49",
+            "sourceId" : "13",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Löst Provisioning-Webhook aus (Direktbestellung DU Admin)",
+            "destinationId" : "4",
+            "id" : "50",
+            "sourceId" : "13",
+            "tags" : "Relationship",
+            "technology" : "JSON/HTTPS"
+          }, {
+            "description" : "Löst Bestelleingangs-Benachrichtigungen aus",
+            "destinationId" : "18",
+            "id" : "51",
+            "sourceId" : "13",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Protokolliert Bestellvorgang",
+            "destinationId" : "17",
+            "id" : "52",
+            "sourceId" : "13",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Übersicht offener Bestellungen von Projektleitern für DU Admins. Jeder DU Admin kann freigeben oder ablehnen. Ablehnung erfordert Pflichtkommentar. Freigabe löst GitLab Provisioning-Webhook aus.",
+          "documentation" : { },
+          "id" : "14",
+          "name" : "Freigabe",
+          "properties" : {
+            "structurizr.dsl.identifier" : "approval"
+          },
+          "relationships" : [ {
+            "description" : "Liest offene Bestellungen, schreibt Freigabe oder Ablehnung mit Kommentar",
+            "destinationId" : "21",
+            "id" : "54",
+            "sourceId" : "14",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Löst Provisioning-Webhook nach Freigabe aus",
+            "destinationId" : "4",
+            "id" : "55",
+            "sourceId" : "14",
+            "tags" : "Relationship",
+            "technology" : "JSON/HTTPS"
+          }, {
+            "description" : "Löst Freigabe- oder Ablehnungs-Benachrichtigung aus",
+            "destinationId" : "18",
+            "id" : "56",
+            "sourceId" : "14",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Protokolliert Freigabe oder Ablehnung mit Kommentar",
+            "destinationId" : "17",
+            "id" : "57",
+            "sourceId" : "14",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Zeigt deployte Infrastrukturelemente gruppiert nach Projekt und Deployment-Umgebung. DU Admin und Webshop Admin sehen alles, Projektleiter nur eigene. Dekommissionierung via GitLab Destroy-Webhook. Bestehendes Projekt als Bestellvorlage nutzbar.",
+          "documentation" : { },
+          "id" : "15",
+          "name" : "Infrastrukturübersicht",
+          "properties" : {
+            "structurizr.dsl.identifier" : "infrastructure"
+          },
+          "relationships" : [ {
+            "description" : "Liest Infrastrukturelemente, Projekte und Umgebungen",
+            "destinationId" : "21",
+            "id" : "61",
+            "sourceId" : "15",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Löst Destroy-Webhook zur Dekommissionierung aus",
+            "destinationId" : "4",
+            "id" : "62",
+            "sourceId" : "15",
+            "tags" : "Relationship",
+            "technology" : "JSON/HTTPS"
+          }, {
+            "description" : "Protokolliert Dekommissionierungsvorgang",
+            "destinationId" : "17",
+            "id" : "63",
+            "sourceId" : "15",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Liefert HTMX-Polling-Fragmente für den Live-Status laufender Provisioning- und Dekommissionierungs-Workflows.",
+          "documentation" : { },
+          "id" : "16",
+          "name" : "Bestellstatus",
+          "properties" : {
+            "structurizr.dsl.identifier" : "status"
+          },
+          "relationships" : [ {
+            "description" : "Liest Pipeline-Status",
+            "destinationId" : "21",
+            "id" : "66",
+            "sourceId" : "16",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Unveränderliches Compliance-Protokoll aller Aktionen: Bestellung, Freigabe, Ablehnung mit Kommentar, Deployment, Dekommissionierung. Für DU Admin und Webshop Admin einsehbar und filterbar. Export als CSV oder PDF wählbar.",
+          "documentation" : { },
+          "id" : "17",
+          "name" : "Audit-Log",
+          "properties" : {
+            "structurizr.dsl.identifier" : "audit"
+          },
+          "relationships" : [ {
+            "description" : "Liest und schreibt Audit-Einträge",
+            "destinationId" : "21",
+            "id" : "69",
+            "sourceId" : "17",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Versendet transaktionale E-Mails. Bestelleingang: Bestätigung an Besteller und Freigabe-Anfrage an alle DU Admins (nur Projektleiter). Freigabe oder Ablehnung mit Kommentar: an Besteller. Deployment abgeschlossen: an Besteller. Deployment fehlgeschlagen: an Besteller und alle DU Admins. Dekommissionierung abgeschlossen: an Besteller.",
+          "documentation" : { },
+          "id" : "18",
+          "name" : "Benachrichtigung",
+          "properties" : {
+            "structurizr.dsl.identifier" : "notification"
+          },
+          "relationships" : [ {
+            "description" : "Sendet E-Mails",
+            "destinationId" : "7",
+            "id" : "70",
+            "sourceId" : "18",
+            "tags" : "Relationship",
+            "technology" : "SMTP"
+          }, {
+            "description" : "Liest Empfängeradressen, protokolliert versendete Nachrichten",
+            "destinationId" : "21",
+            "id" : "71",
+            "sourceId" : "18",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Verwaltung von: Produktkategorien, Produkten (Bild, mehrsprachige Inhalte, Parametersets, Preise je Produkt+Umgebung, Kostenstellen-Konfiguration pro Produkt), globalen Parametersets, GitLab-Quellen (URL + Token je Instanz), Deployment-Umgebungen, Kostenstellen-Liste, Leitwährung, KI-Anbieter-Konfiguration, SMTP-Konfiguration und lokale Benutzeraccounts. Browsed Repos auf konfigurierten GitLab-Quellen via GitLab API und importiert variables.tf Dateien für Produktparameter (HCL-Parser).",
+          "documentation" : { },
+          "id" : "19",
+          "name" : "Administration",
+          "properties" : {
+            "structurizr.dsl.identifier" : "admin"
+          },
+          "relationships" : [ {
+            "description" : "CRUD Produkte, Kategorien, Parameter, Umgebungen, GitLab-Quellen, Kostenstellen, Währungen, Benutzer",
+            "destinationId" : "21",
+            "id" : "73",
+            "sourceId" : "19",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Browsed Repos und liest variables.tf für Produktparameter",
+            "destinationId" : "4",
+            "id" : "74",
+            "sourceId" : "19",
+            "tags" : "Relationship",
+            "technology" : "JSON/HTTPS"
+          }, {
+            "description" : "Löst optionale KI-Übersetzung aus",
+            "destinationId" : "6",
+            "id" : "75",
+            "sourceId" : "19",
+            "tags" : "Relationship",
+            "technology" : "JSON/HTTPS"
+          }, {
+            "description" : "Aktualisiert gespeicherte Wechselkurse",
+            "destinationId" : "8",
+            "id" : "76",
+            "sourceId" : "19",
+            "tags" : "Relationship",
+            "technology" : "JSON/HTTPS"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Goroutine-Pool der periodisch die GitLab API nach Pipeline-Status fragt, den Bestell- und Infrastrukturstatus aktualisiert und Benachrichtigungen bei Statusänderungen auslöst. Koordiniert über PostgreSQL-Locks — sicher bei mehreren Container-Replicas.",
+          "documentation" : { },
+          "id" : "20",
+          "name" : "GitLab Polling",
+          "properties" : {
+            "structurizr.dsl.identifier" : "polling"
+          },
+          "relationships" : [ {
+            "description" : "Pollt Pipeline-Status aller laufenden Workflows",
+            "destinationId" : "4",
+            "id" : "77",
+            "sourceId" : "20",
+            "tags" : "Relationship",
+            "technology" : "JSON/HTTPS"
+          }, {
+            "description" : "Aktualisiert Bestell- und Infrastrukturstatus",
+            "destinationId" : "21",
+            "id" : "78",
+            "sourceId" : "20",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Löst Benachrichtigungen bei Statusänderungen aus",
+            "destinationId" : "18",
+            "id" : "79",
+            "sourceId" : "20",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Protokolliert Statusübergänge",
+            "destinationId" : "17",
+            "id" : "80",
+            "sourceId" : "20",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        } ],
+        "description" : "Go-Server der HTML-Templates serverseitig rendert und via HTMX als Fragmente ausliefert. Enthält UI, Geschäftslogik, GitLab-Integration und alle Hintergrundprozesse in einem stateless Container.",
+        "documentation" : { },
+        "id" : "10",
+        "name" : "Webshop",
+        "properties" : {
+          "structurizr.dsl.identifier" : "app"
+        },
+        "relationships" : [ {
+          "description" : "Liest und schreibt Daten",
+          "destinationId" : "21",
+          "id" : "33",
+          "sourceId" : "10",
+          "tags" : "Relationship",
+          "technology" : "SQL/TCP"
+        }, {
+          "description" : "Webhooks auslösen, Repos browsen, Pipeline-Status pollen",
+          "destinationId" : "4",
+          "id" : "34",
+          "sourceId" : "10",
+          "tags" : "Relationship",
+          "technology" : "JSON/HTTPS"
+        }, {
+          "description" : "OIDC Authorization Code Flow",
+          "destinationId" : "5",
+          "id" : "35",
+          "sourceId" : "10",
+          "tags" : "Relationship",
+          "technology" : "HTTPS"
+        }, {
+          "description" : "KI-Übersetzung (optional)",
+          "destinationId" : "6",
+          "id" : "36",
+          "sourceId" : "10",
+          "tags" : "Relationship",
+          "technology" : "JSON/HTTPS"
+        }, {
+          "description" : "E-Mail-Versand",
+          "destinationId" : "7",
+          "id" : "37",
+          "sourceId" : "10",
+          "tags" : "Relationship",
+          "technology" : "SMTP"
+        }, {
+          "description" : "Wechselkurse abrufen",
+          "destinationId" : "8",
+          "id" : "38",
+          "sourceId" : "10",
+          "tags" : "Relationship",
+          "technology" : "JSON/HTTPS"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "Go / HTMX / Tailwind / DaisyUI"
+      }, {
+        "description" : "Persistenz aller Webshop-Daten: Produktkategorien, Produkte (Bild als bytea, Webhook-Referenz), Produktübersetzungen (je Sprachcode), Parametersets (global, Kategorie, Produkt, Umgebung), GitLab-Quellen, Deployment-Umgebungen, Preise je Produkt+Umgebung, Kostenstellen, Wechselkurse, Projekte (mit Kostenstelle), Bestellungen (inkl. Freigabe-Workflow und Ablehnungskommentar), Infrastrukturelemente, Pipeline-Status, Audit-Log und lokale Benutzer.",
+        "documentation" : { },
+        "id" : "21",
+        "name" : "Datenbank",
+        "properties" : {
+          "structurizr.dsl.identifier" : "database"
+        },
+        "tags" : "Element,Container,Database",
+        "technology" : "PostgreSQL"
+      } ],
+      "description" : "Self-Service Portal über das DU Admins und Projektleiter IT Infrastruktur bestellen, verwalten und dekommissionieren können.",
+      "documentation" : { },
+      "id" : "9",
+      "location" : "Unspecified",
+      "name" : "Infra-Webshop",
+      "properties" : {
+        "structurizr.dsl.identifier" : "webshop"
+      },
+      "relationships" : [ {
+        "description" : "Browsed Repos, löst Webhooks aus, pollt Pipeline-Status",
+        "destinationId" : "4",
+        "id" : "25",
+        "sourceId" : "9",
+        "tags" : "Relationship",
+        "technology" : "JSON/HTTPS"
+      }, {
+        "description" : "Authentifiziert DU Admins und Projektleiter",
+        "destinationId" : "5",
+        "id" : "26",
+        "sourceId" : "9",
+        "tags" : "Relationship",
+        "technology" : "OIDC/HTTPS"
+      }, {
+        "description" : "Übersetzt Produktinhalte (optional, konfigurierbar)",
+        "destinationId" : "6",
+        "id" : "27",
+        "sourceId" : "9",
+        "tags" : "Relationship",
+        "technology" : "JSON/HTTPS"
+      }, {
+        "description" : "Sendet transaktionale E-Mails",
+        "destinationId" : "7",
+        "id" : "28",
+        "sourceId" : "9",
+        "tags" : "Relationship",
+        "technology" : "SMTP"
+      }, {
+        "description" : "Ruft aktuelle Wechselkurse ab",
+        "destinationId" : "8",
+        "id" : "29",
+        "sourceId" : "9",
+        "tags" : "Relationship",
+        "technology" : "JSON/HTTPS"
+      } ],
+      "tags" : "Element,Software System"
+    } ]
+  },
+  "name" : "Infra-Webshop",
+  "properties" : {
+    "structurizr.dsl" : "d29ya3NwYWNlICJJbmZyYS1XZWJzaG9wIiAiU2VsZi1TZXJ2aWNlIFBvcnRhbCB6dW0gQmVzdGVsbGVuLCBWZXJ3YWx0ZW4gdW5kIERla29tbWlzc2lvbmllcmVuIHZvbiBJVCBJbmZyYXN0cnVrdHVyLiBHbyArIEhUTVgsIFNpbmdsZSBDb250YWluZXIuIiB7CgogICAgbW9kZWwgewogICAgICAgIGR1X2FkbWluID0gcGVyc29uICJEVSBBZG1pbiIgIkFkbWluaXN0cmF0b3IgZGVyIERpZ2l0YWwgVW5pdC4gS2FubiBhbGxlIEJlc3RlbGx1bmdlbiwgUHJvamVrdGUgdW5kIEluZnJhc3RydWt0dXIgZWluc2VoZW4sIGRpcmVrdCBiZXN0ZWxsZW4gdW5kIEJlc3RlbGx1bmdlbiB2b24gUHJvamVrdGxlaXRlcm4gZnJlaWdlYmVuIG9kZXIgYWJsZWhuZW4uIiAiUGVyc29uIgogICAgICAgIHNob3BfYWRtaW4gPSBwZXJzb24gIldlYnNob3AgQWRtaW4iICJWZXJ3YWx0ZXQgUHJvZHVrdGthdGFsb2csIFN5c3RlbWtvbmZpZ3VyYXRpb24gdW5kIGxva2FsZSBCZW51dHplcmFjY291bnRzLiBTaWVodCBhbGxlIFByb2pla3RlIHVuZCBJbmZyYXN0cnVrdHVyLiBOdXR6dCBsb2thbGVuIEFjY291bnQuIiAiUGVyc29uIgogICAgICAgIHByb2plY3RfbGVhZGVyID0gcGVyc29uICJQcm9qZWt0bGVpdGVyIiAiS2FubiBCZXN0ZWxsdW5nZW4gYXVmZ2ViZW4gKEZyZWlnYWJlIGR1cmNoIERVIEFkbWluIGVyZm9yZGVybGljaCksIGVpZ2VuZSBJbmZyYXN0cnVrdHVyIGRla29tbWlzc2lvbmllcmVuIHVuZCBQcm9qZWt0ZSB2ZXJ3YWx0ZW4uIFNpZWh0IGF1c3NjaGxpZcOfbGljaCBlaWdlbmUgUHJvamVrdGUsIEJlc3RlbGx1bmdlbiB1bmQgSW5mcmFzdHJ1a3R1ci4iICJQZXJzb24iCgogICAgICAgIGdpdGxhYiA9IHNvZnR3YXJlc3lzdGVtICJHaXRMYWIiICJNZWhyZXJlIGtvbmZpZ3VyaWVyYmFyZSBHaXRMYWItSW5zdGFuemVuIGFscyBRdWVsbGVuIGbDvHIgT3BlblRvZnUgTW9kdWxlLiBFbXBmw6RuZ3QgUHJvdmlzaW9uaW5nLSB1bmQgRGVzdHJveS1XZWJob29rcywgZsO8aHJ0IE9wZW5Ub2Z1IFdvcmtmbG93cyBhdXMgdW5kIHN0ZWxsdCBBUEkgZsO8ciBSZXBvLUJyb3dzZXIgdW5kIFBpcGVsaW5lLVN0YXR1cyBiZXJlaXQuIiAiRXhpc3RpbmcgU3lzdGVtIgogICAgICAgIG9pZGNfcHJvdmlkZXIgPSBzb2Z0d2FyZXN5c3RlbSAiTWljcm9zb2Z0IEVudHJhIElEIiAiU1NPIElkZW50aXR5IFByb3ZpZGVyIChPSURDKSBmw7xyIGRpZSBBdXRoZW50aWZpemllcnVuZyB2b24gRFUgQWRtaW5zIHVuZCBQcm9qZWt0bGVpdGVybi4iICJFeGlzdGluZyBTeXN0ZW0iCiAgICAgICAgYWlfdHJhbnNsYXRpb24gPSBzb2Z0d2FyZXN5c3RlbSAiS0ktw5xiZXJzZXR6dW5nc3NlcnZpY2UiICJLb25maWd1cmllcmJhcmVyIEtJLUFuYmlldGVyIGbDvHIgZGllIMOcYmVyc2V0enVuZyB2b24gUHJvZHVrdGluaGFsdGVuIGluIGFsbGUgRVUtU3ByYWNoZW4gdW5kIFJ1c3Npc2NoLiBDbG91ZDogQ2xhdWRlLCBPcGVuQUksIEF6dXJlIE9wZW5BSS4gT24tUHJlbWlzZTogT2xsYW1hLCBMb2NhbEFJLiBPcHRpb25hbCDigJQgb2huZSBLb25maWd1cmF0aW9uIHdpcmQgZGllIEZ1bmt0aW9uIGF1c2dlYmxlbmRldC4iICJFeGlzdGluZyBTeXN0ZW0iCiAgICAgICAgc210cCA9IHNvZnR3YXJlc3lzdGVtICJNYWlsIFNlcnZlciIgIlNNVFAtU2VydmVyIGbDvHIgdHJhbnNha3Rpb25hbGUgRS1NYWlsczogQmVzdGVsbGJlc3TDpHRpZ3VuZywgRnJlaWdhYmUtQW5mcmFnZSwgRnJlaWdhYmUvQWJsZWhudW5nLCBEZXBsb3ltZW50LUFic2NobHVzcyB1bmQgRmVobGVybWVsZHVuZ2VuLiIgIkV4aXN0aW5nIFN5c3RlbSIKICAgICAgICBleGNoYW5nZV9yYXRlX2FwaSA9IHNvZnR3YXJlc3lzdGVtICJXZWNoc2Vsa3Vycy1BUEkiICJFeHRlcm5lIEFQSSBmw7xyIGFrdHVlbGxlIFdlY2hzZWxrdXJzZS4gQmFzaXMgZsO8ciBkaWUgVW1yZWNobnVuZyB2b24gZGVyIGtvbmZpZ3VyaWVydGVuIExlaXR3w6RocnVuZyBpbiBkaWUgQW56ZWlnZXfDpGhydW5nIGplIEJlbnV0emVyLUxvY2FsZS4iICJFeGlzdGluZyBTeXN0ZW0iCgogICAgICAgIHdlYnNob3AgPSBzb2Z0d2FyZXN5c3RlbSAiSW5mcmEtV2Vic2hvcCIgIlNlbGYtU2VydmljZSBQb3J0YWwgw7xiZXIgZGFzIERVIEFkbWlucyB1bmQgUHJvamVrdGxlaXRlciBJVCBJbmZyYXN0cnVrdHVyIGJlc3RlbGxlbiwgdmVyd2FsdGVuIHVuZCBkZWtvbW1pc3Npb25pZXJlbiBrw7ZubmVuLiIgewoKICAgICAgICAgICAgYXBwID0gY29udGFpbmVyICJXZWJzaG9wIiAiR28tU2VydmVyIGRlciBIVE1MLVRlbXBsYXRlcyBzZXJ2ZXJzZWl0aWcgcmVuZGVydCB1bmQgdmlhIEhUTVggYWxzIEZyYWdtZW50ZSBhdXNsaWVmZXJ0LiBFbnRow6RsdCBVSSwgR2VzY2jDpGZ0c2xvZ2lrLCBHaXRMYWItSW50ZWdyYXRpb24gdW5kIGFsbGUgSGludGVyZ3J1bmRwcm96ZXNzZSBpbiBlaW5lbSBzdGF0ZWxlc3MgQ29udGFpbmVyLiIgIkdvIC8gSFRNWCAvIFRhaWx3aW5kIC8gRGFpc3lVSSIgewoKICAgICAgICAgICAgICAgIGF1dGggPSBjb21wb25lbnQgIkF1dGhlbnRpZml6aWVydW5nIiAiT0lEQy1Mb2dpbiB2aWEgRW50cmEgSUQgKEF1dGhvcml6YXRpb24gQ29kZSBGbG93KSBmw7xyIERVIEFkbWlucyB1bmQgUHJvamVrdGxlaXRlci4gTG9rYWxlIEFjY291bnQtQW5tZWxkdW5nIGbDvHIgV2Vic2hvcCBBZG1pbi4gVmVyd2FsdGV0IFNlc3Npb25zIHVuZCBSb2xsZW4gaW4gdmVyc2NobMO8c3NlbHRlbSBIdHRwT25seS1Db29raWUuIgoKICAgICAgICAgICAgICAgIGNhdGFsb2cgPSBjb21wb25lbnQgIlByb2R1a3RrYXRhbG9nIiAiWmVpZ3QgSW5mcmFzdHJ1a3R1ci1Qcm9kdWt0ZSBuYWNoIEthdGVnb3JpZSBtaXQgQmlsZCwgbWVocnNwcmFjaGlnZXIgQmVzY2hyZWlidW5nIHVuZCBQcmVpcy4gUHJlaXNhbnplaWdlIGluIGRlciBMb2NhbGUtV8OkaHJ1bmcgZGVzIEJlbnV0emVycyDigJQgVW1yZWNobnVuZyBhdXMgZGVyIExlaXR3w6RocnVuZyBhbmhhbmQgZ2VzcGVpY2hlcnRlciBXZWNoc2Vsa3Vyc2UuIEJlaW0gQmVzdGVsbGVuOiBBdXN3YWhsIGRlciB2ZXJmw7xnYmFyZW4gRGVwbG95bWVudC1VbWdlYnVuZywgQW56ZWlnZSBkZXIgdW1nZWJ1bmdzc3BlemlmaXNjaGVuIFBhcmFtZXRlci4iCgogICAgICAgICAgICAgICAgb3JkZXIgPSBjb21wb25lbnQgIkJlc3RlbGx1bmciICJCZXN0ZWxsZm9ybXVsYXIgbWl0IGR5bmFtaXNjaCBnZW5lcmllcnRlbiBQYXJhbWV0ZXJuIGF1cyBnbG9iYWxlbiwgS2F0ZWdvcmllLSB1bmQgUHJvZHVrdC1QYXJhbWV0ZXJzZXRzIHNvd2llIHVtZ2VidW5nc3NwZXppZmlzY2hlbiBQYXJhbWV0ZXJuLiBQcm9qZWt0enVvcmRudW5nIHVuZCBLb3N0ZW5zdGVsbGVuLVp1b3JkbnVuZyBqZSBQb3NpdGlvbi4gRFUgQWRtaW5zIGRlcGxveWVuIGRpcmVrdCB2aWEgUHJvdmlzaW9uaW5nLVdlYmhvb2suIFByb2pla3RsZWl0ZXItQmVzdGVsbHVuZ2VuIHdhcnRlbiBhdWYgRnJlaWdhYmUuIgoKICAgICAgICAgICAgICAgIGFwcHJvdmFsID0gY29tcG9uZW50ICJGcmVpZ2FiZSIgIsOcYmVyc2ljaHQgb2ZmZW5lciBCZXN0ZWxsdW5nZW4gdm9uIFByb2pla3RsZWl0ZXJuIGbDvHIgRFUgQWRtaW5zLiBKZWRlciBEVSBBZG1pbiBrYW5uIGZyZWlnZWJlbiBvZGVyIGFibGVobmVuLiBBYmxlaG51bmcgZXJmb3JkZXJ0IFBmbGljaHRrb21tZW50YXIuIEZyZWlnYWJlIGzDtnN0IEdpdExhYiBQcm92aXNpb25pbmctV2ViaG9vayBhdXMuIgoKICAgICAgICAgICAgICAgIGluZnJhc3RydWN0dXJlID0gY29tcG9uZW50ICJJbmZyYXN0cnVrdHVyw7xiZXJzaWNodCIgIlplaWd0IGRlcGxveXRlIEluZnJhc3RydWt0dXJlbGVtZW50ZSBncnVwcGllcnQgbmFjaCBQcm9qZWt0IHVuZCBEZXBsb3ltZW50LVVtZ2VidW5nLiBEVSBBZG1pbiB1bmQgV2Vic2hvcCBBZG1pbiBzZWhlbiBhbGxlcywgUHJvamVrdGxlaXRlciBudXIgZWlnZW5lLiBEZWtvbW1pc3Npb25pZXJ1bmcgdmlhIEdpdExhYiBEZXN0cm95LVdlYmhvb2suIEJlc3RlaGVuZGVzIFByb2pla3QgYWxzIEJlc3RlbGx2b3JsYWdlIG51dHpiYXIuIgoKICAgICAgICAgICAgICAgIHN0YXR1cyA9IGNvbXBvbmVudCAiQmVzdGVsbHN0YXR1cyIgIkxpZWZlcnQgSFRNWC1Qb2xsaW5nLUZyYWdtZW50ZSBmw7xyIGRlbiBMaXZlLVN0YXR1cyBsYXVmZW5kZXIgUHJvdmlzaW9uaW5nLSB1bmQgRGVrb21taXNzaW9uaWVydW5ncy1Xb3JrZmxvd3MuIgoKICAgICAgICAgICAgICAgIGF1ZGl0ID0gY29tcG9uZW50ICJBdWRpdC1Mb2ciICJVbnZlcsOkbmRlcmxpY2hlcyBDb21wbGlhbmNlLVByb3Rva29sbCBhbGxlciBBa3Rpb25lbjogQmVzdGVsbHVuZywgRnJlaWdhYmUsIEFibGVobnVuZyBtaXQgS29tbWVudGFyLCBEZXBsb3ltZW50LCBEZWtvbW1pc3Npb25pZXJ1bmcuIEbDvHIgRFUgQWRtaW4gdW5kIFdlYnNob3AgQWRtaW4gZWluc2VoYmFyIHVuZCBmaWx0ZXJiYXIuIEV4cG9ydCBhbHMgQ1NWIG9kZXIgUERGIHfDpGhsYmFyLiIKCiAgICAgICAgICAgICAgICBub3RpZmljYXRpb24gPSBjb21wb25lbnQgIkJlbmFjaHJpY2h0aWd1bmciICJWZXJzZW5kZXQgdHJhbnNha3Rpb25hbGUgRS1NYWlscy4gQmVzdGVsbGVpbmdhbmc6IEJlc3TDpHRpZ3VuZyBhbiBCZXN0ZWxsZXIgdW5kIEZyZWlnYWJlLUFuZnJhZ2UgYW4gYWxsZSBEVSBBZG1pbnMgKG51ciBQcm9qZWt0bGVpdGVyKS4gRnJlaWdhYmUgb2RlciBBYmxlaG51bmcgbWl0IEtvbW1lbnRhcjogYW4gQmVzdGVsbGVyLiBEZXBsb3ltZW50IGFiZ2VzY2hsb3NzZW46IGFuIEJlc3RlbGxlci4gRGVwbG95bWVudCBmZWhsZ2VzY2hsYWdlbjogYW4gQmVzdGVsbGVyIHVuZCBhbGxlIERVIEFkbWlucy4gRGVrb21taXNzaW9uaWVydW5nIGFiZ2VzY2hsb3NzZW46IGFuIEJlc3RlbGxlci4iCgogICAgICAgICAgICAgICAgYWRtaW4gPSBjb21wb25lbnQgIkFkbWluaXN0cmF0aW9uIiAiVmVyd2FsdHVuZyB2b246IFByb2R1a3RrYXRlZ29yaWVuLCBQcm9kdWt0ZW4gKEJpbGQsIG1laHJzcHJhY2hpZ2UgSW5oYWx0ZSwgUGFyYW1ldGVyc2V0cywgUHJlaXNlIGplIFByb2R1a3QrVW1nZWJ1bmcsIEtvc3RlbnN0ZWxsZW4tS29uZmlndXJhdGlvbiBwcm8gUHJvZHVrdCksIGdsb2JhbGVuIFBhcmFtZXRlcnNldHMsIEdpdExhYi1RdWVsbGVuIChVUkwgKyBUb2tlbiBqZSBJbnN0YW56KSwgRGVwbG95bWVudC1VbWdlYnVuZ2VuLCBLb3N0ZW5zdGVsbGVuLUxpc3RlLCBMZWl0d8OkaHJ1bmcsIEtJLUFuYmlldGVyLUtvbmZpZ3VyYXRpb24sIFNNVFAtS29uZmlndXJhdGlvbiB1bmQgbG9rYWxlIEJlbnV0emVyYWNjb3VudHMuIEJyb3dzZWQgUmVwb3MgYXVmIGtvbmZpZ3VyaWVydGVuIEdpdExhYi1RdWVsbGVuIHZpYSBHaXRMYWIgQVBJIHVuZCBpbXBvcnRpZXJ0IHZhcmlhYmxlcy50ZiBEYXRlaWVuIGbDvHIgUHJvZHVrdHBhcmFtZXRlciAoSENMLVBhcnNlcikuIgoKICAgICAgICAgICAgICAgIHBvbGxpbmcgPSBjb21wb25lbnQgIkdpdExhYiBQb2xsaW5nIiAiR29yb3V0aW5lLVBvb2wgZGVyIHBlcmlvZGlzY2ggZGllIEdpdExhYiBBUEkgbmFjaCBQaXBlbGluZS1TdGF0dXMgZnJhZ3QsIGRlbiBCZXN0ZWxsLSB1bmQgSW5mcmFzdHJ1a3R1cnN0YXR1cyBha3R1YWxpc2llcnQgdW5kIEJlbmFjaHJpY2h0aWd1bmdlbiBiZWkgU3RhdHVzw6RuZGVydW5nZW4gYXVzbMO2c3QuIEtvb3JkaW5pZXJ0IMO8YmVyIFBvc3RncmVTUUwtTG9ja3Mg4oCUIHNpY2hlciBiZWkgbWVocmVyZW4gQ29udGFpbmVyLVJlcGxpY2FzLiIKICAgICAgICAgICAgfQoKICAgICAgICAgICAgZGF0YWJhc2UgPSBjb250YWluZXIgIkRhdGVuYmFuayIgIlBlcnNpc3RlbnogYWxsZXIgV2Vic2hvcC1EYXRlbjogUHJvZHVrdGthdGVnb3JpZW4sIFByb2R1a3RlIChCaWxkIGFscyBieXRlYSwgV2ViaG9vay1SZWZlcmVueiksIFByb2R1a3TDvGJlcnNldHp1bmdlbiAoamUgU3ByYWNoY29kZSksIFBhcmFtZXRlcnNldHMgKGdsb2JhbCwgS2F0ZWdvcmllLCBQcm9kdWt0LCBVbWdlYnVuZyksIEdpdExhYi1RdWVsbGVuLCBEZXBsb3ltZW50LVVtZ2VidW5nZW4sIFByZWlzZSBqZSBQcm9kdWt0K1VtZ2VidW5nLCBLb3N0ZW5zdGVsbGVuLCBXZWNoc2Vsa3Vyc2UsIFByb2pla3RlIChtaXQgS29zdGVuc3RlbGxlKSwgQmVzdGVsbHVuZ2VuIChpbmtsLiBGcmVpZ2FiZS1Xb3JrZmxvdyB1bmQgQWJsZWhudW5nc2tvbW1lbnRhciksIEluZnJhc3RydWt0dXJlbGVtZW50ZSwgUGlwZWxpbmUtU3RhdHVzLCBBdWRpdC1Mb2cgdW5kIGxva2FsZSBCZW51dHplci4iICJQb3N0Z3JlU1FMIiAiRGF0YWJhc2UiCiAgICAgICAgfQoKICAgICAgICAjIEJlemllaHVuZ2VuIHp3aXNjaGVuIFBlcnNvbmVuIHVuZCBTeXN0ZW1lbgogICAgICAgIGR1X2FkbWluIC0+IHdlYnNob3AgIkJlc3RlbGx0IElUIEluZnJhc3RydWt0dXIgZGlyZWt0LCBnaWJ0IEJlc3RlbGx1bmdlbiBmcmVpLCDDvGJlcndhY2h0IGFsbGUgUHJvamVrdGUiCiAgICAgICAgc2hvcF9hZG1pbiAtPiB3ZWJzaG9wICJWZXJ3YWx0ZXQgUHJvZHVrdGthdGFsb2csIFN5c3RlbWtvbmZpZ3VyYXRpb24gdW5kIEJlbnV0emVyIgogICAgICAgIHByb2plY3RfbGVhZGVyIC0+IHdlYnNob3AgIkJlc3RlbGx0IHVuZCB2ZXJ3YWx0ZXQgZWlnZW5lIElUIEluZnJhc3RydWt0dXIiCiAgICAgICAgd2Vic2hvcCAtPiBnaXRsYWIgIkJyb3dzZWQgUmVwb3MsIGzDtnN0IFdlYmhvb2tzIGF1cywgcG9sbHQgUGlwZWxpbmUtU3RhdHVzIiAiSlNPTi9IVFRQUyIKICAgICAgICB3ZWJzaG9wIC0+IG9pZGNfcHJvdmlkZXIgIkF1dGhlbnRpZml6aWVydCBEVSBBZG1pbnMgdW5kIFByb2pla3RsZWl0ZXIiICJPSURDL0hUVFBTIgogICAgICAgIHdlYnNob3AgLT4gYWlfdHJhbnNsYXRpb24gIsOcYmVyc2V0enQgUHJvZHVrdGluaGFsdGUgKG9wdGlvbmFsLCBrb25maWd1cmllcmJhcikiICJKU09OL0hUVFBTIgogICAgICAgIHdlYnNob3AgLT4gc210cCAiU2VuZGV0IHRyYW5zYWt0aW9uYWxlIEUtTWFpbHMiICJTTVRQIgogICAgICAgIHdlYnNob3AgLT4gZXhjaGFuZ2VfcmF0ZV9hcGkgIlJ1ZnQgYWt0dWVsbGUgV2VjaHNlbGt1cnNlIGFiIiAiSlNPTi9IVFRQUyIKCiAgICAgICAgIyBCZXppZWh1bmdlbiB6d2lzY2hlbiBDb250YWluZXJuCiAgICAgICAgZHVfYWRtaW4gLT4gYXBwICJOdXR6dCBXZWJvYmVyZmzDpGNoZSIgIkhUVFBTIgogICAgICAgIHNob3BfYWRtaW4gLT4gYXBwICJWZXJ3YWx0ZXQgU2hvcCIgIkhUVFBTIgogICAgICAgIHByb2plY3RfbGVhZGVyIC0+IGFwcCAiTnV0enQgV2Vib2JlcmZsw6RjaGUiICJIVFRQUyIKICAgICAgICBhcHAgLT4gZGF0YWJhc2UgIkxpZXN0IHVuZCBzY2hyZWlidCBEYXRlbiIgIlNRTC9UQ1AiCiAgICAgICAgYXBwIC0+IGdpdGxhYiAiV2ViaG9va3MgYXVzbMO2c2VuLCBSZXBvcyBicm93c2VuLCBQaXBlbGluZS1TdGF0dXMgcG9sbGVuIiAiSlNPTi9IVFRQUyIKICAgICAgICBhcHAgLT4gb2lkY19wcm92aWRlciAiT0lEQyBBdXRob3JpemF0aW9uIENvZGUgRmxvdyIgIkhUVFBTIgogICAgICAgIGFwcCAtPiBhaV90cmFuc2xhdGlvbiAiS0ktw5xiZXJzZXR6dW5nIChvcHRpb25hbCkiICJKU09OL0hUVFBTIgogICAgICAgIGFwcCAtPiBzbXRwICJFLU1haWwtVmVyc2FuZCIgIlNNVFAiCiAgICAgICAgYXBwIC0+IGV4Y2hhbmdlX3JhdGVfYXBpICJXZWNoc2Vsa3Vyc2UgYWJydWZlbiIgIkpTT04vSFRUUFMiCgogICAgICAgICMgQmV6aWVodW5nZW4gendpc2NoZW4gS29tcG9uZW50ZW4KICAgICAgICBkdV9hZG1pbiAtPiBhdXRoICJNZWxkZXQgc2ljaCBwZXIgU1NPIGFuIgogICAgICAgIHByb2plY3RfbGVhZGVyIC0+IGF1dGggIk1lbGRldCBzaWNoIHBlciBTU08gYW4iCiAgICAgICAgc2hvcF9hZG1pbiAtPiBhdXRoICJNZWxkZXQgc2ljaCBtaXQgbG9rYWxlbSBBY2NvdW50IGFuIgogICAgICAgIGF1dGggLT4gb2lkY19wcm92aWRlciAiQXV0aG9yaXphdGlvbiBDb2RlIEZsb3ciICJPSURDL0hUVFBTIgogICAgICAgIGF1dGggLT4gZGF0YWJhc2UgIkxpZXN0IEJlbnV0emVyIHVuZCBSb2xsZW4sIHNjaHJlaWJ0IFNlc3Npb25zIgoKICAgICAgICBkdV9hZG1pbiAtPiBjYXRhbG9nICJEdXJjaHN1Y2h0IEluZnJhc3RydWt0dXItUHJvZHVrdGUiCiAgICAgICAgcHJvamVjdF9sZWFkZXIgLT4gY2F0YWxvZyAiRHVyY2hzdWNodCBJbmZyYXN0cnVrdHVyLVByb2R1a3RlIgogICAgICAgIGNhdGFsb2cgLT4gZGF0YWJhc2UgIkxpZXN0IFByb2R1a3RlLCBLYXRlZ29yaWVuLCBQcmVpc2UgdW5kIFdlY2hzZWxrdXJzZSIKCiAgICAgICAgZHVfYWRtaW4gLT4gb3JkZXIgIkJlc3RlbGx0IGRpcmVrdCBvaG5lIEZyZWlnYWJlIgogICAgICAgIHByb2plY3RfbGVhZGVyIC0+IG9yZGVyICJCZXN0ZWxsdCwgQmVzdGVsbHVuZyB3YXJ0ZXQgYXVmIEZyZWlnYWJlIgogICAgICAgIG9yZGVyIC0+IGRhdGFiYXNlICJTcGVpY2hlcnQgQmVzdGVsbHVuZyBtaXQgUGFyYW1ldGVybiwgUHJvamVrdHp1b3JkbnVuZyB1bmQgS29zdGVuc3RlbGxlbiIKICAgICAgICBvcmRlciAtPiBnaXRsYWIgIkzDtnN0IFByb3Zpc2lvbmluZy1XZWJob29rIGF1cyAoRGlyZWt0YmVzdGVsbHVuZyBEVSBBZG1pbikiICJKU09OL0hUVFBTIgogICAgICAgIG9yZGVyIC0+IG5vdGlmaWNhdGlvbiAiTMO2c3QgQmVzdGVsbGVpbmdhbmdzLUJlbmFjaHJpY2h0aWd1bmdlbiBhdXMiCiAgICAgICAgb3JkZXIgLT4gYXVkaXQgIlByb3Rva29sbGllcnQgQmVzdGVsbHZvcmdhbmciCgogICAgICAgIGR1X2FkbWluIC0+IGFwcHJvdmFsICJQcsO8ZnQgdW5kIGVudHNjaGVpZGV0IMO8YmVyIG9mZmVuZSBCZXN0ZWxsdW5nZW4iCiAgICAgICAgYXBwcm92YWwgLT4gZGF0YWJhc2UgIkxpZXN0IG9mZmVuZSBCZXN0ZWxsdW5nZW4sIHNjaHJlaWJ0IEZyZWlnYWJlIG9kZXIgQWJsZWhudW5nIG1pdCBLb21tZW50YXIiCiAgICAgICAgYXBwcm92YWwgLT4gZ2l0bGFiICJMw7ZzdCBQcm92aXNpb25pbmctV2ViaG9vayBuYWNoIEZyZWlnYWJlIGF1cyIgIkpTT04vSFRUUFMiCiAgICAgICAgYXBwcm92YWwgLT4gbm90aWZpY2F0aW9uICJMw7ZzdCBGcmVpZ2FiZS0gb2RlciBBYmxlaG51bmdzLUJlbmFjaHJpY2h0aWd1bmcgYXVzIgogICAgICAgIGFwcHJvdmFsIC0+IGF1ZGl0ICJQcm90b2tvbGxpZXJ0IEZyZWlnYWJlIG9kZXIgQWJsZWhudW5nIG1pdCBLb21tZW50YXIiCgogICAgICAgIGR1X2FkbWluIC0+IGluZnJhc3RydWN0dXJlICJTaWVodCBhbGxlIFByb2pla3RlIHVuZCBJbmZyYXN0cnVrdHVyIgogICAgICAgIHNob3BfYWRtaW4gLT4gaW5mcmFzdHJ1Y3R1cmUgIlNpZWh0IGFsbGUgUHJvamVrdGUgdW5kIEluZnJhc3RydWt0dXIiCiAgICAgICAgcHJvamVjdF9sZWFkZXIgLT4gaW5mcmFzdHJ1Y3R1cmUgIlNpZWh0IG51ciBlaWdlbmUgUHJvamVrdGUgdW5kIEluZnJhc3RydWt0dXIiCiAgICAgICAgaW5mcmFzdHJ1Y3R1cmUgLT4gZGF0YWJhc2UgIkxpZXN0IEluZnJhc3RydWt0dXJlbGVtZW50ZSwgUHJvamVrdGUgdW5kIFVtZ2VidW5nZW4iCiAgICAgICAgaW5mcmFzdHJ1Y3R1cmUgLT4gZ2l0bGFiICJMw7ZzdCBEZXN0cm95LVdlYmhvb2sgenVyIERla29tbWlzc2lvbmllcnVuZyBhdXMiICJKU09OL0hUVFBTIgogICAgICAgIGluZnJhc3RydWN0dXJlIC0+IGF1ZGl0ICJQcm90b2tvbGxpZXJ0IERla29tbWlzc2lvbmllcnVuZ3N2b3JnYW5nIgoKICAgICAgICBkdV9hZG1pbiAtPiBzdGF0dXMgIlZlcmZvbGd0IERlcGxveW1lbnQtU3RhdHVzIgogICAgICAgIHByb2plY3RfbGVhZGVyIC0+IHN0YXR1cyAiVmVyZm9sZ3QgU3RhdHVzIGVpZ2VuZXIgRGVwbG95bWVudHMiCiAgICAgICAgc3RhdHVzIC0+IGRhdGFiYXNlICJMaWVzdCBQaXBlbGluZS1TdGF0dXMiCgogICAgICAgIGR1X2FkbWluIC0+IGF1ZGl0ICJFaW5zaWNodCB1bmQgRXhwb3J0IGRlcyBBdWRpdC1Mb2dzIgogICAgICAgIHNob3BfYWRtaW4gLT4gYXVkaXQgIkVpbnNpY2h0IHVuZCBFeHBvcnQgZGVzIEF1ZGl0LUxvZ3MiCiAgICAgICAgYXVkaXQgLT4gZGF0YWJhc2UgIkxpZXN0IHVuZCBzY2hyZWlidCBBdWRpdC1FaW50csOkZ2UiCgogICAgICAgIG5vdGlmaWNhdGlvbiAtPiBzbXRwICJTZW5kZXQgRS1NYWlscyIgIlNNVFAiCiAgICAgICAgbm90aWZpY2F0aW9uIC0+IGRhdGFiYXNlICJMaWVzdCBFbXBmw6RuZ2VyYWRyZXNzZW4sIHByb3Rva29sbGllcnQgdmVyc2VuZGV0ZSBOYWNocmljaHRlbiIKCiAgICAgICAgc2hvcF9hZG1pbiAtPiBhZG1pbiAiVmVyd2FsdGV0IEthdGFsb2csIEtvbmZpZ3VyYXRpb24gdW5kIEJlbnV0emVyIgogICAgICAgIGFkbWluIC0+IGRhdGFiYXNlICJDUlVEIFByb2R1a3RlLCBLYXRlZ29yaWVuLCBQYXJhbWV0ZXIsIFVtZ2VidW5nZW4sIEdpdExhYi1RdWVsbGVuLCBLb3N0ZW5zdGVsbGVuLCBXw6RocnVuZ2VuLCBCZW51dHplciIKICAgICAgICBhZG1pbiAtPiBnaXRsYWIgIkJyb3dzZWQgUmVwb3MgdW5kIGxpZXN0IHZhcmlhYmxlcy50ZiBmw7xyIFByb2R1a3RwYXJhbWV0ZXIiICJKU09OL0hUVFBTIgogICAgICAgIGFkbWluIC0+IGFpX3RyYW5zbGF0aW9uICJMw7ZzdCBvcHRpb25hbGUgS0ktw5xiZXJzZXR6dW5nIGF1cyIgIkpTT04vSFRUUFMiCiAgICAgICAgYWRtaW4gLT4gZXhjaGFuZ2VfcmF0ZV9hcGkgIkFrdHVhbGlzaWVydCBnZXNwZWljaGVydGUgV2VjaHNlbGt1cnNlIiAiSlNPTi9IVFRQUyIKCiAgICAgICAgcG9sbGluZyAtPiBnaXRsYWIgIlBvbGx0IFBpcGVsaW5lLVN0YXR1cyBhbGxlciBsYXVmZW5kZW4gV29ya2Zsb3dzIiAiSlNPTi9IVFRQUyIKICAgICAgICBwb2xsaW5nIC0+IGRhdGFiYXNlICJBa3R1YWxpc2llcnQgQmVzdGVsbC0gdW5kIEluZnJhc3RydWt0dXJzdGF0dXMiCiAgICAgICAgcG9sbGluZyAtPiBub3RpZmljYXRpb24gIkzDtnN0IEJlbmFjaHJpY2h0aWd1bmdlbiBiZWkgU3RhdHVzw6RuZGVydW5nZW4gYXVzIgogICAgICAgIHBvbGxpbmcgLT4gYXVkaXQgIlByb3Rva29sbGllcnQgU3RhdHVzw7xiZXJnw6RuZ2UiCgogICAgICAgIGRlcGxveW1lbnRFbnZpcm9ubWVudCAiRG9ja2VyIEhvc3QiIHsKICAgICAgICAgICAgZGVwbG95bWVudE5vZGUgIkRvY2tlciBIb3N0IiAiRWluemVsbmVyIFNlcnZlciBmw7xyIGxva2FsZSBFbnR3aWNrbHVuZyB1bmQgaW5pdGlhbGVzIERlcGxveW1lbnQiICJEb2NrZXIgRW5naW5lIiB7CiAgICAgICAgICAgICAgICBkZXBsb3ltZW50Tm9kZSAibmdpbngiICJIVFRQUy1UZXJtaW5pZXJ1bmcgdW5kIFJldmVyc2UgUHJveHkiICJEb2NrZXIgQ29udGFpbmVyIC8gTmdpbngiIHsKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIGRlcGxveW1lbnROb2RlICJ3ZWJzaG9wIiAiR28gV2Vic2hvcC1TZXJ2ZXIiICJEb2NrZXIgQ29udGFpbmVyIiB7CiAgICAgICAgICAgICAgICAgICAgY29udGFpbmVySW5zdGFuY2UgYXBwCiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICBkZXBsb3ltZW50Tm9kZSAicG9zdGdyZXMiICJEYXRlbmJhbmsiICJEb2NrZXIgQ29udGFpbmVyIiB7CiAgICAgICAgICAgICAgICAgICAgY29udGFpbmVySW5zdGFuY2UgZGF0YWJhc2UKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQogICAgICAgICAgICBkZXBsb3ltZW50Tm9kZSAiRW50cmEgSUQgKGV4dGVybikiICIiICJTYWFTIiB7CiAgICAgICAgICAgICAgICBzb2Z0d2FyZVN5c3RlbUluc3RhbmNlIG9pZGNfcHJvdmlkZXIKICAgICAgICAgICAgfQogICAgICAgICAgICBkZXBsb3ltZW50Tm9kZSAiR2l0TGFiIChleHRlcm4pIiAiIiAiT24tUHJlbWlzZSAvIFNhYVMiIHsKICAgICAgICAgICAgICAgIHNvZnR3YXJlU3lzdGVtSW5zdGFuY2UgZ2l0bGFiCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZGVwbG95bWVudE5vZGUgIk1haWwgU2VydmVyIChleHRlcm4pIiAiIiAiT24tUHJlbWlzZSAvIFNhYVMiIHsKICAgICAgICAgICAgICAgIHNvZnR3YXJlU3lzdGVtSW5zdGFuY2Ugc210cAogICAgICAgICAgICB9CiAgICAgICAgICAgIGRlcGxveW1lbnROb2RlICJXZWNoc2Vsa3Vycy1BUEkgKGV4dGVybikiICIiICJTYWFTIiB7CiAgICAgICAgICAgICAgICBzb2Z0d2FyZVN5c3RlbUluc3RhbmNlIGV4Y2hhbmdlX3JhdGVfYXBpCiAgICAgICAgICAgIH0KICAgICAgICB9CgogICAgICAgIGRlcGxveW1lbnRFbnZpcm9ubWVudCAiS3ViZXJuZXRlcyIgewogICAgICAgICAgICBkZXBsb3ltZW50Tm9kZSAiS3ViZXJuZXRlcyBDbHVzdGVyIiAiUHJvZHVrdGlvbnMtQ2x1c3RlciIgIkt1YmVybmV0ZXMiIHsKICAgICAgICAgICAgICAgIGRlcGxveW1lbnROb2RlICJpbmZyYS13ZWJzaG9wIiAiQXBwbGlrYXRpb25zLU5hbWVzcGFjZSIgIkt1YmVybmV0ZXMgTmFtZXNwYWNlIiB7CiAgICAgICAgICAgICAgICAgICAgZGVwbG95bWVudE5vZGUgIkluZ3Jlc3MgKyBjZXJ0LW1hbmFnZXIiICJIVFRQUy1UZXJtaW5pZXJ1bmcgdmlhIExldCdzIEVuY3J5cHQgb2RlciBpbnRlcm5lbSBDQS4gUm91dGV0IGV4dGVybmVuIFRyYWZmaWMgenVtIFdlYnNob3AgU2VydmljZS4iICJOZ2lueCBJbmdyZXNzIC8gY2VydC1tYW5hZ2VyIiB7CiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgIGRlcGxveW1lbnROb2RlICJ3ZWJzaG9wIERlcGxveW1lbnQiICJTdGF0ZWxlc3MgR28gUG9kcywgaG9yaXpvbnRhbCBza2FsaWVyYmFyLiBQb2xsaW5nIHZpYSBQb3N0Z3JlU1FMLUxvY2tzIGtvb3JkaW5pZXJ0LiIgIkt1YmVybmV0ZXMgRGVwbG95bWVudCIgewogICAgICAgICAgICAgICAgICAgICAgICBjb250YWluZXJJbnN0YW5jZSBhcHAKICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgZGVwbG95bWVudE5vZGUgInBvc3RncmVzIFN0YXRlZnVsU2V0IiAiUG9zdGdyZVNRTCBtaXQgcGVyc2lzdGVudGVtIFZvbHVtZSIgIkt1YmVybmV0ZXMgU3RhdGVmdWxTZXQiIHsKICAgICAgICAgICAgICAgICAgICAgICAgY29udGFpbmVySW5zdGFuY2UgZGF0YWJhc2UKICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KICAgICAgICAgICAgZGVwbG95bWVudE5vZGUgIkVudHJhIElEIChleHRlcm4pIiAiIiAiU2FhUyIgewogICAgICAgICAgICAgICAgc29mdHdhcmVTeXN0ZW1JbnN0YW5jZSBvaWRjX3Byb3ZpZGVyCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZGVwbG95bWVudE5vZGUgIkdpdExhYiAoZXh0ZXJuKSIgIiIgIk9uLVByZW1pc2UgLyBTYWFTIiB7CiAgICAgICAgICAgICAgICBzb2Z0d2FyZVN5c3RlbUluc3RhbmNlIGdpdGxhYgogICAgICAgICAgICB9CiAgICAgICAgICAgIGRlcGxveW1lbnROb2RlICJNYWlsIFNlcnZlciAoZXh0ZXJuKSIgIiIgIk9uLVByZW1pc2UgLyBTYWFTIiB7CiAgICAgICAgICAgICAgICBzb2Z0d2FyZVN5c3RlbUluc3RhbmNlIHNtdHAKICAgICAgICAgICAgfQogICAgICAgICAgICBkZXBsb3ltZW50Tm9kZSAiV2VjaHNlbGt1cnMtQVBJIChleHRlcm4pIiAiIiAiU2FhUyIgewogICAgICAgICAgICAgICAgc29mdHdhcmVTeXN0ZW1JbnN0YW5jZSBleGNoYW5nZV9yYXRlX2FwaQogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfQoKICAgIHZpZXdzIHsKICAgICAgICBzeXN0ZW1jb250ZXh0IHdlYnNob3AgIlN5c3RlbUNvbnRleHQiIHsKICAgICAgICAgICAgaW5jbHVkZSAqCiAgICAgICAgICAgIGF1dG9MYXlvdXQKICAgICAgICAgICAgZGVzY3JpcHRpb24gIlN5c3RlbWtvbnRleHQ6IEluZnJhLVdlYnNob3AgdW5kIGFsbGUgZXh0ZXJuZW4gU3lzdGVtZSIKICAgICAgICB9CgogICAgICAgIGNvbnRhaW5lciB3ZWJzaG9wICJDb250YWluZXIiIHsKICAgICAgICAgICAgaW5jbHVkZSAqCiAgICAgICAgICAgIGF1dG9MYXlvdXQKICAgICAgICAgICAgZGVzY3JpcHRpb24gIkNvbnRhaW5lci1EaWFncmFtbTogR28gV2Vic2hvcC1TZXJ2ZXIgdW5kIFBvc3RncmVTUUwgRGF0ZW5iYW5rIgogICAgICAgIH0KCiAgICAgICAgY29tcG9uZW50IGFwcCAiQ29tcG9uZW50X0FwcCIgewogICAgICAgICAgICBpbmNsdWRlICoKICAgICAgICAgICAgYXV0b0xheW91dAogICAgICAgICAgICBkZXNjcmlwdGlvbiAiS29tcG9uZW50ZW5kaWFncmFtbSBHbyBXZWJzaG9wLVNlcnZlciIKICAgICAgICB9CgogICAgICAgIGRlcGxveW1lbnQgd2Vic2hvcCAiRG9ja2VyIEhvc3QiICJEZXBsb3ltZW50X0RvY2tlckhvc3QiIHsKICAgICAgICAgICAgaW5jbHVkZSAqCiAgICAgICAgICAgIGF1dG9MYXlvdXQKICAgICAgICAgICAgZGVzY3JpcHRpb24gIkRlcGxveW1lbnQgYXVmIGVpbmVtIERvY2tlciBIb3N0IG1pdCBOZ2lueCBmw7xyIEhUVFBTIgogICAgICAgIH0KCiAgICAgICAgZGVwbG95bWVudCB3ZWJzaG9wICJLdWJlcm5ldGVzIiAiRGVwbG95bWVudF9LdWJlcm5ldGVzIiB7CiAgICAgICAgICAgIGluY2x1ZGUgKgogICAgICAgICAgICBhdXRvTGF5b3V0CiAgICAgICAgICAgIGRlc2NyaXB0aW9uICJEZXBsb3ltZW50IGF1ZiBLdWJlcm5ldGVzIG1pdCBJbmdyZXNzIHVuZCBjZXJ0LW1hbmFnZXIiCiAgICAgICAgfQoKICAgICAgICBzdHlsZXMgewogICAgICAgICAgICBlbGVtZW50ICJQZXJzb24iIHsKICAgICAgICAgICAgICAgIGNvbG9yICNmZmZmZmYKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgIzA4NDI3YgogICAgICAgICAgICAgICAgZm9udFNpemUgMjIKICAgICAgICAgICAgICAgIHNoYXBlIFBlcnNvbgogICAgICAgICAgICB9CiAgICAgICAgICAgIGVsZW1lbnQgIlNvZnR3YXJlIFN5c3RlbSIgewogICAgICAgICAgICAgICAgYmFja2dyb3VuZCAjMTE2OGJkCiAgICAgICAgICAgICAgICBjb2xvciAjZmZmZmZmCiAgICAgICAgICAgIH0KICAgICAgICAgICAgZWxlbWVudCAiRXhpc3RpbmcgU3lzdGVtIiB7CiAgICAgICAgICAgICAgICBiYWNrZ3JvdW5kICM5OTk5OTkKICAgICAgICAgICAgICAgIGNvbG9yICNmZmZmZmYKICAgICAgICAgICAgfQogICAgICAgICAgICBlbGVtZW50ICJDb250YWluZXIiIHsKICAgICAgICAgICAgICAgIGJhY2tncm91bmQgIzQzOGRkNQogICAgICAgICAgICAgICAgY29sb3IgI2ZmZmZmZgogICAgICAgICAgICB9CiAgICAgICAgICAgIGVsZW1lbnQgIkRhdGFiYXNlIiB7CiAgICAgICAgICAgICAgICBzaGFwZSBDeWxpbmRlcgogICAgICAgICAgICB9CiAgICAgICAgICAgIGVsZW1lbnQgIkNvbXBvbmVudCIgewogICAgICAgICAgICAgICAgYmFja2dyb3VuZCAjODViYmYwCiAgICAgICAgICAgICAgICBjb2xvciAjMDAwMDAwCiAgICAgICAgICAgIH0KICAgICAgICB9CiAgICB9Cn0="
+  },
+  "views" : {
+    "componentViews" : [ {
+      "automaticLayout" : {
+        "applied" : true,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "containerId" : "10",
+      "description" : "Komponentendiagramm Go Webshop-Server",
+      "dimensions" : {
+        "height" : 2788,
+        "width" : 12809
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 8550,
+        "y" : 152
+      }, {
+        "id" : "2",
+        "x" : 9250,
+        "y" : 152
+      }, {
+        "id" : "3",
+        "x" : 7750,
+        "y" : 152
+      }, {
+        "id" : "4",
+        "x" : 5567,
+        "y" : 1452
+      }, {
+        "id" : "5",
+        "x" : 884,
+        "y" : 1452
+      }, {
+        "id" : "6",
+        "x" : 3600,
+        "y" : 1452
+      }, {
+        "id" : "7",
+        "x" : 9975,
+        "y" : 2052
+      }, {
+        "id" : "8",
+        "x" : 2242,
+        "y" : 1452
+      }, {
+        "id" : "11",
+        "x" : 7725,
+        "y" : 852
+      }, {
+        "id" : "12",
+        "x" : 6225,
+        "y" : 852
+      }, {
+        "id" : "13",
+        "x" : 10725,
+        "y" : 852
+      }, {
+        "id" : "14",
+        "x" : 11475,
+        "y" : 852
+      }, {
+        "id" : "15",
+        "x" : 9225,
+        "y" : 852
+      }, {
+        "id" : "16",
+        "x" : 6975,
+        "y" : 852
+      }, {
+        "id" : "17",
+        "x" : 10725,
+        "y" : 1452
+      }, {
+        "id" : "18",
+        "x" : 9975,
+        "y" : 1452
+      }, {
+        "id" : "19",
+        "x" : 8475,
+        "y" : 852
+      }, {
+        "id" : "20",
+        "x" : 9975,
+        "y" : 852
+      }, {
+        "id" : "21",
+        "x" : 4584,
+        "y" : 2052
+      } ],
+      "externalContainerBoundariesVisible" : false,
+      "key" : "Component_App",
+      "order" : 3,
+      "relationships" : [ {
+        "id" : "39"
+      }, {
+        "id" : "40"
+      }, {
+        "id" : "41",
+        "vertices" : [ {
+          "x" : 9100,
+          "y" : 552
+        }, {
+          "x" : 8325,
+          "y" : 748
+        } ]
+      }, {
+        "id" : "42",
+        "vertices" : [ {
+          "x" : 7575,
+          "y" : 1152
+        }, {
+          "x" : 1559,
+          "y" : 1452
+        } ]
+      }, {
+        "id" : "43",
+        "vertices" : [ {
+          "x" : 7575,
+          "y" : 1152
+        }, {
+          "x" : 2092,
+          "y" : 1452
+        }, {
+          "x" : 2092,
+          "y" : 1856
+        } ]
+      }, {
+        "id" : "44",
+        "vertices" : [ {
+          "x" : 8300,
+          "y" : 552
+        }, {
+          "x" : 6825,
+          "y" : 748
+        } ]
+      }, {
+        "id" : "45",
+        "vertices" : [ {
+          "x" : 6825,
+          "y" : 748
+        } ]
+      }, {
+        "id" : "46",
+        "vertices" : [ {
+          "x" : 200,
+          "y" : 1452
+        }, {
+          "x" : 200,
+          "y" : 1856
+        } ]
+      }, {
+        "id" : "47",
+        "vertices" : [ {
+          "x" : 9100,
+          "y" : 552
+        }, {
+          "x" : 10575,
+          "y" : 748
+        } ]
+      }, {
+        "id" : "48",
+        "vertices" : [ {
+          "x" : 8400,
+          "y" : 552
+        }, {
+          "x" : 10575,
+          "y" : 748
+        } ]
+      }, {
+        "id" : "49",
+        "vertices" : [ {
+          "x" : 10575,
+          "y" : 1152
+        }, {
+          "x" : 8684,
+          "y" : 1452
+        } ]
+      }, {
+        "id" : "50",
+        "vertices" : [ {
+          "x" : 10575,
+          "y" : 1152
+        } ]
+      }, {
+        "id" : "51"
+      }, {
+        "id" : "52"
+      }, {
+        "id" : "53",
+        "vertices" : [ {
+          "x" : 9100,
+          "y" : 552
+        }, {
+          "x" : 11325,
+          "y" : 748
+        } ]
+      }, {
+        "id" : "54",
+        "vertices" : [ {
+          "x" : 11325,
+          "y" : 1152
+        }, {
+          "x" : 9825,
+          "y" : 1452
+        }, {
+          "x" : 7884,
+          "y" : 1856
+        } ]
+      }, {
+        "id" : "55",
+        "vertices" : [ {
+          "x" : 11325,
+          "y" : 1152
+        } ]
+      }, {
+        "id" : "56"
+      }, {
+        "id" : "57"
+      }, {
+        "id" : "58"
+      }, {
+        "id" : "59"
+      }, {
+        "id" : "60",
+        "vertices" : [ {
+          "x" : 8400,
+          "y" : 552
+        }, {
+          "x" : 9075,
+          "y" : 748
+        } ]
+      }, {
+        "id" : "61",
+        "vertices" : [ {
+          "x" : 9075,
+          "y" : 1152
+        }, {
+          "x" : 4884,
+          "y" : 1452
+        } ]
+      }, {
+        "id" : "62",
+        "vertices" : [ {
+          "x" : 9075,
+          "y" : 1152
+        } ]
+      }, {
+        "id" : "63"
+      }, {
+        "id" : "64",
+        "vertices" : [ {
+          "x" : 8300,
+          "y" : 552
+        }, {
+          "x" : 7575,
+          "y" : 748
+        } ]
+      }, {
+        "id" : "65"
+      }, {
+        "id" : "66",
+        "vertices" : [ {
+          "x" : 6825,
+          "y" : 1152
+        }, {
+          "x" : 734,
+          "y" : 1452
+        }, {
+          "x" : 734,
+          "y" : 1856
+        } ]
+      }, {
+        "id" : "67",
+        "vertices" : [ {
+          "x" : 9100,
+          "y" : 552
+        }, {
+          "x" : 12075,
+          "y" : 748
+        }, {
+          "x" : 12075,
+          "y" : 1152
+        } ]
+      }, {
+        "id" : "68",
+        "vertices" : [ {
+          "x" : 12609,
+          "y" : 748
+        }, {
+          "x" : 12609,
+          "y" : 1152
+        } ]
+      }, {
+        "id" : "69",
+        "vertices" : [ {
+          "x" : 10575,
+          "y" : 1856
+        } ]
+      }, {
+        "id" : "70"
+      }, {
+        "id" : "71",
+        "vertices" : [ {
+          "x" : 9142,
+          "y" : 1856
+        } ]
+      }, {
+        "id" : "72"
+      }, {
+        "id" : "73",
+        "vertices" : [ {
+          "x" : 8325,
+          "y" : 1152
+        }, {
+          "x" : 3450,
+          "y" : 1452
+        }, {
+          "x" : 3450,
+          "y" : 1856
+        } ]
+      }, {
+        "id" : "74",
+        "vertices" : [ {
+          "x" : 8325,
+          "y" : 1152
+        } ]
+      }, {
+        "id" : "75",
+        "vertices" : [ {
+          "x" : 8325,
+          "y" : 1152
+        }, {
+          "x" : 4275,
+          "y" : 1452
+        } ]
+      }, {
+        "id" : "76",
+        "vertices" : [ {
+          "x" : 8325,
+          "y" : 1152
+        }, {
+          "x" : 2917,
+          "y" : 1452
+        } ]
+      }, {
+        "id" : "77",
+        "vertices" : [ {
+          "x" : 9825,
+          "y" : 1152
+        } ]
+      }, {
+        "id" : "78",
+        "vertices" : [ {
+          "x" : 9825,
+          "y" : 1152
+        }, {
+          "x" : 5417,
+          "y" : 1452
+        } ]
+      }, {
+        "id" : "79"
+      }, {
+        "id" : "80"
+      } ]
+    } ],
+    "configuration" : {
+      "branding" : { },
+      "lastSavedView" : "SystemContext",
+      "metadataSymbols" : "SquareBrackets",
+      "styles" : {
+        "elements" : [ {
+          "background" : "#08427b",
+          "color" : "#ffffff",
+          "fontSize" : 22,
+          "shape" : "Person",
+          "tag" : "Person"
+        }, {
+          "background" : "#1168bd",
+          "color" : "#ffffff",
+          "tag" : "Software System"
+        }, {
+          "background" : "#999999",
+          "color" : "#ffffff",
+          "tag" : "Existing System"
+        }, {
+          "background" : "#438dd5",
+          "color" : "#ffffff",
+          "tag" : "Container"
+        }, {
+          "shape" : "Cylinder",
+          "tag" : "Database"
+        }, {
+          "background" : "#85bbf0",
+          "color" : "#000000",
+          "tag" : "Component"
+        } ]
+      },
+      "terminology" : { }
+    },
+    "containerViews" : [ {
+      "automaticLayout" : {
+        "applied" : true,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "description" : "Container-Diagramm: Go Webshop-Server und PostgreSQL Datenbank",
+      "dimensions" : {
+        "height" : 2188,
+        "width" : 5275
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 200,
+        "y" : 152
+      }, {
+        "id" : "2",
+        "x" : 900,
+        "y" : 152
+      }, {
+        "id" : "3",
+        "x" : 1600,
+        "y" : 152
+      }, {
+        "id" : "4",
+        "x" : 1625,
+        "y" : 1452
+      }, {
+        "id" : "5",
+        "x" : 2375,
+        "y" : 1452
+      }, {
+        "id" : "6",
+        "x" : 3125,
+        "y" : 1452
+      }, {
+        "id" : "7",
+        "x" : 3875,
+        "y" : 1452
+      }, {
+        "id" : "8",
+        "x" : 4625,
+        "y" : 1452
+      }, {
+        "id" : "10",
+        "x" : 875,
+        "y" : 852
+      }, {
+        "id" : "21",
+        "x" : 875,
+        "y" : 1452
+      } ],
+      "externalSoftwareSystemBoundariesVisible" : false,
+      "key" : "Container",
+      "order" : 2,
+      "relationships" : [ {
+        "id" : "30"
+      }, {
+        "id" : "31"
+      }, {
+        "id" : "32"
+      }, {
+        "id" : "33"
+      }, {
+        "id" : "34"
+      }, {
+        "id" : "35"
+      }, {
+        "id" : "36",
+        "vertices" : [ {
+          "x" : 2975,
+          "y" : 1452
+        } ]
+      }, {
+        "id" : "37",
+        "vertices" : [ {
+          "x" : 3725,
+          "y" : 1452
+        } ]
+      }, {
+        "id" : "38",
+        "vertices" : [ {
+          "x" : 4475,
+          "y" : 1452
+        } ]
+      } ],
+      "softwareSystemId" : "9"
+    } ],
+    "deploymentViews" : [ {
+      "automaticLayout" : {
+        "applied" : true,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "description" : "Deployment auf einem Docker Host mit Nginx für HTTPS",
+      "dimensions" : {
+        "height" : 1528,
+        "width" : 3956
+      },
+      "elements" : [ {
+        "id" : "81",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "83",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "84",
+        "x" : 239,
+        "y" : 192
+      }, {
+        "id" : "85",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "86",
+        "x" : 239,
+        "y" : 792
+      }, {
+        "id" : "88",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "89",
+        "x" : 1035,
+        "y" : 792
+      }, {
+        "id" : "91",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "92",
+        "x" : 1785,
+        "y" : 792
+      }, {
+        "id" : "94",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "95",
+        "x" : 2535,
+        "y" : 792
+      }, {
+        "id" : "97",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "98",
+        "x" : 3285,
+        "y" : 792
+      } ],
+      "environment" : "Docker Host",
+      "key" : "Deployment_DockerHost",
+      "order" : 4,
+      "relationships" : [ {
+        "id" : "87"
+      }, {
+        "id" : "90"
+      }, {
+        "id" : "93",
+        "vertices" : [ {
+          "x" : 1664,
+          "y" : 688
+        } ]
+      }, {
+        "id" : "96",
+        "vertices" : [ {
+          "x" : 2414,
+          "y" : 688
+        } ]
+      }, {
+        "id" : "99",
+        "vertices" : [ {
+          "x" : 3164,
+          "y" : 688
+        } ]
+      } ],
+      "softwareSystemId" : "9"
+    }, {
+      "automaticLayout" : {
+        "applied" : true,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "description" : "Deployment auf Kubernetes mit Ingress und cert-manager",
+      "dimensions" : {
+        "height" : 1633,
+        "width" : 4080
+      },
+      "elements" : [ {
+        "id" : "100",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "101",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "103",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "104",
+        "x" : 259,
+        "y" : 211
+      }, {
+        "id" : "105",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "106",
+        "x" : 259,
+        "y" : 811
+      }, {
+        "id" : "108",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "109",
+        "x" : 1159,
+        "y" : 811
+      }, {
+        "id" : "111",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "112",
+        "x" : 1909,
+        "y" : 811
+      }, {
+        "id" : "114",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "115",
+        "x" : 2659,
+        "y" : 811
+      }, {
+        "id" : "117",
+        "x" : 175,
+        "y" : 175
+      }, {
+        "id" : "118",
+        "x" : 3409,
+        "y" : 811
+      } ],
+      "environment" : "Kubernetes",
+      "key" : "Deployment_Kubernetes",
+      "order" : 5,
+      "relationships" : [ {
+        "id" : "107"
+      }, {
+        "id" : "110"
+      }, {
+        "id" : "113",
+        "vertices" : [ {
+          "x" : 1788,
+          "y" : 707
+        } ]
+      }, {
+        "id" : "116",
+        "vertices" : [ {
+          "x" : 2538,
+          "y" : 707
+        } ]
+      }, {
+        "id" : "119",
+        "vertices" : [ {
+          "x" : 3288,
+          "y" : 707
+        } ]
+      } ],
+      "softwareSystemId" : "9"
+    } ],
+    "systemContextViews" : [ {
+      "automaticLayout" : {
+        "applied" : true,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "TopBottom",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "description" : "Systemkontext: Infra-Webshop und alle externen Systeme",
+      "dimensions" : {
+        "height" : 2000,
+        "width" : 3850
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 1024,
+        "y" : 151
+      }, {
+        "id" : "2",
+        "x" : 1724,
+        "y" : 151
+      }, {
+        "id" : "3",
+        "x" : 2424,
+        "y" : 151
+      }, {
+        "id" : "4",
+        "x" : 199,
+        "y" : 1451
+      }, {
+        "id" : "5",
+        "x" : 949,
+        "y" : 1451
+      }, {
+        "id" : "6",
+        "x" : 1699,
+        "y" : 1451
+      }, {
+        "id" : "7",
+        "x" : 2449,
+        "y" : 1451
+      }, {
+        "id" : "8",
+        "x" : 3199,
+        "y" : 1451
+      }, {
+        "id" : "9",
+        "x" : 1699,
+        "y" : 851
+      } ],
+      "enterpriseBoundaryVisible" : true,
+      "key" : "SystemContext",
+      "order" : 1,
+      "relationships" : [ {
+        "id" : "22"
+      }, {
+        "id" : "23"
+      }, {
+        "id" : "24"
+      }, {
+        "id" : "25"
+      }, {
+        "id" : "26"
+      }, {
+        "id" : "27"
+      }, {
+        "id" : "28"
+      }, {
+        "id" : "29"
+      } ],
+      "softwareSystemId" : "9"
+    } ]
+  }
+}

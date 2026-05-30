@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{block "title" .}}Infra Webshop{{end}} — PORR Digital Unit</title>
+    <title>{{block "title" .}}{{.Brand.Name}}{{end}} — {{.Brand.Subtitle}}</title>
     <link rel="stylesheet" href="/static/css/style.css" />
     <script src="https://unpkg.com/htmx.org@2.0.3/dist/htmx.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
@@ -24,7 +24,7 @@
                         </svg>
                     </label>
                 </div>
-                <div class="navbar-center font-bold text-primary">Infra Webshop</div>
+                <div class="navbar-center font-bold text-primary">{{.Brand.Name}}</div>
             </div>
 
             <main class="flex-1 p-6 max-w-7xl mx-auto w-full">
@@ -50,8 +50,8 @@
             <aside class="bg-base-100 border-r border-base-300 min-h-full w-64 flex flex-col">
                 <!-- Brand -->
                 <div class="px-5 py-4 border-b border-base-300 bg-primary text-primary-content">
-                    <h1 class="text-base font-bold tracking-tight">Infra Webshop</h1>
-                    <p class="text-xs opacity-70 mt-0.5">PORR Digital Unit</p>
+                    <h1 class="text-base font-bold tracking-tight">{{.Brand.Name}}</h1>
+                    <p class="text-xs opacity-70 mt-0.5">{{.Brand.Subtitle}}</p>
                 </div>
 
                 <nav class="flex-1 overflow-y-auto p-3">
@@ -87,7 +87,7 @@
                             </a>
                         </li>
 
-                        {{if or (eq .Session.Role "du_admin") (eq .Session.Role "shop_admin")}}
+                        {{if or (eq .Session.Role "admin") (eq .Session.Role "shop_admin")}}
                         <li class="menu-title mt-3 text-xs text-base-content/40 uppercase tracking-wider">{{t "nav.section.mgmt" .Lang}}</li>
                         <li>
                             <a href="/approvals" class="{{if hasPrefix .Path "/approvals"}}active font-medium{{end}}" hx-boost="true">

@@ -1,257 +1,257 @@
 # Infra-Webshop
 
-Self-Service Portal über das DU Admins und Projektleiter IT Infrastruktur bestellen, verwalten und dekommissionieren können. Der Webshop triggert per Webhook GitLab CI/CD Pipelines, die mittels OpenTofu die gewünschte Infrastruktur deployen.
+Self-service portal through which Admins and project managers can order, manage, and decommission IT infrastructure. The webshop triggers GitLab CI/CD pipelines via webhook, which deploy the desired infrastructure using OpenTofu.
 
-## Technologie-Stack
+## Technology Stack
 
-| Schicht               | Technologie                              |
+| Layer                 | Technology                               |
 |-----------------------|------------------------------------------|
 | Server                | Go                                       |
 | UI                    | HTMX + Tailwind CSS + DaisyUI            |
-| Client-Side-JS        | Alpine.js                                |
-| Lokalisierung         | go-i18n (24 EU-Sprachen + Russisch)      |
-| KI-Übersetzung        | Adapter (Claude, OpenAI, Ollama, …)      |
-| Datenbank             | PostgreSQL                               |
-| Authentifizierung     | Microsoft Entra ID (OIDC)                |
-| Deployment            | Single Container (scratch-Image)         |
+| Client-Side JS        | Alpine.js                                |
+| Localization          | go-i18n (24 EU languages + Russian)      |
+| AI Translation        | Adapter (Claude, OpenAI, Ollama, …)      |
+| Database              | PostgreSQL                               |
+| Authentication        | Microsoft Entra ID (OIDC)                |
+| Deployment            | Single Container (scratch image)         |
 | IaC                   | OpenTofu (via GitLab CI)                 |
 
-## Rollen
+## Roles
 
-| Rolle | Beschreibung |
-|-------|--------------|
-| **DU Admin** | Kann direkt bestellen, alle Bestellungen freigeben/ablehnen, alle Projekte und Infrastruktur einsehen. SSO via Entra ID. |
-| **Projektleiter** | Kann bestellen (Freigabe durch DU Admin erforderlich), eigene Projekte und Infrastruktur verwalten. SSO via Entra ID. |
-| **Webshop Admin** | Verwaltet Produktkatalog, Systemkonfiguration und Benutzer. Sieht alle Projekte. Lokaler Account. |
+| Role | Description |
+|------|-------------|
+| **Admin** | Can order directly, approve/reject all orders, view all projects and infrastructure. SSO via Entra ID. |
+| **Project Manager** | Can place orders (approval by Admin required), manage own projects and infrastructure. SSO via Entra ID. |
+| **Webshop Admin** | Manages the product catalog, system configuration, and users. Can view all projects. Local account. |
 
-## Bestellprozess
+## Order Process
 
 ```
-Projektleiter:  Bestellt → Wartend auf Freigabe → [Freigegeben] → Provisioning → Abgeschlossen
-                                                 ↘ [Abgelehnt + Pflichtkommentar]
+Project Manager:  Orders → Pending Approval → [Approved] → Provisioning → Completed
+                                             ↘ [Rejected + Mandatory Comment]
 
-DU Admin:       Bestellt → Provisioning → Abgeschlossen
+Admin:            Orders → Provisioning → Completed
 ```
 
-## E-Mail-Benachrichtigungen
+## Email Notifications
 
-| Ereignis | Empfänger |
-|----------|-----------|
-| Bestellung eingegangen (Projektleiter) | Besteller (Bestätigung) + alle DU Admins (Freigabe-Anfrage) |
-| Bestellung eingegangen (DU Admin) | Besteller (Bestätigung) |
-| Freigabe erteilt | Besteller |
-| Ablehnung mit Kommentar | Besteller |
-| Deployment abgeschlossen | Besteller |
-| Deployment fehlgeschlagen | Besteller + alle DU Admins |
-| Dekommissionierung abgeschlossen | Besteller |
-
-## Produkt-Konfiguration
-
-**Parameter-Vererbung:**
-```
-Globale Parameter          → gelten für alle Produkte, alle Umgebungen
-  └── Kategorie-Parameter  → gelten für alle Produkte einer Kategorie
-        └── Produkt-Parameter (aus variables.tf + manuell)
-              └── Umgebungs-spezifische Parameter
-```
-
-**variables.tf Import:** Der Webshop Admin kann Repos auf konfigurierten GitLab-Quellen browsen und `variables.tf` Dateien auswählen. Parameter werden via HCL-Parser (`hashicorp/hcl/v2`) extrahiert (Name, Typ, Beschreibung, Standardwert, Validierung, sensitive Flag).
-
-**Deployment-Umgebungen:** Jede Umgebung (z.B. "AWS Frankfurt", "On-Premise Wien") verweist auf eine konfigurierte GitLab-Quelle. Ein Produkt kann in mehreren Umgebungen verfügbar sein, jeweils mit eigenem Repo/Webhook und Preisen.
-
-## Kostenstellen
-
-Pro Bestellposition wählbar — Konfiguration durch Webshop Admin:
-
-| Modus | Bedeutung |
+| Event | Recipients |
 |-------|-----------|
-| **Projekt** | Gebucht auf die Kostenstelle des Projekts (Projektleiter muss Kostenstelle am Projekt hinterlegen) |
-| **Auswahl** | Besteller wählt aus einer gepflegten Liste |
-| **Gemeinkostenstelle** | Fixer Overhead-Account |
+| Order received (Project Manager) | Orderer (confirmation) + all Admins (approval request) |
+| Order received (Admin) | Orderer (confirmation) |
+| Approval granted | Orderer |
+| Rejection with comment | Orderer |
+| Deployment completed | Orderer |
+| Deployment failed | Orderer + all Admins |
+| Decommissioning completed | Orderer |
 
-Webshop Admin kann einen Default-Modus setzen und diesen erzwingen oder nur vorschlagen.
+## Product Configuration
 
-## Preise & Währungen
+**Parameter Inheritance:**
+```
+Global Parameters          → apply to all products, all environments
+  └── Category Parameters  → apply to all products in a category
+        └── Product Parameters (from variables.tf + manual)
+              └── Environment-specific Parameters
+```
 
-- Preise werden pro Produkt und Umgebung in der Leitwährung hinterlegt (z.B. VM Azure: 70 EUR, VM On-Prem: 20 EUR)
-- Leitwährung global konfigurierbar
-- Angezeigte Währung folgt der Locale des Benutzers (pl → PLN, cs → CZK, …)
-- Wechselkurse via externer API, in DB gecacht
+**variables.tf Import:** The Webshop Admin can browse repos on configured GitLab sources and select `variables.tf` files. Parameters are extracted via an HCL parser (`hashicorp/hcl/v2`) (name, type, description, default value, validation, sensitive flag).
 
-## Lokalisierung
+**Deployment Environments:** Each environment (e.g. "AWS Frankfurt", "On-Premise Vienna") references a configured GitLab source. A product can be available in multiple environments, each with its own repo/webhook and pricing.
 
-- UI-Texte: `go-i18n` mit JSON-Dateien pro Sprache
-- Produktinhalte: `product_translations`-Tabelle (product_id, language_code, name, description)
-- Sprachauswahl: User-Präferenz in Session, Fallback auf Accept-Language Header
+## Cost Centers
 
-**KI-Übersetzung (optional):** Webshop Admin konfiguriert einen KI-Anbieter (Endpoint, API-Key, Modell). Bei konfiguriertem Anbieter kann der Admin Produktinhalte per Klick übersetzen lassen und vor dem Speichern manuell korrigieren.
+Selectable per order line item — configured by the Webshop Admin:
 
-| Anbieter | Typ |
-|----------|-----|
+| Mode | Meaning |
+|------|---------|
+| **Project** | Charged to the project's cost center (project manager must set the cost center on the project) |
+| **Selection** | Orderer selects from a maintained list |
+| **Overhead Cost Center** | Fixed overhead account |
+
+The Webshop Admin can set a default mode and either enforce it or suggest it only.
+
+## Prices & Currencies
+
+- Prices are stored per product and environment in the lead currency (e.g. VM Azure: 70 EUR, VM On-Prem: 20 EUR)
+- Lead currency is globally configurable
+- Displayed currency follows the user's locale (pl → PLN, cs → CZK, …)
+- Exchange rates via external API, cached in DB
+
+## Localization
+
+- UI texts: `go-i18n` with JSON files per language
+- Product content: `product_translations` table (product_id, language_code, name, description)
+- Language selection: user preference in session, fallback to Accept-Language header
+
+**AI Translation (optional):** The Webshop Admin configures an AI provider (endpoint, API key, model). When a provider is configured, the admin can have product content translated with a single click and manually review it before saving.
+
+| Provider | Type |
+|----------|------|
 | Claude (Anthropic) | Cloud |
 | OpenAI / Azure OpenAI | Cloud |
 | Ollama | On-Premise |
 | LocalAI | On-Premise |
 
-## Audit-Log
+## Audit Log
 
-Unveränderliches Compliance-Protokoll aller Aktionen. Für DU Admin und Webshop Admin einsehbar. Export als **CSV** oder **PDF** wählbar.
+Immutable compliance record of all actions. Viewable by Admin and Webshop Admin. Export as **CSV** or **PDF**.
 
-Protokollierte Ereignisse: Bestellung, Freigabe, Ablehnung (mit Kommentar), Deployment, Dekommissionierung, Konfigurationsänderungen.
+Logged events: order, approval, rejection (with comment), deployment, decommissioning, configuration changes.
 
-## Architektur-Entscheidungen
+## Architecture Decisions
 
-**Go + HTMX** — Serverseitiges Rendering, HTML-Fragmente via HTMX. Kein SPA-Framework, kein Client-Side-State.
+**Go + HTMX** — Server-side rendering, HTML fragments via HTMX. No SPA framework, no client-side state.
 
-**Tailwind CSS + DaisyUI** — Responsives UI. CSS wird im Docker-Build-Stage via Node.js generiert und via `go:embed` eingebettet.
+**Tailwind CSS + DaisyUI** — Responsive UI. CSS is generated during the Docker build stage via Node.js and embedded via `go:embed`.
 
-**Single Container** — Go-Binary serviert Templates, statische Assets und API-Logik in einem Container. Stateless, horizontal skalierbar.
+**Single Container** — Go binary serves templates, static assets, and API logic in one container. Stateless, horizontally scalable.
 
-**PostgreSQL als Single Source of Truth** — Alle Daten in PostgreSQL: Produktbilder als `bytea`, Audit-Log, Jobs für Polling-Koordination via PostgreSQL-Locks.
+**PostgreSQL as Single Source of Truth** — All data in PostgreSQL: product images as `bytea`, audit log, jobs for polling coordination via PostgreSQL locks.
 
-**HCL-Parser** — `hashicorp/hcl/v2` parst `variables.tf` Dateien direkt im Backend.
+**HCL Parser** — `hashicorp/hcl/v2` parses `variables.tf` files directly in the backend.
 
-## Projektstruktur
+## Project Structure
 
 ```
 infra-webshop/
 ├── cmd/
-│   ├── server/            # HTTP-Server Einstiegspunkt
-│   └── migrate/           # Datenbankmigrations-Tool
+│   ├── server/            # HTTP server entry point
+│   └── migrate/           # Database migration tool
 ├── internal/
-│   ├── config/            # Konfiguration via Umgebungsvariablen
-│   ├── handler/           # HTTP Handler (HTMX Endpoints)
-│   ├── service/           # Geschäftslogik-Interfaces
-│   ├── repository/        # Datenbankzugriffs-Interfaces
-│   ├── model/             # Domain-Typen
-│   ├── polling/           # GitLab Polling Worker (Goroutinen)
-│   ├── notification/      # E-Mail-Versand
-│   └── audit/             # Audit-Log
-├── ui/                    # go:embed Root (kein ../-Traversal erlaubt)
-│   ├── ui.go              # embed.FS Deklarationen
+│   ├── config/            # Configuration via environment variables
+│   ├── handler/           # HTTP handlers (HTMX endpoints)
+│   ├── service/           # Business logic interfaces
+│   ├── repository/        # Database access interfaces
+│   ├── model/             # Domain types
+│   ├── polling/           # GitLab polling worker (goroutines)
+│   ├── notification/      # Email dispatch
+│   └── audit/             # Audit log
+├── ui/                    # go:embed root (no ../ traversal allowed)
+│   ├── ui.go              # embed.FS declarations
 │   ├── templates/
-│   │   ├── layout.html    # DaisyUI Basis-Layout
-│   │   ├── pages/         # Vollständige Seiten
-│   │   └── partials/      # HTMX HTML-Fragmente
+│   │   ├── layout.html    # DaisyUI base layout
+│   │   ├── pages/         # Full pages
+│   │   └── partials/      # HTMX HTML fragments
 │   └── static/
-│       └── css/           # Generiertes Tailwind CSS
+│       └── css/           # Generated Tailwind CSS
 ├── deploy/
 │   └── docker-host/
-│       ├── docker-compose.yml   # Produktions-Deployment Docker Host
-│       ├── nginx.conf.example   # Nginx Konfigurationsvorlage
-│       └── .env.example         # Produktions-Umgebungsvariablen
+│       ├── docker-compose.yml   # Production deployment on Docker host
+│       ├── nginx.conf.example   # Nginx configuration template
+│       └── .env.example         # Production environment variables
 ├── docs/
 │   ├── architecture/
-│   │   └── workspace.dsl        # Structurizr C4-Architektur
+│   │   └── workspace.dsl        # Structurizr C4 architecture
 │   ├── requirements/
-│   │   └── requirements.md      # Anforderungsdokument
+│   │   └── requirements.md      # Requirements document
 │   └── guides/
-│       ├── webshop-admin.md     # Handbuch Webshop Admin
-│       └── du-admin.md          # Handbuch DU Admin
-├── .env.example                 # Lokale Entwicklung
-├── input.css                    # Tailwind-Eingabedatei
+│       ├── webshop-admin.md     # Webshop Admin manual
+│       └── admin.md             # Admin manual
+├── .env.example                 # Local development
+├── input.css                    # Tailwind input file
 ├── tailwind.config.js
 ├── package.json
 ├── Makefile
 ├── Dockerfile
-└── docker-compose.yml           # Lokale Entwicklungsumgebung
+└── docker-compose.yml           # Local development environment
 ```
 
-## Lokale Entwicklung
+## Local Development
 
-### Voraussetzungen
+### Prerequisites
 
-| Tool | Version | Installationshinweis |
-|------|---------|----------------------|
+| Tool | Version | Installation |
+|------|---------|--------------|
 | Go | 1.23+ | [go.dev/dl](https://go.dev/dl/) |
 | Node.js | 20+ | [nodejs.org](https://nodejs.org/) |
-| Docker + Docker Compose | aktuell | [docs.docker.com](https://docs.docker.com/get-docker/) |
-| GNU Make | aktuell | Vorinstalliert auf Linux/macOS |
+| Docker + Docker Compose | current | [docs.docker.com](https://docs.docker.com/get-docker/) |
+| GNU Make | current | Pre-installed on Linux/macOS |
 
-### Make-Targets
+### Make Targets
 
 ```bash
-make help         # Alle verfügbaren Targets anzeigen
+make help         # Show all available targets
 ```
 
-| Target | Beschreibung |
+| Target | Description |
 |--------|-------------|
-| `make build` | CSS + beide Go-Binaries kompilieren |
-| `make run` | Entwicklungsserver starten (`go run`) |
-| `make migrate` | Datenbankmigrationen ausführen |
-| `make css` | Tailwind-CSS einmalig generieren |
-| `make css-watch` | Tailwind-CSS im Watch-Modus (UI-Entwicklung) |
-| `make test` | Tests ausführen |
-| `make vet` | `go vet` ausführen |
-| `make docker-build` | Docker-Image bauen |
-| `make dev` | Lokale Services starten (Postgres, Mailpit, Structurizr) |
-| `make dev-down` | Lokale Services stoppen |
-| `make clean` | Build-Artefakte entfernen |
+| `make build` | Compile CSS + both Go binaries |
+| `make run` | Start development server (`go run`) |
+| `make migrate` | Run database migrations |
+| `make css` | Generate Tailwind CSS once |
+| `make css-watch` | Tailwind CSS in watch mode (UI development) |
+| `make test` | Run tests |
+| `make vet` | Run `go vet` |
+| `make docker-build` | Build Docker image |
+| `make dev` | Start local services (Postgres, Mailpit, Structurizr) |
+| `make dev-down` | Stop local services |
+| `make clean` | Remove build artifacts |
 
-`npm install` wird automatisch ausgeführt, wenn `node_modules/` fehlt.
+`npm install` is run automatically when `node_modules/` is missing.
 
-### 1. Repository klonen
+### 1. Clone the Repository
 
 ```bash
 git clone <repo-url>
 cd infra-webshop
 ```
 
-### 2. Umgebungsvariablen konfigurieren
+### 2. Configure Environment Variables
 
 ```bash
 cp .env.example .env
 ```
 
-Mindestens folgende Werte in `.env` anpassen:
+At minimum, set the following values in `.env`:
 
-| Variable | Beschreibung |
+| Variable | Description |
 |----------|-------------|
-| `SESSION_SECRET` | Zufälliger String (mind. 32 Zeichen) |
-| `ADMIN_PASSWORD` | Initiales Passwort für den Webshop Admin |
+| `SESSION_SECRET` | Random string (at least 32 characters) |
+| `ADMIN_PASSWORD` | Initial password for the Webshop Admin |
 
-Entra ID (`ENTRA_*`) ist für die lokale Entwicklung **optional** — der lokale Admin-Account funktioniert ohne SSO.
+Entra ID (`ENTRA_*`) is **optional** for local development — the local admin account works without SSO.
 
-### 3. Lokale Services starten
+### 3. Start Local Services
 
 ```bash
 make dev
 ```
 
-| Service | URL | Beschreibung |
+| Service | URL | Description |
 |---------|-----|-------------|
-| PostgreSQL | `localhost:5432` | Datenbank |
-| Mailpit Web-UI | [http://localhost:8025](http://localhost:8025) | Alle gesendeten E-Mails lokal einsehen |
-| Structurizr Lite | [http://localhost:8088](http://localhost:8088) | C4-Architekturdiagramme |
+| PostgreSQL | `localhost:5432` | Database |
+| Mailpit Web UI | [http://localhost:8025](http://localhost:8025) | View all sent emails locally |
+| Structurizr Lite | [http://localhost:8088](http://localhost:8088) | C4 architecture diagrams |
 
-### 4. Datenbankmigrationen ausführen
+### 4. Run Database Migrations
 
 ```bash
 make migrate
 ```
 
-### 5. CSS generieren
+### 5. Generate CSS
 
 ```bash
 make css
 ```
 
-Während der Entwicklung mit Watch-Modus (in separatem Terminal):
+During development with watch mode (in a separate terminal):
 
 ```bash
 make css-watch
 ```
 
-### 6. Server starten
+### 6. Start the Server
 
 ```bash
 make run
 ```
 
-Die Applikation ist unter [http://localhost:8080](http://localhost:8080) erreichbar.
-Login als Webshop Admin mit den in `.env` gesetzten Credentials.
+The application is available at [http://localhost:8080](http://localhost:8080).
+Log in as Webshop Admin using the credentials set in `.env`.
 
-### Tests ausführen
+### Run Tests
 
 ```bash
 make test
@@ -259,43 +259,43 @@ make test
 
 ## Deployment
 
-Beide Umgebungen nutzen dasselbe stateless Container-Image aus dem privaten DockerHub Registry.
+Both environments use the same stateless container image from the private DockerHub registry.
 
 ### Docker Host
 
-Konfiguration und Dateien unter `deploy/docker-host/`.
+Configuration and files are located under `deploy/docker-host/`.
 
-**Voraussetzungen auf dem Server:**
+**Server Prerequisites:**
 - Docker + Docker Compose
-- Gültiges TLS-Zertifikat (z.B. Let's Encrypt via certbot)
-- Zugriff auf das private DockerHub Registry
+- Valid TLS certificate (e.g. Let's Encrypt via certbot)
+- Access to the private DockerHub registry
 
-**Erstmalige Einrichtung:**
+**Initial Setup:**
 
 ```bash
-# 1. Repository auf den Server klonen oder deploy/-Ordner kopieren
+# 1. Clone the repository onto the server or copy the deploy/ folder
 cd deploy/docker-host
 
-# 2. Umgebungsvariablen konfigurieren
+# 2. Configure environment variables
 cp .env.example .env
-# .env mit tatsächlichen Werten befüllen
+# Fill .env with actual values
 
-# 3. Nginx-Konfiguration anlegen
+# 3. Create Nginx configuration
 cp nginx.conf.example nginx.conf
-# server_name und ssl_certificate Pfade in nginx.conf anpassen
+# Adjust server_name and ssl_certificate paths in nginx.conf
 
-# 4. TLS-Zertifikate ablegen
+# 4. Place TLS certificates
 mkdir certs
-# fullchain.pem und privkey.pem in ./certs/ kopieren
+# Copy fullchain.pem and privkey.pem into ./certs/
 
-# 5. DockerHub Login (privates Image)
+# 5. DockerHub login (private image)
 docker login
 
-# 6. Anwendung starten
+# 6. Start the application
 docker compose up -d
 ```
 
-**Image aktualisieren:**
+**Updating the Image:**
 
 ```bash
 docker compose pull webshop
@@ -304,15 +304,15 @@ docker compose up -d --no-deps webshop
 
 ### Kubernetes
 
-Nginx Ingress Controller + cert-manager übernehmen TLS-Terminierung. Horizontale Skalierung via Kubernetes Deployment. PostgreSQL als StatefulSet mit persistentem Volume.
+Nginx Ingress Controller + cert-manager handle TLS termination. Horizontal scaling via Kubernetes Deployment. PostgreSQL as a StatefulSet with persistent volume.
 
-Das Container-Image wird aus dem privaten DockerHub Registry gezogen — ein `imagePullSecret` mit DockerHub-Credentials muss im Namespace hinterlegt sein.
+The container image is pulled from the private DockerHub registry — an `imagePullSecret` with DockerHub credentials must be present in the namespace.
 
-## Dokumentation
+## Documentation
 
-| Dokument | Pfad |
+| Document | Path |
 |----------|------|
-| Architektur (C4) | `docs/architecture/workspace.dsl` |
-| Anforderungen | `docs/requirements/requirements.md` |
-| Handbuch Webshop Admin | `docs/guides/webshop-admin.md` |
-| Handbuch DU Admin | `docs/guides/du-admin.md` |
+| Architecture (C4) | `docs/architecture/workspace.dsl` |
+| Requirements | `docs/requirements/requirements.md` |
+| Webshop Admin Manual | `docs/guides/webshop-admin.md` |
+| Admin Manual | `docs/guides/admin.md` |

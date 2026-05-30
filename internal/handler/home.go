@@ -23,7 +23,7 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		if sess.Role == model.RoleDUAdmin || sess.Role == model.RoleShopAdmin {
+		if sess.Role == model.RoleAdmin || sess.Role == model.RoleShopAdmin {
 			if pending, err := h.orders.ListPendingApproval(ctx); err == nil {
 				stats.PendingOrders = len(pending)
 			}

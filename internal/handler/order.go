@@ -24,7 +24,7 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 	envID, _ := strconv.ParseInt(r.URL.Query().Get("env"), 10, 64)
 
 	var projects interface{}
-	if sess.Role == model.RoleDUAdmin || sess.Role == model.RoleShopAdmin {
+	if sess.Role == model.RoleAdmin || sess.Role == model.RoleShopAdmin {
 		projects, _ = h.projects.ListAll(r.Context())
 	} else {
 		projects, _ = h.projects.ListByOwner(r.Context(), sess.UserID)
@@ -79,8 +79,8 @@ func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
 		Parameters:    params,
 	}
 
-	// DU Admins skip approval and go straight to provisioning
-	if sess.Role == model.RoleDUAdmin {
+	// Admins skip approval and go straight to provisioning
+	if sess.Role == model.RoleAdmin {
 		o.Status = model.OrderStatusPendingApproval
 		if err := h.orders.Create(r.Context(), o); err != nil {
 			h.redirectWithFlash(w, r, "/orders/new", "error", "Bestellung konnte nicht erstellt werden.")

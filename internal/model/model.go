@@ -7,7 +7,7 @@ import "time"
 type Role string
 
 const (
-	RoleDUAdmin       Role = "du_admin"
+	RoleAdmin         Role = "admin"
 	RoleProjectLeader Role = "project_leader"
 	RoleShopAdmin     Role = "shop_admin"
 )

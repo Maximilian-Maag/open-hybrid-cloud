@@ -93,7 +93,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		return h.sessions.RequireRole("shop_admin", http.HandlerFunc(next))
 	}
 	duAdmin := func(next http.HandlerFunc) http.Handler {
-		return h.sessions.RequireRole("du_admin", http.HandlerFunc(next))
+		return h.sessions.RequireRole("admin", http.HandlerFunc(next))
 	}
 
 	// Public
@@ -122,7 +122,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /infrastructure", req(http.HandlerFunc(h.infrastructureList)))
 	mux.Handle("POST /infrastructure/{id}/decommission", req(http.HandlerFunc(h.decommission)))
 
-	// DU Admin: approval
+	// Admin: approval
 	mux.Handle("GET /approvals", duAdmin(h.approvalList))
 	mux.Handle("POST /approvals/{id}/approve", duAdmin(h.approvalApprove))
 	mux.Handle("POST /approvals/{id}/reject", duAdmin(h.approvalReject))

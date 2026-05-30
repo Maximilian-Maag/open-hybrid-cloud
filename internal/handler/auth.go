@@ -54,7 +54,7 @@ func (h *Handler) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := h.users.UpsertSSO(r.Context(), claims.Sub, claims.Email, claims.Name, model.RoleDUAdmin)
+	u, err := h.users.UpsertSSO(r.Context(), claims.Sub, claims.Email, claims.Name, model.RoleAdmin)
 	if err != nil || u == nil {
 		http.Error(w, "user lookup failed", http.StatusInternalServerError)
 		return

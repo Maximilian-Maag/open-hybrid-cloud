@@ -1,166 +1,166 @@
-workspace "Infra-Webshop" "Self-Service Portal zum Bestellen, Verwalten und Dekommissionieren von IT Infrastruktur. Go + HTMX, Single Container." {
+workspace "Infra-Webshop" "Self-service portal for ordering, managing and decommissioning IT infrastructure. Go + HTMX, single container." {
 
     model {
-        du_admin = person "DU Admin" "Administrator der Digital Unit. Kann alle Bestellungen, Projekte und Infrastruktur einsehen, direkt bestellen und Bestellungen von Projektleitern freigeben oder ablehnen." "Person"
-        shop_admin = person "Webshop Admin" "Verwaltet Produktkatalog, Systemkonfiguration und lokale Benutzeraccounts. Sieht alle Projekte und Infrastruktur. Nutzt lokalen Account." "Person"
-        project_leader = person "Projektleiter" "Kann Bestellungen aufgeben (Freigabe durch DU Admin erforderlich), eigene Infrastruktur dekommissionieren und Projekte verwalten. Sieht ausschließlich eigene Projekte, Bestellungen und Infrastruktur." "Person"
+        du_admin = person "Admin" "Administrator. Can view all orders, projects and infrastructure, order directly and approve or reject orders from project leaders." "Person"
+        shop_admin = person "Webshop Admin" "Manages the product catalog, system configuration and local user accounts. Can view all projects and infrastructure. Uses a local account." "Person"
+        project_leader = person "Project Leader" "Can place orders (approval by Admin required), decommission own infrastructure and manage projects. Can only view own projects, orders and infrastructure." "Person"
 
-        gitlab = softwaresystem "GitLab" "Mehrere konfigurierbare GitLab-Instanzen als Quellen für OpenTofu Module. Empfängt Provisioning- und Destroy-Webhooks, führt OpenTofu Workflows aus und stellt API für Repo-Browser und Pipeline-Status bereit." "Existing System"
-        oidc_provider = softwaresystem "Microsoft Entra ID" "SSO Identity Provider (OIDC) für die Authentifizierung von DU Admins und Projektleitern." "Existing System"
-        ai_translation = softwaresystem "KI-Übersetzungsservice" "Konfigurierbarer KI-Anbieter für die Übersetzung von Produktinhalten in alle EU-Sprachen und Russisch. Cloud: Claude, OpenAI, Azure OpenAI. On-Premise: Ollama, LocalAI. Optional — ohne Konfiguration wird die Funktion ausgeblendet." "Existing System"
-        smtp = softwaresystem "Mail Server" "SMTP-Server für transaktionale E-Mails: Bestellbestätigung, Freigabe-Anfrage, Freigabe/Ablehnung, Deployment-Abschluss und Fehlermeldungen." "Existing System"
-        exchange_rate_api = softwaresystem "Wechselkurs-API" "Externe API für aktuelle Wechselkurse. Basis für die Umrechnung von der konfigurierten Leitwährung in die Anzeigewährung je Benutzer-Locale." "Existing System"
+        gitlab = softwaresystem "GitLab" "Multiple configurable GitLab instances as sources for OpenTofu modules. Receives provisioning and destroy webhooks, executes OpenTofu workflows and provides an API for the repository browser and pipeline status." "Existing System"
+        oidc_provider = softwaresystem "Microsoft Entra ID" "SSO identity provider (OIDC) for authenticating admins and project leaders." "Existing System"
+        ai_translation = softwaresystem "AI Translation Service" "Configurable AI provider for translating product content into all EU languages and Russian. Cloud: Claude, OpenAI, Azure OpenAI. On-premise: Ollama, LocalAI. Optional — hidden when not configured." "Existing System"
+        smtp = softwaresystem "Mail Server" "SMTP server for transactional emails: order confirmation, approval request, approval/rejection, deployment completion and error notifications." "Existing System"
+        exchange_rate_api = softwaresystem "Exchange Rate API" "External API for current exchange rates. Used to convert from the configured base currency to the display currency per user locale." "Existing System"
 
-        webshop = softwaresystem "Infra-Webshop" "Self-Service Portal über das DU Admins und Projektleiter IT Infrastruktur bestellen, verwalten und dekommissionieren können." {
+        webshop = softwaresystem "Infra-Webshop" "Self-service portal through which admins and project leaders can order, manage and decommission IT infrastructure." {
 
-            app = container "Webshop" "Go-Server der HTML-Templates serverseitig rendert und via HTMX als Fragmente ausliefert. Enthält UI, Geschäftslogik, GitLab-Integration und alle Hintergrundprozesse in einem stateless Container." "Go / HTMX / Tailwind / DaisyUI" {
+            app = container "Webshop" "Go server that renders HTML templates server-side and delivers them as fragments via HTMX. Contains UI, business logic, GitLab integration and all background processes in a single stateless container." "Go / HTMX / Tailwind / DaisyUI" {
 
-                auth = component "Authentifizierung" "OIDC-Login via Entra ID (Authorization Code Flow) für DU Admins und Projektleiter. Lokale Account-Anmeldung für Webshop Admin. Verwaltet Sessions und Rollen in verschlüsseltem HttpOnly-Cookie."
+                auth = component "Authentication" "OIDC login via Entra ID (Authorization Code Flow) for admins and project leaders. Local account login for Webshop Admin. Manages sessions and roles in an encrypted HttpOnly cookie."
 
-                catalog = component "Produktkatalog" "Zeigt Infrastruktur-Produkte nach Kategorie mit Bild, mehrsprachiger Beschreibung und Preis. Preisanzeige in der Locale-Währung des Benutzers — Umrechnung aus der Leitwährung anhand gespeicherter Wechselkurse. Beim Bestellen: Auswahl der verfügbaren Deployment-Umgebung, Anzeige der umgebungsspezifischen Parameter."
+                catalog = component "Product Catalog" "Displays infrastructure products by category with image, multilingual description and price. Price shown in the user's locale currency — converted from the base currency using stored exchange rates. When ordering: selection of the available deployment environment, display of environment-specific parameters."
 
-                order = component "Bestellung" "Bestellformular mit dynamisch generierten Parametern aus globalen, Kategorie- und Produkt-Parametersets sowie umgebungsspezifischen Parametern. Projektzuordnung und Kostenstellen-Zuordnung je Position. DU Admins deployen direkt via Provisioning-Webhook. Projektleiter-Bestellungen warten auf Freigabe."
+                order = component "Order" "Order form with dynamically generated parameters from global, category and product parameter sets as well as environment-specific parameters. Project assignment and cost centre assignment per line item. Admins deploy directly via provisioning webhook. Project leader orders await approval."
 
-                approval = component "Freigabe" "Übersicht offener Bestellungen von Projektleitern für DU Admins. Jeder DU Admin kann freigeben oder ablehnen. Ablehnung erfordert Pflichtkommentar. Freigabe löst GitLab Provisioning-Webhook aus."
+                approval = component "Approval" "Overview of pending orders from project leaders for admins. Any admin can approve or reject. Rejection requires a mandatory comment. Approval triggers the GitLab provisioning webhook."
 
-                infrastructure = component "Infrastrukturübersicht" "Zeigt deployte Infrastrukturelemente gruppiert nach Projekt und Deployment-Umgebung. DU Admin und Webshop Admin sehen alles, Projektleiter nur eigene. Dekommissionierung via GitLab Destroy-Webhook. Bestehendes Projekt als Bestellvorlage nutzbar."
+                infrastructure = component "Infrastructure Overview" "Displays deployed infrastructure items grouped by project and deployment environment. Admin and Webshop Admin see everything, project leaders see only their own. Decommissioning via GitLab destroy webhook. Existing project usable as an order template."
 
-                status = component "Bestellstatus" "Liefert HTMX-Polling-Fragmente für den Live-Status laufender Provisioning- und Dekommissionierungs-Workflows."
+                status = component "Order Status" "Delivers HTMX polling fragments for the live status of running provisioning and decommissioning workflows."
 
-                audit = component "Audit-Log" "Unveränderliches Compliance-Protokoll aller Aktionen: Bestellung, Freigabe, Ablehnung mit Kommentar, Deployment, Dekommissionierung. Für DU Admin und Webshop Admin einsehbar und filterbar. Export als CSV oder PDF wählbar."
+                audit = component "Audit Log" "Immutable compliance record of all actions: order, approval, rejection with comment, deployment, decommissioning. Viewable and filterable by Admin and Webshop Admin. Export as CSV or PDF."
 
-                notification = component "Benachrichtigung" "Versendet transaktionale E-Mails. Bestelleingang: Bestätigung an Besteller und Freigabe-Anfrage an alle DU Admins (nur Projektleiter). Freigabe oder Ablehnung mit Kommentar: an Besteller. Deployment abgeschlossen: an Besteller. Deployment fehlgeschlagen: an Besteller und alle DU Admins. Dekommissionierung abgeschlossen: an Besteller."
+                notification = component "Notification" "Sends transactional emails. Order received: confirmation to the orderer and approval request to all admins (project leaders only). Approval or rejection with comment: to the orderer. Deployment completed: to the orderer. Deployment failed: to the orderer and all admins. Decommissioning completed: to the orderer."
 
-                admin = component "Administration" "Verwaltung von: Produktkategorien, Produkten (Bild, mehrsprachige Inhalte, Parametersets, Preise je Produkt+Umgebung, Kostenstellen-Konfiguration pro Produkt), globalen Parametersets, GitLab-Quellen (URL + Token je Instanz), Deployment-Umgebungen, Kostenstellen-Liste, Leitwährung, KI-Anbieter-Konfiguration, SMTP-Konfiguration und lokale Benutzeraccounts. Browsed Repos auf konfigurierten GitLab-Quellen via GitLab API und importiert variables.tf Dateien für Produktparameter (HCL-Parser)."
+                admin = component "Administration" "Management of: product categories, products (image, multilingual content, parameter sets, prices per product and environment, cost centre configuration per product), global parameter sets, GitLab sources (URL and token per instance), deployment environments, cost centre list, base currency, AI provider configuration, SMTP configuration and local user accounts. Browses repositories on configured GitLab sources via the GitLab API and imports variables.tf files for product parameters (HCL parser)."
 
-                polling = component "GitLab Polling" "Goroutine-Pool der periodisch die GitLab API nach Pipeline-Status fragt, den Bestell- und Infrastrukturstatus aktualisiert und Benachrichtigungen bei Statusänderungen auslöst. Koordiniert über PostgreSQL-Locks — sicher bei mehreren Container-Replicas."
+                polling = component "GitLab Polling" "Goroutine pool that periodically queries the GitLab API for pipeline status, updates order and infrastructure status and triggers notifications on status changes. Coordinated via PostgreSQL locks — safe with multiple container replicas."
             }
 
-            database = container "Datenbank" "Persistenz aller Webshop-Daten: Produktkategorien, Produkte (Bild als bytea, Webhook-Referenz), Produktübersetzungen (je Sprachcode), Parametersets (global, Kategorie, Produkt, Umgebung), GitLab-Quellen, Deployment-Umgebungen, Preise je Produkt+Umgebung, Kostenstellen, Wechselkurse, Projekte (mit Kostenstelle), Bestellungen (inkl. Freigabe-Workflow und Ablehnungskommentar), Infrastrukturelemente, Pipeline-Status, Audit-Log und lokale Benutzer." "PostgreSQL" "Database"
+            database = container "Database" "Persistence of all webshop data: product categories, products (image as bytea, webhook reference), product translations (per language code), parameter sets (global, category, product, environment), GitLab sources, deployment environments, prices per product and environment, cost centres, exchange rates, projects (with cost centre), orders (including approval workflow and rejection comment), infrastructure items, pipeline status, audit log and local users." "PostgreSQL" "Database"
         }
 
-        # Beziehungen zwischen Personen und Systemen
-        du_admin -> webshop "Bestellt IT Infrastruktur direkt, gibt Bestellungen frei, überwacht alle Projekte"
-        shop_admin -> webshop "Verwaltet Produktkatalog, Systemkonfiguration und Benutzer"
-        project_leader -> webshop "Bestellt und verwaltet eigene IT Infrastruktur"
-        webshop -> gitlab "Browsed Repos, löst Webhooks aus, pollt Pipeline-Status" "JSON/HTTPS"
-        webshop -> oidc_provider "Authentifiziert DU Admins und Projektleiter" "OIDC/HTTPS"
-        webshop -> ai_translation "Übersetzt Produktinhalte (optional, konfigurierbar)" "JSON/HTTPS"
-        webshop -> smtp "Sendet transaktionale E-Mails" "SMTP"
-        webshop -> exchange_rate_api "Ruft aktuelle Wechselkurse ab" "JSON/HTTPS"
+        # Relationships between persons and systems
+        du_admin -> webshop "Orders IT infrastructure directly, approves orders, monitors all projects"
+        shop_admin -> webshop "Manages product catalog, system configuration and users"
+        project_leader -> webshop "Orders and manages own IT infrastructure"
+        webshop -> gitlab "Browses repositories, triggers webhooks, polls pipeline status" "JSON/HTTPS"
+        webshop -> oidc_provider "Authenticates admins and project leaders" "OIDC/HTTPS"
+        webshop -> ai_translation "Translates product content (optional, configurable)" "JSON/HTTPS"
+        webshop -> smtp "Sends transactional emails" "SMTP"
+        webshop -> exchange_rate_api "Fetches current exchange rates" "JSON/HTTPS"
 
-        # Beziehungen zwischen Containern
-        du_admin -> app "Nutzt Weboberfläche" "HTTPS"
-        shop_admin -> app "Verwaltet Shop" "HTTPS"
-        project_leader -> app "Nutzt Weboberfläche" "HTTPS"
-        app -> database "Liest und schreibt Daten" "SQL/TCP"
-        app -> gitlab "Webhooks auslösen, Repos browsen, Pipeline-Status pollen" "JSON/HTTPS"
+        # Relationships between containers
+        du_admin -> app "Uses web interface" "HTTPS"
+        shop_admin -> app "Manages shop" "HTTPS"
+        project_leader -> app "Uses web interface" "HTTPS"
+        app -> database "Reads and writes data" "SQL/TCP"
+        app -> gitlab "Trigger webhooks, browse repositories, poll pipeline status" "JSON/HTTPS"
         app -> oidc_provider "OIDC Authorization Code Flow" "HTTPS"
-        app -> ai_translation "KI-Übersetzung (optional)" "JSON/HTTPS"
-        app -> smtp "E-Mail-Versand" "SMTP"
-        app -> exchange_rate_api "Wechselkurse abrufen" "JSON/HTTPS"
+        app -> ai_translation "AI translation (optional)" "JSON/HTTPS"
+        app -> smtp "Send emails" "SMTP"
+        app -> exchange_rate_api "Fetch exchange rates" "JSON/HTTPS"
 
-        # Beziehungen zwischen Komponenten
-        du_admin -> auth "Meldet sich per SSO an"
-        project_leader -> auth "Meldet sich per SSO an"
-        shop_admin -> auth "Meldet sich mit lokalem Account an"
+        # Relationships between components
+        du_admin -> auth "Logs in via SSO"
+        project_leader -> auth "Logs in via SSO"
+        shop_admin -> auth "Logs in with local account"
         auth -> oidc_provider "Authorization Code Flow" "OIDC/HTTPS"
-        auth -> database "Liest Benutzer und Rollen, schreibt Sessions"
+        auth -> database "Reads users and roles, writes sessions"
 
-        du_admin -> catalog "Durchsucht Infrastruktur-Produkte"
-        project_leader -> catalog "Durchsucht Infrastruktur-Produkte"
-        catalog -> database "Liest Produkte, Kategorien, Preise und Wechselkurse"
+        du_admin -> catalog "Browses infrastructure products"
+        project_leader -> catalog "Browses infrastructure products"
+        catalog -> database "Reads products, categories, prices and exchange rates"
 
-        du_admin -> order "Bestellt direkt ohne Freigabe"
-        project_leader -> order "Bestellt, Bestellung wartet auf Freigabe"
-        order -> database "Speichert Bestellung mit Parametern, Projektzuordnung und Kostenstellen"
-        order -> gitlab "Löst Provisioning-Webhook aus (Direktbestellung DU Admin)" "JSON/HTTPS"
-        order -> notification "Löst Bestelleingangs-Benachrichtigungen aus"
-        order -> audit "Protokolliert Bestellvorgang"
+        du_admin -> order "Orders directly without approval"
+        project_leader -> order "Places order, order awaits approval"
+        order -> database "Stores order with parameters, project assignment and cost centres"
+        order -> gitlab "Triggers provisioning webhook (direct order by Admin)" "JSON/HTTPS"
+        order -> notification "Triggers order received notifications"
+        order -> audit "Logs the order"
 
-        du_admin -> approval "Prüft und entscheidet über offene Bestellungen"
-        approval -> database "Liest offene Bestellungen, schreibt Freigabe oder Ablehnung mit Kommentar"
-        approval -> gitlab "Löst Provisioning-Webhook nach Freigabe aus" "JSON/HTTPS"
-        approval -> notification "Löst Freigabe- oder Ablehnungs-Benachrichtigung aus"
-        approval -> audit "Protokolliert Freigabe oder Ablehnung mit Kommentar"
+        du_admin -> approval "Reviews and decides on pending orders"
+        approval -> database "Reads pending orders, writes approval or rejection with comment"
+        approval -> gitlab "Triggers provisioning webhook after approval" "JSON/HTTPS"
+        approval -> notification "Triggers approval or rejection notification"
+        approval -> audit "Logs approval or rejection with comment"
 
-        du_admin -> infrastructure "Sieht alle Projekte und Infrastruktur"
-        shop_admin -> infrastructure "Sieht alle Projekte und Infrastruktur"
-        project_leader -> infrastructure "Sieht nur eigene Projekte und Infrastruktur"
-        infrastructure -> database "Liest Infrastrukturelemente, Projekte und Umgebungen"
-        infrastructure -> gitlab "Löst Destroy-Webhook zur Dekommissionierung aus" "JSON/HTTPS"
-        infrastructure -> audit "Protokolliert Dekommissionierungsvorgang"
+        du_admin -> infrastructure "Views all projects and infrastructure"
+        shop_admin -> infrastructure "Views all projects and infrastructure"
+        project_leader -> infrastructure "Views only own projects and infrastructure"
+        infrastructure -> database "Reads infrastructure items, projects and environments"
+        infrastructure -> gitlab "Triggers destroy webhook for decommissioning" "JSON/HTTPS"
+        infrastructure -> audit "Logs the decommissioning"
 
-        du_admin -> status "Verfolgt Deployment-Status"
-        project_leader -> status "Verfolgt Status eigener Deployments"
-        status -> database "Liest Pipeline-Status"
+        du_admin -> status "Tracks deployment status"
+        project_leader -> status "Tracks status of own deployments"
+        status -> database "Reads pipeline status"
 
-        du_admin -> audit "Einsicht und Export des Audit-Logs"
-        shop_admin -> audit "Einsicht und Export des Audit-Logs"
-        audit -> database "Liest und schreibt Audit-Einträge"
+        du_admin -> audit "Views and exports the audit log"
+        shop_admin -> audit "Views and exports the audit log"
+        audit -> database "Reads and writes audit entries"
 
-        notification -> smtp "Sendet E-Mails" "SMTP"
-        notification -> database "Liest Empfängeradressen, protokolliert versendete Nachrichten"
+        notification -> smtp "Sends emails" "SMTP"
+        notification -> database "Reads recipient addresses, logs sent messages"
 
-        shop_admin -> admin "Verwaltet Katalog, Konfiguration und Benutzer"
-        admin -> database "CRUD Produkte, Kategorien, Parameter, Umgebungen, GitLab-Quellen, Kostenstellen, Währungen, Benutzer"
-        admin -> gitlab "Browsed Repos und liest variables.tf für Produktparameter" "JSON/HTTPS"
-        admin -> ai_translation "Löst optionale KI-Übersetzung aus" "JSON/HTTPS"
-        admin -> exchange_rate_api "Aktualisiert gespeicherte Wechselkurse" "JSON/HTTPS"
+        shop_admin -> admin "Manages catalog, configuration and users"
+        admin -> database "CRUD products, categories, parameters, environments, GitLab sources, cost centres, currencies, users"
+        admin -> gitlab "Browses repositories and reads variables.tf for product parameters" "JSON/HTTPS"
+        admin -> ai_translation "Triggers optional AI translation" "JSON/HTTPS"
+        admin -> exchange_rate_api "Updates stored exchange rates" "JSON/HTTPS"
 
-        polling -> gitlab "Pollt Pipeline-Status aller laufenden Workflows" "JSON/HTTPS"
-        polling -> database "Aktualisiert Bestell- und Infrastrukturstatus"
-        polling -> notification "Löst Benachrichtigungen bei Statusänderungen aus"
-        polling -> audit "Protokolliert Statusübergänge"
+        polling -> gitlab "Polls pipeline status of all running workflows" "JSON/HTTPS"
+        polling -> database "Updates order and infrastructure status"
+        polling -> notification "Triggers notifications on status changes"
+        polling -> audit "Logs status transitions"
 
         deploymentEnvironment "Docker Host" {
-            deploymentNode "Docker Host" "Einzelner Server für lokale Entwicklung und initiales Deployment" "Docker Engine" {
-                deploymentNode "nginx" "HTTPS-Terminierung und Reverse Proxy" "Docker Container / Nginx" {
+            deploymentNode "Docker Host" "Single server for local development and initial deployment" "Docker Engine" {
+                deploymentNode "nginx" "HTTPS termination and reverse proxy" "Docker Container / Nginx" {
                 }
-                deploymentNode "webshop" "Go Webshop-Server" "Docker Container" {
+                deploymentNode "webshop" "Go webshop server" "Docker Container" {
                     containerInstance app
                 }
-                deploymentNode "postgres" "Datenbank" "Docker Container" {
+                deploymentNode "postgres" "Database" "Docker Container" {
                     containerInstance database
                 }
             }
-            deploymentNode "Entra ID (extern)" "" "SaaS" {
+            deploymentNode "Entra ID (external)" "" "SaaS" {
                 softwareSystemInstance oidc_provider
             }
-            deploymentNode "GitLab (extern)" "" "On-Premise / SaaS" {
+            deploymentNode "GitLab (external)" "" "On-Premise / SaaS" {
                 softwareSystemInstance gitlab
             }
-            deploymentNode "Mail Server (extern)" "" "On-Premise / SaaS" {
+            deploymentNode "Mail Server (external)" "" "On-Premise / SaaS" {
                 softwareSystemInstance smtp
             }
-            deploymentNode "Wechselkurs-API (extern)" "" "SaaS" {
+            deploymentNode "Exchange Rate API (external)" "" "SaaS" {
                 softwareSystemInstance exchange_rate_api
             }
         }
 
         deploymentEnvironment "Kubernetes" {
-            deploymentNode "Kubernetes Cluster" "Produktions-Cluster" "Kubernetes" {
-                deploymentNode "infra-webshop" "Applikations-Namespace" "Kubernetes Namespace" {
-                    deploymentNode "Ingress + cert-manager" "HTTPS-Terminierung via Let's Encrypt oder internem CA. Routet externen Traffic zum Webshop Service." "Nginx Ingress / cert-manager" {
+            deploymentNode "Kubernetes Cluster" "Production cluster" "Kubernetes" {
+                deploymentNode "infra-webshop" "Application namespace" "Kubernetes Namespace" {
+                    deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes external traffic to the webshop service." "Nginx Ingress / cert-manager" {
                     }
-                    deploymentNode "webshop Deployment" "Stateless Go Pods, horizontal skalierbar. Polling via PostgreSQL-Locks koordiniert." "Kubernetes Deployment" {
+                    deploymentNode "webshop Deployment" "Stateless Go pods, horizontally scalable. Polling coordinated via PostgreSQL locks." "Kubernetes Deployment" {
                         containerInstance app
                     }
-                    deploymentNode "postgres StatefulSet" "PostgreSQL mit persistentem Volume" "Kubernetes StatefulSet" {
+                    deploymentNode "postgres StatefulSet" "PostgreSQL with persistent volume" "Kubernetes StatefulSet" {
                         containerInstance database
                     }
                 }
             }
-            deploymentNode "Entra ID (extern)" "" "SaaS" {
+            deploymentNode "Entra ID (external)" "" "SaaS" {
                 softwareSystemInstance oidc_provider
             }
-            deploymentNode "GitLab (extern)" "" "On-Premise / SaaS" {
+            deploymentNode "GitLab (external)" "" "On-Premise / SaaS" {
                 softwareSystemInstance gitlab
             }
-            deploymentNode "Mail Server (extern)" "" "On-Premise / SaaS" {
+            deploymentNode "Mail Server (external)" "" "On-Premise / SaaS" {
                 softwareSystemInstance smtp
             }
-            deploymentNode "Wechselkurs-API (extern)" "" "SaaS" {
+            deploymentNode "Exchange Rate API (external)" "" "SaaS" {
                 softwareSystemInstance exchange_rate_api
             }
         }
@@ -170,31 +170,31 @@ workspace "Infra-Webshop" "Self-Service Portal zum Bestellen, Verwalten und Deko
         systemcontext webshop "SystemContext" {
             include *
             autoLayout
-            description "Systemkontext: Infra-Webshop und alle externen Systeme"
+            description "System context: Infra-Webshop and all external systems"
         }
 
         container webshop "Container" {
             include *
             autoLayout
-            description "Container-Diagramm: Go Webshop-Server und PostgreSQL Datenbank"
+            description "Container diagram: Go webshop server and PostgreSQL database"
         }
 
         component app "Component_App" {
             include *
             autoLayout
-            description "Komponentendiagramm Go Webshop-Server"
+            description "Component diagram: Go webshop server"
         }
 
         deployment webshop "Docker Host" "Deployment_DockerHost" {
             include *
             autoLayout
-            description "Deployment auf einem Docker Host mit Nginx für HTTPS"
+            description "Deployment on a Docker host with Nginx for HTTPS"
         }
 
         deployment webshop "Kubernetes" "Deployment_Kubernetes" {
             include *
             autoLayout
-            description "Deployment auf Kubernetes mit Ingress und cert-manager"
+            description "Deployment on Kubernetes with Ingress and cert-manager"
         }
 
         styles {

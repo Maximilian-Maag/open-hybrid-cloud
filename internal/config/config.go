@@ -7,6 +7,9 @@ import (
 type Config struct {
 	Port string
 
+	AppName     string
+	AppSubtitle string
+
 	DatabaseURL string
 
 	SessionSecret string
@@ -33,6 +36,8 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:        getEnv("PORT", "8080"),
+		AppName:     getEnv("APP_NAME", "Infra Webshop"),
+		AppSubtitle: getEnv("APP_SUBTITLE", "Infrastructure Self-Service"),
 		DatabaseURL: getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable"),
 
 		SessionSecret: mustGetEnv("SESSION_SECRET"),

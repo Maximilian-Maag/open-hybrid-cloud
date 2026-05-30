@@ -77,7 +77,7 @@ var messages = map[string]map[string]string{
 	"status.pending":      {"de": "Offene Freigaben", "en": "Pending approvals"},
 
 	// Home
-	"home.subtitle":   {"de": "Infrastruktur Self-Service Portal der PORR Digital Unit", "en": "Infrastructure Self-Service Portal of PORR Digital Unit"},
+	"home.subtitle":   {"de": "Infrastruktur Self-Service Portal", "en": "Infrastructure Self-Service Portal"},
 	"home.welcome":    {"de": "Willkommen", "en": "Welcome"},
 	"home.from_catalog":{"de": "Aus dem Katalog", "en": "From the catalog"},
 
@@ -239,7 +239,7 @@ var messages = map[string]map[string]string{
 	"admin.local":      {"de": "Lokal", "en": "Local"},
 	"admin.role":       {"de": "Rolle", "en": "Role"},
 	"admin.role_admin": {"de": "Webshop Admin", "en": "Webshop Admin"},
-	"admin.role_du":    {"de": "DU Admin", "en": "DU Admin"},
+	"admin.role_du":    {"de": "Admin", "en": "Admin"},
 	"admin.role_pl":    {"de": "Projektleiter", "en": "Project Leader"},
 	"admin.password":   {"de": "Passwort", "en": "Password"},
 }

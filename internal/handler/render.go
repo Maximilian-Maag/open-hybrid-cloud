@@ -7,12 +7,19 @@ import (
 	"github.com/porr-ag/infra-webshop/internal/auth"
 )
 
+// Brand holds configurable branding shown in the layout and login page.
+type Brand struct {
+	Name     string
+	Subtitle string
+}
+
 // PageData is the base data available in every page template.
 type PageData struct {
 	Session *auth.SessionData
 	Flash   *auth.FlashData
 	Path    string
 	Lang    string
+	Brand   Brand
 	Data    any
 }
 
@@ -35,6 +42,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 		Flash:   flash,
 		Path:    r.URL.Path,
 		Lang:    lang,
+		Brand:   Brand{Name: h.cfg.AppName, Subtitle: h.cfg.AppSubtitle},
 		Data:    data,
 	}); err != nil {
 		slog.Error("render error", "page", page, "err", err)

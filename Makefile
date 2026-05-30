@@ -14,8 +14,8 @@ help:
 	@echo "  test         Tests ausführen"
 	@echo "  vet          go vet ausführen"
 	@echo "  docker-build Docker-Image bauen"
-	@echo "  dev          Lokale Infrastruktur starten (Postgres, Mailpit, Structurizr)"
-	@echo "  dev-down     Lokale Infrastruktur stoppen"
+	@echo "  dev          Infra-Container starten + Server direkt ausführen (benötigt .env)"
+	@echo "  dev-down     Infra-Container stoppen"
 	@echo "  clean        Build-Artefakte entfernen"
 
 build: node_modules css
@@ -48,6 +48,7 @@ docker-build:
 
 dev:
 	docker compose up -d
+	bash -c 'set -a; source .env; go run ./cmd/server'
 
 dev-down:
 	docker compose down

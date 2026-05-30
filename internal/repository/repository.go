@@ -125,3 +125,8 @@ type AuditRepository interface {
 	FindByUserID(ctx context.Context, userID int64) ([]model.AuditEntry, error)
 	FindByAction(ctx context.Context, action model.AuditAction) ([]model.AuditEntry, error)
 }
+
+type BrandingRepository interface {
+	Load(ctx context.Context) (*model.Branding, error)
+	Save(ctx context.Context, b *model.Branding) error
+}

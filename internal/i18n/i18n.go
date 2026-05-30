@@ -346,4 +346,29 @@ var messages = map[string]map[string]string{
 	"admin.role_du":   {"de": "Admin", "en": "Admin"},
 	"admin.role_pl":   {"de": "Projektleiter", "en": "Project Leader"},
 	"admin.password":  {"de": "Passwort", "en": "Password"},
+
+	// Admin — branding
+	"admin.branding_title":  {"de": "Shop-Design", "en": "Shop Design"},
+	"admin.primary_color":   {"de": "Primärfarbe (Header)", "en": "Primary color (header)"},
+	"admin.secondary_color": {"de": "Akzentfarbe (Buttons)", "en": "Accent color (buttons)"},
+	"admin.upload_logo":     {"de": "Logo hochladen (PNG/SVG, max. 200px Höhe)", "en": "Upload logo (PNG/SVG, max 200px height)"},
+	"admin.save_branding":   {"de": "Design speichern", "en": "Save design"},
+	"admin.preview":         {"de": "Aktuelle Einstellungen", "en": "Current settings"},
+
+	// Search
+	"search.placeholder": {"de": "Infrastruktur suchen...", "en": "Search infrastructure..."},
+
+	// Navigation extras
+	"nav.hello":     {"de": "Hallo,", "en": "Hello,"},
+	"nav.my_orders": {"de": "Meine Bestellungen", "en": "My Orders"},
+
+	// Home hero
+	"home.hero_title": {"de": "Infrastruktur für Ihr Team", "en": "Infrastructure for your team"},
+	"home.hero_body":  {"de": "Server, VMs, Netzwerk und mehr – direkt aus dem Katalog bestellen.", "en": "Order servers, VMs, networks and more – directly from the catalog."},
+	"home.shop_cta":   {"de": "Jetzt stöbern", "en": "Browse now"},
+
+	// Catalog extras
+	"catalog.results_for": {"de": "Ergebnisse für", "en": "Results for"},
+	"catalog.all_prods":   {"de": "Alle Produkte", "en": "All products"},
+	"catalog.categories":  {"de": "Kategorien", "en": "Categories"},
 }

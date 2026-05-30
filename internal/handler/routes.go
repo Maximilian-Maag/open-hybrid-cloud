@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -49,6 +50,7 @@ type Handler struct {
 	exchange      *exchange.Service
 	exchangeRates repository.ExchangeRateRepository
 	translator    aitranslation.Translator
+	brandingRepo  repository.BrandingRepository
 
 	pages    pages
 	partials *template.Template
@@ -76,34 +78,42 @@ type Deps struct {
 	Exchange      *exchange.Service
 	ExchangeRates repository.ExchangeRateRepository
 	Translator    aitranslation.Translator
+	BrandingRepo  repository.BrandingRepository
 }
 
 func New(d Deps) *Handler {
-	return &Handler{
-		cfg:           d.Cfg,
-		sessions:      d.Sessions,
-		oidc:          d.OIDC,
-		users:         d.Users,
-		products:      d.Products,
-		orders:        d.Orders,
-		projects:      d.Projects,
-		infra:         d.Infra,
-		audit:         d.Audit,
-		categories:    d.Categories,
-		environments:  d.Environments,
-		costCenters:   d.CostCenters,
-		gitlabSources: d.GitLabSources,
-		parameters:    d.Parameters,
+	h := &Handler{
+		cfg:             d.Cfg,
+		sessions:        d.Sessions,
+		oidc:            d.OIDC,
+		users:           d.Users,
+		products:        d.Products,
+		orders:          d.Orders,
+		projects:        d.Projects,
+		infra:           d.Infra,
+		audit:           d.Audit,
+		categories:      d.Categories,
+		environments:    d.Environments,
+		costCenters:     d.CostCenters,
+		gitlabSources:   d.GitLabSources,
+		parameters:      d.Parameters,
 		productEnvs:     d.ProductEnvs,
 		translations:    d.Translations,
 		productWebhooks: d.ProductWebhooks,
-		notifier:      d.Notifier,
-		exchange:      d.Exchange,
-		exchangeRates: d.ExchangeRates,
-		translator:    d.Translator,
-		pages:         mustBuildPages(),
-		partials:      mustParsePartials(),
+		notifier:        d.Notifier,
+		exchange:        d.Exchange,
+		exchangeRates:   d.ExchangeRates,
+		translator:      d.Translator,
+		brandingRepo:    d.BrandingRepo,
+		pages:           mustBuildPages(),
+		partials:        mustParsePartials(),
 	}
+	if d.BrandingRepo != nil {
+		if b, err := d.BrandingRepo.Load(context.Background()); err == nil {
+			setBrandCache(*b)
+		}
+	}
+	return h
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
@@ -188,6 +198,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.Handle("POST /admin/products/{id}/webhooks", admin(h.adminProductWebhookCreate))
 	mux.Handle("POST /admin/products/{id}/webhooks/{wid}/delete", admin(h.adminProductWebhookDelete))
+
+	mux.Handle("GET /admin/branding", admin(h.adminBranding))
+	mux.Handle("POST /admin/branding", admin(h.adminBrandingSave))
+	mux.Handle("GET /branding/logo", req(http.HandlerFunc(h.serveBrandingLogo)))
 
 	mux.Handle("GET /products/{id}/image", req(http.HandlerFunc(h.productImage)))
 

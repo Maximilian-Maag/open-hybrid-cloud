@@ -62,6 +62,7 @@ func main() {
 	auditRepo := pgRepo.NewAuditRepository(pool)
 	exchangeRatesRepo := pgRepo.NewExchangeRateRepository(pool)
 	productWebhookRepo := pgRepo.NewProductWebhookRepository(pool)
+	brandingRepo := pgRepo.NewBrandingRepository(pool)
 
 	// Services
 	auditSvc := audit.NewService(auditRepo)
@@ -122,9 +123,10 @@ func main() {
 		Translations:    translationRepo,
 		ProductWebhooks: productWebhookRepo,
 		Notifier:        notifier,
-		Exchange:      exchangeSvc,
-		ExchangeRates: exchangeRatesRepo,
-		Translator:    translator,
+		Exchange:        exchangeSvc,
+		ExchangeRates:   exchangeRatesRepo,
+		Translator:      translator,
+		BrandingRepo:    brandingRepo,
 	})
 
 	staticFS, _ := fs.Sub(ui.Static, "static")

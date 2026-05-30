@@ -192,6 +192,15 @@ type InfrastructureElement struct {
 	DeployedAt    time.Time
 }
 
+// --- Branding ---
+
+type Branding struct {
+	LogoData       []byte
+	LogoMime       string
+	PrimaryColor   string
+	SecondaryColor string
+}
+
 // --- Audit ---
 
 type AuditAction string

@@ -505,6 +505,51 @@ func (h *Handler) adminProductWebhookDelete(w http.ResponseWriter, r *http.Reque
 	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Webhook gelöscht.")
 }
 
+// ---- Branding ----
+
+func (h *Handler) adminBranding(w http.ResponseWriter, r *http.Request) {
+	b := getBrandCache()
+	h.render(w, r, "admin-branding.html", map[string]any{"Branding": b})
+}
+
+func (h *Handler) adminBrandingSave(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(5 << 20); err != nil {
+		r.ParseForm() //nolint:errcheck
+	}
+	current := getBrandCache()
+	if v := r.FormValue("primary_color"); v != "" {
+		current.PrimaryColor = v
+	}
+	if v := r.FormValue("secondary_color"); v != "" {
+		current.SecondaryColor = v
+	}
+	if file, hdr, err := r.FormFile("logo"); err == nil {
+		defer file.Close()
+		current.LogoData, _ = io.ReadAll(file)
+		current.LogoMime = hdr.Header.Get("Content-Type")
+		if current.LogoMime == "" {
+			current.LogoMime = "image/png"
+		}
+	}
+	if err := h.brandingRepo.Save(r.Context(), &current); err != nil {
+		h.redirectWithFlash(w, r, "/admin/branding", "error", "Fehler: "+err.Error())
+		return
+	}
+	setBrandCache(current)
+	h.redirectWithFlash(w, r, "/admin/branding", "success", "Design gespeichert.")
+}
+
+func (h *Handler) serveBrandingLogo(w http.ResponseWriter, r *http.Request) {
+	b := getBrandCache()
+	if len(b.LogoData) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", b.LogoMime)
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Write(b.LogoData) //nolint:errcheck
+}
+
 // ---- Helpers ----
 
 func formInt(r *http.Request, key string) int {

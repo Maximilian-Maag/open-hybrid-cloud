@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 func (h *Handler) catalog(w http.ResponseWriter, r *http.Request) {
@@ -17,6 +18,34 @@ func (h *Handler) catalog(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
+	}
+
+	// Search filter
+	query := r.URL.Query().Get("q")
+	if query != "" {
+		filtered := prods[:0]
+		ql := strings.ToLower(query)
+		for _, p := range prods {
+			if strings.Contains(strings.ToLower(p.Name), ql) || strings.Contains(strings.ToLower(p.Description), ql) {
+				filtered = append(filtered, p)
+			}
+		}
+		prods = filtered
+	}
+
+	// Category filter
+	var selectedCat int64
+	if catStr := r.URL.Query().Get("cat"); catStr != "" {
+		selectedCat, _ = strconv.ParseInt(catStr, 10, 64)
+		if selectedCat > 0 {
+			filtered := prods[:0]
+			for _, p := range prods {
+				if p.CategoryID == selectedCat {
+					filtered = append(filtered, p)
+				}
+			}
+			prods = filtered
+		}
 	}
 
 	views := make([]ProductCardView, 0, len(prods))
@@ -37,8 +66,10 @@ func (h *Handler) catalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.render(w, r, "catalog.html", map[string]any{
-		"Categories": cats,
-		"Products":   views,
+		"Categories":  cats,
+		"Products":    views,
+		"Query":       query,
+		"SelectedCat": selectedCat,
 	})
 }
 
@@ -76,10 +107,20 @@ func (h *Handler) catalogProduct(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	params, _ := h.parameters.FindByScope(r.Context(), "product", id)
+
+	// Resolve category name
+	var catName string
+	if p.CategoryID > 0 {
+		cat, _ := h.categories.FindByID(r.Context(), p.CategoryID)
+		if cat != nil {
+			catName = cat.Name
+		}
+	}
+
 	h.render(w, r, "catalog-product.html", map[string]any{
 		"Product":      p,
 		"Environments": entries,
 		"Parameters":   params,
+		"CategoryName": catName,
 	})
 }
-

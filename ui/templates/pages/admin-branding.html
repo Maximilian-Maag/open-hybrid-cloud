@@ -1,0 +1,146 @@
+{{define "title"}}{{t "admin.branding_title" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6 flex items-center justify-between">
+    <div>
+        <a href="/admin" class="text-sm hover:underline" style="color:var(--bp)">{{t "admin.back" .Lang}}</a>
+        <h2 class="text-2xl font-bold text-gray-800 mt-1">{{t "admin.branding_title" .Lang}}</h2>
+    </div>
+</div>
+
+{{with .Data}}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6"
+     x-data="{
+         primary: '{{.Branding.PrimaryColor}}',
+         secondary: '{{.Branding.SecondaryColor}}',
+         hasLogo: {{if .Branding.LogoData}}true{{else}}false{{end}}
+     }">
+
+    <!-- Form -->
+    <div class="bg-white border border-gray-200 rounded-lg p-6">
+        <form method="POST" action="/admin/branding" enctype="multipart/form-data" class="space-y-5">
+
+            <!-- Primary color -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">{{t "admin.primary_color" $.Lang}}</label>
+                <div class="flex items-center gap-3">
+                    <input type="color" name="primary_color" x-model="primary"
+                           value="{{.Branding.PrimaryColor}}"
+                           class="h-10 w-16 rounded border border-gray-200 cursor-pointer p-0.5" />
+                    <input type="text" :value="primary" @input="primary=$event.target.value"
+                           class="flex-1 border border-gray-200 rounded px-3 py-2 text-sm font-mono"
+                           placeholder="#131921" />
+                </div>
+                <p class="text-xs text-gray-400 mt-1">Header, Sidebar, Footer Hintergrundfarbe</p>
+            </div>
+
+            <!-- Secondary / accent color -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">{{t "admin.secondary_color" $.Lang}}</label>
+                <div class="flex items-center gap-3">
+                    <input type="color" name="secondary_color" x-model="secondary"
+                           value="{{.Branding.SecondaryColor}}"
+                           class="h-10 w-16 rounded border border-gray-200 cursor-pointer p-0.5" />
+                    <input type="text" :value="secondary" @input="secondary=$event.target.value"
+                           class="flex-1 border border-gray-200 rounded px-3 py-2 text-sm font-mono"
+                           placeholder="#febd69" />
+                </div>
+                <p class="text-xs text-gray-400 mt-1">Button- und Akzentfarbe</p>
+            </div>
+
+            <!-- Logo upload -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">{{t "admin.upload_logo" $.Lang}}</label>
+                {{if .Branding.LogoData}}
+                <div class="mb-2 p-3 border border-gray-200 rounded-lg inline-flex items-center gap-3">
+                    <img src="/branding/logo" alt="Current Logo" class="h-10 max-w-[160px] object-contain" />
+                    <span class="text-xs text-gray-500">Aktuelles Logo</span>
+                </div>
+                {{end}}
+                <input type="file" name="logo" accept="image/*"
+                       class="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 border border-gray-200 rounded p-1" />
+                <p class="text-xs text-gray-400 mt-1">PNG oder SVG empfohlen, max. 200px Höhe</p>
+            </div>
+
+            <!-- Save button -->
+            <button type="submit"
+                    class="w-full py-2.5 px-4 rounded font-semibold text-sm"
+                    :style="'background-color:'+secondary+';color:#111'">
+                {{t "admin.save_branding" $.Lang}}
+            </button>
+        </form>
+    </div>
+
+    <!-- Live Preview -->
+    <div class="space-y-4">
+        <h3 class="font-semibold text-gray-700">{{t "admin.preview" $.Lang}}</h3>
+
+        <!-- Header preview -->
+        <div class="rounded-lg overflow-hidden shadow-sm border border-gray-100">
+            <!-- Mock header -->
+            <div :style="'background-color:'+primary" class="px-4 py-3">
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2">
+                        {{if .Branding.LogoData}}
+                        <img src="/branding/logo" alt="Logo" class="h-6 max-w-[100px] object-contain" />
+                        {{else}}
+                        <span class="text-white font-bold text-sm">{{$.Brand.Name}}</span>
+                        {{end}}
+                    </div>
+                    <div class="flex-1 bg-white/20 rounded h-6 flex items-center px-3">
+                        <span class="text-white/60 text-xs">{{t "search.placeholder" $.Lang}}</span>
+                    </div>
+                    <span class="text-white/80 text-xs">Hallo, User</span>
+                </div>
+            </div>
+            <!-- Mock nav strip -->
+            <div :style="'background:rgba(0,0,0,0.18);background-color:'+primary" style="background:rgba(0,0,0,0.18)">
+                <div :style="'background-color:'+primary" class="relative">
+                    <div style="background:rgba(0,0,0,0.18)" class="px-4 py-1.5 flex gap-3">
+                        <span class="text-white/80 text-xs">Start</span>
+                        <span class="text-white font-medium text-xs underline">Katalog</span>
+                        <span class="text-white/80 text-xs">Bestellungen</span>
+                        <span class="text-white/80 text-xs">Projekte</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mock content area -->
+            <div class="bg-gray-50 p-4 space-y-3">
+                <!-- Mock product card -->
+                <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+                    <div>
+                        <span :style="'color:'+primary" class="text-xs font-semibold uppercase tracking-wide">Kategorie</span>
+                        <div class="font-semibold text-sm text-gray-800 mt-0.5">Beispielprodukt</div>
+                        <span :style="'color:#B12704'" class="font-bold text-sm">€ 299</span>
+                        <span class="text-xs text-gray-400">/mo.</span>
+                    </div>
+                    <button :style="'background-color:'+secondary+';color:#111'" class="px-4 py-2 rounded text-sm font-semibold">
+                        Bestellen
+                    </button>
+                </div>
+
+                <div class="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+                    <div>
+                        <span :style="'color:'+primary" class="text-xs font-semibold uppercase tracking-wide">Kategorie</span>
+                        <div class="font-semibold text-sm text-gray-800 mt-0.5">Weiteres Produkt</div>
+                        <span :style="'color:#B12704'" class="font-bold text-sm">€ 149</span>
+                        <span class="text-xs text-gray-400">/mo.</span>
+                    </div>
+                    <button :style="'background-color:'+secondary+';color:#111'" class="px-4 py-2 rounded text-sm font-semibold">
+                        Bestellen
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mock footer -->
+            <div :style="'background-color:'+primary" class="px-4 py-2">
+                <span class="text-white/60 text-xs">© {{$.Brand.Name}}</span>
+            </div>
+        </div>
+
+        <p class="text-xs text-gray-400 text-center">Vorschau der Farbeinstellungen. Änderungen sind live sichtbar.</p>
+    </div>
+
+</div>
+{{end}}
+{{end}}

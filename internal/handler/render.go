@@ -3,26 +3,52 @@ package handler
 import (
 	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/porr-ag/infra-webshop/internal/auth"
 	"github.com/porr-ag/infra-webshop/internal/i18n"
+	"github.com/porr-ag/infra-webshop/internal/model"
 )
 
-// Brand holds configurable branding shown in the layout and login page.
 type Brand struct {
-	Name     string
-	Subtitle string
+	Name           string
+	Subtitle       string
+	PrimaryColor   string
+	SecondaryColor string
+	HasLogo        bool
 }
 
-// PageData is the base data available in every page template.
 type PageData struct {
-	Session       *auth.SessionData
-	Flash         *auth.FlashData
-	Path          string
-	Lang          string
-	Brand         Brand
+	Session        *auth.SessionData
+	Flash          *auth.FlashData
+	Path           string
+	Lang           string
+	Brand          Brand
 	SupportedLangs []string
-	Data          any
+	Data           any
+}
+
+// brandCache holds the current branding, hot-reloaded when admin saves.
+var (
+	brandCache   model.Branding = model.Branding{PrimaryColor: "#131921", SecondaryColor: "#febd69"}
+	brandCacheMu sync.RWMutex
+)
+
+func setBrandCache(b model.Branding) {
+	brandCacheMu.Lock()
+	brandCache = b
+	brandCacheMu.Unlock()
+}
+
+// SetBrandCache is the exported variant for use from outside the package (e.g. main).
+func SetBrandCache(b model.Branding) {
+	setBrandCache(b)
+}
+
+func getBrandCache() model.Branding {
+	brandCacheMu.RLock()
+	defer brandCacheMu.RUnlock()
+	return brandCache
 }
 
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, data any) {
@@ -41,13 +67,21 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, da
 	}
 	lang := detectLang(r, sessLang)
 
+	b := getBrandCache()
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, "layout", PageData{
-		Session:        sess,
-		Flash:          flash,
-		Path:           r.URL.Path,
-		Lang:           lang,
-		Brand:          Brand{Name: h.cfg.AppName, Subtitle: h.cfg.AppSubtitle},
+		Session: sess,
+		Flash:   flash,
+		Path:    r.URL.Path,
+		Lang:    lang,
+		Brand: Brand{
+			Name:           h.cfg.AppName,
+			Subtitle:       h.cfg.AppSubtitle,
+			PrimaryColor:   b.PrimaryColor,
+			SecondaryColor: b.SecondaryColor,
+			HasLogo:        len(b.LogoData) > 0,
+		},
 		SupportedLangs: i18n.Supported(),
 		Data:           data,
 	}); err != nil {
@@ -67,7 +101,6 @@ func (h *Handler) redirectWithFlash(w http.ResponseWriter, r *http.Request, to, 
 	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
-// lang returns the current request language (used by non-render handlers).
 func (h *Handler) lang(r *http.Request) string {
 	sess, _ := h.sessions.Get(r)
 	var sessLang string

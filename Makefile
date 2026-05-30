@@ -51,6 +51,7 @@ dev:
 	bash -c 'set -a; source .env; go run ./cmd/server'
 
 dev-down:
+	-pkill -INT -f 'cmd/server' 2>/dev/null; true
 	docker compose down
 
 clean:

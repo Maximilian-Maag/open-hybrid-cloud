@@ -1,0 +1,37 @@
+{{define "title"}}{{t "projects.title" .Lang}}{{end}}
+{{define "content"}}
+<div class="flex items-center justify-between mb-6">
+    <h2 class="text-2xl font-bold">{{t "projects.title" .Lang}}</h2>
+    <a href="/projects/new" class="btn btn-primary btn-sm">{{t "action.new_project" .Lang}}</a>
+</div>
+
+{{with .Data}}
+{{if .Projects}}
+<div class="overflow-x-auto">
+    <table class="table">
+        <thead><tr>
+            <th>{{t "common.name" $.Lang}}</th>
+            <th>{{t "common.description" $.Lang}}</th>
+            <th>{{t "common.created" $.Lang}}</th>
+            <th></th>
+        </tr></thead>
+        <tbody>
+        {{range .Projects}}
+        <tr class="hover">
+            <td class="font-medium">{{.Name}}</td>
+            <td class="text-sm text-base-content/60">{{.Description}}</td>
+            <td class="text-sm text-base-content/60">{{.CreatedAt.Format "02.01.2006"}}</td>
+            <td><a href="/projects/{{.ID}}" class="btn btn-ghost btn-xs">{{t "common.edit" $.Lang}}</a></td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="text-center py-16 text-base-content/50">
+    <p>{{t "projects.empty" $.Lang}}</p>
+    <a href="/projects/new" class="btn btn-primary btn-sm mt-4">{{t "projects.first" $.Lang}}</a>
+</div>
+{{end}}
+{{end}}
+{{end}}

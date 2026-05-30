@@ -1,0 +1,70 @@
+{{define "title"}}{{t "admin.edit_product" .Lang}}{{end}}
+{{define "content"}}
+{{with .Data}}
+<div class="mb-4">
+    <a href="/admin/products" class="btn btn-ghost btn-sm">{{t "common.back" $.Lang}}</a>
+</div>
+<h2 class="text-2xl font-bold mb-6">{{t "admin.edit_product" $.Lang}}</h2>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="space-y-6">
+        <form method="POST" action="/admin/products/{{.Product.ID}}" class="card bg-base-100 border border-base-300">
+            <div class="card-body space-y-4">
+                <h3 class="card-title text-base">{{t "admin.general" $.Lang}}</h3>
+                <div class="form-control">
+                    <label class="label"><span class="label-text text-sm">{{t "admin.categories" $.Lang}}</span></label>
+                    <select name="category_id" class="select select-bordered select-sm">
+                        {{range .Categories}}
+                        <option value="{{.ID}}" {{if eq .ID $.Product.CategoryID}}selected{{end}}>{{.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text text-sm">{{t "admin.name_de" $.Lang}}</span></label>
+                    <input type="text" name="name" class="input input-bordered input-sm" value="{{.Product.Name}}" />
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text text-sm">{{t "admin.desc_de" $.Lang}}</span></label>
+                    <textarea name="description" class="textarea textarea-bordered textarea-sm" rows="3">{{.Product.Description}}</textarea>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">{{t "common.save" $.Lang}}</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="space-y-4">
+        {{if .ProductEnvs}}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body">
+                <h3 class="card-title text-base">{{t "admin.avail_envs" $.Lang}}</h3>
+                <div class="space-y-1 text-sm">
+                {{range .ProductEnvs}}
+                <div class="flex justify-between items-center py-1 border-b border-base-200">
+                    <span>{{t "admin.environments" $.Lang}} {{.EnvironmentID}}</span>
+                    <span class="font-mono">{{.Price}} {{.Currency}}</span>
+                </div>
+                {{end}}
+                </div>
+            </div>
+        </div>
+        {{end}}
+
+        {{if .Translations}}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body">
+                <h3 class="card-title text-base">{{t "admin.translations" $.Lang}}</h3>
+                <div class="space-y-1 text-sm">
+                {{range .Translations}}
+                <div class="flex justify-between py-1 border-b border-base-200">
+                    <span class="badge badge-ghost badge-sm">{{.LanguageCode}}</span>
+                    <span class="text-base-content/60">{{.Name}}</span>
+                </div>
+                {{end}}
+                </div>
+            </div>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+{{end}}

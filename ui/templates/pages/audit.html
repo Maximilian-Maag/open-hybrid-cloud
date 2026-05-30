@@ -1,0 +1,36 @@
+{{define "title"}}{{t "audit.title" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6">
+    <h2 class="text-2xl font-bold">{{t "audit.title" .Lang}}</h2>
+    <p class="text-base-content/60 text-sm mt-1">{{t "audit.subtitle" .Lang}}</p>
+</div>
+
+{{with .Data}}
+{{if .Entries}}
+<div class="overflow-x-auto">
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>{{t "audit.timestamp" $.Lang}}</th>
+                <th>{{t "audit.action" $.Lang}}</th>
+                <th>{{t "audit.entity" $.Lang}}</th>
+                <th>{{t "audit.details" $.Lang}}</th>
+            </tr>
+        </thead>
+        <tbody>
+        {{range .Entries}}
+        <tr>
+            <td class="text-xs text-base-content/60 whitespace-nowrap">{{.CreatedAt.Format "02.01.2006 15:04:05"}}</td>
+            <td class="font-mono text-xs">{{.Action}}</td>
+            <td class="font-mono text-xs">{{.EntityID}}</td>
+            <td class="text-xs text-base-content/60">{{.Details}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="text-center py-16 text-base-content/50">{{t "audit.empty" $.Lang}}</div>
+{{end}}
+{{end}}
+{{end}}

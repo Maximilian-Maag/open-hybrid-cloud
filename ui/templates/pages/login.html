@@ -1,0 +1,37 @@
+{{define "title"}}Infra Webshop{{end}}
+{{define "content"}}
+<div class="min-h-screen flex items-center justify-center bg-base-200">
+    <div class="card bg-base-100 shadow-xl w-full max-w-sm">
+        <div class="card-body">
+            <h1 class="text-2xl font-bold text-center mb-2">Infra Webshop</h1>
+            <p class="text-center text-base-content/60 text-sm mb-4">PORR Digital Unit</p>
+
+            {{if .Data}}{{with .Data}}
+            {{if .Error}}
+            <div class="alert alert-error text-sm mb-4">{{.Error}}</div>
+            {{end}}
+
+            {{if .OIDCEnabled}}
+            <a href="/auth/start" class="btn btn-primary w-full mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.22C21 6.73 16.74 3 12 3c-4.69 0-9 3.65-9 9.28C3 16.93 7.14 21 12 21c.34 0 .67-.02 1-.06V17.5A5.5 5.5 0 1112 6.5a5.5 5.5 0 015 3.22C18.5 11.5 21 12 21 12.22z"/></svg>
+                {{t "login.entra" $.Lang}}
+            </a>
+            <div class="divider text-xs">{{t "login.or" $.Lang}}</div>
+            {{end}}
+            {{end}}{{end}}
+
+            <form method="POST" action="/login" class="space-y-4">
+                <div class="form-control">
+                    <label class="label"><span class="label-text text-sm">{{t "login.email" .Lang}}</span></label>
+                    <input type="email" name="email" class="input input-bordered input-sm" required autofocus />
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text text-sm">{{t "login.password" .Lang}}</span></label>
+                    <input type="password" name="password" class="input input-bordered input-sm" required />
+                </div>
+                <button type="submit" class="btn btn-neutral w-full btn-sm">{{t "login.submit" .Lang}}</button>
+            </form>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,92 @@
+{{define "title"}}{{with .Data}}{{if .Product}}{{.Product.Name}}{{end}}{{end}}{{end}}
+{{define "content"}}
+{{with .Data}}
+{{if .Product}}
+<div class="text-sm breadcrumbs mb-5 text-base-content/55">
+    <ul>
+        <li><a href="/catalog" class="hover:text-primary">{{t "nav.catalog" $.Lang}}</a></li>
+        <li class="text-base-content/80">{{.Product.Name}}</li>
+    </ul>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 space-y-6">
+        <div>
+            <h2 class="text-3xl font-bold">{{.Product.Name}}</h2>
+            {{if .Product.Description}}
+            <p class="text-base-content/65 mt-3 text-base leading-relaxed">{{.Product.Description}}</p>
+            {{end}}
+        </div>
+
+        {{if .Parameters}}
+        <div class="card bg-base-100 border border-base-300">
+            <div class="card-body">
+                <h3 class="card-title text-base mb-1">{{t "product.params" $.Lang}}</h3>
+                <p class="text-xs text-base-content/50 mb-3">{{t "product.params_hint" $.Lang}}</p>
+                <div class="overflow-x-auto">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr class="text-xs uppercase text-base-content/40">
+                                <th>{{t "param.name_col" $.Lang}}</th>
+                                <th>{{t "param.type" $.Lang}}</th>
+                                <th class="text-center">{{t "param.required" $.Lang}}</th>
+                                <th>{{t "param.default" $.Lang}}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {{range .Parameters}}
+                        <tr>
+                            <td>
+                                <code class="text-xs bg-base-200 px-1.5 py-0.5 rounded font-mono">{{.Name}}</code>
+                                {{if .Description}}<div class="text-xs text-base-content/45 mt-0.5">{{.Description}}</div>{{end}}
+                            </td>
+                            <td><span class="badge badge-ghost badge-xs">{{.Type}}</span></td>
+                            <td class="text-center">
+                                {{if .Required}}<span class="badge badge-warning badge-xs">{{t "common.yes" $.Lang}}</span>
+                                {{else}}<span class="text-base-content/25 text-xs">–</span>{{end}}
+                            </td>
+                            <td class="font-mono text-xs text-base-content/50">
+                                {{if .DefaultValue}}{{.DefaultValue}}{{else}}<span class="text-base-content/25">–</span>{{end}}
+                            </td>
+                        </tr>
+                        {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {{end}}
+    </div>
+
+    <div class="lg:col-span-1">
+        <div class="card bg-base-100 border border-base-300 sticky top-6">
+            <div class="card-body">
+                <h3 class="font-bold text-base mb-1">{{t "product.choose_env" $.Lang}}</h3>
+                <p class="text-xs text-base-content/50 mb-4">{{t "product.env_hint" $.Lang}}</p>
+                {{if .Environments}}
+                <div class="space-y-2">
+                    {{range .Environments}}
+                    <a href="/orders/new?product={{$.Product.ID}}&env={{.ID}}"
+                       class="flex items-center justify-between p-3.5 rounded-lg border border-base-300 hover:border-primary hover:bg-primary/5 transition-all cursor-pointer group">
+                        <div class="font-semibold text-sm group-hover:text-primary transition-colors">{{.Name}}</div>
+                        <div class="text-right shrink-0">
+                            <div class="text-base font-bold">{{printf "%.0f" .Price}}</div>
+                            <div class="text-xs text-base-content/45">{{.Currency}}{{t "price.per_month_s" $.Lang}}</div>
+                        </div>
+                    </a>
+                    {{end}}
+                </div>
+                <p class="text-xs text-base-content/40 mt-3 text-center">{{t "price.vat_note" $.Lang}}</p>
+                {{else}}
+                <div class="text-center py-6">
+                    <p class="text-sm text-base-content/50">{{t "product.no_envs" $.Lang}}</p>
+                    <p class="text-xs text-base-content/35 mt-1">{{t "common.contact_admin" $.Lang}}</p>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+{{end}}
+{{end}}

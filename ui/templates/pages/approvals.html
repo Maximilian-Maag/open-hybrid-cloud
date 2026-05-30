@@ -1,0 +1,43 @@
+{{define "title"}}{{t "approvals.title" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6">
+    <h2 class="text-2xl font-bold">{{t "approvals.title" .Lang}}</h2>
+    <p class="text-base-content/60 text-sm mt-1">{{t "approvals.subtitle" .Lang}}</p>
+</div>
+
+{{with .Data}}
+{{if .Orders}}
+<div class="space-y-4">
+    {{range .Orders}}
+    <div class="card bg-base-100 border border-base-300" x-data="{ showReject: false }">
+        <div class="card-body">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="font-semibold">{{t "approvals.order" $.Lang}} #{{.ID}}</p>
+                    <p class="text-sm text-base-content/60">{{.CreatedAt.Format "02.01.2006 15:04"}}</p>
+                </div>
+                <div class="flex gap-2">
+                    <form method="POST" action="/approvals/{{.ID}}/approve">
+                        <button type="submit" class="btn btn-success btn-sm">{{t "action.approve" $.Lang}}</button>
+                    </form>
+                    <button @click="showReject = !showReject" class="btn btn-error btn-sm btn-outline">{{t "action.reject" $.Lang}}</button>
+                </div>
+            </div>
+
+            <div x-show="showReject" x-cloak class="mt-4 border-t border-base-300 pt-4">
+                <form method="POST" action="/approvals/{{.ID}}/reject" class="flex gap-2">
+                    <input type="text" name="note" placeholder="{{t "approvals.reject_note" $.Lang}}" class="input input-bordered input-sm flex-1" required />
+                    <button type="submit" class="btn btn-error btn-sm">{{t "action.reject" $.Lang}}</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{else}}
+<div class="text-center py-16 text-base-content/50">
+    <p>{{t "approvals.empty" $.Lang}}</p>
+</div>
+{{end}}
+{{end}}
+{{end}}

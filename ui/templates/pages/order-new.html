@@ -1,0 +1,96 @@
+{{define "title"}}{{t "order_new.title" .Lang}}{{end}}
+{{define "content"}}
+{{with .Data}}
+<div class="mb-4">
+    <a href="/catalog" class="btn btn-ghost btn-sm">{{t "order_new.back" $.Lang}}</a>
+</div>
+
+<h2 class="text-2xl font-bold mb-6">{{t "order_new.title" $.Lang}}</h2>
+
+<form method="POST" action="/orders/new" class="max-w-2xl space-y-6">
+    {{if .Product}}
+    <input type="hidden" name="product_id" value="{{.Product.ID}}" />
+    {{end}}
+    {{if .Environment}}
+    <input type="hidden" name="environment_id" value="{{.Environment.ID}}" />
+    {{end}}
+
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body">
+            <h3 class="card-title text-base">{{t "order_new.product_env" $.Lang}}</h3>
+            <div class="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                    <span class="text-base-content/60">{{t "order.product" $.Lang}}</span>
+                    <p class="font-medium">{{if .Product}}{{.Product.Name}}{{else}}—{{end}}</p>
+                </div>
+                <div>
+                    <span class="text-base-content/60">{{t "order.env" $.Lang}}</span>
+                    <p class="font-medium">{{if .Environment}}{{.Environment.Name}}{{else}}—{{end}}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">{{t "order_new.project" $.Lang}}</span></label>
+        <select name="project_id" class="select select-bordered" required>
+            <option value="">{{t "order_new.choose" $.Lang}}</option>
+            {{range .Projects}}
+            <option value="{{.ID}}">{{.Name}}</option>
+            {{end}}
+        </select>
+        <div class="mt-1">
+            <a href="/projects/new" class="text-xs text-primary">{{t "order_new.new_project" $.Lang}}</a>
+        </div>
+    </div>
+
+    {{if .CostCenters}}
+    <div class="form-control">
+        <label class="label"><span class="label-text font-medium">{{t "order_new.cost_center" $.Lang}}</span></label>
+        <select name="cost_center_id" class="select select-bordered">
+            <option value="">{{t "order_new.by_project" $.Lang}}</option>
+            {{range .CostCenters}}
+            {{if .Active}}<option value="{{.ID}}">{{.Code}} — {{.Name}}</option>{{end}}
+            {{end}}
+        </select>
+    </div>
+    {{end}}
+
+    {{if .Parameters}}
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body">
+            <h3 class="card-title text-base">{{t "order_new.parameters" $.Lang}}</h3>
+            <div class="space-y-3">
+            {{range .Parameters}}
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text text-sm font-mono">{{.Name}}{{if .Required}} <span class="text-error">*</span>{{end}}</span>
+                    {{if .Description}}<span class="label-text-alt text-xs text-base-content/60">{{.Description}}</span>{{end}}
+                </label>
+                {{if eq (printf "%s" .Type) "bool"}}
+                <select name="{{.Name}}" class="select select-bordered select-sm">
+                    <option value="false">false</option>
+                    <option value="true">true</option>
+                </select>
+                {{else}}
+                <input type="{{if eq (printf "%s" .Type) "number"}}number{{else}}text{{end}}"
+                       name="{{.Name}}"
+                       value="{{.DefaultValue}}"
+                       class="input input-bordered input-sm"
+                       {{if .Required}}required{{end}}
+                       {{if .Sensitive}}autocomplete="off"{{end}} />
+                {{end}}
+            </div>
+            {{end}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    <div class="flex gap-3">
+        <button type="submit" class="btn btn-primary">{{t "action.submit_order" $.Lang}}</button>
+        <a href="/catalog" class="btn btn-ghost">{{t "common.cancel" $.Lang}}</a>
+    </div>
+</form>
+{{end}}
+{{end}}

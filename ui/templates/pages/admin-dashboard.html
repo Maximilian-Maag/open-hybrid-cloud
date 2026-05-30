@@ -1,0 +1,51 @@
+{{define "title"}}{{t "admin.title" .Lang}}{{end}}
+{{define "content"}}
+<h2 class="text-2xl font-bold mb-6">{{t "admin.title" .Lang}}</h2>
+
+{{with .Data}}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="stat bg-base-100 border border-base-300 rounded-box">
+        <div class="stat-title">{{t "admin.categories" $.Lang}}</div>
+        <div class="stat-value text-2xl">{{.CategoryCount}}</div>
+        <div class="stat-actions"><a href="/admin/categories" class="btn btn-xs">{{t "admin.manage" $.Lang}}</a></div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-box">
+        <div class="stat-title">{{t "admin.products" $.Lang}}</div>
+        <div class="stat-value text-2xl">{{.ProductCount}}</div>
+        <div class="stat-actions"><a href="/admin/products" class="btn btn-xs">{{t "admin.manage" $.Lang}}</a></div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-box">
+        <div class="stat-title">{{t "admin.environments" $.Lang}}</div>
+        <div class="stat-value text-2xl">{{.EnvironmentCount}}</div>
+        <div class="stat-actions"><a href="/admin/environments" class="btn btn-xs">{{t "admin.manage" $.Lang}}</a></div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-box">
+        <div class="stat-title">{{t "admin.users" $.Lang}}</div>
+        <div class="stat-value text-2xl">{{.UserCount}}</div>
+        <div class="stat-actions"><a href="/admin/users" class="btn btn-xs">{{t "admin.manage" $.Lang}}</a></div>
+    </div>
+</div>
+{{end}}
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body">
+            <h3 class="card-title text-base">{{t "admin.catalog" .Lang}}</h3>
+            <ul class="space-y-1 text-sm">
+                <li><a href="/admin/categories" class="link link-hover">{{t "admin.cat_manage" .Lang}}</a></li>
+                <li><a href="/admin/products" class="link link-hover">{{t "admin.prod_manage" .Lang}}</a></li>
+            </ul>
+        </div>
+    </div>
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body">
+            <h3 class="card-title text-base">{{t "admin.infra_config" .Lang}}</h3>
+            <ul class="space-y-1 text-sm">
+                <li><a href="/admin/sources" class="link link-hover">{{t "admin.gitlab_sources" .Lang}}</a></li>
+                <li><a href="/admin/environments" class="link link-hover">{{t "admin.deploy_envs" .Lang}}</a></li>
+                <li><a href="/admin/costcenters" class="link link-hover">{{t "admin.cost_centers" .Lang}}</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+{{end}}

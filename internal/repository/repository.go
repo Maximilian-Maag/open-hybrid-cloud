@@ -8,12 +8,30 @@ import (
 	"github.com/porr-ag/infra-webshop/internal/model"
 )
 
+type UserRepository interface {
+	FindByID(ctx context.Context, id int64) (*model.User, error)
+	FindByEmail(ctx context.Context, email string) (*model.User, error)
+	FindBySSOSub(ctx context.Context, sub string) (*model.User, error)
+	FindAll(ctx context.Context) ([]model.User, error)
+	Save(ctx context.Context, user *model.User) error
+	Update(ctx context.Context, user *model.User) error
+}
+
+type CategoryRepository interface {
+	FindAll(ctx context.Context) ([]model.Category, error)
+	FindByID(ctx context.Context, id int64) (*model.Category, error)
+	Save(ctx context.Context, category *model.Category) error
+	Update(ctx context.Context, category *model.Category) error
+	Delete(ctx context.Context, id int64) error
+}
+
 type ProductRepository interface {
 	FindAll(ctx context.Context) ([]model.Product, error)
 	FindByID(ctx context.Context, id int64) (*model.Product, error)
 	FindByCategoryID(ctx context.Context, categoryID int64) ([]model.Product, error)
 	Save(ctx context.Context, product *model.Product) error
 	Update(ctx context.Context, product *model.Product) error
+	Delete(ctx context.Context, id int64) error
 }
 
 type ProductTranslationRepository interface {
@@ -22,13 +40,42 @@ type ProductTranslationRepository interface {
 	Upsert(ctx context.Context, t *model.ProductTranslation) error
 }
 
-type OrderRepository interface {
-	FindByID(ctx context.Context, id int64) (*model.Order, error)
-	FindByUserID(ctx context.Context, userID int64) ([]model.Order, error)
-	FindByStatus(ctx context.Context, status model.OrderStatus) ([]model.Order, error)
-	Save(ctx context.Context, order *model.Order) error
-	UpdateStatus(ctx context.Context, id int64, status model.OrderStatus) error
-	UpdatePipelineID(ctx context.Context, id int64, pipelineID string) error
+type ParameterRepository interface {
+	FindByScope(ctx context.Context, scope model.ParameterScope, scopeID int64) ([]model.Parameter, error)
+	FindByID(ctx context.Context, id int64) (*model.Parameter, error)
+	Save(ctx context.Context, p *model.Parameter) error
+	Update(ctx context.Context, p *model.Parameter) error
+	Delete(ctx context.Context, id int64) error
+}
+
+type GitLabSourceRepository interface {
+	FindAll(ctx context.Context) ([]model.GitLabSource, error)
+	FindByID(ctx context.Context, id int64) (*model.GitLabSource, error)
+	Save(ctx context.Context, s *model.GitLabSource) error
+	Update(ctx context.Context, s *model.GitLabSource) error
+	Delete(ctx context.Context, id int64) error
+}
+
+type EnvironmentRepository interface {
+	FindAll(ctx context.Context) ([]model.DeploymentEnvironment, error)
+	FindByID(ctx context.Context, id int64) (*model.DeploymentEnvironment, error)
+	Save(ctx context.Context, env *model.DeploymentEnvironment) error
+	Update(ctx context.Context, env *model.DeploymentEnvironment) error
+	Delete(ctx context.Context, id int64) error
+}
+
+type ProductEnvironmentRepository interface {
+	FindByProductID(ctx context.Context, productID int64) ([]model.ProductEnvironment, error)
+	FindByProductAndEnv(ctx context.Context, productID, envID int64) (*model.ProductEnvironment, error)
+	Upsert(ctx context.Context, pe *model.ProductEnvironment) error
+	Delete(ctx context.Context, productID, envID int64) error
+}
+
+type CostCenterRepository interface {
+	FindAll(ctx context.Context) ([]model.CostCenter, error)
+	FindByID(ctx context.Context, id int64) (*model.CostCenter, error)
+	Save(ctx context.Context, cc *model.CostCenter) error
+	Update(ctx context.Context, cc *model.CostCenter) error
 }
 
 type ProjectRepository interface {
@@ -39,20 +86,14 @@ type ProjectRepository interface {
 	Update(ctx context.Context, project *model.Project) error
 }
 
-type UserRepository interface {
-	FindByID(ctx context.Context, id int64) (*model.User, error)
-	FindByEmail(ctx context.Context, email string) (*model.User, error)
-	FindBySSOSub(ctx context.Context, sub string) (*model.User, error)
-	FindAll(ctx context.Context) ([]model.User, error)
-	Save(ctx context.Context, user *model.User) error
-	Update(ctx context.Context, user *model.User) error
-}
-
-type AuditRepository interface {
-	Save(ctx context.Context, entry *model.AuditEntry) error
-	FindAll(ctx context.Context) ([]model.AuditEntry, error)
-	FindByUserID(ctx context.Context, userID int64) ([]model.AuditEntry, error)
-	FindByAction(ctx context.Context, action model.AuditAction) ([]model.AuditEntry, error)
+type OrderRepository interface {
+	FindByID(ctx context.Context, id int64) (*model.Order, error)
+	FindByUserID(ctx context.Context, userID int64) ([]model.Order, error)
+	FindByStatus(ctx context.Context, status model.OrderStatus) ([]model.Order, error)
+	Save(ctx context.Context, order *model.Order) error
+	UpdateStatus(ctx context.Context, id int64, status model.OrderStatus) error
+	UpdateRejection(ctx context.Context, id int64, note string) error
+	UpdatePipelineID(ctx context.Context, id int64, pipelineID string) error
 }
 
 type InfrastructureRepository interface {
@@ -61,4 +102,11 @@ type InfrastructureRepository interface {
 	FindByID(ctx context.Context, id int64) (*model.InfrastructureElement, error)
 	Save(ctx context.Context, el *model.InfrastructureElement) error
 	UpdateStatus(ctx context.Context, id int64, status model.OrderStatus) error
+}
+
+type AuditRepository interface {
+	Save(ctx context.Context, entry *model.AuditEntry) error
+	FindAll(ctx context.Context) ([]model.AuditEntry, error)
+	FindByUserID(ctx context.Context, userID int64) ([]model.AuditEntry, error)
+	FindByAction(ctx context.Context, action model.AuditAction) ([]model.AuditEntry, error)
 }

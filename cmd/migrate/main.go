@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
+
+	"github.com/porr-ag/infra-webshop/internal/db"
+	"github.com/porr-ag/infra-webshop/internal/migrations"
 )
 
 func main() {
@@ -11,7 +15,17 @@ func main() {
 		dbURL = "postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable"
 	}
 
-	slog.Info("running migrations", "database", dbURL)
-	// TODO: implement schema migrations (e.g. via golang-migrate or goose)
+	ctx := context.Background()
+	pool, err := db.New(ctx, dbURL)
+	if err != nil {
+		slog.Error("database connection failed", "err", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	if err := migrations.Run(ctx, pool); err != nil {
+		slog.Error("migrations failed", "err", err)
+		os.Exit(1)
+	}
 	slog.Info("migrations complete")
 }

@@ -15,12 +15,13 @@ const (
 // --- Benutzer ---
 
 type User struct {
-	ID        int64
-	Email     string
-	Name      string
-	Role      Role
-	SSOSub    string // Entra ID Subject-Claim, leer bei lokalen Accounts
-	CreatedAt time.Time
+	ID           int64
+	Email        string
+	Name         string
+	Role         Role
+	SSOSub       string // Entra ID Subject-Claim, leer bei lokalen Accounts
+	PasswordHash string // nur bei lokalen Accounts (Webshop Admin)
+	CreatedAt    time.Time
 }
 
 // --- Produktkatalog ---
@@ -37,6 +38,9 @@ type Product struct {
 	BaseLanguage string
 	Image        []byte
 	CreatedAt    time.Time
+	// Computed from product_translations at service level — not persisted
+	Name        string
+	Description string
 }
 
 type ProductTranslation struct {

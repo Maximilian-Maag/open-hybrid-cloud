@@ -1,0 +1,49 @@
+{{define "title"}}{{t "infra.title" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6">
+    <h2 class="text-2xl font-bold">{{t "infra.title" .Lang}}</h2>
+    <p class="text-base-content/60 text-sm mt-1">{{t "infra.subtitle" .Lang}}</p>
+</div>
+
+{{with .Data}}
+{{if .Elements}}
+<div class="overflow-x-auto">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>{{t "common.status" $.Lang}}</th>
+                <th>{{t "infra.deployed" $.Lang}}</th>
+                <th>{{t "infra.parameters" $.Lang}}</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {{range .Elements}}
+        <tr class="hover">
+            <td class="font-mono text-sm">{{.ID}}</td>
+            <td>
+                <span class="badge badge-sm {{statusBadgeClass .Status}}">{{statusLabel $.Lang .Status}}</span>
+            </td>
+            <td class="text-sm text-base-content/60">{{.DeployedAt.Format "02.01.2006 15:04"}}</td>
+            <td class="text-xs text-base-content/50">{{len .Parameters}}</td>
+            <td>
+                {{if or (eq (printf "%s" .Status) "completed") (eq (printf "%s" .Status) "provisioning")}}
+                <form method="POST" action="/infrastructure/{{.ID}}/decommission"
+                      onsubmit="return confirm('{{t "infra.confirm_decomm" $.Lang}}')">
+                    <button type="submit" class="btn btn-warning btn-xs">{{t "action.decomm" $.Lang}}</button>
+                </form>
+                {{end}}
+            </td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="text-center py-16 text-base-content/50">
+    <p>{{t "infra.empty" $.Lang}}</p>
+</div>
+{{end}}
+{{end}}
+{{end}}

@@ -181,3 +181,33 @@ Under **Infrastructure**:
 - Complete overview of all deployed infrastructure elements, grouped by project and environment
 - As Webshop Admin all projects are visible (including those of other users)
 - Decommissioning is available via the infrastructure overview (destroy webhook)
+
+---
+
+## 9. Shop Design
+
+Under **Administration → Shop Design** (or directly at `/admin/branding`):
+
+### 9.1 Colors
+
+- **Primary color**: Used for the header, footer and navigation bar. Default: `#131921` (dark blue).
+- **Accent color**: Used for buttons and call-to-action elements. Default: `#febd69` (amber).
+- The live preview on the right updates in real time as you change the color values.
+
+### 9.2 Logo
+
+- Upload a logo image (PNG or SVG recommended, max. 200 px height)
+- The logo replaces the shop name text in the header
+- Leave empty to display the shop name as plain text
+
+### 9.3 Shop Name and Subtitle
+
+- **Shop name**: Displayed in the header and browser title. Overrides the `APP_NAME` environment variable when set. Leave empty to use the env var.
+- **Subtitle / Tagline**: Short description shown in the footer. Overrides `APP_SUBTITLE`.
+
+### 9.4 Imprint (Legal Notice)
+
+- Enter the full imprint text in the **Imprint** field (plain text, line breaks are preserved)
+- Once saved, an **Imprint** link appears in the footer
+- The imprint is publicly accessible at `/impressum` (no login required)
+- Leave empty to hide the imprint link entirely

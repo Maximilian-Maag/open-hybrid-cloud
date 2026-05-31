@@ -112,7 +112,8 @@
   backgroundcolor=\color{code-bg},
   basicstyle=\ttfamily\footnotesize,
   breaklines=true,
-  breakatwhitespace=true,
+  breakatwhitespace=false,
+  postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\enspace},
   frame=single,
   framesep=4pt,
   rulecolor=\color{gray!40},
@@ -121,6 +122,7 @@
   captionpos=b,
   xleftmargin=6pt,
   xrightmargin=6pt,
+  columns=flexible,
 }
 \lstdefinestyle{bash}{
   language=bash,
@@ -193,6 +195,10 @@
 \usepackage{pdflscape}
 \usepackage{amsmath}
 \usepackage{pifont}
+% xurl extends hyperref's \url to allow line breaks at more characters
+\usepackage{xurl}
+% Allow generous inter-word spacing to prevent overfull hboxes in text
+\setlength{\emergencystretch}{3em}
 \newcommand{\cmark}{\ding{51}}
 \newcommand{\xmark}{\ding{55}}
 
@@ -381,6 +387,7 @@ systems it depends on.
 
 \begin{figure}[H]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[node distance=1.0cm and 1.2cm]
 
   % Central system
@@ -419,7 +426,7 @@ systems it depends on.
   \draw[c4arrow] (ws) -- node[c4label, left=1pt]{JSON/HTTPS} (ai);
   \draw[c4arrow] (ws) -- node[c4label, right=1pt]{SMTP} (smtp);
 
-\end{tikzpicture}
+\end{tikzpicture}}%
 \caption{C4 Level 1 — System Context Diagram}
 \label{fig:c4-l1}
 \end{figure}
@@ -1268,8 +1275,8 @@ per VM (\code{vm-\{label\}}). Webhook-triggered by the webshop.
   \item[Resources created:]
     \code{linode\_firewall} (VM-specific), \code{linode\_instance},
     \code{linode\_firewall\_device} (attaches firewall to VM),
-    \code{linode\_volume} (optional block storage), \code{linode\_domain\_record}
-    (optional A record).
+    \code{linode\_volume} (optional block storage),
+    \code{linode\_domain\_record} (optional A record).
   \item[Key design choice:]
     The VM gets its own firewall (in addition to the base firewall from
     \code{network-core}) to allow per-VM port rules without affecting
@@ -1398,28 +1405,29 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[node distance=1.4cm and 2.0cm,
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.2cm and 1.6cm,
   box/.style={rectangle, draw=porr-blue!70, fill=porr-blue!10,
-              text width=3.2cm, align=center, minimum height=1.1cm, font=\small\bfseries},
+              text width=2.8cm, align=center, minimum height=1.1cm, font=\small\bfseries},
   db/.style={cylinder, draw=c4-database!80, fill=c4-database!20,
-             shape border rotate=90, text width=2.4cm, align=center,
+             shape border rotate=90, text width=2.2cm, align=center,
              minimum height=1.2cm, font=\small\bfseries},
   ext/.style={rectangle, draw=gray!60, fill=gray!10, dashed,
-              text width=2.8cm, align=center, minimum height=1.0cm, font=\small},
+              text width=2.4cm, align=center, minimum height=1.0cm, font=\small},
   arr/.style={->, >=Stealth, thick, gray!60}]
 
   \node[ext] (client) {Browser\\/ API Client};
-  \node[box, right=2.5cm of client] (nginx) {Nginx\\\scriptsize TLS termination\\reverse proxy};
-  \node[box, right=2.5cm of nginx] (app) {infra-webshop\\\scriptsize Docker container\\:8080};
-  \node[db, right=2.5cm of app] (pg) {PostgreSQL\\\scriptsize Docker container\\:5432};
-  \node[ext, below=1.5cm of nginx] (letsenc) {Let's Encrypt\\\scriptsize or Corporate CA};
+  \node[box, right=1.6cm of client] (nginx) {Nginx\\\scriptsize TLS termination\\reverse proxy};
+  \node[box, right=1.6cm of nginx] (app) {infra-webshop\\\scriptsize Docker\\:8080};
+  \node[db, right=1.6cm of app] (pg) {PostgreSQL\\\scriptsize :5432};
+  \node[ext, below=1.2cm of nginx] (letsenc) {Let's Encrypt\\\scriptsize or Corporate CA};
 
   \draw[arr] (client) -- node[above,font=\tiny]{HTTPS:443} (nginx);
   \draw[arr] (nginx)  -- node[above,font=\tiny]{HTTP:8080} (app);
   \draw[arr] (app)    -- node[above,font=\tiny]{TCP:5432} (pg);
   \draw[arr, dashed] (letsenc) -- node[right,font=\tiny]{cert} (nginx);
 
-\end{tikzpicture}
+\end{tikzpicture}}%
 \caption{Docker Host deployment architecture}
 \label{fig:docker-arch}
 \end{figure}
@@ -1550,6 +1558,7 @@ cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
 
 \begin{figure}[H]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[node distance=1.2cm and 1.8cm,
   pod/.style={rectangle, draw=c4-container!80, fill=c4-container!15,
               text width=2.8cm, align=center, minimum height=1.0cm, font=\small\bfseries},
@@ -1562,7 +1571,7 @@ cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
   \node[ext] (client) {Browser};
   \node[svc, right=1.8cm of client] (ing) {Ingress\\(Nginx)};
   \node[pod, right=1.8cm of ing] (app) {infra-webshop\\Pod(s)};
-  \node[ext, right=1.8cm of app] (pg) {PostgreSQL\\\scriptsize external or\\RDS/Cloud SQL};
+  \node[ext, right=1.8cm of app] (pg) {PostgreSQL\\\scriptsize external};
   \node[svc, below=1.0cm of ing] (cm) {cert-manager\\ClusterIssuer};
   \node[svc, below=1.0cm of app] (hpa) {HPA};
 
@@ -1572,7 +1581,7 @@ cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
   \draw[arr, dashed] (cm) -- (ing);
   \draw[arr, dashed] (hpa) -- (app);
 
-\end{tikzpicture}
+\end{tikzpicture}}%
 \caption{Kubernetes deployment architecture}
 \label{fig:k8s-arch}
 \end{figure}
@@ -1904,7 +1913,8 @@ Under \textbf{Administration → Deployment Environments}:
 \end{enumerate}
 
 \notebox{The Webhook URL points to a specific GitLab project pipeline
-trigger endpoint, e.g.:\\\code{https://gitlab.example.com/api/v4/projects/42/ref/main/trigger/pipeline}}
+trigger endpoint, e.g.:\\
+\url{https://gitlab.example.com/api/v4/projects/42/ref/main/trigger/pipeline}}
 
 \section{SMTP Configuration}
 
@@ -2411,6 +2421,7 @@ make vet
 
 \begin{figure}[H]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
   state/.style={rectangle, rounded corners=6pt, draw=porr-blue!60,
                 fill=porr-blue!10, minimum width=3.2cm,
@@ -2432,7 +2443,7 @@ make vet
   \draw[arr] (prov)   -- node[c4label,above]{\scriptsize pipeline OK} (done);
   \draw[arr] (prov)   -- node[c4label,right]{\scriptsize pipeline fail} (fail);
 
-\end{tikzpicture}
+\end{tikzpicture}}%
 \caption{Order lifecycle state machine}
 \label{fig:lifecycle}
 \end{figure}
@@ -2875,10 +2886,11 @@ translation:
 
 \chapter{OpenTofu Module Variable Reference}
 \label{app:tofu-vars}
+\footnotesize
 
 \section{network-core Variables}
 
-\begin{longtable}{@{}L{3.5cm}lL{6.0cm}l@{}}
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
   \midrule
@@ -2897,7 +2909,7 @@ translation:
 
 \section{vm-platform Variables}
 
-\begin{longtable}{@{}L{3.5cm}lL{6.0cm}l@{}}
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
   \midrule
@@ -2923,7 +2935,7 @@ translation:
 
 \section{k8s-platform Variables}
 
-\begin{longtable}{@{}L{3.8cm}lL{5.8cm}l@{}}
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
   \midrule
@@ -2945,7 +2957,7 @@ translation:
 
 \section{shared-services Variables}
 
-\begin{longtable}{@{}L{3.5cm}lL{6.0cm}l@{}}
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
   \midrule
@@ -2970,7 +2982,7 @@ translation:
 
 \section{observability Variables}
 
-\begin{longtable}{@{}L{3.8cm}lL{5.8cm}l@{}}
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
   \midrule
@@ -2996,7 +3008,8 @@ translation:
 \chapter{HTTP Route Reference}
 \label{app:routes}
 
-\begin{longtable}{@{}llL{5.5cm}l@{}}
+\footnotesize
+\begin{longtable}{@{}lL{7.5cm}L{4.0cm}l@{}}
   \toprule
   \textbf{Method} & \textbf{Path} & \textbf{Description} & \textbf{Role} \\
   \midrule
@@ -3042,11 +3055,12 @@ translation:
 \chapter{Requirements Traceability Matrix}
 \label{app:rtm}
 
-The following tables map each functional and non-functional requirement
+The following table maps each functional and non-functional requirement
 to the implementation location and the handbook section that describes
 it.
 
-\begin{longtable}{@{}lL{4.2cm}L{5.0cm}l@{}}
+\begin{landscape}
+\begin{longtable}{@{}lL{5.5cm}L{9.0cm}l@{}}
   \toprule
   \textbf{ID} & \textbf{Requirement} & \textbf{Implementation} & \textbf{Section} \\
   \midrule
@@ -3128,6 +3142,7 @@ it.
   \caption{Requirements traceability matrix}
   \label{tab:rtm}
 \end{longtable}
+\end{landscape}
 
 \chapter{Compiling This Handbook}
 \label{app:compile}

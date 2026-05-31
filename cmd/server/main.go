@@ -63,6 +63,7 @@ func main() {
 	exchangeRatesRepo := pgRepo.NewExchangeRateRepository(pool)
 	productWebhookRepo := pgRepo.NewProductWebhookRepository(pool)
 	brandingRepo := pgRepo.NewBrandingRepository(pool)
+	appConfigRepo := pgRepo.NewAppConfigRepository(pool)
 
 	// Services
 	auditSvc := audit.NewService(auditRepo)
@@ -74,6 +75,10 @@ func main() {
 
 	// Notification
 	notifier := notification.NewService(cfg, userRepo)
+	if appCfg, err := appConfigRepo.Load(ctx); err == nil && appCfg.SMTPHost != "" {
+		notifier.Reconfigure(appCfg.SMTPHost, appCfg.SMTPPort, appCfg.SMTPFrom,
+			appCfg.SMTPUsername, appCfg.SMTPPassword, appCfg.SMTPTLS)
+	}
 
 	// Exchange rates
 	exchangeSvc := exchange.NewService(cfg.ExchangeRateAPIURL, cfg.ExchangeRateAPIKey)
@@ -81,8 +86,12 @@ func main() {
 		exchangeSvc.LoadRates(rates)
 	}
 
-	// AI translation
-	translator := aitranslation.NewTranslator(cfg.AIProvider, cfg.AIEndpoint, cfg.AIAPIKey, cfg.AIModel)
+	// AI translation — DB config overrides env vars if present
+	aiProvider, aiEndpoint, aiAPIKey, aiModel := cfg.AIProvider, cfg.AIEndpoint, cfg.AIAPIKey, cfg.AIModel
+	if appCfg, err := appConfigRepo.Load(ctx); err == nil && appCfg.AIProvider != "" {
+		aiProvider, aiEndpoint, aiAPIKey, aiModel = appCfg.AIProvider, appCfg.AIEndpoint, appCfg.AIAPIKey, appCfg.AIModel
+	}
+	translator := aitranslation.NewTranslator(aiProvider, aiEndpoint, aiAPIKey, aiModel)
 
 	// Polling worker
 	pollingWorker := polling.NewWorker(orderRepo, infraRepo, envRepo, sourceRepo, userRepo, productWebhookRepo, notifier, pool)
@@ -127,6 +136,7 @@ func main() {
 		ExchangeRates:   exchangeRatesRepo,
 		Translator:      translator,
 		BrandingRepo:    brandingRepo,
+		AppConfigRepo:   appConfigRepo,
 	})
 
 	staticFS, _ := fs.Sub(ui.Static, "static")

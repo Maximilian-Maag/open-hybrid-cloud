@@ -296,8 +296,7 @@ func (h *Handler) adminUserCreate(w http.ResponseWriter, r *http.Request) {
 // ---- Audit ----
 
 func (h *Handler) auditLog(w http.ResponseWriter, r *http.Request) {
-	entries, _ := h.audit.List(r.Context(), service.AuditFilter{})
-	h.render(w, r, "audit.html", map[string]any{"Entries": entries})
+	h.auditLogFiltered(w, r)
 }
 
 func (h *Handler) auditExport(w http.ResponseWriter, r *http.Request) {

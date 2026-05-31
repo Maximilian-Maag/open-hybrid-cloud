@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net"
 	"net/smtp"
 	"strings"
 	"text/template"
@@ -19,10 +18,41 @@ import (
 type Service struct {
 	cfg   *config.Config
 	users repository.UserRepository
+	// smtpOverride holds DB-sourced SMTP settings that override cfg.
+	smtpHost     string
+	smtpPort     string
+	smtpFrom     string
+	smtpUsername string
+	smtpPassword string
+	smtpTLS      bool
+	smtpFromDB   bool // true once Reconfigure has been called with non-empty host
 }
 
 func NewService(cfg *config.Config, users repository.UserRepository) *Service {
 	return &Service{cfg: cfg, users: users}
+}
+
+// Reconfigure replaces the runtime SMTP settings with DB-sourced values.
+// If host is empty, the original config values remain in effect.
+func (s *Service) Reconfigure(host, port, from, username, password string, tls bool) {
+	if host == "" {
+		s.smtpFromDB = false
+		return
+	}
+	s.smtpHost = host
+	s.smtpPort = port
+	s.smtpFrom = from
+	s.smtpUsername = username
+	s.smtpPassword = password
+	s.smtpTLS = tls
+	s.smtpFromDB = true
+}
+
+func (s *Service) effectiveSMTP() (host, port, from, username, password string, useTLS bool) {
+	if s.smtpFromDB {
+		return s.smtpHost, s.smtpPort, s.smtpFrom, s.smtpUsername, s.smtpPassword, s.smtpTLS
+	}
+	return s.cfg.SMTPHost, s.cfg.SMTPPort, s.cfg.SMTPFrom, s.cfg.SMTPUsername, s.cfg.SMTPPassword, s.cfg.SMTPTLS
 }
 
 type emailData struct {
@@ -48,45 +78,47 @@ func renderTmpl(tmplStr string, data any) (string, error) {
 
 // sendHTML sends an HTML email. Returns nil silently if SMTP is not configured.
 func (s *Service) sendHTML(to []string, subject, body string) error {
-	if s.cfg.SMTPHost == "" || s.cfg.SMTPFrom == "" {
+	host, port, from, username, password, useTLS := s.effectiveSMTP()
+	if host == "" || from == "" {
 		return nil
 	}
-	addr := s.cfg.SMTPHost + ":" + s.cfg.SMTPPort
+	addr := host + ":" + port
 
-	msg := "From: " + s.cfg.SMTPFrom + "\r\n" +
+	msg := "From: " + from + "\r\n" +
 		"To: " + strings.Join(to, ", ") + "\r\n" +
 		"Subject: " + subject + "\r\n" +
 		"MIME-Version: 1.0\r\n" +
 		"Content-Type: text/html; charset=utf-8\r\n" +
 		"\r\n" + body
 
-	if s.cfg.SMTPTLS {
-		return s.sendTLS(addr, to, []byte(msg))
+	if useTLS {
+		return s.sendTLSwith(addr, host, to, []byte(msg))
 	}
 
-	var auth smtp.Auth
-	if s.cfg.SMTPUsername != "" {
-		auth = smtp.PlainAuth("", s.cfg.SMTPUsername, s.cfg.SMTPPassword, s.cfg.SMTPHost)
+	var smtpAuth smtp.Auth
+	if username != "" {
+		smtpAuth = smtp.PlainAuth("", username, password, host)
 	}
-	return smtp.SendMail(addr, auth, s.cfg.SMTPFrom, to, []byte(msg))
+	return smtp.SendMail(addr, smtpAuth, from, to, []byte(msg))
 }
 
-func (s *Service) sendTLS(addr string, to []string, msg []byte) error {
-	conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: s.cfg.SMTPHost})
+func (s *Service) sendTLSwith(addr, host string, to []string, msg []byte) error {
+	_, _, from, username, password, _ := s.effectiveSMTP()
+	conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: host})
 	if err != nil {
 		return fmt.Errorf("smtp tls dial: %w", err)
 	}
-	client, err := smtp.NewClient(conn, s.cfg.SMTPHost)
+	client, err := smtp.NewClient(conn, host)
 	if err != nil {
 		return fmt.Errorf("smtp client: %w", err)
 	}
 	defer client.Close()
-	if s.cfg.SMTPUsername != "" {
-		if err := client.Auth(smtp.PlainAuth("", s.cfg.SMTPUsername, s.cfg.SMTPPassword, s.cfg.SMTPHost)); err != nil {
+	if username != "" {
+		if err := client.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
 			return fmt.Errorf("smtp auth: %w", err)
 		}
 	}
-	if err := client.Mail(s.cfg.SMTPFrom); err != nil {
+	if err := client.Mail(from); err != nil {
 		return err
 	}
 	for _, r := range to {
@@ -118,10 +150,6 @@ func (s *Service) findAdminEmails(ctx context.Context) []string {
 	return emails
 }
 
-// dialAddr opens a plain TCP connection for SMTP (used in sendHTML non-TLS path fallback).
-func dialAddr(addr string) (net.Conn, error) {
-	return net.Dial("tcp", addr)
-}
 
 // OrderCreated notifies the orderer and, if isProjectLeader, all admins.
 func (s *Service) OrderCreated(ctx context.Context, order *model.Order, ordererEmail string, isProjectLeader bool) error {

@@ -54,10 +54,32 @@ func (s *userService) VerifyPassword(ctx context.Context, email, password string
 	if err != nil {
 		return nil, err
 	}
-	if u == nil || !auth.CheckPassword(u.PasswordHash, password) {
+	if u == nil || !u.Active || !auth.CheckPassword(u.PasswordHash, password) {
 		return nil, nil
 	}
 	return u, nil
+}
+
+func (s *userService) ChangePassword(ctx context.Context, id int64, currentPassword, newPassword string) error {
+	u, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return fmt.Errorf("user not found")
+	}
+	if !auth.CheckPassword(u.PasswordHash, currentPassword) {
+		return fmt.Errorf("current password incorrect")
+	}
+	hash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	return s.repo.UpdatePassword(ctx, id, hash)
+}
+
+func (s *userService) SetActive(ctx context.Context, id int64, active bool) error {
+	return s.repo.SetActive(ctx, id, active)
 }
 
 func (s *userService) UpsertSSO(ctx context.Context, sub, email, name string, role model.Role) (*model.User, error) {

@@ -51,6 +51,7 @@ type Handler struct {
 	exchangeRates repository.ExchangeRateRepository
 	translator    aitranslation.Translator
 	brandingRepo  repository.BrandingRepository
+	appConfigRepo repository.AppConfigRepository
 
 	pages    pages
 	partials *template.Template
@@ -79,6 +80,7 @@ type Deps struct {
 	ExchangeRates repository.ExchangeRateRepository
 	Translator    aitranslation.Translator
 	BrandingRepo  repository.BrandingRepository
+	AppConfigRepo repository.AppConfigRepository
 }
 
 func New(d Deps) *Handler {
@@ -105,6 +107,7 @@ func New(d Deps) *Handler {
 		exchangeRates:   d.ExchangeRates,
 		translator:      d.Translator,
 		brandingRepo:    d.BrandingRepo,
+		appConfigRepo:   d.AppConfigRepo,
 		pages:           mustBuildPages(),
 		partials:        mustParsePartials(),
 	}
@@ -183,6 +186,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.Handle("GET /admin/users", admin(h.adminUsers))
 	mux.Handle("POST /admin/users", admin(h.adminUserCreate))
+	mux.Handle("GET /admin/users/{id}/edit", admin(h.adminUserEdit))
+	mux.Handle("POST /admin/users/{id}/edit", admin(h.adminUserUpdate))
+	mux.Handle("POST /admin/users/{id}/deactivate", admin(h.adminUserDeactivate))
 
 	mux.Handle("GET /admin/currencies", admin(h.adminCurrencies))
 	mux.Handle("POST /admin/currencies/refresh", admin(h.adminCurrencyRefresh))
@@ -199,12 +205,29 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /admin/products/{id}/webhooks", admin(h.adminProductWebhookCreate))
 	mux.Handle("POST /admin/products/{id}/webhooks/{wid}/delete", admin(h.adminProductWebhookDelete))
 
+	mux.Handle("GET /admin/parameters", admin(h.adminParameters))
+	mux.Handle("POST /admin/parameters", admin(h.adminParameterCreate))
+	mux.Handle("POST /admin/parameters/{id}/delete", admin(h.adminParameterDelete))
+
+	mux.Handle("GET /admin/categories/{id}/parameters", admin(h.adminCategoryParameters))
+	mux.Handle("POST /admin/categories/{id}/parameters", admin(h.adminCategoryParameterCreate))
+	mux.Handle("POST /admin/categories/{id}/parameters/{pid}/delete", admin(h.adminCategoryParameterDelete))
+
+	mux.Handle("GET /admin/smtp", admin(h.adminSMTP))
+	mux.Handle("POST /admin/smtp", admin(h.adminSMTPSave))
+
+	mux.Handle("GET /admin/ai-config", admin(h.adminAIConfig))
+	mux.Handle("POST /admin/ai-config", admin(h.adminAIConfigSave))
+
 	mux.Handle("GET /admin/branding", admin(h.adminBranding))
 	mux.Handle("POST /admin/branding", admin(h.adminBrandingSave))
 	mux.Handle("GET /branding/logo", req(http.HandlerFunc(h.serveBrandingLogo)))
 	mux.Handle("GET /impressum", req(http.HandlerFunc(h.impressum)))
 
 	mux.Handle("GET /products/{id}/image", req(http.HandlerFunc(h.productImage)))
+
+	mux.Handle("GET /settings/profile", req(http.HandlerFunc(h.profilePage)))
+	mux.Handle("POST /settings/profile", req(http.HandlerFunc(h.profileUpdate)))
 
 	mux.Handle("GET /audit", duAdmin(h.auditLog))
 	mux.Handle("GET /audit/export", duAdmin(h.auditExport))

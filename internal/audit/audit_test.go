@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/porr-ag/infra-webshop/internal/model"
 	"github.com/porr-ag/infra-webshop/internal/service"
@@ -35,6 +36,9 @@ func (r *stubAuditRepo) FindByUserID(ctx context.Context, uid int64) ([]model.Au
 }
 func (r *stubAuditRepo) FindByAction(ctx context.Context, action model.AuditAction) ([]model.AuditEntry, error) {
 	return nil, nil
+}
+func (r *stubAuditRepo) FindFiltered(ctx context.Context, userID int64, action model.AuditAction, from, to *time.Time) ([]model.AuditEntry, error) {
+	return r.entries, nil
 }
 
 func TestAuditService_Log_positive(t *testing.T) {

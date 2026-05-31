@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/porr-ag/infra-webshop/internal/model"
 )
@@ -50,6 +51,8 @@ type UserService interface {
 	ListAll(ctx context.Context) ([]model.User, error)
 	VerifyPassword(ctx context.Context, email, password string) (*model.User, error)
 	UpsertSSO(ctx context.Context, sub, email, name string, role model.Role) (*model.User, error)
+	ChangePassword(ctx context.Context, id int64, currentPassword, newPassword string) error
+	SetActive(ctx context.Context, id int64, active bool) error
 }
 
 type AuditService interface {
@@ -60,4 +63,6 @@ type AuditService interface {
 type AuditFilter struct {
 	UserID int64
 	Action model.AuditAction
+	From   *time.Time
+	To     *time.Time
 }

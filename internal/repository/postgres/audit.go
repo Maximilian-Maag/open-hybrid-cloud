@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -54,7 +56,46 @@ func (r *auditRepo) FindByAction(ctx context.Context, action model.AuditAction) 
 	return pgx.CollectRows(rows, scanAudit)
 }
 
+func (r *auditRepo) FindFiltered(ctx context.Context, userID int64, action model.AuditAction, from, to *time.Time) ([]model.AuditEntry, error) {
+	query := `SELECT ` + auditCols + ` FROM audit_log WHERE TRUE`
+	args := []any{}
+	n := 1
+	if userID != 0 {
+		query += ` AND user_id=$` + itoa(n)
+		args = append(args, userID)
+		n++
+	}
+	if action != "" {
+		query += ` AND action=$` + itoa(n)
+		args = append(args, string(action))
+		n++
+	}
+	if from != nil {
+		query += ` AND created_at>=$` + itoa(n)
+		args = append(args, *from)
+		n++
+	}
+	if to != nil {
+		query += ` AND created_at<=$` + itoa(n)
+		args = append(args, *to)
+		n++
+	}
+	query += ` ORDER BY created_at DESC`
+	_ = n
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, scanAudit)
+}
+
 func scanAudit(row pgx.CollectableRow) (model.AuditEntry, error) {
 	var e model.AuditEntry
 	return e, row.Scan(&e.ID, &e.UserID, &e.Action, &e.EntityID, &e.Details, &e.CreatedAt)
+}
+
+func itoa(n int) string {
+	return strconv.Itoa(n)
 }

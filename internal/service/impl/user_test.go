@@ -12,7 +12,11 @@ type stubUserRepo struct {
 	saved *model.User
 }
 
-func (r *stubUserRepo) Save(ctx context.Context, u *model.User) error        { r.saved = u; return nil }
+func (r *stubUserRepo) Save(ctx context.Context, u *model.User) error {
+	u.Active = true
+	r.saved = u
+	return nil
+}
 func (r *stubUserRepo) Update(ctx context.Context, u *model.User) error      { return nil }
 func (r *stubUserRepo) FindByID(ctx context.Context, id int64) (*model.User, error) {
 	if r.saved != nil && r.saved.ID == id {
@@ -33,6 +37,13 @@ func (r *stubUserRepo) FindByRole(ctx context.Context, role model.Role) ([]model
 	return nil, nil
 }
 func (r *stubUserRepo) FindAll(ctx context.Context) ([]model.User, error) { return nil, nil }
+func (r *stubUserRepo) UpdatePassword(ctx context.Context, id int64, passwordHash string) error {
+	if r.saved != nil && r.saved.ID == id {
+		r.saved.PasswordHash = passwordHash
+	}
+	return nil
+}
+func (r *stubUserRepo) SetActive(ctx context.Context, id int64, active bool) error { return nil }
 
 var _ repository.UserRepository = (*stubUserRepo)(nil)
 

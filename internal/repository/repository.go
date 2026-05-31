@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/porr-ag/infra-webshop/internal/model"
 )
@@ -16,6 +17,8 @@ type UserRepository interface {
 	FindAll(ctx context.Context) ([]model.User, error)
 	Save(ctx context.Context, user *model.User) error
 	Update(ctx context.Context, user *model.User) error
+	UpdatePassword(ctx context.Context, id int64, passwordHash string) error
+	SetActive(ctx context.Context, id int64, active bool) error
 }
 
 type CategoryRepository interface {
@@ -124,9 +127,15 @@ type AuditRepository interface {
 	FindAll(ctx context.Context) ([]model.AuditEntry, error)
 	FindByUserID(ctx context.Context, userID int64) ([]model.AuditEntry, error)
 	FindByAction(ctx context.Context, action model.AuditAction) ([]model.AuditEntry, error)
+	FindFiltered(ctx context.Context, userID int64, action model.AuditAction, from, to *time.Time) ([]model.AuditEntry, error)
 }
 
 type BrandingRepository interface {
 	Load(ctx context.Context) (*model.Branding, error)
 	Save(ctx context.Context, b *model.Branding) error
+}
+
+type AppConfigRepository interface {
+	Load(ctx context.Context) (*model.AppConfig, error)
+	Save(ctx context.Context, cfg *model.AppConfig) error
 }

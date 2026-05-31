@@ -19,6 +19,7 @@ type User struct {
 	Email        string
 	Name         string
 	Role         Role
+	Active       bool
 	SSOSub       string // Entra ID Subject-Claim, leer bei lokalen Accounts
 	PasswordHash string // nur bei lokalen Accounts (Webshop Admin)
 	CreatedAt    time.Time
@@ -202,6 +203,21 @@ type Branding struct {
 	ShopName       string
 	ShopSubtitle   string
 	ImprintText    string
+}
+
+// --- App Config ---
+
+type AppConfig struct {
+	SMTPHost     string
+	SMTPPort     string
+	SMTPFrom     string
+	SMTPUsername string
+	SMTPPassword string
+	SMTPTLS      bool
+	AIProvider   string
+	AIEndpoint   string
+	AIAPIKey     string
+	AIModel      string
 }
 
 // --- Audit ---

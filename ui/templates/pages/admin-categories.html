@@ -16,7 +16,8 @@
                 <tr>
                     <td>{{.Name}}</td>
                     <td>{{.DisplayOrder}}</td>
-                    <td>
+                    <td class="flex gap-1">
+                        <a href="/admin/categories/{{.ID}}/parameters" class="btn btn-ghost btn-xs">{{t "admin.parameters" $.Lang}}</a>
                         <form method="POST" action="/admin/categories/{{.ID}}/delete"
                               onsubmit="return confirm('{{t "admin.confirm_delete_cat" $.Lang}}')">
                             <button type="submit" class="btn btn-ghost btn-xs text-error">{{t "common.delete" $.Lang}}</button>

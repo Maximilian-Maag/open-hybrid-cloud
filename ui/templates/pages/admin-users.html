@@ -15,6 +15,8 @@
                     <th>E-Mail</th>
                     <th>{{t "admin.role" $.Lang}}</th>
                     <th>{{t "admin.user_type" $.Lang}}</th>
+                    <th>{{t "admin.status" $.Lang}}</th>
+                    <th></th>
                 </tr></thead>
                 <tbody>
                 {{range .Users}}
@@ -27,6 +29,11 @@
                         {{else}}<span class="badge badge-ghost badge-sm">{{t "admin.role_pl" $.Lang}}</span>{{end}}
                     </td>
                     <td class="text-xs text-base-content/50">{{if .SSOSub}}{{t "admin.sso" $.Lang}}{{else}}{{t "admin.local" $.Lang}}{{end}}</td>
+                    <td>
+                        {{if .Active}}<span class="badge badge-success badge-sm">{{t "admin.active" $.Lang}}</span>
+                        {{else}}<span class="badge badge-error badge-sm">{{t "admin.inactive" $.Lang}}</span>{{end}}
+                    </td>
+                    <td><a href="/admin/users/{{.ID}}/edit" class="btn btn-ghost btn-xs">{{t "common.edit" $.Lang}}</a></td>
                 </tr>
                 {{end}}
                 </tbody>

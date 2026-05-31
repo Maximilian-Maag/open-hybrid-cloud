@@ -69,7 +69,7 @@ func (s *infrastructureService) Decommission(ctx context.Context, elementID, use
 // Pipeline IDs are appended to the infra element's pipeline_id array.
 func (s *infrastructureService) triggerDestroyWebhook(ctx context.Context, el *model.InfrastructureElement, env *model.DeploymentEnvironment) error {
 	vars := buildVars(el.Parameters, "INFRA_ID", strconv.FormatInt(el.ID, 10))
-	vars = append(vars, map[string]string{"key": "DESTROY", "value": "true"})
+	vars = append(vars, map[string]string{"key": "TF_ACTION", "value": "destroy"})
 
 	productWebhooks, _ := s.webhooks.FindByProductAndEnv(ctx, el.ProductID, el.EnvironmentID)
 	if len(productWebhooks) == 0 {

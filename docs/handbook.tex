@@ -1040,39 +1040,41 @@ for the \code{vm-platform} module. Singleton modules differ only in the
 and there is no destroy branch.
 
 \begin{lstlisting}[style=yaml,caption={.gitlab-ci.yml for vm-platform (webhook-triggered module)},label={lst:gitlab-ci-vm}]
+image: ghcr.io/opentofu/opentofu:1.9
+
+variables:
+  TF_ACTION: "apply"
+  TF_STATE_NAME: "vm-${TF_VAR_vm_label}"
+  TF_VAR_linode_token: "${LINODE_TOKEN}"
+
+.tofu_init: &tofu_init
+  before_script:
+    - tofu init
+        -reconfigure
+        -backend-config="address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
+        -backend-config="lock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
+        -backend-config="unlock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
+        -backend-config="username=gitlab-ci-token"
+        -backend-config="password=${CI_JOB_TOKEN}"
+        -backend-config="lock_method=POST"
+        -backend-config="unlock_method=DELETE"
+        -backend-config="retry_wait_min=5"
+
 stages:
   - validate
   - plan
   - apply
 
-variables:
-  TF_ROOT: "."
-  TF_ACTION: "apply"
-  TF_STATE_NAME: "vm-${TF_VAR_vm_label}"
-  GL_TF_STATE_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
-
-.tofu_init: &tofu_init
-  before_script:
-    - tofu init
-      -backend-config="address=${GL_TF_STATE_URL}"
-      -backend-config="lock_address=${GL_TF_STATE_URL}/lock"
-      -backend-config="unlock_address=${GL_TF_STATE_URL}/lock"
-      -backend-config="username=gitlab-ci-token"
-      -backend-config="password=${CI_JOB_TOKEN}"
-      -backend-config="lock_method=POST"
-      -backend-config="unlock_method=DELETE"
-      -backend-config="retry_wait_min=5"
-
 validate:
   stage: validate
-  image: ghcr.io/opentofu/opentofu:1.8
   <<: *tofu_init
   script:
     - tofu validate
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "trigger"
 
 plan:
   stage: plan
-  image: ghcr.io/opentofu/opentofu:1.8
   <<: *tofu_init
   script:
     - tofu plan -out=tfplan
@@ -1080,38 +1082,94 @@ plan:
     paths:
       - tfplan
     expire_in: 1 hour
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "trigger"
 
 apply:
   stage: apply
-  image: ghcr.io/opentofu/opentofu:1.8
   <<: *tofu_init
   script:
     - |
       if [ "${TF_ACTION}" = "destroy" ]; then
         tofu destroy -auto-approve
       else
-        tofu apply tfplan
+        tofu apply -auto-approve tfplan
       fi
   dependencies:
     - plan
-  when: on_success
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "trigger" && $TF_ACTION == "destroy"
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "trigger"
+      when: on_success
 \end{lstlisting}
 
-Listing~\ref{lst:gitlab-ci-singleton} shows the \code{apply} job
-variant used for singleton modules where a human must confirm:
+Listing~\ref{lst:gitlab-ci-singleton} shows a complete pipeline for
+singleton modules (\code{network-core}, \code{shared-services},
+\code{observability}) where a human must confirm the apply step:
 
-\begin{lstlisting}[style=yaml,caption={apply job for singleton modules (when: manual)},label={lst:gitlab-ci-singleton}]
-apply:
-  stage: apply
-  image: ghcr.io/opentofu/opentofu:1.8
+\begin{lstlisting}[style=yaml,caption={.gitlab-ci.yml for singleton modules (manual apply)},label={lst:gitlab-ci-singleton}]
+image: ghcr.io/opentofu/opentofu:1.9
+
+variables:
+  TF_STATE_NAME: "shared-prod"
+  TF_VAR_linode_token: "${LINODE_TOKEN}"
+
+.tofu_init: &tofu_init
+  before_script:
+    - tofu init
+        -backend-config="address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
+        -backend-config="lock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
+        -backend-config="unlock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
+        -backend-config="username=gitlab-ci-token"
+        -backend-config="password=${CI_JOB_TOKEN}"
+        -backend-config="lock_method=POST"
+        -backend-config="unlock_method=DELETE"
+        -backend-config="retry_wait_min=5"
+
+stages:
+  - validate
+  - plan
+  - apply
+
+validate:
+  stage: validate
   <<: *tofu_init
   script:
-    - tofu apply tfplan
+    - tofu validate
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+plan:
+  stage: plan
+  <<: *tofu_init
+  script:
+    - tofu plan -out=tfplan
+  artifacts:
+    paths:
+      - tfplan
+    expire_in: 1 hour
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+apply:
+  stage: apply
+  <<: *tofu_init
+  script:
+    - tofu apply -auto-approve tfplan
   dependencies:
     - plan
-  when: manual
-  allow_failure: false
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
 \end{lstlisting}
+
+\notebox{The single required CI/CD variable to set in the \textit{infra-state}
+GitLab project group is \code{INFRA\_STATE\_PROJECT\_ID} — the numeric project
+ID of the \code{infra-state} repository (visible in GitLab under
+\textbf{Settings → General}). \code{CI\_JOB\_TOKEN} and \code{CI\_API\_V4\_URL}
+are provided automatically by GitLab CI. \code{LINODE\_TOKEN} must be
+set with Read/Write API access.}
 
 \section{Webhook Integration with the Webshop}
 \label{sec:webhook}

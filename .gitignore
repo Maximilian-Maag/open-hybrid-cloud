@@ -58,3 +58,14 @@ Desktop.ini
 # Test- und Coverage-Ausgaben
 coverage.out
 coverage.html
+
+# LaTeX — Hilfsdateien (docs/handbook.pdf wird committed, Aux-Dateien nicht)
+docs/handbook.aux
+docs/handbook.log
+docs/handbook.out
+docs/handbook.toc
+docs/handbook.lof
+docs/handbook.lot
+docs/handbook.fls
+docs/handbook.fdb_latexmk
+docs/handbook.synctex.gz

@@ -63,6 +63,22 @@ func TestUserService_Create_positive(t *testing.T) {
 	}
 }
 
+func TestUserService_VerifyPassword_positive(t *testing.T) {
+	repo := &stubUserRepo{}
+	svc := NewUserService(repo)
+
+	u := &model.User{Email: "alice@example.com"}
+	_ = svc.Create(context.Background(), u, "correct")
+
+	result, err := svc.VerifyPassword(context.Background(), "alice@example.com", "correct")
+	if err != nil {
+		t.Fatalf("VerifyPassword: unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Error("VerifyPassword: expected user for correct password, got nil")
+	}
+}
+
 func TestUserService_VerifyPassword_negative_wrongPassword(t *testing.T) {
 	repo := &stubUserRepo{}
 	svc := NewUserService(repo)
@@ -76,5 +92,67 @@ func TestUserService_VerifyPassword_negative_wrongPassword(t *testing.T) {
 	}
 	if result != nil {
 		t.Error("VerifyPassword: expected nil for wrong password, got user")
+	}
+}
+
+func TestUserService_VerifyPassword_negative_inactiveUser(t *testing.T) {
+	repo := &stubUserRepo{}
+	svc := NewUserService(repo)
+
+	u := &model.User{Email: "carol@example.com"}
+	_ = svc.Create(context.Background(), u, "secret")
+	repo.saved.Active = false
+
+	result, err := svc.VerifyPassword(context.Background(), "carol@example.com", "secret")
+	if err != nil {
+		t.Fatalf("VerifyPassword: unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Error("VerifyPassword: expected nil for inactive user, got user")
+	}
+}
+
+func TestUserService_ChangePassword_positive(t *testing.T) {
+	repo := &stubUserRepo{}
+	svc := NewUserService(repo)
+
+	u := &model.User{Email: "dave@example.com"}
+	_ = svc.Create(context.Background(), u, "old-pass")
+	oldHash := repo.saved.PasswordHash
+
+	err := svc.ChangePassword(context.Background(), repo.saved.ID, "old-pass", "new-pass")
+	if err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+	if repo.saved.PasswordHash == oldHash {
+		t.Error("ChangePassword: expected password hash to change")
+	}
+}
+
+func TestUserService_ChangePassword_negative_wrongCurrentPassword(t *testing.T) {
+	repo := &stubUserRepo{}
+	svc := NewUserService(repo)
+
+	u := &model.User{Email: "eve@example.com"}
+	_ = svc.Create(context.Background(), u, "real-pass")
+
+	err := svc.ChangePassword(context.Background(), repo.saved.ID, "wrong-current", "new-pass")
+	if err == nil {
+		t.Error("ChangePassword: expected error for wrong current password, got nil")
+	}
+}
+
+func TestUserService_SetActive_positive(t *testing.T) {
+	repo := &stubUserRepo{}
+	svc := NewUserService(repo)
+
+	u := &model.User{Email: "frank@example.com"}
+	_ = svc.Create(context.Background(), u, "pass")
+
+	if err := svc.SetActive(context.Background(), repo.saved.ID, false); err != nil {
+		t.Fatalf("SetActive(false): %v", err)
+	}
+	if err := svc.SetActive(context.Background(), repo.saved.ID, true); err != nil {
+		t.Fatalf("SetActive(true): %v", err)
 	}
 }

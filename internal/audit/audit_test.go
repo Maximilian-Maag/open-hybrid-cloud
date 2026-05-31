@@ -65,3 +65,44 @@ func TestAuditService_Log_negative_repoError(t *testing.T) {
 		t.Error("expected error when repo.Save fails, got nil")
 	}
 }
+
+func TestAuditService_List_withFilter_positive(t *testing.T) {
+	repo := &stubAuditRepo{}
+	svc := NewService(repo)
+
+	_ = svc.Log(context.Background(), &model.AuditEntry{UserID: 1, Action: model.AuditActionOrderCreated})
+	_ = svc.Log(context.Background(), &model.AuditEntry{UserID: 2, Action: model.AuditActionOrderApproved})
+
+	// Filter by UserID — stubAuditRepo.FindFiltered returns all entries; test that no error occurs
+	now := time.Now()
+	results, err := svc.List(context.Background(), service.AuditFilter{
+		UserID: 1,
+		From:   &now,
+	})
+	if err != nil {
+		t.Fatalf("List with filter: unexpected error: %v", err)
+	}
+	if results == nil {
+		t.Error("List with filter: expected non-nil slice")
+	}
+}
+
+func TestAuditService_List_noFilter_positive(t *testing.T) {
+	repo := &stubAuditRepo{}
+	svc := NewService(repo)
+
+	for i := 0; i < 3; i++ {
+		_ = svc.Log(context.Background(), &model.AuditEntry{
+			UserID: int64(i + 1),
+			Action: model.AuditActionOrderCreated,
+		})
+	}
+
+	results, err := svc.List(context.Background(), service.AuditFilter{})
+	if err != nil {
+		t.Fatalf("List no filter: %v", err)
+	}
+	if len(results) != 3 {
+		t.Errorf("List no filter: want 3 entries, got %d", len(results))
+	}
+}

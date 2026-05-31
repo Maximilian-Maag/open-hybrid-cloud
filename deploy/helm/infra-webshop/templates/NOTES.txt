@@ -1,0 +1,25 @@
+PORR AG Infra Webshop deployed successfully.
+
+{{- if .Values.migrate.enabled }}
+Database migrations were run as a pre-install/pre-upgrade hook.
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+The application is available at:
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+No Ingress is configured. Access the application via port-forward:
+
+  kubectl port-forward svc/{{ include "infra-webshop.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+
+Then open: http://localhost:8080
+{{- end }}
+
+Initial admin credentials:
+  Email:    {{ .Values.env.adminEmail }}
+  Password: (value of env.adminPassword — change immediately after first login)
+
+To check rollout status:
+  kubectl rollout status deployment/{{ include "infra-webshop.fullname" . }} -n {{ .Release.Namespace }}

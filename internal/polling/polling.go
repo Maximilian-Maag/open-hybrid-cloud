@@ -134,20 +134,55 @@ func (w *Worker) pollOrder(ctx context.Context, o *model.Order) {
 	switch {
 	case anyFailed:
 		_ = w.orders.UpdateStatus(ctx, o.ID, model.OrderStatusFailed)
-		w.updateInfraForOrder(ctx, o.ID, model.OrderStatusFailed)
+		w.updateInfraForOrder(ctx, o.ID, model.OrderStatusFailed, nil)
 		if email := w.userEmail(ctx, o.UserID); email != "" {
 			_ = w.notifier.ProvisioningFailed(ctx, o, email)
 		}
 	case allDone:
 		_ = w.orders.UpdateStatus(ctx, o.ID, model.OrderStatusCompleted)
-		w.updateInfraForOrder(ctx, o.ID, model.OrderStatusCompleted)
+		outputs := w.fetchOutputs(ctx, client, webhookURLs, o.PipelineIDs)
+		w.updateInfraForOrder(ctx, o.ID, model.OrderStatusCompleted, outputs)
 		if email := w.userEmail(ctx, o.UserID); email != "" {
 			_ = w.notifier.ProvisioningCompleted(ctx, o, email)
 		}
 	}
 }
 
-func (w *Worker) updateInfraForOrder(ctx context.Context, orderID int64, status model.OrderStatus) {
+// fetchOutputs retrieves tofu output values from the apply job trace of the last pipeline.
+func (w *Worker) fetchOutputs(ctx context.Context, client *gitlab.Client, webhookURLs []string, pipelineIDs []string) map[string]string {
+	if len(pipelineIDs) == 0 || len(webhookURLs) == 0 {
+		return nil
+	}
+	pid, err := strconv.ParseInt(pipelineIDs[len(pipelineIDs)-1], 10, 64)
+	if err != nil {
+		return nil
+	}
+	projectID, err := extractProjectID(webhookURLs[len(webhookURLs)-1])
+	if err != nil {
+		return nil
+	}
+	jobs, err := client.GetPipelineJobs(ctx, projectID, pid)
+	if err != nil {
+		slog.Warn("polling: get pipeline jobs", "err", err)
+		return nil
+	}
+	for _, job := range jobs {
+		if job.Name != "apply" {
+			continue
+		}
+		trace, err := client.GetJobTrace(ctx, projectID, job.ID)
+		if err != nil {
+			slog.Warn("polling: get job trace", "job_id", job.ID, "err", err)
+			return nil
+		}
+		outputs := gitlab.ParseTofuOutputs(trace)
+		slog.Info("polling: parsed outputs", "job_id", job.ID, "outputs", outputs)
+		return outputs
+	}
+	return nil
+}
+
+func (w *Worker) updateInfraForOrder(ctx context.Context, orderID int64, status model.OrderStatus, outputs map[string]string) {
 	els, err := w.infra.FindByStatuses(ctx, []model.OrderStatus{model.OrderStatusProvisioning})
 	if err != nil {
 		return
@@ -155,6 +190,9 @@ func (w *Worker) updateInfraForOrder(ctx context.Context, orderID int64, status 
 	for _, el := range els {
 		if el.OrderID == orderID {
 			_ = w.infra.UpdateStatus(ctx, el.ID, status)
+			if len(outputs) > 0 {
+				_ = w.infra.UpdateOutputs(ctx, el.ID, outputs)
+			}
 			return
 		}
 	}

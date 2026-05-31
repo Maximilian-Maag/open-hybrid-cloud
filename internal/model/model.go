@@ -190,6 +190,7 @@ type InfrastructureElement struct {
 	Status        OrderStatus
 	Parameters    map[string]string
 	PipelineIDs   []string // GitLab pipeline IDs for polling
+	Outputs       map[string]string // OpenTofu outputs after successful apply
 	DeployedAt    time.Time
 }
 

@@ -109,6 +109,8 @@ type InfrastructureRepository interface {
 	Save(ctx context.Context, el *model.InfrastructureElement) error
 	UpdateStatus(ctx context.Context, id int64, status model.OrderStatus) error
 	AppendPipelineID(ctx context.Context, id int64, pipelineID string) error
+	UpdateOutputs(ctx context.Context, id int64, outputs map[string]string) error
+	FindByOrderID(ctx context.Context, orderID int64) (*model.InfrastructureElement, error)
 }
 
 type ProductWebhookRepository interface {

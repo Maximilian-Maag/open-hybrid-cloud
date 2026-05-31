@@ -4,13 +4,21 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/porr-ag/infra-webshop/internal/gitlab"
 	"github.com/porr-ag/infra-webshop/internal/model"
 )
 
 func (h *Handler) gitlabClientFromSource(r *http.Request) (*gitlab.Client, error) {
-	sourceID, _ := strconv.ParseInt(r.URL.Query().Get("source"), 10, 64)
+	if err := r.ParseForm(); err != nil {
+		// ignore parse errors for query-only requests
+	}
+	sourceValue := r.URL.Query().Get("source")
+	if sourceValue == "" {
+		sourceValue = r.FormValue("source")
+	}
+	sourceID, _ := strconv.ParseInt(sourceValue, 10, 64)
 	src, err := h.gitlabSources.FindByID(r.Context(), sourceID)
 	if err != nil || src == nil {
 		return nil, http.ErrNoCookie // sentinel
@@ -85,6 +93,10 @@ func (h *Handler) gitlabImportVars(w http.ResponseWriter, r *http.Request) {
 	branch := r.FormValue("branch")
 	filePath := r.FormValue("file")
 	productID, _ := strconv.ParseInt(r.FormValue("product_id"), 10, 64)
+	if productID <= 0 {
+		h.redirectWithFlash(w, r, "/admin/products/new", "error", "Please save the product before importing variables.")
+		return
+	}
 
 	content, err := client.GetFile(r.Context(), projectID, branch, filePath)
 	if err != nil {
@@ -101,14 +113,18 @@ func (h *Handler) gitlabImportVars(w http.ResponseWriter, r *http.Request) {
 		case "bool":
 			paramType = model.ParameterTypeBool
 		}
+		name := v.Name
+		if !strings.HasPrefix(name, "TF_VAR_") {
+			name = "TF_VAR_" + name
+		}
 		p := &model.Parameter{
 			Scope:        model.ParameterScopeProduct,
 			ScopeID:      productID,
-			Name:         v.Name,
+			Name:         name,
 			Type:         paramType,
 			Description:  v.Description,
 			DefaultValue: v.DefaultValue,
-			Required:     !v.Sensitive && v.DefaultValue == "",
+			Required:     v.DefaultValue == "",
 			Sensitive:    v.Sensitive,
 		}
 		_ = h.parameters.Save(r.Context(), p)

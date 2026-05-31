@@ -37,13 +37,13 @@ type Handler struct {
 	infra    service.InfrastructureService
 	audit    service.AuditService
 
-	categories   repository.CategoryRepository
-	environments repository.EnvironmentRepository
-	costCenters  repository.CostCenterRepository
-	gitlabSources repository.GitLabSourceRepository
-	parameters   repository.ParameterRepository
-	productEnvs  repository.ProductEnvironmentRepository
-	translations repository.ProductTranslationRepository
+	categories      repository.CategoryRepository
+	environments    repository.EnvironmentRepository
+	costCenters     repository.CostCenterRepository
+	gitlabSources   repository.GitLabSourceRepository
+	parameters      repository.ParameterRepository
+	productEnvs     repository.ProductEnvironmentRepository
+	translations    repository.ProductTranslationRepository
 	productWebhooks repository.ProductWebhookRepository
 
 	notifier      *notification.Service
@@ -58,29 +58,29 @@ type Handler struct {
 }
 
 type Deps struct {
-	Cfg          *config.Config
-	Sessions     *auth.SessionStore
-	OIDC         *auth.OIDCProvider
-	Users        service.UserService
-	Products     service.ProductService
-	Orders       service.OrderService
-	Projects     service.ProjectService
-	Infra        service.InfrastructureService
-	Audit        service.AuditService
-	Categories   repository.CategoryRepository
-	Environments repository.EnvironmentRepository
-	CostCenters  repository.CostCenterRepository
-	GitLabSources repository.GitLabSourceRepository
-	Parameters   repository.ParameterRepository
+	Cfg             *config.Config
+	Sessions        *auth.SessionStore
+	OIDC            *auth.OIDCProvider
+	Users           service.UserService
+	Products        service.ProductService
+	Orders          service.OrderService
+	Projects        service.ProjectService
+	Infra           service.InfrastructureService
+	Audit           service.AuditService
+	Categories      repository.CategoryRepository
+	Environments    repository.EnvironmentRepository
+	CostCenters     repository.CostCenterRepository
+	GitLabSources   repository.GitLabSourceRepository
+	Parameters      repository.ParameterRepository
 	ProductEnvs     repository.ProductEnvironmentRepository
 	Translations    repository.ProductTranslationRepository
 	ProductWebhooks repository.ProductWebhookRepository
-	Notifier      *notification.Service
-	Exchange      *exchange.Service
-	ExchangeRates repository.ExchangeRateRepository
-	Translator    aitranslation.Translator
-	BrandingRepo  repository.BrandingRepository
-	AppConfigRepo repository.AppConfigRepository
+	Notifier        *notification.Service
+	Exchange        *exchange.Service
+	ExchangeRates   repository.ExchangeRateRepository
+	Translator      aitranslation.Translator
+	BrandingRepo    repository.BrandingRepository
+	AppConfigRepo   repository.AppConfigRepository
 }
 
 func New(d Deps) *Handler {
@@ -203,6 +203,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /admin/gitlab/import-vars", admin(h.gitlabImportVars))
 
 	mux.Handle("POST /admin/products/{id}/webhooks", admin(h.adminProductWebhookCreate))
+	mux.Handle("POST /admin/products/{id}/environments", admin(h.adminProductEnvironmentCreate))
+	mux.Handle("POST /admin/products/{id}/parameters", admin(h.adminProductParameterCreate))
+	mux.Handle("POST /admin/products/{id}/parameters/delete-all", admin(h.adminProductParameterDeleteAll))
+	mux.Handle("POST /admin/products/{id}/parameters/{pid}/delete", admin(h.adminProductParameterDelete))
 	mux.Handle("POST /admin/products/{id}/webhooks/{wid}/delete", admin(h.adminProductWebhookDelete))
 
 	mux.Handle("GET /admin/parameters", admin(h.adminParameters))
@@ -298,7 +302,8 @@ func statusLabelI18n(lang string, s interface{}) string {
 	return result
 }
 
-func statusBadgeClass(s string) string {
+func statusBadgeClass(s interface{}) string {
+	status := fmt.Sprintf("%s", s)
 	classes := map[string]string{
 		"pending_approval": "badge-warning",
 		"approved":         "badge-info",
@@ -309,9 +314,8 @@ func statusBadgeClass(s string) string {
 		"decommissioning":  "badge-warning",
 		"decommissioned":   "badge-ghost",
 	}
-	if c, ok := classes[s]; ok {
+	if c, ok := classes[status]; ok {
 		return c
 	}
 	return "badge-ghost"
 }
-

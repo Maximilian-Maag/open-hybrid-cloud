@@ -38,40 +38,8 @@
     {{if .GitLabSources}}
     <div class="card bg-base-100 border border-base-300">
         <div class="card-body space-y-3">
-            <h3 class="card-title text-base">{{t "admin.import_vars" .Lang}}</h3>
-            <p class="text-sm text-base-content/60">{{t "admin.import_vars_hint" $.Lang}}</p>
-            <form method="POST" action="/admin/gitlab/import-vars" class="space-y-3">
-                <input type="hidden" name="product_id" value="0" />
-                <div class="form-control">
-                    <label class="label label-text text-xs">{{t "admin.select_source" $.Lang}}</label>
-                    <select name="source" class="select select-bordered select-sm" id="gl-source"
-                        onchange="loadGLProjects(this.value)">
-                        <option value="">–</option>
-                        {{range .GitLabSources}}
-                        <option value="{{.ID}}">{{.Name}}</option>
-                        {{end}}
-                    </select>
-                </div>
-                <div class="form-control" id="gl-project-wrap" style="display:none">
-                    <label class="label label-text text-xs">{{t "admin.select_project" $.Lang}}</label>
-                    <select name="project" class="select select-bordered select-sm" id="gl-project"
-                        onchange="loadGLBranches(document.getElementById('gl-source').value, this.value)">
-                    </select>
-                </div>
-                <div class="form-control" id="gl-branch-wrap" style="display:none">
-                    <label class="label label-text text-xs">{{t "admin.select_branch" $.Lang}}</label>
-                    <select name="branch" class="select select-bordered select-sm" id="gl-branch"
-                        onchange="loadGLFiles(document.getElementById('gl-source').value, document.getElementById('gl-project').value, this.value)">
-                    </select>
-                </div>
-                <div class="form-control" id="gl-file-wrap" style="display:none">
-                    <label class="label label-text text-xs">{{t "admin.select_file" $.Lang}}</label>
-                    <select name="file" class="select select-bordered select-sm" id="gl-file"></select>
-                </div>
-                <button type="submit" class="btn btn-secondary btn-sm" id="gl-import" style="display:none">
-                    {{t "admin.import" $.Lang}}
-                </button>
-            </form>
+            <h3 class="card-title text-base">{{t "admin.import_vars" $.Lang}}</h3>
+            <p class="text-sm text-base-content/60">Speichern Sie das Produkt zuerst, bevor Sie Variablen importieren.</p>
         </div>
     </div>
     {{end}}

@@ -44,5 +44,21 @@
     </div>
     {{end}}
 </div>
+
+{{if .Infra}}{{if .Infra.Outputs}}
+<div class="card bg-base-100 border border-success mt-4">
+    <div class="card-body">
+        <h3 class="font-semibold mb-3 text-success">{{t "order.outputs" $.Lang}}</h3>
+        <dl class="space-y-1 text-sm">
+            {{range $k, $v := .Infra.Outputs}}
+            <div class="flex gap-2">
+                <dt class="font-mono text-xs text-base-content/60 w-36 truncate">{{$k}}</dt>
+                <dd class="font-mono text-xs">{{$v}}</dd>
+            </div>
+            {{end}}
+        </dl>
+    </div>
+</div>
+{{end}}{{end}}
 {{end}}
 {{end}}

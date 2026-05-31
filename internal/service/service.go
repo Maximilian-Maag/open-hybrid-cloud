@@ -39,6 +39,7 @@ type InfrastructureService interface {
 	ListByProject(ctx context.Context, projectID int64) ([]model.InfrastructureElement, error)
 	ListAll(ctx context.Context) ([]model.InfrastructureElement, error)
 	GetByID(ctx context.Context, id int64) (*model.InfrastructureElement, error)
+	FindByOrderID(ctx context.Context, orderID int64) (*model.InfrastructureElement, error)
 	Decommission(ctx context.Context, elementID, userID int64) error
 }
 

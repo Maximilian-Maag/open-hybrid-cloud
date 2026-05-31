@@ -72,8 +72,8 @@ func (h *Handler) adminProductNew(w http.ResponseWriter, r *http.Request) {
 	envs, _ := h.environments.FindAll(r.Context())
 	sources, _ := h.gitlabSources.FindAll(r.Context())
 	h.render(w, r, "admin-product-new.html", map[string]any{
-		"Categories":   cats,
-		"Environments": envs,
+		"Categories":    cats,
+		"Environments":  envs,
 		"GitLabSources": sources,
 	})
 }
@@ -113,7 +113,12 @@ func (h *Handler) adminProductEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	cats, _ := h.categories.FindAll(r.Context())
 	envs, _ := h.environments.FindAll(r.Context())
+	sources, _ := h.gitlabSources.FindAll(r.Context())
 	penvs, _ := h.productEnvs.FindByProductID(r.Context(), id)
+	envNames := make(map[int64]string, len(envs))
+	for _, e := range envs {
+		envNames[e.ID] = e.Name
+	}
 	params, _ := h.parameters.FindByScope(r.Context(), "product", id)
 	translations, _ := h.translations.FindByProductID(r.Context(), id)
 
@@ -130,11 +135,82 @@ func (h *Handler) adminProductEdit(w http.ResponseWriter, r *http.Request) {
 		"Product":       p,
 		"Categories":    cats,
 		"Environments":  envs,
+		"EnvNames":      envNames,
 		"ProductEnvs":   penvs,
 		"Parameters":    params,
 		"Translations":  translations,
 		"WebhooksByEnv": webhooksByEnv,
+		"GitLabSources": sources,
 	})
+}
+
+func (h *Handler) adminProductEnvironmentCreate(w http.ResponseWriter, r *http.Request) {
+	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	environmentID := formInt64(r, "environment_id")
+	if environmentID == 0 {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: Umgebung wählen.")
+		return
+	}
+	price, _ := strconv.ParseFloat(r.FormValue("price"), 64)
+	currency := r.FormValue("currency")
+	if currency == "" {
+		currency = "EUR"
+	}
+	pe := &model.ProductEnvironment{
+		ProductID:        productID,
+		EnvironmentID:    environmentID,
+		Price:            price,
+		Currency:         currency,
+		CostCenterMode:   model.CostCenterModeProject,
+		ForcedCostCenter: false,
+	}
+	if err := h.productEnvs.Upsert(r.Context(), pe); err != nil {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		return
+	}
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Umgebung hinzugefügt.")
+}
+
+func (h *Handler) adminProductParameterCreate(w http.ResponseWriter, r *http.Request) {
+	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	p := &model.Parameter{
+		Scope:        model.ParameterScopeProduct,
+		ScopeID:      productID,
+		Name:         r.FormValue("name"),
+		Type:         model.ParameterType(r.FormValue("type")),
+		Description:  r.FormValue("description"),
+		DefaultValue: r.FormValue("default_value"),
+		Required:     r.FormValue("required") == "on",
+		Sensitive:    r.FormValue("sensitive") == "on",
+	}
+	if err := h.parameters.Save(r.Context(), p); err != nil {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		return
+	}
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Eingabevariable hinzugefügt.")
+}
+
+func (h *Handler) adminProductParameterDelete(w http.ResponseWriter, r *http.Request) {
+	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	paramID, _ := strconv.ParseInt(r.PathValue("pid"), 10, 64)
+	if err := h.parameters.Delete(r.Context(), paramID); err != nil {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		return
+	}
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Eingabevariable gelöscht.")
+}
+
+func (h *Handler) adminProductParameterDeleteAll(w http.ResponseWriter, r *http.Request) {
+	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	params, err := h.parameters.FindByScope(r.Context(), model.ParameterScopeProduct, productID)
+	if err != nil {
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		return
+	}
+	for _, p := range params {
+		_ = h.parameters.Delete(r.Context(), p.ID)
+	}
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Alle Eingabevariablen gelöscht.")
 }
 
 func (h *Handler) adminProductUpdate(w http.ResponseWriter, r *http.Request) {

@@ -14,7 +14,7 @@ type TFVariable struct {
 }
 
 var (
-	reVarBlock    = regexp.MustCompile(`(?s)variable\s+"([^"]+)"\s*\{(.*?)\n\}`)
+	reVarBlock    = regexp.MustCompile(`(?s)variable\s+"([^"]+)"\s*\{(.*?)\}`)
 	reType        = regexp.MustCompile(`type\s*=\s*(\w+)`)
 	reDescription = regexp.MustCompile(`description\s*=\s*"([^"]*)"`)
 	reDefault     = regexp.MustCompile(`default\s*=\s*"?([^"\n]*)"?`)

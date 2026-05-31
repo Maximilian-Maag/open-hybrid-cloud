@@ -3,20 +3,26 @@ package impl
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 
+	"github.com/porr-ag/infra-webshop/internal/gitlab"
 	"github.com/porr-ag/infra-webshop/internal/model"
 	"github.com/porr-ag/infra-webshop/internal/repository"
 	"github.com/porr-ag/infra-webshop/internal/service"
 )
 
+var projectIDReOrder = regexp.MustCompile(`/projects/(\d+)/`)
+
 type orderService struct {
-	orders   repository.OrderRepository
-	infra    repository.InfrastructureRepository
-	envs     repository.EnvironmentRepository
-	webhooks repository.ProductWebhookRepository
-	audit    service.AuditService
+	orders     repository.OrderRepository
+	infra      repository.InfrastructureRepository
+	envs       repository.EnvironmentRepository
+	sources    repository.GitLabSourceRepository
+	webhooks   repository.ProductWebhookRepository
+	audit      service.AuditService
 	httpClient *http.Client
 }
 
@@ -24,6 +30,7 @@ func NewOrderService(
 	orders repository.OrderRepository,
 	infra repository.InfrastructureRepository,
 	envs repository.EnvironmentRepository,
+	sources repository.GitLabSourceRepository,
 	webhooks repository.ProductWebhookRepository,
 	audit service.AuditService,
 ) service.OrderService {
@@ -31,6 +38,7 @@ func NewOrderService(
 		orders:     orders,
 		infra:      infra,
 		envs:       envs,
+		sources:    sources,
 		webhooks:   webhooks,
 		audit:      audit,
 		httpClient: &http.Client{},
@@ -114,12 +122,15 @@ func (s *orderService) triggerWebhook(ctx context.Context, o *model.Order) error
 
 	vars := buildVars(o.Parameters, "ORDER_ID", strconv.FormatInt(o.ID, 10))
 
+	glClient := s.gitlabClientFor(ctx, env)
+
 	productWebhooks, _ := s.webhooks.FindByProductAndEnv(ctx, o.ProductID, o.EnvironmentID)
 	if len(productWebhooks) == 0 {
 		pid, err := fireWebhook(ctx, s.httpClient, env.WebhookURL, env.WebhookToken, vars)
 		if err != nil {
 			return err
 		}
+		pid = s.resolvePipelineID(ctx, pid, glClient, env.WebhookURL)
 		if pid != "" {
 			_ = s.orders.AppendPipelineID(ctx, o.ID, pid)
 		}
@@ -131,9 +142,52 @@ func (s *orderService) triggerWebhook(ctx context.Context, o *model.Order) error
 		if err != nil {
 			return fmt.Errorf("webhook %s: %w", wh.Name, err)
 		}
+		pid = s.resolvePipelineID(ctx, pid, glClient, wh.WebhookURL)
 		if pid != "" {
 			_ = s.orders.AppendPipelineID(ctx, o.ID, pid)
 		}
 	}
 	return nil
+}
+
+// gitlabClientFor returns a GitLab client for the environment's source.
+func (s *orderService) gitlabClientFor(ctx context.Context, env *model.DeploymentEnvironment) *gitlab.Client {
+	if env.GitLabSourceID == 0 {
+		return nil
+	}
+	src, err := s.sources.FindByID(ctx, env.GitLabSourceID)
+	if err != nil || src == nil {
+		return nil
+	}
+	return gitlab.NewClient(src.URL, src.AccessToken)
+}
+
+// resolvePipelineID returns pid if non-empty, otherwise falls back to the latest trigger pipeline via the GitLab API.
+func (s *orderService) resolvePipelineID(ctx context.Context, pid string, client *gitlab.Client, webhookURL string) string {
+	if pid != "" {
+		return pid
+	}
+	if client == nil {
+		return ""
+	}
+	projectID, err := extractProjectID(webhookURL)
+	if err != nil {
+		return ""
+	}
+	latestID, err := client.GetLatestTriggerPipeline(ctx, projectID)
+	if err != nil {
+		slog.Warn("order: fallback pipeline lookup failed", "err", err)
+		return ""
+	}
+	slog.Info("order: resolved pipeline ID via API fallback", "pipeline_id", latestID)
+	return strconv.FormatInt(latestID, 10)
+}
+
+func extractProjectID(webhookURL string) (int64, error) {
+	// reuse the same regex logic from polling
+	m := projectIDReOrder.FindStringSubmatch(webhookURL)
+	if len(m) < 2 {
+		return 0, fmt.Errorf("no project ID in webhook URL: %s", webhookURL)
+	}
+	return strconv.ParseInt(m[1], 10, 64)
 }

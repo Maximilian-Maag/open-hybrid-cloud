@@ -40,6 +40,10 @@ func (s *infrastructureService) GetByID(ctx context.Context, id int64) (*model.I
 	return s.infra.FindByID(ctx, id)
 }
 
+func (s *infrastructureService) FindByOrderID(ctx context.Context, orderID int64) (*model.InfrastructureElement, error) {
+	return s.infra.FindByOrderID(ctx, orderID)
+}
+
 func (s *infrastructureService) Decommission(ctx context.Context, elementID, userID int64) error {
 	el, err := s.infra.FindByID(ctx, elementID)
 	if err != nil || el == nil {

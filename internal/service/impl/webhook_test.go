@@ -2,8 +2,10 @@ package impl
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 )
 
@@ -41,5 +43,41 @@ func TestFireWebhook_negative_serverError(t *testing.T) {
 	_, err := fireWebhook(context.Background(), &http.Client{}, srv.URL, "token", nil)
 	if err == nil {
 		t.Error("expected error for HTTP 500 response, got nil")
+	}
+}
+
+func TestFireWebhook_positive_formEncoded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Content-Type"); got != "application/x-www-form-urlencoded" {
+			t.Errorf("Content-Type: want %q, got %q", "application/x-www-form-urlencoded", got)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		vals, err := url.ParseQuery(string(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if vals.Get("token") != "token" {
+			t.Errorf("token: want token, got %q", vals.Get("token"))
+		}
+		if vals.Get("ref") != "main" {
+			t.Errorf("ref: want main, got %q", vals.Get("ref"))
+		}
+		if vals.Get("variables[ORDER_ID]") != "42" {
+			t.Errorf("variables[ORDER_ID]: want 42, got %q", vals.Get("variables[ORDER_ID]"))
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":123}`))
+	}))
+	defer srv.Close()
+
+	pid, err := fireWebhook(context.Background(), &http.Client{}, srv.URL, "token", []map[string]string{{"key": "ORDER_ID", "value": "42"}})
+	if err != nil {
+		t.Fatalf("fireWebhook: %v", err)
+	}
+	if pid != "123" {
+		t.Fatalf("pid: want 123, got %q", pid)
 	}
 }

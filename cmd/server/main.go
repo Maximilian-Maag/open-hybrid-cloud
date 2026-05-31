@@ -69,7 +69,7 @@ func main() {
 	auditSvc := audit.NewService(auditRepo)
 	userSvc := impl.NewUserService(userRepo)
 	productSvc := impl.NewProductService(productRepo, translationRepo)
-	orderSvc := impl.NewOrderService(orderRepo, infraRepo, envRepo, productWebhookRepo, auditSvc)
+	orderSvc := impl.NewOrderService(orderRepo, infraRepo, envRepo, sourceRepo, productWebhookRepo, auditSvc)
 	projectSvc := impl.NewProjectService(projectRepo)
 	infraSvc := impl.NewInfrastructureService(infraRepo, envRepo, productWebhookRepo, auditSvc)
 

@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
+	"strings"
 )
 
 type Client struct {
@@ -102,6 +104,88 @@ func (c *Client) GetPipelineStatus(ctx context.Context, projectID, pipelineID in
 	path := fmt.Sprintf("/projects/%d/pipelines/%d", projectID, pipelineID)
 	var p Pipeline
 	return &p, c.get(ctx, path, nil, &p)
+}
+
+// Job represents a GitLab CI job.
+type Job struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// GetLatestTriggerPipeline returns the most recent pipeline triggered via pipeline trigger for a project.
+func (c *Client) GetLatestTriggerPipeline(ctx context.Context, projectID int64) (int64, error) {
+	path := fmt.Sprintf("/projects/%d/pipelines", projectID)
+	var pipelines []Pipeline
+	if err := c.get(ctx, path, url.Values{"source": {"trigger"}, "per_page": {"1"}, "order_by": {"id"}, "sort": {"desc"}}, &pipelines); err != nil {
+		return 0, err
+	}
+	if len(pipelines) == 0 {
+		return 0, fmt.Errorf("no trigger pipelines found")
+	}
+	return pipelines[0].ID, nil
+}
+
+// GetPipelineJobs returns all jobs for a pipeline.
+func (c *Client) GetPipelineJobs(ctx context.Context, projectID, pipelineID int64) ([]Job, error) {
+	path := fmt.Sprintf("/projects/%d/pipelines/%d/jobs", projectID, pipelineID)
+	var jobs []Job
+	return jobs, c.get(ctx, path, url.Values{"per_page": {"50"}}, &jobs)
+}
+
+// GetJobTrace returns the raw log output of a job.
+func (c *Client) GetJobTrace(ctx context.Context, projectID, jobID int64) ([]byte, error) {
+	u := fmt.Sprintf("%s/api/v4/projects/%d/jobs/%d/trace", c.BaseURL, projectID, jobID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.Token != "" {
+		req.Header.Set("PRIVATE-TOKEN", c.Token)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
+var (
+	ansiEscape    = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+	runnerLogLine = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z \w+ `)
+)
+
+// ParseTofuOutputs extracts key=value pairs from the "Outputs:" section of a tofu apply log.
+// Handles GitLab runner log format with timestamp prefixes and ANSI escape codes.
+func ParseTofuOutputs(trace []byte) map[string]string {
+	outputs := map[string]string{}
+	inOutputs := false
+	for _, raw := range strings.Split(string(trace), "\n") {
+		// strip GitLab runner timestamp prefix (e.g. "2024-01-01T00:00:00.000Z 01O ")
+		line := runnerLogLine.ReplaceAllString(strings.TrimRight(raw, "\r"), "")
+		// strip ANSI escape codes
+		line = ansiEscape.ReplaceAllString(line, "")
+		if strings.TrimSpace(line) == "Outputs:" {
+			inOutputs = true
+			continue
+		}
+		if inOutputs {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			if strings.HasPrefix(strings.TrimSpace(line), "─") || strings.HasPrefix(line, "╷") || strings.HasPrefix(line, "Apply") {
+				break
+			}
+			if idx := strings.Index(line, " = "); idx != -1 {
+				k := strings.TrimSpace(line[:idx])
+				v := strings.Trim(strings.TrimSpace(line[idx+3:]), `"`)
+				if k != "" {
+					outputs[k] = v
+				}
+			}
+		}
+	}
+	return outputs
 }
 
 // GetFile returns the raw content of a file at a given path and ref.

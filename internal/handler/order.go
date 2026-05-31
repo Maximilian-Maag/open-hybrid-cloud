@@ -135,11 +135,13 @@ func (h *Handler) orderDetail(w http.ResponseWriter, r *http.Request) {
 	product, _ := h.products.GetByID(r.Context(), o.ProductID, h.lang(r))
 	env, _ := h.environments.FindByID(r.Context(), o.EnvironmentID)
 	project, _ := h.projects.GetByID(r.Context(), o.ProjectID)
+	infra, _ := h.infra.FindByOrderID(r.Context(), o.ID)
 	h.render(w, r, "order-detail.html", map[string]any{
 		"Order":   o,
 		"Product": product,
 		"Env":     env,
 		"Project": project,
+		"Infra":   infra,
 	})
 }
 

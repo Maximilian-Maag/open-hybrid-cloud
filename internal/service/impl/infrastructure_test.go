@@ -65,3 +65,9 @@ func (r *stubInfraRepoFull) UpdateStatus(ctx context.Context, id int64, s model.
 func (r *stubInfraRepoFull) AppendPipelineID(ctx context.Context, id int64, pid string) error {
 	return nil
 }
+func (r *stubInfraRepoFull) UpdateOutputs(ctx context.Context, id int64, outputs map[string]string) error {
+	return nil
+}
+func (r *stubInfraRepoFull) FindByOrderID(ctx context.Context, orderID int64) (*model.InfrastructureElement, error) {
+	return nil, nil
+}

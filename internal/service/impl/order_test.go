@@ -74,6 +74,12 @@ func (r *stubInfraRepo2) UpdateStatus(ctx context.Context, id int64, s model.Ord
 func (r *stubInfraRepo2) AppendPipelineID(ctx context.Context, id int64, pid string) error {
 	return nil
 }
+func (r *stubInfraRepo2) UpdateOutputs(ctx context.Context, id int64, outputs map[string]string) error {
+	return nil
+}
+func (r *stubInfraRepo2) FindByOrderID(ctx context.Context, orderID int64) (*model.InfrastructureElement, error) {
+	return nil, nil
+}
 
 var _ repository.InfrastructureRepository = (*stubInfraRepo2)(nil)
 
@@ -101,6 +107,20 @@ func (r *stubWebhookRepo) Delete(ctx context.Context, id int64) error           
 
 var _ repository.ProductWebhookRepository = (*stubWebhookRepo)(nil)
 
+type stubGitLabSourceRepo struct{}
+
+func (r *stubGitLabSourceRepo) FindAll(ctx context.Context) ([]model.GitLabSource, error) {
+	return nil, nil
+}
+func (r *stubGitLabSourceRepo) FindByID(ctx context.Context, id int64) (*model.GitLabSource, error) {
+	return nil, nil
+}
+func (r *stubGitLabSourceRepo) Save(ctx context.Context, s *model.GitLabSource) error   { return nil }
+func (r *stubGitLabSourceRepo) Update(ctx context.Context, s *model.GitLabSource) error { return nil }
+func (r *stubGitLabSourceRepo) Delete(ctx context.Context, id int64) error              { return nil }
+
+var _ repository.GitLabSourceRepository = (*stubGitLabSourceRepo)(nil)
+
 type stubAudit struct{}
 
 func (s *stubAudit) Log(ctx context.Context, e *model.AuditEntry) error { return nil }
@@ -114,7 +134,7 @@ var _ service.AuditService = (*stubAudit)(nil)
 
 func TestOrderService_Create_positive(t *testing.T) {
 	orderRepo := newStubOrderRepo()
-	svc := NewOrderService(orderRepo, &stubInfraRepo2{}, &stubEnvRepo{}, &stubWebhookRepo{}, &stubAudit{})
+	svc := NewOrderService(orderRepo, &stubInfraRepo2{}, &stubEnvRepo{}, &stubGitLabSourceRepo{}, &stubWebhookRepo{}, &stubAudit{})
 
 	o := &model.Order{ProjectID: 1, ProductID: 2, UserID: 3}
 	if err := svc.Create(context.Background(), o); err != nil {
@@ -129,7 +149,7 @@ func TestOrderService_Create_positive(t *testing.T) {
 }
 
 func TestOrderService_Approve_negative_orderNotFound(t *testing.T) {
-	svc := NewOrderService(newStubOrderRepo(), &stubInfraRepo2{}, &stubEnvRepo{}, &stubWebhookRepo{}, &stubAudit{})
+	svc := NewOrderService(newStubOrderRepo(), &stubInfraRepo2{}, &stubEnvRepo{}, &stubGitLabSourceRepo{}, &stubWebhookRepo{}, &stubAudit{})
 
 	// Order ID 999 was never saved → repo returns nil
 	err := svc.Approve(context.Background(), 999, 1)

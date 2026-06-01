@@ -1,0 +1,105 @@
+replicaCount: 2
+
+image:
+  repository: porrag/infra-webshop
+  pullPolicy: IfNotPresent
+  # Overrides Chart.appVersion when set
+  tag: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ── Application environment ───────────────────────────────────────────────────
+# Required values — set via --set or a separate secrets values file.
+# Never commit real credentials here.
+env:
+  # Required
+  databaseUrl: ""       # DATABASE_URL  postgres://user:pass@host:5432/db?sslmode=require
+  sessionSecret: ""     # SESSION_SECRET  32+ random bytes, hex-encoded
+  adminPassword: ""     # ADMIN_PASSWORD  initial Webshop Admin password
+
+  # Optional — application settings
+  port: "8080"
+  appName: "Infra Webshop"
+  appSubtitle: "Infrastructure Self-Service"
+  adminEmail: "admin@example.com"
+  baseCurrency: "EUR"
+
+  # Optional — Microsoft Entra ID (OIDC)
+  entra:
+    tenantId: ""
+    clientId: ""
+    clientSecret: ""
+    redirectUrl: ""
+
+  # Optional — SMTP
+  smtp:
+    host: ""
+    port: "587"
+    from: ""
+    username: ""
+    password: ""
+    tls: "false"
+
+  # Optional — AI translation
+  ai:
+    provider: "claude"
+    endpoint: ""
+    apiKey: ""
+    model: "claude-haiku-4-5-20251001"
+
+  # Optional — Exchange rate API
+  exchangeRate:
+    apiUrl: "https://api.exchangerate.host/latest"
+    apiKey: ""
+
+# ── Service ───────────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+
+# ── Ingress ───────────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: shop.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: infra-webshop-tls
+      hosts:
+        - shop.example.com
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# ── Autoscaling ───────────────────────────────────────────────────────────────
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+# ── Database migration hook ───────────────────────────────────────────────────
+migrate:
+  # Run /migrate as a pre-install / pre-upgrade Helm hook
+  enabled: true
+
+# ── Pod configuration ─────────────────────────────────────────────────────────
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

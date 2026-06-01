@@ -1,0 +1,3171 @@
+% ============================================================
+%  PORR AG Infrastructure Webshop — Technical Handbook
+% ============================================================
+\documentclass[12pt,a4paper,twoside]{report}
+
+% ── Encoding & fonts ─────────────────────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ── Page layout ──────────────────────────────────────────────
+\usepackage[
+  a4paper,
+  top=30mm, bottom=30mm,
+  inner=30mm, outer=25mm,
+  headheight=15pt
+]{geometry}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\small\nouppercase{\leftmark}}
+\fancyhead[RO]{\small\nouppercase{\rightmark}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Colors ───────────────────────────────────────────────────
+\usepackage[dvipsnames,table]{xcolor}
+\definecolor{porr-blue}{HTML}{131921}
+\definecolor{porr-amber}{HTML}{febd69}
+\definecolor{c4-person}{HTML}{08427b}
+\definecolor{c4-system}{HTML}{1168bd}
+\definecolor{c4-external}{HTML}{6b6b6b}
+\definecolor{c4-container}{HTML}{2E7D98}
+\definecolor{c4-component}{HTML}{4585A5}
+\definecolor{c4-database}{HTML}{2D6A4F}
+\definecolor{note-bg}{HTML}{FFF9C4}
+\definecolor{warn-bg}{HTML}{FFECB3}
+\definecolor{code-bg}{HTML}{F5F5F5}
+\definecolor{link-color}{HTML}{1565C0}
+
+% ── Graphics & TikZ ──────────────────────────────────────────
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,shapes.multipart,arrows.meta,positioning,fit,backgrounds,calc}
+
+\tikzset{
+  c4person/.style={
+    rectangle, rounded corners=8pt,
+    draw=c4-person!80, fill=c4-person!15,
+    text width=3.2cm, align=center,
+    minimum height=2.0cm, font=\small\bfseries
+  },
+  c4system/.style={
+    rectangle,
+    draw=c4-system!80, fill=c4-system!20,
+    text width=3.4cm, align=center,
+    minimum height=1.8cm, font=\small\bfseries
+  },
+  c4external/.style={
+    rectangle,
+    draw=c4-external!80, fill=c4-external!15,
+    text width=3.4cm, align=center,
+    minimum height=1.8cm, font=\small\bfseries
+  },
+  c4container/.style={
+    rectangle,
+    draw=c4-container!80, fill=c4-container!20,
+    text width=3.4cm, align=center,
+    minimum height=2.0cm, font=\small\bfseries
+  },
+  c4database/.style={
+    cylinder,
+    draw=c4-database!80, fill=c4-database!20,
+    shape border rotate=90,
+    text width=2.8cm, align=center,
+    minimum height=1.8cm, font=\small\bfseries
+  },
+  c4component/.style={
+    rectangle,
+    draw=c4-component!80, fill=c4-component!15,
+    text width=3.0cm, align=center,
+    minimum height=1.6cm, font=\scriptsize\bfseries
+  },
+  c4boundary/.style={
+    dashed, draw=gray!60, fill=gray!5,
+    rounded corners=4pt
+  },
+  c4arrow/.style={
+    ->, >=Stealth[round], thick,
+    draw=gray!70
+  },
+  c4label/.style={
+    font=\scriptsize\itshape, text=gray!60!black,
+    align=center
+  },
+  c4sublabel/.style={
+    font=\tiny, text=gray!50, align=center
+  },
+}
+
+% ── Tables ───────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+% ── Code listings ─────────────────────────────────────────────
+\usepackage{listings}
+\lstset{
+  backgroundcolor=\color{code-bg},
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  breakatwhitespace=false,
+  postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\enspace},
+  frame=single,
+  framesep=4pt,
+  rulecolor=\color{gray!40},
+  tabsize=2,
+  showstringspaces=false,
+  captionpos=b,
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+  columns=flexible,
+}
+\lstdefinestyle{bash}{
+  language=bash,
+  keywordstyle=\color{MidnightBlue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{ForestGreen},
+}
+\lstdefinestyle{go}{
+  language=Go,
+  keywordstyle=\color{MidnightBlue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{ForestGreen},
+}
+\lstdefinestyle{hcl}{
+  morekeywords={resource,variable,output,module,provider,terraform,
+                required_providers,backend,locals,data,for_each,
+                dynamic,content,default,type,description,value,source,
+                required_version,sensitive},
+  keywordstyle=\color{MidnightBlue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{ForestGreen},
+}
+\lstdefinestyle{yaml}{
+  language=,
+  morekeywords={true,false,null},
+  keywordstyle=\color{MidnightBlue},
+  commentstyle=\color{gray},
+  stringstyle=\color{ForestGreen},
+}
+\lstdefinestyle{sql}{
+  language=SQL,
+  keywordstyle=\color{MidnightBlue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{ForestGreen},
+}
+
+% ── Callout boxes ─────────────────────────────────────────────
+\usepackage[most]{tcolorbox}
+\tcbset{
+  noteboxstyle/.style={
+    colback=note-bg, colframe=Goldenrod!80!black,
+    fonttitle=\bfseries, title={Note},
+    left=4pt, right=4pt, top=4pt, bottom=4pt,
+    boxrule=0.8pt
+  },
+  warnboxstyle/.style={
+    colback=warn-bg, colframe=Orange!80!black,
+    fonttitle=\bfseries, title={Important},
+    left=4pt, right=4pt, top=4pt, bottom=4pt,
+    boxrule=0.8pt
+  },
+  tipboxstyle/.style={
+    colback=green!8, colframe=ForestGreen!70,
+    fonttitle=\bfseries, title={Tip},
+    left=4pt, right=4pt, top=4pt, bottom=4pt,
+    boxrule=0.8pt
+  },
+}
+\newcommand{\notebox}[1]{\begin{tcolorbox}[noteboxstyle]#1\end{tcolorbox}}
+\newcommand{\warnbox}[1]{\begin{tcolorbox}[warnboxstyle]#1\end{tcolorbox}}
+\newcommand{\tipbox}[1]{\begin{tcolorbox}[tipboxstyle]#1\end{tcolorbox}}
+
+% ── Misc packages ─────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{pdflscape}
+\usepackage{amsmath}
+\usepackage{pifont}
+% xurl extends hyperref's \url to allow line breaks at more characters
+\usepackage{xurl}
+% Allow generous inter-word spacing to prevent overfull hboxes in text
+\setlength{\emergencystretch}{3em}
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\ding{55}}
+
+% ── Hyperlinks ────────────────────────────────────────────────
+\usepackage[
+  colorlinks=true,
+  linkcolor=link-color,
+  urlcolor=link-color,
+  citecolor=link-color,
+  pdfauthor={PORR AG Infrastructure Team},
+  pdftitle={PORR AG Infrastructure Webshop — Technical Handbook},
+  pdfsubject={Technical documentation for administrators, developers, and project managers},
+  pdfkeywords={PORR, webshop, infrastructure, OpenTofu, GitLab, Linode, Go, C4},
+  bookmarksnumbered=true,
+  hypertexnames=true,
+  unicode=true,
+]{hyperref}
+
+% ── Chapter style ─────────────────────────────────────────────
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\color{porr-blue}}
+  {\chaptertitlename\ \thechapter}{12pt}{\Huge}
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{porr-blue!80}}
+  {\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{porr-blue!60}}
+  {\thesubsection}{1em}{}
+
+% ── Custom commands ───────────────────────────────────────────
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{\textcolor{MidnightBlue}{#1}}}
+\newcommand{\term}[1]{\textit{#1}}
+\newcommand{\route}[1]{\texttt{\textcolor{ForestGreen}{#1}}}
+\newcommand{\env}[1]{\texttt{\textcolor{Maroon}{#1}}}
+\newcommand{\role}[1]{\textsf{\textbf{#1}}}
+
+% ── Version info ──────────────────────────────────────────────
+\newcommand{\docversion}{1.0}
+\newcommand{\docdate}{2025}
+
+% ─────────────────────────────────────────────────────────────
+\begin{document}
+
+% ── Title page ───────────────────────────────────────────────
+\begin{titlepage}
+  \begin{tikzpicture}[remember picture, overlay]
+    \fill[porr-blue] (current page.north west) rectangle
+      ([yshift=-5cm] current page.north east);
+    \fill[porr-amber] ([yshift=-5cm] current page.north west) rectangle
+      ([yshift=-5.4cm] current page.north east);
+  \end{tikzpicture}
+
+  \vspace*{2.5cm}
+
+  {\color{white}\fontsize{28}{34}\selectfont\bfseries
+    PORR AG\\[6pt]
+    Infrastructure Webshop}
+
+  \vspace{2.2cm}
+
+  {\fontsize{22}{28}\selectfont\bfseries Technical Handbook}
+
+  \vspace{0.4cm}
+  {\large\color{gray!60!black} Version \docversion\ · \docdate}
+
+  \vfill
+
+  \begin{tabular}{@{}ll}
+    \toprule
+    \textbf{Audience}  & Administrators, Developers, Project Managers \\
+    \textbf{System}    & Infrastructure Webshop \\
+    \textbf{Stack}     & Go · PostgreSQL · HTMX · OpenTofu · GitLab · Linode \\
+    \textbf{Scope}     & Architecture · Operations · Development · Product Lifecycle \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{1cm}
+  {\small\color{gray}PORR AG — Digital Unit Infrastructure Team}
+\end{titlepage}
+
+% ── Front matter ─────────────────────────────────────────────
+\tableofcontents
+\listoffigures
+\listoftables
+\lstlistoflistings
+
+% ─────────────────────────────────────────────────────────────
+%  PART I — OVERVIEW & ARCHITECTURE
+% ─────────────────────────────────────────────────────────────
+\part{Overview \& Architecture}
+\label{part:arch}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Introduction}
+\label{ch:intro}
+
+\section{Purpose of This Handbook}
+
+The PORR AG Infrastructure Webshop is a self-service portal that enables Digital Unit (DU) Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
+
+It covers:
+\begin{itemize}
+  \item The complete system architecture described with the C4 model
+  \item Infrastructure-as-Code modules and the GitLab CI/CD concept
+  \item Architecture and design decisions with their rationale
+  \item Step-by-step administrator operations
+  \item Developer onboarding, code structure, and extension patterns
+  \item The full product lifecycle from creation to decommissioning
+\end{itemize}
+
+\section{Target Audiences}
+
+\begin{description}[leftmargin=3.5cm, style=nextline]
+  \item[\role{DU Admin}]
+    Responsible for approving orders, monitoring all infrastructure, and
+    ordering directly without an approval step. Reads
+    Part~\ref{part:admin} and Part~\ref{part:pm}.
+  \item[\role{Webshop Admin}]
+    Responsible for the product catalog, system configuration, and local
+    user accounts. Reads Part~\ref{part:admin} entirely.
+  \item[\role{Developer}]
+    Extends or maintains the webshop codebase and the OpenTofu modules.
+    Reads Part~\ref{part:arch} and Part~\ref{part:dev}.
+  \item[\role{Project Manager}]
+    Places infrastructure orders and manages projects. Reads
+    Part~\ref{part:pm}.
+\end{description}
+
+\section{Conventions Used in This Handbook}
+
+\begin{description}
+  \item[\code{monospace}] File paths, commands, code, environment variables, and route patterns.
+  \item[\textit{italic}] Technical terms on first use.
+  \item[\textbf{bold}] UI labels, button names, and menu items.
+  \item[Note boxes] Yellow-highlighted boxes providing additional context or important background information.
+  \item[Important boxes] Orange-highlighted boxes warning about actions that can cause data loss or service disruption.
+  \item[Tip boxes] Green-highlighted boxes with shortcuts and best practices.
+\end{description}
+
+\section{System At a Glance}
+
+The webshop is a single Go binary that renders HTML server-side and
+delivers page fragments via HTMX for a responsive, app-like feel.
+Orders are fulfilled by triggering GitLab CI/CD pipelines that run
+OpenTofu (a Terraform-compatible open-source tool) to provision or
+destroy cloud resources on Linode/Akamai. The system is stateless above
+the PostgreSQL layer, enabling horizontal scaling without coordination.
+
+\begin{table}[H]
+  \centering
+  \caption{Technology stack overview}
+  \label{tab:stack}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
+    \toprule
+    \textbf{Layer} & \textbf{Technology} & \textbf{Version} \\
+    \midrule
+    Backend        & Go                       & 1.22+ \\
+    Frontend       & HTMX + Alpine.js         & 2.0 / 3.14 \\
+    CSS            & Tailwind CSS + DaisyUI   & 3.x / 4.x \\
+    Database       & PostgreSQL               & 15+ \\
+    DB Driver      & pgx/v5 (jackc)           & 5.x \\
+    IaC            & OpenTofu                 & 1.9+ \\
+    Cloud          & Linode/Akamai            & — \\
+    CI/CD          & GitLab CE                & 16+ \\
+    State Backend  & GitLab Managed TF State  & — \\
+    Auth           & OIDC (Entra ID) + local  & — \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{C4 Architecture Model}
+\label{ch:c4}
+
+The system is described using the \term{C4 model} (Context, Container,
+Component, Code). Each level zooms in one step deeper.
+
+% ── Level 1 ──────────────────────────────────────────────────
+\section{Level 1 — System Context}
+\label{sec:c4-l1}
+
+Figure~\ref{fig:c4-l1} shows who uses the webshop and which external
+systems it depends on.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.0cm and 1.2cm]
+
+  % Central system
+  \node[c4system, text width=4cm, minimum height=2.4cm] (ws)
+    {\textbf{Infra-Webshop}\\[4pt]
+     \scriptsize Self-service portal for ordering, managing and decommissioning IT infrastructure.\\
+     \scriptsize Go · HTMX · PostgreSQL};
+
+  % Persons (top)
+  \node[c4person, above left=1.8cm and 2.6cm of ws] (dua)
+    {\textbf{DU Admin}\\[4pt]\scriptsize Orders directly, approves/rejects, sees all infrastructure};
+  \node[c4person, above=1.8cm of ws] (sa)
+    {\textbf{Webshop Admin}\\[4pt]\scriptsize Manages catalog \& config};
+  \node[c4person, above right=1.8cm and 2.6cm of ws] (pl)
+    {\textbf{Project Manager}\\[4pt]\scriptsize Orders own infrastructure};
+
+  % External systems (bottom row)
+  \node[c4external, below left=2.0cm and 4.0cm of ws] (gl)
+    {\textbf{GitLab}\\[4pt]\scriptsize Webhook target, repo browser, pipeline status};
+  \node[c4external, below left=2.0cm and 0.8cm of ws] (oidc)
+    {\textbf{Microsoft Entra ID}\\[4pt]\scriptsize OIDC SSO provider};
+  \node[c4external, below right=2.0cm and 0.8cm of ws] (ai)
+    {\textbf{AI Translation API}\\[4pt]\scriptsize Claude/OpenAI/Ollama (optional)};
+  \node[c4external, below right=2.0cm and 4.0cm of ws] (smtp)
+    {\textbf{Mail Server}\\[4pt]\scriptsize SMTP transactional email};
+
+  % Arrows — persons to webshop
+  \draw[c4arrow] (dua)  -- node[c4label, right=1pt]{Uses HTTPS} (ws);
+  \draw[c4arrow] (sa)   -- node[c4label, right=1pt]{Uses HTTPS} (ws);
+  \draw[c4arrow] (pl)   -- node[c4label, right=1pt]{Uses HTTPS} (ws);
+
+  % Arrows — webshop to external
+  \draw[c4arrow] (ws) -- node[c4label, left=1pt, align=right]
+    {Webhooks, API\\JSON/HTTPS} (gl);
+  \draw[c4arrow] (ws) -- node[c4label, right=1pt]{OIDC/HTTPS} (oidc);
+  \draw[c4arrow] (ws) -- node[c4label, left=1pt]{JSON/HTTPS} (ai);
+  \draw[c4arrow] (ws) -- node[c4label, right=1pt]{SMTP} (smtp);
+
+\end{tikzpicture}}%
+\caption{C4 Level 1 — System Context Diagram}
+\label{fig:c4-l1}
+\end{figure}
+
+\subsection{Actors}
+
+\begin{description}
+  \item[\role{DU Admin} (Digital Unit Administrator)]
+    Authenticates via Microsoft Entra ID SSO. Has the system role
+    \code{admin}. Can order infrastructure directly (no approval required),
+    approve or reject orders from Project Managers, view all projects and
+    infrastructure, and decommission any resource.
+  \item[\role{Webshop Admin}]
+    Uses a local account (no SSO). Has the system role \code{shop\_admin}.
+    Manages the product catalog, system configuration (SMTP, AI, branding,
+    currencies), environments, GitLab sources, cost centers, and local
+    users. Cannot place orders.
+  \item[\role{Project Manager}]
+    Authenticates via Entra ID SSO. Has the system role \code{user}.
+    Places orders (which require DU Admin approval), manages their own
+    projects, and can decommission their own infrastructure.
+\end{description}
+
+\subsection{External Systems}
+
+\begin{description}
+  \item[\textbf{GitLab}]
+    One or more self-hosted or cloud GitLab instances. The webshop
+    connects to GitLab for three purposes: (1) browsing repositories and
+    importing \code{variables.tf} parameter definitions, (2) triggering
+    provisioning and decommissioning webhooks, and (3) polling pipeline
+    status to update order state.
+  \item[\textbf{Microsoft Entra ID}]
+    The OIDC identity provider for DU Admins and Project Managers. The
+    webshop implements the Authorization Code Flow. Local accounts for
+    Webshop Admins bypass this provider entirely.
+  \item[\textbf{AI Translation API}]
+    Optional. Used to auto-translate product names and descriptions into
+    all 25 supported languages. Multiple backends are supported:
+    cloud-based (Claude, OpenAI, Azure OpenAI) and on-premise
+    (Ollama, LocalAI). The feature is hidden when no provider is
+    configured.
+  \item[\textbf{Mail Server}]
+    Any SMTP server. Sends order confirmations, approval request
+    notifications, approval/rejection notices, deployment completion
+    alerts, and failure notifications.
+\end{description}
+
+% ── Level 2 ──────────────────────────────────────────────────
+\section{Level 2 — Container Diagram}
+\label{sec:c4-l2}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.4cm and 1.8cm]
+
+  % System boundary
+  \begin{scope}[on background layer]
+    \node[c4boundary, fit={(0,-0.5)(10,6.5)}, inner sep=0.6cm,
+          label={[font=\small\itshape]above left:Infra-Webshop System}] (bound) {};
+  \end{scope}
+
+  % Go application
+  \node[c4container, text width=4.2cm, minimum height=3.2cm] (app) at (3,3)
+    {\textbf{Webshop Application}\\[4pt]
+     \scriptsize Renders HTML server-side.\\
+     Handles auth, catalog, orders,\\
+     admin, polling, notifications.\\[4pt]
+     \scriptsize\textit{Go 1.22 · net/http · HTMX}};
+
+  % Database
+  \node[c4database, right=2.2cm of app] (db)
+    {\textbf{PostgreSQL}\\[4pt]
+     \scriptsize All persistent data};
+
+  % Persons (above)
+  \node[c4person, above left=1.6cm and 0.4cm of app] (dua)
+    {\textbf{DU Admin}};
+  \node[c4person, above=1.6cm of app] (sa)
+    {\textbf{Webshop Admin}};
+  \node[c4person, above right=1.6cm and 0.4cm of app] (pl)
+    {\textbf{Project Manager}};
+
+  % External below
+  \node[c4external, below left=1.6cm and 1.5cm of app, text width=2.8cm] (gl)
+    {\textbf{GitLab}};
+  \node[c4external, below=1.6cm of app, text width=2.8cm] (oidc)
+    {\textbf{Entra ID}};
+  \node[c4external, below right=1.6cm and 1.5cm of app, text width=2.8cm] (smtp)
+    {\textbf{SMTP}};
+
+  % Arrows
+  \draw[c4arrow] (dua) -- (app);
+  \draw[c4arrow] (sa)  -- (app);
+  \draw[c4arrow] (pl)  -- (app);
+  \draw[c4arrow] (app) -- node[c4label,above]{SQL/TCP} (db);
+  \draw[c4arrow] (app) -- node[c4label,right=2pt]{JSON/HTTPS} (gl);
+  \draw[c4arrow] (app) -- node[c4label,right=2pt]{OIDC} (oidc);
+  \draw[c4arrow] (app) -- node[c4label,right=2pt]{SMTP} (smtp);
+
+\end{tikzpicture}
+\caption{C4 Level 2 — Container Diagram}
+\label{fig:c4-l2}
+\end{figure}
+
+The system has exactly two containers:
+
+\begin{description}
+  \item[\textbf{Webshop Application}]
+    A single stateless Go binary. It handles HTTP requests, renders HTML
+    via \code{html/template}, serves HTMX fragments, coordinates all
+    business logic, runs the GitLab polling goroutines, and manages
+    outbound SMTP. Being stateless above the database layer means
+    multiple replicas can run behind a load balancer without any
+    coordination layer.
+  \item[\textbf{PostgreSQL Database}]
+    The single source of truth. Stores the product catalog, orders,
+    infrastructure state, audit log, branding, configuration, users, and
+    exchange rates. The database is the only stateful component.
+\end{description}
+
+% ── Level 3 ──────────────────────────────────────────────────
+\section{Level 3 — Component Diagram}
+\label{sec:c4-l3}
+
+Figure~\ref{fig:c4-l3} decomposes the Go application container into
+its major logical components.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.7cm and 0.6cm]
+
+  % Top row
+  \node[c4component] (auth)
+    {\textbf{Auth}\\[2pt]\scriptsize OIDC + local session};
+  \node[c4component, right=of auth] (catalog)
+    {\textbf{Catalog}\\[2pt]\scriptsize Products, categories, pricing};
+  \node[c4component, right=of catalog] (order)
+    {\textbf{Order}\\[2pt]\scriptsize Form, webhook dispatch};
+  \node[c4component, right=of order] (approval)
+    {\textbf{Approval}\\[2pt]\scriptsize Approve/reject flow};
+  \node[c4component, right=of approval] (infra)
+    {\textbf{Infrastructure}\\[2pt]\scriptsize Overview, decommission};
+
+  % Middle row
+  \node[c4component, below=0.9cm of auth] (audit)
+    {\textbf{Audit}\\[2pt]\scriptsize Immutable log, export};
+  \node[c4component, right=of audit] (notif)
+    {\textbf{Notification}\\[2pt]\scriptsize SMTP email dispatch};
+  \node[c4component, right=of notif] (polling)
+    {\textbf{GitLab Polling}\\[2pt]\scriptsize Pipeline status sync};
+  \node[c4component, right=of polling] (admin)
+    {\textbf{Admin}\\[2pt]\scriptsize Catalog \& config mgmt};
+  \node[c4component, right=of admin] (aitrans)
+    {\textbf{AI Translation}\\[2pt]\scriptsize Pluggable translator};
+
+  % Bottom row — repositories
+  \node[c4database, below=0.9cm of audit, text width=2.4cm] (repo)
+    {\textbf{Repositories}\\[2pt]\scriptsize pgx/v5 SQL layer};
+
+  % Arrows: components to repo
+  \foreach \n in {auth, catalog, order, approval, infra, audit, notif, polling, admin, aitrans}
+    \draw[->, thick, draw=gray!40, dashed] (\n) -- (repo);
+
+\end{tikzpicture}
+}
+\caption{C4 Level 3 — Component Diagram (Webshop Application)}
+\label{fig:c4-l3}
+\end{figure}
+
+\subsection{Component Descriptions}
+
+\begin{longtable}{@{}L{3.0cm}L{10cm}@{}}
+  \toprule
+  \textbf{Component} & \textbf{Responsibility} \\
+  \midrule
+  \endhead
+  Auth &
+    Handles OIDC Authorization Code Flow (Entra ID) and local password
+    login. Issues encrypted, HttpOnly session cookies. Enforces role-based
+    access (\code{admin}, \code{shop\_admin}, \code{user}). \\[4pt]
+  Catalog &
+    Renders products grouped by category. Converts prices from the
+    configured base currency to the user's locale currency using stored
+    exchange rates. Supports 25 languages via the i18n engine. \\[4pt]
+  Order &
+    Renders the order form with parameters from global, category, and
+    product parameter sets. Stores orders in PostgreSQL. For DU Admins,
+    triggers the GitLab provisioning webhook immediately; for Project
+    Managers, parks the order for approval. \\[4pt]
+  Approval &
+    Lists pending orders for DU Admins. Approve triggers the GitLab
+    webhook. Reject requires a mandatory comment. Both paths send
+    email notifications and write to the audit log. \\[4pt]
+  Infrastructure &
+    Shows deployed resources grouped by project and environment.
+    Role-scoped: Project Managers see only their own. Triggers the
+    GitLab destroy webhook for decommissioning. Supports
+    ``use as template'' to pre-fill a new order. \\[4pt]
+  Audit &
+    Append-only log of all system actions. Filterable by date range,
+    user, and action type. Exportable as CSV or PDF. \\[4pt]
+  Notification &
+    Wraps SMTP email delivery. Silently no-ops when SMTP is not
+    configured. SMTP credentials are live-reloadable from the database
+    without a server restart. \\[4pt]
+  GitLab Polling &
+    Goroutine pool that periodically queries the GitLab Pipelines API for
+    in-flight orders. Updates order and infrastructure state on
+    completion or failure, then triggers email notifications.
+    Uses PostgreSQL advisory locks so multiple replicas do not
+    double-poll. \\[4pt]
+  Admin &
+    All Webshop Admin pages: categories, products (CRUD, image upload,
+    AI translation, webhook management, parameter import from
+    \code{variables.tf}), environments, GitLab sources, cost centers,
+    currencies, SMTP, AI config, branding, users. \\[4pt]
+  AI Translation &
+    Pluggable interface (\code{aitranslation.Translator}). Concrete
+    implementations for Claude, OpenAI, Azure OpenAI, Ollama, and LocalAI.
+    Selected and instantiated at startup from the database configuration;
+    swappable at runtime via the Admin UI. \\[4pt]
+  Repositories &
+    Thin SQL layer using \code{pgx/v5}. One repository interface per
+    aggregate root (User, Product, Order, etc.). Implementations in
+    \file{internal/repository/postgres/}. \\
+  \bottomrule
+  \caption{Component descriptions}
+  \label{tab:components}
+\end{longtable}
+
+% ── Level 4 ──────────────────────────────────────────────────
+\section{Level 4 — Key Code Flows}
+\label{sec:c4-l4}
+
+\subsection{Order Placement Flow (Project Manager)}
+
+\begin{enumerate}
+  \item Browser submits \route{POST /orders/new}.
+  \item \code{handler.orderCreate()} validates input, calls
+        \code{service.OrderService.Create()}.
+  \item The order service writes the order record with status
+        \code{pending\_approval} to PostgreSQL.
+  \item The notification service sends an approval-request email to all
+        DU Admins.
+  \item The audit service writes an \code{order\_placed} entry.
+  \item Browser redirects to \route{GET /orders/\{id\}} showing the
+        \textit{Awaiting Approval} status.
+\end{enumerate}
+
+\subsection{Order Approval \& Provisioning Flow}
+
+\begin{enumerate}
+  \item DU Admin opens \route{GET /approvals} and clicks \textbf{Approve}.
+  \item \code{handler.approvalApprove()} calls
+        \code{service.OrderService.Approve()}.
+  \item The order service updates status to \code{provisioning}, stores
+        the webhook URLs from the product-environment configuration.
+  \item For each configured webhook (ordered by \code{exec\_order}): an
+        HTTP POST is sent to the GitLab webhook URL with the Linode/Tofu
+        parameters as JSON.
+  \item GitLab receives the trigger, starts a pipeline, returns a
+        pipeline ID.
+  \item The webshop stores the pipeline ID(s) in the JSONB
+        \code{pipeline\_ids} column.
+  \item The GitLab Polling goroutine detects the in-flight pipeline and
+        starts querying the Pipelines API every 30 seconds.
+  \item When the pipeline completes successfully, the poller sets status
+        to \code{completed} and sends a deployment-complete email.
+  \item On failure, status becomes \code{failed} and failure emails go
+        to the orderer and all DU Admins.
+\end{enumerate}
+
+\subsection{Request–Response Lifecycle (HTMX)}
+
+Most user interactions either perform a full page load (navigation) or
+return an HTML fragment (HTMX). The server detects HTMX requests via the
+\code{HX-Request} header. Full renders use the layout template with
+content injected into the \code{\{\{block "content"\}\}} slot.
+Fragments skip the layout and return only the relevant HTML snippet,
+which HTMX swaps into the DOM.
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Design Decisions \& Technology Rationale}
+\label{ch:design}
+
+\section{Go as Application Language}
+
+\textbf{Decision:} The entire backend is written in Go.
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item Compiles to a single self-contained binary with no runtime
+        dependencies — ideal for Docker-based deployment.
+  \item Low memory footprint and predictable garbage collection enable
+        running multiple polling goroutines without resource pressure.
+  \item The standard library \code{net/http} in Go 1.22+ provides
+        pattern-matching routing (\code{"GET /path/\{id\}"}) sufficient
+        for this use case, removing the need for a router dependency.
+  \item \code{html/template} provides automatic context-aware escaping,
+        eliminating entire classes of XSS vulnerabilities.
+  \item Goroutines provide a natural model for the concurrent GitLab
+        pipeline polling without callback complexity.
+\end{itemize}
+
+\textbf{Alternative considered:} Python/FastAPI with Jinja2. Rejected
+because the deployment story is more complex (virtualenv, interpreter)
+and concurrency requires async, which increases cognitive overhead.
+
+\section{Server-Side Rendering with HTMX}
+
+\textbf{Decision:} Pages are rendered server-side; dynamic updates use
+HTMX HTML fragments rather than a JavaScript SPA framework.
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item No JSON API surface to design, document, or secure separately —
+        the server owns both data and presentation.
+  \item Progressive enhancement: the UI degrades gracefully if JS is
+        unavailable.
+  \item HTMX's \code{hx-get}/\code{hx-post} attributes on HTML elements
+        cover the interactivity requirements (live status polling,
+        inline form submission, partial page swaps) without React or Vue
+        build pipelines.
+  \item Template-level security: Go's \code{html/template} auto-escapes
+        all inserted values, preventing XSS by construction.
+\end{itemize}
+
+\section{DaisyUI + Tailwind CSS}
+
+\textbf{Decision:} Tailwind CSS for utility classes, DaisyUI for
+semantic component classes (\code{btn}, \code{badge}, \code{card},
+\code{modal}, etc.).
+
+\textbf{Rationale:}
+DaisyUI components map directly to HTML elements and class names —
+no JavaScript component framework is required. The combination produces
+accessible, consistent UI with minimal custom CSS. Tailwind's JIT
+compilation trims the final CSS file to only used classes.
+
+\section{PostgreSQL with pgx (No ORM)}
+
+\textbf{Decision:} PostgreSQL 15+, accessed via \code{pgx/v5} with
+hand-written SQL. No ORM.
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item JSONB arrays for \code{pipeline\_ids} allow storing multiple
+        concurrent pipeline references per order without a join table,
+        while retaining full query ability.
+  \item BYTEA columns store product images and the branding logo directly
+        in the database, eliminating a separate object store for this scale.
+  \item Direct SQL gives precise control over query shape and enables
+        \code{ON CONFLICT DO UPDATE} (upserts) for the branding and
+        app-config singleton rows.
+  \item PostgreSQL advisory locks coordinate the polling goroutines across
+        multiple replicas without an additional message broker.
+  \item pgx is the highest-performance PostgreSQL driver for Go; it
+        avoids the \code{database/sql} reflection overhead.
+\end{itemize}
+
+\section{Single-Container Architecture}
+
+\textbf{Decision:} The entire application (HTTP server, background
+polling, notification dispatch) runs in a single container.
+
+\textbf{Rationale:}
+At the anticipated load (tens of users, hundreds of orders per month),
+microservice decomposition would add operational complexity (service
+discovery, inter-service auth, distributed tracing) without meaningful
+benefit. The single-binary model keeps deployment simple: one
+\code{docker run} or one Kubernetes \code{Deployment} object.
+Horizontal scaling is achieved by running multiple replicas; PostgreSQL
+advisory locks ensure the polling goroutines do not duplicate work.
+
+\section{OpenTofu over Terraform}
+
+\textbf{Decision:} All IaC modules use OpenTofu 1.9+.
+
+\textbf{Rationale:}
+OpenTofu is a community-governed, truly open-source fork of Terraform
+created after HashiCorp changed Terraform's license to BSL 1.1 in 2023.
+The API, HCL syntax, provider ecosystem, and state format are fully
+compatible. Using OpenTofu avoids future licensing costs and complies
+with PORR's open-source software policy.
+
+\section{GitLab Managed Terraform State}
+
+\textbf{Decision:} OpenTofu state is stored in GitLab's built-in
+HTTP-compatible state backend (GitLab Managed Terraform State).
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item Reuses existing GitLab infrastructure — no S3 bucket, no
+        Terraform Cloud account, no Vault setup required.
+  \item State is protected by GitLab's RBAC: only project members with
+        Developer or higher access can read or modify state.
+  \item State locking via HTTP \code{LOCK}/\code{UNLOCK} prevents
+        concurrent apply operations.
+  \item State is browsable in the GitLab UI under
+        \textbf{Infrastructure → Terraform states}.
+\end{itemize}
+
+\section{Per-Resource Isolated State}
+
+\textbf{Decision:} Each VM and each Kubernetes cluster has its own
+isolated OpenTofu state (named \code{vm-\{label\}} and
+\code{k8s-\{label\}}).
+
+\textbf{Rationale:}
+Shared state across multiple VMs creates blast-radius risk: a failing
+\code{apply} for one VM could lock the state and block unrelated VMs.
+Isolated states mean each resource's lifecycle is entirely independent.
+The trade-off is a larger number of state files, which is manageable
+at the expected scale.
+
+\section{Webhook-Driven Pipeline Trigger}
+
+\textbf{Decision:} The webshop triggers GitLab pipelines via webhook
+(HTTP POST) rather than the GitLab API's pipeline-trigger endpoint.
+
+\textbf{Rationale:}
+Webhooks are the native GitLab mechanism for external triggers. They
+carry a secure token for authentication and include the ability to pass
+variables (OpenTofu parameters) as JSON. The pipeline configuration
+(\file{.gitlab-ci.yml}) lives in the same repository as the IaC code,
+making the trigger configuration auditable and version-controlled.
+
+\section{Internationalization: 25 Languages}
+
+\textbf{Decision:} All UI strings are externalized in a key-value i18n
+map covering 25 languages (all EU official languages plus Russian and
+Ukrainian).
+
+\textbf{Rationale:}
+PORR AG operates across Europe. The map is defined in
+\file{internal/i18n/i18n.go} as a Go map literal for compile-time
+completeness checking. Translation of product content (not UI strings)
+is delegated to the optional AI translation service.
+
+\section{Session Security: Encrypted Cookies}
+
+\textbf{Decision:} User sessions are stored in encrypted, signed HTTP
+cookies — not in the database or server-side session store.
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item No database round-trip on every request to look up a session.
+  \item Horizontal scaling is trivial: no shared session store required.
+  \item The \code{SESSION\_KEY} (32-byte, hex-encoded) is used to both
+        sign and encrypt the cookie content via AES-GCM, so the server
+        can verify integrity without a separate HMAC key.
+  \item Cookies are set with \code{HttpOnly}, \code{Secure}, and
+        \code{SameSite=Lax} to mitigate XSS session theft and CSRF.
+  \item Logout invalidates the session by overwriting the cookie with an
+        empty, expired value — no server-side revocation list needed for
+        the MVP threat model.
+\end{itemize}
+
+\textbf{Alternative considered:} Server-side sessions in PostgreSQL.
+Rejected to avoid the extra table and join on every authenticated
+request. If revocation of individual sessions at scale is required this
+can be introduced as a future enhancement.
+
+\section{Password Hashing: bcrypt}
+
+\textbf{Decision:} Local user passwords are hashed with bcrypt (cost
+factor~12) via \code{golang.org/x/crypto/bcrypt}.
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item bcrypt is an adaptive, memory-hard function specifically designed
+        for password storage; it is resistant to GPU-accelerated
+        dictionary attacks.
+  \item Cost factor~12 takes ~250\,ms on modern hardware — slow enough
+        to deter brute-force while still acceptable for interactive login.
+  \item The Go standard-library-adjacent \code{x/crypto} package is
+        actively maintained by the Go team.
+  \item Passwords are never stored in plaintext or with reversible
+        encryption.
+\end{itemize}
+
+\textbf{Alternative considered:} Argon2id. More modern, but bcrypt is
+widely understood, well-tested in Go, and sufficient for the low
+login-volume use case.
+
+\section{Static Asset Embedding: \texttt{embed.FS}}
+
+\textbf{Decision:} HTML templates and static assets (CSS, JS, images)
+are embedded into the Go binary at compile time using the
+\code{//go:embed} directive and \code{embed.FS}.
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item The resulting binary is fully self-contained — no external
+        file system paths need to match the deployment environment.
+  \item Deployment is a single \code{COPY} in the Dockerfile (multi-stage
+        build); no volume mounts are required for templates.
+  \item Template changes are compiled into the binary, so a deployment
+        is always atomic: the binary and its templates are in sync.
+  \item The Go compiler resolves embed paths at build time, making
+        missing-file bugs a compile error rather than a runtime panic.
+\end{itemize}
+
+\textbf{Trade-off:} Hot-reloading templates during development is not
+possible without restarting the server. The \code{make dev} target runs
+the server with \code{go run}, so a simple restart is fast enough for
+the development workflow.
+
+% ─────────────────────────────────────────────────────────────
+%  PART II — INFRASTRUCTURE AS CODE
+% ─────────────────────────────────────────────────────────────
+\part{Infrastructure as Code}
+\label{part:iac}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{GitLab Repository Concept}
+\label{ch:gitlab-concept}
+
+\section{Overview}
+
+The IaC layer consists of six GitLab repositories in the \code{porr-ag}
+group. Each repository is a self-contained OpenTofu module with its own
+CI/CD pipeline and state. Together they provision all cloud
+infrastructure on Linode/Akamai.
+
+\begin{table}[H]
+  \centering
+  \caption{GitLab repository overview}
+  \label{tab:repos}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
+    \toprule
+    \textbf{Repository} & \textbf{Purpose} & \textbf{Trigger} \\
+    \midrule
+    \code{network-core}   & VPC, subnets, base firewall, DNS zone & Manual \\
+    \code{vm-platform}    & Linode VM instances (per-VM) & Webhook \\
+    \code{k8s-platform}   & LKE Kubernetes clusters (per-cluster) & Webhook \\
+    \code{shared-services}& GitLab CE + Vault + Registry & Manual \\
+    \code{observability}  & Grafana + Prometheus + Loki & Manual \\
+    \code{infra-state}    & State backend host (no IaC code) & N/A \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\section{Repository File Structure}
+
+Every module repository (except \code{infra-state}) follows the same
+file layout:
+
+\begin{lstlisting}[style=bash]
+<module>/
++-- .gitlab-ci.yml   # CI/CD pipeline definition
++-- backend.tf       # HTTP state backend (GitLab Managed)
++-- provider.tf      # Linode provider + required versions
++-- variables.tf     # Input variable declarations
++-- main.tf          # Resource definitions
++-- outputs.tf       # Output values
+\end{lstlisting}
+
+\section{State Management}
+
+All state files live in the \code{infra-state} project. The project
+hosts no IaC code; it is solely a container for GitLab Managed Terraform
+State files.
+
+\textbf{State naming convention:}
+
+\begin{table}[H]
+  \centering
+  \caption{State name convention per module}
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    \textbf{Module} & \textbf{State name} \\
+    \midrule
+    \code{network-core}    & \code{network-core} \\
+    \code{vm-platform}     & \code{vm-\{vm\_label\}} \\
+    \code{k8s-platform}    & \code{k8s-\{cluster\_label\}} \\
+    \code{shared-services} & \code{shared-prod} \\
+    \code{observability}   & \code{observability-prod} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The backend URL pattern is:
+\begin{lstlisting}[style=bash]
+https://<gitlab-host>/api/v4/projects/<INFRA_STATE_PROJECT_ID>/terraform/state/<STATE_NAME>
+\end{lstlisting}
+
+Backend configuration is passed at \code{tofu init} time via
+\code{-backend-config} flags, not hard-coded in \file{backend.tf}.
+This keeps credentials out of version control.
+
+\section{CI/CD Pipeline Stages}
+
+All module pipelines share the same three-stage structure:
+
+\begin{enumerate}
+  \item \textbf{validate} — \code{tofu validate}: checks HCL syntax and
+        provider schema compliance.
+  \item \textbf{plan} — \code{tofu plan -out=tfplan}: computes the
+        diff and saves the plan artifact.
+  \item \textbf{apply} — \code{tofu apply tfplan}: applies the plan.
+        For webhook-triggered modules, apply runs automatically on
+        pipeline success. For singleton modules (\code{shared-services},
+        \code{observability}, \code{network-core}), the apply job is
+        \code{when: manual} to require deliberate human confirmation.
+\end{enumerate}
+
+\textbf{Destroy flow:} Webhook-triggered modules (\code{vm-platform},
+\code{k8s-platform}) accept a \code{TF\_ACTION=destroy} variable. When
+set, the apply stage runs \code{tofu destroy -auto-approve} instead of
+\code{tofu apply}.
+
+Listing~\ref{lst:gitlab-ci-vm} shows the canonical \file{.gitlab-ci.yml}
+for the \code{vm-platform} module. Singleton modules differ only in the
+\code{apply} job: \code{when: manual} replaces \code{when: on\_success},
+and there is no destroy branch.
+
+\begin{lstlisting}[style=yaml,caption={.gitlab-ci.yml for vm-platform (webhook-triggered module)},label={lst:gitlab-ci-vm}]
+image: ghcr.io/opentofu/opentofu:1.9
+
+variables:
+  TF_ACTION: "apply"
+  TF_STATE_NAME: "vm-${TF_VAR_vm_label}"
+  TF_VAR_linode_token: "${LINODE_TOKEN}"
+
+.tofu_init: &tofu_init
+  before_script:
+    - tofu init
+        -reconfigure
+        -backend-config="address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
+        -backend-config="lock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
+        -backend-config="unlock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
+        -backend-config="username=gitlab-ci-token"
+        -backend-config="password=${CI_JOB_TOKEN}"
+        -backend-config="lock_method=POST"
+        -backend-config="unlock_method=DELETE"
+        -backend-config="retry_wait_min=5"
+
+stages:
+  - validate
+  - plan
+  - apply
+
+validate:
+  stage: validate
+  <<: *tofu_init
+  script:
+    - tofu validate
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "trigger"
+
+plan:
+  stage: plan
+  <<: *tofu_init
+  script:
+    - tofu plan -out=tfplan
+  artifacts:
+    paths:
+      - tfplan
+    expire_in: 1 hour
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "trigger"
+
+apply:
+  stage: apply
+  <<: *tofu_init
+  script:
+    - |
+      if [ "${TF_ACTION}" = "destroy" ]; then
+        tofu destroy -auto-approve
+      else
+        tofu apply -auto-approve tfplan
+      fi
+  dependencies:
+    - plan
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "trigger" && $TF_ACTION == "destroy"
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "trigger"
+      when: on_success
+\end{lstlisting}
+
+Listing~\ref{lst:gitlab-ci-singleton} shows a complete pipeline for
+singleton modules (\code{network-core}, \code{shared-services},
+\code{observability}) where a human must confirm the apply step:
+
+\begin{lstlisting}[style=yaml,caption={.gitlab-ci.yml for singleton modules (manual apply)},label={lst:gitlab-ci-singleton}]
+image: ghcr.io/opentofu/opentofu:1.9
+
+variables:
+  TF_STATE_NAME: "shared-prod"
+  TF_VAR_linode_token: "${LINODE_TOKEN}"
+
+.tofu_init: &tofu_init
+  before_script:
+    - tofu init
+        -backend-config="address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
+        -backend-config="lock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
+        -backend-config="unlock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
+        -backend-config="username=gitlab-ci-token"
+        -backend-config="password=${CI_JOB_TOKEN}"
+        -backend-config="lock_method=POST"
+        -backend-config="unlock_method=DELETE"
+        -backend-config="retry_wait_min=5"
+
+stages:
+  - validate
+  - plan
+  - apply
+
+validate:
+  stage: validate
+  <<: *tofu_init
+  script:
+    - tofu validate
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+plan:
+  stage: plan
+  <<: *tofu_init
+  script:
+    - tofu plan -out=tfplan
+  artifacts:
+    paths:
+      - tfplan
+    expire_in: 1 hour
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+apply:
+  stage: apply
+  <<: *tofu_init
+  script:
+    - tofu apply -auto-approve tfplan
+  dependencies:
+    - plan
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+\end{lstlisting}
+
+\notebox{The single required CI/CD variable to set in the \textit{infra-state}
+GitLab project group is \code{INFRA\_STATE\_PROJECT\_ID} — the numeric project
+ID of the \code{infra-state} repository (visible in GitLab under
+\textbf{Settings → General}). \code{CI\_JOB\_TOKEN} and \code{CI\_API\_V4\_URL}
+are provided automatically by GitLab CI. \code{LINODE\_TOKEN} must be
+set with Read/Write API access.}
+
+\section{Webhook Integration with the Webshop}
+\label{sec:webhook}
+
+\begin{enumerate}
+  \item A DU Admin approves an order in the webshop (or places one
+        directly).
+  \item For each webhook configured on the product-environment
+        combination, the webshop sends:
+\begin{lstlisting}[style=bash]
+POST <gitlab-webhook-url>
+X-Gitlab-Token: <secret>
+Content-Type: application/json
+
+{
+  "ref": "main",
+  "variables": [
+    {"key": "TF_VAR_vm_label",  "value": "myvm-01"},
+    {"key": "TF_VAR_vpc_id",    "value": "12345"},
+    ...
+  ]
+}
+\end{lstlisting}
+  \item GitLab starts a pipeline for the \code{main} branch, injecting
+        the variables as environment variables.
+  \item The pipeline reads \code{TF\_VAR\_*} variables, runs
+        \code{tofu plan} then \code{tofu apply}.
+  \item On completion (success or failure), the webshop's polling
+        goroutine detects the status change and updates the order record.
+\end{enumerate}
+
+\section{Dependency Between Modules}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.0cm and 2.0cm,
+  dep/.style={rectangle, draw=porr-blue!60, fill=porr-blue!10,
+              text width=3cm, align=center, minimum height=1.2cm,
+              font=\small\bfseries},
+  dep-ext/.style={rectangle, draw=gray!60, fill=gray!10,
+                  text width=3cm, align=center, minimum height=1.2cm,
+                  font=\small},
+  arr/.style={->, >=Stealth, thick, gray!70}]
+
+  \node[dep] (nc)  {network-core};
+  \node[dep, right=2.5cm of nc] (vm)  {vm-platform};
+  \node[dep, right=of vm]        (k8s) {k8s-platform};
+  \node[dep, below=1.2cm of nc]  (ss)  {shared-services};
+  \node[dep, right=of ss]        (obs) {observability};
+  \node[dep-ext, below right=1.2cm and 0.5cm of nc, text width=2.2cm]
+        (is) {infra-state\\\scriptsize(state host)};
+
+  \draw[arr] (nc) -- node[c4label,above]{\scriptsize vpc\_id, subnet\_id, firewall\_id} (vm);
+  \draw[arr] (nc) -- node[c4label,above]{\scriptsize vpc\_id, subnet\_id} (k8s);
+  \draw[arr] (nc) -- (ss);
+  \draw[arr] (nc) -- (obs);
+
+\end{tikzpicture}
+\caption{Module dependency graph}
+\label{fig:module-deps}
+\end{figure}
+
+\code{network-core} must be applied first. Its outputs (\code{vpc\_id},
+\code{subnet\_ids}, \code{firewall\_id}) are passed as input variables
+to all other modules.
+
+% ─────────────────────────────────────────────────────────────
+\chapter{OpenTofu Modules}
+\label{ch:modules}
+
+\section{network-core}
+
+\textbf{Purpose:} Foundational network infrastructure. Apply once per
+environment; no webhook trigger.
+
+\begin{description}
+  \item[Resources created:]
+    \code{linode\_vpc} (VPC), \code{linode\_vpc\_subnet} (subnets via
+    \code{for\_each}), \code{linode\_firewall} (base inbound/outbound
+    policy), \code{linode\_domain} (optional DNS zone).
+  \item[Key design choice:]
+    Subnets are defined as a \code{map(object(\{cidr, description\}))}
+    variable. This allows adding subnets by editing a single variable
+    without changing the resource code.
+  \item[Key outputs:]
+    \code{vpc\_id}, \code{subnet\_ids} (map: label → ID),
+    \code{firewall\_id}, \code{dns\_zone\_id}.
+\end{description}
+
+\section{vm-platform}
+
+\textbf{Purpose:} Provision individual Linode VMs on demand. One state
+per VM (\code{vm-\{label\}}). Webhook-triggered by the webshop.
+
+\begin{description}
+  \item[Resources created:]
+    \code{linode\_firewall} (VM-specific), \code{linode\_instance},
+    \code{linode\_firewall\_device} (attaches firewall to VM),
+    \code{linode\_volume} (optional block storage),
+    \code{linode\_domain\_record} (optional A record).
+  \item[Key design choice:]
+    The VM gets its own firewall (in addition to the base firewall from
+    \code{network-core}) to allow per-VM port rules without affecting
+    the shared base policy.
+  \item[Destroy flow:]
+    Triggered by the webshop decommission action.
+    \code{TF\_ACTION=destroy} → \code{tofu destroy -auto-approve}.
+\end{description}
+
+\section{k8s-platform}
+
+\textbf{Purpose:} Provision Linode Kubernetes Engine (LKE) clusters.
+One state per cluster (\code{k8s-\{label\}}). Webhook-triggered.
+
+\begin{description}
+  \item[Resources created:]
+    \code{linode\_firewall} (cluster-specific), \code{linode\_lke\_cluster}
+    with dynamic \code{pool} blocks (supports multiple node pools with
+    optional autoscaler), \code{linode\_domain\_record} (optional).
+  \item[Key output:]
+    \code{kubeconfig} (base64-encoded, marked \code{sensitive}) —
+    retrieve with \code{tofu output -raw kubeconfig | base64 -d}.
+  \item[Node pool design:]
+    Node pools are a \code{list(object)} variable with an optional
+    \code{autoscaler} sub-object, allowing any combination of fixed-size
+    and auto-scaling pools in a single cluster.
+\end{description}
+
+\section{shared-services}
+
+\textbf{Purpose:} Long-lived shared services: GitLab CE, HashiCorp
+Vault, container registry. Single state (\code{shared-prod}).
+Manual apply.
+
+\begin{description}
+  \item[Resources created:]
+    Two \code{linode\_instance} resources (GitLab, Vault), two
+    \code{linode\_volume} resources (data volumes), one
+    \code{linode\_firewall} with tailored inbound rules (HTTP/HTTPS/Git
+    SSH for GitLab; Vault API 8200 restricted to RFC1918), two
+    \code{linode\_firewall\_device} attachments, optional DNS A records.
+  \item[Operational note:]
+    GitLab CE and Vault are installed via post-provisioning scripts
+    (cloud-init or Ansible), not managed by OpenTofu. OpenTofu only
+    provisions the infrastructure layer.
+\end{description}
+
+\section{observability}
+
+\textbf{Purpose:} Grafana, Prometheus, and Loki on a single VM.
+Single state (\code{observability-prod}). Manual apply.
+
+\begin{description}
+  \item[Resources created:]
+    \code{linode\_instance}, \code{linode\_volume} (200 GB default for
+    metrics and logs), \code{linode\_firewall} (Grafana port
+    configurable, Prometheus/Loki restricted to RFC1918), optional DNS
+    A record.
+  \item[Key output:]
+    \code{grafana\_url} — \code{http://\{ip\}:\{port\}}.
+\end{description}
+
+% ─────────────────────────────────────────────────────────────
+%  PART III — ADMINISTRATOR GUIDE
+% ─────────────────────────────────────────────────────────────
+\part{Administrator Guide}
+\label{part:admin}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Initial Setup \& Installation}
+\label{ch:setup}
+
+\section{Prerequisites}
+
+\begin{itemize}
+  \item Docker 24+ (or a Kubernetes cluster)
+  \item PostgreSQL 15+ (external or containerized)
+  \item SMTP server credentials (optional, can be configured later)
+  \item Microsoft Entra ID application registration for OIDC
+        (optional for local-only operation)
+  \item Linode API token with Read/Write scope
+  \item GitLab instance with webhook support
+\end{itemize}
+
+\section{Environment Variables}
+
+The webshop is configured entirely via environment variables. Copy
+\file{.env.example} to \file{.env} and populate the following:
+
+\begin{table}[H]
+  \centering
+  \caption{Required environment variables}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
+    \toprule
+    \textbf{Variable} & \textbf{Description} & \textbf{Required} \\
+    \midrule
+    \env{DATABASE\_URL}     & PostgreSQL DSN                         & Yes \\
+    \env{SESSION\_KEY}      & 32-byte hex session encryption key      & Yes \\
+    \env{ADMIN\_EMAIL}      & Initial Webshop Admin email             & Yes \\
+    \env{ADMIN\_PASSWORD}   & Initial Webshop Admin password          & Yes \\
+    \env{BASE\_URL}         & Public URL of the webshop               & Yes \\
+    \env{OIDC\_CLIENT\_ID}     & Entra ID application client ID      & No  \\
+    \env{OIDC\_CLIENT\_SECRET} & Entra ID client secret              & No  \\
+    \env{OIDC\_ISSUER}         & Entra ID issuer URL                 & No  \\
+    \env{SMTP\_HOST}        & SMTP host (overridable in Admin UI)     & No  \\
+    \env{SMTP\_PORT}        & SMTP port (default 587)                 & No  \\
+    \env{SMTP\_FROM}        & Sender address                          & No  \\
+    \env{SMTP\_USERNAME}    & SMTP username                           & No  \\
+    \env{SMTP\_PASSWORD}    & SMTP password                           & No  \\
+    \env{AI\_PROVIDER}      & AI translation provider (startup only)  & No  \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\notebox{SMTP and AI translation can also be configured (and overridden)
+through the Admin UI at \route{/admin/smtp} and \route{/admin/ai-config}.
+Database settings take precedence over environment variables at runtime.}
+
+\section{Deployment on a Docker Host}
+\label{sec:docker-deploy}
+
+This section describes a production-grade deployment on a single Linux
+host using Docker and an Nginx reverse proxy with TLS termination.
+
+\subsection*{Architecture}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.2cm and 1.6cm,
+  box/.style={rectangle, draw=porr-blue!70, fill=porr-blue!10,
+              text width=2.8cm, align=center, minimum height=1.1cm, font=\small\bfseries},
+  db/.style={cylinder, draw=c4-database!80, fill=c4-database!20,
+             shape border rotate=90, text width=2.2cm, align=center,
+             minimum height=1.2cm, font=\small\bfseries},
+  ext/.style={rectangle, draw=gray!60, fill=gray!10, dashed,
+              text width=2.4cm, align=center, minimum height=1.0cm, font=\small},
+  arr/.style={->, >=Stealth, thick, gray!60}]
+
+  \node[ext] (client) {Browser\\/ API Client};
+  \node[box, right=1.6cm of client] (nginx) {Nginx\\\scriptsize TLS termination\\reverse proxy};
+  \node[box, right=1.6cm of nginx] (app) {infra-webshop\\\scriptsize Docker\\:8080};
+  \node[db, right=1.6cm of app] (pg) {PostgreSQL\\\scriptsize :5432};
+  \node[ext, below=1.2cm of nginx] (letsenc) {Let's Encrypt\\\scriptsize or Corporate CA};
+
+  \draw[arr] (client) -- node[above,font=\tiny]{HTTPS:443} (nginx);
+  \draw[arr] (nginx)  -- node[above,font=\tiny]{HTTP:8080} (app);
+  \draw[arr] (app)    -- node[above,font=\tiny]{TCP:5432} (pg);
+  \draw[arr, dashed] (letsenc) -- node[right,font=\tiny]{cert} (nginx);
+
+\end{tikzpicture}}%
+\caption{Docker Host deployment architecture}
+\label{fig:docker-arch}
+\end{figure}
+
+\subsection*{Step-by-Step Deployment Procedure}
+
+\begin{enumerate}
+
+\item \textbf{Install Docker and Docker Compose.}
+\begin{lstlisting}[style=bash]
+# Debian/Ubuntu
+apt-get install -y docker.io docker-compose-v2
+systemctl enable --now docker
+\end{lstlisting}
+
+\item \textbf{Clone the repository and build the image.}
+\begin{lstlisting}[style=bash]
+git clone https://gitlab.example.com/porr-ag/infra-webshop.git
+cd infra-webshop
+make docker-build
+# or pull from registry:
+docker login registry.gitlab.example.com
+docker pull registry.gitlab.example.com/porr-ag/infra-webshop:latest
+\end{lstlisting}
+
+\item \textbf{Create the environment file.}
+\begin{lstlisting}[style=bash]
+cp deploy/docker-host/.env.example deploy/docker-host/.env
+# Edit .env with a text editor; set at minimum:
+#   DATABASE_URL, SESSION_KEY, ADMIN_EMAIL, ADMIN_PASSWORD, BASE_URL
+\end{lstlisting}
+
+\item \textbf{Start PostgreSQL and the application.}
+\begin{lstlisting}[style=bash]
+cd deploy/docker-host
+docker compose up -d
+\end{lstlisting}
+
+\item \textbf{Run database migrations.}
+\begin{lstlisting}[style=bash]
+docker exec infra-webshop /migrate
+\end{lstlisting}
+
+\item \textbf{Obtain a TLS certificate.}
+
+\textit{Option A — Let's Encrypt (public domain):}
+\begin{lstlisting}[style=bash]
+apt-get install -y certbot python3-certbot-nginx
+certbot --nginx -d shop.example.com
+\end{lstlisting}
+
+\textit{Option B — Corporate CA (internal PKI):} Place the signed
+certificate and key at the paths referenced in
+\file{deploy/docker-host/nginx.conf} (see below) and restart Nginx.
+
+\item \textbf{Configure Nginx as TLS-terminating reverse proxy.}
+
+Listing~\ref{lst:nginxconf} shows a minimal but production-ready
+Nginx configuration:
+
+\begin{lstlisting}[style=yaml,caption={deploy/docker-host/nginx.conf},label={lst:nginxconf}]
+server {
+    listen 80;
+    server_name shop.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name shop.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/shop.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/shop.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    client_max_body_size 10m;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8080;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+}
+\end{lstlisting}
+
+\item \textbf{Reload Nginx.}
+\begin{lstlisting}[style=bash]
+nginx -t && systemctl reload nginx
+\end{lstlisting}
+
+\item \textbf{Verify the deployment.}
+
+Navigate to \url{https://shop.example.com} and log in with
+\env{ADMIN\_EMAIL} / \env{ADMIN\_PASSWORD}. Change the password
+immediately under \textbf{Settings → My Profile}.
+
+\item \textbf{(Optional) Enable automatic certificate renewal.}
+\begin{lstlisting}[style=bash]
+# Certbot installs a systemd timer automatically
+systemctl status certbot.timer
+\end{lstlisting}
+
+\end{enumerate}
+
+\subsection*{Backup \& Restore}
+
+\begin{lstlisting}[style=bash]
+# Backup PostgreSQL
+docker exec porr-postgres pg_dump -U webshop webshop \
+  | gzip > backup-$(date +%Y%m%d).sql.gz
+
+# Restore
+zcat backup-20260101.sql.gz \
+  | docker exec -i porr-postgres psql -U webshop webshop
+\end{lstlisting}
+
+\section{Deployment on Kubernetes}
+\label{sec:k8s-deploy}
+
+This section covers deploying the webshop to an existing Kubernetes
+cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
+
+\subsection*{Architecture}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.2cm and 1.8cm,
+  pod/.style={rectangle, draw=c4-container!80, fill=c4-container!15,
+              text width=2.8cm, align=center, minimum height=1.0cm, font=\small\bfseries},
+  svc/.style={rectangle, rounded corners=4pt, draw=porr-amber!80, fill=porr-amber!20,
+              text width=2.4cm, align=center, minimum height=0.9cm, font=\scriptsize\bfseries},
+  ext/.style={rectangle, draw=gray!60, fill=gray!10, dashed,
+              text width=2.4cm, align=center, minimum height=0.9cm, font=\small},
+  arr/.style={->, >=Stealth, thick, gray!60}]
+
+  \node[ext] (client) {Browser};
+  \node[svc, right=1.8cm of client] (ing) {Ingress\\(Nginx)};
+  \node[pod, right=1.8cm of ing] (app) {infra-webshop\\Pod(s)};
+  \node[ext, right=1.8cm of app] (pg) {PostgreSQL\\\scriptsize external};
+  \node[svc, below=1.0cm of ing] (cm) {cert-manager\\ClusterIssuer};
+  \node[svc, below=1.0cm of app] (hpa) {HPA};
+
+  \draw[arr] (client) -- node[above,font=\tiny]{HTTPS} (ing);
+  \draw[arr] (ing) -- node[above,font=\tiny]{:8080} (app);
+  \draw[arr] (app) -- node[above,font=\tiny]{:5432} (pg);
+  \draw[arr, dashed] (cm) -- (ing);
+  \draw[arr, dashed] (hpa) -- (app);
+
+\end{tikzpicture}}%
+\caption{Kubernetes deployment architecture}
+\label{fig:k8s-arch}
+\end{figure}
+
+\subsection*{Prerequisites}
+
+\begin{itemize}
+  \item \code{kubectl} and \code{helm} (v3.12+) configured for the target cluster
+  \item Nginx Ingress Controller installed (\code{ingress-nginx})
+  \item cert-manager installed with a \code{ClusterIssuer} for Let's
+        Encrypt or a corporate CA
+  \item The image \code{porrag/infra-webshop:\textit{tag}} is publicly
+        available on Docker Hub — no \code{imagePullSecret} required
+\end{itemize}
+
+\subsection*{Deployment with Helm}
+
+The repository ships a Helm chart at \file{deploy/helm/infra-webshop/}.
+It covers the full deployment in a single command and handles database
+migrations automatically as a pre-install/pre-upgrade hook.
+
+\begin{lstlisting}[style=bash,caption={Helm install with required values},label={lst:helm-install}]
+helm upgrade --install infra-webshop \
+  deploy/helm/infra-webshop \
+  --namespace infra-webshop \
+  --create-namespace \
+  --set env.databaseUrl="postgres://user:pass@pg.example.com:5432/webshop?sslmode=require" \
+  --set env.sessionSecret="<32-byte-hex>" \
+  --set env.adminPassword="<initial-password>" \
+  --set ingress.hosts[0].host=shop.example.com \
+  --set ingress.tls[0].hosts[0]=shop.example.com \
+  --set ingress.tls[0].secretName=infra-webshop-tls
+\end{lstlisting}
+
+\notebox{Sensitive values should be passed via a separate
+\file{secrets.values.yaml} file (not committed to version control)
+rather than as \code{--set} arguments, so they do not appear in shell
+history.}
+
+\begin{lstlisting}[style=bash,caption={Example secrets.values.yaml (do not commit)},label={lst:helm-secrets}]
+env:
+  databaseUrl: "postgres://user:pass@pg.example.com:5432/webshop?sslmode=require"
+  sessionSecret: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+  adminPassword: "change-me-immediately"
+  entra:
+    tenantId: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    clientId: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    clientSecret: "your-client-secret"
+    redirectUrl: "https://shop.example.com/auth/callback"
+\end{lstlisting}
+
+\begin{lstlisting}[style=bash]
+helm upgrade --install infra-webshop deploy/helm/infra-webshop \
+  --namespace infra-webshop --create-namespace \
+  -f values.production.yaml \
+  -f secrets.values.yaml
+\end{lstlisting}
+
+Table~\ref{tab:helm-values} lists the most important configurable values.
+
+\begin{table}[H]
+  \centering
+  \caption{Key Helm values}
+  \label{tab:helm-values}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
+    \toprule
+    \textbf{Key} & \textbf{Description} & \textbf{Default} \\
+    \midrule
+    \code{image.repository}          & Docker Hub image name          & \code{porrag/infra-webshop} \\
+    \code{image.tag}                  & Image tag (empty = appVersion) & \code{""} \\
+    \code{replicaCount}               & Deployment replicas            & \code{2} \\
+    \code{env.databaseUrl}            & PostgreSQL DSN (required)      & — \\
+    \code{env.sessionSecret}          & Session encryption key (req.)  & — \\
+    \code{env.adminPassword}          & Initial admin password (req.)  & — \\
+    \code{ingress.hosts}              & Ingress host list              & \code{shop.example.com} \\
+    \code{ingress.tls}                & TLS configuration              & (see values.yaml) \\
+    \code{autoscaling.enabled}        & Enable HPA                     & \code{false} \\
+    \code{autoscaling.maxReplicas}    & HPA max replica count          & \code{6} \\
+    \code{migrate.enabled}            & Run DB migrations as hook      & \code{true} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection*{Step-by-Step Manual Deployment (without Helm)}
+
+\begin{enumerate}
+
+\item \textbf{Create the namespace.}
+\begin{lstlisting}[style=bash]
+kubectl create namespace infra-webshop
+\end{lstlisting}
+
+\item \textbf{Create the image pull secret (if using a private registry).}
+\begin{lstlisting}[style=bash]
+kubectl create secret docker-registry gitlab-registry \
+  --namespace infra-webshop \
+  --docker-server=registry.gitlab.example.com \
+  --docker-username=<deploy-token-name> \
+  --docker-password=<deploy-token-value>
+\end{lstlisting}
+
+\item \textbf{Create the application Secret.}
+\begin{lstlisting}[style=yaml,caption={Kubernetes Secret for the webshop},label={lst:k8s-secret}]
+apiVersion: v1
+kind: Secret
+metadata:
+  name: infra-webshop-env
+  namespace: infra-webshop
+type: Opaque
+stringData:
+  DATABASE_URL: "postgres://webshop:password@pg.example.com:5432/webshop?sslmode=require"
+  SESSION_KEY: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+  ADMIN_EMAIL: "admin@example.com"
+  ADMIN_PASSWORD: "changeme"
+  BASE_URL: "https://shop.example.com"
+\end{lstlisting}
+
+\item \textbf{Run database migrations as a Kubernetes Job.}
+\begin{lstlisting}[style=yaml,caption={Migration Job},label={lst:k8s-migrate}]
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: infra-webshop-migrate
+  namespace: infra-webshop
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: gitlab-registry
+      containers:
+        - name: migrate
+          image: registry.gitlab.example.com/porr-ag/infra-webshop:latest
+          command: ["/migrate"]
+          envFrom:
+            - secretRef:
+                name: infra-webshop-env
+\end{lstlisting}
+
+\begin{lstlisting}[style=bash]
+kubectl apply -f migrate-job.yaml
+kubectl wait --for=condition=complete job/infra-webshop-migrate \
+  -n infra-webshop --timeout=120s
+\end{lstlisting}
+
+\item \textbf{Deploy the application.}
+\begin{lstlisting}[style=yaml,caption={Deployment and Service},label={lst:k8s-deployment}]
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: infra-webshop
+  namespace: infra-webshop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: infra-webshop
+  template:
+    metadata:
+      labels:
+        app: infra-webshop
+    spec:
+      imagePullSecrets:
+        - name: gitlab-registry
+      containers:
+        - name: app
+          image: registry.gitlab.example.com/porr-ag/infra-webshop:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: infra-webshop-env
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: infra-webshop
+  namespace: infra-webshop
+spec:
+  selector:
+    app: infra-webshop
+  ports:
+    - port: 80
+      targetPort: 8080
+\end{lstlisting}
+
+\item \textbf{Configure the Ingress with TLS.}
+\begin{lstlisting}[style=yaml,caption={Ingress with cert-manager TLS},label={lst:k8s-ingress}]
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: infra-webshop
+  namespace: infra-webshop
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - shop.example.com
+      secretName: infra-webshop-tls
+  rules:
+    - host: shop.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: infra-webshop
+                port:
+                  number: 80
+\end{lstlisting}
+
+\item \textbf{(Optional) Configure Horizontal Pod Autoscaler.}
+\begin{lstlisting}[style=yaml,caption={HorizontalPodAutoscaler},label={lst:k8s-hpa}]
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: infra-webshop
+  namespace: infra-webshop
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: infra-webshop
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+\end{lstlisting}
+
+\item \textbf{Apply all manifests and verify.}
+\begin{lstlisting}[style=bash]
+kubectl apply -f secret.yaml
+kubectl apply -f deployment.yaml
+kubectl apply -f ingress.yaml
+kubectl apply -f hpa.yaml      # optional
+
+kubectl rollout status deployment/infra-webshop -n infra-webshop
+kubectl get ingress -n infra-webshop
+\end{lstlisting}
+
+\end{enumerate}
+
+\notebox{The polling goroutines that track GitLab pipeline status run
+inside each pod. With multiple replicas, advisory locks in PostgreSQL
+(\code{pg\_try\_advisory\_lock}) ensure that only one pod polls each
+pipeline at a time, preventing duplicate status updates.}
+
+\section{Database Migrations}
+
+Migrations are versioned SQL files in \file{internal/migrations/}.
+Run migrations before starting the server:
+
+\begin{lstlisting}[style=bash]
+# Run all pending migrations
+make migrate
+
+# Or directly
+go run ./cmd/migrate
+\end{lstlisting}
+
+Migrations are idempotent (\code{IF NOT EXISTS}, \code{IF NOT EXISTS}
+guards). Re-running is safe.
+
+\section{First Login}
+
+\begin{enumerate}
+  \item Navigate to the webshop URL.
+  \item Click \textbf{Local Login} (not \textbf{Sign in with Microsoft}).
+  \item Enter the email and password from \env{ADMIN\_EMAIL} and
+        \env{ADMIN\_PASSWORD}.
+  \item Navigate to \textbf{Settings → My Profile} and change the
+        default password immediately.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{System Configuration}
+\label{ch:sysconfig}
+
+\section{GitLab Sources}
+
+Under \textbf{Administration → GitLab Sources}:
+
+\begin{enumerate}
+  \item Click \textbf{Add New Source}.
+  \item Enter a \textbf{Name} (label), the instance \textbf{URL}, and
+        a \textbf{Personal Access Token} with \code{read\_api} scope.
+  \item Save. The source is now available when creating environments and
+        when browsing repositories for parameter import.
+\end{enumerate}
+
+\section{Deployment Environments}
+
+Under \textbf{Administration → Deployment Environments}:
+
+\begin{enumerate}
+  \item Click \textbf{Add New Environment}.
+  \item Enter a \textbf{Name} (e.g. \textit{Linode Frankfurt Production}),
+        select the \textbf{GitLab Source}, and enter the \textbf{Webhook URL}
+        and \textbf{Webhook Token}.
+  \item Save. The environment becomes available when assigning products.
+\end{enumerate}
+
+\notebox{The Webhook URL points to a specific GitLab project pipeline
+trigger endpoint, e.g.:\\
+\url{https://gitlab.example.com/api/v4/projects/42/ref/main/trigger/pipeline}}
+
+\section{SMTP Configuration}
+
+Under \textbf{Administration → Email} (\route{/admin/smtp}):
+
+Enter host, port, sender address, username, password, and TLS mode.
+Click \textbf{Save}. The notification service reloads credentials
+immediately without a server restart.
+
+\section{AI Translation}
+\label{sec:aitranslation}
+
+Under \textbf{Administration → AI Translation} (\route{/admin/ai-config}):
+
+\begin{enumerate}
+  \item Select a \textbf{Provider}: Claude, OpenAI, Azure OpenAI,
+        Ollama, or LocalAI.
+  \item Enter the \textbf{API endpoint} and \textbf{API key}.
+        For Ollama/LocalAI, the endpoint is a local URL and no key
+        is required.
+  \item Enter the \textbf{model name} (e.g. \code{claude-opus-4-7},
+        \code{gpt-4o}, \code{llama3.1}).
+  \item Click \textbf{Save}. The translator instance is replaced
+        immediately — the next translation request uses the new provider.
+\end{enumerate}
+
+\section{Branding}
+\label{sec:branding}
+
+Under \textbf{Administration → Shop Design} (\route{/admin/branding}):
+
+\begin{itemize}
+  \item \textbf{Shop Name} and \textbf{Subtitle} — shown in the header.
+  \item \textbf{Primary Color} — header, footer, navigation
+        (default: \code{\#131921}).
+  \item \textbf{Accent Color} — buttons and call-to-action elements
+        (default: \code{\#febd69}).
+  \item \textbf{Logo} — PNG or SVG, displayed in the header; replaces
+        the shop name text if present.
+  \item \textbf{Imprint} — HTML-formatted legal imprint text, shown at
+        \route{/impressum}.
+\end{itemize}
+
+All branding values are stored in a singleton database row and cached
+in-memory with a mutex for read performance.
+
+\section{Currencies}
+\label{sec:currencies}
+
+Under \textbf{Administration → Currencies}:
+
+\begin{enumerate}
+  \item The \textbf{base currency} (default EUR) is the currency in
+        which all product prices are stored.
+  \item Optionally configure an exchange rate API key and endpoint.
+  \item Click \textbf{Update Rates} to fetch live rates.
+  \item Individual rates can be overridden manually for fixed-rate
+        environments.
+\end{enumerate}
+
+Prices are displayed in the user's locale currency by looking up the
+browser locale and applying the stored rate.
+
+% ─────────────────────────────────────────────────────────────
+\chapter{User Management}
+\label{ch:users}
+
+\section{Roles}
+
+\begin{table}[H]
+  \centering
+  \caption{User roles and capabilities}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xll@{}}
+    \toprule
+    \textbf{Role} & \textbf{Description} &
+      \textbf{Auth method} & \textbf{DB role} \\
+    \midrule
+    DU Admin         & Full access; direct ordering; approval & SSO  & \code{admin} \\
+    Webshop Admin    & Catalog \& config; no ordering          & Local & \code{shop\_admin} \\
+    Project Manager  & Orders own infra; approval required     & SSO  & \code{user} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\section{Creating a Local Account}
+
+Under \textbf{Administration → Users}:
+
+\begin{enumerate}
+  \item Click \textbf{New User}.
+  \item Enter \textbf{Name}, \textbf{Email}, \textbf{Password}, and
+        select a \textbf{Role}.
+  \item Click \textbf{Save}.
+\end{enumerate}
+
+SSO users are created automatically on first login.
+
+\section{Editing Users}
+
+Click \textbf{Edit} next to a user to change name, email, or role.
+The password can only be changed by the user themselves under
+\textbf{Settings → My Profile}.
+
+\section{Deactivating Users}
+
+Click \textbf{Deactivate} on the user edit page. Deactivated users
+cannot log in. Their orders and projects remain visible in the system.
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Audit Log}
+\label{ch:audit}
+
+The audit log under \route{/audit} is an append-only, tamper-evident
+record of all system actions.
+
+\section{Logged Events}
+
+\begin{table}[H]
+  \centering
+  \caption{Audited actions}
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    \textbf{Action} & \textbf{Trigger} \\
+    \midrule
+    \code{order\_placed}      & User submits an order \\
+    \code{order\_approved}    & DU Admin approves \\
+    \code{order\_rejected}    & DU Admin rejects (with comment) \\
+    \code{order\_deployed}    & Pipeline completes successfully \\
+    \code{order\_failed}      & Pipeline fails \\
+    \code{decommission\_started}  & User triggers decommission \\
+    \code{decommission\_complete} & Destroy pipeline succeeds \\
+    \code{user\_login}        & Successful authentication \\
+    \code{user\_created}      & Admin creates a user \\
+    \code{config\_changed}    & System configuration updated \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Filtering}
+
+Use the filter form to narrow results by:
+\begin{itemize}
+  \item \textbf{Date range} (from / to)
+  \item \textbf{User}
+  \item \textbf{Action type}
+\end{itemize}
+
+\section{Export}
+
+Click \textbf{Export CSV} or \textbf{Export PDF} to download the
+currently filtered audit log for compliance reporting.
+
+% ─────────────────────────────────────────────────────────────
+%  PART IV — DEVELOPER GUIDE
+% ─────────────────────────────────────────────────────────────
+\part{Developer Guide}
+\label{part:dev}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Development Environment}
+\label{ch:devenv}
+
+\section{Prerequisites}
+
+\begin{itemize}
+  \item Go 1.22+
+  \item Node.js 20+ (for Tailwind CSS compilation)
+  \item Docker \& Docker Compose (for local PostgreSQL)
+  \item \code{pdflatex} or \code{lualatex} (for handbook compilation)
+\end{itemize}
+
+\section{Quick Start}
+
+\begin{lstlisting}[style=bash]
+# Clone and enter the repo
+git clone git@gitlab.example.com:porr-ag/infra-webshop.git
+cd infra-webshop
+
+# Copy and populate environment
+cp .env.example .env
+# Edit .env with your local DB credentials
+
+# Start PostgreSQL and the server in one command
+make dev
+
+# In another terminal: CSS hot-reload
+make css-watch
+\end{lstlisting}
+
+\code{make dev} starts Docker Compose (PostgreSQL), runs CSS build, then
+starts the Go server with live environment variables from \file{.env}.
+
+\section{Makefile Targets}
+
+\begin{table}[H]
+  \centering
+  \caption{Makefile targets}
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    \textbf{Target} & \textbf{Action} \\
+    \midrule
+    \code{make build}      & Build CSS + Go binary \\
+    \code{make run}        & Start server (requires running DB) \\
+    \code{make migrate}    & Run database migrations \\
+    \code{make css}        & Build Tailwind CSS once \\
+    \code{make css-watch}  & Watch and rebuild CSS on change \\
+    \code{make test}       & Run all Go tests \\
+    \code{make vet}        & Run \code{go vet} \\
+    \code{make docker-build} & Build Docker image \\
+    \code{make dev}        & Start DB + server (development) \\
+    \code{make dev-down}   & Stop DB + server \\
+    \code{make clean}      & Remove build artefacts \\
+    \code{make docs}       & Compile the LaTeX handbook to PDF \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Codebase Structure}
+\label{ch:codebase}
+
+\section{Directory Layout}
+
+\begin{lstlisting}
+infra-webshop/
++-- cmd/
+|   +-- server/         # main.go -- server entry point
+|   +-- migrate/        # main.go -- migration runner
++-- docs/               # Documentation (this handbook)
+|   +-- handbook.tex
+|   +-- handbook.pdf    # compiled output
++-- internal/
+|   +-- aitranslation/  # AI translator interface + backends
+|   +-- audit/          # AuditService implementation
+|   +-- auth/           # OIDC, session store, password hashing
+|   +-- config/         # Config struct loaded from env
+|   +-- exchange/       # Currency exchange rate service
+|   +-- handler/        # HTTP handlers and route registration
+|   +-- i18n/           # 25-language key-value translation map
+|   +-- migrations/     # SQL migration files (001_*.sql, ...)
+|   +-- model/          # Shared domain model structs
+|   +-- notification/   # SMTP notification service
+|   +-- repository/     # Repository interfaces
+|   |   +-- postgres/   # pgx/v5 implementations
+|   +-- service/        # Service interfaces
+|       +-- impl/       # Service implementations
++-- ui/
+    +-- templates/
+    |   +-- layout.html         # Shared layout
+    |   +-- pages/              # One file per page
+    |   +-- partials/           # HTMX fragment templates
+    +-- static/
+    |   +-- css/style.css       # Compiled Tailwind output
+    +-- ui.go                   # embed.FS declarations
+\end{lstlisting}
+
+\section{Layered Architecture}
+
+The code follows a strict layered architecture with downward-only
+dependencies:
+
+\[
+\text{Handler} \rightarrow \text{Service} \rightarrow \text{Repository} \rightarrow \text{PostgreSQL}
+\]
+
+\begin{description}
+  \item[\textbf{Handler layer}] (\file{internal/handler/})
+    HTTP handlers only. Read request, call service, render template.
+    No business logic. No SQL.
+  \item[\textbf{Service layer}] (\file{internal/service/})
+    Business rules and orchestration. Calls repositories. Triggers
+    notifications, audit writes, webhook dispatches.
+    Defined as interfaces in \file{service.go}, implemented in
+    \file{impl/}.
+  \item[\textbf{Repository layer}] (\file{internal/repository/})
+    Data access. Defined as interfaces (one per aggregate root).
+    Implemented in \file{postgres/} using pgx. No business logic.
+  \item[\textbf{Model layer}] (\file{internal/model/})
+    Plain Go structs shared across layers. No methods beyond simple
+    helpers.
+\end{description}
+
+\section{Template System}
+
+Each page is a separate \code{*template.Template} instance containing
+the shared \file{layout.html} plus its own page file. This avoids
+\code{\{\{define "content"\}\}} collisions between pages.
+
+Page templates define two blocks:
+\begin{lstlisting}[style=go]
+{{define "title"}}Page Title{{end}}
+{{define "content"}}
+  <!-- page HTML using Tailwind / DaisyUI -->
+{{end}}
+\end{lstlisting}
+
+Data is passed as \code{map[string]any} to \code{h.render()}, which
+wraps it in a \code{PageData} struct providing:
+\begin{description}
+  \item[\code{.Lang}] User's active language code (e.g. \code{"de"}).
+  \item[\code{.Brand}] Branding values (colors, shop name, etc.).
+  \item[\code{.Session}] Current user session (name, role, email).
+  \item[\code{.Flash}] One-time flash message (success/error).
+  \item[\code{.Data}] The \code{map[string]any} passed by the handler.
+\end{description}
+
+Access data in templates:
+\begin{lstlisting}[style=go]
+{{t "admin.title" .Lang}}       {{/* translated string */}}
+{{.Brand.PrimaryColor}}         {{/* branding color */}}
+{{.Session.Name}}               {{/* logged-in user's name */}}
+{{with .Data}}
+  {{.ProductCount}}             {{/* handler-provided data */}}
+{{end}}
+\end{lstlisting}
+
+\section{Adding Translations}
+
+All UI strings live in \file{internal/i18n/i18n.go} as a
+\code{map[string]map[string]string}. To add a new key:
+
+\begin{lstlisting}[style=go]
+// In translations map:
+"my.new.key": {
+    "en": "English text",
+    "de": "Deutscher Text",
+    "fr": "Texte francais",
+    // ... all 25 language codes
+},
+\end{lstlisting}
+
+Use in templates with \code{\{\{t "my.new.key" .Lang\}\}}.
+
+\section{Database Migrations}
+\label{sec:dbmigrations}
+
+Migration files follow the naming pattern
+\file{NNN\_description.sql} and are executed in alphabetical order.
+Write migrations defensively:
+
+\begin{lstlisting}[style=sql]
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS image_mime TEXT NOT NULL DEFAULT 'image/jpeg';
+
+CREATE TABLE IF NOT EXISTS app_config (
+  id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  smtp_host TEXT NOT NULL DEFAULT ''
+  -- ...
+);
+\end{lstlisting}
+
+\warnbox{Never modify a migration that has already been applied to
+production. Always create a new migration file for schema changes.}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Adding a New Feature}
+\label{ch:new-feature}
+
+This chapter describes the canonical pattern for adding a feature end-to-end.
+
+\section{Example: Adding a New Admin Page}
+
+\textbf{Goal:} Add an admin page at \route{/admin/widgets} that lists
+and creates widgets stored in a new \code{widgets} database table.
+
+\subsection{Step 1: Create the Migration}
+
+Create \file{internal/migrations/010\_widgets.sql}:
+
+\begin{lstlisting}[style=sql]
+CREATE TABLE IF NOT EXISTS widgets (
+  id   BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+\end{lstlisting}
+
+\subsection{Step 2: Add the Model}
+
+In \file{internal/model/model.go}:
+
+\begin{lstlisting}[style=go]
+type Widget struct {
+    ID        int64
+    Name      string
+    Active    bool
+    CreatedAt time.Time
+}
+\end{lstlisting}
+
+\subsection{Step 3: Define the Repository Interface}
+
+In \file{internal/repository/repository.go}:
+
+\begin{lstlisting}[style=go]
+type WidgetRepository interface {
+    FindAll(ctx context.Context) ([]model.Widget, error)
+    Create(ctx context.Context, name string) error
+    Delete(ctx context.Context, id int64) error
+}
+\end{lstlisting}
+
+\subsection{Step 4: Implement the Repository}
+
+Create \file{internal/repository/postgres/widget.go}:
+
+\begin{lstlisting}[style=go]
+type widgetRepo struct{ pool *pgxpool.Pool }
+
+func NewWidgetRepository(pool *pgxpool.Pool) repository.WidgetRepository {
+    return &widgetRepo{pool: pool}
+}
+
+func (r *widgetRepo) FindAll(ctx context.Context) ([]model.Widget, error) {
+    rows, err := r.pool.Query(ctx,
+        `SELECT id, name, active, created_at FROM widgets ORDER BY name`)
+    // ... scan rows into []model.Widget
+}
+\end{lstlisting}
+
+\subsection{Step 5: Add the Handler}
+
+Add to the \code{Handler} struct in \file{routes.go}:
+\begin{lstlisting}[style=go]
+widgets repository.WidgetRepository
+\end{lstlisting}
+
+Add to \code{Deps} struct and wire in \code{New()}.
+Add handler methods to a new file \file{handler/widgets.go}:
+
+\begin{lstlisting}[style=go]
+func (h *Handler) adminWidgets(w http.ResponseWriter, r *http.Request) {
+    items, _ := h.widgets.FindAll(r.Context())
+    h.render(w, r, "admin-widgets.html", map[string]any{
+        "Widgets": items,
+    })
+}
+\end{lstlisting}
+
+Register routes in \code{RegisterRoutes}:
+\begin{lstlisting}[style=go]
+mux.Handle("GET /admin/widgets",  admin(h.adminWidgets))
+mux.Handle("POST /admin/widgets", admin(h.adminWidgetCreate))
+\end{lstlisting}
+
+\subsection{Step 6: Create the Template}
+
+Create \file{ui/templates/pages/admin-widgets.html}:
+
+\begin{lstlisting}[style=go]
+{{define "title"}}{{t "admin.widgets" .Lang}}{{end}}
+{{define "content"}}
+<div class="max-w-4xl mx-auto">
+  <h2 class="text-2xl font-bold mb-6">{{t "admin.widgets" .Lang}}</h2>
+  {{with .Data}}
+  <table class="table table-zebra w-full">
+    {{range .Widgets}}
+    <tr><td>{{.Name}}</td></tr>
+    {{end}}
+  </table>
+  {{end}}
+</div>
+{{end}}
+\end{lstlisting}
+
+\subsection{Step 7: Add i18n Keys}
+
+In \file{internal/i18n/i18n.go}, add the key with all 25 language
+translations.
+
+\subsection{Step 8: Wire Up in main.go}
+
+\begin{lstlisting}[style=go]
+widgetRepo := pgRepo.NewWidgetRepository(pool)
+// ...
+h := handler.New(handler.Deps{
+    // ...
+    Widgets: widgetRepo,
+})
+\end{lstlisting}
+
+\subsection{Step 9: Test}
+
+Add test stubs in \file{internal/repository/} (or use the real DB in
+integration tests). Run:
+
+\begin{lstlisting}[style=bash]
+make test
+make vet
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────
+%  PART V — PROJECT MANAGER GUIDE
+% ─────────────────────────────────────────────────────────────
+\part{Project Manager \& Product Lifecycle Guide}
+\label{part:pm}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Ordering Infrastructure}
+\label{ch:ordering}
+
+\section{The Order Lifecycle}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  state/.style={rectangle, rounded corners=6pt, draw=porr-blue!60,
+                fill=porr-blue!10, minimum width=3.2cm,
+                minimum height=1.0cm, align=center, font=\small},
+  arr/.style={->, >=Stealth, thick, gray!70},
+  node distance=0.5cm and 1.8cm
+]
+  \node[state] (placed)   {Order Placed};
+  \node[state, right=of placed] (pend) {Pending\\Approval};
+  \node[state, right=of pend]  (prov) {Provisioning};
+  \node[state, right=of prov]  (done) {Completed};
+  \node[state, below=0.8cm of pend] (rej) {Rejected};
+  \node[state, below=0.8cm of prov] (fail) {Failed};
+
+  \draw[arr] (placed) -- node[c4label,above]{\scriptsize DU Admin\\(direct)} (prov);
+  \draw[arr] (placed) -- node[c4label,above]{\scriptsize Project Mgr} (pend);
+  \draw[arr] (pend)   -- node[c4label,above]{\scriptsize approved} (prov);
+  \draw[arr] (pend)   -- node[c4label,right]{\scriptsize rejected} (rej);
+  \draw[arr] (prov)   -- node[c4label,above]{\scriptsize pipeline OK} (done);
+  \draw[arr] (prov)   -- node[c4label,right]{\scriptsize pipeline fail} (fail);
+
+\end{tikzpicture}}%
+\caption{Order lifecycle state machine}
+\label{fig:lifecycle}
+\end{figure}
+
+\section{Placing an Order}
+
+\begin{enumerate}
+  \item Navigate to \textbf{Catalog} and select a product.
+  \item Click \textbf{Configure} → select the deployment environment.
+  \item Select or create a \textbf{Project}.
+  \item Fill in the \textbf{Parameters} (required fields are marked).
+  \item Select or confirm the \textbf{Cost Center}.
+  \item Click \textbf{Deploy Now}.
+\end{enumerate}
+
+As a \role{Project Manager} the order status changes to
+\textit{Pending Approval}. A DU Admin receives an email notification.
+
+As a \role{DU Admin} the GitLab webhook fires immediately.
+
+\section{Tracking Status}
+
+After placing an order, navigate to \textbf{My Orders → \{order\}}.
+The status updates live via HTMX polling every 30 seconds.
+
+\section{Using an Existing Deployment as a Template}
+
+\begin{enumerate}
+  \item Open \textbf{Infrastructure}.
+  \item Find the resource and click \textbf{Use as Template}.
+  \item The order form opens pre-filled with the original parameters.
+  \item Modify as needed and submit.
+\end{enumerate}
+
+\section{Decommissioning}
+\label{sec:decommission}
+
+\begin{enumerate}
+  \item Open \textbf{Infrastructure}.
+  \item Find the resource and click \textbf{Decommission}.
+  \item Confirm the action.
+  \item The destroy webhook fires; status changes to
+        \textit{Decommissioning}.
+  \item On pipeline completion, status becomes \textit{Decommissioned}.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Introducing a New Product}
+\label{ch:new-product}
+
+This chapter describes the complete process for making a new
+infrastructure product available in the webshop. Follow the steps
+sequentially.
+
+\section{Overview}
+
+\begin{enumerate}
+  \item Plan the product
+  \item Prepare the OpenTofu module
+  \item Configure the GitLab webhook
+  \item Create the product in the Admin UI
+  \item Define parameters (import or manual)
+  \item Configure deployment environments and pricing
+  \item Set up AI translations
+  \item Test the full order flow
+  \item Publish
+\end{enumerate}
+
+\section{Step 1: Plan the Product}
+
+Before touching any UI, answer these questions:
+
+\begin{itemize}
+  \item \textbf{What does the product deploy?}
+    (e.g. \textit{Managed PostgreSQL VM on Linode})
+  \item \textbf{Which OpenTofu module delivers it?}
+    (\code{vm-platform}, \code{k8s-platform}, or a new module)
+  \item \textbf{In which environments is it available?}
+    (e.g. Linode Frankfurt, Linode Amsterdam)
+  \item \textbf{What parameters does the user need to provide?}
+    (e.g. \code{vm\_label}, \code{instance\_type}, \code{db\_name})
+  \item \textbf{What is the base price in EUR per environment?}
+  \item \textbf{Who assigns the cost center?} (project / select / overhead)
+\end{itemize}
+
+\section{Step 2: Prepare the OpenTofu Module}
+
+If the product uses an existing module (\code{vm-platform} or
+\code{k8s-platform}), skip to Step 3. For a new product type:
+
+\begin{enumerate}
+  \item Create a new GitLab repository in the \code{porr-ag} group.
+  \item Add the standard files:
+        \file{provider.tf}, \file{backend.tf}, \file{variables.tf},
+        \file{main.tf}, \file{outputs.tf}, \file{.gitlab-ci.yml}.
+  \item Declare all user-provided parameters as \code{variable} blocks
+        in \file{variables.tf} with \code{description}, \code{type},
+        and \code{default} where applicable:
+
+\begin{lstlisting}[style=hcl]
+variable "db_name" {
+  description = "Name of the PostgreSQL database to create."
+  type        = string
+}
+
+variable "db_size_gb" {
+  description = "Database volume size in GB."
+  type        = number
+  default     = 20
+}
+\end{lstlisting}
+
+  \item Test the module locally:
+\begin{lstlisting}[style=bash]
+tofu init -backend-config="address=..." \
+          -backend-config="username=..." \
+          -backend-config="password=..."
+tofu plan -var="linode_token=$TOKEN" \
+          -var="db_name=test" \
+          -var="db_size_gb=20"
+tofu apply
+tofu destroy
+\end{lstlisting}
+  \item Commit and push to the \code{main} branch.
+\end{enumerate}
+
+\section{Step 3: Configure the GitLab Webhook}
+
+In the GitLab repository:
+
+\begin{enumerate}
+  \item Go to \textbf{Settings → CI/CD → Pipeline trigger tokens}.
+  \item Click \textbf{Add new token} and give it a descriptive name
+        (e.g. \textit{webshop-prod}).
+  \item Note the \textbf{trigger URL} and \textbf{token}.
+\end{enumerate}
+
+The trigger URL has the form:
+\begin{lstlisting}[style=bash]
+https://gitlab.example.com/api/v4/projects/<PROJECT_ID>/ref/main/trigger/pipeline
+\end{lstlisting}
+
+\section{Step 4: Create a Category (if needed)}
+
+Under \textbf{Administration → Categories}:
+
+\begin{enumerate}
+  \item Click \textbf{New Category}.
+  \item Enter a \textbf{Name}.
+  \item Optionally assign a \textbf{Category Parameter Set} (see Step 5).
+  \item Save.
+\end{enumerate}
+
+\section{Step 5: Create the Product}
+\label{sec:step5}
+
+Under \textbf{Administration → Products → New}:
+
+\subsection{Basic Information}
+
+\begin{enumerate}
+  \item Select the \textbf{Category}.
+  \item Enter the product \textbf{Name} in the primary language.
+  \item Enter a detailed \textbf{Description} in the primary language.
+  \item Upload a product \textbf{Image} (PNG or JPEG, max 10 MB).
+  \item Click \textbf{Save \& Continue}.
+\end{enumerate}
+
+\subsection{Parameters}
+
+Choose one of two import methods:
+
+\textbf{Option A — Import from \texttt{variables.tf}} (recommended):
+
+\begin{enumerate}
+  \item Click \textbf{Browse Repository}.
+  \item Select the \textbf{GitLab Source} and the repository.
+  \item Select the branch (\code{main}) and navigate to
+        \file{variables.tf}.
+  \item Click \textbf{Import Parameters}.
+  \item The webshop parses the HCL and creates parameter records for
+        each variable. Review and adjust:
+        \begin{itemize}
+          \item \textbf{Required} — must the user fill this in?
+          \item \textbf{Sensitive} — should the value be masked in
+                the UI and audit log?
+          \item \textbf{Default value} — pre-fill the order form.
+          \item \textbf{Type} — text, number, boolean, or dropdown.
+        \end{itemize}
+\end{enumerate}
+
+\textbf{Option B — Manual entry}:
+
+Click \textbf{Add Parameter} and fill in each field manually.
+
+\notebox{Parameters whose names match OpenTofu variable names
+(e.g. \code{instance\_type}) are passed to the webhook as
+\code{TF\_VAR\_instance\_type}. The name in the webshop must match
+the \code{variable} block name in \file{variables.tf} exactly.}
+
+\subsection{Deployment Environments}
+
+\begin{enumerate}
+  \item Click \textbf{Add Environment}.
+  \item Select an environment from the dropdown (must be pre-configured
+        under Administration → Environments).
+  \item Enter the \textbf{Price} in the base currency.
+  \item For the webhook, either:
+        \begin{itemize}
+          \item Use the environment's default webhook URL, or
+          \item Enter a product-specific webhook URL and token.
+        \end{itemize}
+  \item Configure the \textbf{Cost Center Mode}:
+        \begin{description}
+          \item[Project] Cost center inherited from the project.
+          \item[Select] Orderer selects from the cost center list.
+          \item[Overhead] Always assigns a fixed cost center.
+        \end{description}
+  \item Repeat for each environment.
+\end{enumerate}
+
+\subsection{Multiple Webhooks (Pipeline Arrays)}
+
+A single product-environment combination can have multiple webhooks
+executed in order (e.g. first provision the VM, then configure DNS,
+then register in Vault). Under the webhook section:
+
+\begin{enumerate}
+  \item Click \textbf{Add Webhook}.
+  \item Enter URL, token, and \textbf{Execution Order} (1, 2, 3 …).
+  \item Webhooks are triggered sequentially in ascending order.
+\end{enumerate}
+
+\section{Step 6: Configure AI Translation}
+
+\begin{enumerate}
+  \item Ensure an AI provider is configured (Chapter~\ref{ch:sysconfig}).
+  \item Open the product in \textbf{Administration → Products}.
+  \item Click \textbf{Generate AI Translation}.
+  \item Review the generated translations for all 25 languages.
+  \item Edit any that require adjustment.
+  \item Save.
+\end{enumerate}
+
+\tipbox{Generate translations early in the process. The AI translates
+both the product name and description. Individual translations can
+be re-generated for specific languages by editing the translation
+tab directly.}
+
+\section{Step 7: Global and Category Parameter Sets}
+
+\textbf{Global parameters} (under \textbf{Administration → Global
+Parameters}) apply to every order regardless of product. Use them for
+organization-wide fields such as a cost center code or project tag that
+must always be captured.
+
+\textbf{Category parameters} (under \textbf{Administration → Categories
+→ \{category\} → Parameters}) apply to all products within a category.
+Use them to avoid repeating parameters shared by related products
+(e.g. all VM products share a \code{region} parameter).
+
+\textbf{Parameter hierarchy} (applied in this order on the order form):
+\begin{enumerate}
+  \item Global parameters
+  \item Category parameters
+  \item Product parameters
+  \item Environment-specific parameters (override per-environment)
+\end{enumerate}
+
+\section{Step 8: Test the Full Order Flow}
+
+\begin{enumerate}
+  \item Log in as a \role{DU Admin} (DU Admins trigger webhooks directly).
+  \item Navigate to \textbf{Catalog} and find the new product.
+  \item Click \textbf{Configure}, fill in test parameters, and
+        click \textbf{Deploy Now}.
+  \item Monitor the order under \textbf{My Orders} — the status should
+        progress from \textit{Provisioning} to \textit{Completed}.
+  \item Verify the infrastructure was created in the Linode Cloud
+        Manager.
+  \item Test the email notification (check the admin email inbox).
+  \item Test the \textbf{Decommission} flow:
+        \begin{itemize}
+          \item Open \textbf{Infrastructure}.
+          \item Click \textbf{Decommission} on the test resource.
+          \item Verify the destroy pipeline runs and the resource
+                disappears from the Linode Cloud Manager.
+        \end{itemize}
+\end{enumerate}
+
+\warnbox{Always test decommission in a non-production environment first.
+A destroy pipeline permanently deletes cloud resources and their data.}
+
+\section{Step 9: Test with a Project Manager Account}
+
+\begin{enumerate}
+  \item Log in (or create a test account) as a \role{Project Manager}.
+  \item Place an order for the new product.
+  \item Verify the order shows \textit{Pending Approval}.
+  \item Switch to the \role{DU Admin} account.
+  \item Approve the order under \textbf{Approvals}.
+  \item Verify the webhook fires and provisioning completes.
+  \item Verify the Project Manager receives the confirmation email.
+\end{enumerate}
+
+\section{Step 10: Product is Live}
+
+Once testing passes:
+\begin{itemize}
+  \item The product is immediately visible in the catalog.
+  \item No deployment or restart of the webshop is required.
+  \item Announce the new product to users via the notification service
+        or the shop's subtitle/branding.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Project Management}
+\label{ch:projects}
+
+\section{Projects}
+
+A \term{project} is a container for related infrastructure orders. Every
+order must be associated with a project. Projects have:
+\begin{itemize}
+  \item A \textbf{Name} and optional \textbf{Description}.
+  \item An optional \textbf{Cost Center} (used when cost center mode
+        is \textit{Project}).
+  \item An owner (the user who created it).
+\end{itemize}
+
+\role{Project Managers} see only their own projects.
+\role{DU Admins} and \role{Webshop Admins} see all projects.
+
+\section{Infrastructure Overview}
+\label{sec:infra-overview}
+
+The \textbf{Infrastructure} page shows all deployed resources grouped by
+project and environment. Each resource shows:
+\begin{itemize}
+  \item Product name and environment.
+  \item Deployment date and current status.
+  \item Key parameters (e.g. VM label, cluster name).
+  \item Buttons: \textbf{Use as Template}, \textbf{Decommission}.
+\end{itemize}
+
+\section{Cost Center Assignment}
+
+Cost centers are maintained under \textbf{Administration → Cost Centers}.
+The three assignment modes give fine-grained control over who can
+allocate costs:
+
+\begin{description}
+  \item[Project] No user input; cost center comes from the project.
+        Use for products where cost is always allocated to the project
+        budget.
+  \item[Select] Orderer picks from the cost center list. Use when
+        individual orders can span cost centers.
+  \item[Overhead] Always assigns a fixed cost center regardless of
+        order. Use for shared services (monitoring, DNS).
+\end{description}
+
+% ─────────────────────────────────────────────────────────────
+%  APPENDICES
+% ─────────────────────────────────────────────────────────────
+\appendix
+
+\chapter{Supported Languages}
+\label{app:languages}
+
+The following 25 languages are supported in the UI and for AI product
+translation:
+
+\begin{longtable}{@{}lll@{}}
+  \toprule
+  \textbf{Code} & \textbf{Language} & \textbf{Native name} \\
+  \midrule
+  \endhead
+  \code{de} & German     & Deutsch \\
+  \code{en} & English    & English \\
+  \code{fr} & French     & Fran\c{c}ais \\
+  \code{it} & Italian    & Italiano \\
+  \code{es} & Spanish    & Espa\~{n}ol \\
+  \code{pt} & Portuguese & Portugu\^{e}s \\
+  \code{nl} & Dutch      & Nederlands \\
+  \code{pl} & Polish     & Polski \\
+  \code{cs} & Czech      & \v{C}e\v{s}tina \\
+  \code{sk} & Slovak     & Sloven\v{c}ina \\
+  \code{hu} & Hungarian  & Magyar \\
+  \code{ro} & Romanian   & Rom\^{a}n\u{a} \\
+  \code{bg} & Bulgarian  & Balgarski (Cyrillic) \\
+  \code{hr} & Croatian   & Hrvatski \\
+  \code{sl} & Slovenian  & Sloven\v{s}\v{c}ina \\
+  \code{et} & Estonian   & Eesti \\
+  \code{lv} & Latvian    & Latvie\v{s}u \\
+  \code{lt} & Lithuanian & Lietuvi\k{u} \\
+  \code{fi} & Finnish    & Suomi \\
+  \code{sv} & Swedish    & Svenska \\
+  \code{da} & Danish     & Dansk \\
+  \code{el} & Greek      & Ellinika (Greek script) \\
+  \code{mt} & Maltese    & Malti \\
+  \code{ru} & Russian    & Russkij (Cyrillic) \\
+  \code{uk} & Ukrainian  & Ukrayinska (Cyrillic) \\
+  \bottomrule
+  \caption{Supported language codes}
+  \label{tab:languages}
+\end{longtable}
+
+\chapter{Environment Variable Reference}
+\label{app:envvars}
+
+\begin{longtable}{@{}L{4.5cm}L{7.5cm}l@{}}
+  \toprule
+  \textbf{Variable} & \textbf{Description} & \textbf{Required} \\
+  \midrule
+  \endhead
+  \env{DATABASE\_URL}         & PostgreSQL connection string (DSN)          & Yes \\
+  \env{SESSION\_KEY}          & 32-byte hex key for session encryption       & Yes \\
+  \env{ADMIN\_EMAIL}          & Email of the initial Webshop Admin account   & Yes \\
+  \env{ADMIN\_PASSWORD}       & Password of the initial admin account        & Yes \\
+  \env{BASE\_URL}             & Public base URL (e.g. \code{https://shop.example.com}) & Yes \\
+  \env{PORT}                  & HTTP listen port (default: \code{8080})      & No  \\
+  \env{OIDC\_CLIENT\_ID}      & Entra ID application (client) ID             & No  \\
+  \env{OIDC\_CLIENT\_SECRET}  & Entra ID client secret                       & No  \\
+  \env{OIDC\_ISSUER}          & OIDC issuer URL (\code{https://login.microsoft...}) & No  \\
+  \env{SMTP\_HOST}            & SMTP server hostname                         & No  \\
+  \env{SMTP\_PORT}            & SMTP port (default: \code{587})              & No  \\
+  \env{SMTP\_FROM}            & Sender email address                         & No  \\
+  \env{SMTP\_USERNAME}        & SMTP authentication username                 & No  \\
+  \env{SMTP\_PASSWORD}        & SMTP authentication password                 & No  \\
+  \env{SMTP\_TLS}             & \code{true} to use TLS/SSL                   & No  \\
+  \env{AI\_PROVIDER}          & AI translation provider at startup           & No  \\
+  \env{AI\_ENDPOINT}          & AI API endpoint URL                          & No  \\
+  \env{AI\_API\_KEY}          & AI API key                                   & No  \\
+  \env{AI\_MODEL}             & AI model name                                & No  \\
+  \env{EXCHANGE\_RATE\_KEY}   & Exchange rate API key                        & No  \\
+  \bottomrule
+  \caption{Environment variable reference}
+  \label{tab:envvars}
+\end{longtable}
+
+\chapter{OpenTofu Module Variable Reference}
+\label{app:tofu-vars}
+\footnotesize
+
+\section{network-core Variables}
+
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
+  \toprule
+  \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
+  \midrule
+  \endhead
+  \code{linode\_token}      & string  & Linode API token (sensitive)    & — \\
+  \code{region}             & string  & Linode region                   & \code{eu-central} \\
+  \code{vpc\_label}         & string  & VPC label                       & \code{porr-vpc-prod} \\
+  \code{vpc\_description}   & string  & VPC description                 & (see defaults) \\
+  \code{subnets}            & map(obj)& Subnet map (label→cidr)         & app + mgmt \\
+  \code{firewall\_inbound\_rules} & list(obj) & Inbound firewall rules  & SSH + ICMP \\
+  \code{dns\_domain}        & string  & DNS zone domain (empty=none)    & \code{""} \\
+  \code{tags}               & list    & Resource tags                   & \code{["infra","network-core"]} \\
+  \bottomrule
+  \caption{network-core variables}
+\end{longtable}
+
+\section{vm-platform Variables}
+
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
+  \toprule
+  \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
+  \midrule
+  \endhead
+  \code{linode\_token}     & string & Linode API token (sensitive)   & — \\
+  \code{vm\_label}         & string & Unique VM label (state name)   & — \\
+  \code{region}            & string & Linode region                  & \code{eu-central} \\
+  \code{vpc\_id}           & number & VPC ID from network-core        & — \\
+  \code{subnet\_id}        & number & Subnet ID from network-core     & — \\
+  \code{firewall\_id}      & number & Base firewall ID                & — \\
+  \code{instance\_type}    & string & Linode plan                    & \code{g6-standard-2} \\
+  \code{image}             & string & Boot image                     & \code{linode/debian12} \\
+  \code{root\_pass}        & string & Root password (sensitive)      & — \\
+  \code{ssh\_keys}         & list   & Authorized SSH keys            & \code{[]} \\
+  \code{volume\_size\_gb}  & number & Block storage size (0=none)    & \code{0} \\
+  \code{additional\_inbound\_rules} & list(obj) & Extra firewall rules & \code{[]} \\
+  \code{dns\_zone\_id}     & number & DNS zone ID (null=none)        & \code{null} \\
+  \code{dns\_hostname}     & string & A record hostname              & \code{""} \\
+  \code{tags}              & list   & Resource tags                  & \code{["infra","vm"]} \\
+  \bottomrule
+  \caption{vm-platform variables}
+\end{longtable}
+
+\section{k8s-platform Variables}
+
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
+  \toprule
+  \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
+  \midrule
+  \endhead
+  \code{linode\_token}       & string    & Linode API token (sensitive) & — \\
+  \code{cluster\_label}      & string    & Unique cluster label         & — \\
+  \code{region}              & string    & Linode region                & \code{eu-central} \\
+  \code{kubernetes\_version} & string    & K8s version                  & \code{1.31} \\
+  \code{vpc\_id}             & number    & VPC ID                       & — \\
+  \code{subnet\_id}          & number    & Subnet ID                    & — \\
+  \code{node\_pools}         & list(obj) & Node pool configurations     & 1× g6-standard-2 \\
+  \code{additional\_inbound\_rules} & list(obj) & Extra firewall rules & \code{[]} \\
+  \code{dns\_zone\_id}       & number    & DNS zone ID (null=none)      & \code{null} \\
+  \code{dns\_hostname}       & string    & A record hostname            & \code{""} \\
+  \code{tags}                & list      & Resource tags                & \code{["infra","k8s"]} \\
+  \bottomrule
+  \caption{k8s-platform variables}
+\end{longtable}
+
+\section{shared-services Variables}
+
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
+  \toprule
+  \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
+  \midrule
+  \endhead
+  \code{linode\_token}          & string & Linode API token (sensitive)        & — \\
+  \code{region}                 & string & Linode region                       & \code{eu-central} \\
+  \code{gitlab\_label}          & string & GitLab CE Linode label              & \code{porr-gitlab} \\
+  \code{gitlab\_instance\_type} & string & Linode plan for GitLab CE           & \code{g6-standard-4} \\
+  \code{vault\_label}           & string & Vault Linode label                  & \code{porr-vault} \\
+  \code{vault\_instance\_type}  & string & Linode plan for Vault               & \code{g6-standard-2} \\
+  \code{image}                  & string & Boot image                         & \code{linode/debian12} \\
+  \code{root\_pass}             & string & Root password (sensitive)           & — \\
+  \code{ssh\_keys}              & list   & Authorized SSH keys                 & \code{[]} \\
+  \code{vpc\_id}                & number & VPC ID from network-core            & — \\
+  \code{subnet\_id}             & number & Subnet ID from network-core         & — \\
+  \code{allowed\_admin\_ipv4}   & list   & IPv4 CIDRs for SSH \& Vault admin   & \code{["0.0.0.0/0"]} \\
+  \code{tags}                   & list   & Resource tags                       & \code{["infra","shared"]} \\
+  \bottomrule
+  \caption{shared-services variables}
+  \label{tab:vars-shared}
+\end{longtable}
+
+\section{observability Variables}
+
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
+  \toprule
+  \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
+  \midrule
+  \endhead
+  \code{linode\_token}           & string & Linode API token (sensitive)      & — \\
+  \code{region}                  & string & Linode region                     & \code{eu-central} \\
+  \code{obs\_label}              & string & Linode instance label             & \code{porr-obs} \\
+  \code{instance\_type}          & string & Linode plan                       & \code{g6-standard-2} \\
+  \code{image}                   & string & Boot image                        & \code{linode/debian12} \\
+  \code{root\_pass}              & string & Root password (sensitive)         & — \\
+  \code{ssh\_keys}               & list   & Authorized SSH keys               & \code{[]} \\
+  \code{vpc\_id}                 & number & VPC ID from network-core          & — \\
+  \code{subnet\_id}              & number & Subnet ID from network-core       & — \\
+  \code{volume\_size\_gb}        & number & Block storage size in GiB         & \code{200} \\
+  \code{grafana\_port}           & number & Grafana HTTP port                 & \code{3000} \\
+  \code{allowed\_grafana\_ipv4}  & list   & IPv4 CIDRs for Grafana access     & \code{["0.0.0.0/0"]} \\
+  \code{tags}                    & list   & Resource tags                     & \code{["infra","obs"]} \\
+  \bottomrule
+  \caption{observability variables}
+  \label{tab:vars-obs}
+\end{longtable}
+
+\chapter{HTTP Route Reference}
+\label{app:routes}
+
+\footnotesize
+\begin{longtable}{@{}lL{7.5cm}L{4.0cm}l@{}}
+  \toprule
+  \textbf{Method} & \textbf{Path} & \textbf{Description} & \textbf{Role} \\
+  \midrule
+  \endhead
+  GET  & \code{/}                              & Home / dashboard                  & auth \\
+  GET  & \code{/catalog}                        & Product catalog                   & auth \\
+  GET  & \code{/catalog/\{id\}}                 & Product detail                    & auth \\
+  GET  & \code{/orders}                         & My orders list                    & auth \\
+  GET  & \code{/orders/new}                     & New order form                    & auth \\
+  POST & \code{/orders/new}                     & Submit order                      & auth \\
+  GET  & \code{/orders/\{id\}}                  & Order detail / status             & auth \\
+  GET  & \code{/projects}                       & Projects list                     & auth \\
+  GET  & \code{/infrastructure}                 & Infrastructure overview           & auth \\
+  POST & \code{/infrastructure/\{id\}/decommission} & Trigger decommission          & auth \\
+  GET  & \code{/settings/profile}               & Profile / change password         & auth \\
+  GET  & \code{/approvals}                      & Approval queue                    & admin \\
+  POST & \code{/approvals/\{id\}/approve}       & Approve order                     & admin \\
+  POST & \code{/approvals/\{id\}/reject}        & Reject order                      & admin \\
+  GET  & \code{/audit}                          & Audit log                         & admin \\
+  GET  & \code{/audit/export}                   & Export audit log                  & admin \\
+  GET  & \code{/admin}                          & Admin dashboard                   & shop\_admin \\
+  GET  & \code{/admin/categories}               & Category list                     & shop\_admin \\
+  GET  & \code{/admin/products}                 & Product list                      & shop\_admin \\
+  GET  & \code{/admin/products/new}             & New product form                  & shop\_admin \\
+  GET  & \code{/admin/products/\{id\}}          & Edit product                      & shop\_admin \\
+  GET  & \code{/admin/environments}             & Environment list                  & shop\_admin \\
+  GET  & \code{/admin/sources}                  & GitLab sources list               & shop\_admin \\
+  GET  & \code{/admin/costcenters}              & Cost center list                  & shop\_admin \\
+  GET  & \code{/admin/users}                    & User list                         & shop\_admin \\
+  GET  & \code{/admin/currencies}               & Currency management               & shop\_admin \\
+  GET  & \code{/admin/parameters}               & Global parameters                 & shop\_admin \\
+  GET  & \code{/admin/smtp}                     & SMTP configuration                & shop\_admin \\
+  GET  & \code{/admin/ai-config}                & AI translation config             & shop\_admin \\
+  GET  & \code{/admin/branding}                 & Shop branding                     & shop\_admin \\
+  GET  & \code{/login}                          & Login page                        & public \\
+  GET  & \code{/auth/callback}                  & OIDC callback                     & public \\
+  POST & \code{/logout}                         & Log out                           & auth \\
+  \bottomrule
+  \caption{HTTP route reference (selected)}
+  \label{tab:routes}
+\end{longtable}
+
+\chapter{Requirements Traceability Matrix}
+\label{app:rtm}
+
+The following table maps each functional and non-functional requirement
+to the implementation location and the handbook section that describes
+it.
+
+\begin{landscape}
+\begin{longtable}{@{}lL{5.5cm}L{9.0cm}l@{}}
+  \toprule
+  \textbf{ID} & \textbf{Requirement} & \textbf{Implementation} & \textbf{Section} \\
+  \midrule
+  \endhead
+  FA-01 & User authentication (local + SSO) &
+    \file{internal/service/impl/user.go}, \file{internal/handler/auth.go} &
+    \S\ref{ch:users} \\
+  FA-02 & Role-based access control (admin, user, pm) &
+    \file{internal/middleware/auth.go}, \file{internal/model/user.go} &
+    \S\ref{ch:users} \\
+  FA-03 & Product catalog with categories &
+    \file{internal/handler/catalog.go} &
+    \S\ref{ch:ordering} \\
+  FA-04 & Configurable product parameters &
+    \file{internal/model/parameter.go}, admin UI &
+    \S\ref{sec:step5} \\
+  FA-05 & Shopping-cart order flow &
+    \file{internal/handler/order.go} &
+    \S\ref{ch:ordering} \\
+  FA-06 & Order approval workflow &
+    \file{internal/handler/approval.go} &
+    \S\ref{ch:ordering} \\
+  FA-07 & GitLab webhook trigger &
+    \file{internal/service/impl/pipeline.go} &
+    \S\ref{sec:webhook} \\
+  FA-08 & Pipeline status polling &
+    \file{internal/polling/}, \file{internal/service/impl/pipeline.go} &
+    \S\ref{sec:webhook} \\
+  FA-09 & Infrastructure overview &
+    \file{internal/handler/infrastructure.go} &
+    \S\ref{sec:infra-overview} \\
+  FA-10 & Decommission (destroy) flow &
+    \file{internal/handler/infrastructure.go} &
+    \S\ref{sec:decommission} \\
+  FA-11 & Audit log &
+    \file{internal/audit/}, \file{internal/handler/audit.go} &
+    \S\ref{ch:audit} \\
+  FA-12 & AI-powered product translation &
+    \file{internal/service/impl/translation.go} &
+    \S\ref{sec:aitranslation} \\
+  FA-13 & Multi-currency support &
+    \file{internal/service/impl/currency.go} &
+    \S\ref{sec:currencies} \\
+  FA-14 & Branding configuration &
+    \file{internal/handler/admin.go}, \file{internal/model/branding.go} &
+    \S\ref{sec:branding} \\
+  \midrule
+  NFA-01.1 & Docker deployment &
+    \file{Dockerfile}, \file{deploy/docker-host/} &
+    \S\ref{sec:docker-deploy} \\
+  NFA-01.2 & Kubernetes deployment &
+    \file{deploy/k8s/} manifests &
+    \S\ref{sec:k8s-deploy} \\
+  NFA-01.3 & Single binary (embed.FS) &
+    \file{cmd/server/main.go}, \code{//go:embed} directives &
+    \S\ref{ch:design} \\
+  NFA-01.4 & Database migrations at startup &
+    \file{cmd/migrate/main.go}, \file{internal/migrations/} &
+    \S\ref{sec:dbmigrations} \\
+  NFA-02.1 & HTTPS enforcement &
+    Nginx config (reverse proxy, TLS termination) &
+    \S\ref{sec:docker-deploy} \\
+  NFA-02.2 & Secure session cookies &
+    \file{internal/session/}, AES-GCM encrypted HttpOnly cookies &
+    \S\ref{ch:design} \\
+  NFA-02.3 & bcrypt password hashing &
+    \file{internal/service/impl/user.go} &
+    \S\ref{ch:design} \\
+  NFA-02.4 & Role-enforced routes &
+    \file{internal/middleware/auth.go} &
+    \S\ref{ch:users} \\
+  NFA-03 & 25-language i18n &
+    \file{internal/i18n/i18n.go} &
+    \S\ref{app:languages} \\
+  NFA-04 & Audit trail for all state changes &
+    \file{internal/audit/service.go} &
+    \S\ref{ch:audit} \\
+  \bottomrule
+  \caption{Requirements traceability matrix}
+  \label{tab:rtm}
+\end{longtable}
+\end{landscape}
+
+\chapter{Compiling This Handbook}
+\label{app:compile}
+
+The handbook source is at \file{docs/handbook.tex}. Compile with:
+
+\begin{lstlisting}[style=bash]
+# From the repo root
+make docs
+
+# Or manually (run twice for ToC/references)
+cd docs
+pdflatex handbook.tex
+pdflatex handbook.tex
+\end{lstlisting}
+
+\textbf{Required LaTeX packages:} \code{lmodern}, \code{geometry},
+\code{fancyhdr}, \code{xcolor}, \code{tikz}, \code{pgf},
+\code{booktabs}, \code{longtable}, \code{tabularx}, \code{listings},
+\code{tcolorbox}, \code{hyperref}, \code{enumitem}, \code{float},
+\code{caption}, \code{graphicx}, \code{microtype}, \code{parskip},
+\code{pdflscape}, \code{pifont}.
+
+All packages are available in TeX Live 2023+ and MiKTeX 23+.
+
+\end{document}

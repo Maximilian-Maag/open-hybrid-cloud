@@ -1,183 +1,213 @@
-# Handbuch Webshop Admin
+# Webshop Admin Guide
 
-## Übersicht
+## Overview
 
-Der Webshop Admin ist verantwortlich für:
-- Konfiguration und Pflege des Produktkatalogs
-- Systemkonfiguration (GitLab-Anbindung, Umgebungen, Währungen, KI-Anbieter, SMTP)
-- Verwaltung lokaler Benutzeraccounts
-- Einsicht und Export des Audit-Logs
+The Webshop Admin is responsible for:
+- Configuring and maintaining the product catalog
+- System configuration (GitLab integration, environments, currencies, AI providers, SMTP)
+- Managing local user accounts
+- Viewing and exporting the audit log
 
-Der Webshop Admin verwendet einen **lokalen Account** (kein SSO).
-
----
-
-## 1. Erster Login
-
-1. Browser öffnen und zur Webshop-URL navigieren
-2. Auf **Lokaler Login** klicken
-3. E-Mail-Adresse und Passwort aus der Serverkonfiguration (`ADMIN_EMAIL`, `ADMIN_PASSWORD`) eingeben
-4. Nach dem ersten Login das Passwort unter **Einstellungen → Profil** ändern
+The Webshop Admin uses a **local account** (no SSO).
 
 ---
 
-## 2. Systemkonfiguration
+## 1. First Login
 
-### 2.1 GitLab-Quellen konfigurieren
-
-Unter **Administration → GitLab-Quellen**:
-
-1. **Neue Quelle anlegen** klicken
-2. Felder ausfüllen:
-   - **Name**: Bezeichnung der GitLab-Instanz (z.B. "GitLab Intern")
-   - **URL**: Basis-URL der GitLab-Instanz (z.B. `https://gitlab.example.com`)
-   - **Access Token**: Personal Access Token mit `read_api`-Berechtigung
-3. **Verbindung testen** — prüft ob die Instanz erreichbar ist
-4. Speichern
-
-### 2.2 Deployment-Umgebungen konfigurieren
-
-Unter **Administration → Deployment-Umgebungen**:
-
-1. **Neue Umgebung anlegen** klicken
-2. Felder ausfüllen:
-   - **Name**: Bezeichnung (z.B. "AWS Frankfurt", "On-Premise Wien")
-   - **Beschreibung**: Optional
-   - **GitLab-Quelle**: Auswahl aus konfigurierten Quellen
-   - **Webhook-URL**: URL des GitLab-Webhooks für diese Umgebung
-   - **Webhook-Token**: Sicherheits-Token für den Webhook
-3. Speichern
-
-### 2.3 SMTP konfigurieren
-
-Unter **Administration → E-Mail**:
-
-1. SMTP-Serverdaten eintragen (Host, Port, Absenderadresse, Credentials, TLS)
-2. **Test-E-Mail senden** klicken — sendet eine Test-E-Mail an die Admin-Adresse
-3. Speichern
-
-### 2.4 Leitwährung und Wechselkurse
-
-Unter **Administration → Währungen**:
-
-1. **Leitwährung** auswählen (Standard: EUR) — alle Produktpreise werden in dieser Währung hinterlegt
-2. **Wechselkurs-API-Key** und URL hinterlegen
-3. **Kurse aktualisieren** klicken — lädt aktuelle Wechselkurse von der konfigurierten API
-4. Einzelne Kurse können manuell überschrieben werden
-
-### 2.5 KI-Übersetzung konfigurieren (optional)
-
-Unter **Administration → KI-Übersetzung**:
-
-1. **Anbieter** auswählen: Claude, OpenAI, Azure OpenAI, Ollama, LocalAI
-2. **Endpoint-URL** und **API-Key** eintragen (bei Ollama/LocalAI: lokale URL, kein API-Key nötig)
-3. **Modell** auswählen oder eintragen
-4. **Verbindung testen** klicken
-5. Speichern — nach dem Speichern wird die Übersetzungsfunktion in der Produktpflege eingeblendet
+1. Open your browser and navigate to the webshop URL
+2. Click **Local Login**
+3. Enter the email address and password from the server configuration (`ADMIN_EMAIL`, `ADMIN_PASSWORD`)
+4. After the first login, change the password under **Settings → Profile**
 
 ---
 
-## 3. Produktkategorien
+## 2. System Configuration
 
-Unter **Administration → Kategorien**:
+### 2.1 Configuring GitLab Sources
 
-- Kategorien anlegen, bearbeiten und löschen
-- Jede Kategorie kann ein **Kategorie-Parameterset** erhalten (gilt für alle Produkte dieser Kategorie)
-- Reihenfolge der Anzeige im Katalog ist konfigurierbar
+Under **Administration → GitLab Sources**:
 
----
+1. Click **Add New Source**
+2. Fill in the fields:
+   - **Name**: Label for the GitLab instance (e.g. "Internal GitLab")
+   - **URL**: Base URL of the GitLab instance (e.g. `https://gitlab.example.com`)
+   - **Access Token**: Personal access token with `read_api` permission
+3. **Test connection** — verifies the instance is reachable
+4. Save
 
-## 4. Produktkatalog pflegen
+### 2.2 Configuring Deployment Environments
 
-### 4.1 Neues Produkt anlegen
+Under **Administration → Deployment Environments**:
 
-Unter **Administration → Produkte → Neu**:
+1. Click **Add New Environment**
+2. Fill in the fields:
+   - **Name**: Label (e.g. "AWS Frankfurt", "On-Premises Vienna")
+   - **Description**: Optional
+   - **GitLab Source**: Select from configured sources
+   - **Webhook URL**: URL of the GitLab webhook for this environment
+   - **Webhook Token**: Security token for the webhook
+3. Save
 
-**Schritt 1 – Basisinformationen**
-- **Kategorie** wählen
-- **Name** und **Beschreibung** in der Basissprache eingeben
-- **Bild** hochladen (JPEG/PNG, max. 10 MB)
+### 2.3 Configuring SMTP
 
-**Schritt 2 – Übersetzungen**
-- Wenn ein KI-Anbieter konfiguriert ist: **KI-Übersetzung erstellen** klicken
-- KI übersetzt Name und Beschreibung in alle aktivierten Sprachen
-- Einzelne Übersetzungen können manuell bearbeitet werden
-- Alle Übersetzungen vor dem Speichern prüfen
+Under **Administration → Email**:
 
-**Schritt 3 – Parameter**
+1. Enter SMTP server details (host, port, sender address, credentials, TLS)
+2. Click **Send Test Email** — sends a test email to the admin address
+3. Save
 
-*Option A: Import aus `variables.tf`*
-1. **Repo browsen** klicken → GitLab-Quelle auswählen
-2. Repo und Branch auswählen
-3. Eine oder mehrere `variables.tf` Dateien auswählen
-4. **Parameter importieren** — Felder werden automatisch aus dem HCL-Parser befüllt
-5. Importierte Parameter können angepasst oder ergänzt werden
+### 2.4 Base Currency and Exchange Rates
 
-*Option B: Manuelle Eingabe*
-- **Parameter hinzufügen** klicken
-- Name, Typ (Text, Zahl, Bool, Dropdown), Beschreibung, Standardwert, Pflichtfeld und Sichtbarkeit je Umgebung festlegen
+Under **Administration → Currencies**:
 
-**Schritt 4 – Deployment-Umgebungen**
-- Umgebungen auswählen in denen das Produkt verfügbar sein soll
-- Je Umgebung: Webhook-URL (falls abweichend von Umgebungskonfiguration) und umgebungsspezifische Parameter festlegen
+1. Select the **base currency** (default: EUR) — all product prices are stored in this currency
+2. Enter the **exchange rate API key** and URL
+3. Click **Update Rates** — fetches current exchange rates from the configured API
+4. Individual rates can be overridden manually
 
-**Schritt 5 – Preise**
-- Je Umgebung einen Preis in der Leitwährung hinterlegen (z.B. AWS: 70 EUR, On-Prem: 20 EUR)
-- Preise sind informativ, keine Zahlungsabwicklung
+### 2.5 Configuring AI Translation (optional)
 
-**Schritt 6 – Kostenstellen-Konfiguration**
-Je Umgebung festlegen:
-- **Modus**: Projekt / Auswahl / Gemeinkostenstelle
-- **Default erzwingen**: Ja → Besteller kann Kostenstelle nicht ändern; Nein → Vorschlag
-- Bei Modus "Gemeinkostenstelle": zugehörige Kostenstelle auswählen
+Under **Administration → AI Translation**:
 
-### 4.2 Produkt bearbeiten
-
-Unter **Administration → Produkte** das gewünschte Produkt öffnen. Alle Felder aus der Anlage können editiert werden. Übersetzungen können jederzeit per KI neu generiert oder manuell angepasst werden.
-
-### 4.3 Globale Parametersets
-
-Unter **Administration → Globale Parameter**:
-
-Parameter die für *alle* Produkte und *alle* Umgebungen gelten (z.B. Projekt-Tag, Kostenstellen-Label). Diese werden beim Bestellen automatisch zum Formular hinzugefügt.
+1. Select a **provider**: Claude, OpenAI, Azure OpenAI, Ollama, LocalAI
+2. Enter the **endpoint URL** and **API key** (for Ollama/LocalAI: local URL, no API key needed)
+3. Select or enter a **model**
+4. Click **Test Connection**
+5. Save — after saving, the translation feature will appear in product editing
 
 ---
 
-## 5. Kostenstellen verwalten
+## 3. Product Categories
 
-Unter **Administration → Kostenstellen**:
+Under **Administration → Categories**:
 
-- Kostenstellen anlegen (Name, Kostenstellennummer, Beschreibung)
-- Kostenstellen bearbeiten und deaktivieren (deaktivierte Kostenstellen sind für neue Bestellungen nicht mehr wählbar)
-- Diese Liste wird Bestellern bei Modus "Auswahl" angezeigt
-
----
-
-## 6. Benutzerverwaltung
-
-Unter **Administration → Benutzer**:
-
-- Lokale Benutzeraccounts anlegen (Name, E-Mail, Passwort, Rolle)
-- Vorhandene Accounts bearbeiten oder deaktivieren
-- SSO-Benutzer (DU Admins, Projektleiter via Entra ID) werden automatisch beim ersten Login angelegt und erscheinen ebenfalls in dieser Liste
-- Rollen: **DU Admin**, **Projektleiter**, **Webshop Admin**
+- Create, edit, and delete categories
+- Each category can have a **category parameter set** (applies to all products in that category)
+- Display order in the catalog is configurable
 
 ---
 
-## 7. Audit-Log
+## 4. Managing the Product Catalog
 
-Unter **Administration → Audit-Log**:
+### 4.1 Creating a New Product
 
-- Tabelle aller protokollierten Aktionen mit Zeitstempel, Benutzer, Aktion und Details
-- Filterbar nach Zeitraum, Benutzer, Aktionstyp
-- **Export als CSV** oder **Export als PDF** — Format vor dem Export wählbar
+Under **Administration → Products → New**:
+
+**Step 1 – Basic Information**
+- Select a **category**
+- Enter **name** and **description** in the base language
+- Upload an **image** (JPEG/PNG, max 10 MB)
+
+**Step 2 – Translations**
+- If an AI provider is configured: click **Generate AI Translation**
+- AI translates name and description into all enabled languages
+- Individual translations can be edited manually
+- Review all translations before saving
+
+**Step 3 – Parameters**
+
+*Option A: Import from `variables.tf`*
+1. Click **Browse Repo** → select a GitLab source
+2. Select repo and branch
+3. Select one or more `variables.tf` files
+4. Click **Import Parameters** — fields are automatically populated from the HCL parser
+5. Imported parameters can be adjusted or supplemented
+
+*Option B: Manual Entry*
+- Click **Add Parameter**
+- Set name, type (text, number, bool, dropdown), description, default value, required flag, and visibility per environment
+
+**Step 4 – Deployment Environments**
+- Select environments in which the product should be available
+- Per environment: webhook URL (if different from environment configuration) and environment-specific parameters
+
+**Step 5 – Pricing**
+- Enter a price in the base currency per environment (e.g. AWS: 70 EUR, on-premises: 20 EUR)
+- Prices are informational; no payment processing
+
+**Step 6 – Cost Center Configuration**
+Per environment, set:
+- **Mode**: Project / Select / Overhead
+- **Force Default**: Yes → orderer cannot change the cost center; No → suggestion only
+- For "Overhead" mode: select the associated cost center
+
+### 4.2 Editing a Product
+
+Open the desired product under **Administration → Products**. All fields from creation can be edited. Translations can be regenerated via AI or edited manually at any time.
+
+### 4.3 Global Parameter Sets
+
+Under **Administration → Global Parameters**:
+
+Parameters that apply to *all* products and *all* environments (e.g. project tag, cost center label). These are automatically added to the order form.
 
 ---
 
-## 8. Infrastrukturübersicht
+## 5. Managing Cost Centers
 
-Unter **Infrastruktur**:
+Under **Administration → Cost Centers**:
 
-- Vollständige Übersicht aller deployter Infrastrukturelemente, gruppiert nach Projekt und Umgebung
-- Als Webshop Admin sind alle Projekte sichtbar (auch fremde)
-- Dekommissionierung ist über die Infrastrukturübersicht möglich (Destroy-Webhook)
+- Create cost centers (name, cost center code, description)
+- Edit and deactivate cost centers (deactivated cost centers are no longer selectable for new orders)
+- This list is shown to orderers when the cost center mode is "Select"
+
+---
+
+## 6. User Management
+
+Under **Administration → Users**:
+
+- Create local user accounts (name, email, password, role)
+- Edit or deactivate existing accounts
+- SSO users (Admins and project leaders via Entra ID) are created automatically on first login and appear in this list as well
+- Roles: **Admin**, **Project Leader**, **Webshop Admin**
+
+---
+
+## 7. Audit Log
+
+Under **Administration → Audit Log**:
+
+- Table of all logged actions with timestamp, user, action, and details
+- Filterable by time range, user, action type
+- Export as **CSV** or **PDF** — format selectable before export
+
+---
+
+## 8. Infrastructure Overview
+
+Under **Infrastructure**:
+
+- Complete overview of all deployed infrastructure elements, grouped by project and environment
+- As Webshop Admin all projects are visible (including those of other users)
+- Decommissioning is available via the infrastructure overview (destroy webhook)
+
+---
+
+## 9. Shop Design
+
+Under **Administration → Shop Design** (or directly at `/admin/branding`):
+
+### 9.1 Colors
+
+- **Primary color**: Used for the header, footer and navigation bar. Default: `#131921` (dark blue).
+- **Accent color**: Used for buttons and call-to-action elements. Default: `#febd69` (amber).
+- The live preview on the right updates in real time as you change the color values.
+
+### 9.2 Logo
+
+- Upload a logo image (PNG or SVG recommended, max. 200 px height)
+- The logo replaces the shop name text in the header
+- Leave empty to display the shop name as plain text
+
+### 9.3 Shop Name and Subtitle
+
+- **Shop name**: Displayed in the header and browser title. Overrides the `APP_NAME` environment variable when set. Leave empty to use the env var.
+- **Subtitle / Tagline**: Short description shown in the footer. Overrides `APP_SUBTITLE`.
+
+### 9.4 Imprint (Legal Notice)
+
+- Enter the full imprint text in the **Imprint** field (plain text, line breaks are preserved)
+- Once saved, an **Imprint** link appears in the footer
+- The imprint is publicly accessible at `/impressum` (no login required)
+- Leave empty to hide the imprint link entirely

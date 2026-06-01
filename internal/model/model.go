@@ -7,7 +7,7 @@ import "time"
 type Role string
 
 const (
-	RoleDUAdmin       Role = "du_admin"
+	RoleAdmin         Role = "admin"
 	RoleProjectLeader Role = "project_leader"
 	RoleShopAdmin     Role = "shop_admin"
 )
@@ -15,12 +15,14 @@ const (
 // --- Benutzer ---
 
 type User struct {
-	ID        int64
-	Email     string
-	Name      string
-	Role      Role
-	SSOSub    string // Entra ID Subject-Claim, leer bei lokalen Accounts
-	CreatedAt time.Time
+	ID           int64
+	Email        string
+	Name         string
+	Role         Role
+	Active       bool
+	SSOSub       string // Entra ID Subject-Claim, leer bei lokalen Accounts
+	PasswordHash string // nur bei lokalen Accounts (Webshop Admin)
+	CreatedAt    time.Time
 }
 
 // --- Produktkatalog ---
@@ -37,6 +39,9 @@ type Product struct {
 	BaseLanguage string
 	Image        []byte
 	CreatedAt    time.Time
+	// Computed from product_translations at service level — not persisted
+	Name        string
+	Description string
 }
 
 type ProductTranslation struct {
@@ -47,15 +52,16 @@ type ProductTranslation struct {
 }
 
 type Parameter struct {
-	ID           int64
-	Scope        ParameterScope // global, category, product
-	ScopeID      int64          // CategoryID oder ProductID, 0 bei global
-	Name         string
-	Type         ParameterType
-	Description  string
-	DefaultValue string
-	Required     bool
-	Sensitive    bool
+	ID            int64
+	Scope         ParameterScope // global, category, product
+	ScopeID       int64          // CategoryID or ProductID, 0 for global
+	EnvironmentID int64          // 0 = applies to all environments
+	Name          string
+	Type          ParameterType
+	Description   string
+	DefaultValue  string
+	Required      bool
+	Sensitive     bool
 }
 
 type ParameterScope string
@@ -94,12 +100,25 @@ type DeploymentEnvironment struct {
 }
 
 type ProductEnvironment struct {
+	ProductID        int64
+	EnvironmentID    int64
+	Price            float64
+	Currency         string // Leitwährung
+	CostCenterMode   CostCenterMode
+	ForcedCostCenter bool
+}
+
+// ProductWebhook defines one pipeline trigger endpoint for a product+environment combination.
+// Multiple webhooks are fired in ascending ExecOrder (ties are fired concurrently).
+// If none are defined the DeploymentEnvironment.WebhookURL/Token is used as fallback.
+type ProductWebhook struct {
+	ID            int64
 	ProductID     int64
 	EnvironmentID int64
-	Price         float64
-	Currency      string // Leitwährung
-	CostCenterMode CostCenterMode
-	ForcedCostCenter bool
+	Name          string
+	WebhookURL    string
+	WebhookToken  string
+	ExecOrder     int
 }
 
 // --- Kostenstellen ---
@@ -146,18 +165,18 @@ const (
 )
 
 type Order struct {
-	ID             int64
-	ProjectID      int64
-	ProductID      int64
-	EnvironmentID  int64
-	UserID         int64
-	Status         OrderStatus
-	Parameters     map[string]string
-	CostCenterID   int64
-	RejectionNote  string
-	PipelineID     string // GitLab Pipeline ID für Polling
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID            int64
+	ProjectID     int64
+	ProductID     int64
+	EnvironmentID int64
+	UserID        int64
+	Status        OrderStatus
+	Parameters    map[string]string
+	CostCenterID  int64
+	RejectionNote string
+	PipelineIDs   []string // GitLab pipeline IDs (one per webhook) for polling
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // --- Infrastruktur ---
@@ -170,7 +189,36 @@ type InfrastructureElement struct {
 	ProductID     int64
 	Status        OrderStatus
 	Parameters    map[string]string
+	PipelineIDs   []string // GitLab pipeline IDs for polling
+	Outputs       map[string]string // OpenTofu outputs after successful apply
 	DeployedAt    time.Time
+}
+
+// --- Branding ---
+
+type Branding struct {
+	LogoData       []byte
+	LogoMime       string
+	PrimaryColor   string
+	SecondaryColor string
+	ShopName       string
+	ShopSubtitle   string
+	ImprintText    string
+}
+
+// --- App Config ---
+
+type AppConfig struct {
+	SMTPHost     string
+	SMTPPort     string
+	SMTPFrom     string
+	SMTPUsername string
+	SMTPPassword string
+	SMTPTLS      bool
+	AIProvider   string
+	AIEndpoint   string
+	AIAPIKey     string
+	AIModel      string
 }
 
 // --- Audit ---

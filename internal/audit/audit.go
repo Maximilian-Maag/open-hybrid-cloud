@@ -22,11 +22,8 @@ func (s *auditService) Log(ctx context.Context, entry *model.AuditEntry) error {
 }
 
 func (s *auditService) List(ctx context.Context, filter service.AuditFilter) ([]model.AuditEntry, error) {
-	if filter.UserID != 0 {
-		return s.repo.FindByUserID(ctx, filter.UserID)
-	}
-	if filter.Action != "" {
-		return s.repo.FindByAction(ctx, filter.Action)
+	if filter.UserID != 0 || filter.Action != "" || filter.From != nil || filter.To != nil {
+		return s.repo.FindFiltered(ctx, filter.UserID, filter.Action, filter.From, filter.To)
 	}
 	return s.repo.FindAll(ctx)
 }

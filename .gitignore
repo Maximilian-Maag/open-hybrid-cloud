@@ -38,7 +38,8 @@ docs/architecture/.structurizr/
 
 # IDE
 .idea/
-.vscode/
+.vscode/*
+!.vscode/launch.json
 *.swp
 *.swo
 *.swn

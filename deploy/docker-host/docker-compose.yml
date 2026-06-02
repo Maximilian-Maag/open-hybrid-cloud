@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
   webshop:
-    image: your-org/infra-webshop:latest
+    image: porrag/infra-webshop:latest
     container_name: infra-webshop-app
     expose:
       - "8080"

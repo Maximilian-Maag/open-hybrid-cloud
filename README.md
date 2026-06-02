@@ -188,6 +188,18 @@ make help         # Show all available targets
 | `make dev-down` | Stop local services |
 | `make clean` | Remove build artifacts |
 
+### Smoke Test Runner
+
+The repository includes a smoke test command in `cmd/smoke/`.
+Run it against a local database to verify product deletion cleanup:
+
+```bash
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable \
+  go run ./cmd/smoke
+```
+
+This helper creates temporary product, order, and infrastructure rows and then deletes the product to validate cascading cleanup behavior.
+
 `npm install` is run automatically when `node_modules/` is missing.
 
 ### 1. Clone the Repository

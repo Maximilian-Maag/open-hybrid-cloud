@@ -2132,6 +2132,15 @@ starts the Go server with live environment variables from \file{.env}.
   \end{tabular}
 \end{table}
 
+The repository also includes a local smoke test runner in \file{cmd/smoke/}. Run:
+
+\begin{lstlisting}[style=bash]
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable \
+  go run ./cmd/smoke
+\end{lstlisting}
+
+This command creates temporary rows and verifies cascading cleanup for product deletion.
+
 % ─────────────────────────────────────────────────────────────
 \chapter{Codebase Structure}
 \label{ch:codebase}
@@ -2143,6 +2152,7 @@ infra-webshop/
 +-- cmd/
 |   +-- server/         # main.go -- server entry point
 |   +-- migrate/        # main.go -- migration runner
+|   +-- smoke/          # main.go -- smoke test runner
 +-- docs/               # Documentation (this handbook)
 |   +-- handbook.tex
 |   +-- handbook.pdf    # compiled output

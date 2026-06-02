@@ -1,0 +1,24 @@
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - staticcheck
+    - unused
+    - goimports
+    - exhaustive
+    - bodyclose
+    - noctx
+    - sqlclosecheck
+
+issues:
+  exclude-rules:
+    - path: tools/
+      linters:
+        - unused
+
+linters-settings:
+  exhaustive:
+    default-signifies-exhaustive: true
+  goimports:
+    local-prefixes: github.com/porr-ag/infra-webshop

@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/porr-ag/infra-webshop/internal/model"
 	"github.com/porr-ag/infra-webshop/internal/repository"
 )
@@ -80,6 +81,11 @@ func (r *userRepo) SetActive(ctx context.Context, id int64, active bool) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE users SET active=$1 WHERE id=$2`,
 		active, id)
+	return err
+}
+
+func (r *userRepo) Delete(ctx context.Context, id int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, id)
 	return err
 }
 

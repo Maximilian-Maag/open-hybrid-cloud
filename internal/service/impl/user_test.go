@@ -17,7 +17,7 @@ func (r *stubUserRepo) Save(ctx context.Context, u *model.User) error {
 	r.saved = u
 	return nil
 }
-func (r *stubUserRepo) Update(ctx context.Context, u *model.User) error      { return nil }
+func (r *stubUserRepo) Update(ctx context.Context, u *model.User) error { return nil }
 func (r *stubUserRepo) FindByID(ctx context.Context, id int64) (*model.User, error) {
 	if r.saved != nil && r.saved.ID == id {
 		return r.saved, nil
@@ -44,6 +44,7 @@ func (r *stubUserRepo) UpdatePassword(ctx context.Context, id int64, passwordHas
 	return nil
 }
 func (r *stubUserRepo) SetActive(ctx context.Context, id int64, active bool) error { return nil }
+func (r *stubUserRepo) Delete(ctx context.Context, id int64) error                 { return nil }
 
 var _ repository.UserRepository = (*stubUserRepo)(nil)
 

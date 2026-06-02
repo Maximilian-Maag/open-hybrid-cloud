@@ -14,7 +14,10 @@ func (h *Handler) setLang(w http.ResponseWriter, r *http.Request) {
 	}
 	if sess, ok := h.sessions.Get(r); ok {
 		sess.Lang = lang
-		h.sessions.Set(w, *sess)
+		if err := h.sessions.Set(w, *sess); err != nil {
+			http.Error(w, "session error", http.StatusInternalServerError)
+			return
+		}
 	}
 	ref := r.Header.Get("Referer")
 	if ref == "" {

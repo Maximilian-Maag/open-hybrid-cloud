@@ -150,6 +150,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /projects/new", req(http.HandlerFunc(h.projectCreate)))
 	mux.Handle("GET /projects/{id}", req(http.HandlerFunc(h.projectDetail)))
 	mux.Handle("POST /projects/{id}", req(http.HandlerFunc(h.projectUpdate)))
+	mux.Handle("POST /projects/{id}/delete", req(http.HandlerFunc(h.projectDelete)))
 
 	mux.Handle("GET /infrastructure", req(http.HandlerFunc(h.infrastructureList)))
 	mux.Handle("POST /infrastructure/{id}/decommission", req(http.HandlerFunc(h.decommission)))
@@ -189,6 +190,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /admin/users/{id}/edit", admin(h.adminUserEdit))
 	mux.Handle("POST /admin/users/{id}/edit", admin(h.adminUserUpdate))
 	mux.Handle("POST /admin/users/{id}/deactivate", admin(h.adminUserDeactivate))
+	mux.Handle("POST /admin/users/{id}/delete", admin(h.adminUserDelete))
 
 	mux.Handle("GET /admin/currencies", admin(h.adminCurrencies))
 	mux.Handle("POST /admin/currencies/refresh", admin(h.adminCurrencyRefresh))

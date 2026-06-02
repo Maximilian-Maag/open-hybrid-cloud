@@ -168,6 +168,16 @@ infra-webshop/
 | Docker + Docker Compose | current | [docs.docker.com](https://docs.docker.com/get-docker/) |
 | GNU Make | current | Pre-installed on Linux/macOS |
 
+On **Ubuntu** or **Manjaro** all prerequisites can be installed with a single command:
+
+```bash
+make install-requirements
+```
+
+This installs Go, Node.js, npm, Docker, Docker Compose, and the required Go tools (`goimports`, `golangci-lint`) via the native package manager. A re-login is required afterwards for the Docker group membership to take effect.
+
+> **Note (Ubuntu):** `golang-go` from the Ubuntu repositories may be slightly behind the latest release. If Go 1.23+ is not available in your Ubuntu version, install it manually from [go.dev/dl](https://go.dev/dl/).
+
 ### Make Targets
 
 ```bash
@@ -183,10 +193,24 @@ make help         # Show all available targets
 | `make css-watch` | Tailwind CSS in watch mode (UI development) |
 | `make test` | Run tests |
 | `make vet` | Run `go vet` |
+| `make lint` | Run `golangci-lint` (requires `golangci-lint` in `PATH`) |
+| `make install-requirements` | Install all required tools and packages (Ubuntu and Manjaro) |
 | `make docker-build` | Build Docker image |
 | `make dev` | Start local services (Postgres, Mailpit, Structurizr) |
 | `make dev-down` | Stop local services |
 | `make clean` | Remove build artifacts |
+
+### Smoke Test Runner
+
+The repository includes a smoke test command in `cmd/smoke/`.
+Run it against a local database to verify product deletion cleanup:
+
+```bash
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable \
+  go run ./cmd/smoke
+```
+
+This helper creates temporary product, order, and infrastructure rows and then deletes the product to validate cascading cleanup behavior.
 
 `npm install` is run automatically when `node_modules/` is missing.
 

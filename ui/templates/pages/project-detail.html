@@ -32,6 +32,15 @@
         <button type="submit" class="btn btn-primary">{{t "common.save" $.Lang}}</button>
         <a href="/projects" class="btn btn-ghost">{{t "common.cancel" $.Lang}}</a>
     </div>
+    {{if $.Session}}
+    {{if or (eq $.Session.Role "shop_admin") (eq $.Session.Role "admin") (and (eq $.Session.Role "project_leader") (eq .Project.OwnerID $.Session.UserID))}}
+    <div class="mt-4">
+        <form method="POST" action="/projects/{{.Project.ID}}/delete" onsubmit="return confirm('{{t "admin.confirm_delete" $.Lang}}')">
+            <button type="submit" class="btn btn-ghost text-error">{{t "common.delete" $.Lang}}</button>
+        </form>
+    </div>
+    {{end}}
+    {{end}}
 </form>
 {{end}}
 {{end}}

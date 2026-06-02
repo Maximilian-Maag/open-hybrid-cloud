@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -57,7 +58,7 @@ func TestSession_positive(t *testing.T) {
 func TestSession_negative_tamperedCookie(t *testing.T) {
 	store := NewSessionStore("a-32-byte-secret-for-testing-ok!")
 
-	req, _ := http.NewRequest("GET", "/", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: cookieName, Value: "tampered-garbage-value"})
 
 	_, ok := store.Get(req)

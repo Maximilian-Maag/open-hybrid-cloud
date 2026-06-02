@@ -40,7 +40,9 @@ func Run(ctx context.Context, pool *pgxpool.Pool) error {
 
 	for _, name := range files {
 		var version int64
-		fmt.Sscanf(name, "%d", &version)
+		if _, err := fmt.Sscanf(name, "%d", &version); err != nil {
+			return fmt.Errorf("parse migration version from %q: %w", name, err)
+		}
 
 		var exists bool
 		err := pool.QueryRow(ctx,

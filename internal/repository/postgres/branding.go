@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/porr-ag/infra-webshop/internal/model"
 	"github.com/porr-ag/infra-webshop/internal/repository"
 )

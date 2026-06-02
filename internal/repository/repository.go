@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/porr-ag/infra-webshop/internal/model"
@@ -19,7 +20,12 @@ type UserRepository interface {
 	Update(ctx context.Context, user *model.User) error
 	UpdatePassword(ctx context.Context, id int64, passwordHash string) error
 	SetActive(ctx context.Context, id int64, active bool) error
+	Delete(ctx context.Context, id int64) error
 }
+
+// ErrReferenced is returned when a delete would violate a foreign-key
+// constraint because the entity is still referenced by other rows.
+var ErrReferenced = errors.New("referenced by other records")
 
 type CategoryRepository interface {
 	FindAll(ctx context.Context) ([]model.Category, error)
@@ -89,6 +95,7 @@ type ProjectRepository interface {
 	FindAll(ctx context.Context) ([]model.Project, error)
 	Save(ctx context.Context, project *model.Project) error
 	Update(ctx context.Context, project *model.Project) error
+	Delete(ctx context.Context, id int64) error
 }
 
 type OrderRepository interface {
@@ -103,6 +110,7 @@ type OrderRepository interface {
 
 type InfrastructureRepository interface {
 	FindByProjectID(ctx context.Context, projectID int64) ([]model.InfrastructureElement, error)
+	FindByProductID(ctx context.Context, productID int64) ([]model.InfrastructureElement, error)
 	FindAll(ctx context.Context) ([]model.InfrastructureElement, error)
 	FindByID(ctx context.Context, id int64) (*model.InfrastructureElement, error)
 	FindByStatuses(ctx context.Context, statuses []model.OrderStatus) ([]model.InfrastructureElement, error)

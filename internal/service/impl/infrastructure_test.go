@@ -71,3 +71,6 @@ func (r *stubInfraRepoFull) UpdateOutputs(ctx context.Context, id int64, outputs
 func (r *stubInfraRepoFull) FindByOrderID(ctx context.Context, orderID int64) (*model.InfrastructureElement, error) {
 	return nil, nil
 }
+func (r *stubInfraRepoFull) FindByProductID(ctx context.Context, productID int64) ([]model.InfrastructureElement, error) {
+	return nil, nil
+}

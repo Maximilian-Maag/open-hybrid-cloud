@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/porr-ag/infra-webshop/internal/model"
 	"github.com/porr-ag/infra-webshop/internal/repository"
 )
@@ -32,6 +33,17 @@ func (r *infraRepo) FindByProjectID(ctx context.Context, projectID int64) ([]mod
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+infraCols+` FROM infrastructure_elements WHERE project_id=$1 ORDER BY deployed_at DESC`,
 		projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, scanInfra)
+}
+
+func (r *infraRepo) FindByProductID(ctx context.Context, productID int64) ([]model.InfrastructureElement, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+infraCols+` FROM infrastructure_elements WHERE product_id=$1 ORDER BY deployed_at DESC`,
+		productID)
 	if err != nil {
 		return nil, err
 	}

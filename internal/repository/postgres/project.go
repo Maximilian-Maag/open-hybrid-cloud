@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/porr-ag/infra-webshop/internal/model"
 	"github.com/porr-ag/infra-webshop/internal/repository"
 )
@@ -71,6 +72,11 @@ func (r *projectRepo) Update(ctx context.Context, p *model.Project) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE projects SET name=$1,description=$2,cost_center_id=$3 WHERE id=$4`,
 		p.Name, p.Description, ccID, p.ID)
+	return err
+}
+
+func (r *projectRepo) Delete(ctx context.Context, id int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM projects WHERE id=$1`, id)
 	return err
 }
 

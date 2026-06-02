@@ -107,6 +107,10 @@
 | FA-09.2 | Admins can decommission all infrastructure elements. Project Managers can only decommission their own. |
 | FA-09.3 | Decommissioning triggers the GitLab destroy webhook of the associated OpenTofu module. |
 | FA-09.4 | The decommissioning status is updated via the GitLab polling mechanism. |
+| FA-09.5 | When a **project** is deleted, all active infrastructure elements belonging to that project are automatically decommissioned (destroy webhook fired) before the project record is removed. |
+| FA-09.6 | When a **product** is deleted, all active infrastructure elements provisioned from that product are automatically decommissioned before the product record is removed. |
+| FA-09.7 | When a **category** is deleted, all active infrastructure elements belonging to any product in that category are automatically decommissioned before the category record is removed. |
+| FA-09.8 | Infrastructure already in status *Decommissioning* or *Decommissioned* is skipped during cascade decommissioning. |
 
 ---
 

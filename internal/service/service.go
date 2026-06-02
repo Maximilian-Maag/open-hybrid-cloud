@@ -30,6 +30,7 @@ type OrderService interface {
 type ProjectService interface {
 	Create(ctx context.Context, project *model.Project) error
 	Update(ctx context.Context, project *model.Project) error
+	Delete(ctx context.Context, id int64) error
 	ListByOwner(ctx context.Context, ownerID int64) ([]model.Project, error)
 	ListAll(ctx context.Context) ([]model.Project, error)
 	GetByID(ctx context.Context, id int64) (*model.Project, error)
@@ -41,6 +42,8 @@ type InfrastructureService interface {
 	GetByID(ctx context.Context, id int64) (*model.InfrastructureElement, error)
 	FindByOrderID(ctx context.Context, orderID int64) (*model.InfrastructureElement, error)
 	Decommission(ctx context.Context, elementID, userID int64) error
+	DecommissionByProject(ctx context.Context, projectID, userID int64) error
+	DecommissionByProduct(ctx context.Context, productID, userID int64) error
 }
 
 type UserService interface {
@@ -49,6 +52,7 @@ type UserService interface {
 	GetBySSOSub(ctx context.Context, sub string) (*model.User, error)
 	Create(ctx context.Context, user *model.User, password string) error
 	Update(ctx context.Context, user *model.User) error
+	Delete(ctx context.Context, id int64) error
 	ListAll(ctx context.Context) ([]model.User, error)
 	VerifyPassword(ctx context.Context, email, password string) (*model.User, error)
 	UpsertSSO(ctx context.Context, sub, email, name string, role model.Role) (*model.User, error)

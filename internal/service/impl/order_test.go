@@ -80,6 +80,9 @@ func (r *stubInfraRepo2) UpdateOutputs(ctx context.Context, id int64, outputs ma
 func (r *stubInfraRepo2) FindByOrderID(ctx context.Context, orderID int64) (*model.InfrastructureElement, error) {
 	return nil, nil
 }
+func (r *stubInfraRepo2) FindByProductID(ctx context.Context, productID int64) ([]model.InfrastructureElement, error) {
+	return nil, nil
+}
 
 var _ repository.InfrastructureRepository = (*stubInfraRepo2)(nil)
 
@@ -91,7 +94,7 @@ func (r *stubEnvRepo) FindAll(ctx context.Context) ([]model.DeploymentEnvironmen
 func (r *stubEnvRepo) FindByID(ctx context.Context, id int64) (*model.DeploymentEnvironment, error) {
 	return nil, errors.New("environment not found")
 }
-func (r *stubEnvRepo) Save(ctx context.Context, e *model.DeploymentEnvironment) error  { return nil }
+func (r *stubEnvRepo) Save(ctx context.Context, e *model.DeploymentEnvironment) error   { return nil }
 func (r *stubEnvRepo) Update(ctx context.Context, e *model.DeploymentEnvironment) error { return nil }
 func (r *stubEnvRepo) Delete(ctx context.Context, id int64) error                       { return nil }
 
@@ -102,8 +105,8 @@ type stubWebhookRepo struct{}
 func (r *stubWebhookRepo) FindByProductAndEnv(ctx context.Context, pID, eID int64) ([]model.ProductWebhook, error) {
 	return nil, nil
 }
-func (r *stubWebhookRepo) Save(ctx context.Context, pw *model.ProductWebhook) error   { return nil }
-func (r *stubWebhookRepo) Delete(ctx context.Context, id int64) error                 { return nil }
+func (r *stubWebhookRepo) Save(ctx context.Context, pw *model.ProductWebhook) error { return nil }
+func (r *stubWebhookRepo) Delete(ctx context.Context, id int64) error               { return nil }
 
 var _ repository.ProductWebhookRepository = (*stubWebhookRepo)(nil)
 

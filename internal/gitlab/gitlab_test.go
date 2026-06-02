@@ -53,7 +53,7 @@ func TestParseVariables_negative_noBlocks(t *testing.T) {
 
 func TestGetPipelineStatus_positive(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(Pipeline{ID: 42, Status: "success"})
+		_ = json.NewEncoder(w).Encode(Pipeline{ID: 42, Status: "success"})
 	}))
 	defer srv.Close()
 

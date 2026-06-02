@@ -34,6 +34,20 @@ func TestBuildVars_positive(t *testing.T) {
 	}
 }
 
+func TestBuildVars_filtersReservedKeys(t *testing.T) {
+	params := map[string]string{"tf_action": "destroy", "DESTROY": "true", "env": "prod"}
+	vars := buildVars(params, "ORDER_ID", "42")
+
+	for _, v := range vars {
+		if v["key"] == "TF_ACTION" || v["key"] == "DESTROY" {
+			t.Errorf("buildVars: reserved key %q should not be forwarded", v["key"])
+		}
+	}
+	if len(vars) != 2 { // ORDER_ID + ENV
+		t.Errorf("buildVars: want 2 entries after filtering reserved keys, got %d", len(vars))
+	}
+}
+
 func TestFireWebhook_negative_serverError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)

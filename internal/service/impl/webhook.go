@@ -55,11 +55,22 @@ func fireWebhook(ctx context.Context, client *http.Client, urlStr, token string,
 }
 
 // buildVars constructs GitLab trigger variables from order parameters plus one extra key/value.
+// Reserved pipeline variables must not be passed through from user-defined parameters.
 func buildVars(params map[string]string, extraKey, extraVal string) []map[string]string {
+	reserved := map[string]bool{
+		"ORDER_ID":  true,
+		"INFRA_ID":  true,
+		"TF_ACTION": true,
+		"DESTROY":   true,
+	}
 	vars := make([]map[string]string, 0, len(params)+1)
 	vars = append(vars, map[string]string{"key": extraKey, "value": extraVal})
 	for k, v := range params {
-		vars = append(vars, map[string]string{"key": strings.ToUpper(k), "value": v})
+		key := strings.ToUpper(k)
+		if reserved[key] {
+			continue
+		}
+		vars = append(vars, map[string]string{"key": key, "value": v})
 	}
 	return vars
 }

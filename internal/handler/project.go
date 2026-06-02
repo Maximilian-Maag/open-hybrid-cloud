@@ -115,6 +115,10 @@ func (h *Handler) projectDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	if err := h.infra.DecommissionByProject(r.Context(), id, sess.UserID); err != nil {
+		h.redirectWithFlash(w, r, "/projects", "error", "Fehler beim Dekommissionieren: "+err.Error())
+		return
+	}
 	if err := h.projects.Delete(r.Context(), id); err != nil {
 		h.redirectWithFlash(w, r, "/projects", "error", "Fehler: "+err.Error())
 		return

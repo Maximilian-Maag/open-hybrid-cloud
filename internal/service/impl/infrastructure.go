@@ -12,10 +12,10 @@ import (
 )
 
 type infrastructureService struct {
-	infra    repository.InfrastructureRepository
-	envs     repository.EnvironmentRepository
-	webhooks repository.ProductWebhookRepository
-	audit    service.AuditService
+	infra      repository.InfrastructureRepository
+	envs       repository.EnvironmentRepository
+	webhooks   repository.ProductWebhookRepository
+	audit      service.AuditService
 	httpClient *http.Client
 }
 
@@ -65,7 +65,36 @@ func (s *infrastructureService) Decommission(ctx context.Context, elementID, use
 	return nil
 }
 
-// triggerDestroyWebhook fires the destroy pipeline(s) with DESTROY=true and INFRA_ID set.
+func (s *infrastructureService) DecommissionByProject(ctx context.Context, projectID, userID int64) error {
+	elements, err := s.infra.FindByProjectID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	return s.decommissionActive(ctx, elements, userID)
+}
+
+func (s *infrastructureService) DecommissionByProduct(ctx context.Context, productID, userID int64) error {
+	elements, err := s.infra.FindByProductID(ctx, productID)
+	if err != nil {
+		return err
+	}
+	return s.decommissionActive(ctx, elements, userID)
+}
+
+func (s *infrastructureService) decommissionActive(ctx context.Context, elements []model.InfrastructureElement, userID int64) error {
+	for _, el := range elements {
+		switch el.Status {
+		case model.OrderStatusDecommissioning, model.OrderStatusDecommissioned:
+			continue
+		}
+		if err := s.Decommission(ctx, el.ID, userID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// triggerDestroyWebhook fires the destroy pipeline(s) with TF_ACTION=destroy and INFRA_ID set.
 // Pipeline IDs are appended to the infra element's pipeline_id array.
 func (s *infrastructureService) triggerDestroyWebhook(ctx context.Context, el *model.InfrastructureElement, env *model.DeploymentEnvironment) error {
 	vars := buildVars(el.Parameters, "INFRA_ID", strconv.FormatInt(el.ID, 10))

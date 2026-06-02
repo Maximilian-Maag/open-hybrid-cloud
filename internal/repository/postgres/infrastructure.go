@@ -39,6 +39,17 @@ func (r *infraRepo) FindByProjectID(ctx context.Context, projectID int64) ([]mod
 	return pgx.CollectRows(rows, scanInfra)
 }
 
+func (r *infraRepo) FindByProductID(ctx context.Context, productID int64) ([]model.InfrastructureElement, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+infraCols+` FROM infrastructure_elements WHERE product_id=$1 ORDER BY deployed_at DESC`,
+		productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, scanInfra)
+}
+
 func (r *infraRepo) FindByID(ctx context.Context, id int64) (*model.InfrastructureElement, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+infraCols+` FROM infrastructure_elements WHERE id=$1`, id)

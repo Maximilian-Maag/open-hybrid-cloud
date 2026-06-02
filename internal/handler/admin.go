@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-pdf/fpdf"
+	"github.com/porr-ag/infra-webshop/internal/auth"
 	"github.com/porr-ag/infra-webshop/internal/i18n"
 	"github.com/porr-ag/infra-webshop/internal/model"
 	"github.com/porr-ag/infra-webshop/internal/service"
@@ -49,6 +50,18 @@ func (h *Handler) adminCategoryCreate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) adminCategoryDelete(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	sess, _ := auth.FromContext(r.Context())
+	prods, err := h.products.ListByCategory(r.Context(), id, "de")
+	if err != nil {
+		h.redirectWithFlash(w, r, "/admin/categories", "error", "Fehler: "+err.Error())
+		return
+	}
+	for _, p := range prods {
+		if err := h.infra.DecommissionByProduct(r.Context(), p.ID, sess.UserID); err != nil {
+			h.redirectWithFlash(w, r, "/admin/categories", "error", "Fehler beim Dekommissionieren: "+err.Error())
+			return
+		}
+	}
 	if err := h.categories.Delete(r.Context(), id); err != nil {
 		h.redirectWithFlash(w, r, "/admin/categories", "error", "Fehler: "+err.Error())
 		return
@@ -243,6 +256,11 @@ func (h *Handler) adminProductUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) adminProductDelete(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	sess, _ := auth.FromContext(r.Context())
+	if err := h.infra.DecommissionByProduct(r.Context(), id, sess.UserID); err != nil {
+		h.redirectWithFlash(w, r, "/admin/products", "error", "Fehler beim Dekommissionieren: "+err.Error())
+		return
+	}
 	if err := h.products.Delete(r.Context(), id); err != nil {
 		h.redirectWithFlash(w, r, "/admin/products", "error", "Fehler: "+err.Error())
 		return

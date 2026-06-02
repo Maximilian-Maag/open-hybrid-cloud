@@ -110,6 +110,7 @@ type OrderRepository interface {
 
 type InfrastructureRepository interface {
 	FindByProjectID(ctx context.Context, projectID int64) ([]model.InfrastructureElement, error)
+	FindByProductID(ctx context.Context, productID int64) ([]model.InfrastructureElement, error)
 	FindAll(ctx context.Context) ([]model.InfrastructureElement, error)
 	FindByID(ctx context.Context, id int64) (*model.InfrastructureElement, error)
 	FindByStatuses(ctx context.Context, statuses []model.OrderStatus) ([]model.InfrastructureElement, error)

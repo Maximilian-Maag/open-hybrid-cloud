@@ -42,6 +42,8 @@ type InfrastructureService interface {
 	GetByID(ctx context.Context, id int64) (*model.InfrastructureElement, error)
 	FindByOrderID(ctx context.Context, orderID int64) (*model.InfrastructureElement, error)
 	Decommission(ctx context.Context, elementID, userID int64) error
+	DecommissionByProject(ctx context.Context, projectID, userID int64) error
+	DecommissionByProduct(ctx context.Context, productID, userID int64) error
 }
 
 type UserService interface {

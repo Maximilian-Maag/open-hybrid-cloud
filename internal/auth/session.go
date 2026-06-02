@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 
 	"github.com/gorilla/securecookie"
 	"github.com/porr-ag/infra-webshop/internal/model"
@@ -91,9 +92,12 @@ const flashCookie = "infra_flash"
 
 func (s *SessionStore) SetFlash(w http.ResponseWriter, kind, msg string) {
 	b, _ := json.Marshal(FlashData{Kind: kind, Message: msg})
+	// Cookie values must not contain raw double-quotes or other invalid
+	// characters. URL-escape the JSON payload so it is safe to roundtrip.
+	v := url.QueryEscape(string(b))
 	http.SetCookie(w, &http.Cookie{
 		Name:     flashCookie,
-		Value:    string(b),
+		Value:    v,
 		Path:     "/",
 		HttpOnly: true,
 		MaxAge:   60,
@@ -107,7 +111,12 @@ func (s *SessionStore) PopFlash(w http.ResponseWriter, r *http.Request) *FlashDa
 	}
 	http.SetCookie(w, &http.Cookie{Name: flashCookie, Value: "", Path: "/", MaxAge: -1})
 	var f FlashData
-	if err := json.Unmarshal([]byte(c.Value), &f); err != nil {
+	// Decode the URL-escaped payload before unmarshalling JSON.
+	dec, err2 := url.QueryUnescape(c.Value)
+	if err2 != nil {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(dec), &f); err != nil {
 		return nil
 	}
 	return &f

@@ -40,7 +40,7 @@
                 </h2>
                 {{else if .SelectedCat}}
                 <h2 class="text-xl font-bold text-gray-800">
-                    {{range .Categories}}{{if eq . $.Data.SelectedCat}}{{.Name}}{{end}}{{end}}
+                    {{range .Categories}}{{if eq .ID $.Data.SelectedCat}}{{.Name}}{{end}}{{end}}
                     {{t "catalog.title" $.Lang}}
                 </h2>
                 {{else}}

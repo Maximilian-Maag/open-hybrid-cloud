@@ -1051,7 +1051,7 @@ image: ghcr.io/opentofu/opentofu:1.9
 
 variables:
   TF_ACTION: "apply"
-  TF_STATE_NAME: "vm-${TF_VAR_vm_label}"
+  TF_STATE_NAME: "vm-${vm_label}"
   TF_VAR_linode_token: "${LINODE_TOKEN}"
 
 .tofu_init: &tofu_init

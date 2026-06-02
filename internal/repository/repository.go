@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/porr-ag/infra-webshop/internal/model"
@@ -21,6 +22,10 @@ type UserRepository interface {
 	SetActive(ctx context.Context, id int64, active bool) error
 	Delete(ctx context.Context, id int64) error
 }
+
+// ErrReferenced is returned when a delete would violate a foreign-key
+// constraint because the entity is still referenced by other rows.
+var ErrReferenced = errors.New("referenced by other records")
 
 type CategoryRepository interface {
 	FindAll(ctx context.Context) ([]model.Category, error)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/porr-ag/infra-webshop/internal/model"
@@ -66,6 +67,16 @@ func (r *productRepo) Update(ctx context.Context, p *model.Product) error {
 
 func (r *productRepo) Delete(ctx context.Context, id int64) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM products WHERE id=$1`, id)
+	if err == nil {
+		return nil
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		if pgErr.Code == "23503" {
+			// foreign key violation: referenced by other table(s)
+			return repository.ErrReferenced
+		}
+	}
 	return err
 }
 

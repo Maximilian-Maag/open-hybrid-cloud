@@ -21,7 +21,16 @@
             <td class="font-medium">{{.Name}}</td>
             <td class="text-sm text-base-content/60">{{.Description}}</td>
             <td class="text-sm text-base-content/60">{{.CreatedAt.Format "02.01.2006"}}</td>
-            <td><a href="/projects/{{.ID}}" class="btn btn-ghost btn-xs">{{t "common.edit" $.Lang}}</a></td>
+            <td class="flex gap-1">
+                <a href="/projects/{{.ID}}" class="btn btn-ghost btn-xs">{{t "common.edit" $.Lang}}</a>
+                {{if $.Session}}
+                {{if or (eq $.Session.Role "shop_admin") (eq $.Session.Role "admin") (and (eq $.Session.Role "project_leader") (eq .OwnerID $.Session.UserID))}}
+                <form method="POST" action="/projects/{{.ID}}/delete" onsubmit="return confirm('{{t "admin.confirm_delete" $.Lang}}')">
+                    <button type="submit" class="btn btn-ghost btn-xs text-error">{{t "common.delete" $.Lang}}</button>
+                </form>
+                {{end}}
+                {{end}}
+            </td>
         </tr>
         {{end}}
         </tbody>

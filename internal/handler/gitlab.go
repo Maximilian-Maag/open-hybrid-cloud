@@ -114,9 +114,6 @@ func (h *Handler) gitlabImportVars(w http.ResponseWriter, r *http.Request) {
 			paramType = model.ParameterTypeBool
 		}
 		name := v.Name
-		if !strings.HasPrefix(name, "TF_VAR_") {
-			name = "TF_VAR_" + name
-		}
 		p := &model.Parameter{
 			Scope:        model.ParameterScopeProduct,
 			ScopeID:      productID,

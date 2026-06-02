@@ -83,6 +83,11 @@ func (r *userRepo) SetActive(ctx context.Context, id int64, active bool) error {
 	return err
 }
 
+func (r *userRepo) Delete(ctx context.Context, id int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, id)
+	return err
+}
+
 func (r *userRepo) scanOne(ctx context.Context, sql string, args ...any) (*model.User, error) {
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {

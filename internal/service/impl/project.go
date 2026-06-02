@@ -35,3 +35,7 @@ func (s *projectService) ListAll(ctx context.Context) ([]model.Project, error) {
 func (s *projectService) GetByID(ctx context.Context, id int64) (*model.Project, error) {
 	return s.repo.FindByID(ctx, id)
 }
+
+func (s *projectService) Delete(ctx context.Context, id int64) error {
+	return s.repo.Delete(ctx, id)
+}

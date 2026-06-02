@@ -19,6 +19,7 @@ type UserRepository interface {
 	Update(ctx context.Context, user *model.User) error
 	UpdatePassword(ctx context.Context, id int64, passwordHash string) error
 	SetActive(ctx context.Context, id int64, active bool) error
+	Delete(ctx context.Context, id int64) error
 }
 
 type CategoryRepository interface {
@@ -89,6 +90,7 @@ type ProjectRepository interface {
 	FindAll(ctx context.Context) ([]model.Project, error)
 	Save(ctx context.Context, project *model.Project) error
 	Update(ctx context.Context, project *model.Project) error
+	Delete(ctx context.Context, id int64) error
 }
 
 type OrderRepository interface {

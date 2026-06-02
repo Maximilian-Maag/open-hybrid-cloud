@@ -48,6 +48,15 @@ func (h *Handler) adminUserDeactivate(w http.ResponseWriter, r *http.Request) {
 	h.redirectWithFlash(w, r, "/admin/users", "success", "Benutzer deaktiviert.")
 }
 
+func (h *Handler) adminUserDelete(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err := h.users.Delete(r.Context(), id); err != nil {
+		h.redirectWithFlash(w, r, "/admin/users", "error", "Fehler: "+err.Error())
+		return
+	}
+	h.redirectWithFlash(w, r, "/admin/users", "success", "Benutzer gelöscht.")
+}
+
 // ---- Global parameters ----
 
 func (h *Handler) adminParameters(w http.ResponseWriter, r *http.Request) {

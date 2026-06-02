@@ -74,6 +74,11 @@ func (r *projectRepo) Update(ctx context.Context, p *model.Project) error {
 	return err
 }
 
+func (r *projectRepo) Delete(ctx context.Context, id int64) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM projects WHERE id=$1`, id)
+	return err
+}
+
 func scanProject(row pgx.CollectableRow) (model.Project, error) {
 	var p model.Project
 	var ccID *int64

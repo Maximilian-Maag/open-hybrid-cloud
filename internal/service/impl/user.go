@@ -82,6 +82,10 @@ func (s *userService) SetActive(ctx context.Context, id int64, active bool) erro
 	return s.repo.SetActive(ctx, id, active)
 }
 
+func (s *userService) Delete(ctx context.Context, id int64) error {
+	return s.repo.Delete(ctx, id)
+}
+
 func (s *userService) UpsertSSO(ctx context.Context, sub, email, name string, role model.Role) (*model.User, error) {
 	u, err := s.repo.FindBySSOSub(ctx, sub)
 	if err != nil {

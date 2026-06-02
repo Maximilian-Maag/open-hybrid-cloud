@@ -98,3 +98,26 @@ func (h *Handler) projectUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	h.redirectWithFlash(w, r, "/projects", "success", "Projekt gespeichert.")
 }
+
+func (h *Handler) projectDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	sess, _ := auth.FromContext(r.Context())
+	p, _ := h.projects.GetByID(r.Context(), id)
+	if p == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if sess.Role == model.RoleProjectLeader && p.OwnerID != sess.UserID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := h.projects.Delete(r.Context(), id); err != nil {
+		h.redirectWithFlash(w, r, "/projects", "error", "Fehler: "+err.Error())
+		return
+	}
+	h.redirectWithFlash(w, r, "/projects", "success", "Projekt gelöscht.")
+}

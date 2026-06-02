@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/porr-ag/infra-webshop/internal/gitlab"
 	"github.com/porr-ag/infra-webshop/internal/model"

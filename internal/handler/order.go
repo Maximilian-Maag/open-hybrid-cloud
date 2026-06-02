@@ -90,8 +90,8 @@ func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
 		Parameters:    params,
 	}
 
-	// Admins skip approval and go straight to provisioning
-	if sess.Role == model.RoleAdmin {
+	// Admins and Shop Admins skip approval and go straight to provisioning
+	if sess.Role == model.RoleAdmin || sess.Role == model.RoleShopAdmin {
 		o.Status = model.OrderStatusPendingApproval
 		if err := h.orders.Create(r.Context(), o); err != nil {
 			h.redirectWithFlash(w, r, "/orders/new", "error", "Bestellung konnte nicht erstellt werden.")

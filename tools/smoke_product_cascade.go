@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func main() {
+func RunProductCascadeSmokeTest() {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable"
@@ -90,17 +90,12 @@ func main() {
 	}
 	fmt.Println("infrastructure_elements remaining with id:", cnt)
 
-	// Cleanup created supporting rows
-	if _, _ = pool.Exec(ctx, `DELETE FROM deployment_environments WHERE id=$1`, envID); true {
-	}
-	if _, _ = pool.Exec(ctx, `DELETE FROM projects WHERE id=$1`, projectID); true {
-	}
-	if _, _ = pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID); true {
-	}
-	if _, _ = pool.Exec(ctx, `DELETE FROM gitlab_sources WHERE id=$1`, gitlabID); true {
-	}
-	if _, _ = pool.Exec(ctx, `DELETE FROM categories WHERE id=$1`, categoryID); true {
-	}
+	// Cleanup created supporting rows (errors ignored — best effort)
+	_, _ = pool.Exec(ctx, `DELETE FROM deployment_environments WHERE id=$1`, envID)
+	_, _ = pool.Exec(ctx, `DELETE FROM projects WHERE id=$1`, projectID)
+	_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
+	_, _ = pool.Exec(ctx, `DELETE FROM gitlab_sources WHERE id=$1`, gitlabID)
+	_, _ = pool.Exec(ctx, `DELETE FROM categories WHERE id=$1`, categoryID)
 
 	fmt.Println("Cleanup done")
 }

@@ -86,6 +86,7 @@ func (s *infrastructureService) decommissionActive(ctx context.Context, elements
 		switch el.Status {
 		case model.OrderStatusDecommissioning, model.OrderStatusDecommissioned:
 			continue
+		default:
 		}
 		if err := s.Decommission(ctx, el.ID, userID); err != nil {
 			return err

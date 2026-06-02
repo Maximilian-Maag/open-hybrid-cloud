@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/gorilla/securecookie"
+
 	"github.com/porr-ag/infra-webshop/internal/model"
 )
 

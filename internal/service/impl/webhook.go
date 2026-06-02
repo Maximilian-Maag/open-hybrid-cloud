@@ -25,7 +25,7 @@ func fireWebhook(ctx context.Context, client *http.Client, urlStr, token string,
 		if !ok || key == "" {
 			continue
 		}
-		value, _ := v["value"]
+		value := v["value"]
 		form.Set("variables["+key+"]", value)
 	}
 

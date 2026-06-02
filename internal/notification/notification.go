@@ -150,7 +150,6 @@ func (s *Service) findAdminEmails(ctx context.Context) []string {
 	return emails
 }
 
-
 // OrderCreated notifies the orderer and, if isProjectLeader, all admins.
 func (s *Service) OrderCreated(ctx context.Context, order *model.Order, ordererEmail string, isProjectLeader bool) error {
 	data := emailData{OrderID: order.ID, OrdEmail: ordererEmail}

@@ -28,8 +28,8 @@ type User struct {
 // --- Produktkatalog ---
 
 type Category struct {
-	ID          int64
-	Name        string
+	ID           int64
+	Name         string
 	DisplayOrder int
 }
 
@@ -75,9 +75,9 @@ const (
 type ParameterType string
 
 const (
-	ParameterTypeString  ParameterType = "string"
-	ParameterTypeNumber  ParameterType = "number"
-	ParameterTypeBool    ParameterType = "bool"
+	ParameterTypeString   ParameterType = "string"
+	ParameterTypeNumber   ParameterType = "number"
+	ParameterTypeBool     ParameterType = "bool"
 	ParameterTypeDropdown ParameterType = "dropdown"
 )
 
@@ -91,12 +91,12 @@ type GitLabSource struct {
 }
 
 type DeploymentEnvironment struct {
-	ID            int64
-	Name          string
-	Description   string
+	ID             int64
+	Name           string
+	Description    string
 	GitLabSourceID int64
-	WebhookURL    string
-	WebhookToken  string
+	WebhookURL     string
+	WebhookToken   string
 }
 
 type ProductEnvironment struct {
@@ -189,7 +189,7 @@ type InfrastructureElement struct {
 	ProductID     int64
 	Status        OrderStatus
 	Parameters    map[string]string
-	PipelineIDs   []string // GitLab pipeline IDs for polling
+	PipelineIDs   []string          // GitLab pipeline IDs for polling
 	Outputs       map[string]string // OpenTofu outputs after successful apply
 	DeployedAt    time.Time
 }
@@ -226,13 +226,13 @@ type AppConfig struct {
 type AuditAction string
 
 const (
-	AuditActionOrderCreated    AuditAction = "order.created"
-	AuditActionOrderApproved   AuditAction = "order.approved"
-	AuditActionOrderRejected   AuditAction = "order.rejected"
-	AuditActionOrderDeployed   AuditAction = "order.deployed"
-	AuditActionOrderFailed     AuditAction = "order.failed"
-	AuditActionDecommissioned  AuditAction = "infra.decommissioned"
-	AuditActionConfigChanged   AuditAction = "config.changed"
+	AuditActionOrderCreated   AuditAction = "order.created"
+	AuditActionOrderApproved  AuditAction = "order.approved"
+	AuditActionOrderRejected  AuditAction = "order.rejected"
+	AuditActionOrderDeployed  AuditAction = "order.deployed"
+	AuditActionOrderFailed    AuditAction = "order.failed"
+	AuditActionDecommissioned AuditAction = "infra.decommissioned"
+	AuditActionConfigChanged  AuditAction = "config.changed"
 )
 
 type AuditEntry struct {

@@ -10,9 +10,7 @@ import (
 )
 
 func (h *Handler) gitlabClientFromSource(r *http.Request) (*gitlab.Client, error) {
-	if err := r.ParseForm(); err != nil {
-		// ignore parse errors for query-only requests
-	}
+	_ = r.ParseForm()
 	sourceValue := r.URL.Query().Get("source")
 	if sourceValue == "" {
 		sourceValue = r.FormValue("source")

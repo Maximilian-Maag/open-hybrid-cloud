@@ -96,6 +96,6 @@ func (o *OIDCProvider) HandleCallback(r *http.Request) (*OIDCClaims, error) {
 
 func randomState() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	_, _ = rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)
 }

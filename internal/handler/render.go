@@ -107,13 +107,6 @@ func coalesce(a, b string) string {
 	return b
 }
 
-func (h *Handler) renderPartial(w http.ResponseWriter, name string, data any) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.partials.ExecuteTemplate(w, name, data); err != nil {
-		slog.Error("partial render error", "partial", name, "err", err)
-	}
-}
-
 func (h *Handler) redirectWithFlash(w http.ResponseWriter, r *http.Request, to, kind, msg string) {
 	h.sessions.SetFlash(w, kind, msg)
 	http.Redirect(w, r, to, http.StatusSeeOther)

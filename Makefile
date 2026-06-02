@@ -1,4 +1,4 @@
-.PHONY: help build run migrate css css-watch test vet docker-build dev dev-down clean docs docs-clean
+.PHONY: help build run migrate css css-watch test vet lint docker-build dev dev-down clean docs docs-clean
 
 SERVER   := ./server
 MIGRATE  := ./migrate
@@ -15,6 +15,7 @@ help:
 	@echo "  css-watch    Tailwind-CSS im Watch-Modus neu generieren"
 	@echo "  test         Tests ausführen"
 	@echo "  vet          go vet ausführen"
+	@echo "  lint         golangci-lint ausführen"
 	@echo "  docker-build Docker-Image bauen"
 	@echo "  dev          Infra-Container starten + Server direkt ausführen (benötigt .env)"
 	@echo "  dev-down     Infra-Container stoppen"
@@ -46,6 +47,9 @@ test:
 
 vet:
 	go vet ./...
+
+lint:
+	golangci-lint run ./...
 
 docker-build:
 	docker build -t infra-webshop:latest .

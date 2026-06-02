@@ -154,7 +154,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /infrastructure", req(http.HandlerFunc(h.infrastructureList)))
 	mux.Handle("POST /infrastructure/{id}/decommission", req(http.HandlerFunc(h.decommission)))
 
-	// Admin: approval
+	// Admin & Shop Admin: approval
 	mux.Handle("GET /approvals", duAdmin(h.approvalList))
 	mux.Handle("POST /approvals/{id}/approve", duAdmin(h.approvalApprove))
 	mux.Handle("POST /approvals/{id}/reject", duAdmin(h.approvalReject))

@@ -2080,11 +2080,28 @@ currently filtered audit log for compliance reporting.
 \section{Prerequisites}
 
 \begin{itemize}
-  \item Go 1.22+
+  \item Go 1.23+
   \item Node.js 20+ (for Tailwind CSS compilation)
   \item Docker \& Docker Compose (for local PostgreSQL)
-  \item \code{pdflatex} or \code{lualatex} (for handbook compilation)
+  \item \code{golangci-lint} (static analysis — installed via \code{make install-requirements})
+  \item \code{pdflatex} or \code{lualatex} (for handbook compilation, optional)
 \end{itemize}
+
+On Ubuntu or Manjaro all prerequisites except \code{pdflatex} can be installed
+with a single command:
+
+\begin{lstlisting}[style=bash]
+make install-requirements
+\end{lstlisting}
+
+This detects the native package manager (\code{pacman} or \code{apt-get}),
+installs Go, Node.js, npm, Docker, and Docker Compose, and then installs the
+Go tools \code{goimports} and \code{golangci-lint} via \code{go install}.
+A re-login is required afterwards for the Docker group membership to take effect.
+
+\notebox{\textbf{Ubuntu note:} The \code{golang-go} package in the Ubuntu repositories
+  may lag behind the latest Go release. If Go~1.23+ is not available, install it
+  manually from \url{https://go.dev/dl/}.}
 
 \section{Quick Start}
 
@@ -2092,6 +2109,9 @@ currently filtered audit log for compliance reporting.
 # Clone and enter the repo
 git clone git@gitlab.example.com:porr-ag/infra-webshop.git
 cd infra-webshop
+
+# Install all required tools (Ubuntu / Manjaro)
+make install-requirements
 
 # Copy and populate environment
 cp .env.example .env
@@ -2123,6 +2143,8 @@ starts the Go server with live environment variables from \file{.env}.
     \code{make css-watch}  & Watch and rebuild CSS on change \\
     \code{make test}       & Run all Go tests \\
     \code{make vet}        & Run \code{go vet} \\
+    \code{make lint}       & Run \code{golangci-lint} \\
+    \code{make install-requirements} & Install system packages + Go tools (Ubuntu/Manjaro) \\
     \code{make docker-build} & Build Docker image \\
     \code{make dev}        & Start DB + server (development) \\
     \code{make dev-down}   & Stop DB + server \\
@@ -2415,6 +2437,7 @@ integration tests). Run:
 \begin{lstlisting}[style=bash]
 make test
 make vet
+make lint
 \end{lstlisting}
 
 % ─────────────────────────────────────────────────────────────
@@ -2499,6 +2522,30 @@ The status updates live via HTMX polling every 30 seconds.
         \textit{Decommissioning}.
   \item On pipeline completion, status becomes \textit{Decommissioned}.
 \end{enumerate}
+
+\subsection*{Cascade Decommissioning on Deletion}
+
+Deleting a \textbf{project}, \textbf{product}, or \textbf{category}
+automatically triggers decommissioning for all active infrastructure elements
+associated with that object before the database record is removed:
+
+\begin{itemize}
+  \item \textbf{Project deleted} — all active infrastructure elements of the
+    project receive a destroy webhook call.
+  \item \textbf{Product deleted} — all active infrastructure elements
+    provisioned from that product receive a destroy webhook call.
+  \item \textbf{Category deleted} — all active infrastructure elements of every
+    product in the category receive a destroy webhook call.
+\end{itemize}
+
+Infrastructure already in status \textit{Decommissioning} or
+\textit{Decommissioned} is skipped. Dependent database rows (translations,
+parameters, environment assignments) are removed automatically via PostgreSQL
+\code{ON DELETE CASCADE} constraints after the webhooks have been triggered.
+
+\warnbox{Deleting a project, product, or category is irreversible. All associated
+cloud resources will be destroyed by OpenTofu. Verify there are no active
+workloads before proceeding.}
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Introducing a New Product}
@@ -3104,6 +3151,9 @@ it.
     \S\ref{sec:infra-overview} \\
   FA-10 & Decommission (destroy) flow &
     \file{internal/handler/infrastructure.go} &
+    \S\ref{sec:decommission} \\
+  FA-09.5--9.8 & Cascade decommission on project/product/category delete &
+    \file{internal/service/impl/infrastructure.go} &
     \S\ref{sec:decommission} \\
   FA-11 & Audit log &
     \file{internal/audit/}, \file{internal/handler/audit.go} &

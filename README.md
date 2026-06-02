@@ -168,6 +168,16 @@ infra-webshop/
 | Docker + Docker Compose | current | [docs.docker.com](https://docs.docker.com/get-docker/) |
 | GNU Make | current | Pre-installed on Linux/macOS |
 
+On **Ubuntu** or **Manjaro** all prerequisites can be installed with a single command:
+
+```bash
+make install-requirements
+```
+
+This installs Go, Node.js, npm, Docker, Docker Compose, and the required Go tools (`goimports`, `golangci-lint`) via the native package manager. A re-login is required afterwards for the Docker group membership to take effect.
+
+> **Note (Ubuntu):** `golang-go` from the Ubuntu repositories may be slightly behind the latest release. If Go 1.23+ is not available in your Ubuntu version, install it manually from [go.dev/dl](https://go.dev/dl/).
+
 ### Make Targets
 
 ```bash
@@ -184,6 +194,7 @@ make help         # Show all available targets
 | `make test` | Run tests |
 | `make vet` | Run `go vet` |
 | `make lint` | Run `golangci-lint` (requires `golangci-lint` in `PATH`) |
+| `make install-requirements` | Install all required tools and packages (Ubuntu and Manjaro) |
 | `make docker-build` | Build Docker image |
 | `make dev` | Start local services (Postgres, Mailpit, Structurizr) |
 | `make dev-down` | Stop local services |

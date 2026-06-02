@@ -85,6 +85,8 @@ Under **Administration → Categories**:
 - Each category can have a **category parameter set** (applies to all products in that category)
 - Display order in the catalog is configurable
 
+> **Important when deleting a category:** The webshop automatically fires the GitLab destroy webhook for every active infrastructure element belonging to any product in the category before the category record is removed. All products and their dependent data within the category are removed via cascading deletes afterward.
+
 ---
 
 ## 4. Managing the Product Catalog
@@ -135,7 +137,15 @@ Per environment, set:
 
 Open the desired product under **Administration → Products**. All fields from creation can be edited. Translations can be regenerated via AI or edited manually at any time.
 
-### 4.3 Global Parameter Sets
+### 4.3 Deleting a Product
+
+1. Open the product under **Administration → Products**
+2. Click **Delete**
+3. Confirm in the dialog
+
+> **Important:** Before the product record is removed, the webshop automatically fires the GitLab destroy webhook for every active infrastructure element that was provisioned from this product. Infrastructure already in status *Decommissioning* or *Decommissioned* is skipped. Dependent database rows (translations, parameters, environment assignments) are removed automatically via cascading deletes.
+
+### 4.4 Global Parameter Sets
 
 Under **Administration → Global Parameters**:
 

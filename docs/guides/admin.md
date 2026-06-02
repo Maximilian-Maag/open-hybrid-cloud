@@ -108,6 +108,14 @@ Under **Projects**:
 - Edit existing projects
 - Change the cost center of a project
 
+### 6.1 Deleting a Project
+
+1. Open the project under **Projects**
+2. Click **Delete**
+3. Confirm in the dialog
+
+> **Important:** Before the project record is removed, the webshop automatically fires the GitLab destroy webhook for every active infrastructure element belonging to the project (status transitions to *Decommissioning*). The database records are removed after the webhooks have been triggered. Infrastructure that is already in status *Decommissioning* or *Decommissioned* is skipped.
+
 ---
 
 ## 7. Audit Log

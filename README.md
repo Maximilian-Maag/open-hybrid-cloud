@@ -183,6 +183,7 @@ make help         # Show all available targets
 | `make css-watch` | Tailwind CSS in watch mode (UI development) |
 | `make test` | Run tests |
 | `make vet` | Run `go vet` |
+| `make lint` | Run `golangci-lint` (requires `golangci-lint` in `PATH`) |
 | `make docker-build` | Build Docker image |
 | `make dev` | Start local services (Postgres, Mailpit, Structurizr) |
 | `make dev-down` | Stop local services |

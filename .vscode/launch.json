@@ -9,7 +9,7 @@
             "program": "${workspaceFolder}/cmd/server",
             "envFile": "${workspaceFolder}/.env",
             "cwd": "${workspaceFolder}",
-            "dlvToolPath": "/home/mmaag/go/bin/dlv"
+            "dlvToolPath": "~/go/bin/dlv"
         },
         {
             "name": "Migrate",
@@ -19,7 +19,7 @@
             "program": "${workspaceFolder}/cmd/migrate",
             "envFile": "${workspaceFolder}/.env",
             "cwd": "${workspaceFolder}",
-            "dlvToolPath": "/home/mmaag/go/bin/dlv"
+            "dlvToolPath": "~/go/bin/dlv"
         },
         {
             "name": "Test (aktuelles Paket)",
@@ -28,7 +28,7 @@
             "mode": "test",
             "program": "${fileDirname}",
             "envFile": "${workspaceFolder}/.env",
-            "dlvToolPath": "/home/mmaag/go/bin/dlv"
+            "dlvToolPath": "~/go/bin/dlv"
         }
     ]
 }

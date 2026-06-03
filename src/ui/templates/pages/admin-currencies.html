@@ -1,0 +1,37 @@
+{{define "title"}}{{t "admin.currencies" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6 flex items-center justify-between">
+    <div>
+        <h2 class="text-2xl font-bold">{{t "admin.currencies" .Lang}}</h2>
+        <p class="text-base-content/60 text-sm mt-1">{{t "admin.currencies_subtitle" .Lang}}</p>
+    </div>
+    <form method="POST" action="/admin/currencies/refresh">
+        <button type="submit" class="btn btn-primary btn-sm">{{t "admin.refresh_rates" $.Lang}}</button>
+    </form>
+</div>
+
+{{with .Data}}
+{{if .Rates}}
+<div class="overflow-x-auto">
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>{{t "admin.currency_code" $.Lang}}</th>
+                <th>{{t "admin.rate" $.Lang}} (vs EUR)</th>
+            </tr>
+        </thead>
+        <tbody>
+        {{range $code, $rate := .Rates}}
+        <tr>
+            <td class="font-mono font-semibold">{{$code}}</td>
+            <td class="font-mono text-right">{{printf "%.6f" $rate}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="text-center py-16 text-base-content/50">{{t "admin.no_rates" $.Lang}}</div>
+{{end}}
+{{end}}
+{{end}}

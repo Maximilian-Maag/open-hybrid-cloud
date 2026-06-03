@@ -1,0 +1,53 @@
+{{define "title"}}{{t "admin.categories" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6">
+    <a href="/admin" class="btn btn-ghost btn-sm mb-2">{{t "admin.back" .Lang}}</a>
+    <h2 class="text-2xl font-bold">{{t "admin.categories" .Lang}}</h2>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div>
+        {{with .Data}}{{if .Categories}}
+        <div class="overflow-x-auto">
+            <table class="table">
+                <thead><tr><th>{{t "common.name" $.Lang}}</th><th>{{t "admin.display_order" $.Lang}}</th><th></th></tr></thead>
+                <tbody>
+                {{range .Categories}}
+                <tr>
+                    <td>{{.Name}}</td>
+                    <td>{{.DisplayOrder}}</td>
+                    <td class="flex gap-1">
+                        <a href="/admin/categories/{{.ID}}/parameters" class="btn btn-ghost btn-xs">{{t "admin.parameters" $.Lang}}</a>
+                        <form method="POST" action="/admin/categories/{{.ID}}/delete"
+                              onsubmit="return confirm('{{t "admin.confirm_delete_cat" $.Lang}}')">
+                            <button type="submit" class="btn btn-ghost btn-xs text-error">{{t "common.delete" $.Lang}}</button>
+                        </form>
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <p class="text-base-content/50 text-sm">{{t "admin.no_categories" $.Lang}}</p>
+        {{end}}{{end}}
+    </div>
+
+    <div class="card bg-base-100 border border-base-300">
+        <div class="card-body">
+            <h3 class="card-title text-base">{{t "admin.new_category" .Lang}}</h3>
+            <form method="POST" action="/admin/categories" class="space-y-3">
+                <div class="form-control">
+                    <label class="label"><span class="label-text text-sm">{{t "common.name" .Lang}}</span></label>
+                    <input type="text" name="name" class="input input-bordered input-sm" required />
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text text-sm">{{t "admin.display_order" .Lang}}</span></label>
+                    <input type="number" name="display_order" class="input input-bordered input-sm" value="0" />
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">{{t "common.create" .Lang}}</button>
+            </form>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,69 @@
+package comp
+
+// Variant controls the visual style of a button.
+type Variant string
+
+const (
+	VPrimary   Variant = "primary"   // brand-secondary background, dark text
+	VSecondary Variant = "secondary" // white + border
+	VGhost     Variant = "ghost"     // transparent, muted text
+	VDanger    Variant = "danger"    // red text on transparent
+)
+
+// Size controls button padding / text scale.
+type Size string
+
+const (
+	SzXS Size = "xs"
+	SzSM Size = "sm"
+	SzMD Size = "md"
+)
+
+func btnBase() string {
+	return "inline-flex items-center justify-center gap-1.5 font-medium rounded-md transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+}
+
+func btnVariantClass(v Variant) string {
+	switch v {
+	case VPrimary:
+		return "bg-[var(--bs)] text-gray-900 hover:brightness-95 focus-visible:ring-[var(--bs)]"
+	case VSecondary:
+		return "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 focus-visible:ring-slate-300"
+	case VDanger:
+		return "text-red-600 hover:bg-red-50 focus-visible:ring-red-300"
+	default: // ghost
+		return "text-slate-600 hover:bg-slate-100 focus-visible:ring-slate-200"
+	}
+}
+
+func btnSizeClass(s Size) string {
+	switch s {
+	case SzXS:
+		return "px-2 py-1 text-xs"
+	case SzMD:
+		return "px-4 py-2 text-sm"
+	default: // sm
+		return "px-3 py-1.5 text-sm"
+	}
+}
+
+func BtnClass(v Variant, s Size) string {
+	return btnBase() + " " + btnVariantClass(v) + " " + btnSizeClass(s)
+}
+
+// Btn renders a <button> element. Extra HTMX / data attributes via attrs.
+templ Btn(label string, v Variant, s Size, attrs templ.Attributes) {
+	<button class={ BtnClass(v, s) } { attrs... }>{ label }</button>
+}
+
+// BtnLink renders an <a> styled as a button.
+templ BtnLink(label, href string, v Variant, s Size) {
+	<a href={ templ.URL(href) } class={ BtnClass(v, s) }>{ label }</a>
+}
+
+// IconBtn is a square button that holds an SVG icon (passed as children).
+templ IconBtn(v Variant, s Size, attrs templ.Attributes) {
+	<button class={ BtnClass(v, s) + " aspect-square" } { attrs... }>
+		{ children... }
+	</button>
+}

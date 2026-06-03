@@ -1,0 +1,58 @@
+{{define "title"}}{{t "admin.title" .Lang}}{{end}}
+{{define "content"}}
+<h2 class="text-2xl font-bold mb-6">{{t "admin.title" .Lang}}</h2>
+
+{{with .Data}}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="bg-white border border-gray-200 rounded-lg p-4">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">{{t "admin.categories" $.Lang}}</div>
+        <div class="text-3xl font-bold text-gray-800">{{.CategoryCount}}</div>
+        <a href="/admin/categories" class="text-xs mt-2 inline-block hover:underline" style="color:var(--bp)">{{t "admin.manage" $.Lang}}</a>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg p-4">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">{{t "admin.products" $.Lang}}</div>
+        <div class="text-3xl font-bold text-gray-800">{{.ProductCount}}</div>
+        <a href="/admin/products" class="text-xs mt-2 inline-block hover:underline" style="color:var(--bp)">{{t "admin.manage" $.Lang}}</a>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg p-4">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">{{t "admin.environments" $.Lang}}</div>
+        <div class="text-3xl font-bold text-gray-800">{{.EnvironmentCount}}</div>
+        <a href="/admin/environments" class="text-xs mt-2 inline-block hover:underline" style="color:var(--bp)">{{t "admin.manage" $.Lang}}</a>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg p-4">
+        <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">{{t "admin.users" $.Lang}}</div>
+        <div class="text-3xl font-bold text-gray-800">{{.UserCount}}</div>
+        <a href="/admin/users" class="text-xs mt-2 inline-block hover:underline" style="color:var(--bp)">{{t "admin.manage" $.Lang}}</a>
+    </div>
+</div>
+{{end}}
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="bg-white border border-gray-200 rounded-lg p-5">
+        <h3 class="font-semibold text-sm text-gray-700 mb-3">{{t "admin.catalog" .Lang}}</h3>
+        <ul class="space-y-2 text-sm">
+            <li><a href="/admin/categories" class="hover:underline" style="color:var(--bp)">{{t "admin.cat_manage" .Lang}}</a></li>
+            <li><a href="/admin/products" class="hover:underline" style="color:var(--bp)">{{t "admin.prod_manage" .Lang}}</a></li>
+            <li><a href="/admin/parameters" class="hover:underline" style="color:var(--bp)">{{t "admin.global_params" .Lang}}</a></li>
+        </ul>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg p-5">
+        <h3 class="font-semibold text-sm text-gray-700 mb-3">{{t "admin.infra_config" .Lang}}</h3>
+        <ul class="space-y-2 text-sm">
+            <li><a href="/admin/sources" class="hover:underline" style="color:var(--bp)">{{t "admin.gitlab_sources" .Lang}}</a></li>
+            <li><a href="/admin/environments" class="hover:underline" style="color:var(--bp)">{{t "admin.deploy_envs" .Lang}}</a></li>
+            <li><a href="/admin/costcenters" class="hover:underline" style="color:var(--bp)">{{t "admin.cost_centers" .Lang}}</a></li>
+        </ul>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-lg p-5">
+        <h3 class="font-semibold text-sm text-gray-700 mb-3">{{t "admin.system_config" .Lang}}</h3>
+        <ul class="space-y-2 text-sm">
+            <li><a href="/admin/smtp" class="hover:underline" style="color:var(--bp)">{{t "admin.smtp_title" .Lang}}</a></li>
+            <li><a href="/admin/ai-config" class="hover:underline" style="color:var(--bp)">{{t "admin.ai_title" .Lang}}</a></li>
+            <li><a href="/admin/currencies" class="hover:underline" style="color:var(--bp)">{{t "admin.currencies" .Lang}}</a></li>
+            <li><a href="/admin/branding" class="hover:underline" style="color:var(--bp)">{{t "admin.branding_title" .Lang}}</a></li>
+            <li><a href="/admin/users" class="hover:underline" style="color:var(--bp)">{{t "admin.users" .Lang}}</a></li>
+        </ul>
+    </div>
+</div>
+{{end}}

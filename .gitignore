@@ -12,13 +12,14 @@
 # Buildausgabe (kompilierte Binaries)
 /server
 /migrate
+__debug_bin*
 
 # Umgebungsvariablen — .env.example wird committed, .env nicht
 .env
 deploy/docker-host/.env
 
 # Generiertes CSS (wird via Tailwind CLI erzeugt)
-ui/static/css/style.css
+src/ui/static/css/style.css
 
 # Node.js
 node_modules/

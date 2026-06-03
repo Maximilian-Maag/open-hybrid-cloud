@@ -1,0 +1,73 @@
+package comp
+
+// Card is a white surface container with border and shadow.
+// Usage: @comp.Card() { <p>content</p> }
+templ Card() {
+	<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+		{ children... }
+	</div>
+}
+
+// CardBody adds consistent inner padding.
+templ CardBody() {
+	<div class="p-5">
+		{ children... }
+	</div>
+}
+
+// CardHeader renders a titled section header inside a card.
+templ CardHeader(title string) {
+	<div class="px-5 py-4 border-b border-slate-100">
+		<h3 class="text-sm font-semibold text-slate-900">{ title }</h3>
+	</div>
+}
+
+// Section groups a titled block on a page (not a card, just spacing).
+templ Section(title string) {
+	<section class="space-y-3">
+		if title != "" {
+			<h2 class="text-base font-semibold text-slate-900">{ title }</h2>
+		}
+		{ children... }
+	</section>
+}
+
+// PageHeader renders the standardised page title row with an optional back link.
+templ PageHeader(title, backHref string) {
+	<div class="mb-6">
+		if backHref != "" {
+			<a href={ templ.URL(backHref) } class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 mb-2 transition-colors">
+				<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+				</svg>
+				Zurück
+			</a>
+		}
+		<h1 class="text-2xl font-bold text-slate-900">{ title }</h1>
+	</div>
+}
+
+// PageHeaderAction is like PageHeader but with an action button on the right.
+templ PageHeaderAction(title, backHref string, action templ.Component) {
+	<div class="mb-6 flex items-start justify-between">
+		<div>
+			if backHref != "" {
+				<a href={ templ.URL(backHref) } class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 mb-2 transition-colors">
+					<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+					</svg>
+					Zurück
+				</a>
+			}
+			<h1 class="text-2xl font-bold text-slate-900">{ title }</h1>
+		</div>
+		@action
+	</div>
+}
+
+// EmptyState shows a centered placeholder when a list is empty.
+templ EmptyState(message string) {
+	<div class="text-center py-12">
+		<p class="text-sm text-slate-400">{ message }</p>
+	</div>
+}

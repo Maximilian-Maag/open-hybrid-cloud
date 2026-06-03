@@ -1,0 +1,34 @@
+package comp
+
+// FlashBanner renders a success or error notification banner.
+templ FlashBanner(kind, message string) {
+	if message != "" {
+		<div
+			class={
+				"flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium border",
+				templ.KV("bg-emerald-50 text-emerald-800 border-emerald-200", kind == "success"),
+				templ.KV("bg-red-50 text-red-800 border-red-200", kind == "error"),
+				templ.KV("bg-amber-50 text-amber-800 border-amber-200", kind == "warning"),
+			}
+		>
+			if kind == "success" {
+				<svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0114 0z"/>
+				</svg>
+			} else {
+				<svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0114 0z"/>
+				</svg>
+			}
+			<span class="flex-1">{ message }</span>
+		</div>
+	}
+}
+
+// FlashOOB is an out-of-band HTMX swap that updates the flash container
+// without a full page reload. Pair with renderPartials in the handler.
+templ FlashOOB(kind, message string) {
+	<div id="flash-container" class="mb-4" hx-swap-oob="true">
+		@FlashBanner(kind, message)
+	</div>
+}

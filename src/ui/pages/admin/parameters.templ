@@ -1,0 +1,140 @@
+package admin
+
+import (
+	"fmt"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
+)
+
+templ AdminParameters(vd view.AdminParametersView) {
+	@comp.Layout(vd.PageData) {
+		<div class="mb-6">
+			<a href="/admin" class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 mb-2 transition-colors">
+				<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+				</svg>
+				{ i18n.T("admin.back", vd.Lang) }
+			</a>
+			<h1 class="text-2xl font-bold text-slate-900">{ i18n.T("admin.global_params", vd.Lang) }</h1>
+			<p class="text-sm text-slate-400 mt-1">{ i18n.T("admin.global_params_hint", vd.Lang) }</p>
+		</div>
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+			<div>
+				if len(vd.Parameters) == 0 {
+					<p class="text-sm text-slate-400">{ i18n.T("admin.no_params", vd.Lang) }</p>
+				} else {
+					@comp.Card() {
+						@paramTable(vd.Parameters, "/admin/parameters", vd.Lang)
+					}
+				}
+			</div>
+			@comp.Card() {
+				@comp.CardHeader(i18n.T("admin.new_param", vd.Lang))
+				@comp.CardBody() {
+					@paramCreateForm("/admin/parameters", vd.Lang)
+				}
+			}
+		</div>
+	}
+}
+
+templ AdminCategoryParams(vd view.AdminCategoryParamsView) {
+	@comp.Layout(vd.PageData) {
+		<div class="mb-6">
+			<a href="/admin/categories" class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 mb-2 transition-colors">
+				<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+				</svg>
+				{ i18n.T("admin.back", vd.Lang) }
+			</a>
+			<h1 class="text-2xl font-bold text-slate-900">{ i18n.T("admin.category_params", vd.Lang) }: { vd.Category.Name }</h1>
+			<p class="text-sm text-slate-400 mt-1">{ i18n.T("admin.category_params_hint", vd.Lang) }</p>
+		</div>
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+			<div>
+				if len(vd.Parameters) == 0 {
+					<p class="text-sm text-slate-400">{ i18n.T("admin.no_params", vd.Lang) }</p>
+				} else {
+					@comp.Card() {
+						@paramTable(vd.Parameters, "/admin/categories/"+fmt.Sprint(vd.Category.ID)+"/parameters", vd.Lang)
+					}
+				}
+			</div>
+			@comp.Card() {
+				@comp.CardHeader(i18n.T("admin.new_param", vd.Lang))
+				@comp.CardBody() {
+					@paramCreateForm("/admin/categories/"+fmt.Sprint(vd.Category.ID)+"/parameters", vd.Lang)
+				}
+			}
+		</div>
+	}
+}
+
+templ paramTable(params []model.Parameter, deleteBase string, lang string) {
+	<table class="w-full text-sm">
+		<thead>
+			<tr class="border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wide">
+				<th class="px-4 py-3 text-left font-medium">{ i18n.T("admin.param_name", lang) }</th>
+				<th class="px-4 py-3 text-left font-medium">{ i18n.T("admin.param_type", lang) }</th>
+				<th class="px-4 py-3 text-left font-medium">{ i18n.T("common.description", lang) }</th>
+				<th class="px-4 py-3 text-left font-medium">{ i18n.T("admin.param_required", lang) }</th>
+				<th class="px-4 py-3"></th>
+			</tr>
+		</thead>
+		<tbody class="divide-y divide-slate-50">
+			for _, p := range params {
+				<tr class="hover:bg-slate-50/60">
+					<td class="px-4 py-3 font-mono text-sm text-slate-700">{ p.Name }</td>
+					<td class="px-4 py-3">@comp.Badge(string(p.Type), comp.BadgeGray)</td>
+					<td class="px-4 py-3 text-slate-400 text-xs">{ p.Description }</td>
+					<td class="px-4 py-3">
+						if p.Required {
+							@comp.Badge(i18n.T("admin.yes", lang), comp.BadgeYellow)
+						} else {
+							<span class="text-slate-200">—</span>
+						}
+					</td>
+					<td class="px-4 py-3">
+						<button
+							class={ comp.BtnClass(comp.VDanger, comp.SzXS) }
+							hx-post={ deleteBase + "/" + fmt.Sprint(p.ID) + "/delete" }
+							hx-confirm={ i18n.T("admin.confirm_delete", lang) }
+							hx-target="body"
+						>
+							{ i18n.T("common.delete", lang) }
+						</button>
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+templ paramCreateForm(action string, lang string) {
+	<form method="POST" action={ templ.URL(action) } class="space-y-4">
+		@comp.Field(i18n.T("admin.param_name", lang), "name", true) {
+			@comp.Input("name", "text", "project_tag", "", templ.Attributes{"required": ""})
+		}
+		@comp.Field(i18n.T("admin.param_type", lang), "type", false) {
+			@comp.Select("type", templ.Attributes{}) {
+				<option value="string">string</option>
+				<option value="number">number</option>
+				<option value="bool">bool</option>
+				<option value="dropdown">dropdown</option>
+			}
+		}
+		@comp.Field(i18n.T("common.description", lang), "description", false) {
+			@comp.Input("description", "text", "", "", templ.Attributes{})
+		}
+		@comp.Field(i18n.T("admin.param_default", lang), "default_value", false) {
+			@comp.Input("default_value", "text", "", "", templ.Attributes{})
+		}
+		<div class="flex gap-4">
+			@comp.Checkbox("required", i18n.T("admin.param_required", lang), false)
+			@comp.Checkbox("sensitive", i18n.T("admin.param_sensitive", lang), false)
+		</div>
+		@comp.Btn(i18n.T("common.create", lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
+	</form>
+}

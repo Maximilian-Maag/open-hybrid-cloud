@@ -6,9 +6,9 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/cmd/server",
+            "program": "${workspaceFolder}/src/cmd/server",
             "envFile": "${workspaceFolder}/.env",
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/src",
             "dlvToolPath": "~/go/bin/dlv"
         },
         {
@@ -16,9 +16,9 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/cmd/migrate",
+            "program": "${workspaceFolder}/src/cmd/migrate",
             "envFile": "${workspaceFolder}/.env",
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/src",
             "dlvToolPath": "~/go/bin/dlv"
         },
         {

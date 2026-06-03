@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
 )
 
 type UserRepository interface {

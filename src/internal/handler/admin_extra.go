@@ -5,9 +5,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/porr-ag/infra-webshop/internal/aitranslation"
-	"github.com/porr-ag/infra-webshop/internal/model"
-	"github.com/porr-ag/infra-webshop/internal/service"
+	"github.com/porr-ag/infra-webshop/src/internal/aitranslation"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/service"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	adminpages "github.com/porr-ag/infra-webshop/src/ui/pages/admin"
+	auditpages "github.com/porr-ag/infra-webshop/src/ui/pages/audit"
 )
 
 // ---- User edit / deactivate ----
@@ -19,7 +22,10 @@ func (h *Handler) adminUserEdit(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	h.render(w, r, "admin-user-edit.html", map[string]any{"EditUser": u})
+	renderTempl(w, r, adminpages.AdminUserEdit(view.AdminUserEditView{
+		PageData: h.buildPageData(w, r),
+		EditUser: u,
+	}))
 }
 
 func (h *Handler) adminUserUpdate(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +67,10 @@ func (h *Handler) adminUserDelete(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) adminParameters(w http.ResponseWriter, r *http.Request) {
 	params, _ := h.parameters.FindByScope(r.Context(), model.ParameterScopeGlobal, 0)
-	h.render(w, r, "admin-parameters.html", map[string]any{"Parameters": params})
+	renderTempl(w, r, adminpages.AdminParameters(view.AdminParametersView{
+		PageData:   h.buildPageData(w, r),
+		Parameters: params,
+	}))
 }
 
 func (h *Handler) adminParameterCreate(w http.ResponseWriter, r *http.Request) {
@@ -101,10 +110,11 @@ func (h *Handler) adminCategoryParameters(w http.ResponseWriter, r *http.Request
 		return
 	}
 	params, _ := h.parameters.FindByScope(r.Context(), model.ParameterScopeCategory, catID)
-	h.render(w, r, "admin-category-parameters.html", map[string]any{
-		"Category":   cat,
-		"Parameters": params,
-	})
+	renderTempl(w, r, adminpages.AdminCategoryParams(view.AdminCategoryParamsView{
+		PageData:   h.buildPageData(w, r),
+		Category:   cat,
+		Parameters: params,
+	}))
 }
 
 func (h *Handler) adminCategoryParameterCreate(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +157,10 @@ func (h *Handler) adminSMTP(w http.ResponseWriter, r *http.Request) {
 			cfg = *c
 		}
 	}
-	h.render(w, r, "admin-smtp.html", map[string]any{"SMTPConfig": cfg})
+	renderTempl(w, r, adminpages.AdminSMTP(view.AdminSMTPView{
+		PageData:   h.buildPageData(w, r),
+		SMTPConfig: cfg,
+	}))
 }
 
 func (h *Handler) adminSMTPSave(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +203,10 @@ func (h *Handler) adminAIConfig(w http.ResponseWriter, r *http.Request) {
 			cfg = *c
 		}
 	}
-	h.render(w, r, "admin-ai-config.html", map[string]any{"AIConfig": cfg})
+	renderTempl(w, r, adminpages.AdminAIConfig(view.AdminAIConfigView{
+		PageData: h.buildPageData(w, r),
+		AIConfig: cfg,
+	}))
 }
 
 func (h *Handler) adminAIConfigSave(w http.ResponseWriter, r *http.Request) {
@@ -219,31 +235,64 @@ func (h *Handler) adminAIConfigSave(w http.ResponseWriter, r *http.Request) {
 
 // ---- Audit log with filter ----
 
+const auditPerPage = 50
+
 func (h *Handler) auditLogFiltered(w http.ResponseWriter, r *http.Request) {
 	filter := service.AuditFilter{}
+	q := r.URL.Query()
 
-	if uid := r.URL.Query().Get("user_id"); uid != "" {
+	if uid := q.Get("user_id"); uid != "" {
 		filter.UserID, _ = strconv.ParseInt(uid, 10, 64)
 	}
-	if action := r.URL.Query().Get("action"); action != "" {
+	if action := q.Get("action"); action != "" {
 		filter.Action = model.AuditAction(action)
 	}
-	if from := r.URL.Query().Get("from"); from != "" {
+	if from := q.Get("from"); from != "" {
 		if t, err := time.Parse("2006-01-02", from); err == nil {
 			filter.From = &t
 		}
 	}
-	if to := r.URL.Query().Get("to"); to != "" {
+	if to := q.Get("to"); to != "" {
 		if t, err := time.Parse("2006-01-02", to); err == nil {
 			end := t.Add(24*time.Hour - time.Second)
 			filter.To = &end
 		}
 	}
 
-	entries, _ := h.audit.List(r.Context(), filter)
+	allEntries, _ := h.audit.List(r.Context(), filter)
 	users, _ := h.users.ListAll(r.Context())
 
-	q := r.URL.Query()
+	userNames := make(map[int64]string, len(users))
+	for _, u := range users {
+		userNames[u.ID] = u.Name
+	}
+
+	totalCount := len(allEntries)
+	totalPages := (totalCount + auditPerPage - 1) / auditPerPage
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+
+	start := (page - 1) * auditPerPage
+	end := start + auditPerPage
+	if end > totalCount {
+		end = totalCount
+	}
+	pageEntries := allEntries[start:end]
+
+	filterQuery := "user_id=" + q.Get("user_id") +
+		"&action=" + q.Get("action") +
+		"&from=" + q.Get("from") +
+		"&to=" + q.Get("to")
+
 	filterMap := map[string]string{
 		"user_id": q.Get("user_id"),
 		"action":  q.Get("action"),
@@ -251,9 +300,15 @@ func (h *Handler) auditLogFiltered(w http.ResponseWriter, r *http.Request) {
 		"to":      q.Get("to"),
 	}
 
-	h.render(w, r, "audit.html", map[string]any{
-		"Entries": entries,
-		"Users":   users,
-		"Filter":  filterMap,
-	})
+	renderTempl(w, r, auditpages.AuditLog(view.AuditView{
+		PageData:    h.buildPageData(w, r),
+		Entries:     pageEntries,
+		Users:       users,
+		UserNames:   userNames,
+		Filter:      filterMap,
+		FilterQuery: filterQuery,
+		Page:        page,
+		TotalPages:  totalPages,
+		TotalCount:  totalCount,
+	}))
 }

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/porr-ag/infra-webshop/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
 )
 
 func (h *Handler) setLang(w http.ResponseWriter, r *http.Request) {

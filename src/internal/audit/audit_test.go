@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/porr-ag/infra-webshop/internal/model"
-	"github.com/porr-ag/infra-webshop/internal/service"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/service"
 )
 
 type stubAuditRepo struct {

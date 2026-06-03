@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/porr-ag/infra-webshop/internal/config"
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/config"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
 )
 
 func TestOrderCreated_positive_noSMTP(t *testing.T) {

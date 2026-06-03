@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
 )
 
 type ProductService interface {

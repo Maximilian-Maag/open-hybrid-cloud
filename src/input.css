@@ -1,3 +1,44 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Design system foundation for templ-based pages.
+ * Complements Tailwind utilities used in .templ components.
+ */
+
+@layer base {
+  :root {
+    /* Brand colours — overridden at runtime via inline style on <html> */
+    --bp: #131921;
+    --bs: #febd69;
+  }
+
+  *,
+  *::before,
+  *::after {
+    border-color: theme("colors.slate.200");
+  }
+}
+
+@layer components {
+  /*
+   * <details> / <summary> user-menu: hide the browser marker,
+   * keep a clean arrow indicator via CSS only.
+   */
+  details > summary {
+    list-style: none;
+  }
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /*
+   * Subtle focus ring for interactive elements inside the brand header.
+   * The ring colour matches --bs so it stays on-brand.
+   */
+  .focus-brand:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bs);
+  }
+}

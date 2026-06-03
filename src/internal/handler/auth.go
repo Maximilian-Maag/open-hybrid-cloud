@@ -3,8 +3,10 @@ package handler
 import (
 	"net/http"
 
-	"github.com/porr-ag/infra-webshop/internal/auth"
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/auth"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	authpages "github.com/porr-ag/infra-webshop/src/ui/pages/auth"
 )
 
 func (h *Handler) loginPage(w http.ResponseWriter, r *http.Request) {
@@ -12,23 +14,37 @@ func (h *Handler) loginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	h.render(w, r, "login.html", map[string]any{
-		"OIDCEnabled": h.oidc != nil,
-	})
+	renderTempl(w, r, authpages.Login(view.LoginView{
+		PageData:    h.buildPageData(w, r),
+		OIDCEnabled: h.oidc != nil,
+	}))
 }
 
 func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
+	ip := remoteIP(r)
+	if !h.loginRL.allowed(ip) {
+		renderTempl(w, r, authpages.Login(view.LoginView{
+			PageData:    h.buildPageData(w, r),
+			Error:       "Zu viele fehlgeschlagene Anmeldeversuche. Bitte warten Sie 15 Minuten.",
+			OIDCEnabled: h.oidc != nil,
+		}))
+		return
+	}
+
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
 	u, err := h.users.VerifyPassword(r.Context(), email, password)
 	if err != nil || u == nil {
-		h.render(w, r, "login.html", map[string]any{
-			"Error":       "Ungültige E-Mail oder Passwort.",
-			"OIDCEnabled": h.oidc != nil,
-		})
+		h.loginRL.record(ip)
+		renderTempl(w, r, authpages.Login(view.LoginView{
+			PageData:    h.buildPageData(w, r),
+			Error:       "Ungültige E-Mail oder Passwort.",
+			OIDCEnabled: h.oidc != nil,
+		}))
 		return
 	}
+	h.loginRL.clear(ip)
 
 	if err := h.sessions.Set(w, auth.SessionData{
 		UserID: u.ID,

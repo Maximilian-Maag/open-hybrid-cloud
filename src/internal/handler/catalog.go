@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	catalogpages "github.com/porr-ag/infra-webshop/src/ui/pages/catalog"
 )
 
 func (h *Handler) catalog(w http.ResponseWriter, r *http.Request) {
@@ -48,11 +51,11 @@ func (h *Handler) catalog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	views := make([]ProductCardView, 0, len(prods))
+	views := make([]view.ProductCardView, 0, len(prods))
 	for _, p := range prods {
 		cat, _ := h.categories.FindByID(ctx, p.CategoryID)
 		envs, _ := h.productEnvs.FindByProductID(ctx, p.ID)
-		v := ProductCardView{Product: p, EnvCount: len(envs)}
+		v := view.ProductCardView{Product: p, EnvCount: len(envs)}
 		if cat != nil {
 			v.CategoryName = cat.Name
 		}
@@ -65,12 +68,13 @@ func (h *Handler) catalog(w http.ResponseWriter, r *http.Request) {
 		views = append(views, v)
 	}
 
-	h.render(w, r, "catalog.html", map[string]any{
-		"Categories":  cats,
-		"Products":    views,
-		"Query":       query,
-		"SelectedCat": selectedCat,
-	})
+	renderTempl(w, r, catalogpages.Catalog(view.CatalogView{
+		PageData:    h.buildPageData(w, r),
+		Categories:  cats,
+		Products:    views,
+		Query:       query,
+		SelectedCat: selectedCat,
+	}))
 }
 
 func (h *Handler) catalogProduct(w http.ResponseWriter, r *http.Request) {
@@ -90,17 +94,11 @@ func (h *Handler) catalogProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
-	type envEntry struct {
-		ID       int64
-		Name     string
-		Price    float64
-		Currency string
-	}
-	var entries []envEntry
+	var entries []view.CatalogEnvEntry
 	for _, pe := range envs {
 		env, _ := h.environments.FindByID(r.Context(), pe.EnvironmentID)
 		if env != nil {
-			entries = append(entries, envEntry{
+			entries = append(entries, view.CatalogEnvEntry{
 				ID: env.ID, Name: env.Name,
 				Price: pe.Price, Currency: pe.Currency,
 			})
@@ -108,7 +106,6 @@ func (h *Handler) catalogProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	params, _ := h.parameters.FindByScope(r.Context(), "product", id)
 
-	// Resolve category name
 	var catName string
 	if p.CategoryID > 0 {
 		cat, _ := h.categories.FindByID(r.Context(), p.CategoryID)
@@ -117,10 +114,11 @@ func (h *Handler) catalogProduct(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.render(w, r, "catalog-product.html", map[string]any{
-		"Product":      p,
-		"Environments": entries,
-		"Parameters":   params,
-		"CategoryName": catName,
-	})
+	renderTempl(w, r, catalogpages.CatalogProduct(view.CatalogProductView{
+		PageData:     h.buildPageData(w, r),
+		Product:      p,
+		Environments: entries,
+		Parameters:   params,
+		CategoryName: catName,
+	}))
 }

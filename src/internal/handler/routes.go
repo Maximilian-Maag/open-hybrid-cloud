@@ -2,28 +2,16 @@ package handler
 
 import (
 	"context"
-	"fmt"
-	"html/template"
-	"io/fs"
-	"log/slog"
 	"net/http"
-	"path"
-	"strings"
 
-	"github.com/porr-ag/infra-webshop/internal/aitranslation"
-	"github.com/porr-ag/infra-webshop/internal/auth"
-	"github.com/porr-ag/infra-webshop/internal/config"
-	"github.com/porr-ag/infra-webshop/internal/exchange"
-	"github.com/porr-ag/infra-webshop/internal/i18n"
-	"github.com/porr-ag/infra-webshop/internal/notification"
-	"github.com/porr-ag/infra-webshop/internal/repository"
-	"github.com/porr-ag/infra-webshop/internal/service"
-	"github.com/porr-ag/infra-webshop/ui"
+	"github.com/porr-ag/infra-webshop/src/internal/aitranslation"
+	"github.com/porr-ag/infra-webshop/src/internal/auth"
+	"github.com/porr-ag/infra-webshop/src/internal/config"
+	"github.com/porr-ag/infra-webshop/src/internal/exchange"
+	"github.com/porr-ag/infra-webshop/src/internal/notification"
+	"github.com/porr-ag/infra-webshop/src/internal/repository"
+	"github.com/porr-ag/infra-webshop/src/internal/service"
 )
-
-// pages holds one pre-parsed template set per page (layout + page file).
-// This avoids block-collision when multiple pages define {{define "content"}}.
-type pages map[string]*template.Template
 
 type Handler struct {
 	cfg      *config.Config
@@ -53,8 +41,7 @@ type Handler struct {
 	brandingRepo  repository.BrandingRepository
 	appConfigRepo repository.AppConfigRepository
 
-	pages    pages
-	partials *template.Template
+	loginRL *loginRateLimiter
 }
 
 type Deps struct {
@@ -108,8 +95,7 @@ func New(d Deps) *Handler {
 		translator:      d.Translator,
 		brandingRepo:    d.BrandingRepo,
 		appConfigRepo:   d.AppConfigRepo,
-		pages:           mustBuildPages(),
-		partials:        mustParsePartials(),
+		loginRL:         newLoginRateLimiter(),
 	}
 	if d.BrandingRepo != nil {
 		if b, err := d.BrandingRepo.Load(context.Background()); err == nil {
@@ -237,87 +223,4 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.Handle("GET /audit", duAdmin(h.auditLog))
 	mux.Handle("GET /audit/export", duAdmin(h.auditExport))
-}
-
-// mustBuildPages creates one template.Template per page, each containing
-// the shared layout + its page file, so {{define "content"}} doesn't collide.
-func mustBuildPages() pages {
-	pp := pages{}
-	entries, err := fs.ReadDir(ui.Templates, "templates/pages")
-	if err != nil {
-		slog.Error("read pages dir", "err", err)
-		return pp
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		t, err := template.New("").Funcs(templateFuncs()).ParseFS(ui.Templates,
-			"templates/layout.html",
-			"templates/pages/"+name,
-		)
-		if err != nil {
-			slog.Error("parse page template", "page", name, "err", err)
-			continue
-		}
-		pp[name] = t
-	}
-	return pp
-}
-
-// mustParsePartials parses all partials into a single template set for HTMX fragments.
-func mustParsePartials() *template.Template {
-	tmpl := template.New("").Funcs(templateFuncs())
-	entries, _ := fs.ReadDir(ui.Templates, "templates/partials")
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		content, err := fs.ReadFile(ui.Templates, "templates/partials/"+e.Name())
-		if err != nil {
-			continue
-		}
-		template.Must(tmpl.New(path.Base(e.Name())).Parse(string(content)))
-	}
-	return tmpl
-}
-
-func templateFuncs() template.FuncMap {
-	return template.FuncMap{
-		"statusLabel":      statusLabelI18n,
-		"statusBadgeClass": statusBadgeClass,
-		"hasPrefix":        strings.HasPrefix,
-		"t":                i18n.T,
-		"langName":         i18n.LanguageName,
-	}
-}
-
-// statusLabelI18n translates order status strings using the i18n package.
-// Called in templates as: {{statusLabel $.Lang .Status}}
-func statusLabelI18n(lang string, s interface{}) string {
-	key := "status." + fmt.Sprintf("%s", s)
-	result := i18n.T(key, lang)
-	if result == key {
-		return fmt.Sprintf("%s", s)
-	}
-	return result
-}
-
-func statusBadgeClass(s interface{}) string {
-	status := fmt.Sprintf("%s", s)
-	classes := map[string]string{
-		"pending_approval": "badge-warning",
-		"approved":         "badge-info",
-		"rejected":         "badge-error",
-		"provisioning":     "badge-info",
-		"completed":        "badge-success",
-		"failed":           "badge-error",
-		"decommissioning":  "badge-warning",
-		"decommissioned":   "badge-ghost",
-	}
-	if c, ok := classes[status]; ok {
-		return c
-	}
-	return "badge-ghost"
 }

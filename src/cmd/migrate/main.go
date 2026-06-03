@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/porr-ag/infra-webshop/internal/db"
-	"github.com/porr-ag/infra-webshop/internal/migrations"
+	"github.com/porr-ag/infra-webshop/src/internal/db"
+	"github.com/porr-ag/infra-webshop/src/internal/migrations"
 )
 
 func main() {

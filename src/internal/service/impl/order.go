@@ -8,10 +8,10 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/porr-ag/infra-webshop/internal/gitlab"
-	"github.com/porr-ag/infra-webshop/internal/model"
-	"github.com/porr-ag/infra-webshop/internal/repository"
-	"github.com/porr-ag/infra-webshop/internal/service"
+	"github.com/porr-ag/infra-webshop/src/internal/gitlab"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/repository"
+	"github.com/porr-ag/infra-webshop/src/internal/service"
 )
 
 var projectIDReOrder = regexp.MustCompile(`/projects/(\d+)/`)

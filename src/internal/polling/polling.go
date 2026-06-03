@@ -10,10 +10,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/porr-ag/infra-webshop/internal/gitlab"
-	"github.com/porr-ag/infra-webshop/internal/model"
-	"github.com/porr-ag/infra-webshop/internal/notification"
-	"github.com/porr-ag/infra-webshop/internal/repository"
+	"github.com/porr-ag/infra-webshop/src/internal/gitlab"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/notification"
+	"github.com/porr-ag/infra-webshop/src/internal/repository"
 )
 
 var projectIDRe = regexp.MustCompile(`/projects/(\d+)/`)

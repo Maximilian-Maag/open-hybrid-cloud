@@ -1,6 +1,7 @@
 package comp
 
 import (
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
 	"github.com/porr-ag/infra-webshop/src/internal/view"
 	"strings"
 )
@@ -66,11 +67,12 @@ templ layoutHeader(pd view.PageData) {
 				}
 			</a>
 			<!-- Search -->
-			<div class="flex-1 max-w-xl hidden sm:block">
+			<div class="flex-1 max-w-xl">
 				<form method="GET" action="/catalog" class="flex items-center bg-white/10 border border-white/20 rounded-lg overflow-hidden">
 					<input
 						type="text"
 						name="q"
+						value={ pd.SearchQuery }
 						placeholder="Produkte suchen …"
 						class="flex-1 bg-transparent px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none"
 					/>
@@ -93,7 +95,7 @@ templ layoutHeader(pd view.PageData) {
 // userMenu uses a native <details> element — no JavaScript required.
 templ userMenu(pd view.PageData) {
 	<details class="relative group">
-		<summary class="list-none cursor-pointer select-none flex flex-col items-end leading-tight text-white/80 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white rounded">
+		<summary class="list-none cursor-pointer select-none flex flex-col items-end leading-tight text-white/80 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--bs)] rounded">
 			<span class="text-xs opacity-70">{ pd.Session.Name }</span>
 			<span class="text-sm font-semibold">Meine Bestellungen</span>
 		</summary>
@@ -119,21 +121,35 @@ templ userMenu(pd view.PageData) {
 }
 
 templ langSwitcher(pd view.PageData) {
-	<form method="POST" action="/lang">
-		<select
-			name="lang"
-			onchange="this.form.submit()"
-			class="bg-transparent text-white text-xs border border-white/30 rounded px-1 py-0.5 focus:outline-none cursor-pointer"
-		>
-			for _, l := range pd.SupportedLangs {
-				if l == pd.Lang {
-					<option value={ l } selected class="text-slate-900 bg-white">{ l }</option>
-				} else {
-					<option value={ l } class="text-slate-900 bg-white">{ l }</option>
+	<details class="relative">
+		<summary class="list-none cursor-pointer select-none flex items-center gap-1 text-white/80 hover:text-white text-xs font-medium border border-white/20 rounded-md px-2 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--bs)] transition-colors">
+			<svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/>
+			</svg>
+			{ strings.ToUpper(pd.Lang) }
+		</summary>
+		<div class="absolute right-0 top-full mt-2 z-50 bg-white rounded-xl shadow-xl border border-slate-200 p-3 w-72">
+			<div class="grid grid-cols-3 gap-1">
+				for _, l := range pd.SupportedLangs {
+					<form method="POST" action="/lang">
+						<input type="hidden" name="lang" value={ l }/>
+						<button type="submit" class={ langBtnClass(l == pd.Lang) }>
+							<span class="font-bold text-xs">{ strings.ToUpper(l) }</span>
+							<span class="block text-[10px] leading-tight truncate">{ i18n.LanguageName(l) }</span>
+						</button>
+					</form>
 				}
-			}
-		</select>
-	</form>
+			</div>
+		</div>
+	</details>
+}
+
+func langBtnClass(active bool) string {
+	base := "w-full flex flex-col items-center rounded-lg px-1 py-2 transition-colors text-center"
+	if active {
+		return base + " bg-[var(--bs)] text-gray-900"
+	}
+	return base + " text-slate-600 hover:bg-slate-50"
 }
 
 templ layoutNav(pd view.PageData) {

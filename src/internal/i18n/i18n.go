@@ -2195,6 +2195,13 @@ var messages = map[string]map[string]string{
 		"fi": "Tila", "sv": "Status", "da": "Status", "et": "Olek",
 		"lv": "Statuss", "lt": "Būsena", "mt": "Status", "ga": "Stádas", "ru": "Статус",
 	},
+	"admin.confirm_deactivate": {
+		"de": "Wirklich deaktivieren?", "en": "Really deactivate?",
+	},
+	"admin.confirm_del_all_params": {
+		"de": "Wirklich alle Eingabevariablen löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
+		"en": "Really delete all parameters? This action cannot be undone.",
+	},
 	"admin.confirm_deactivate_user": {
 		"de": "Benutzer wirklich deaktivieren?", "en": "Really deactivate this user?", "fr": "Désactiver cet utilisateur ?",
 		"it": "Disattivare davvero questo utente?", "es": "¿Desactivar realmente a este usuario?",

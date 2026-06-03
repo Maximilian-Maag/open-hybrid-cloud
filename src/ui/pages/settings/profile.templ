@@ -1,0 +1,33 @@
+package settings
+
+import (
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
+)
+
+templ Profile(vd view.ProfileView) {
+	@comp.Layout(vd.PageData) {
+		@comp.PageHeader(i18n.T("profile.title", vd.Lang), "/")
+		<p class="text-sm text-slate-500 -mt-4 mb-6">{ i18n.T("profile.subtitle", vd.Lang) }</p>
+		<div class="max-w-md">
+			@comp.Card() {
+				@comp.CardHeader(i18n.T("profile.change_password", vd.Lang))
+				@comp.CardBody() {
+					<form method="POST" action="/settings/profile" class="space-y-4">
+						@comp.Field(i18n.T("profile.current_password", vd.Lang), "current_password", true) {
+							@comp.Input("current_password", "password", "", "", templ.Attributes{"required": "", "autocomplete": "current-password"})
+						}
+						@comp.Field(i18n.T("profile.new_password", vd.Lang), "new_password", true) {
+							@comp.Input("new_password", "password", "", "", templ.Attributes{"required": "", "minlength": "8", "autocomplete": "new-password"})
+						}
+						@comp.Field(i18n.T("profile.confirm_password", vd.Lang), "confirm_password", true) {
+							@comp.Input("confirm_password", "password", "", "", templ.Attributes{"required": "", "minlength": "8", "autocomplete": "new-password"})
+						}
+						@comp.Btn(i18n.T("profile.save_password", vd.Lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
+					</form>
+				}
+			}
+		</div>
+	}
+}

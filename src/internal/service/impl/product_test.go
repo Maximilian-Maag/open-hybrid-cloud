@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/porr-ag/infra-webshop/internal/model"
-	"github.com/porr-ag/infra-webshop/internal/repository"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/repository"
 )
 
 type stubProductRepo struct {

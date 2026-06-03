@@ -1,8 +1,10 @@
 .PHONY: help build run migrate css css-watch templ test vet lint install-requirements docker-build dev dev-down clean docs docs-clean
 
-SERVER   := ./server
-MIGRATE  := ./migrate
-SRC      := src
+SERVER        := ./server
+MIGRATE       := ./migrate
+SRC           := src
+GOBIN         := $(shell go env GOPATH)/bin
+GOLANGCI_LINT := $(shell command -v golangci-lint 2>/dev/null || echo $(GOBIN)/golangci-lint)
 
 help:
 	@echo "Usage: make <target>"
@@ -52,7 +54,7 @@ vet:
 	go vet ./...
 
 lint:
-	golangci-lint run ./...
+	$(GOLANGCI_LINT) run ./...
 
 install-requirements:
 	@echo "==> Installing templ CLI..."

@@ -1,34 +1,11 @@
 package handler
 
 import (
-	"log/slog"
 	"net/http"
 	"sync"
 
-	"github.com/porr-ag/infra-webshop/internal/auth"
-	"github.com/porr-ag/infra-webshop/internal/i18n"
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
 )
-
-type Brand struct {
-	Name           string
-	Subtitle       string
-	PrimaryColor   string
-	SecondaryColor string
-	HasLogo        bool
-	ImprintText    string
-}
-
-type PageData struct {
-	Session        *auth.SessionData
-	Flash          *auth.FlashData
-	Path           string
-	Lang           string
-	Brand          Brand
-	SupportedLangs []string
-	SearchQuery    string
-	Data           any
-}
 
 // brandCache holds the current branding, hot-reloaded when admin saves.
 var (
@@ -51,53 +28,6 @@ func getBrandCache() model.Branding {
 	brandCacheMu.RLock()
 	defer brandCacheMu.RUnlock()
 	return brandCache
-}
-
-func (h *Handler) render(w http.ResponseWriter, r *http.Request, page string, data any) {
-	t, ok := h.pages[page]
-	if !ok {
-		slog.Error("unknown page", "page", page)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	sess, _ := h.sessions.Get(r)
-	flash := h.sessions.PopFlash(w, r)
-
-	var sessLang string
-	if sess != nil {
-		sessLang = sess.Lang
-	}
-	lang := detectLang(r, sessLang)
-
-	b := getBrandCache()
-
-	var searchQuery string
-	if m, ok := data.(map[string]any); ok {
-		if q, ok := m["Query"].(string); ok {
-			searchQuery = q
-		}
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := t.ExecuteTemplate(w, "layout", PageData{
-		Session: sess,
-		Flash:   flash,
-		Path:    r.URL.Path,
-		Lang:    lang,
-		Brand: Brand{
-			Name:           coalesce(b.ShopName, h.cfg.AppName),
-			Subtitle:       coalesce(b.ShopSubtitle, h.cfg.AppSubtitle),
-			PrimaryColor:   b.PrimaryColor,
-			SecondaryColor: b.SecondaryColor,
-			HasLogo:        len(b.LogoData) > 0,
-			ImprintText:    b.ImprintText,
-		},
-		SupportedLangs: i18n.Supported(),
-		SearchQuery:    searchQuery,
-		Data:           data,
-	}); err != nil {
-		slog.Error("render error", "page", page, "err", err)
-	}
 }
 
 func coalesce(a, b string) string {

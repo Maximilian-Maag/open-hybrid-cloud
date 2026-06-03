@@ -1,12 +1,21 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["./ui/templates/**/*.html"],
+  content: [
+    "./ui/comp/**/*.templ",
+    "./ui/pages/**/*.templ",
+  ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        brand: {
+          primary:   "var(--bp)",
+          secondary: "var(--bs)",
+        },
+      },
+      boxShadow: {
+        xs: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+      },
+    },
   },
-  plugins: [require("daisyui")],
-  daisyui: {
-    themes: ["corporate", "dark"],
-    logs: false,
-  },
+  plugins: [],
 }

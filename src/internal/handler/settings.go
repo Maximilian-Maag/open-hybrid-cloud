@@ -2,10 +2,15 @@ package handler
 
 import (
 	"net/http"
+
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	settingspages "github.com/porr-ag/infra-webshop/src/ui/pages/settings"
 )
 
 func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {
-	h.render(w, r, "profile.html", nil)
+	renderTempl(w, r, settingspages.Profile(view.ProfileView{
+		PageData: h.buildPageData(w, r),
+	}))
 }
 
 func (h *Handler) profileUpdate(w http.ResponseWriter, r *http.Request) {

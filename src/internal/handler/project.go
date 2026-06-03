@@ -4,8 +4,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/porr-ag/infra-webshop/internal/auth"
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/auth"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	projectpages "github.com/porr-ag/infra-webshop/src/ui/pages/projects"
 )
 
 func (h *Handler) projectList(w http.ResponseWriter, r *http.Request) {
@@ -22,15 +24,19 @@ func (h *Handler) projectList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	costCenters, _ := h.costCenters.FindAll(r.Context())
-	h.render(w, r, "projects.html", map[string]any{
-		"Projects":    projects,
-		"CostCenters": costCenters,
-	})
+	renderTempl(w, r, projectpages.ProjectList(view.ProjectListView{
+		PageData:    h.buildPageData(w, r),
+		Projects:    projects,
+		CostCenters: costCenters,
+	}))
 }
 
 func (h *Handler) projectNew(w http.ResponseWriter, r *http.Request) {
 	costCenters, _ := h.costCenters.FindAll(r.Context())
-	h.render(w, r, "project-new.html", map[string]any{"CostCenters": costCenters})
+	renderTempl(w, r, projectpages.ProjectNew(view.ProjectNewView{
+		PageData:    h.buildPageData(w, r),
+		CostCenters: costCenters,
+	}))
 }
 
 func (h *Handler) projectCreate(w http.ResponseWriter, r *http.Request) {
@@ -66,10 +72,11 @@ func (h *Handler) projectDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	costCenters, _ := h.costCenters.FindAll(r.Context())
-	h.render(w, r, "project-detail.html", map[string]any{
-		"Project":     p,
-		"CostCenters": costCenters,
-	})
+	renderTempl(w, r, projectpages.ProjectDetail(view.ProjectDetailView{
+		PageData:    h.buildPageData(w, r),
+		Project:     p,
+		CostCenters: costCenters,
+	}))
 }
 
 func (h *Handler) projectUpdate(w http.ResponseWriter, r *http.Request) {

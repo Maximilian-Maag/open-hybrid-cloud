@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/porr-ag/infra-webshop/internal/model"
-	"github.com/porr-ag/infra-webshop/internal/repository"
-	"github.com/porr-ag/infra-webshop/internal/service"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/repository"
+	"github.com/porr-ag/infra-webshop/src/internal/service"
 )
 
 type infrastructureService struct {

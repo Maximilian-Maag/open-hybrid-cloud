@@ -28,11 +28,11 @@ func btnVariantClass(v Variant) string {
 	case VPrimary:
 		return "bg-[var(--bs)] text-gray-900 hover:brightness-95 focus-visible:ring-[var(--bs)]"
 	case VSecondary:
-		return "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 focus-visible:ring-slate-300"
+		return "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 focus-visible:ring-[var(--bs)]"
 	case VDanger:
 		return "text-red-600 hover:bg-red-50 focus-visible:ring-red-300"
 	default: // ghost
-		return "text-slate-600 hover:bg-slate-100 focus-visible:ring-slate-200"
+		return "text-slate-600 hover:bg-slate-100 focus-visible:ring-[var(--bs)]"
 	}
 }
 

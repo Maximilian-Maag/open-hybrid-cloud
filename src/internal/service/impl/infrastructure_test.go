@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
 )
 
 func TestInfraService_ListAll_positive(t *testing.T) {

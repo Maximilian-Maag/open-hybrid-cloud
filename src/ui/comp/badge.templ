@@ -32,6 +32,22 @@ templ Badge(label string, color BadgeColor) {
 	<span class={ badgeClass(color) }>{ label }</span>
 }
 
+// StatusBadgeColor returns the BadgeColor for a status string.
+func StatusBadgeColor(status string) BadgeColor {
+	switch status {
+	case "completed":
+		return BadgeGreen
+	case "failed", "rejected":
+		return BadgeRed
+	case "pending_approval", "decommissioning":
+		return BadgeYellow
+	case "provisioning", "approved":
+		return BadgeBlue
+	default:
+		return BadgeGray
+	}
+}
+
 // StatusBadge maps order/infra status strings to a badge.
 templ StatusBadge(status string) {
 	switch status {

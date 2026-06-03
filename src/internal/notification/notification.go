@@ -9,9 +9,9 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/porr-ag/infra-webshop/internal/config"
-	"github.com/porr-ag/infra-webshop/internal/model"
-	"github.com/porr-ag/infra-webshop/internal/repository"
+	"github.com/porr-ag/infra-webshop/src/internal/config"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/repository"
 )
 
 // Service sends transactional email notifications via SMTP.

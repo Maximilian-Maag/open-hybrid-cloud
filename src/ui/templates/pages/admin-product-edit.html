@@ -202,7 +202,8 @@
                                 {{if .Required}}<span class="badge badge-warning badge-xs">{{t "admin.yes" $.Lang}}</span>{{else}}<span class="text-base-content/40">—</span>{{end}}
                             </td>
                             <td>
-                                <form method="POST" action="/admin/products/{{$.Data.Product.ID}}/parameters/{{.ID}}/delete">
+                                <form method="POST" action="/admin/products/{{$.Data.Product.ID}}/parameters/{{.ID}}/delete"
+                                      onsubmit="return confirm('{{t "admin.confirm_delete" $.Lang}}')">
                                     <button type="submit" class="btn btn-ghost btn-xs text-error">{{t "common.delete" $.Lang}}</button>
                                 </form>
                             </td>
@@ -215,8 +216,9 @@
                 <p class="text-base-content/50 text-sm mb-4">{{t "admin.no_params" $.Lang}}</p>
                 {{end}}
                 {{if gt (len .Parameters) 0}}
-                <form method="POST" action="/admin/products/{{.Product.ID}}/parameters/delete-all" class="mb-4">
-                    <button type="submit" class="btn btn-error btn-sm">Alle Eingabevariablen löschen</button>
+                <form method="POST" action="/admin/products/{{.Product.ID}}/parameters/delete-all" class="mb-4"
+                      onsubmit="return confirm('{{t "admin.confirm_del_all_params" $.Lang}}')">
+                    <button type="submit" class="btn btn-error btn-sm">{{t "common.delete" $.Lang}} ({{len .Parameters}})</button>
                 </form>
                 {{end}}
                 <form method="POST" action="/admin/products/{{.Product.ID}}/parameters" class="space-y-3">
@@ -277,8 +279,9 @@
                 <span class="badge badge-xs badge-ghost">{{.ExecOrder}}</span>
                 <span class="font-medium">{{.Name}}</span>
                 <span class="font-mono text-base-content/50 truncate flex-1">{{.WebhookURL}}</span>
-                <form method="POST" action="/admin/products/{{$.Data.Product.ID}}/webhooks/{{.ID}}/delete">
-                    <button type="submit" class="btn btn-xs btn-error btn-outline">delete</button>
+                <form method="POST" action="/admin/products/{{$.Data.Product.ID}}/webhooks/{{.ID}}/delete"
+                      onsubmit="return confirm('{{t "admin.confirm_delete" $.Lang}}')">
+                    <button type="submit" class="btn btn-xs btn-error btn-outline">{{t "common.delete" $.Lang}}</button>
                 </form>
             </div>
             {{end}}

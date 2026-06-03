@@ -69,7 +69,7 @@ func Badge(label string, color BadgeColor) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var2).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/comp/badge.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/comp/badge.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -82,7 +82,7 @@ func Badge(label string, color BadgeColor) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/comp/badge.templ`, Line: 32, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/comp/badge.templ`, Line: 32, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -94,6 +94,22 @@ func Badge(label string, color BadgeColor) templ.Component {
 		}
 		return nil
 	})
+}
+
+// StatusBadgeColor returns the BadgeColor for a status string.
+func StatusBadgeColor(status string) BadgeColor {
+	switch status {
+	case "completed":
+		return BadgeGreen
+	case "failed", "rejected":
+		return BadgeRed
+	case "pending_approval", "decommissioning":
+		return BadgeYellow
+	case "provisioning", "approved":
+		return BadgeBlue
+	default:
+		return BadgeGray
+	}
 }
 
 // StatusBadge maps order/infra status strings to a badge.

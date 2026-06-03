@@ -3,7 +3,7 @@ package auth
 import (
 	"net/http"
 
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
 )
 
 // Require returns middleware that ensures a valid session exists.

@@ -1,0 +1,150 @@
+package projects
+
+import (
+	"fmt"
+	"github.com/porr-ag/infra-webshop/src/internal/auth"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
+)
+
+templ ProjectList(vd view.ProjectListView) {
+	@comp.Layout(vd.PageData) {
+		@comp.PageHeaderAction(i18n.T("projects.title", vd.Lang), "", comp.BtnLink(i18n.T("action.new_project", vd.Lang), "/projects/new", comp.VPrimary, comp.SzSM))
+		if len(vd.Projects) == 0 {
+			@comp.Card() {
+				@comp.CardBody() {
+					@comp.EmptyState(i18n.T("projects.empty", vd.Lang))
+				}
+			}
+		} else {
+			@comp.Card() {
+				<table class="w-full text-sm">
+					<thead>
+						<tr class="border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wide">
+							<th class="px-4 py-3 text-left font-medium">{ i18n.T("common.name", vd.Lang) }</th>
+							<th class="px-4 py-3 text-left font-medium">{ i18n.T("common.description", vd.Lang) }</th>
+							<th class="px-4 py-3 text-left font-medium">{ i18n.T("common.created", vd.Lang) }</th>
+							<th class="px-4 py-3"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-slate-50">
+						for _, p := range vd.Projects {
+							@projectRow(p, vd.PageData, vd.Lang)
+						}
+					</tbody>
+				</table>
+			}
+		}
+	}
+}
+
+templ projectRow(p model.Project, pd view.PageData, lang string) {
+	<tr class="hover:bg-slate-50/60 transition-colors">
+		<td class="px-4 py-3 font-medium text-slate-900">{ p.Name }</td>
+		<td class="px-4 py-3 text-slate-400 text-xs">{ p.Description }</td>
+		<td class="px-4 py-3 text-slate-400 text-xs">{ p.CreatedAt.Format("02.01.2006") }</td>
+		<td class="px-4 py-3">
+			<div class="flex justify-end gap-1">
+				@comp.BtnLink(i18n.T("common.edit", lang), "/projects/"+fmt.Sprint(p.ID), comp.VGhost, comp.SzXS)
+				if pd.Session != nil && canDeleteProject(pd.Session, p) {
+					<button
+						class={ comp.BtnClass(comp.VDanger, comp.SzXS) }
+						hx-post={ "/projects/" + fmt.Sprint(p.ID) + "/delete" }
+						hx-confirm={ i18n.T("admin.confirm_delete", lang) }
+						hx-target="body"
+						hx-push-url="/projects"
+					>
+						{ i18n.T("common.delete", lang) }
+					</button>
+				}
+			</div>
+		</td>
+	</tr>
+}
+
+func canDeleteProject(s *auth.SessionData, p model.Project) bool {
+	if s == nil {
+		return false
+	}
+	return string(s.Role) == "shop_admin" || string(s.Role) == "admin" ||
+		(string(s.Role) == "project_leader" && p.OwnerID == s.UserID)
+}
+
+templ ProjectNew(vd view.ProjectNewView) {
+	@comp.Layout(vd.PageData) {
+		@comp.PageHeader(i18n.T("project.new_title", vd.Lang), "/projects")
+		<form method="POST" action="/projects/new" class="max-w-lg space-y-4">
+			@comp.Field(i18n.T("common.name", vd.Lang), "name", true) {
+				@comp.Input("name", "text", "", "", templ.Attributes{"required": ""})
+			}
+			@comp.Field(i18n.T("common.description", vd.Lang), "description", false) {
+				@comp.Textarea("description", "", "", 3, templ.Attributes{})
+			}
+			if len(vd.CostCenters) > 0 {
+				@comp.Field(i18n.T("project.cost_center", vd.Lang), "cost_center_id", false) {
+					@comp.Select("cost_center_id", templ.Attributes{}) {
+						<option value="">{ i18n.T("project.none_cc", vd.Lang) }</option>
+						for _, cc := range vd.CostCenters {
+							if cc.Active {
+								<option value={ fmt.Sprint(cc.ID) }>{ cc.Code } — { cc.Name }</option>
+							}
+						}
+					}
+				}
+			}
+			<div class="flex gap-3">
+				@comp.Btn(i18n.T("common.create", vd.Lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
+				@comp.BtnLink(i18n.T("common.cancel", vd.Lang), "/projects", comp.VGhost, comp.SzSM)
+			</div>
+		</form>
+	}
+}
+
+templ ProjectDetail(vd view.ProjectDetailView) {
+	@comp.Layout(vd.PageData) {
+		@comp.PageHeader(i18n.T("project.edit_title", vd.Lang), "/projects")
+		<form method="POST" action={ templ.URL("/projects/" + fmt.Sprint(vd.Project.ID)) } class="max-w-lg space-y-4">
+			@comp.Field(i18n.T("common.name", vd.Lang), "name", true) {
+				@comp.Input("name", "text", "", vd.Project.Name, templ.Attributes{"required": ""})
+			}
+			@comp.Field(i18n.T("common.description", vd.Lang), "description", false) {
+				@comp.Textarea("description", "", vd.Project.Description, 3, templ.Attributes{})
+			}
+			if len(vd.CostCenters) > 0 {
+				@comp.Field(i18n.T("project.cost_center", vd.Lang), "cost_center_id", false) {
+					@comp.Select("cost_center_id", templ.Attributes{}) {
+						<option value="">{ i18n.T("project.none_cc", vd.Lang) }</option>
+						for _, cc := range vd.CostCenters {
+							if cc.Active {
+								if cc.ID == vd.Project.CostCenterID {
+									<option value={ fmt.Sprint(cc.ID) } selected>{ cc.Code } — { cc.Name }</option>
+								} else {
+									<option value={ fmt.Sprint(cc.ID) }>{ cc.Code } — { cc.Name }</option>
+								}
+							}
+						}
+					}
+				}
+			}
+			<div class="flex gap-3">
+				@comp.Btn(i18n.T("common.save", vd.Lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
+				@comp.BtnLink(i18n.T("common.cancel", vd.Lang), "/projects", comp.VGhost, comp.SzSM)
+			</div>
+		</form>
+		if vd.PageData.Session != nil && canDeleteProject(vd.PageData.Session, *vd.Project) {
+			<div class="mt-6 pt-6 border-t border-slate-100">
+				<button
+					class={ comp.BtnClass(comp.VDanger, comp.SzSM) }
+					hx-post={ "/projects/" + fmt.Sprint(vd.Project.ID) + "/delete" }
+					hx-confirm={ i18n.T("admin.confirm_delete", vd.Lang) }
+					hx-target="body"
+					hx-push-url="/projects"
+				>
+					{ i18n.T("common.delete", vd.Lang) }
+				</button>
+			</div>
+		}
+	}
+}

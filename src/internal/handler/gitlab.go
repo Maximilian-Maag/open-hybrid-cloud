@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/porr-ag/infra-webshop/internal/gitlab"
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/gitlab"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
 )
 
 func (h *Handler) gitlabClientFromSource(r *http.Request) (*gitlab.Client, error) {

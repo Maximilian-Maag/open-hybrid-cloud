@@ -3,14 +3,16 @@ package handler
 import (
 	"net/http"
 
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	homepages "github.com/porr-ag/infra-webshop/src/ui/pages/home"
 )
 
 func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	sess, _ := h.sessions.Get(r)
 
-	var stats HomeStats
+	var stats view.HomeStats
 	if sess != nil {
 		if orders, err := h.orders.ListByUser(ctx, sess.UserID); err == nil {
 			stats.TotalOrders = len(orders)
@@ -32,11 +34,11 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 
 	lang := h.lang(r)
 	prods, _ := h.products.ListAll(ctx, lang)
-	var featured []ProductCardView
+	var featured []view.ProductCardView
 	for _, p := range prods {
 		cat, _ := h.categories.FindByID(ctx, p.CategoryID)
 		envs, _ := h.productEnvs.FindByProductID(ctx, p.ID)
-		v := ProductCardView{Product: p, EnvCount: len(envs)}
+		v := view.ProductCardView{Product: p, EnvCount: len(envs)}
 		if cat != nil {
 			v.CategoryName = cat.Name
 		}
@@ -52,8 +54,9 @@ func (h *Handler) home(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.render(w, r, "index.html", HomeData{
+	renderTempl(w, r, homepages.Home(view.HomeView{
+		PageData: h.buildPageData(w, r),
 		Stats:    stats,
 		Featured: featured,
-	})
+	}))
 }

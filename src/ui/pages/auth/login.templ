@@ -1,0 +1,67 @@
+package auth
+
+import (
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
+)
+
+templ Login(vd view.LoginView) {
+	@comp.Layout(vd.PageData) {
+		<div class="min-h-[80vh] flex items-center justify-center">
+			<div class="w-full max-w-sm">
+				<div class="text-center mb-8">
+					if vd.Brand.HasLogo {
+						<img src="/branding/logo" alt={ vd.Brand.Name } class="h-12 mx-auto mb-4 object-contain"/>
+					}
+					<h1 class="text-2xl font-bold text-slate-900">{ vd.Brand.Name }</h1>
+					<p class="text-sm text-slate-500 mt-1">{ vd.Brand.Subtitle }</p>
+				</div>
+				@comp.Card() {
+					@comp.CardBody() {
+						if vd.Error != "" {
+							<div class="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+								{ vd.Error }
+							</div>
+						}
+						if vd.OIDCEnabled {
+							<a
+								href="/auth/start"
+								class="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg font-medium text-sm text-white transition-opacity hover:opacity-90 mb-4"
+								style="background-color:var(--bp)"
+							>
+								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+									<path d="M21 12.22C21 6.73 16.74 3 12 3c-4.69 0-9 3.65-9 9.28C3 16.93 7.14 21 12 21c.34 0 .67-.02 1-.06V17.5A5.5 5.5 0 1112 6.5a5.5 5.5 0 015 3.22C18.5 11.5 21 12 21 12.22z"/>
+								</svg>
+								{ i18n.T("login.entra", vd.Lang) }
+							</a>
+							<div class="relative my-4">
+								<div class="absolute inset-0 flex items-center">
+									<div class="w-full border-t border-slate-200"></div>
+								</div>
+								<div class="relative flex justify-center">
+									<span class="bg-white px-3 text-xs text-slate-400">{ i18n.T("login.or", vd.Lang) }</span>
+								</div>
+							</div>
+						}
+						<form method="POST" action="/login" class="space-y-4">
+							@comp.Field(i18n.T("login.email", vd.Lang), "email", true) {
+								@comp.Input("email", "email", "", "", templ.Attributes{"required": "", "autofocus": "", "autocomplete": "email"})
+							}
+							@comp.Field(i18n.T("login.password", vd.Lang), "password", true) {
+								@comp.Input("password", "password", "", "", templ.Attributes{"required": "", "autocomplete": "current-password"})
+							}
+							<button
+								type="submit"
+								class="w-full px-4 py-2.5 rounded-lg font-medium text-sm text-white transition-opacity hover:opacity-90"
+								style="background-color:var(--bp)"
+							>
+								{ i18n.T("login.submit", vd.Lang) }
+							</button>
+						</form>
+					}
+				}
+			</div>
+		</div>
+	}
+}

@@ -9,10 +9,14 @@ import (
 
 	"github.com/go-pdf/fpdf"
 
-	"github.com/porr-ag/infra-webshop/internal/auth"
-	"github.com/porr-ag/infra-webshop/internal/i18n"
-	"github.com/porr-ag/infra-webshop/internal/model"
-	"github.com/porr-ag/infra-webshop/internal/service"
+	"github.com/porr-ag/infra-webshop/src/internal/auth"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/service"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
+	adminpages "github.com/porr-ag/infra-webshop/src/ui/pages/admin"
+	miscpages "github.com/porr-ag/infra-webshop/src/ui/pages/misc"
 )
 
 func (h *Handler) adminDashboard(w http.ResponseWriter, r *http.Request) {
@@ -21,20 +25,25 @@ func (h *Handler) adminDashboard(w http.ResponseWriter, r *http.Request) {
 	envs, _ := h.environments.FindAll(r.Context())
 	sources, _ := h.gitlabSources.FindAll(r.Context())
 	users, _ := h.users.ListAll(r.Context())
-	h.render(w, r, "admin-dashboard.html", map[string]any{
-		"CategoryCount":    len(cats),
-		"ProductCount":     len(prods),
-		"EnvironmentCount": len(envs),
-		"SourceCount":      len(sources),
-		"UserCount":        len(users),
-	})
+	renderTempl(w, r, adminpages.Dashboard(view.AdminDashboardView{
+		PageData:         h.buildPageData(w, r),
+		CategoryCount:    len(cats),
+		ProductCount:     len(prods),
+		EnvironmentCount: len(envs),
+		SourceCount:      len(sources),
+		UserCount:        len(users),
+	}))
 }
 
 // ---- Categories ----
 
 func (h *Handler) adminCategories(w http.ResponseWriter, r *http.Request) {
 	cats, _ := h.categories.FindAll(r.Context())
-	h.render(w, r, "admin-categories.html", map[string]any{"Categories": cats})
+	vd := view.AdminCategoriesView{
+		PageData:   h.buildPageData(w, r),
+		Categories: cats,
+	}
+	renderTempl(w, r, adminpages.Categories(vd))
 }
 
 func (h *Handler) adminCategoryCreate(w http.ResponseWriter, r *http.Request) {
@@ -42,32 +51,57 @@ func (h *Handler) adminCategoryCreate(w http.ResponseWriter, r *http.Request) {
 		Name:         r.FormValue("name"),
 		DisplayOrder: formInt(r, "display_order"),
 	}
+	var flashKind, flashMsg string
 	if err := h.categories.Save(r.Context(), c); err != nil {
-		h.redirectWithFlash(w, r, "/admin/categories", "error", "Fehler: "+err.Error())
+		flashKind, flashMsg = "error", "Fehler: "+err.Error()
+	} else {
+		flashKind, flashMsg = "success", "Kategorie erstellt."
+	}
+
+	if isHTMX(r) {
+		cats, _ := h.categories.FindAll(r.Context())
+		renderPartials(r.Context(), w,
+			adminpages.CategoryList(cats),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/categories", "success", "Kategorie erstellt.")
+	h.redirectWithFlash(w, r, "/admin/categories", flashKind, flashMsg)
 }
 
 func (h *Handler) adminCategoryDelete(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	sess, _ := auth.FromContext(r.Context())
+	var flashKind, flashMsg string
+
 	prods, err := h.products.ListByCategory(r.Context(), id, "de")
 	if err != nil {
-		h.redirectWithFlash(w, r, "/admin/categories", "error", "Fehler: "+err.Error())
-		return
-	}
-	for _, p := range prods {
-		if err := h.infra.DecommissionByProduct(r.Context(), p.ID, sess.UserID); err != nil {
-			h.redirectWithFlash(w, r, "/admin/categories", "error", "Fehler beim Dekommissionieren: "+err.Error())
-			return
+		flashKind, flashMsg = "error", "Fehler: "+err.Error()
+	} else {
+		for _, p := range prods {
+			if err := h.infra.DecommissionByProduct(r.Context(), p.ID, sess.UserID); err != nil {
+				flashKind, flashMsg = "error", "Fehler beim Dekommissionieren: "+err.Error()
+				break
+			}
+		}
+		if flashMsg == "" {
+			if err := h.categories.Delete(r.Context(), id); err != nil {
+				flashKind, flashMsg = "error", "Fehler: "+err.Error()
+			} else {
+				flashKind, flashMsg = "success", "Kategorie gelöscht."
+			}
 		}
 	}
-	if err := h.categories.Delete(r.Context(), id); err != nil {
-		h.redirectWithFlash(w, r, "/admin/categories", "error", "Fehler: "+err.Error())
+
+	if isHTMX(r) {
+		cats, _ := h.categories.FindAll(r.Context())
+		renderPartials(r.Context(), w,
+			adminpages.CategoryList(cats),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/categories", "success", "Kategorie gelöscht.")
+	h.redirectWithFlash(w, r, "/admin/categories", flashKind, flashMsg)
 }
 
 // ---- Products ----
@@ -75,21 +109,28 @@ func (h *Handler) adminCategoryDelete(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) adminProducts(w http.ResponseWriter, r *http.Request) {
 	prods, _ := h.products.ListAll(r.Context(), "de")
 	cats, _ := h.categories.FindAll(r.Context())
-	h.render(w, r, "admin-products.html", map[string]any{
-		"Products":   prods,
-		"Categories": cats,
-	})
+	catNames := make(map[int64]string, len(cats))
+	for _, c := range cats {
+		catNames[c.ID] = c.Name
+	}
+	renderTempl(w, r, adminpages.AdminProducts(view.AdminProductsView{
+		PageData:   h.buildPageData(w, r),
+		Products:   prods,
+		Categories: cats,
+		CatNames:   catNames,
+	}))
 }
 
 func (h *Handler) adminProductNew(w http.ResponseWriter, r *http.Request) {
 	cats, _ := h.categories.FindAll(r.Context())
 	envs, _ := h.environments.FindAll(r.Context())
 	sources, _ := h.gitlabSources.FindAll(r.Context())
-	h.render(w, r, "admin-product-new.html", map[string]any{
-		"Categories":    cats,
-		"Environments":  envs,
-		"GitLabSources": sources,
-	})
+	renderTempl(w, r, adminpages.AdminProductNew(view.AdminProductNewView{
+		PageData:      h.buildPageData(w, r),
+		Categories:    cats,
+		Environments:  envs,
+		GitLabSources: sources,
+	}))
 }
 
 func (h *Handler) adminProductCreate(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +177,6 @@ func (h *Handler) adminProductEdit(w http.ResponseWriter, r *http.Request) {
 	params, _ := h.parameters.FindByScope(r.Context(), "product", id)
 	translations, _ := h.translations.FindByProductID(r.Context(), id)
 
-	// Load webhooks for each environment the product is available in
 	webhooksByEnv := make(map[int64][]model.ProductWebhook)
 	for _, pe := range penvs {
 		whs, _ := h.productWebhooks.FindByProductAndEnv(r.Context(), id, pe.EnvironmentID)
@@ -145,17 +185,18 @@ func (h *Handler) adminProductEdit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.render(w, r, "admin-product-edit.html", map[string]any{
-		"Product":       p,
-		"Categories":    cats,
-		"Environments":  envs,
-		"EnvNames":      envNames,
-		"ProductEnvs":   penvs,
-		"Parameters":    params,
-		"Translations":  translations,
-		"WebhooksByEnv": webhooksByEnv,
-		"GitLabSources": sources,
-	})
+	renderTempl(w, r, adminpages.AdminProductEdit(view.AdminProductEditView{
+		PageData:      h.buildPageData(w, r),
+		Product:       p,
+		Categories:    cats,
+		Environments:  envs,
+		EnvNames:      envNames,
+		ProductEnvs:   penvs,
+		Parameters:    params,
+		Translations:  translations,
+		WebhooksByEnv: webhooksByEnv,
+		GitLabSources: sources,
+	}))
 }
 
 func (h *Handler) adminProductEnvironmentCreate(w http.ResponseWriter, r *http.Request) {
@@ -274,10 +315,11 @@ func (h *Handler) adminProductDelete(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) adminEnvironments(w http.ResponseWriter, r *http.Request) {
 	envs, _ := h.environments.FindAll(r.Context())
 	sources, _ := h.gitlabSources.FindAll(r.Context())
-	h.render(w, r, "admin-environments.html", map[string]any{
-		"Environments": envs,
-		"Sources":      sources,
-	})
+	renderTempl(w, r, adminpages.AdminEnvironments(view.AdminEnvironmentsView{
+		PageData:     h.buildPageData(w, r),
+		Environments: envs,
+		Sources:      sources,
+	}))
 }
 
 func (h *Handler) adminEnvironmentCreate(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +350,10 @@ func (h *Handler) adminEnvironmentDelete(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) adminSources(w http.ResponseWriter, r *http.Request) {
 	sources, _ := h.gitlabSources.FindAll(r.Context())
-	h.render(w, r, "admin-sources.html", map[string]any{"Sources": sources})
+	renderTempl(w, r, adminpages.AdminSources(view.AdminSourcesView{
+		PageData: h.buildPageData(w, r),
+		Sources:  sources,
+	}))
 }
 
 func (h *Handler) adminSourceCreate(w http.ResponseWriter, r *http.Request) {
@@ -337,7 +382,10 @@ func (h *Handler) adminSourceDelete(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) adminCostCenters(w http.ResponseWriter, r *http.Request) {
 	ccs, _ := h.costCenters.FindAll(r.Context())
-	h.render(w, r, "admin-costcenters.html", map[string]any{"CostCenters": ccs})
+	renderTempl(w, r, adminpages.AdminCostCenters(view.AdminCostCentersView{
+		PageData:    h.buildPageData(w, r),
+		CostCenters: ccs,
+	}))
 }
 
 func (h *Handler) adminCostCenterCreate(w http.ResponseWriter, r *http.Request) {
@@ -372,7 +420,10 @@ func (h *Handler) adminCostCenterDelete(w http.ResponseWriter, r *http.Request) 
 
 func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 	users, _ := h.users.ListAll(r.Context())
-	h.render(w, r, "admin-users.html", map[string]any{"Users": users})
+	renderTempl(w, r, adminpages.AdminUsers(view.AdminUsersView{
+		PageData: h.buildPageData(w, r),
+		Users:    users,
+	}))
 }
 
 func (h *Handler) adminUserCreate(w http.ResponseWriter, r *http.Request) {
@@ -454,7 +505,10 @@ func (h *Handler) adminCurrencies(w http.ResponseWriter, r *http.Request) {
 	if h.exchange != nil {
 		rates = h.exchange.RatesSnapshot()
 	}
-	h.render(w, r, "admin-currencies.html", map[string]any{"Rates": rates})
+	renderTempl(w, r, adminpages.AdminCurrencies(view.AdminCurrenciesView{
+		PageData: h.buildPageData(w, r),
+		Rates:    rates,
+	}))
 }
 
 func (h *Handler) adminCurrencyRefresh(w http.ResponseWriter, r *http.Request) {
@@ -494,7 +548,7 @@ func (h *Handler) adminProductImageUploadPage(w http.ResponseWriter, r *http.Req
 		http.NotFound(w, r)
 		return
 	}
-	h.render(w, r, "admin-product-edit.html", map[string]any{"Product": p})
+	http.Redirect(w, r, "/admin/products/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
 func (h *Handler) adminProductImageUpload(w http.ResponseWriter, r *http.Request) {
@@ -603,7 +657,10 @@ func (h *Handler) adminProductWebhookDelete(w http.ResponseWriter, r *http.Reque
 
 func (h *Handler) adminBranding(w http.ResponseWriter, r *http.Request) {
 	b := getBrandCache()
-	h.render(w, r, "admin-branding.html", map[string]any{"Branding": b})
+	renderTempl(w, r, adminpages.AdminBranding(view.AdminBrandingView{
+		PageData: h.buildPageData(w, r),
+		Branding: b,
+	}))
 }
 
 func (h *Handler) adminBrandingSave(w http.ResponseWriter, r *http.Request) {
@@ -650,7 +707,7 @@ func (h *Handler) serveBrandingLogo(w http.ResponseWriter, r *http.Request) {
 // ---- Impressum ----
 
 func (h *Handler) impressum(w http.ResponseWriter, r *http.Request) {
-	h.render(w, r, "impressum.html", nil)
+	renderTempl(w, r, miscpages.Impressum(h.buildPageData(w, r)))
 }
 
 // ---- Helpers ----

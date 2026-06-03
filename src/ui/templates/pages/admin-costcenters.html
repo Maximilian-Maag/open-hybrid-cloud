@@ -19,7 +19,8 @@
                     <td>{{if .Active}}<span class="badge badge-success badge-sm">{{t "admin.active" $.Lang}}</span>{{else}}<span class="badge badge-ghost badge-sm">{{t "admin.inactive" $.Lang}}</span>{{end}}</td>
                     <td>
                         {{if .Active}}
-                        <form method="POST" action="/admin/costcenters/{{.ID}}/delete">
+                        <form method="POST" action="/admin/costcenters/{{.ID}}/delete"
+                              onsubmit="return confirm('{{t "admin.confirm_deactivate" $.Lang}}')">
                             <button type="submit" class="btn btn-ghost btn-xs text-warning">{{t "admin.deactivate" $.Lang}}</button>
                         </form>
                         {{end}}

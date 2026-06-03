@@ -25,6 +25,7 @@ type PageData struct {
 	Lang           string
 	Brand          Brand
 	SupportedLangs []string
+	SearchQuery    string
 }
 
 // WithSupportedLangs fills SupportedLangs from the i18n package.

@@ -4,8 +4,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/porr-ag/infra-webshop/internal/auth"
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/auth"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	infrapages "github.com/porr-ag/infra-webshop/src/ui/pages/infra"
 )
 
 func (h *Handler) infrastructureList(w http.ResponseWriter, r *http.Request) {
@@ -13,7 +15,6 @@ func (h *Handler) infrastructureList(w http.ResponseWriter, r *http.Request) {
 	var elements []model.InfrastructureElement
 	var err error
 	if sess.Role == model.RoleProjectLeader {
-		// Collect across all own projects
 		projs, _ := h.projects.ListByOwner(r.Context(), sess.UserID)
 		for _, p := range projs {
 			els, e := h.infra.ListByProject(r.Context(), p.ID)
@@ -30,7 +31,10 @@ func (h *Handler) infrastructureList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
-	h.render(w, r, "infrastructure.html", map[string]any{"Elements": elements})
+	renderTempl(w, r, infrapages.Infrastructure(view.InfraView{
+		PageData: h.buildPageData(w, r),
+		Elements: elements,
+	}))
 }
 
 func (h *Handler) decommission(w http.ResponseWriter, r *http.Request) {

@@ -4,8 +4,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/porr-ag/infra-webshop/internal/auth"
-	"github.com/porr-ag/infra-webshop/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/auth"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	approvalpages "github.com/porr-ag/infra-webshop/src/ui/pages/approvals"
+	orderpages "github.com/porr-ag/infra-webshop/src/ui/pages/orders"
 )
 
 func (h *Handler) orderList(w http.ResponseWriter, r *http.Request) {
@@ -15,7 +18,10 @@ func (h *Handler) orderList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
-	h.render(w, r, "orders.html", map[string]any{"Orders": orders})
+	renderTempl(w, r, orderpages.OrderList(view.OrderListView{
+		PageData: h.buildPageData(w, r),
+		Orders:   orders,
+	}))
 }
 
 func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +29,6 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 	productID, _ := strconv.ParseInt(r.URL.Query().Get("product"), 10, 64)
 	envID, _ := strconv.ParseInt(r.URL.Query().Get("env"), 10, 64)
 
-	// FA-06.7: pre-fill from an existing infra element
 	prefilledParams := map[string]string{}
 	if fromInfraID, _ := strconv.ParseInt(r.URL.Query().Get("from_infra"), 10, 64); fromInfraID > 0 {
 		if el, err := h.infra.GetByID(r.Context(), fromInfraID); err == nil && el != nil {
@@ -33,7 +38,7 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var projects interface{}
+	var projects []model.Project
 	if sess.Role == model.RoleAdmin || sess.Role == model.RoleShopAdmin {
 		projects, _ = h.projects.ListAll(r.Context())
 	} else {
@@ -47,14 +52,15 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 	env, _ := h.environments.FindByID(r.Context(), envID)
 	costCenters, _ := h.costCenters.FindAll(r.Context())
 
-	h.render(w, r, "order-new.html", map[string]any{
-		"Product":         product,
-		"Environment":     env,
-		"Projects":        projects,
-		"Parameters":      append(globalParams, params...),
-		"CostCenters":     costCenters,
-		"PrefilledParams": prefilledParams,
-	})
+	renderTempl(w, r, orderpages.OrderNew(view.OrderNewView{
+		PageData:        h.buildPageData(w, r),
+		Product:         product,
+		Environment:     env,
+		Projects:        projects,
+		Parameters:      append(globalParams, params...),
+		CostCenters:     costCenters,
+		PrefilledParams: prefilledParams,
+	}))
 }
 
 func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +75,6 @@ func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
 	projectID, _ := strconv.ParseInt(r.FormValue("project_id"), 10, 64)
 	ccID, _ := strconv.ParseInt(r.FormValue("cost_center_id"), 10, 64)
 
-	// Collect all form values not handled above as parameters
 	params := map[string]string{}
 	reserved := map[string]bool{
 		"product_id": true, "environment_id": true,
@@ -90,7 +95,6 @@ func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
 		Parameters:    params,
 	}
 
-	// Admins and Shop Admins skip approval and go straight to provisioning
 	if sess.Role == model.RoleAdmin || sess.Role == model.RoleShopAdmin {
 		o.Status = model.OrderStatusPendingApproval
 		if err := h.orders.Create(r.Context(), o); err != nil {
@@ -136,13 +140,14 @@ func (h *Handler) orderDetail(w http.ResponseWriter, r *http.Request) {
 	env, _ := h.environments.FindByID(r.Context(), o.EnvironmentID)
 	project, _ := h.projects.GetByID(r.Context(), o.ProjectID)
 	infra, _ := h.infra.FindByOrderID(r.Context(), o.ID)
-	h.render(w, r, "order-detail.html", map[string]any{
-		"Order":   o,
-		"Product": product,
-		"Env":     env,
-		"Project": project,
-		"Infra":   infra,
-	})
+	renderTempl(w, r, orderpages.OrderDetail(view.OrderDetailView{
+		PageData: h.buildPageData(w, r),
+		Order:    o,
+		Product:  product,
+		Env:      env,
+		Project:  project,
+		Infra:    infra,
+	}))
 }
 
 func (h *Handler) approvalList(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +156,10 @@ func (h *Handler) approvalList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
-	h.render(w, r, "approvals.html", map[string]any{"Orders": orders})
+	renderTempl(w, r, approvalpages.Approvals(view.ApprovalsView{
+		PageData: h.buildPageData(w, r),
+		Orders:   orders,
+	}))
 }
 
 func (h *Handler) approvalApprove(w http.ResponseWriter, r *http.Request) {

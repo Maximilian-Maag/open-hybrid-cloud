@@ -17,7 +17,10 @@
         {{range .Products}}
         <tr class="hover">
             <td>{{if .Name}}{{.Name}}{{else}}<span class="text-base-content/40">—</span>{{end}}</td>
-            <td class="text-sm text-base-content/60">ID {{.CategoryID}}</td>
+            <td class="text-sm text-base-content/60">
+                {{$cat := index $.Data.CatNames .CategoryID}}
+                {{if $cat}}{{$cat}}{{else}}<span class="text-base-content/30">—</span>{{end}}
+            </td>
             <td class="flex gap-1">
                 <a href="/admin/products/{{.ID}}" class="btn btn-ghost btn-xs">{{t "common.edit" $.Lang}}</a>
                 <form method="POST" action="/admin/products/{{.ID}}/delete"

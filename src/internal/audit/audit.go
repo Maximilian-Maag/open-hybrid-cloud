@@ -4,9 +4,9 @@ package audit
 import (
 	"context"
 
-	"github.com/porr-ag/infra-webshop/internal/model"
-	"github.com/porr-ag/infra-webshop/internal/repository"
-	"github.com/porr-ag/infra-webshop/internal/service"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/repository"
+	"github.com/porr-ag/infra-webshop/src/internal/service"
 )
 
 type auditService struct {

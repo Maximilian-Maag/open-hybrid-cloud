@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"io"
 	"net/http"
 
 	"github.com/a-h/templ"
@@ -35,6 +34,7 @@ func (h *Handler) buildPageData(w http.ResponseWriter, r *http.Request) view.Pag
 			HasLogo:        len(b.LogoData) > 0,
 			ImprintText:    b.ImprintText,
 		},
+		SearchQuery: r.URL.Query().Get("q"),
 	}.WithSupportedLangs()
 }
 
@@ -53,11 +53,4 @@ func renderPartials(ctx context.Context, w http.ResponseWriter, components ...te
 	for _, c := range components {
 		_ = c.Render(ctx, w)
 	}
-}
-
-// noContent sends an empty 200 response used when HTMX should trigger a
-// client-side event without a DOM swap (e.g. hx-on::after-request).
-func noContent(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, "")
 }

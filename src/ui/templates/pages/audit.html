@@ -70,12 +70,35 @@
             <td class="text-xs text-base-content/60 whitespace-nowrap">{{.CreatedAt.Format "02.01.2006 15:04:05"}}</td>
             <td class="font-mono text-xs">{{.Action}}</td>
             <td class="font-mono text-xs">{{.EntityID}}</td>
-            <td class="font-mono text-xs">{{.UserID}}</td>
+            <td class="text-xs">
+                {{$name := index $.Data.UserNames .UserID}}
+                {{if $name}}{{$name}}{{else}}<span class="text-base-content/40 font-mono">ID {{.UserID}}</span>{{end}}
+            </td>
             <td class="text-xs text-base-content/60">{{.Details}}</td>
         </tr>
         {{end}}
         </tbody>
     </table>
+</div>
+
+<!-- Pagination -->
+<div class="flex items-center justify-between mt-4">
+    <p class="text-xs text-base-content/50">
+        {{.TotalCount}} Einträge gesamt &mdash; Seite {{.Page}} von {{.TotalPages}}
+    </p>
+    <div class="join">
+        {{if gt .Page 1}}
+        <a href="/audit?{{.FilterQuery}}&page={{sub1 .Page}}" class="join-item btn btn-xs">«</a>
+        {{else}}
+        <button class="join-item btn btn-xs btn-disabled">«</button>
+        {{end}}
+        <span class="join-item btn btn-xs btn-active">{{.Page}}</span>
+        {{if lt .Page .TotalPages}}
+        <a href="/audit?{{.FilterQuery}}&page={{add1 .Page}}" class="join-item btn btn-xs">»</a>
+        {{else}}
+        <button class="join-item btn btn-xs btn-disabled">»</button>
+        {{end}}
+    </div>
 </div>
 {{else}}
 <div class="text-center py-16 text-base-content/50">{{t "audit.empty" $.Lang}}</div>

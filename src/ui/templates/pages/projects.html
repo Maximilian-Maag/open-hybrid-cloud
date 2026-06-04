@@ -1,0 +1,46 @@
+{{define "title"}}{{t "projects.title" .Lang}}{{end}}
+{{define "content"}}
+<div class="flex items-center justify-between mb-6">
+    <h2 class="text-2xl font-bold">{{t "projects.title" .Lang}}</h2>
+    <a href="/projects/new" class="ds-btn-sm ds-btn-primary">{{t "action.new_project" .Lang}}</a>
+</div>
+
+{{with .Data}}
+{{if .Projects}}
+<div class="overflow-x-auto">
+    <table class="ds-table">
+        <thead><tr>
+            <th>{{t "common.name" $.Lang}}</th>
+            <th>{{t "common.description" $.Lang}}</th>
+            <th>{{t "common.created" $.Lang}}</th>
+            <th></th>
+        </tr></thead>
+        <tbody>
+        {{range .Projects}}
+        <tr>
+            <td class="font-medium">{{.Name}}</td>
+            <td class="text-sm text-slate-500">{{.Description}}</td>
+            <td class="text-sm text-slate-500">{{.CreatedAt.Format "02.01.2006"}}</td>
+            <td class="flex gap-1">
+                <a href="/projects/{{.ID}}" class="ds-btn-xs ds-btn-ghost">{{t "common.edit" $.Lang}}</a>
+                {{if $.Session}}
+                {{if or (eq $.Session.Role "shop_admin") (eq $.Session.Role "admin") (and (eq $.Session.Role "project_leader") (eq .OwnerID $.Session.UserID))}}
+                <form method="POST" action="/projects/{{.ID}}/delete" onsubmit="return confirm('{{t "admin.confirm_delete" $.Lang}}')">
+                    <button type="submit" class="ds-btn-xs ds-btn-danger">{{t "common.delete" $.Lang}}</button>
+                </form>
+                {{end}}
+                {{end}}
+            </td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="text-center py-16 text-slate-400">
+    <p>{{t "projects.empty" $.Lang}}</p>
+    <a href="/projects/new" class="ds-btn-sm ds-btn-primary mt-4">{{t "projects.first" $.Lang}}</a>
+</div>
+{{end}}
+{{end}}
+{{end}}

@@ -1,0 +1,64 @@
+package approvals
+
+import (
+	"fmt"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
+)
+
+templ Approvals(vd view.ApprovalsView) {
+	@comp.Layout(vd.PageData) {
+		<div class="mb-6">
+			<h1 class="text-2xl font-bold text-slate-900">{ i18n.T("approvals.title", vd.Lang) }</h1>
+			<p class="text-sm text-slate-400 mt-1">{ i18n.T("approvals.subtitle", vd.Lang) }</p>
+		</div>
+		if len(vd.Orders) == 0 {
+			@comp.Card() {
+				@comp.CardBody() {
+					@comp.EmptyState(i18n.T("approvals.empty", vd.Lang))
+				}
+			}
+		} else {
+			<div class="space-y-4">
+				for _, o := range vd.Orders {
+					@approvalCard(o, vd.Lang)
+				}
+			</div>
+		}
+	}
+}
+
+templ approvalCard(o model.Order, lang string) {
+	<div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+		<div class="p-5">
+			<div class="flex items-start justify-between">
+				<div>
+					<p class="font-semibold text-slate-900">{ i18n.T("approvals.order", lang) } #{ fmt.Sprint(o.ID) }</p>
+					<p class="text-xs text-slate-400 mt-0.5">{ o.CreatedAt.Format("02.01.2006 15:04") }</p>
+				</div>
+				<div class="flex gap-2">
+					<form method="POST" action={ templ.URL("/approvals/" + fmt.Sprint(o.ID) + "/approve") }>
+						@comp.Btn(i18n.T("action.approve", lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
+					</form>
+				</div>
+			</div>
+			<!-- Reject toggle using <details>/<summary> — stateless, no Alpine.js -->
+			<details class="mt-4">
+				<summary class="cursor-pointer text-sm text-red-600 font-medium hover:text-red-700 list-none flex items-center gap-1.5">
+					<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+					</svg>
+					{ i18n.T("action.reject", lang) }
+				</summary>
+				<div class="mt-3 pt-3 border-t border-slate-100">
+					<form method="POST" action={ templ.URL("/approvals/" + fmt.Sprint(o.ID) + "/reject") } class="flex gap-2">
+						@comp.Input("note", "text", i18n.T("approvals.reject_note", lang), "", templ.Attributes{"required": ""})
+						@comp.Btn(i18n.T("action.reject", lang), comp.VDanger, comp.SzSM, templ.Attributes{"type": "submit"})
+					</form>
+				</div>
+			</details>
+		</div>
+	</div>
+}

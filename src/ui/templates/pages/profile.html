@@ -1,0 +1,30 @@
+{{define "title"}}{{t "profile.title" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6">
+    <h2 class="text-2xl font-bold">{{t "profile.title" .Lang}}</h2>
+    <p class="text-slate-500 text-sm mt-1">{{t "profile.subtitle" .Lang}}</p>
+</div>
+
+<div class="max-w-md">
+    <div class="ds-card">
+        <div class="ds-card-body">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">{{t "profile.change_password" .Lang}}</h3>
+            <form method="POST" action="/settings/profile" class="space-y-3">
+                <div class="ds-field">
+                    <label for="current-password" class="ds-label">{{t "profile.current_password" .Lang}}</label>
+                    <input id="current-password" type="password" name="current_password" class="ds-input" required autocomplete="current-password" />
+                </div>
+                <div class="ds-field">
+                    <label for="new-password" class="ds-label">{{t "profile.new_password" .Lang}}</label>
+                    <input id="new-password" type="password" name="new_password" class="ds-input" required minlength="8" autocomplete="new-password" />
+                </div>
+                <div class="ds-field">
+                    <label for="confirm-password" class="ds-label">{{t "profile.confirm_password" .Lang}}</label>
+                    <input id="confirm-password" type="password" name="confirm_password" class="ds-input" required minlength="8" autocomplete="new-password" />
+                </div>
+                <button type="submit" class="ds-btn-sm ds-btn-primary">{{t "profile.save_password" .Lang}}</button>
+            </form>
+        </div>
+    </div>
+</div>
+{{end}}

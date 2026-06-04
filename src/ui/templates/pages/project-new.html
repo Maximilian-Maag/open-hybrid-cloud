@@ -1,0 +1,33 @@
+{{define "title"}}{{t "project.new_title" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-4">
+    <a href="/projects" class="ds-btn-sm ds-btn-ghost">{{t "common.back" .Lang}}</a>
+</div>
+<h2 class="text-2xl font-bold mb-6">{{t "project.new_title" .Lang}}</h2>
+
+<form method="POST" action="/projects/new" class="max-w-lg space-y-4">
+    <div class="ds-field">
+        <label for="proj-name" class="ds-label">{{t "common.name" .Lang}} <span class="text-red-600" aria-hidden="true">*</span></label>
+        <input id="proj-name" type="text" name="name" class="ds-input" required aria-required="true" />
+    </div>
+    <div class="ds-field">
+        <label for="proj-desc" class="ds-label">{{t "common.description" .Lang}}</label>
+        <textarea id="proj-desc" name="description" class="ds-textarea" rows="3"></textarea>
+    </div>
+    {{with .Data}}{{if .CostCenters}}
+    <div class="ds-field">
+        <label for="proj-cc" class="ds-label">{{t "project.cost_center" $.Lang}}</label>
+        <select id="proj-cc" name="cost_center_id" class="ds-select">
+            <option value="">{{t "project.none_cc" $.Lang}}</option>
+            {{range .CostCenters}}
+            {{if .Active}}<option value="{{.ID}}">{{.Code}} — {{.Name}}</option>{{end}}
+            {{end}}
+        </select>
+    </div>
+    {{end}}{{end}}
+    <div class="flex gap-3">
+        <button type="submit" class="ds-btn-md ds-btn-primary">{{t "common.create" .Lang}}</button>
+        <a href="/projects" class="ds-btn-md ds-btn-ghost">{{t "common.cancel" .Lang}}</a>
+    </div>
+</form>
+{{end}}

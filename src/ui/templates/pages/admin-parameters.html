@@ -1,0 +1,84 @@
+{{define "title"}}{{t "admin.global_params" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6">
+    <a href="/admin" class="ds-btn-sm ds-btn-ghost mb-2">{{t "admin.back" .Lang}}</a>
+    <h2 class="text-2xl font-bold">{{t "admin.global_params" .Lang}}</h2>
+    <p class="text-slate-500 text-sm mt-1">{{t "admin.global_params_hint" .Lang}}</p>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div>
+        {{with .Data}}{{if .Parameters}}
+        <div class="overflow-x-auto">
+            <table class="ds-table">
+                <thead><tr>
+                    <th>{{t "admin.param_name" $.Lang}}</th>
+                    <th>{{t "admin.param_type" $.Lang}}</th>
+                    <th>{{t "common.description" $.Lang}}</th>
+                    <th>{{t "admin.param_required" $.Lang}}</th>
+                    <th></th>
+                </tr></thead>
+                <tbody>
+                {{range .Parameters}}
+                <tr>
+                    <td class="font-mono text-sm">{{.Name}}</td>
+                    <td><span class="ds-badge-gray">{{.Type}}</span></td>
+                    <td class="text-sm text-slate-500">{{.Description}}</td>
+                    <td>{{if .Required}}<span class="ds-badge-yellow">{{t "admin.yes" $.Lang}}</span>{{else}}<span class="text-slate-300">—</span>{{end}}</td>
+                    <td>
+                        <form method="POST" action="/admin/parameters/{{.ID}}/delete"
+                              onsubmit="return confirm('{{t "admin.confirm_delete" $.Lang}}')">
+                            <button type="submit" class="ds-btn-xs ds-btn-danger">{{t "common.delete" $.Lang}}</button>
+                        </form>
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <p class="text-slate-400 text-sm">{{t "admin.no_params" $.Lang}}</p>
+        {{end}}{{end}}
+    </div>
+
+    <div class="ds-card">
+        <div class="ds-card-body">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">{{t "admin.new_param" .Lang}}</h3>
+            <form method="POST" action="/admin/parameters" class="space-y-3">
+                <div class="ds-field">
+                    <label for="param-name" class="ds-label">{{t "admin.param_name" .Lang}}</label>
+                    <input id="param-name" type="text" name="name" class="ds-input" required placeholder="project_tag" />
+                </div>
+                <div class="ds-field">
+                    <label for="param-type" class="ds-label">{{t "admin.param_type" .Lang}}</label>
+                    <select id="param-type" name="type" class="ds-select">
+                        <option value="string">string</option>
+                        <option value="number">number</option>
+                        <option value="bool">bool</option>
+                        <option value="dropdown">dropdown</option>
+                    </select>
+                </div>
+                <div class="ds-field">
+                    <label for="param-desc" class="ds-label">{{t "common.description" .Lang}}</label>
+                    <input id="param-desc" type="text" name="description" class="ds-input" />
+                </div>
+                <div class="ds-field">
+                    <label for="param-default" class="ds-label">{{t "admin.param_default" .Lang}}</label>
+                    <input id="param-default" type="text" name="default_value" class="ds-input" />
+                </div>
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" name="required" class="ds-checkbox" />
+                        <span class="text-sm text-slate-700">{{t "admin.param_required" .Lang}}</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" name="sensitive" class="ds-checkbox" />
+                        <span class="text-sm text-slate-700">{{t "admin.param_sensitive" .Lang}}</span>
+                    </label>
+                </div>
+                <button type="submit" class="ds-btn-sm ds-btn-primary">{{t "common.create" .Lang}}</button>
+            </form>
+        </div>
+    </div>
+</div>
+{{end}}

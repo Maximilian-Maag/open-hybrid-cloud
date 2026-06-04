@@ -1,0 +1,80 @@
+version: '3.8'
+
+# Production deployment on Docker host
+# Prerequisite: docker login (private DockerHub image)
+# Configuration: .env file in the same directory (see .env.example)
+
+services:
+
+  nginx:
+    image: nginx:alpine
+    container_name: infra-webshop-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - webshop
+    restart: unless-stopped
+
+  webshop:
+    image: porrag/infra-webshop:latest
+    container_name: infra-webshop-app
+    expose:
+      - "8080"
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/infrawebshop?sslmode=disable"
+      SESSION_SECRET: "${SESSION_SECRET}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
+      ENTRA_TENANT_ID: "${ENTRA_TENANT_ID}"
+      ENTRA_CLIENT_ID: "${ENTRA_CLIENT_ID}"
+      ENTRA_CLIENT_SECRET: "${ENTRA_CLIENT_SECRET}"
+      ENTRA_REDIRECT_URL: "${ENTRA_REDIRECT_URL}"
+      SMTP_HOST: "${SMTP_HOST}"
+      SMTP_PORT: "${SMTP_PORT}"
+      SMTP_FROM: "${SMTP_FROM}"
+      SMTP_USERNAME: "${SMTP_USERNAME}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD}"
+      SMTP_TLS: "${SMTP_TLS}"
+      EXCHANGE_RATE_API_URL: "${EXCHANGE_RATE_API_URL}"
+      EXCHANGE_RATE_API_KEY: "${EXCHANGE_RATE_API_KEY}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: infra-webshop-postgres
+    environment:
+      POSTGRES_DB: infrawebshop
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: infra-webshop-watchtower
+    environment:
+      DOCKER_API_VERSION: "1.47"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /root/.docker/config.json:/config.json:ro
+    command: --cleanup --interval 300 --label-enable
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -1,0 +1,100 @@
+package admin
+
+import (
+	"strconv"
+
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
+)
+
+// Categories renders the full admin categories page (used on initial GET).
+templ Categories(vd view.AdminCategoriesView) {
+	@comp.Layout(vd.PageData) {
+		@comp.PageHeader("Kategorien", "/admin")
+		<div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+			<!-- List (takes 3 of 5 columns) -->
+			<div class="lg:col-span-3">
+				@CategoryList(vd.Categories)
+			</div>
+			<!-- Create form (takes 2 of 5 columns) -->
+			<div class="lg:col-span-2">
+				@comp.Card() {
+					@comp.CardHeader("Neue Kategorie")
+					@comp.CardBody() {
+						@categoryCreateForm()
+					}
+				}
+			</div>
+		</div>
+	}
+}
+
+// CategoryList is the HTMX-swappable list fragment (id="cat-list").
+// Returned standalone on every POST so the table updates without a page reload.
+templ CategoryList(cats []model.Category) {
+	<div id="cat-list">
+		if len(cats) == 0 {
+			@comp.Card() {
+				@comp.EmptyState("Noch keine Kategorien vorhanden.")
+			}
+		} else {
+			@comp.Card() {
+				<table class="w-full text-sm">
+					<thead>
+						<tr class="border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wide">
+							<th class="px-4 py-3 text-left font-medium">Name</th>
+							<th class="px-4 py-3 text-left font-medium">Reihenfolge</th>
+							<th class="px-4 py-3 text-right font-medium"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-slate-50">
+						for _, cat := range cats {
+							@categoryRow(cat)
+						}
+					</tbody>
+				</table>
+			}
+		}
+	</div>
+}
+
+templ categoryRow(cat model.Category) {
+	<tr class="hover:bg-slate-50/60 transition-colors">
+		<td class="px-4 py-3 font-medium text-slate-900">{ cat.Name }</td>
+		<td class="px-4 py-3 text-slate-500">{ strconv.Itoa(cat.DisplayOrder) }</td>
+		<td class="px-4 py-3">
+			<div class="flex justify-end items-center gap-1">
+				@comp.BtnLink("Parameter", "/admin/categories/"+strconv.FormatInt(cat.ID, 10)+"/parameters", comp.VGhost, comp.SzXS)
+				<button
+					class={ comp.BtnClass(comp.VDanger, comp.SzXS) }
+					hx-post={ "/admin/categories/" + strconv.FormatInt(cat.ID, 10) + "/delete" }
+					hx-target="#cat-list"
+					hx-swap="outerHTML"
+					hx-confirm="Kategorie wirklich löschen? Alle zugehörigen Produkte werden ebenfalls entfernt."
+				>
+					Löschen
+				</button>
+			</div>
+		</td>
+	</tr>
+}
+
+// categoryCreateForm is a self-contained form that POSTs via HTMX and swaps #cat-list.
+templ categoryCreateForm() {
+	<form
+		hx-post="/admin/categories"
+		hx-target="#cat-list"
+		hx-swap="outerHTML"
+		hx-on::after-request="if(event.detail.successful) this.reset()"
+		class="space-y-4"
+	>
+		@comp.Field("Name", "name", true) {
+			@comp.Input("name", "text", "z. B. Virtual Machines", "", templ.Attributes{"required": ""})
+		}
+		@comp.Field("Anzeigereihenfolge", "display_order", false) {
+			@comp.Input("display_order", "number", "0", "0", templ.Attributes{"min": "0"})
+		}
+		@comp.Btn("Erstellen", comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
+	</form>
+}

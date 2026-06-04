@@ -1,0 +1,42 @@
+services:
+
+  # Architecture documentation
+  structurizr-lite:
+    image: structurizr/lite
+    container_name: structurizr-lite
+    ports:
+      - "8088:8080"
+    volumes:
+      - ../docs/architecture:/usr/local/structurizr
+    restart: unless-stopped
+
+  # Local development: database
+  postgres:
+    image: postgres:16-alpine
+    container_name: infra-webshop-postgres
+    environment:
+      POSTGRES_DB: infrawebshop
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d infrawebshop"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  # Local development: SMTP (Mailpit — web UI for email testing)
+  mailpit:
+    image: axllent/mailpit
+    container_name: infra-webshop-mailpit
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web-UI
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

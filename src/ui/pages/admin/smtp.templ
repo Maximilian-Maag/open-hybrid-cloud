@@ -1,0 +1,53 @@
+package admin
+
+import (
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
+)
+
+templ AdminSMTP(vd view.AdminSMTPView) {
+	@comp.Layout(vd.PageData) {
+		<div class="mb-6">
+			<a href="/admin" class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 mb-2 transition-colors">
+				<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+				</svg>
+				{ i18n.T("admin.back", vd.Lang) }
+			</a>
+			<h1 class="text-2xl font-bold text-slate-900">{ i18n.T("admin.smtp_title", vd.Lang) }</h1>
+			<p class="text-sm text-slate-400 mt-1">{ i18n.T("admin.smtp_subtitle", vd.Lang) }</p>
+		</div>
+		<div class="max-w-lg">
+			@comp.Card() {
+				@comp.CardBody() {
+					<form method="POST" action="/admin/smtp" class="space-y-4">
+						<div class="grid grid-cols-3 gap-3">
+							<div class="col-span-2">
+								@comp.Field(i18n.T("admin.smtp_host", vd.Lang), "smtp_host", false) {
+									@comp.Input("smtp_host", "text", "smtp.example.com", vd.SMTPConfig.SMTPHost, templ.Attributes{})
+								}
+							</div>
+							<div>
+								@comp.Field(i18n.T("admin.smtp_port", vd.Lang), "smtp_port", false) {
+									@comp.Input("smtp_port", "text", "587", vd.SMTPConfig.SMTPPort, templ.Attributes{})
+								}
+							</div>
+						</div>
+						@comp.Field(i18n.T("admin.smtp_from", vd.Lang), "smtp_from", false) {
+							@comp.Input("smtp_from", "email", "noreply@example.com", vd.SMTPConfig.SMTPFrom, templ.Attributes{})
+						}
+						@comp.Field(i18n.T("admin.smtp_username", vd.Lang), "smtp_username", false) {
+							@comp.Input("smtp_username", "text", "", vd.SMTPConfig.SMTPUsername, templ.Attributes{"autocomplete": "off"})
+						}
+						@comp.Field(i18n.T("admin.smtp_password", vd.Lang), "smtp_password", false) {
+							@comp.Input("smtp_password", "password", i18n.T("admin.smtp_password_hint", vd.Lang), "", templ.Attributes{"autocomplete": "new-password"})
+						}
+						@comp.Checkbox("smtp_tls", i18n.T("admin.smtp_tls", vd.Lang), vd.SMTPConfig.SMTPTLS)
+						@comp.Btn(i18n.T("common.save", vd.Lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
+					</form>
+				}
+			}
+		</div>
+	}
+}

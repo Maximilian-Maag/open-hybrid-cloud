@@ -1,0 +1,54 @@
+{{define "title"}}{{t "admin.smtp_title" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6">
+    <a href="/admin" class="ds-btn-sm ds-btn-ghost mb-2">{{t "admin.back" .Lang}}</a>
+    <h2 class="text-2xl font-bold">{{t "admin.smtp_title" .Lang}}</h2>
+    <p class="text-slate-500 text-sm mt-1">{{t "admin.smtp_subtitle" .Lang}}</p>
+</div>
+
+<div class="max-w-lg">
+    {{with .Data}}
+    <div class="ds-card">
+        <div class="ds-card-body">
+            <form method="POST" action="/admin/smtp" class="space-y-4">
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="ds-field col-span-2">
+                        <label for="smtp-host" class="ds-label">{{t "admin.smtp_host" $.Lang}}</label>
+                        <input id="smtp-host" type="text" name="smtp_host" class="ds-input"
+                               value="{{.SMTPConfig.SMTPHost}}" placeholder="smtp.example.com" />
+                    </div>
+                    <div class="ds-field">
+                        <label for="smtp-port" class="ds-label">{{t "admin.smtp_port" $.Lang}}</label>
+                        <input id="smtp-port" type="text" name="smtp_port" class="ds-input"
+                               value="{{.SMTPConfig.SMTPPort}}" placeholder="587" />
+                    </div>
+                </div>
+                <div class="ds-field">
+                    <label for="smtp-from" class="ds-label">{{t "admin.smtp_from" $.Lang}}</label>
+                    <input id="smtp-from" type="email" name="smtp_from" class="ds-input"
+                           value="{{.SMTPConfig.SMTPFrom}}" placeholder="noreply@example.com" />
+                </div>
+                <div class="ds-field">
+                    <label for="smtp-username" class="ds-label">{{t "admin.smtp_username" $.Lang}}</label>
+                    <input id="smtp-username" type="text" name="smtp_username" class="ds-input"
+                           value="{{.SMTPConfig.SMTPUsername}}" autocomplete="off" />
+                </div>
+                <div class="ds-field">
+                    <label for="smtp-password" class="ds-label">{{t "admin.smtp_password" $.Lang}}</label>
+                    <input id="smtp-password" type="password" name="smtp_password" class="ds-input"
+                           placeholder="{{t "admin.smtp_password_hint" $.Lang}}" autocomplete="new-password" />
+                </div>
+                <div class="ds-field">
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" name="smtp_tls" class="ds-checkbox"
+                               {{if .SMTPConfig.SMTPTLS}}checked{{end}} />
+                        <span class="text-sm text-slate-700">{{t "admin.smtp_tls" $.Lang}}</span>
+                    </label>
+                </div>
+                <button type="submit" class="ds-btn-sm ds-btn-primary">{{t "common.save" $.Lang}}</button>
+            </form>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}

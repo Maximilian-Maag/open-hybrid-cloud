@@ -238,8 +238,8 @@
 \newcommand{\role}[1]{\textsf{\textbf{#1}}}
 
 % ── Version info ──────────────────────────────────────────────
-\newcommand{\docversion}{1.0}
-\newcommand{\docdate}{2025}
+\newcommand{\docversion}{1.1}
+\newcommand{\docdate}{\today}
 
 % ─────────────────────────────────────────────────────────────
 \begin{document}
@@ -270,6 +270,7 @@
 
   \begin{tabular}{@{}ll}
     \toprule
+    \textbf{Autor}     & Maximilian Jakob Maag B.Sc. \\
     \textbf{Audience}  & Administrators, Developers, Project Managers \\
     \textbf{System}    & Infrastructure Webshop \\
     \textbf{Stack}     & Go · PostgreSQL · HTMX · OpenTofu · GitLab · Linode \\
@@ -358,8 +359,9 @@ the PostgreSQL layer, enabling horizontal scaling without coordination.
     \textbf{Layer} & \textbf{Technology} & \textbf{Version} \\
     \midrule
     Backend        & Go                       & 1.22+ \\
-    Frontend       & HTMX + Alpine.js         & 2.0 / 3.14 \\
-    CSS            & Tailwind CSS + DaisyUI   & 3.x / 4.x \\
+    Templates      & templ                    & 0.3+ \\
+    Frontend       & HTMX                     & 2.0 \\
+    CSS            & Tailwind CSS             & 3.x \\
     Database       & PostgreSQL               & 15+ \\
     DB Driver      & pgx/v5 (jackc)           & 5.x \\
     IaC            & OpenTofu                 & 1.9+ \\
@@ -537,7 +539,7 @@ The system has exactly two containers:
 \begin{description}
   \item[\textbf{Webshop Application}]
     A single stateless Go binary. It handles HTTP requests, renders HTML
-    via \code{html/template}, serves HTMX fragments, coordinates all
+    via \code{templ} components, serves HTMX fragments, coordinates all
     business logic, runs the GitLab polling goroutines, and manages
     outbound SMTP. Being stateless above the database layer means
     multiple replicas can run behind a load balancer without any
@@ -705,10 +707,9 @@ its major logical components.
 
 Most user interactions either perform a full page load (navigation) or
 return an HTML fragment (HTMX). The server detects HTMX requests via the
-\code{HX-Request} header. Full renders use the layout template with
-content injected into the \code{\{\{block "content"\}\}} slot.
-Fragments skip the layout and return only the relevant HTML snippet,
-which HTMX swaps into the DOM.
+\code{HX-Request} header. Full renders compose a templ \code{Layout}
+component around the page component. Fragments skip the layout and
+return only the relevant HTML snippet, which HTMX swaps into the DOM.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Design Decisions \& Technology Rationale}
@@ -756,17 +757,106 @@ HTMX HTML fragments rather than a JavaScript SPA framework.
         all inserted values, preventing XSS by construction.
 \end{itemize}
 
-\section{DaisyUI + Tailwind CSS}
+\section{templ for Type-Safe HTML Components}
 
-\textbf{Decision:} Tailwind CSS for utility classes, DaisyUI for
-semantic component classes (\code{btn}, \code{badge}, \code{card},
-\code{modal}, etc.).
+\textbf{Decision:} All HTML pages and UI components are authored as
+\code{.templ} files and compiled to Go by the \code{templ} CLI. The
+\code{html/template} package is no longer used for page rendering.
 
 \textbf{Rationale:}
-DaisyUI components map directly to HTML elements and class names —
-no JavaScript component framework is required. The combination produces
-accessible, consistent UI with minimal custom CSS. Tailwind's JIT
-compilation trims the final CSS file to only used classes.
+\begin{itemize}
+  \item \textbf{Compile-time type safety:} Each page receives a concrete
+        typed view struct (e.g.\ \code{view.OrderListView}). Passing the
+        wrong data to a component is a compile error, not a runtime
+        \code{nil} panic or a missing-key silently rendering empty.
+  \item \textbf{No map[string]any:} The old \code{html/template} approach
+        required every handler to pass \code{map[string]any\{\}} to
+        \code{h.render()}, providing no compile-time guarantee that the
+        template would find the keys it expected.
+  \item \textbf{Composable components:} templ supports Go functions as
+        components with typed parameters, children slots, and helper
+        functions — the same mental model as React components but compiled
+        to plain Go without a JS build step.
+  \item \textbf{XSS safety preserved:} templ auto-escapes all string
+        interpolations by default, maintaining the same security guarantee
+        as \code{html/template}.
+  \item \textbf{IDE support:} The templ VS Code extension provides syntax
+        highlighting, autocompletion, and go-to-definition inside
+        \code{.templ} files.
+\end{itemize}
+
+\textbf{Design system:} A shared component library under
+\file{ui/comp/} (\code{comp.Btn}, \code{comp.Card}, \code{comp.Badge},
+\code{comp.Field}, etc.) provides a consistent visual language. Page
+components under \file{ui/pages/} compose these primitives and receive
+typed view models from the handler layer.
+
+\section{Tailwind CSS without DaisyUI}
+
+\textbf{Decision:} Pure Tailwind CSS utility classes; DaisyUI was
+removed after the migration to templ was complete.
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item \textbf{Theme collision:} DaisyUI ships its own CSS custom
+        properties (\code{--b1}, \code{--p}, \code{--s}, …) which
+        conflicted with the application's own branding variables
+        (\code{--bp}, \code{--bs}). Keeping both required workarounds
+        and caused unpredictable cascade ordering.
+  \item \textbf{Specificity fights:} DaisyUI's component classes
+        (\code{btn}, \code{badge}, \code{card}) carry higher specificity
+        than plain utilities, making it hard to override individual
+        properties without \code{!important} or extra wrapper classes.
+  \item \textbf{Bundle size and opacity:} DaisyUI adds several hundred
+        kilobytes of pre-defined component CSS. Tailwind's content-scan
+        only purges \emph{unused} utilities; DaisyUI component styles are
+        included unconditionally, inflating the bundle with styles that
+        the templ components never use.
+  \item \textbf{Design independence:} The hand-authored component library
+        in \file{ui/comp/} uses only Tailwind utilities, making every
+        style decision explicit and auditable. There are no hidden
+        DaisyUI defaults to debug.
+\end{itemize}
+
+\textbf{What replaced it:} The \file{ui/comp/} package provides the
+same functional coverage (buttons, badges, cards, form inputs,
+checkboxes, layout shell) using only Tailwind utilities and the two
+brand CSS variables \code{var(--bp)} and \code{var(--bs)}.
+
+\section{No Alpine.js}
+
+\textbf{Decision:} Alpine.js was removed from the project. The only
+remaining JavaScript beyond HTMX is the CDN-loaded Alpine.js on the
+branding admin page, where it powers the live colour preview.
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item \textbf{All use cases replaced by HTML:} Every place Alpine.js
+        was used — collapsible sections, toggle visibility, show/hide
+        forms — can be handled by the native \code{<details>/\allowbreak<summary>}
+        element. This is a zero-JavaScript, zero-dependency solution that
+        is accessible by default and degrades gracefully in all browsers.
+  \item \textbf{Reduced attack surface:} Alpine.js evaluates expressions
+        from HTML attributes (\code{x-data}, \code{x-show},
+        \code{x-on:click}). Any XSS that manages to inject an attribute
+        becomes executable code. Removing Alpine.js eliminates this
+        vector.
+  \item \textbf{Dependency hygiene:} Alpine.js loaded from a CDN
+        introduces a third-party supply-chain dependency on every page
+        load. Removing it means the only external script is HTMX, which
+        is already trusted as a core dependency.
+  \item \textbf{Consistency:} Mixing two reactive JavaScript libraries
+        (HTMX and Alpine) creates a mental model split: developers must
+        decide which tool owns each interactive behaviour. Pure
+        HTMX + HTML is a single coherent model.
+\end{itemize}
+
+\textbf{Exception:} The admin branding page (\route{/admin/branding})
+retains Alpine.js loaded via CDN script tag. It drives a live
+colour-preview widget where two colour inputs immediately update a
+mock header element without a server round-trip. This is the one
+genuine use case for in-page reactive state that cannot be reasonably
+replaced by \code{<details>} or HTMX alone.
 
 \section{PostgreSQL with pgx (No ORM)}
 
@@ -1455,14 +1545,14 @@ docker pull registry.gitlab.example.com/porr-ag/infra-webshop:latest
 
 \item \textbf{Create the environment file.}
 \begin{lstlisting}[style=bash]
-cp deploy/docker-host/.env.example deploy/docker-host/.env
+cp infra/docker-host/.env.example infra/docker-host/.env
 # Edit .env with a text editor; set at minimum:
 #   DATABASE_URL, SESSION_KEY, ADMIN_EMAIL, ADMIN_PASSWORD, BASE_URL
 \end{lstlisting}
 
 \item \textbf{Start PostgreSQL and the application.}
 \begin{lstlisting}[style=bash]
-cd deploy/docker-host
+cd infra/docker-host
 docker compose up -d
 \end{lstlisting}
 
@@ -1481,14 +1571,14 @@ certbot --nginx -d shop.example.com
 
 \textit{Option B — Corporate CA (internal PKI):} Place the signed
 certificate and key at the paths referenced in
-\file{deploy/docker-host/nginx.conf} (see below) and restart Nginx.
+\file{infra/docker-host/nginx.conf} (see below) and restart Nginx.
 
 \item \textbf{Configure Nginx as TLS-terminating reverse proxy.}
 
 Listing~\ref{lst:nginxconf} shows a minimal but production-ready
 Nginx configuration:
 
-\begin{lstlisting}[style=yaml,caption={deploy/docker-host/nginx.conf},label={lst:nginxconf}]
+\begin{lstlisting}[style=yaml,caption={infra/docker-host/nginx.conf},label={lst:nginxconf}]
 server {
     listen 80;
     server_name shop.example.com;
@@ -1599,13 +1689,13 @@ cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
 
 \subsection*{Deployment with Helm}
 
-The repository ships a Helm chart at \file{deploy/helm/infra-webshop/}.
+The repository ships a Helm chart at \file{infra/helm/infra-webshop/}.
 It covers the full deployment in a single command and handles database
 migrations automatically as a pre-install/pre-upgrade hook.
 
 \begin{lstlisting}[style=bash,caption={Helm install with required values},label={lst:helm-install}]
 helm upgrade --install infra-webshop \
-  deploy/helm/infra-webshop \
+  infra/helm/infra-webshop \
   --namespace infra-webshop \
   --create-namespace \
   --set env.databaseUrl="postgres://user:pass@pg.example.com:5432/webshop?sslmode=require" \
@@ -1634,7 +1724,7 @@ env:
 \end{lstlisting}
 
 \begin{lstlisting}[style=bash]
-helm upgrade --install infra-webshop deploy/helm/infra-webshop \
+helm upgrade --install infra-webshop infra/helm/infra-webshop \
   --namespace infra-webshop --create-namespace \
   -f values.production.yaml \
   -f secrets.values.yaml
@@ -2194,10 +2284,24 @@ infra-webshop/
 |   +-- service/        # Service interfaces
 |       +-- impl/       # Service implementations
 +-- ui/
-    +-- templates/
-    |   +-- layout.html         # Shared layout
-    |   +-- pages/              # One file per page
-    |   +-- partials/           # HTMX fragment templates
+    +-- comp/                   # Shared templ component library
+    |   +-- layout.templ        # Full-page layout shell + nav
+    |   +-- badge.templ         # Status badges
+    |   +-- button.templ        # Button variants (Btn, BtnLink, IconBtn)
+    |   +-- card.templ          # Card, CardBody, CardHeader, PageHeader
+    |   +-- form.templ          # Field, Input, Textarea, Select, Checkbox
+    +-- pages/                  # One package per route group
+    |   +-- admin/              # *.templ for all /admin/* pages
+    |   +-- approvals/
+    |   +-- audit/
+    |   +-- auth/
+    |   +-- catalog/
+    |   +-- home/
+    |   +-- infra/
+    |   +-- misc/
+    |   +-- orders/
+    |   +-- projects/
+    |   +-- settings/
     +-- static/
     |   +-- css/style.css       # Compiled Tailwind output
     +-- ui.go                   # embed.FS declarations
@@ -2229,39 +2333,318 @@ dependencies:
     helpers.
 \end{description}
 
-\section{Template System}
+\section{Template System (templ)}
 
-Each page is a separate \code{*template.Template} instance containing
-the shared \file{layout.html} plus its own page file. This avoids
-\code{\{\{define "content"\}\}} collisions between pages.
+All pages are authored as \code{.templ} files and compiled to Go by
+\code{templ generate ./...}. Each \code{.templ} file produces a
+corresponding \code{\_templ.go} file which is committed alongside the
+source.
 
-Page templates define two blocks:
+Page components receive a typed view struct:
 \begin{lstlisting}[style=go]
-{{define "title"}}Page Title{{end}}
-{{define "content"}}
-  <!-- page HTML using Tailwind / DaisyUI -->
-{{end}}
+// ui/pages/orders/orders.templ
+templ OrderList(vd view.OrderListView) {
+    @comp.Layout(vd.PageData) {
+        // page content -- type-checked at compile time
+    }
+}
 \end{lstlisting}
 
-Data is passed as \code{map[string]any} to \code{h.render()}, which
-wraps it in a \code{PageData} struct providing:
+Handlers assemble the view struct and call \code{renderTempl}:
+\begin{lstlisting}[style=go]
+func (h *Handler) orderList(w http.ResponseWriter, r *http.Request) {
+    orders, _ := h.orders.ListByUser(r.Context(), sess.UserID)
+    renderTempl(w, r, orderpages.OrderList(view.OrderListView{
+        PageData: h.buildPageData(w, r),
+        Orders:   orders,
+    }))
+}
+\end{lstlisting}
+
+\code{buildPageData} assembles the common \code{view.PageData} struct
+providing:
 \begin{description}
-  \item[\code{.Lang}] User's active language code (e.g. \code{"de"}).
-  \item[\code{.Brand}] Branding values (colors, shop name, etc.).
+  \item[\code{.Lang}] User's active language code (e.g.\ \code{"de"}).
+  \item[\code{.Brand}] Branding values (colours, shop name, logo flag).
   \item[\code{.Session}] Current user session (name, role, email).
   \item[\code{.Flash}] One-time flash message (success/error).
-  \item[\code{.Data}] The \code{map[string]any} passed by the handler.
+  \item[\code{.SearchQuery}] Current catalog search term from the URL.
 \end{description}
 
-Access data in templates:
+Translations are called directly in templ files:
 \begin{lstlisting}[style=go]
-{{t "admin.title" .Lang}}       {{/* translated string */}}
-{{.Brand.PrimaryColor}}         {{/* branding color */}}
-{{.Session.Name}}               {{/* logged-in user's name */}}
-{{with .Data}}
-  {{.ProductCount}}             {{/* handler-provided data */}}
-{{end}}
+{ i18n.T("orders.title", vd.Lang) }  // translated string
+{ string(o.Status) }                  // named type requires cast
 \end{lstlisting}
+
+\section{Design System}
+\label{sec:design-system}
+
+All UI is built from a small, self-contained component library under
+\file{src/ui/comp/}. Components are plain templ functions — no
+framework, no runtime dependencies.
+
+\subsection*{Design Tokens}
+
+Two CSS custom properties drive every coloured surface:
+
+\begin{description}
+  \item[\code{var(--bp)}] Brand primary colour (default \code{\#131921},
+        the dark header). Used for header, navigation, footer, active
+        highlights, and price text.
+  \item[\code{var(--bs)}] Brand secondary / accent colour (default
+        \code{\#febd69}, amber). Used for CTA buttons, active language
+        badges, and focus rings.
+\end{description}
+
+The values are injected by \code{comp.Layout} as inline CSS custom
+properties on \code{<html>}. Every component should reference these
+variables rather than hardcoding colours:
+
+\begin{lstlisting}[style=go]
+<!-- correct -->
+<div style="background-color:var(--bp)">...</div>
+<a style="color:var(--bs)">...</a>
+
+<!-- wrong: breaks custom branding -->
+<div class="bg-[#131921]">...</div>
+\end{lstlisting}
+
+\subsection*{Layout Shell (\texttt{comp.Layout})}
+
+Every page is wrapped in \code{comp.Layout}:
+
+\begin{lstlisting}[style=go]
+templ MyPage(vd view.MyView) {
+    @comp.Layout(vd.PageData) {
+        // page content here
+    }
+}
+\end{lstlisting}
+
+\code{comp.Layout} renders: \texttt{<head>} with meta tags and stylesheets,
+sticky header with brand logo / search bar / user menu / language
+picker, the top navigation bar with role-based links, a flash banner
+slot, the \texttt{<main>} content area (2XL max-width, horizontal
+padding), and the footer. Nothing else should set \code{<html>},
+\code{<head>}, or \code{<body>}.
+
+\subsection*{Page Structure}
+
+\begin{description}
+  \item[\code{comp.PageHeader(title, backHref)}]
+        Full-width page title row with an optional back arrow link.
+        Use at the top of every dedicated page.
+  \item[\code{comp.PageHeaderAction(title, backHref, action)}]
+        Same as above but with an action slot on the right (e.g.\ a
+        primary button).
+  \item[\code{comp.Section(title)}]
+        A titled content group with a subtle separator. Use to divide
+        a page into logical parts.
+  \item[\code{comp.EmptyState(message)}]
+        Centred placeholder message for empty lists or zero results.
+\end{description}
+
+\begin{lstlisting}[style=go]
+@comp.PageHeaderAction("Bestellungen", "/", action) {
+    @comp.BtnLink("Neue Bestellung", "/catalog",
+                  comp.VPrimary, comp.SzMD)
+}
+@comp.Section("Offene Bestellungen") {
+    if len(orders) == 0 {
+        @comp.EmptyState("Keine Bestellungen vorhanden.")
+    }
+    // list rows...
+}
+\end{lstlisting}
+
+\subsection*{Cards}
+
+\begin{description}
+  \item[\code{comp.Card()}]
+        White surface with border and subtle shadow. Use as a generic
+        content container.
+  \item[\code{comp.CardBody()}]
+        Adds consistent padding inside a \code{Card}.
+  \item[\code{comp.CardHeader(title)}]
+        A titled header strip for a card.
+\end{description}
+
+\begin{lstlisting}[style=go]
+@comp.Card() {
+    @comp.CardHeader("Details") {}
+    @comp.CardBody() {
+        // form fields, table, prose, etc.
+    }
+}
+\end{lstlisting}
+
+\subsection*{Buttons}
+
+\begin{description}
+  \item[\code{comp.Btn(label, variant, size, templ.Attributes)}]
+        A \code{<button>} element. Pass extra HTML attributes (e.g.\
+        \code{hx-post}, \code{disabled}) via the fourth argument.
+  \item[\code{comp.BtnLink(label, href, variant, size)}]
+        An \code{<a>} element styled as a button. Use for navigation
+        CTAs.
+  \item[\code{comp.IconBtn(variant, size, templ.Attributes)}]
+        Square icon button; children supply the icon SVG.
+  \item[\code{comp.BtnClass(variant, size)}]
+        Returns just the Tailwind class string. Use when you need to
+        apply button styling to an element not covered by the
+        components above (e.g.\ an HTMX-powered \code{<button>} inside
+        a templ \code{children...} slot).
+\end{description}
+
+\textbf{Variants:}
+
+\begin{tabular}{ll}
+\code{comp.VPrimary}   & Filled, uses \code{var(--bp)} background — main CTAs. \\
+\code{comp.VSecondary} & Outlined border button — secondary actions. \\
+\code{comp.VGhost}     & Transparent, text-only — low-emphasis actions. \\
+\code{comp.VDanger}    & Red filled — destructive actions (delete, reject). \\
+\end{tabular}
+
+\textbf{Sizes:}
+
+\begin{tabular}{ll}
+\code{comp.SzXS} & Extra small — inline or table-row actions. \\
+\code{comp.SzSM} & Small — secondary actions, compact layouts. \\
+\code{comp.SzMD} & Medium (default) — primary page-level CTAs. \\
+\end{tabular}
+
+\begin{lstlisting}[style=go]
+// Primary CTA
+@comp.BtnLink("Jetzt bestellen", "/catalog/"+id,
+              comp.VPrimary, comp.SzMD)
+
+// Danger action with HTMX
+@comp.Btn("Ablehnen", comp.VDanger, comp.SzSM,
+          templ.Attributes{"hx-delete": "/orders/"+id,
+                           "hx-confirm": "Wirklich ablehnen?"})
+
+// Icon button (custom SVG inside)
+@comp.IconBtn(comp.VGhost, comp.SzXS,
+              templ.Attributes{"aria-label": "Bearbeiten"}) {
+    <svg .../>
+}
+\end{lstlisting}
+
+\subsection*{Badges}
+
+\begin{description}
+  \item[\code{comp.Badge(label, color)}]
+        A small inline pill. Use \code{comp.BadgeGreen}, \code{comp.BadgeRed},
+        \code{comp.BadgeYellow}, \code{comp.BadgeBlue}, or
+        \code{comp.BadgeGray} for the \code{color} argument.
+  \item[\code{comp.StatusBadge(status)}]
+        Convenience wrapper that maps an order/resource status string
+        to the appropriate colour via \code{comp.StatusBadgeColor}.
+        No need to branch on status in the template.
+\end{description}
+
+\begin{lstlisting}[style=go]
+// Generic badge
+@comp.Badge("Aktiv", comp.BadgeGreen)
+@comp.Badge("Fehler", comp.BadgeRed)
+
+// Status-aware badge (recommended for orders)
+@comp.StatusBadge(string(order.Status))
+\end{lstlisting}
+
+Status colour mapping (via \code{comp.StatusBadgeColor}):
+
+\begin{tabular}{ll}
+\code{active}, \code{approved}, \code{completed} & Green \\
+\code{pending}                                    & Yellow \\
+\code{failed}, \code{rejected}                    & Red \\
+\code{provisioning}, \code{decommissioning}       & Blue \\
+Everything else                                   & Gray \\
+\end{tabular}
+
+\subsection*{Forms}
+
+All form fields use the components in \file{ui/comp/form.templ} for
+consistent label alignment, spacing, and required-marker rendering.
+
+\begin{description}
+  \item[\code{comp.Field(label, name, required)}]
+        A \code{<label>} + slot wrapper. Place an \code{Input},
+        \code{Select}, or \code{Textarea} inside it.
+  \item[\code{comp.Input(name, type, placeholder, value, attrs)}]
+        Styled \code{<input>}. Pass extra attributes (e.g.\
+        \code{hx-get}, \code{min}, \code{step}) via the last argument.
+  \item[\code{comp.Textarea(name, placeholder, value, rows, attrs)}]
+        Styled \code{<textarea>}.
+  \item[\code{comp.Select(name, attrs)}]
+        Styled \code{<select>} wrapper; children are \code{<option>}
+        elements written inline.
+  \item[\code{comp.Checkbox(name, label, checked)}]
+        A labelled checkbox with correct \code{for}/\code{id} wiring.
+\end{description}
+
+\begin{lstlisting}[style=go]
+<form method="POST" action="/admin/products">
+    @comp.Field("Produktname", "name", true) {
+        @comp.Input("name", "text", "z.B. VM-Platform",
+                    product.Name, nil)
+    }
+    @comp.Field("Beschreibung", "description", false) {
+        @comp.Textarea("description", "", product.Description,
+                       4, nil)
+    }
+    @comp.Field("Kategorie", "category_id", true) {
+        @comp.Select("category_id", nil) {
+            for _, c := range categories {
+                <option value={ fmt.Sprint(c.ID) }
+                        selected?={ c.ID == product.CategoryID }>
+                    { c.Name }
+                </option>
+            }
+        }
+    }
+    @comp.Field("Aktiv", "active", false) {
+        @comp.Checkbox("active", "Produkt ist sichtbar",
+                       product.Active)
+    }
+    @comp.Btn("Speichern", comp.VPrimary, comp.SzMD, nil)
+</form>
+\end{lstlisting}
+
+\subsection*{Flash Messages}
+
+Flash messages are set server-side via \code{redirectWithFlash} and
+rendered automatically by \code{comp.Layout} from \code{pd.Flash}.
+HTMX responses that want to show a flash message use the
+\code{HX-Trigger} response header instead:
+
+\begin{lstlisting}[style=go]
+// In a handler that returns an HTMX partial:
+w.Header().Set("HX-Trigger", `{"showFlash":{"kind":"success",
+    "message":"Gespeichert"}}`)
+\end{lstlisting}
+
+\subsection*{Component Conventions}
+
+\begin{itemize}
+  \item \textbf{Never hardcode colours.} Always use \code{var(--bp)},
+        \code{var(--bs)}, or Tailwind's neutral palette
+        (\code{slate-*}). Hardcoded hex values break custom branding.
+  \item \textbf{Use \code{comp.VPrimary} for the single most important
+        action} on a page. Use \code{comp.VSecondary} or
+        \code{comp.VGhost} for everything else.
+  \item \textbf{No JavaScript.} Interactive disclosure (menus, modals,
+        accordions) uses native \code{<details>/<summary>}.
+        Server-side partial updates use HTMX attributes. Never add
+        \code{<script>} tags to component files.
+  \item \textbf{No inline \code{style} except for brand tokens.}
+        Arbitrary colours, sizes, and spacing belong in Tailwind
+        utility classes, not \code{style=""} attributes.
+  \item \textbf{Prefer \code{comp.StatusBadge} over manual branching.}
+        The mapping is maintained centrally; adding a new status only
+        requires updating \code{comp.StatusBadgeColor}.
+\end{itemize}
 
 \section{Adding Translations}
 
@@ -2376,14 +2759,24 @@ widgets repository.WidgetRepository
 \end{lstlisting}
 
 Add to \code{Deps} struct and wire in \code{New()}.
+Add a view struct in \file{internal/view/pages.go}:
+
+\begin{lstlisting}[style=go]
+type AdminWidgetsView struct {
+    view.PageData
+    Widgets []model.Widget
+}
+\end{lstlisting}
+
 Add handler methods to a new file \file{handler/widgets.go}:
 
 \begin{lstlisting}[style=go]
 func (h *Handler) adminWidgets(w http.ResponseWriter, r *http.Request) {
     items, _ := h.widgets.FindAll(r.Context())
-    h.render(w, r, "admin-widgets.html", map[string]any{
-        "Widgets": items,
-    })
+    renderTempl(w, r, adminpages.AdminWidgets(view.AdminWidgetsView{
+        PageData: h.buildPageData(w, r),
+        Widgets:  items,
+    }))
 }
 \end{lstlisting}
 
@@ -2393,25 +2786,39 @@ mux.Handle("GET /admin/widgets",  admin(h.adminWidgets))
 mux.Handle("POST /admin/widgets", admin(h.adminWidgetCreate))
 \end{lstlisting}
 
-\subsection{Step 6: Create the Template}
+\subsection{Step 6: Create the templ Component}
 
-Create \file{ui/templates/pages/admin-widgets.html}:
+Create \file{ui/pages/admin/widgets.templ}:
 
 \begin{lstlisting}[style=go]
-{{define "title"}}{{t "admin.widgets" .Lang}}{{end}}
-{{define "content"}}
-<div class="max-w-4xl mx-auto">
-  <h2 class="text-2xl font-bold mb-6">{{t "admin.widgets" .Lang}}</h2>
-  {{with .Data}}
-  <table class="table table-zebra w-full">
-    {{range .Widgets}}
-    <tr><td>{{.Name}}</td></tr>
-    {{end}}
-  </table>
-  {{end}}
-</div>
-{{end}}
+package admin
+
+import (
+    "github.com/porr-ag/infra-webshop/src/internal/i18n"
+    "github.com/porr-ag/infra-webshop/src/internal/view"
+    "github.com/porr-ag/infra-webshop/src/ui/comp"
+)
+
+templ AdminWidgets(vd view.AdminWidgetsView) {
+    @comp.Layout(vd.PageData) {
+        @comp.PageHeader(i18n.T("admin.widgets", vd.Lang), "/admin")
+        @comp.Card() {
+            <table class="w-full text-sm">
+                <tbody>
+                    for _, w := range vd.Widgets {
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-4 py-3">{ w.Name }</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+}
 \end{lstlisting}
+
+Run \code{templ generate ./...} to compile to Go, then \code{go build ./...}
+to verify type correctness before running.
 
 \subsection{Step 7: Add i18n Keys}
 
@@ -3169,10 +3576,10 @@ it.
     \S\ref{sec:branding} \\
   \midrule
   NFA-01.1 & Docker deployment &
-    \file{Dockerfile}, \file{deploy/docker-host/} &
+    \file{Dockerfile}, \file{infra/docker-host/} &
     \S\ref{sec:docker-deploy} \\
   NFA-01.2 & Kubernetes deployment &
-    \file{deploy/k8s/} manifests &
+    \file{infra/helm/infra-webshop/} manifests &
     \S\ref{sec:k8s-deploy} \\
   NFA-01.3 & Single binary (embed.FS) &
     \file{cmd/server/main.go}, \code{//go:embed} directives &

@@ -1,0 +1,107 @@
+{{define "title"}}{{t "audit.title" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6 flex items-center justify-between">
+    <div>
+        <h2 class="text-2xl font-bold">{{t "audit.title" .Lang}}</h2>
+        <p class="text-slate-500 text-sm mt-1">{{t "audit.subtitle" .Lang}}</p>
+    </div>
+    <div class="flex gap-2">
+        <a href="/audit/export?format=csv" class="ds-btn-sm ds-btn-ghost">{{t "audit.export_csv" .Lang}}</a>
+        <a href="/audit/export?format=pdf" class="ds-btn-sm ds-btn-ghost">{{t "audit.export_pdf" .Lang}}</a>
+    </div>
+</div>
+
+<!-- Filter form -->
+<form method="GET" action="/audit" class="flex flex-wrap gap-3 mb-6 items-end">
+    {{with .Data}}
+    <div class="ds-field">
+        <label for="audit-user" class="ds-label-xs">{{t "audit.filter_user" $.Lang}}</label>
+        <select id="audit-user" name="user_id" class="ds-select-xs w-44">
+            <option value="">{{t "audit.all_users" $.Lang}}</option>
+            {{range .Users}}
+            <option value="{{.ID}}" {{if eq (printf "%v" .ID) (index $.Data.Filter "user_id")}}selected{{end}}>{{.Name}}</option>
+            {{end}}
+        </select>
+    </div>
+    <div class="ds-field">
+        <label for="audit-action" class="ds-label-xs">{{t "audit.filter_action" $.Lang}}</label>
+        <select id="audit-action" name="action" class="ds-select-xs w-48">
+            <option value="">{{t "audit.all_actions" $.Lang}}</option>
+            <option value="order.created" {{if eq (index .Filter "action") "order.created"}}selected{{end}}>order.created</option>
+            <option value="order.approved" {{if eq (index .Filter "action") "order.approved"}}selected{{end}}>order.approved</option>
+            <option value="order.rejected" {{if eq (index .Filter "action") "order.rejected"}}selected{{end}}>order.rejected</option>
+            <option value="order.deployed" {{if eq (index .Filter "action") "order.deployed"}}selected{{end}}>order.deployed</option>
+            <option value="order.failed" {{if eq (index .Filter "action") "order.failed"}}selected{{end}}>order.failed</option>
+            <option value="infra.decommissioned" {{if eq (index .Filter "action") "infra.decommissioned"}}selected{{end}}>infra.decommissioned</option>
+            <option value="config.changed" {{if eq (index .Filter "action") "config.changed"}}selected{{end}}>config.changed</option>
+        </select>
+    </div>
+    <div class="ds-field">
+        <label for="audit-from" class="ds-label-xs">{{t "audit.filter_from" $.Lang}}</label>
+        <input id="audit-from" type="date" name="from" class="ds-input-xs w-36"
+               value="{{index .Filter "from"}}" />
+    </div>
+    <div class="ds-field">
+        <label for="audit-to" class="ds-label-xs">{{t "audit.filter_to" $.Lang}}</label>
+        <input id="audit-to" type="date" name="to" class="ds-input-xs w-36"
+               value="{{index .Filter "to"}}" />
+    </div>
+    <button type="submit" class="ds-btn-sm ds-btn-primary">{{t "audit.apply_filter" $.Lang}}</button>
+    <a href="/audit" class="ds-btn-sm ds-btn-ghost">{{t "audit.reset_filter" $.Lang}}</a>
+    {{end}}
+</form>
+
+{{with .Data}}
+{{if .Entries}}
+<div class="overflow-x-auto">
+    <table class="ds-table">
+        <thead>
+            <tr>
+                <th>{{t "audit.timestamp" $.Lang}}</th>
+                <th>{{t "audit.action" $.Lang}}</th>
+                <th>{{t "audit.entity" $.Lang}}</th>
+                <th>{{t "audit.user" $.Lang}}</th>
+                <th>{{t "audit.details" $.Lang}}</th>
+            </tr>
+        </thead>
+        <tbody>
+        {{range .Entries}}
+        <tr>
+            <td class="text-xs text-slate-500 whitespace-nowrap">{{.CreatedAt.Format "02.01.2006 15:04:05"}}</td>
+            <td class="font-mono text-xs">{{.Action}}</td>
+            <td class="font-mono text-xs">{{.EntityID}}</td>
+            <td class="text-xs">
+                {{$name := index $.Data.UserNames .UserID}}
+                {{if $name}}{{$name}}{{else}}<span class="text-slate-300 font-mono">ID {{.UserID}}</span>{{end}}
+            </td>
+            <td class="text-xs text-slate-500">{{.Details}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+
+<!-- Pagination -->
+<div class="flex items-center justify-between mt-4">
+    <p class="text-xs text-slate-400">
+        {{.TotalCount}} Einträge gesamt &mdash; Seite {{.Page}} von {{.TotalPages}}
+    </p>
+    <div class="flex gap-1">
+        {{if gt .Page 1}}
+        <a href="/audit?{{.FilterQuery}}&page={{sub1 .Page}}" class="ds-btn-xs ds-btn-ghost">«</a>
+        {{else}}
+        <span class="ds-btn-xs ds-btn-ghost opacity-50 cursor-not-allowed">«</span>
+        {{end}}
+        <span class="inline-flex items-center justify-center px-2 py-1 text-xs font-medium rounded-md bg-[var(--bs)] text-gray-900">{{.Page}}</span>
+        {{if lt .Page .TotalPages}}
+        <a href="/audit?{{.FilterQuery}}&page={{add1 .Page}}" class="ds-btn-xs ds-btn-ghost">»</a>
+        {{else}}
+        <span class="ds-btn-xs ds-btn-ghost opacity-50 cursor-not-allowed">»</span>
+        {{end}}
+    </div>
+</div>
+{{else}}
+<div class="text-center py-16 text-slate-400">{{t "audit.empty" $.Lang}}</div>
+{{end}}
+{{end}}
+{{end}}

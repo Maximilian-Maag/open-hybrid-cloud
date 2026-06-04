@@ -1,0 +1,46 @@
+{{define "title"}}{{t "project.edit_title" .Lang}}{{end}}
+{{define "content"}}
+{{with .Data}}
+<div class="mb-4">
+    <a href="/projects" class="ds-btn-sm ds-btn-ghost">{{t "common.back" $.Lang}}</a>
+</div>
+<h2 class="text-2xl font-bold mb-6">{{t "project.edit_title" $.Lang}}</h2>
+
+<form method="POST" action="/projects/{{.Project.ID}}" class="max-w-lg space-y-4">
+    <div class="ds-field">
+        <label for="edit-proj-name" class="ds-label">{{t "common.name" $.Lang}} <span class="text-red-600" aria-hidden="true">*</span></label>
+        <input id="edit-proj-name" type="text" name="name" class="ds-input" value="{{.Project.Name}}" required aria-required="true" />
+    </div>
+    <div class="ds-field">
+        <label for="edit-proj-desc" class="ds-label">{{t "common.description" $.Lang}}</label>
+        <textarea id="edit-proj-desc" name="description" class="ds-textarea" rows="3">{{.Project.Description}}</textarea>
+    </div>
+    {{if .CostCenters}}
+    <div class="ds-field">
+        <label for="edit-proj-cc" class="ds-label">{{t "project.cost_center" $.Lang}}</label>
+        <select id="edit-proj-cc" name="cost_center_id" class="ds-select">
+            <option value="">{{t "project.none_cc" $.Lang}}</option>
+            {{range .CostCenters}}
+            {{if .Active}}
+            <option value="{{.ID}}" {{if eq .ID $.Project.CostCenterID}}selected{{end}}>{{.Code}} — {{.Name}}</option>
+            {{end}}
+            {{end}}
+        </select>
+    </div>
+    {{end}}
+    <div class="flex gap-3">
+        <button type="submit" class="ds-btn-md ds-btn-primary">{{t "common.save" $.Lang}}</button>
+        <a href="/projects" class="ds-btn-md ds-btn-ghost">{{t "common.cancel" $.Lang}}</a>
+    </div>
+    {{if $.Session}}
+    {{if or (eq $.Session.Role "shop_admin") (eq $.Session.Role "admin") (and (eq $.Session.Role "project_leader") (eq .Project.OwnerID $.Session.UserID))}}
+    <div class="mt-4">
+        <form method="POST" action="/projects/{{.Project.ID}}/delete" onsubmit="return confirm('{{t "admin.confirm_delete" $.Lang}}')">
+            <button type="submit" class="ds-btn-md ds-btn-ghost text-red-600">{{t "common.delete" $.Lang}}</button>
+        </form>
+    </div>
+    {{end}}
+    {{end}}
+</form>
+{{end}}
+{{end}}

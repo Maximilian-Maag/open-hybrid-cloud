@@ -1,0 +1,64 @@
+{{define "title"}}{{t "approvals.order" .Lang}} #{{with .Data}}{{.Order.ID}}{{end}}{{end}}
+{{define "content"}}
+{{with .Data}}
+<div class="mb-4">
+    <a href="/orders" class="ds-btn-sm ds-btn-ghost">{{t "order.back" $.Lang}}</a>
+</div>
+
+<div class="flex items-start justify-between mb-6">
+    <div>
+        <h2 class="text-2xl font-bold">{{t "approvals.order" $.Lang}} #{{.Order.ID}}</h2>
+        <p class="text-slate-500 text-sm">{{.Order.CreatedAt.Format "02.01.2006 15:04"}}</p>
+    </div>
+    <span class="ds-badge ds-badge-gray">{{statusLabel $.Lang .Order.Status}}</span>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="ds-card">
+        <div class="ds-card-body">
+            <h3 class="font-semibold mb-3">{{t "common.details" $.Lang}}</h3>
+            <dl class="space-y-2 text-sm">
+                <div class="flex gap-2"><dt class="text-slate-500 w-28">{{t "order.product" $.Lang}}</dt><dd>{{if .Product}}{{.Product.Name}}{{end}}</dd></div>
+                <div class="flex gap-2"><dt class="text-slate-500 w-28">{{t "order.env" $.Lang}}</dt><dd>{{if .Env}}{{.Env.Name}}{{end}}</dd></div>
+                <div class="flex gap-2"><dt class="text-slate-500 w-28">{{t "order.project" $.Lang}}</dt><dd>{{if .Project}}{{.Project.Name}}{{end}}</dd></div>
+                {{if .Order.RejectionNote}}
+                <div class="flex gap-2"><dt class="text-red-600 w-28">{{t "order.rejection" $.Lang}}</dt><dd class="text-red-600">{{.Order.RejectionNote}}</dd></div>
+                {{end}}
+            </dl>
+        </div>
+    </div>
+
+    {{if .Order.Parameters}}
+    <div class="ds-card">
+        <div class="ds-card-body">
+            <h3 class="font-semibold mb-3">{{t "order.parameters" $.Lang}}</h3>
+            <dl class="space-y-1 text-sm">
+                {{range $k, $v := .Order.Parameters}}
+                <div class="flex gap-2">
+                    <dt class="font-mono text-xs text-slate-500 w-36 truncate">{{$k}}</dt>
+                    <dd class="font-mono text-xs">{{$v}}</dd>
+                </div>
+                {{end}}
+            </dl>
+        </div>
+    </div>
+    {{end}}
+</div>
+
+{{if .Infra}}{{if .Infra.Outputs}}
+<div class="ds-card border-emerald-200 mt-4">
+    <div class="ds-card-body">
+        <h3 class="font-semibold mb-3 text-emerald-700">{{t "order.outputs" $.Lang}}</h3>
+        <dl class="space-y-1 text-sm">
+            {{range $k, $v := .Infra.Outputs}}
+            <div class="flex gap-2">
+                <dt class="font-mono text-xs text-slate-500 w-36 truncate">{{$k}}</dt>
+                <dd class="font-mono text-xs">{{$v}}</dd>
+            </div>
+            {{end}}
+        </dl>
+    </div>
+</div>
+{{end}}{{end}}
+{{end}}
+{{end}}

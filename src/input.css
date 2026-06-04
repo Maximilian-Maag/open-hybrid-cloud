@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design system foundation for templ-based pages.
+ * Complements Tailwind utilities used in .templ components.
+ */
+
+@layer base {
+  :root {
+    /* Brand colours — overridden at runtime via inline style on <html> */
+    --bp: #131921;
+    --bs: #febd69;
+  }
+
+  *,
+  *::before,
+  *::after {
+    border-color: theme("colors.slate.200");
+  }
+}
+
+@layer components {
+  /*
+   * <details> / <summary> user-menu: hide the browser marker,
+   * keep a clean arrow indicator via CSS only.
+   */
+  details > summary {
+    list-style: none;
+  }
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /*
+   * Subtle focus ring for interactive elements inside the brand header.
+   * The ring colour matches --bs so it stays on-brand.
+   */
+  .focus-brand:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bs);
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────────────────── */
+
+  .ds-btn {
+    @apply inline-flex items-center justify-center gap-1.5 font-medium rounded-md transition-all
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .ds-btn-xs  { @apply ds-btn px-2 py-1 text-xs; }
+  .ds-btn-sm  { @apply ds-btn px-3 py-1.5 text-sm; }
+  .ds-btn-md  { @apply ds-btn px-4 py-2 text-sm; }
+
+  .ds-btn-primary {
+    @apply bg-[var(--bs)] text-gray-900 hover:brightness-95 focus-visible:ring-[var(--bs)];
+  }
+  .ds-btn-secondary {
+    @apply bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 focus-visible:ring-[var(--bs)];
+  }
+  .ds-btn-ghost {
+    @apply text-slate-600 hover:bg-slate-100 focus-visible:ring-[var(--bs)];
+  }
+  .ds-btn-danger {
+    @apply text-red-600 hover:bg-red-50 focus-visible:ring-red-300;
+  }
+  .ds-btn-danger-outline {
+    @apply text-red-600 border border-red-300 hover:bg-red-50 focus-visible:ring-red-300;
+  }
+  .ds-btn-success {
+    @apply bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-300;
+  }
+  .ds-btn-warning {
+    @apply bg-amber-500 text-white hover:bg-amber-600 focus-visible:ring-amber-300;
+  }
+
+  /* ── Form fields ─────────────────────────────────────────────────────── */
+
+  .ds-field { @apply space-y-1; }
+
+  .ds-label    { @apply block text-sm font-medium text-slate-700; }
+  .ds-label-xs { @apply block text-xs font-medium text-slate-600; }
+
+  .ds-input {
+    @apply block w-full rounded-md border border-slate-200 bg-white px-3 py-1.5
+           text-sm text-slate-900 placeholder:text-slate-400 shadow-xs
+           focus:outline-none focus:ring-2 focus:ring-[var(--bs)] focus:border-[var(--bs)]
+           disabled:bg-slate-50 disabled:text-slate-400;
+  }
+  .ds-input-xs {
+    @apply block w-full rounded-md border border-slate-200 bg-white px-2 py-1
+           text-xs text-slate-900 placeholder:text-slate-400
+           focus:outline-none focus:ring-2 focus:ring-[var(--bs)] focus:border-[var(--bs)];
+  }
+  .ds-textarea  { @apply ds-input resize-y; }
+  .ds-select    { @apply ds-input; }
+  .ds-select-xs { @apply ds-input-xs; }
+
+  .ds-checkbox {
+    @apply h-4 w-4 rounded border-slate-300 text-[var(--bs)] focus:ring-[var(--bs)];
+  }
+
+  .ds-file-input {
+    @apply block w-full text-sm text-slate-600 border border-slate-200 rounded-md p-1
+           file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0
+           file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700
+           hover:file:bg-slate-200;
+  }
+
+  /* ── Cards ───────────────────────────────────────────────────────────── */
+
+  .ds-card      { @apply bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden; }
+  .ds-card-body { @apply p-5; }
+
+  /* ── Badges ──────────────────────────────────────────────────────────── */
+
+  .ds-badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  .ds-badge-gray   { @apply ds-badge bg-slate-100 text-slate-600 ring-1 ring-slate-500/20; }
+  .ds-badge-green  { @apply ds-badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20; }
+  .ds-badge-red    { @apply ds-badge bg-red-50 text-red-700 ring-1 ring-red-600/20; }
+  .ds-badge-yellow { @apply ds-badge bg-amber-50 text-amber-700 ring-1 ring-amber-600/20; }
+  .ds-badge-blue   { @apply ds-badge bg-blue-50 text-blue-700 ring-1 ring-blue-600/20; }
+
+  /* ── Alerts ──────────────────────────────────────────────────────────── */
+
+  .ds-alert         { @apply flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium border; }
+  .ds-alert-error   { @apply ds-alert bg-red-50 text-red-800 border-red-200; }
+  .ds-alert-warning { @apply ds-alert bg-amber-50 text-amber-800 border-amber-200; }
+  .ds-alert-info    { @apply ds-alert bg-blue-50 text-blue-800 border-blue-200; }
+
+  /* ── Table ───────────────────────────────────────────────────────────── */
+
+  .ds-table { @apply w-full text-sm text-left; }
+  .ds-table thead th {
+    @apply px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide
+           border-b border-slate-200 bg-slate-50;
+  }
+  .ds-table tbody td { @apply px-3 py-2.5 border-b border-slate-100; }
+  .ds-table tbody tr:last-child td { @apply border-b-0; }
+  .ds-table tbody tr { @apply hover:bg-slate-50 transition-colors; }
+}

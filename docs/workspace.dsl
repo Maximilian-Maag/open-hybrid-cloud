@@ -13,7 +13,7 @@ workspace "Infra-Webshop" "Self-Service Portal zum Bestellen, Verwalten und Deko
 
         webshop = softwaresystem "Infra-Webshop" "Self-Service Portal über das DU Admins und Projektleiter IT Infrastruktur bestellen, verwalten und dekommissionieren können." {
 
-            app = container "Webshop" "Go-Server der HTML-Templates serverseitig rendert und via HTMX als Fragmente ausliefert. Enthält UI, Geschäftslogik, GitLab-Integration und alle Hintergrundprozesse in einem stateless Container." "Go / HTMX / Tailwind / DaisyUI" {
+            app = container "Webshop" "Go-Server der HTML-Templates serverseitig rendert und via HTMX als Fragmente ausliefert. Enthält UI, Geschäftslogik, GitLab-Integration und alle Hintergrundprozesse in einem stateless Container." "Go / HTMX / Tailwind CSS" {
 
                 auth = component "Authentifizierung" "OIDC-Login via Entra ID (Authorization Code Flow) für DU Admins und Projektleiter. Lokale Account-Anmeldung für Webshop Admin. Verwaltet Sessions und Rollen in verschlüsseltem HttpOnly-Cookie."
 

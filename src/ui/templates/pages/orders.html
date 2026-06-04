@@ -1,0 +1,43 @@
+{{define "title"}}{{t "orders.title" .Lang}}{{end}}
+{{define "content"}}
+<div class="flex items-center justify-between mb-6">
+    <h2 class="text-2xl font-bold">{{t "orders.title" .Lang}}</h2>
+    <a href="/catalog" class="ds-btn-sm ds-btn-primary">{{t "action.new_order" .Lang}}</a>
+</div>
+
+{{with .Data}}
+{{if .Orders}}
+<div class="overflow-x-auto">
+    <table class="ds-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>{{t "common.status" $.Lang}}</th>
+                <th>{{t "common.created" $.Lang}}</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {{range .Orders}}
+        <tr>
+            <td class="font-mono text-sm">{{.ID}}</td>
+            <td>
+                <span class="ds-badge ds-badge-gray">
+                    {{statusLabel $.Lang .Status}}
+                </span>
+            </td>
+            <td class="text-sm text-slate-500">{{.CreatedAt.Format "02.01.2006 15:04"}}</td>
+            <td><a href="/orders/{{.ID}}" class="ds-btn-xs ds-btn-ghost">{{t "common.details" $.Lang}}</a></td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="text-center py-16 text-slate-400">
+    <p>{{t "orders.empty" $.Lang}}</p>
+    <a href="/catalog" class="ds-btn-sm ds-btn-primary mt-4">{{t "action.to_catalog" $.Lang}}</a>
+</div>
+{{end}}
+{{end}}
+{{end}}

@@ -1,0 +1,87 @@
+package comp
+
+// Field wraps a label + input in a consistent vertical stack.
+templ Field(label, name string, required bool) {
+	<div class="space-y-1">
+		<label for={ name } class="block text-sm font-medium text-slate-700">
+			{ label }
+			if required {
+				<span class="text-red-500 ml-0.5">*</span>
+			}
+		</label>
+		{ children... }
+	</div>
+}
+
+// inputBase returns the common class string for text-like inputs.
+func inputBase() string {
+	return "block w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 " +
+		"placeholder:text-slate-400 shadow-xs " +
+		"focus:outline-none focus:ring-2 focus:ring-[var(--bs)] focus:border-[var(--bs)] " +
+		"disabled:bg-slate-50 disabled:text-slate-400"
+}
+
+// Input renders a plain <input> element.
+templ Input(name, inputType, placeholder, value string, attrs templ.Attributes) {
+	<input
+		id={ name }
+		name={ name }
+		type={ inputType }
+		placeholder={ placeholder }
+		value={ value }
+		class={ inputBase() }
+		{ attrs... }
+	/>
+}
+
+// Textarea renders a <textarea> element.
+templ Textarea(name, placeholder, value string, rows int, attrs templ.Attributes) {
+	<textarea
+		id={ name }
+		name={ name }
+		placeholder={ placeholder }
+		rows={ itoa(rows) }
+		class={ inputBase() + " resize-y" }
+		{ attrs... }
+	>{ value }</textarea>
+}
+
+// Select renders a <select> element. Options are passed as children.
+templ Select(name string, attrs templ.Attributes) {
+	<select
+		id={ name }
+		name={ name }
+		class={ inputBase() }
+		{ attrs... }
+	>
+		{ children... }
+	</select>
+}
+
+// Checkbox renders a labelled checkbox row.
+templ Checkbox(name, label string, checked bool) {
+	<label class="flex items-center gap-2 cursor-pointer select-none">
+		<input
+			type="checkbox"
+			name={ name }
+			class="h-4 w-4 rounded border-slate-300 text-[var(--bs)] focus:ring-[var(--bs)]"
+			if checked {
+				checked
+			}
+		/>
+		<span class="text-sm text-slate-700">{ label }</span>
+	</label>
+}
+
+// itoa converts an int to string for templ attribute use.
+func itoa(n int) string {
+	if n <= 0 {
+		return "3"
+	}
+	s := ""
+	for n > 0 {
+		s = string(rune('0'+n%10)) + s
+		n /= 10
+	}
+	return s
+}

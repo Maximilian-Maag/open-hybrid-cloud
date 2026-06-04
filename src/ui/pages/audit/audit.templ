@@ -1,0 +1,137 @@
+package audit
+
+import (
+	"fmt"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
+)
+
+templ AuditLog(vd view.AuditView) {
+	@comp.Layout(vd.PageData) {
+		<div class="mb-6 flex items-start justify-between">
+			<div>
+				<h1 class="text-2xl font-bold text-slate-900">{ i18n.T("audit.title", vd.Lang) }</h1>
+				<p class="text-sm text-slate-400 mt-1">{ i18n.T("audit.subtitle", vd.Lang) }</p>
+			</div>
+			<div class="flex gap-2">
+				@comp.BtnLink(i18n.T("audit.export_csv", vd.Lang), "/audit/export?format=csv", comp.VSecondary, comp.SzSM)
+				@comp.BtnLink(i18n.T("audit.export_pdf", vd.Lang), "/audit/export?format=pdf", comp.VSecondary, comp.SzSM)
+			</div>
+		</div>
+		<!-- Filter form -->
+		<form method="GET" action="/audit" class="flex flex-wrap gap-3 items-end mb-6">
+			<div class="space-y-1">
+				<label class="block text-xs text-slate-500">{ i18n.T("audit.filter_user", vd.Lang) }</label>
+				<select name="user_id" class="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[var(--bs)]">
+					<option value="">{ i18n.T("audit.all_users", vd.Lang) }</option>
+					for _, u := range vd.Users {
+						if fmt.Sprint(u.ID) == vd.Filter["user_id"] {
+							<option value={ fmt.Sprint(u.ID) } selected>{ u.Name }</option>
+						} else {
+							<option value={ fmt.Sprint(u.ID) }>{ u.Name }</option>
+						}
+					}
+				</select>
+			</div>
+			<div class="space-y-1">
+				<label class="block text-xs text-slate-500">{ i18n.T("audit.filter_action", vd.Lang) }</label>
+				<select name="action" class="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[var(--bs)]">
+					<option value="">{ i18n.T("audit.all_actions", vd.Lang) }</option>
+					for _, action := range auditActions() {
+						if vd.Filter["action"] == action {
+							<option value={ action } selected>{ action }</option>
+						} else {
+							<option value={ action }>{ action }</option>
+						}
+					}
+				</select>
+			</div>
+			<div class="space-y-1">
+				<label class="block text-xs text-slate-500">{ i18n.T("audit.filter_from", vd.Lang) }</label>
+				<input type="date" name="from" value={ vd.Filter["from"] }
+					class="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[var(--bs)]"/>
+			</div>
+			<div class="space-y-1">
+				<label class="block text-xs text-slate-500">{ i18n.T("audit.filter_to", vd.Lang) }</label>
+				<input type="date" name="to" value={ vd.Filter["to"] }
+					class="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[var(--bs)]"/>
+			</div>
+			@comp.Btn(i18n.T("audit.apply_filter", vd.Lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
+			@comp.BtnLink(i18n.T("audit.reset_filter", vd.Lang), "/audit", comp.VGhost, comp.SzSM)
+		</form>
+		if len(vd.Entries) == 0 {
+			@comp.Card() {
+				@comp.CardBody() {
+					@comp.EmptyState(i18n.T("audit.empty", vd.Lang))
+				}
+			}
+		} else {
+			@comp.Card() {
+				<table class="w-full text-xs">
+					<thead>
+						<tr class="border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wide">
+							<th class="px-4 py-3 text-left font-medium">{ i18n.T("audit.timestamp", vd.Lang) }</th>
+							<th class="px-4 py-3 text-left font-medium">{ i18n.T("audit.action", vd.Lang) }</th>
+							<th class="px-4 py-3 text-left font-medium">{ i18n.T("audit.entity", vd.Lang) }</th>
+							<th class="px-4 py-3 text-left font-medium">{ i18n.T("audit.user", vd.Lang) }</th>
+							<th class="px-4 py-3 text-left font-medium">{ i18n.T("audit.details", vd.Lang) }</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-slate-50">
+						for _, e := range vd.Entries {
+							@auditRow(e, vd.UserNames)
+						}
+					</tbody>
+				</table>
+			}
+			<div class="flex items-center justify-between mt-4">
+				<p class="text-xs text-slate-400">
+					{ fmt.Sprint(vd.TotalCount) } { i18n.T("audit.total_entries", vd.Lang) } — { i18n.T("audit.page", vd.Lang) } { fmt.Sprint(vd.Page) } / { fmt.Sprint(vd.TotalPages) }
+				</p>
+				<div class="flex gap-1">
+					if vd.Page > 1 {
+						@comp.BtnLink("«", "/audit?"+vd.FilterQuery+"&page="+fmt.Sprint(vd.Page-1), comp.VSecondary, comp.SzXS)
+					} else {
+						<button class={ comp.BtnClass(comp.VSecondary, comp.SzXS) } disabled>«</button>
+					}
+					<span class="inline-flex items-center px-2 py-1 text-xs font-medium text-slate-700 bg-slate-100 rounded-md">{ fmt.Sprint(vd.Page) }</span>
+					if vd.Page < vd.TotalPages {
+						@comp.BtnLink("»", "/audit?"+vd.FilterQuery+"&page="+fmt.Sprint(vd.Page+1), comp.VSecondary, comp.SzXS)
+					} else {
+						<button class={ comp.BtnClass(comp.VSecondary, comp.SzXS) } disabled>»</button>
+					}
+				</div>
+			</div>
+		}
+	}
+}
+
+templ auditRow(e model.AuditEntry, userNames map[int64]string) {
+	<tr class="hover:bg-slate-50/40">
+		<td class="px-4 py-2.5 text-slate-400 whitespace-nowrap">{ e.CreatedAt.Format("02.01.2006 15:04:05") }</td>
+		<td class="px-4 py-2.5 font-mono text-slate-700">{ string(e.Action) }</td>
+		<td class="px-4 py-2.5 font-mono text-slate-500">{ fmt.Sprint(e.EntityID) }</td>
+		<td class="px-4 py-2.5">
+			if name, ok := userNames[e.UserID]; ok && name != "" {
+				{ name }
+			} else {
+				<span class="text-slate-300 font-mono">ID { fmt.Sprint(e.UserID) }</span>
+			}
+		</td>
+		<td class="px-4 py-2.5 text-slate-400">{ e.Details }</td>
+	</tr>
+}
+
+func auditActions() []string {
+	return []string{
+		"order.created",
+		"order.approved",
+		"order.rejected",
+		"order.deployed",
+		"order.failed",
+		"infra.decommissioned",
+		"config.changed",
+	}
+}

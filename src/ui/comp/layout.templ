@@ -1,0 +1,188 @@
+package comp
+
+import (
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"strings"
+)
+
+// brandStyle injects CSS custom properties for the primary / secondary brand
+// colours. These drive all coloured surfaces through var(--bp) / var(--bs).
+func brandStyle(b view.Brand) templ.SafeCSS {
+	return templ.SafeCSS("--bp:" + b.PrimaryColor + ";--bs:" + b.SecondaryColor)
+}
+
+func navLinkClass(current, href string) string {
+	active := current == href || (href != "/" && strings.HasPrefix(current, href))
+	base := "px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap "
+	if active {
+		return base + "bg-white/15 text-white"
+	}
+	return base + "text-white/75 hover:text-white hover:bg-white/10"
+}
+
+// Layout is the full-page shell: head, header, nav, flash, main, footer.
+// Page content is passed through the children slot.
+templ Layout(pd view.PageData) {
+	<!DOCTYPE html>
+	<html lang={ pd.Lang } style={ brandStyle(pd.Brand) }>
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>{ pd.Brand.Name } — { pd.Brand.Subtitle }</title>
+		<link rel="stylesheet" href="/static/css/style.css"/>
+		<script src="https://unpkg.com/htmx.org@2.0.3/dist/htmx.min.js" defer></script>
+	</head>
+	<body class="bg-slate-50 min-h-screen flex flex-col text-slate-900 antialiased">
+		if pd.Session != nil {
+			@layoutHeader(pd)
+			@layoutNav(pd)
+		}
+		<main class="flex-1">
+			<div class="max-w-screen-2xl mx-auto px-4 py-6">
+				<div id="flash-container" class="mb-5">
+					if pd.Flash != nil {
+						@FlashBanner(pd.Flash.Kind, pd.Flash.Message)
+					}
+				</div>
+				{ children... }
+			</div>
+		</main>
+		if pd.Session != nil {
+			@layoutFooter(pd)
+		}
+	</body>
+	</html>
+}
+
+templ layoutHeader(pd view.PageData) {
+	<header class="sticky top-0 z-50" style="background-color:var(--bp)">
+		<div class="max-w-screen-2xl mx-auto px-4 h-14 flex items-center gap-4">
+			<!-- Brand -->
+			<a href="/" class="flex items-center gap-2 shrink-0 mr-2">
+				if pd.Brand.HasLogo {
+					<img src="/branding/logo" alt={ pd.Brand.Name } class="h-8 max-w-[120px] object-contain"/>
+				} else {
+					<span class="text-white font-bold text-lg tracking-tight">{ pd.Brand.Name }</span>
+				}
+			</a>
+			<!-- Search -->
+			<div class="flex-1 max-w-xl">
+				<form method="GET" action="/catalog" class="flex items-center bg-white/10 border border-white/20 rounded-lg overflow-hidden">
+					<input
+						type="text"
+						name="q"
+						value={ pd.SearchQuery }
+						placeholder="Produkte suchen …"
+						class="flex-1 bg-transparent px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none"
+					/>
+					<button type="submit" aria-label="Suchen" class="px-3 text-white/60 hover:text-white transition-colors">
+						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+						</svg>
+					</button>
+				</form>
+			</div>
+			<!-- Right controls -->
+			<div class="ml-auto flex items-center gap-3">
+				@userMenu(pd)
+				@langSwitcher(pd)
+			</div>
+		</div>
+	</header>
+}
+
+// userMenu uses a native <details> element — no JavaScript required.
+templ userMenu(pd view.PageData) {
+	<details class="relative group">
+		<summary class="list-none cursor-pointer select-none flex flex-col items-end leading-tight text-white/80 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--bs)] rounded">
+			<span class="text-xs opacity-70">{ pd.Session.Name }</span>
+			<span class="text-sm font-semibold">Meine Bestellungen</span>
+		</summary>
+		<div class="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1">
+			<a href="/orders" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Bestellungen</a>
+			<a href="/projects" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Projekte</a>
+			if pd.Session.Role == "admin" || pd.Session.Role == "shop_admin" {
+				<hr class="my-1 border-slate-100"/>
+				<a href="/approvals" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Genehmigungen</a>
+				<a href="/audit" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Audit</a>
+			}
+			if pd.Session.Role == "shop_admin" {
+				<hr class="my-1 border-slate-100"/>
+				<a href="/admin" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Admin</a>
+			}
+			<hr class="my-1 border-slate-100"/>
+			<a href="/settings/profile" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Profil</a>
+			<form method="POST" action="/logout" class="px-4 py-1">
+				<button type="submit" class="text-sm text-slate-700 hover:text-red-600 w-full text-left transition-colors">Abmelden</button>
+			</form>
+		</div>
+	</details>
+}
+
+templ langSwitcher(pd view.PageData) {
+	<details class="relative">
+		<summary class="list-none cursor-pointer select-none flex items-center gap-1 text-white/80 hover:text-white text-xs font-medium border border-white/20 rounded-md px-2 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--bs)] transition-colors">
+			<svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/>
+			</svg>
+			{ strings.ToUpper(pd.Lang) }
+		</summary>
+		<div class="absolute right-0 top-full mt-2 z-50 bg-white rounded-xl shadow-xl border border-slate-200 p-3 w-72">
+			<div class="grid grid-cols-3 gap-1">
+				for _, l := range pd.SupportedLangs {
+					<form method="POST" action="/lang">
+						<input type="hidden" name="lang" value={ l }/>
+						<button type="submit" class={ langBtnClass(l == pd.Lang) }>
+							<span class="font-bold text-xs">{ strings.ToUpper(l) }</span>
+							<span class="block text-[10px] leading-tight truncate">{ i18n.LanguageName(l) }</span>
+						</button>
+					</form>
+				}
+			</div>
+		</div>
+	</details>
+}
+
+func langBtnClass(active bool) string {
+	base := "w-full flex flex-col items-center rounded-lg px-1 py-2 transition-colors text-center"
+	if active {
+		return base + " bg-[var(--bs)] text-gray-900"
+	}
+	return base + " text-slate-600 hover:bg-slate-50"
+}
+
+templ layoutNav(pd view.PageData) {
+	<div style="background-color:var(--bp)" class="border-t border-white/10">
+		<nav class="max-w-screen-2xl mx-auto px-4 py-1 flex items-center gap-0.5 overflow-x-auto">
+			<a href="/" class={ navLinkClass(pd.Path, "/") }>Start</a>
+			<a href="/catalog" class={ navLinkClass(pd.Path, "/catalog") }>Katalog</a>
+			<a href="/orders" class={ navLinkClass(pd.Path, "/orders") }>Bestellungen</a>
+			<a href="/projects" class={ navLinkClass(pd.Path, "/projects") }>Projekte</a>
+			<a href="/infrastructure" class={ navLinkClass(pd.Path, "/infrastructure") }>Infrastruktur</a>
+			if pd.Session != nil && (pd.Session.Role == "admin" || pd.Session.Role == "shop_admin") {
+				<a href="/approvals" class={ navLinkClass(pd.Path, "/approvals") }>Genehmigungen</a>
+				<a href="/audit" class={ navLinkClass(pd.Path, "/audit") }>Audit</a>
+			}
+			if pd.Session != nil && pd.Session.Role == "shop_admin" {
+				<a href="/admin" class={ navLinkClass(pd.Path, "/admin") }>Admin</a>
+			}
+		</nav>
+	</div>
+}
+
+templ layoutFooter(pd view.PageData) {
+	<footer class="mt-10 border-t border-white/10" style="background-color:var(--bp)">
+		<div class="max-w-screen-2xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+			<span class="text-white/50 text-xs">© { pd.Brand.Name } — { pd.Brand.Subtitle }</span>
+			<div class="flex gap-4">
+				<a href="/catalog" class="text-white/60 text-xs hover:text-white transition-colors">Katalog</a>
+				<a href="/orders" class="text-white/60 text-xs hover:text-white transition-colors">Bestellungen</a>
+				<a href="/projects" class="text-white/60 text-xs hover:text-white transition-colors">Projekte</a>
+				if pd.Brand.ImprintText != "" {
+					<a href="/impressum" class="text-white/60 text-xs hover:text-white transition-colors">Impressum</a>
+				}
+			</div>
+		</div>
+	</footer>
+}

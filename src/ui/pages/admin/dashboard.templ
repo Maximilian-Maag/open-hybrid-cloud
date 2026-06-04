@@ -1,0 +1,65 @@
+package admin
+
+import (
+	"fmt"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
+)
+
+templ Dashboard(vd view.AdminDashboardView) {
+	@comp.Layout(vd.PageData) {
+		@comp.PageHeader(i18n.T("admin.title", vd.Lang), "")
+		<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+			@adminStatCard(i18n.T("admin.categories", vd.Lang), fmt.Sprint(vd.CategoryCount), "/admin/categories", i18n.T("admin.manage", vd.Lang))
+			@adminStatCard(i18n.T("admin.products", vd.Lang), fmt.Sprint(vd.ProductCount), "/admin/products", i18n.T("admin.manage", vd.Lang))
+			@adminStatCard(i18n.T("admin.environments", vd.Lang), fmt.Sprint(vd.EnvironmentCount), "/admin/environments", i18n.T("admin.manage", vd.Lang))
+			@adminStatCard(i18n.T("admin.users", vd.Lang), fmt.Sprint(vd.UserCount), "/admin/users", i18n.T("admin.manage", vd.Lang))
+		</div>
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+			@adminNavCard(i18n.T("admin.catalog", vd.Lang), []adminLink{
+				{i18n.T("admin.cat_manage", vd.Lang), "/admin/categories"},
+				{i18n.T("admin.prod_manage", vd.Lang), "/admin/products"},
+				{i18n.T("admin.global_params", vd.Lang), "/admin/parameters"},
+			})
+			@adminNavCard(i18n.T("admin.infra_config", vd.Lang), []adminLink{
+				{i18n.T("admin.gitlab_sources", vd.Lang), "/admin/sources"},
+				{i18n.T("admin.deploy_envs", vd.Lang), "/admin/environments"},
+				{i18n.T("admin.cost_centers", vd.Lang), "/admin/costcenters"},
+			})
+			@adminNavCard(i18n.T("admin.system_config", vd.Lang), []adminLink{
+				{i18n.T("admin.smtp_title", vd.Lang), "/admin/smtp"},
+				{i18n.T("admin.ai_title", vd.Lang), "/admin/ai-config"},
+				{i18n.T("admin.currencies", vd.Lang), "/admin/currencies"},
+				{i18n.T("admin.branding_title", vd.Lang), "/admin/branding"},
+				{i18n.T("admin.users", vd.Lang), "/admin/users"},
+			})
+		</div>
+	}
+}
+
+type adminLink struct {
+	Label string
+	Href  string
+}
+
+templ adminStatCard(label, value, href, linkLabel string) {
+	<div class="bg-white border border-slate-200 rounded-lg p-4">
+		<div class="text-xs text-slate-400 uppercase tracking-wide mb-1">{ label }</div>
+		<div class="text-3xl font-bold text-slate-800">{ value }</div>
+		<a href={ templ.URL(href) } class="text-xs mt-2 inline-block hover:underline" style="color:var(--bp)">{ linkLabel }</a>
+	</div>
+}
+
+templ adminNavCard(title string, links []adminLink) {
+	<div class="bg-white border border-slate-200 rounded-lg p-5">
+		<h3 class="font-semibold text-sm text-slate-700 mb-3">{ title }</h3>
+		<ul class="space-y-2 text-sm">
+			for _, l := range links {
+				<li>
+					<a href={ templ.URL(l.Href) } class="hover:underline" style="color:var(--bp)">{ l.Label }</a>
+				</li>
+			}
+		</ul>
+	</div>
+}

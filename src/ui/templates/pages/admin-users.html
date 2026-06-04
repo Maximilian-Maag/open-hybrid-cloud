@@ -1,0 +1,74 @@
+{{define "title"}}{{t "admin.users" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-4">
+    <a href="/admin" class="ds-btn-sm ds-btn-ghost mb-2">{{t "admin.back" .Lang}}</a>
+    <h2 class="text-2xl font-bold">{{t "admin.users" .Lang}}</h2>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div>
+        {{with .Data}}{{if .Users}}
+        <div class="overflow-x-auto">
+            <table class="ds-table">
+                <thead><tr>
+                    <th>{{t "common.name" $.Lang}}</th>
+                    <th>E-Mail</th>
+                    <th>{{t "admin.role" $.Lang}}</th>
+                    <th>{{t "admin.user_type" $.Lang}}</th>
+                    <th>{{t "admin.status" $.Lang}}</th>
+                    <th></th>
+                </tr></thead>
+                <tbody>
+                {{range .Users}}
+                <tr>
+                    <td>{{.Name}}</td>
+                    <td class="text-sm">{{.Email}}</td>
+                    <td>
+                        {{if eq (printf "%s" .Role) "shop_admin"}}<span class="ds-badge-red">{{t "admin.role_admin" $.Lang}}</span>
+                        {{else if eq (printf "%s" .Role) "admin"}}<span class="ds-badge-yellow">{{t "admin.role_du" $.Lang}}</span>
+                        {{else}}<span class="ds-badge-gray">{{t "admin.role_pl" $.Lang}}</span>{{end}}
+                    </td>
+                    <td class="text-xs text-slate-400">{{if .SSOSub}}{{t "admin.sso" $.Lang}}{{else}}{{t "admin.local" $.Lang}}{{end}}</td>
+                    <td>
+                        {{if .Active}}<span class="ds-badge-green">{{t "admin.active" $.Lang}}</span>
+                        {{else}}<span class="ds-badge-red">{{t "admin.inactive" $.Lang}}</span>{{end}}
+                    </td>
+                    <td><a href="/admin/users/{{.ID}}/edit" class="ds-btn-xs ds-btn-ghost">{{t "common.edit" $.Lang}}</a></td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{end}}{{end}}
+    </div>
+
+    <div class="ds-card">
+        <div class="ds-card-body">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">{{t "admin.new_user" .Lang}}</h3>
+            <form method="POST" action="/admin/users" class="space-y-3">
+                <div class="ds-field">
+                    <label for="new-user-name" class="ds-label">{{t "common.name" .Lang}}</label>
+                    <input id="new-user-name" type="text" name="name" class="ds-input" required />
+                </div>
+                <div class="ds-field">
+                    <label for="new-user-email" class="ds-label">E-Mail</label>
+                    <input id="new-user-email" type="email" name="email" class="ds-input" required />
+                </div>
+                <div class="ds-field">
+                    <label for="new-user-role" class="ds-label">{{t "admin.role" .Lang}}</label>
+                    <select id="new-user-role" name="role" class="ds-select">
+                        <option value="shop_admin">{{t "admin.role_admin" .Lang}}</option>
+                        <option value="admin">{{t "admin.role_du" .Lang}}</option>
+                        <option value="project_leader">{{t "admin.role_pl" .Lang}}</option>
+                    </select>
+                </div>
+                <div class="ds-field">
+                    <label for="new-user-password" class="ds-label">{{t "admin.password" .Lang}}</label>
+                    <input id="new-user-password" type="password" name="password" class="ds-input" required />
+                </div>
+                <button type="submit" class="ds-btn-sm ds-btn-primary">{{t "common.create" .Lang}}</button>
+            </form>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -13,7 +13,7 @@ linters:
 
 issues:
   exclude-rules:
-    - path: tools/
+    - path: src/tools/
       linters:
         - unused
 

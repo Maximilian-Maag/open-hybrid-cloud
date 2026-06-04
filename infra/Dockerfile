@@ -1,0 +1,28 @@
+# Stage 1 — Build CSS
+FROM node:20-alpine AS css-builder
+WORKDIR /build/src
+COPY src/package.json src/package-lock.json* ./
+RUN npm ci --prefer-offline
+COPY src/input.css src/tailwind.config.js ./
+COPY src/ui/comp ./ui/comp
+COPY src/ui/pages ./ui/pages
+COPY src/ui/templates ./ui/templates
+RUN npm run build:css
+
+# Stage 2 — Build Go binary
+FROM golang:1.25-alpine AS go-builder
+WORKDIR /build
+COPY go.mod go.sum* ./
+RUN go mod download
+COPY . .
+COPY --from=css-builder /build/src/ui/static/css/style.css ./src/ui/static/css/style.css
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server ./src/cmd/server
+
+# Stage 3 — Runtime
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+COPY --from=go-builder /build/server .
+EXPOSE 8080
+USER nobody
+ENTRYPOINT ["/app/server"]

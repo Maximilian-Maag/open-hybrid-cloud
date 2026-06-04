@@ -1,0 +1,48 @@
+{{define "title"}}{{t "admin.ai_title" .Lang}}{{end}}
+{{define "content"}}
+<div class="mb-6">
+    <a href="/admin" class="ds-btn-sm ds-btn-ghost mb-2">{{t "admin.back" .Lang}}</a>
+    <h2 class="text-2xl font-bold">{{t "admin.ai_title" .Lang}}</h2>
+    <p class="text-slate-500 text-sm mt-1">{{t "admin.ai_subtitle" .Lang}}</p>
+</div>
+
+<div class="max-w-lg">
+    {{with .Data}}
+    <div class="ds-card">
+        <div class="ds-card-body">
+            <form method="POST" action="/admin/ai-config" class="space-y-4">
+                <div class="ds-field">
+                    <label for="ai-provider" class="ds-label">{{t "admin.ai_provider" $.Lang}}</label>
+                    <select id="ai-provider" name="ai_provider" class="ds-select">
+                        <option value="" {{if eq .AIConfig.AIProvider ""}}selected{{end}}>{{t "admin.ai_disabled" $.Lang}}</option>
+                        <option value="claude" {{if eq .AIConfig.AIProvider "claude"}}selected{{end}}>Claude (Anthropic)</option>
+                        <option value="openai" {{if eq .AIConfig.AIProvider "openai"}}selected{{end}}>OpenAI</option>
+                        <option value="azure_openai" {{if eq .AIConfig.AIProvider "azure_openai"}}selected{{end}}>Azure OpenAI</option>
+                        <option value="ollama" {{if eq .AIConfig.AIProvider "ollama"}}selected{{end}}>Ollama (local)</option>
+                        <option value="localai" {{if eq .AIConfig.AIProvider "localai"}}selected{{end}}>LocalAI (local)</option>
+                    </select>
+                </div>
+                <div class="ds-field">
+                    <label for="ai-endpoint" class="ds-label">{{t "admin.ai_endpoint" $.Lang}}</label>
+                    <input id="ai-endpoint" type="url" name="ai_endpoint" class="ds-input"
+                           value="{{.AIConfig.AIEndpoint}}"
+                           placeholder="{{t "admin.ai_endpoint_hint" $.Lang}}" />
+                </div>
+                <div class="ds-field">
+                    <label for="ai-api-key" class="ds-label">{{t "admin.ai_api_key" $.Lang}}</label>
+                    <input id="ai-api-key" type="password" name="ai_api_key" class="ds-input"
+                           placeholder="{{t "admin.ai_api_key_hint" $.Lang}}" autocomplete="new-password" />
+                </div>
+                <div class="ds-field">
+                    <label for="ai-model" class="ds-label">{{t "admin.ai_model" $.Lang}}</label>
+                    <input id="ai-model" type="text" name="ai_model" class="ds-input"
+                           value="{{.AIConfig.AIModel}}"
+                           placeholder="claude-haiku-4-5-20251001" />
+                </div>
+                <button type="submit" class="ds-btn-sm ds-btn-primary">{{t "common.save" $.Lang}}</button>
+            </form>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}

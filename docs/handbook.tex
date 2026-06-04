@@ -1545,14 +1545,14 @@ docker pull registry.gitlab.example.com/porr-ag/infra-webshop:latest
 
 \item \textbf{Create the environment file.}
 \begin{lstlisting}[style=bash]
-cp deploy/docker-host/.env.example deploy/docker-host/.env
+cp infra/docker-host/.env.example infra/docker-host/.env
 # Edit .env with a text editor; set at minimum:
 #   DATABASE_URL, SESSION_KEY, ADMIN_EMAIL, ADMIN_PASSWORD, BASE_URL
 \end{lstlisting}
 
 \item \textbf{Start PostgreSQL and the application.}
 \begin{lstlisting}[style=bash]
-cd deploy/docker-host
+cd infra/docker-host
 docker compose up -d
 \end{lstlisting}
 
@@ -1571,14 +1571,14 @@ certbot --nginx -d shop.example.com
 
 \textit{Option B — Corporate CA (internal PKI):} Place the signed
 certificate and key at the paths referenced in
-\file{deploy/docker-host/nginx.conf} (see below) and restart Nginx.
+\file{infra/docker-host/nginx.conf} (see below) and restart Nginx.
 
 \item \textbf{Configure Nginx as TLS-terminating reverse proxy.}
 
 Listing~\ref{lst:nginxconf} shows a minimal but production-ready
 Nginx configuration:
 
-\begin{lstlisting}[style=yaml,caption={deploy/docker-host/nginx.conf},label={lst:nginxconf}]
+\begin{lstlisting}[style=yaml,caption={infra/docker-host/nginx.conf},label={lst:nginxconf}]
 server {
     listen 80;
     server_name shop.example.com;
@@ -1689,13 +1689,13 @@ cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
 
 \subsection*{Deployment with Helm}
 
-The repository ships a Helm chart at \file{deploy/helm/infra-webshop/}.
+The repository ships a Helm chart at \file{infra/helm/infra-webshop/}.
 It covers the full deployment in a single command and handles database
 migrations automatically as a pre-install/pre-upgrade hook.
 
 \begin{lstlisting}[style=bash,caption={Helm install with required values},label={lst:helm-install}]
 helm upgrade --install infra-webshop \
-  deploy/helm/infra-webshop \
+  infra/helm/infra-webshop \
   --namespace infra-webshop \
   --create-namespace \
   --set env.databaseUrl="postgres://user:pass@pg.example.com:5432/webshop?sslmode=require" \
@@ -1724,7 +1724,7 @@ env:
 \end{lstlisting}
 
 \begin{lstlisting}[style=bash]
-helm upgrade --install infra-webshop deploy/helm/infra-webshop \
+helm upgrade --install infra-webshop infra/helm/infra-webshop \
   --namespace infra-webshop --create-namespace \
   -f values.production.yaml \
   -f secrets.values.yaml
@@ -3576,10 +3576,10 @@ it.
     \S\ref{sec:branding} \\
   \midrule
   NFA-01.1 & Docker deployment &
-    \file{Dockerfile}, \file{deploy/docker-host/} &
+    \file{Dockerfile}, \file{infra/docker-host/} &
     \S\ref{sec:docker-deploy} \\
   NFA-01.2 & Kubernetes deployment &
-    \file{deploy/k8s/} manifests &
+    \file{infra/helm/infra-webshop/} manifests &
     \S\ref{sec:k8s-deploy} \\
   NFA-01.3 & Single binary (embed.FS) &
     \file{cmd/server/main.go}, \code{//go:embed} directives &

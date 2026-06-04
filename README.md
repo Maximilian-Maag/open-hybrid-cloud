@@ -7,8 +7,7 @@ Self-service portal through which Admins and project managers can order, manage,
 | Layer                 | Technology                               |
 |-----------------------|------------------------------------------|
 | Server                | Go                                       |
-| UI                    | HTMX + Tailwind CSS + DaisyUI            |
-| Client-Side JS        | Alpine.js                                |
+| UI                    | HTMX + Tailwind CSS                      |
 | Localization          | go-i18n (24 EU languages + Russian)      |
 | AI Translation        | Adapter (Claude, OpenAI, Ollama, …)      |
 | Database              | PostgreSQL                               |
@@ -103,7 +102,7 @@ Logged events: order, approval, rejection (with comment), deployment, decommissi
 
 **Go + HTMX** — Server-side rendering, HTML fragments via HTMX. No SPA framework, no client-side state.
 
-**Tailwind CSS + DaisyUI** — Responsive UI. CSS is generated during the Docker build stage via Node.js and embedded via `go:embed`.
+**Tailwind CSS** — Responsive UI with a custom component design system (`ui/comp/`). CSS is generated during the Docker build stage via Node.js and embedded via `go:embed`.
 
 **Single Container** — Go binary serves templates, static assets, and API logic in one container. Stateless, horizontally scalable.
 
@@ -115,46 +114,49 @@ Logged events: order, approval, rejection (with comment), deployment, decommissi
 
 ```
 infra-webshop/
-├── cmd/
-│   ├── server/            # HTTP server entry point
-│   └── migrate/           # Database migration tool
-├── internal/
-│   ├── config/            # Configuration via environment variables
-│   ├── handler/           # HTTP handlers (HTMX endpoints)
-│   ├── service/           # Business logic interfaces
-│   ├── repository/        # Database access interfaces
-│   ├── model/             # Domain types
-│   ├── polling/           # GitLab polling worker (goroutines)
-│   ├── notification/      # Email dispatch
-│   └── audit/             # Audit log
-├── ui/                    # go:embed root (no ../ traversal allowed)
-│   ├── ui.go              # embed.FS declarations
-│   ├── templates/
-│   │   ├── layout.html    # DaisyUI base layout
-│   │   ├── pages/         # Full pages
-│   │   └── partials/      # HTMX HTML fragments
-│   └── static/
-│       └── css/           # Generated Tailwind CSS
-├── deploy/
-│   └── docker-host/
-│       ├── docker-compose.yml   # Production deployment on Docker host
-│       ├── nginx.conf.example   # Nginx configuration template
-│       └── .env.example         # Production environment variables
+├── src/                         # Go + Node source
+│   ├── cmd/
+│   │   ├── server/              # HTTP server entry point
+│   │   └── migrate/             # Database migration tool
+│   ├── internal/
+│   │   ├── config/              # Configuration via environment variables
+│   │   ├── handler/             # HTTP handlers (HTMX endpoints)
+│   │   ├── service/             # Business logic interfaces
+│   │   ├── repository/          # Database access interfaces
+│   │   ├── model/               # Domain types
+│   │   ├── polling/             # GitLab polling worker (goroutines)
+│   │   ├── notification/        # Email dispatch
+│   │   └── audit/               # Audit log
+│   ├── ui/                      # go:embed root
+│   │   ├── ui.go                # embed.FS declarations
+│   │   ├── comp/                # Reusable templ components (design system)
+│   │   ├── pages/               # Templ page templates
+│   │   ├── templates/           # Legacy HTML templates (fallback)
+│   │   └── static/
+│   │       └── css/             # Generated Tailwind CSS
+│   ├── input.css                # Tailwind input file
+│   ├── tailwind.config.js
+│   └── package.json
+├── infra/
+│   ├── Dockerfile
+│   ├── docker-compose.yml       # Local development environment
+│   ├── docker-host/
+│   │   ├── docker-compose.yml   # Production deployment on Docker host
+│   │   ├── nginx.conf.example   # Nginx configuration template
+│   │   └── .env.example         # Production environment variables
+│   └── helm/
+│       └── infra-webshop/       # Helm chart for Kubernetes deployment
 ├── docs/
-│   ├── architecture/
-│   │   └── workspace.dsl        # Structurizr C4 architecture
+│   ├── workspace.dsl            # Structurizr C4 architecture
 │   ├── requirements/
 │   │   └── requirements.md      # Requirements document
 │   └── guides/
 │       ├── webshop-admin.md     # Webshop Admin manual
-│       └── admin.md             # Admin manual
+│       ├── admin.md             # Admin manual
+│       └── gitlab-opentofu-workflow.md
 ├── .env.example                 # Local development
-├── input.css                    # Tailwind input file
-├── tailwind.config.js
-├── package.json
-├── Makefile
-├── Dockerfile
-└── docker-compose.yml           # Local development environment
+├── go.mod
+└── Makefile
 ```
 
 ## Local Development
@@ -287,7 +289,7 @@ Both environments use the same stateless container image from the private Docker
 
 ### Docker Host
 
-Configuration and files are located under `deploy/docker-host/`.
+Configuration and files are located under `infra/docker-host/`.
 
 **Server Prerequisites:**
 - Docker + Docker Compose
@@ -297,8 +299,8 @@ Configuration and files are located under `deploy/docker-host/`.
 **Initial Setup:**
 
 ```bash
-# 1. Clone the repository onto the server or copy the deploy/ folder
-cd deploy/docker-host
+# 1. Clone the repository onto the server or copy the infra/ folder
+cd infra/docker-host
 
 # 2. Configure environment variables
 cp .env.example .env

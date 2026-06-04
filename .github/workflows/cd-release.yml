@@ -42,28 +42,28 @@ jobs:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: amd64
-        run: go build -ldflags="-s -w" -o dist/server-linux-amd64 ./cmd/server
+        run: go build -ldflags="-s -w" -o dist/server-linux-amd64 ./src/cmd/server
 
       - name: Build migrate binary (linux/amd64)
         env:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: amd64
-        run: go build -ldflags="-s -w" -o dist/migrate-linux-amd64 ./cmd/migrate
+        run: go build -ldflags="-s -w" -o dist/migrate-linux-amd64 ./src/cmd/migrate
 
       - name: Build server binary (linux/arm64)
         env:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: arm64
-        run: go build -ldflags="-s -w" -o dist/server-linux-arm64 ./cmd/server
+        run: go build -ldflags="-s -w" -o dist/server-linux-arm64 ./src/cmd/server
 
       - name: Build migrate binary (linux/arm64)
         env:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: arm64
-        run: go build -ldflags="-s -w" -o dist/migrate-linux-arm64 ./cmd/migrate
+        run: go build -ldflags="-s -w" -o dist/migrate-linux-arm64 ./src/cmd/migrate
 
       # ── Docker image ────────────────────────────────────────────────────────
       - name: Set up Docker Buildx

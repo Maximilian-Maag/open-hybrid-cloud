@@ -55,7 +55,7 @@ func AdminCurrencies(vd view.AdminCurrenciesView) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.currencies", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/currencies.templ`, Line: 14, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/currencies.templ`, Line: 14, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -68,7 +68,7 @@ func AdminCurrencies(vd view.AdminCurrenciesView) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.currencies_subtitle", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/currencies.templ`, Line: 15, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/currencies.templ`, Line: 15, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -147,7 +147,7 @@ func AdminCurrencies(vd view.AdminCurrenciesView) templ.Component {
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.currency_code", vd.Lang))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/currencies.templ`, Line: 32, Col: 91}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/currencies.templ`, Line: 32, Col: 91}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
@@ -160,7 +160,7 @@ func AdminCurrencies(vd view.AdminCurrenciesView) templ.Component {
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.rate", vd.Lang))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/currencies.templ`, Line: 33, Col: 83}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/currencies.templ`, Line: 33, Col: 83}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
@@ -178,7 +178,7 @@ func AdminCurrencies(vd view.AdminCurrenciesView) templ.Component {
 						var templ_7745c5c3_Var10 string
 						templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(code)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/currencies.templ`, Line: 39, Col: 75}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/currencies.templ`, Line: 39, Col: 75}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 						if templ_7745c5c3_Err != nil {
@@ -191,7 +191,7 @@ func AdminCurrencies(vd view.AdminCurrenciesView) templ.Component {
 						var templ_7745c5c3_Var11 string
 						templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.6f", rate))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/currencies.templ`, Line: 40, Col: 93}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/currencies.templ`, Line: 40, Col: 93}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 						if templ_7745c5c3_Err != nil {

@@ -56,7 +56,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.back", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 19, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 19, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -69,7 +69,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.branding_title", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 21, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 21, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -82,7 +82,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue("{ primary: '" + vd.Branding.PrimaryColor + "', secondary: '" + vd.Branding.SecondaryColor + "' }")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 27, Col: 110}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 27, Col: 110}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
@@ -95,7 +95,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.primary_color", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 34, Col: 109}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 34, Col: 109}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -108,7 +108,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(vd.Branding.PrimaryColor)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 36, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 36, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 			if templ_7745c5c3_Err != nil {
@@ -121,7 +121,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.secondary_color", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 43, Col: 111}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 43, Col: 111}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -134,7 +134,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(vd.Branding.SecondaryColor)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 45, Col: 104}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 45, Col: 104}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 			if templ_7745c5c3_Err != nil {
@@ -147,7 +147,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.shop_name", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 52, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 52, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -160,7 +160,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(vd.Branding.ShopName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 53, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 53, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 			if templ_7745c5c3_Err != nil {
@@ -173,7 +173,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(vd.Brand.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 53, Col: 100}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 53, Col: 100}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
 			if templ_7745c5c3_Err != nil {
@@ -186,7 +186,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.shop_subtitle", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 58, Col: 109}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 58, Col: 109}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -199,7 +199,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(vd.Branding.ShopSubtitle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 59, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 59, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 			if templ_7745c5c3_Err != nil {
@@ -212,7 +212,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(vd.Brand.Subtitle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 59, Col: 112}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 59, Col: 112}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 			if templ_7745c5c3_Err != nil {
@@ -225,7 +225,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.upload_logo", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 63, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 63, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -248,7 +248,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.imprint_text", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 75, Col: 108}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 75, Col: 108}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -261,7 +261,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(vd.Branding.ImprintText)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 76, Col: 225}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 76, Col: 225}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -274,7 +274,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.imprint_hint", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 77, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 77, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -287,7 +287,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.save_branding", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 85, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 85, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -300,7 +300,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.preview", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 91, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 91, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -323,7 +323,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(vd.Brand.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 100, Col: 67}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 100, Col: 67}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 				if templ_7745c5c3_Err != nil {
@@ -341,7 +341,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("search.placeholder", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 104, Col: 83}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 104, Col: 83}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -354,7 +354,7 @@ func AdminBranding(vd view.AdminBrandingView) templ.Component {
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(vd.Brand.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/branding.templ`, Line: 145, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/branding.templ`, Line: 145, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {

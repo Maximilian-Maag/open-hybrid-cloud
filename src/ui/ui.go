@@ -1,4 +1,4 @@
-// Package ui enthält die eingebetteten Templates und statischen Assets.
+// Package ui holds the embedded templates and static assets.
 package ui
 
 import "embed"

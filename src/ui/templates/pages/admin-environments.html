@@ -1,7 +1,7 @@
 {{define "title"}}{{t "admin.deploy_envs" .Lang}}{{end}}
 {{define "content"}}
 <div class="mb-4">
-    <a href="/admin" class="btn btn-ghost btn-sm mb-2">{{t "admin.back" .Lang}}</a>
+    <a href="/admin" class="ds-btn-sm ds-btn-ghost mb-2">{{t "admin.back" .Lang}}</a>
     <h2 class="text-2xl font-bold">{{t "admin.deploy_envs" .Lang}}</h2>
 </div>
 
@@ -10,17 +10,17 @@
         {{with .Data}}{{if .Environments}}
         <div class="space-y-2">
             {{range .Environments}}
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body py-3">
+            <div class="ds-card">
+                <div class="ds-card-body py-3">
                     <div class="flex justify-between items-start">
                         <div>
                             <p class="font-medium">{{.Name}}</p>
-                            <p class="text-xs text-base-content/60">{{.Description}}</p>
-                            <p class="text-xs font-mono text-base-content/40 mt-1">{{.WebhookURL}}</p>
+                            <p class="text-xs text-slate-500">{{.Description}}</p>
+                            <p class="text-xs font-mono text-slate-300 mt-1">{{.WebhookURL}}</p>
                         </div>
                         <form method="POST" action="/admin/environments/{{.ID}}/delete"
                               onsubmit="return confirm('{{t "admin.confirm_delete_env" $.Lang}}')">
-                            <button type="submit" class="btn btn-ghost btn-xs text-error">×</button>
+                            <button type="submit" class="ds-btn-xs ds-btn-danger">×</button>
                         </form>
                     </div>
                 </div>
@@ -28,40 +28,40 @@
             {{end}}
         </div>
         {{else}}
-        <p class="text-base-content/50 text-sm">{{t "admin.no_envs" $.Lang}}</p>
+        <p class="text-slate-400 text-sm">{{t "admin.no_envs" $.Lang}}</p>
         {{end}}{{end}}
     </div>
 
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body">
-            <h3 class="card-title text-base">{{t "admin.new_env" .Lang}}</h3>
+    <div class="ds-card">
+        <div class="ds-card-body">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">{{t "admin.new_env" .Lang}}</h3>
             <form method="POST" action="/admin/environments" class="space-y-3">
-                <div class="form-control">
-                    <label class="label"><span class="label-text text-sm">{{t "common.name" .Lang}}</span></label>
-                    <input type="text" name="name" class="input input-bordered input-sm" required />
+                <div class="ds-field">
+                    <label for="env-name" class="ds-label">{{t "common.name" .Lang}}</label>
+                    <input id="env-name" type="text" name="name" class="ds-input" required />
                 </div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text text-sm">{{t "common.description" .Lang}}</span></label>
-                    <input type="text" name="description" class="input input-bordered input-sm" />
+                <div class="ds-field">
+                    <label for="env-desc" class="ds-label">{{t "common.description" .Lang}}</label>
+                    <input id="env-desc" type="text" name="description" class="ds-input" />
                 </div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text text-sm">{{t "admin.gitlab_source" .Lang}}</span></label>
-                    <select name="gitlab_source_id" class="select select-bordered select-sm" required>
+                <div class="ds-field">
+                    <label for="env-source" class="ds-label">{{t "admin.gitlab_source" .Lang}}</label>
+                    <select id="env-source" name="gitlab_source_id" class="ds-select" required>
                         <option value="">{{t "admin.choose" .Lang}}</option>
                         {{with .Data}}{{range .Sources}}
                         <option value="{{.ID}}">{{.Name}}</option>
                         {{end}}{{end}}
                     </select>
                 </div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text text-sm">{{t "admin.webhook_url" .Lang}}</span></label>
-                    <input type="url" name="webhook_url" class="input input-bordered input-sm" required />
+                <div class="ds-field">
+                    <label for="env-webhook-url" class="ds-label">{{t "admin.webhook_url" .Lang}}</label>
+                    <input id="env-webhook-url" type="url" name="webhook_url" class="ds-input" required />
                 </div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text text-sm">{{t "admin.webhook_token" .Lang}}</span></label>
-                    <input type="password" name="webhook_token" class="input input-bordered input-sm" required />
+                <div class="ds-field">
+                    <label for="env-webhook-token" class="ds-label">{{t "admin.webhook_token" .Lang}}</label>
+                    <input id="env-webhook-token" type="password" name="webhook_token" class="ds-input" required />
                 </div>
-                <button type="submit" class="btn btn-primary btn-sm">{{t "common.create" .Lang}}</button>
+                <button type="submit" class="ds-btn-sm ds-btn-primary">{{t "common.create" .Lang}}</button>
             </form>
         </div>
     </div>

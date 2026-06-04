@@ -2,13 +2,13 @@
 {{define "content"}}
 <div class="mb-6">
     <h2 class="text-2xl font-bold">{{t "infra.title" .Lang}}</h2>
-    <p class="text-base-content/60 text-sm mt-1">{{t "infra.subtitle" .Lang}}</p>
+    <p class="text-slate-500 text-sm mt-1">{{t "infra.subtitle" .Lang}}</p>
 </div>
 
 {{with .Data}}
 {{if .Elements}}
 <div class="overflow-x-auto">
-    <table class="table">
+    <table class="ds-table">
         <thead>
             <tr>
                 <th>#</th>
@@ -20,19 +20,19 @@
         </thead>
         <tbody>
         {{range .Elements}}
-        <tr class="hover">
+        <tr>
             <td class="font-mono text-sm">{{.ID}}</td>
             <td>
-                <span class="badge badge-sm {{statusBadgeClass .Status}}">{{statusLabel $.Lang .Status}}</span>
+                <span class="ds-badge ds-badge-gray">{{statusLabel $.Lang .Status}}</span>
             </td>
-            <td class="text-sm text-base-content/60">{{.DeployedAt.Format "02.01.2006 15:04"}}</td>
-            <td class="text-xs text-base-content/50">{{len .Parameters}}</td>
+            <td class="text-sm text-slate-500">{{.DeployedAt.Format "02.01.2006 15:04"}}</td>
+            <td class="text-xs text-slate-400">{{len .Parameters}}</td>
             <td class="flex gap-1">
-                <a href="/orders/new?from_infra={{.ID}}" class="btn btn-ghost btn-xs">{{t "infra.use_template" $.Lang}}</a>
+                <a href="/orders/new?from_infra={{.ID}}" class="ds-btn-xs ds-btn-ghost">{{t "infra.use_template" $.Lang}}</a>
                 {{if or (eq (printf "%s" .Status) "completed") (eq (printf "%s" .Status) "provisioning")}}
                 <form method="POST" action="/infrastructure/{{.ID}}/decommission"
                       onsubmit="return confirm('{{t "infra.confirm_decomm" $.Lang}}')">
-                    <button type="submit" class="btn btn-warning btn-xs">{{t "action.decomm" $.Lang}}</button>
+                    <button type="submit" class="ds-btn-xs ds-btn-warning">{{t "action.decomm" $.Lang}}</button>
                 </form>
                 {{end}}
             </td>
@@ -42,7 +42,7 @@
     </table>
 </div>
 {{else}}
-<div class="text-center py-16 text-base-content/50">
+<div class="text-center py-16 text-slate-400">
     <p>{{t "infra.empty" $.Lang}}</p>
 </div>
 {{end}}

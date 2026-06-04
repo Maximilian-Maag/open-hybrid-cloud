@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"github.com/porr-ag/infra-webshop/src/internal/i18n"
+	"github.com/porr-ag/infra-webshop/src/internal/model"
 	"github.com/porr-ag/infra-webshop/src/internal/view"
 	"github.com/porr-ag/infra-webshop/src/ui/comp"
 )
@@ -12,64 +13,82 @@ templ AdminCostCenters(vd view.AdminCostCentersView) {
 		@comp.PageHeader(i18n.T("admin.cost_centers", vd.Lang), "/admin")
 		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 			<div>
-				if len(vd.CostCenters) == 0 {
-					<p class="text-sm text-slate-400">{ i18n.T("admin.no_categories", vd.Lang) }</p>
-				} else {
-					@comp.Card() {
-						<table class="w-full text-sm">
-							<thead>
-								<tr class="border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wide">
-									<th class="px-4 py-3 text-left font-medium">Code</th>
-									<th class="px-4 py-3 text-left font-medium">{ i18n.T("common.name", vd.Lang) }</th>
-									<th class="px-4 py-3 text-left font-medium">{ i18n.T("common.status", vd.Lang) }</th>
-									<th class="px-4 py-3"></th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-slate-50">
-								for _, cc := range vd.CostCenters {
-									<tr class="hover:bg-slate-50/60">
-										<td class="px-4 py-3 font-mono text-sm text-slate-700">{ cc.Code }</td>
-										<td class="px-4 py-3 text-slate-800">{ cc.Name }</td>
-										<td class="px-4 py-3">
-											if cc.Active {
-												@comp.Badge(i18n.T("admin.active", vd.Lang), comp.BadgeGreen)
-											} else {
-												@comp.Badge(i18n.T("admin.inactive", vd.Lang), comp.BadgeGray)
-											}
-										</td>
-										<td class="px-4 py-3">
-											if cc.Active {
-												<button
-													class={ comp.BtnClass(comp.VDanger, comp.SzXS) }
-													hx-post={ "/admin/costcenters/" + fmt.Sprint(cc.ID) + "/delete" }
-													hx-confirm={ i18n.T("admin.confirm_deactivate", vd.Lang) }
-													hx-target="body"
-												>
-													{ i18n.T("admin.deactivate", vd.Lang) }
-												</button>
-											}
-										</td>
-									</tr>
-								}
-							</tbody>
-						</table>
-					}
-				}
+				@CostCenterList(vd.CostCenters, vd.Lang)
 			</div>
 			@comp.Card() {
 				@comp.CardHeader(i18n.T("admin.new_costcenter", vd.Lang))
 				@comp.CardBody() {
-					<form method="POST" action="/admin/costcenters" class="space-y-4">
-						@comp.Field("Code", "code", true) {
-							@comp.Input("code", "text", "z.B. 4711", "", templ.Attributes{"required": ""})
-						}
-						@comp.Field(i18n.T("common.name", vd.Lang), "name", true) {
-							@comp.Input("name", "text", "", "", templ.Attributes{"required": ""})
-						}
-						@comp.Btn(i18n.T("common.create", vd.Lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
-					</form>
+					@costCenterCreateForm(vd.Lang)
 				}
 			}
 		</div>
 	}
+}
+
+// CostCenterList is the HTMX-swappable list fragment (id="cc-list").
+templ CostCenterList(ccs []model.CostCenter, lang string) {
+	<div id="cc-list">
+		if len(ccs) == 0 {
+			<p class="text-sm text-slate-400">{ i18n.T("admin.no_categories", lang) }</p>
+		} else {
+			@comp.Card() {
+				<table class="w-full text-sm">
+					<thead>
+						<tr class="border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wide">
+							<th class="px-4 py-3 text-left font-medium">Code</th>
+							<th class="px-4 py-3 text-left font-medium">{ i18n.T("common.name", lang) }</th>
+							<th class="px-4 py-3 text-left font-medium">{ i18n.T("common.status", lang) }</th>
+							<th class="px-4 py-3"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-slate-50">
+						for _, cc := range ccs {
+							<tr class="hover:bg-slate-50/60">
+								<td class="px-4 py-3 font-mono text-sm text-slate-700">{ cc.Code }</td>
+								<td class="px-4 py-3 text-slate-800">{ cc.Name }</td>
+								<td class="px-4 py-3">
+									if cc.Active {
+										@comp.Badge(i18n.T("admin.active", lang), comp.BadgeGreen)
+									} else {
+										@comp.Badge(i18n.T("admin.inactive", lang), comp.BadgeGray)
+									}
+								</td>
+								<td class="px-4 py-3">
+									if cc.Active {
+										<button
+											class={ comp.BtnClass(comp.VDanger, comp.SzXS) }
+											hx-post={ "/admin/costcenters/" + fmt.Sprint(cc.ID) + "/delete" }
+											hx-confirm={ i18n.T("admin.confirm_deactivate", lang) }
+											hx-target="#cc-list"
+											hx-swap="outerHTML"
+										>
+											{ i18n.T("admin.deactivate", lang) }
+										</button>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		}
+	</div>
+}
+
+templ costCenterCreateForm(lang string) {
+	<form
+		hx-post="/admin/costcenters"
+		hx-target="#cc-list"
+		hx-swap="outerHTML"
+		hx-on::after-request="if(event.detail.successful) this.reset()"
+		class="space-y-4"
+	>
+		@comp.Field("Code", "code", true) {
+			@comp.Input("code", "text", "z.B. 4711", "", templ.Attributes{"required": ""})
+		}
+		@comp.Field(i18n.T("common.name", lang), "name", true) {
+			@comp.Input("name", "text", "", "", templ.Attributes{"required": ""})
+		}
+		@comp.Btn(i18n.T("common.create", lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
+	</form>
 }

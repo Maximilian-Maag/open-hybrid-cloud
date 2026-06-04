@@ -1,5 +1,5 @@
-// Package service enthält die Geschäftslogik-Interfaces.
-// Implementierungen werden je Feature in eigenen Dateien angelegt.
+// Package service defines the business logic interfaces.
+// Implementations are organized per feature in separate files.
 package service
 
 import (

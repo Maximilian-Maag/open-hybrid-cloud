@@ -149,7 +149,7 @@ func adminStatCard(label, value, href, linkLabel string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/dashboard.templ`, Line: 48, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/dashboard.templ`, Line: 48, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -162,7 +162,7 @@ func adminStatCard(label, value, href, linkLabel string) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(value)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/dashboard.templ`, Line: 49, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/dashboard.templ`, Line: 49, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -175,7 +175,7 @@ func adminStatCard(label, value, href, linkLabel string) templ.Component {
 		var templ_7745c5c3_Var6 templ.SafeURL
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(href))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/dashboard.templ`, Line: 50, Col: 27}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/dashboard.templ`, Line: 50, Col: 27}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -188,7 +188,7 @@ func adminStatCard(label, value, href, linkLabel string) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(linkLabel)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/dashboard.templ`, Line: 50, Col: 115}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/dashboard.templ`, Line: 50, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -230,7 +230,7 @@ func adminNavCard(title string, links []adminLink) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/dashboard.templ`, Line: 56, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/dashboard.templ`, Line: 56, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -248,7 +248,7 @@ func adminNavCard(title string, links []adminLink) templ.Component {
 			var templ_7745c5c3_Var10 templ.SafeURL
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(l.Href))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/dashboard.templ`, Line: 60, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/dashboard.templ`, Line: 60, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -261,7 +261,7 @@ func adminNavCard(title string, links []adminLink) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(l.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/admin/dashboard.templ`, Line: 60, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/dashboard.templ`, Line: 60, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {

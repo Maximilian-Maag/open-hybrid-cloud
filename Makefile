@@ -9,21 +9,21 @@ GOLANGCI_LINT := $(shell command -v golangci-lint 2>/dev/null || echo $(GOBIN)/g
 help:
 	@echo "Usage: make <target>"
 	@echo ""
-	@echo "  build        templ + Tailwind-CSS + Go-Binaries kompilieren"
-	@echo "  run          Entwicklungsserver starten (benötigt .env)"
-	@echo "  migrate      Datenbankmigrationen ausführen"
-	@echo "  css          Tailwind-CSS einmalig generieren"
-	@echo "  css-watch    Tailwind-CSS im Watch-Modus"
-	@echo "  templ        templ-Dateien zu Go kompilieren"
-	@echo "  test         Tests ausführen"
-	@echo "  vet          go vet ausführen"
-	@echo "  lint         golangci-lint ausführen"
-	@echo "  docker-build Docker-Image bauen"
-	@echo "  dev          Infra-Container + Server starten (benötigt .env)"
-	@echo "  dev-down     Infra-Container stoppen"
-	@echo "  docs         Technical Handbook als PDF kompilieren"
-	@echo "  docs-clean   LaTeX-Hilfsdateien entfernen"
-	@echo "  clean        Build-Artefakte entfernen"
+	@echo "  build        compile templ + Tailwind CSS + Go binaries"
+	@echo "  run          start the development server (requires .env)"
+	@echo "  migrate      run database migrations"
+	@echo "  css          generate Tailwind CSS once"
+	@echo "  css-watch    generate Tailwind CSS in watch mode"
+	@echo "  templ        compile templ files to Go"
+	@echo "  test         run tests"
+	@echo "  vet          run go vet"
+	@echo "  lint         run golangci-lint"
+	@echo "  docker-build build Docker image"
+	@echo "  dev          start infra containers + server (requires .env)"
+	@echo "  dev-down     stop infra containers"
+	@echo "  docs         compile technical handbook to PDF"
+	@echo "  docs-clean   remove LaTeX auxiliary files"
+	@echo "  clean        remove build artifacts"
 
 build: $(SRC)/node_modules templ css
 	go build -o $(SERVER) ./$(SRC)/cmd/server
@@ -87,7 +87,7 @@ docker-build:
 dev: $(SRC)/node_modules
 	-pkill -INT -f '$(SRC)/cmd/server' 2>/dev/null; true
 	npm run build:css --prefix $(SRC)
-	docker compose -f infra/docker-compose.yml up -d
+	docker compose -f infra/docker-compose.yml up -d --wait
 	bash -c 'set -a; source .env; go run ./$(SRC)/cmd/server'
 
 dev-down:

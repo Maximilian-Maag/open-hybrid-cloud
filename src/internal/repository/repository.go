@@ -1,5 +1,5 @@
-// Package repository enthält die Datenbankzugriffs-Interfaces.
-// Implementierungen werden je Feature in eigenen Dateien angelegt.
+// Package repository defines the database access interfaces.
+// Implementations are organized per feature in separate files.
 package repository
 
 import (

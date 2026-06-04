@@ -1,7 +1,7 @@
 {{define "title"}}{{t "admin.gitlab_sources" .Lang}}{{end}}
 {{define "content"}}
 <div class="mb-4">
-    <a href="/admin" class="btn btn-ghost btn-sm mb-2">{{t "admin.back" .Lang}}</a>
+    <a href="/admin" class="ds-btn-sm ds-btn-ghost mb-2">{{t "admin.back" .Lang}}</a>
     <h2 class="text-2xl font-bold">{{t "admin.gitlab_sources" .Lang}}</h2>
 </div>
 
@@ -10,16 +10,16 @@
         {{with .Data}}{{if .Sources}}
         <div class="space-y-2">
             {{range .Sources}}
-            <div class="card bg-base-100 border border-base-300">
-                <div class="card-body py-3">
+            <div class="ds-card">
+                <div class="ds-card-body py-3">
                     <div class="flex justify-between items-start">
                         <div>
                             <p class="font-medium">{{.Name}}</p>
-                            <p class="text-xs font-mono text-base-content/50">{{.URL}}</p>
+                            <p class="text-xs font-mono text-slate-400">{{.URL}}</p>
                         </div>
                         <form method="POST" action="/admin/sources/{{.ID}}/delete"
                               onsubmit="return confirm('{{t "admin.confirm_del_gitlab" $.Lang}}')">
-                            <button type="submit" class="btn btn-ghost btn-xs text-error">×</button>
+                            <button type="submit" class="ds-btn-xs ds-btn-danger">×</button>
                         </form>
                     </div>
                 </div>
@@ -27,27 +27,27 @@
             {{end}}
         </div>
         {{else}}
-        <p class="text-base-content/50 text-sm">{{t "admin.no_gitlab" $.Lang}}</p>
+        <p class="text-slate-400 text-sm">{{t "admin.no_gitlab" $.Lang}}</p>
         {{end}}{{end}}
     </div>
 
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body">
-            <h3 class="card-title text-base">{{t "admin.new_gitlab" .Lang}}</h3>
+    <div class="ds-card">
+        <div class="ds-card-body">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">{{t "admin.new_gitlab" .Lang}}</h3>
             <form method="POST" action="/admin/sources" class="space-y-3">
-                <div class="form-control">
-                    <label class="label"><span class="label-text text-sm">{{t "common.name" .Lang}}</span></label>
-                    <input type="text" name="name" class="input input-bordered input-sm" placeholder="e.g. Internal GitLab" required />
+                <div class="ds-field">
+                    <label for="src-name" class="ds-label">{{t "common.name" .Lang}}</label>
+                    <input id="src-name" type="text" name="name" class="ds-input" placeholder="e.g. Internal GitLab" required />
                 </div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text text-sm">URL</span></label>
-                    <input type="url" name="url" class="input input-bordered input-sm" placeholder="https://gitlab.example.com" required />
+                <div class="ds-field">
+                    <label for="src-url" class="ds-label">URL</label>
+                    <input id="src-url" type="url" name="url" class="ds-input" placeholder="https://gitlab.example.com" required />
                 </div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text text-sm">{{t "admin.access_token" .Lang}}</span></label>
-                    <input type="password" name="access_token" class="input input-bordered input-sm" required />
+                <div class="ds-field">
+                    <label for="src-token" class="ds-label">{{t "admin.access_token" .Lang}}</label>
+                    <input id="src-token" type="password" name="access_token" class="ds-input" required />
                 </div>
-                <button type="submit" class="btn btn-primary btn-sm">{{t "common.create" .Lang}}</button>
+                <button type="submit" class="ds-btn-sm ds-btn-primary">{{t "common.create" .Lang}}</button>
             </form>
         </div>
     </div>

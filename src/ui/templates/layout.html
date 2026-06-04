@@ -58,10 +58,11 @@
 
         <!-- Search bar -->
         <div class="flex-1 max-w-2xl">
-            <form method="GET" action="/catalog" class="search-bar flex items-center">
-                <input type="text" name="q" value="{{.SearchQuery}}"
+            <form method="GET" action="/catalog" class="search-bar flex items-center" role="search">
+                <label for="search-q" class="sr-only">{{t "search.placeholder" .Lang}}</label>
+                <input type="text" id="search-q" name="q" value="{{.SearchQuery}}"
                        placeholder="{{t "search.placeholder" .Lang}}" class="flex-1" />
-                <button type="submit" aria-label="Search">
+                <button type="submit" aria-label="{{t "search.placeholder" .Lang}}">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
@@ -74,28 +75,30 @@
 
             <!-- User dropdown -->
             <div class="relative" x-data="{open:false}">
-                <button @click="open=!open" class="flex flex-col items-start leading-tight nav-lnk focus:outline-none">
+                <button id="user-menu-btn" @click="open=!open" :aria-expanded="open" aria-haspopup="menu"
+                        class="flex flex-col items-start leading-tight nav-lnk focus:outline-none">
                     <span class="text-xs opacity-80">{{t "nav.hello" .Lang}} {{.Session.Name}}</span>
                     <span class="text-sm font-bold">{{t "nav.my_orders" .Lang}}</span>
                 </button>
                 <div x-show="open" @click.outside="open=false" x-transition
+                     role="menu" aria-labelledby="user-menu-btn"
                      class="absolute right-0 mt-2 w-52 bg-white border border-gray-200 rounded shadow-lg z-50 py-1"
                      style="display:none">
-                    <a href="/orders" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.orders" .Lang}}</a>
-                    <a href="/projects" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.projects" .Lang}}</a>
+                    <a href="/orders" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.orders" .Lang}}</a>
+                    <a href="/projects" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.projects" .Lang}}</a>
                     {{if or (eq .Session.Role "admin") (eq .Session.Role "shop_admin")}}
-                    <hr class="my-1 border-gray-100" />
-                    <a href="/approvals" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.approvals" .Lang}}</a>
-                    <a href="/audit" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.audit" .Lang}}</a>
+                    <hr class="my-1 border-gray-100" role="separator" />
+                    <a href="/approvals" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.approvals" .Lang}}</a>
+                    <a href="/audit" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.audit" .Lang}}</a>
                     {{end}}
                     {{if eq .Session.Role "shop_admin"}}
-                    <hr class="my-1 border-gray-100" />
-                    <a href="/admin" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.admin" .Lang}}</a>
+                    <hr class="my-1 border-gray-100" role="separator" />
+                    <a href="/admin" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.admin" .Lang}}</a>
                     {{end}}
-                    <hr class="my-1 border-gray-100" />
-                    <a href="/settings/profile" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.profile" .Lang}}</a>
-                    <form method="POST" action="/logout" class="px-4 py-1">
-                        <button type="submit" class="text-sm text-gray-700 hover:text-red-600 w-full text-left">{{t "nav.logout" .Lang}}</button>
+                    <hr class="my-1 border-gray-100" role="separator" />
+                    <a href="/settings/profile" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.profile" .Lang}}</a>
+                    <form method="POST" action="/logout" class="px-4 py-1" role="none">
+                        <button type="submit" role="menuitem" class="text-sm text-gray-700 hover:text-red-600 w-full text-left">{{t "nav.logout" .Lang}}</button>
                     </form>
                 </div>
             </div>
@@ -103,7 +106,8 @@
             <!-- Language switcher -->
             <div class="nav-lnk">
                 <form method="POST" action="/lang">
-                    <select name="lang" onchange="this.form.submit()"
+                    <label for="lang-select" class="sr-only">{{t "nav.language" .Lang}}</label>
+                    <select id="lang-select" name="lang" onchange="this.form.submit()"
                             class="bg-transparent text-white text-xs border border-white/30 rounded px-1 py-0.5 focus:outline-none cursor-pointer">
                         {{range .SupportedLangs}}
                         <option value="{{.}}" {{if eq . $.Lang}}selected{{end}} class="text-gray-800 bg-white">{{langName .}}</option>
@@ -154,11 +158,11 @@
              x-init="setTimeout(() => show = false, 5000)"
              class="rounded px-4 py-3 mb-5 flex items-center gap-3 {{if eq .Flash.Kind "success"}}flash-success{{else}}flash-error{{end}}">
             {{if eq .Flash.Kind "success"}}
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             {{else}}
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             {{end}}
@@ -178,12 +182,12 @@
 <footer class="shop-header mt-8">
     <div class="max-w-screen-2xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
         <span class="text-white/70 text-xs">© {{.Brand.Name}} — {{.Brand.Subtitle}}</span>
-        <div class="flex gap-4">
+        <nav aria-label="{{t "nav.footer" .Lang}}" class="flex gap-4">
             <a href="/catalog" class="nav-lnk text-xs">{{t "nav.catalog" .Lang}}</a>
             <a href="/orders" class="nav-lnk text-xs">{{t "nav.orders" .Lang}}</a>
             <a href="/projects" class="nav-lnk text-xs">{{t "nav.projects" .Lang}}</a>
             {{if .Brand.ImprintText}}<a href="/impressum" class="nav-lnk text-xs">{{t "nav.impressum" .Lang}}</a>{{end}}
-        </div>
+        </nav>
     </div>
 </footer>
 

@@ -1,45 +1,45 @@
 {{define "title"}}{{t "admin.new_product" .Lang}}{{end}}
 {{define "content"}}
 <div class="mb-4">
-    <a href="/admin/products" class="btn btn-ghost btn-sm">{{t "common.back" .Lang}}</a>
+    <a href="/admin/products" class="ds-btn-sm ds-btn-ghost">{{t "common.back" .Lang}}</a>
 </div>
 <h2 class="text-2xl font-bold mb-6">{{t "admin.new_product" .Lang}}</h2>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <form method="POST" action="/admin/products/new" enctype="multipart/form-data" class="space-y-4">
-        <div class="form-control">
-            <label class="label"><span class="label-text font-medium">{{t "admin.categories" .Lang}} <span class="text-error">*</span></span></label>
-            <select name="category_id" class="select select-bordered" required>
+        <div class="ds-field">
+            <label for="new-prod-cat" class="ds-label">{{t "admin.categories" .Lang}} <span class="text-red-600" aria-hidden="true">*</span></label>
+            <select id="new-prod-cat" name="category_id" class="ds-select" required aria-required="true">
                 <option value="">{{t "admin.choose" .Lang}}</option>
                 {{with .Data}}{{range .Categories}}
                 <option value="{{.ID}}">{{.Name}}</option>
                 {{end}}{{end}}
             </select>
         </div>
-        <div class="form-control">
-            <label class="label"><span class="label-text font-medium">{{t "admin.name_de" .Lang}} <span class="text-error">*</span></span></label>
-            <input type="text" name="name" class="input input-bordered" required />
+        <div class="ds-field">
+            <label for="new-prod-name" class="ds-label">{{t "admin.name_de" .Lang}} <span class="text-red-600" aria-hidden="true">*</span></label>
+            <input id="new-prod-name" type="text" name="name" class="ds-input" required aria-required="true" />
         </div>
-        <div class="form-control">
-            <label class="label"><span class="label-text font-medium">{{t "admin.desc_de" .Lang}}</span></label>
-            <textarea name="description" class="textarea textarea-bordered" rows="4"></textarea>
+        <div class="ds-field">
+            <label for="new-prod-desc" class="ds-label">{{t "admin.desc_de" .Lang}}</label>
+            <textarea id="new-prod-desc" name="description" class="ds-textarea" rows="4"></textarea>
         </div>
-        <div class="form-control">
-            <label class="label"><span class="label-text font-medium">{{t "admin.product_image" .Lang}}</span></label>
-            <input type="file" name="image" accept="image/*" class="file-input file-input-bordered" />
+        <div class="ds-field">
+            <label for="new-prod-image" class="ds-label">{{t "admin.product_image" .Lang}}</label>
+            <input id="new-prod-image" type="file" name="image" accept="image/*" class="ds-file-input" />
         </div>
         <div class="flex gap-3">
-            <button type="submit" class="btn btn-primary">{{t "common.create" .Lang}}</button>
-            <a href="/admin/products" class="btn btn-ghost">{{t "common.cancel" .Lang}}</a>
+            <button type="submit" class="ds-btn-md ds-btn-primary">{{t "common.create" .Lang}}</button>
+            <a href="/admin/products" class="ds-btn-md ds-btn-ghost">{{t "common.cancel" .Lang}}</a>
         </div>
     </form>
 
     {{with .Data}}
     {{if .GitLabSources}}
-    <div class="card bg-base-100 border border-base-300">
-        <div class="card-body space-y-3">
-            <h3 class="card-title text-base">{{t "admin.import_vars" $.Lang}}</h3>
-            <p class="text-sm text-base-content/60">Speichern Sie das Produkt zuerst, bevor Sie Variablen importieren.</p>
+    <div class="ds-card">
+        <div class="ds-card-body space-y-3">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">{{t "admin.import_vars" $.Lang}}</h3>
+            <p class="text-sm text-slate-500">Speichern Sie das Produkt zuerst, bevor Sie Variablen importieren.</p>
         </div>
     </div>
     {{end}}

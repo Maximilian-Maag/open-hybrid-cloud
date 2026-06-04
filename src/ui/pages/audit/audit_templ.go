@@ -56,7 +56,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.title", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 15, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 15, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -69,7 +69,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.subtitle", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 16, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 16, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -94,7 +94,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.filter_user", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 26, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 26, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -107,7 +107,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.all_users", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 28, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 28, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -126,7 +126,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprint(u.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 31, Col: 39}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 31, Col: 39}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 					if templ_7745c5c3_Err != nil {
@@ -139,7 +139,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(u.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 31, Col: 59}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 31, Col: 59}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
@@ -157,7 +157,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprint(u.ID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 33, Col: 39}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 33, Col: 39}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 					if templ_7745c5c3_Err != nil {
@@ -170,7 +170,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var10 string
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(u.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 33, Col: 50}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 33, Col: 50}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {
@@ -189,7 +189,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.filter_action", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 39, Col: 88}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 39, Col: 88}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -202,7 +202,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.all_actions", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 41, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 41, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -221,7 +221,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var13 string
 					templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(action)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 44, Col: 29}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 44, Col: 29}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 					if templ_7745c5c3_Err != nil {
@@ -234,7 +234,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var14 string
 					templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(action)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 44, Col: 49}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 44, Col: 49}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 					if templ_7745c5c3_Err != nil {
@@ -252,7 +252,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var15 string
 					templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(action)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 46, Col: 29}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 46, Col: 29}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 					if templ_7745c5c3_Err != nil {
@@ -265,7 +265,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var16 string
 					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(action)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 46, Col: 40}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 46, Col: 40}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {
@@ -284,7 +284,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.filter_from", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 52, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 52, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -297,7 +297,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(vd.Filter["from"])
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 53, Col: 60}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 53, Col: 60}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 			if templ_7745c5c3_Err != nil {
@@ -310,7 +310,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.filter_to", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 57, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 57, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -323,7 +323,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(vd.Filter["to"])
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 58, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 58, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 			if templ_7745c5c3_Err != nil {
@@ -406,7 +406,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var24 string
 					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.timestamp", vd.Lang))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 75, Col: 87}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 75, Col: 87}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 					if templ_7745c5c3_Err != nil {
@@ -419,7 +419,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var25 string
 					templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.action", vd.Lang))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 76, Col: 84}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 76, Col: 84}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 					if templ_7745c5c3_Err != nil {
@@ -432,7 +432,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var26 string
 					templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.entity", vd.Lang))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 77, Col: 84}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 77, Col: 84}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 					if templ_7745c5c3_Err != nil {
@@ -445,7 +445,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var27 string
 					templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.user", vd.Lang))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 78, Col: 82}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 78, Col: 82}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 					if templ_7745c5c3_Err != nil {
@@ -458,7 +458,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var28 string
 					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.details", vd.Lang))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 79, Col: 85}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 79, Col: 85}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 					if templ_7745c5c3_Err != nil {
@@ -491,7 +491,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 				var templ_7745c5c3_Var29 string
 				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(vd.TotalCount))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 91, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 91, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
@@ -504,7 +504,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 				var templ_7745c5c3_Var30 string
 				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.total_entries", vd.Lang))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 91, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 91, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
@@ -517,7 +517,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 				var templ_7745c5c3_Var31 string
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("audit.page", vd.Lang))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 91, Col: 113}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 91, Col: 113}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {
@@ -530,7 +530,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 				var templ_7745c5c3_Var32 string
 				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(vd.Page))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 91, Col: 137}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 91, Col: 137}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 				if templ_7745c5c3_Err != nil {
@@ -543,7 +543,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 				var templ_7745c5c3_Var33 string
 				templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(vd.TotalPages))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 91, Col: 169}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 91, Col: 169}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 				if templ_7745c5c3_Err != nil {
@@ -571,7 +571,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var35 string
 					templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var34).String())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 1, Col: 0}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 1, Col: 0}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var35)
 					if templ_7745c5c3_Err != nil {
@@ -589,7 +589,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 				var templ_7745c5c3_Var36 string
 				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(vd.Page))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 99, Col: 134}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 99, Col: 134}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 				if templ_7745c5c3_Err != nil {
@@ -617,7 +617,7 @@ func AuditLog(vd view.AuditView) templ.Component {
 					var templ_7745c5c3_Var38 string
 					templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var37).String())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 1, Col: 0}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 1, Col: 0}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 					if templ_7745c5c3_Err != nil {
@@ -671,7 +671,7 @@ func auditRow(e model.AuditEntry, userNames map[int64]string) templ.Component {
 		var templ_7745c5c3_Var40 string
 		templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(e.CreatedAt.Format("02.01.2006 15:04:05"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 113, Col: 102}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 113, Col: 102}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 		if templ_7745c5c3_Err != nil {
@@ -684,7 +684,7 @@ func auditRow(e model.AuditEntry, userNames map[int64]string) templ.Component {
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(string(e.Action))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 114, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 114, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -697,7 +697,7 @@ func auditRow(e model.AuditEntry, userNames map[int64]string) templ.Component {
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(e.EntityID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 115, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 115, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -711,7 +711,7 @@ func auditRow(e model.AuditEntry, userNames map[int64]string) templ.Component {
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 118, Col: 10}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 118, Col: 10}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -725,7 +725,7 @@ func auditRow(e model.AuditEntry, userNames map[int64]string) templ.Component {
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(e.UserID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 120, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 120, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -743,7 +743,7 @@ func auditRow(e model.AuditEntry, userNames map[int64]string) templ.Component {
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(e.Details)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/audit/audit.templ`, Line: 123, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/audit/audit.templ`, Line: 123, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {

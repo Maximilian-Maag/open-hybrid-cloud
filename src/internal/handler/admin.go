@@ -47,15 +47,16 @@ func (h *Handler) adminCategories(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminCategoryCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	c := &model.Category{
 		Name:         r.FormValue("name"),
 		DisplayOrder: formInt(r, "display_order"),
 	}
 	var flashKind, flashMsg string
 	if err := h.categories.Save(r.Context(), c); err != nil {
-		flashKind, flashMsg = "error", "Fehler: "+err.Error()
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
 	} else {
-		flashKind, flashMsg = "success", "Kategorie erstellt."
+		flashKind, flashMsg = "success", i18n.T("flash.category_created", lang)
 	}
 
 	if isHTMX(r) {
@@ -70,25 +71,26 @@ func (h *Handler) adminCategoryCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminCategoryDelete(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	sess, _ := auth.FromContext(r.Context())
 	var flashKind, flashMsg string
 
 	prods, err := h.products.ListByCategory(r.Context(), id, "de")
 	if err != nil {
-		flashKind, flashMsg = "error", "Fehler: "+err.Error()
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
 	} else {
 		for _, p := range prods {
 			if err := h.infra.DecommissionByProduct(r.Context(), p.ID, sess.UserID); err != nil {
-				flashKind, flashMsg = "error", "Fehler beim Dekommissionieren: "+err.Error()
+				flashKind, flashMsg = "error", i18n.T("flash.decommission_error", lang)+": "+err.Error()
 				break
 			}
 		}
 		if flashMsg == "" {
 			if err := h.categories.Delete(r.Context(), id); err != nil {
-				flashKind, flashMsg = "error", "Fehler: "+err.Error()
+				flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
 			} else {
-				flashKind, flashMsg = "success", "Kategorie gelöscht."
+				flashKind, flashMsg = "success", i18n.T("flash.category_deleted", lang)
 			}
 		}
 	}
@@ -147,7 +149,8 @@ func (h *Handler) adminProductCreate(w http.ResponseWriter, r *http.Request) {
 		file.Close()
 	}
 	if err := h.products.Save(r.Context(), p); err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/new", "error", "Fehler: "+err.Error())
+		lang := h.lang(r)
+		h.redirectWithFlash(w, r, "/admin/products/new", "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
 	_ = h.translations.Upsert(r.Context(), &model.ProductTranslation{
@@ -156,7 +159,7 @@ func (h *Handler) adminProductCreate(w http.ResponseWriter, r *http.Request) {
 		Name:         r.FormValue("name"),
 		Description:  r.FormValue("description"),
 	})
-	h.redirectWithFlash(w, r, "/admin/products", "success", "Produkt erstellt.")
+	h.redirectWithFlash(w, r, "/admin/products", "success", i18n.T("flash.product_created", h.lang(r)))
 }
 
 func (h *Handler) adminProductEdit(w http.ResponseWriter, r *http.Request) {
@@ -200,10 +203,11 @@ func (h *Handler) adminProductEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminProductEnvironmentCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	environmentID := formInt64(r, "environment_id")
 	if environmentID == 0 {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: Umgebung wählen.")
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", i18n.T("flash.env_required", lang))
 		return
 	}
 	price, _ := strconv.ParseFloat(r.FormValue("price"), 64)
@@ -220,13 +224,14 @@ func (h *Handler) adminProductEnvironmentCreate(w http.ResponseWriter, r *http.R
 		ForcedCostCenter: false,
 	}
 	if err := h.productEnvs.Upsert(r.Context(), pe); err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Umgebung hinzugefügt.")
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", i18n.T("flash.env_added", lang))
 }
 
 func (h *Handler) adminProductParameterCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	p := &model.Parameter{
 		Scope:        model.ParameterScopeProduct,
@@ -239,33 +244,35 @@ func (h *Handler) adminProductParameterCreate(w http.ResponseWriter, r *http.Req
 		Sensitive:    r.FormValue("sensitive") == "on",
 	}
 	if err := h.parameters.Save(r.Context(), p); err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Eingabevariable hinzugefügt.")
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", i18n.T("flash.param_added", lang))
 }
 
 func (h *Handler) adminProductParameterDelete(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	paramID, _ := strconv.ParseInt(r.PathValue("pid"), 10, 64)
 	if err := h.parameters.Delete(r.Context(), paramID); err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Eingabevariable gelöscht.")
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", i18n.T("flash.param_deleted", lang))
 }
 
 func (h *Handler) adminProductParameterDeleteAll(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	params, err := h.parameters.FindByScope(r.Context(), model.ParameterScopeProduct, productID)
 	if err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
 	for _, p := range params {
 		_ = h.parameters.Delete(r.Context(), p.ID)
 	}
-	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Alle Eingabevariablen gelöscht.")
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", i18n.T("flash.params_all_deleted", lang))
 }
 
 func (h *Handler) adminProductUpdate(w http.ResponseWriter, r *http.Request) {
@@ -284,7 +291,8 @@ func (h *Handler) adminProductUpdate(w http.ResponseWriter, r *http.Request) {
 		file.Close()
 	}
 	if err := h.products.Update(r.Context(), p); err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", "Fehler: "+err.Error())
+		lang := h.lang(r)
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
 	_ = h.translations.Upsert(r.Context(), &model.ProductTranslation{
@@ -293,21 +301,22 @@ func (h *Handler) adminProductUpdate(w http.ResponseWriter, r *http.Request) {
 		Name:         r.FormValue("name"),
 		Description:  r.FormValue("description"),
 	})
-	h.redirectWithFlash(w, r, "/admin/products", "success", "Produkt gespeichert.")
+	h.redirectWithFlash(w, r, "/admin/products", "success", i18n.T("flash.product_saved", h.lang(r)))
 }
 
 func (h *Handler) adminProductDelete(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	sess, _ := auth.FromContext(r.Context())
 	if err := h.infra.DecommissionByProduct(r.Context(), id, sess.UserID); err != nil {
-		h.redirectWithFlash(w, r, "/admin/products", "error", "Fehler beim Dekommissionieren: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/products", "error", i18n.T("flash.decommission_error", lang)+": "+err.Error())
 		return
 	}
 	if err := h.products.Delete(r.Context(), id); err != nil {
-		h.redirectWithFlash(w, r, "/admin/products", "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/products", "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/products", "success", "Produkt gelöscht.")
+	h.redirectWithFlash(w, r, "/admin/products", "success", i18n.T("flash.product_deleted", lang))
 }
 
 // ---- Environments ----
@@ -323,6 +332,7 @@ func (h *Handler) adminEnvironments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminEnvironmentCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	env := &model.DeploymentEnvironment{
 		Name:           r.FormValue("name"),
 		Description:    r.FormValue("description"),
@@ -330,20 +340,41 @@ func (h *Handler) adminEnvironmentCreate(w http.ResponseWriter, r *http.Request)
 		WebhookURL:     r.FormValue("webhook_url"),
 		WebhookToken:   r.FormValue("webhook_token"),
 	}
+	var flashKind, flashMsg string
 	if err := h.environments.Save(r.Context(), env); err != nil {
-		h.redirectWithFlash(w, r, "/admin/environments", "error", "Fehler: "+err.Error())
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
+	} else {
+		flashKind, flashMsg = "success", i18n.T("flash.env_created", lang)
+	}
+	if isHTMX(r) {
+		envs, _ := h.environments.FindAll(r.Context())
+		renderPartials(r.Context(), w,
+			adminpages.EnvironmentList(envs, lang),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/environments", "success", "Umgebung erstellt.")
+	h.redirectWithFlash(w, r, "/admin/environments", flashKind, flashMsg)
 }
 
 func (h *Handler) adminEnvironmentDelete(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	var flashKind, flashMsg string
 	if err := h.environments.Delete(r.Context(), id); err != nil {
-		h.redirectWithFlash(w, r, "/admin/environments", "error", "Fehler: "+err.Error())
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
+	} else {
+		flashKind, flashMsg = "success", i18n.T("flash.env_deleted", lang)
+	}
+	if isHTMX(r) {
+		envs, _ := h.environments.FindAll(r.Context())
+		renderPartials(r.Context(), w,
+			adminpages.EnvironmentList(envs, lang),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/environments", "success", "Umgebung gelöscht.")
+	h.redirectWithFlash(w, r, "/admin/environments", flashKind, flashMsg)
 }
 
 // ---- GitLab Sources ----
@@ -357,25 +388,47 @@ func (h *Handler) adminSources(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminSourceCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	s := &model.GitLabSource{
 		Name:        r.FormValue("name"),
 		URL:         r.FormValue("url"),
 		AccessToken: r.FormValue("access_token"),
 	}
+	var flashKind, flashMsg string
 	if err := h.gitlabSources.Save(r.Context(), s); err != nil {
-		h.redirectWithFlash(w, r, "/admin/sources", "error", "Fehler: "+err.Error())
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
+	} else {
+		flashKind, flashMsg = "success", i18n.T("flash.source_created", lang)
+	}
+	if isHTMX(r) {
+		sources, _ := h.gitlabSources.FindAll(r.Context())
+		renderPartials(r.Context(), w,
+			adminpages.SourceList(sources, lang),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/sources", "success", "GitLab-Quelle erstellt.")
+	h.redirectWithFlash(w, r, "/admin/sources", flashKind, flashMsg)
 }
 
 func (h *Handler) adminSourceDelete(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	var flashKind, flashMsg string
 	if err := h.gitlabSources.Delete(r.Context(), id); err != nil {
-		h.redirectWithFlash(w, r, "/admin/sources", "error", "Fehler: "+err.Error())
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
+	} else {
+		flashKind, flashMsg = "success", i18n.T("flash.source_deleted", lang)
+	}
+	if isHTMX(r) {
+		sources, _ := h.gitlabSources.FindAll(r.Context())
+		renderPartials(r.Context(), w,
+			adminpages.SourceList(sources, lang),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/sources", "success", "Quelle gelöscht.")
+	h.redirectWithFlash(w, r, "/admin/sources", flashKind, flashMsg)
 }
 
 // ---- Cost Centers ----
@@ -389,31 +442,53 @@ func (h *Handler) adminCostCenters(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminCostCenterCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	cc := &model.CostCenter{
 		Code:   r.FormValue("code"),
 		Name:   r.FormValue("name"),
 		Active: true,
 	}
+	var flashKind, flashMsg string
 	if err := h.costCenters.Save(r.Context(), cc); err != nil {
-		h.redirectWithFlash(w, r, "/admin/costcenters", "error", "Fehler: "+err.Error())
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
+	} else {
+		flashKind, flashMsg = "success", i18n.T("flash.costcenter_created", lang)
+	}
+	if isHTMX(r) {
+		ccs, _ := h.costCenters.FindAll(r.Context())
+		renderPartials(r.Context(), w,
+			adminpages.CostCenterList(ccs, lang),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/costcenters", "success", "Kostenstelle erstellt.")
+	h.redirectWithFlash(w, r, "/admin/costcenters", flashKind, flashMsg)
 }
 
 func (h *Handler) adminCostCenterDelete(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	cc, _ := h.costCenters.FindByID(r.Context(), id)
+	var flashKind, flashMsg string
 	if cc == nil {
-		h.redirectWithFlash(w, r, "/admin/costcenters", "error", "Kostenstelle nicht gefunden.")
+		flashKind, flashMsg = "error", i18n.T("flash.costcenter_not_found", lang)
+	} else {
+		cc.Active = false
+		if err := h.costCenters.Update(r.Context(), cc); err != nil {
+			flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
+		} else {
+			flashKind, flashMsg = "success", i18n.T("flash.costcenter_deactivated", lang)
+		}
+	}
+	if isHTMX(r) {
+		ccs, _ := h.costCenters.FindAll(r.Context())
+		renderPartials(r.Context(), w,
+			adminpages.CostCenterList(ccs, lang),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	cc.Active = false
-	if err := h.costCenters.Update(r.Context(), cc); err != nil {
-		h.redirectWithFlash(w, r, "/admin/costcenters", "error", "Fehler: "+err.Error())
-		return
-	}
-	h.redirectWithFlash(w, r, "/admin/costcenters", "success", "Kostenstelle deaktiviert.")
+	h.redirectWithFlash(w, r, "/admin/costcenters", flashKind, flashMsg)
 }
 
 // ---- Users ----
@@ -427,16 +502,17 @@ func (h *Handler) adminUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminUserCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	u := &model.User{
 		Email: r.FormValue("email"),
 		Name:  r.FormValue("name"),
 		Role:  model.Role(r.FormValue("role")),
 	}
 	if err := h.users.Create(r.Context(), u, r.FormValue("password")); err != nil {
-		h.redirectWithFlash(w, r, "/admin/users", "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/users", "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/users", "success", "Benutzer erstellt.")
+	h.redirectWithFlash(w, r, "/admin/users", "success", i18n.T("flash.user_created", lang))
 }
 
 // ---- Audit ----
@@ -512,19 +588,20 @@ func (h *Handler) adminCurrencies(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminCurrencyRefresh(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	if h.exchange == nil {
-		h.redirectWithFlash(w, r, "/admin/currencies", "error", "Exchange rate service not configured.")
+		h.redirectWithFlash(w, r, "/admin/currencies", "error", i18n.T("flash.exchange_rate_unconfigured", lang))
 		return
 	}
 	rates, err := h.exchange.Refresh(r.Context())
 	if err != nil {
-		h.redirectWithFlash(w, r, "/admin/currencies", "error", "Refresh failed: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/currencies", "error", i18n.T("flash.refresh_failed", lang)+": "+err.Error())
 		return
 	}
 	if h.exchangeRates != nil {
 		_ = h.exchangeRates.SaveAll(r.Context(), rates)
 	}
-	h.redirectWithFlash(w, r, "/admin/currencies", "success", "Exchange rates refreshed.")
+	h.redirectWithFlash(w, r, "/admin/currencies", "success", i18n.T("flash.exchange_rates_refreshed", lang))
 }
 
 // ---- Product Image ----
@@ -562,30 +639,32 @@ func (h *Handler) adminProductImageUpload(w http.ResponseWriter, r *http.Request
 		http.NotFound(w, r)
 		return
 	}
+	lang := h.lang(r)
 	file, _, err := r.FormFile("image")
 	if err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", "No image file.")
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", i18n.T("flash.product_image_missing", lang))
 		return
 	}
 	defer file.Close()
 	data, err := io.ReadAll(file)
 	if err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", "Read error.")
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", i18n.T("flash.product_image_read_error", lang))
 		return
 	}
 	p.Image = data
 	if err := h.products.Update(r.Context(), p); err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", "Save error.")
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", i18n.T("flash.product_image_save_error", lang))
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "success", "Image uploaded.")
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "success", i18n.T("flash.product_image_uploaded", lang))
 }
 
 // ---- AI Translation ----
 
 func (h *Handler) adminProductTranslate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	if h.translator == nil {
-		h.redirectWithFlash(w, r, "/admin/products", "error", "AI translation not configured.")
+		h.redirectWithFlash(w, r, "/admin/products", "error", i18n.T("flash.ai_unconfigured", lang))
 		return
 	}
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -609,24 +688,25 @@ func (h *Handler) adminProductTranslate(w http.ResponseWriter, r *http.Request) 
 	}
 	results, err := h.translator.Translate(r.Context(), p.Name, p.Description, p.BaseLanguage, targetLangs)
 	if err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", "Translation failed: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "error", i18n.T("flash.translation_failed", lang)+": "+err.Error())
 		return
 	}
-	for lang, t := range results {
+	for l, t := range results {
 		_ = h.translations.Upsert(r.Context(), &model.ProductTranslation{
 			ProductID:    id,
-			LanguageCode: lang,
+			LanguageCode: l,
 			Name:         t.Name,
 			Description:  t.Description,
 		})
 	}
 	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(id, 10), "success",
-		strconv.Itoa(len(results))+" translations generated.")
+		strconv.Itoa(len(results))+" "+i18n.T("flash.translations_generated", lang))
 }
 
 // ---- Product webhooks ----
 
 func (h *Handler) adminProductWebhookCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	pw := &model.ProductWebhook{
 		ProductID:     productID,
@@ -637,20 +717,21 @@ func (h *Handler) adminProductWebhookCreate(w http.ResponseWriter, r *http.Reque
 		ExecOrder:     formInt(r, "exec_order"),
 	}
 	if err := h.productWebhooks.Save(r.Context(), pw); err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Webhook gespeichert.")
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", i18n.T("flash.webhook_saved", lang))
 }
 
 func (h *Handler) adminProductWebhookDelete(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	wid, _ := strconv.ParseInt(r.PathValue("wid"), 10, 64)
 	if err := h.productWebhooks.Delete(r.Context(), wid); err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", "Webhook gelöscht.")
+	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", i18n.T("flash.webhook_deleted", lang))
 }
 
 // ---- Branding ----
@@ -685,12 +766,13 @@ func (h *Handler) adminBrandingSave(w http.ResponseWriter, r *http.Request) {
 			current.LogoMime = "image/png"
 		}
 	}
+	lang := h.lang(r)
 	if err := h.brandingRepo.Save(r.Context(), &current); err != nil {
-		h.redirectWithFlash(w, r, "/admin/branding", "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/branding", "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
 	setBrandCache(current)
-	h.redirectWithFlash(w, r, "/admin/branding", "success", "Design gespeichert.")
+	h.redirectWithFlash(w, r, "/admin/branding", "success", i18n.T("flash.branding_saved", lang))
 }
 
 func (h *Handler) serveBrandingLogo(w http.ResponseWriter, r *http.Request) {

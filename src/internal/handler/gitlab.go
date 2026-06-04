@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/porr-ag/infra-webshop/src/internal/gitlab"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
 	"github.com/porr-ag/infra-webshop/src/internal/model"
 )
 
@@ -77,13 +78,14 @@ func (h *Handler) gitlabFiles(w http.ResponseWriter, r *http.Request) {
 // gitlabImportVars reads a Terraform variables.tf file and imports its variables
 // as product parameters. Expects form fields: source, project, branch, file, product_id.
 func (h *Handler) gitlabImportVars(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	client, err := h.gitlabClientFromSource(r)
 	if err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/new", "error", "GitLab source not found.")
+		h.redirectWithFlash(w, r, "/admin/products/new", "error", i18n.T("flash.gitlab_source_not_found", lang))
 		return
 	}
 	projectID, _ := strconv.ParseInt(r.FormValue("project"), 10, 64)
@@ -91,13 +93,13 @@ func (h *Handler) gitlabImportVars(w http.ResponseWriter, r *http.Request) {
 	filePath := r.FormValue("file")
 	productID, _ := strconv.ParseInt(r.FormValue("product_id"), 10, 64)
 	if productID <= 0 {
-		h.redirectWithFlash(w, r, "/admin/products/new", "error", "Please save the product before importing variables.")
+		h.redirectWithFlash(w, r, "/admin/products/new", "error", i18n.T("flash.gitlab_save_product_first", lang))
 		return
 	}
 
 	content, err := client.GetFile(r.Context(), projectID, branch, filePath)
 	if err != nil {
-		h.redirectWithFlash(w, r, "/admin/products/new", "error", "Could not read file: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/products/new", "error", i18n.T("flash.file_read_error", lang)+": "+err.Error())
 		return
 	}
 
@@ -129,5 +131,5 @@ func (h *Handler) gitlabImportVars(w http.ResponseWriter, r *http.Request) {
 		target = "/admin/products/" + strconv.FormatInt(productID, 10)
 	}
 	h.redirectWithFlash(w, r, target, "success",
-		strconv.Itoa(len(vars))+" variables imported.")
+		strconv.Itoa(len(vars))+" "+i18n.T("flash.gitlab_import_success", lang))
 }

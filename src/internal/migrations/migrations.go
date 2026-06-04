@@ -1,4 +1,4 @@
-// Package migrations verwaltet das Datenbankschema.
+// Package migrations manages the database schema.
 package migrations
 
 import (

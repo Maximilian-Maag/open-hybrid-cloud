@@ -1,23 +1,23 @@
 {{define "title"}}{{t "project.new_title" .Lang}}{{end}}
 {{define "content"}}
 <div class="mb-4">
-    <a href="/projects" class="btn btn-ghost btn-sm">{{t "common.back" .Lang}}</a>
+    <a href="/projects" class="ds-btn-sm ds-btn-ghost">{{t "common.back" .Lang}}</a>
 </div>
 <h2 class="text-2xl font-bold mb-6">{{t "project.new_title" .Lang}}</h2>
 
 <form method="POST" action="/projects/new" class="max-w-lg space-y-4">
-    <div class="form-control">
-        <label class="label"><span class="label-text font-medium">{{t "common.name" .Lang}} <span class="text-error">*</span></span></label>
-        <input type="text" name="name" class="input input-bordered" required />
+    <div class="ds-field">
+        <label for="proj-name" class="ds-label">{{t "common.name" .Lang}} <span class="text-red-600" aria-hidden="true">*</span></label>
+        <input id="proj-name" type="text" name="name" class="ds-input" required aria-required="true" />
     </div>
-    <div class="form-control">
-        <label class="label"><span class="label-text font-medium">{{t "common.description" .Lang}}</span></label>
-        <textarea name="description" class="textarea textarea-bordered" rows="3"></textarea>
+    <div class="ds-field">
+        <label for="proj-desc" class="ds-label">{{t "common.description" .Lang}}</label>
+        <textarea id="proj-desc" name="description" class="ds-textarea" rows="3"></textarea>
     </div>
     {{with .Data}}{{if .CostCenters}}
-    <div class="form-control">
-        <label class="label"><span class="label-text font-medium">{{t "project.cost_center" $.Lang}}</span></label>
-        <select name="cost_center_id" class="select select-bordered">
+    <div class="ds-field">
+        <label for="proj-cc" class="ds-label">{{t "project.cost_center" $.Lang}}</label>
+        <select id="proj-cc" name="cost_center_id" class="ds-select">
             <option value="">{{t "project.none_cc" $.Lang}}</option>
             {{range .CostCenters}}
             {{if .Active}}<option value="{{.ID}}">{{.Code}} — {{.Name}}</option>{{end}}
@@ -26,8 +26,8 @@
     </div>
     {{end}}{{end}}
     <div class="flex gap-3">
-        <button type="submit" class="btn btn-primary">{{t "common.create" .Lang}}</button>
-        <a href="/projects" class="btn btn-ghost">{{t "common.cancel" .Lang}}</a>
+        <button type="submit" class="ds-btn-md ds-btn-primary">{{t "common.create" .Lang}}</button>
+        <a href="/projects" class="ds-btn-md ds-btn-ghost">{{t "common.cancel" .Lang}}</a>
     </div>
 </form>
 {{end}}

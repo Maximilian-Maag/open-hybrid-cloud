@@ -1,8 +1,8 @@
 version: '3.8'
 
-# Produktions-Deployment auf Docker Host
-# Voraussetzung: docker login (privates DockerHub Image)
-# Konfiguration: .env Datei im selben Verzeichnis (siehe .env.example)
+# Production deployment on Docker host
+# Prerequisite: docker login (private DockerHub image)
+# Configuration: .env file in the same directory (see .env.example)
 
 services:
 

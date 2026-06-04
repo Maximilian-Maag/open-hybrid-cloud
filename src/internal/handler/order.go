@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/porr-ag/infra-webshop/src/internal/auth"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
 	"github.com/porr-ag/infra-webshop/src/internal/model"
 	"github.com/porr-ag/infra-webshop/src/internal/view"
 	approvalpages "github.com/porr-ag/infra-webshop/src/ui/pages/approvals"
@@ -64,6 +65,7 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	sess, _ := auth.FromContext(r.Context())
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -98,11 +100,11 @@ func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
 	if sess.Role == model.RoleAdmin || sess.Role == model.RoleShopAdmin {
 		o.Status = model.OrderStatusPendingApproval
 		if err := h.orders.Create(r.Context(), o); err != nil {
-			h.redirectWithFlash(w, r, "/orders/new", "error", "Bestellung konnte nicht erstellt werden.")
+			h.redirectWithFlash(w, r, "/orders/new", "error", i18n.T("flash.order_create_error", lang))
 			return
 		}
 		if err := h.orders.Approve(r.Context(), o.ID, sess.UserID); err != nil {
-			h.redirectWithFlash(w, r, "/orders", "error", "Webhook konnte nicht ausgelöst werden: "+err.Error())
+			h.redirectWithFlash(w, r, "/orders", "error", i18n.T("flash.webhook_trigger_error", lang)+": "+err.Error())
 			return
 		}
 		if h.notifier != nil {
@@ -110,14 +112,14 @@ func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if err := h.orders.Create(r.Context(), o); err != nil {
-			h.redirectWithFlash(w, r, "/orders/new", "error", "Bestellung konnte nicht erstellt werden.")
+			h.redirectWithFlash(w, r, "/orders/new", "error", i18n.T("flash.order_create_error", lang))
 			return
 		}
 		if h.notifier != nil {
 			_ = h.notifier.OrderCreated(r.Context(), o, sess.Email, true)
 		}
 	}
-	h.redirectWithFlash(w, r, "/orders", "success", "Bestellung erfolgreich aufgegeben.")
+	h.redirectWithFlash(w, r, "/orders", "success", i18n.T("flash.order_created", lang))
 }
 
 func (h *Handler) orderDetail(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +165,7 @@ func (h *Handler) approvalList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) approvalApprove(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
@@ -180,10 +183,11 @@ func (h *Handler) approvalApprove(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	h.redirectWithFlash(w, r, "/approvals", "success", "Bestellung freigegeben.")
+	h.redirectWithFlash(w, r, "/approvals", "success", i18n.T("flash.order_approved", lang))
 }
 
 func (h *Handler) approvalReject(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
@@ -191,7 +195,7 @@ func (h *Handler) approvalReject(w http.ResponseWriter, r *http.Request) {
 	}
 	note := r.FormValue("note")
 	if note == "" {
-		h.redirectWithFlash(w, r, "/approvals", "error", "Ablehnungskommentar ist verpflichtend.")
+		h.redirectWithFlash(w, r, "/approvals", "error", i18n.T("flash.order_reject_note_required", lang))
 		return
 	}
 	sess, _ := auth.FromContext(r.Context())
@@ -206,5 +210,5 @@ func (h *Handler) approvalReject(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	h.redirectWithFlash(w, r, "/approvals", "success", "Bestellung abgelehnt.")
+	h.redirectWithFlash(w, r, "/approvals", "success", i18n.T("flash.order_rejected", lang))
 }

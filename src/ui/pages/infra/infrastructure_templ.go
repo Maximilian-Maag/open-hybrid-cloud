@@ -56,7 +56,7 @@ func Infrastructure(vd view.InfraView) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("infra.title", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 14, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 14, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -69,7 +69,7 @@ func Infrastructure(vd view.InfraView) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("infra.subtitle", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 15, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 15, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -140,7 +140,7 @@ func Infrastructure(vd view.InfraView) templ.Component {
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("common.status", vd.Lang))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 29, Col: 85}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 29, Col: 85}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
@@ -153,7 +153,7 @@ func Infrastructure(vd view.InfraView) templ.Component {
 					var templ_7745c5c3_Var9 string
 					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("infra.deployed", vd.Lang))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 30, Col: 86}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 30, Col: 86}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 					if templ_7745c5c3_Err != nil {
@@ -166,7 +166,7 @@ func Infrastructure(vd view.InfraView) templ.Component {
 					var templ_7745c5c3_Var10 string
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("infra.parameters", vd.Lang))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 31, Col: 88}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 31, Col: 88}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {
@@ -231,7 +231,7 @@ func infraRow(el model.InfrastructureElement, lang string) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(el.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 48, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 48, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -252,7 +252,7 @@ func infraRow(el model.InfrastructureElement, lang string) templ.Component {
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(el.DeployedAt.Format("02.01.2006 15:04"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 52, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 52, Col: 89}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -265,7 +265,7 @@ func infraRow(el model.InfrastructureElement, lang string) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(len(el.Parameters)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 53, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 53, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -292,7 +292,7 @@ func infraRow(el model.InfrastructureElement, lang string) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var15).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 			if templ_7745c5c3_Err != nil {
@@ -305,7 +305,7 @@ func infraRow(el model.InfrastructureElement, lang string) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue("/infrastructure/" + fmt.Sprint(el.ID) + "/decommission")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 60, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 60, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 			if templ_7745c5c3_Err != nil {
@@ -318,7 +318,7 @@ func infraRow(el model.InfrastructureElement, lang string) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(i18n.T("infra.confirm_decomm", lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 61, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 61, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
 			if templ_7745c5c3_Err != nil {
@@ -331,7 +331,7 @@ func infraRow(el model.InfrastructureElement, lang string) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("action.decomm", lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/infra/infrastructure.templ`, Line: 63, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/infra/infrastructure.templ`, Line: 63, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {

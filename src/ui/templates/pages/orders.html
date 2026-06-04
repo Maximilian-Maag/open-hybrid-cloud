@@ -2,13 +2,13 @@
 {{define "content"}}
 <div class="flex items-center justify-between mb-6">
     <h2 class="text-2xl font-bold">{{t "orders.title" .Lang}}</h2>
-    <a href="/catalog" class="btn btn-primary btn-sm">{{t "action.new_order" .Lang}}</a>
+    <a href="/catalog" class="ds-btn-sm ds-btn-primary">{{t "action.new_order" .Lang}}</a>
 </div>
 
 {{with .Data}}
 {{if .Orders}}
 <div class="overflow-x-auto">
-    <table class="table">
+    <table class="ds-table">
         <thead>
             <tr>
                 <th>#</th>
@@ -19,24 +19,24 @@
         </thead>
         <tbody>
         {{range .Orders}}
-        <tr class="hover">
+        <tr>
             <td class="font-mono text-sm">{{.ID}}</td>
             <td>
-                <span class="badge badge-sm {{statusBadgeClass .Status}}">
+                <span class="ds-badge ds-badge-gray">
                     {{statusLabel $.Lang .Status}}
                 </span>
             </td>
-            <td class="text-sm text-base-content/60">{{.CreatedAt.Format "02.01.2006 15:04"}}</td>
-            <td><a href="/orders/{{.ID}}" class="btn btn-ghost btn-xs">{{t "common.details" $.Lang}}</a></td>
+            <td class="text-sm text-slate-500">{{.CreatedAt.Format "02.01.2006 15:04"}}</td>
+            <td><a href="/orders/{{.ID}}" class="ds-btn-xs ds-btn-ghost">{{t "common.details" $.Lang}}</a></td>
         </tr>
         {{end}}
         </tbody>
     </table>
 </div>
 {{else}}
-<div class="text-center py-16 text-base-content/50">
+<div class="text-center py-16 text-slate-400">
     <p>{{t "orders.empty" $.Lang}}</p>
-    <a href="/catalog" class="btn btn-primary btn-sm mt-4">{{t "action.to_catalog" $.Lang}}</a>
+    <a href="/catalog" class="ds-btn-sm ds-btn-primary mt-4">{{t "action.to_catalog" $.Lang}}</a>
 </div>
 {{end}}
 {{end}}

@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/porr-ag/infra-webshop/src/internal/auth"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
 	"github.com/porr-ag/infra-webshop/src/internal/model"
 	"github.com/porr-ag/infra-webshop/src/internal/view"
 	infrapages "github.com/porr-ag/infra-webshop/src/ui/pages/infra"
@@ -38,6 +39,7 @@ func (h *Handler) infrastructureList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) decommission(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
@@ -60,5 +62,5 @@ func (h *Handler) decommission(w http.ResponseWriter, r *http.Request) {
 		h.redirectWithFlash(w, r, "/infrastructure", "error", err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/infrastructure", "success", "Dekommissionierung gestartet.")
+	h.redirectWithFlash(w, r, "/infrastructure", "success", i18n.T("flash.decommission_started", lang))
 }

@@ -3,6 +3,7 @@ module.exports = {
   content: [
     "./ui/comp/**/*.templ",
     "./ui/pages/**/*.templ",
+    "./ui/templates/**/*.html",
   ],
   theme: {
     extend: {

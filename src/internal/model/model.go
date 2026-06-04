@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-// --- Rollen ---
+// --- Roles ---
 
 type Role string
 
@@ -12,7 +12,7 @@ const (
 	RoleShopAdmin     Role = "shop_admin"
 )
 
-// --- Benutzer ---
+// --- Users ---
 
 type User struct {
 	ID           int64
@@ -20,12 +20,12 @@ type User struct {
 	Name         string
 	Role         Role
 	Active       bool
-	SSOSub       string // Entra ID Subject-Claim, leer bei lokalen Accounts
-	PasswordHash string // nur bei lokalen Accounts (Webshop Admin)
+	SSOSub       string // Entra ID subject claim; empty for local accounts
+	PasswordHash string // only set for local accounts (shop admin)
 	CreatedAt    time.Time
 }
 
-// --- Produktkatalog ---
+// --- Product catalogue ---
 
 type Category struct {
 	ID           int64
@@ -81,7 +81,7 @@ const (
 	ParameterTypeDropdown ParameterType = "dropdown"
 )
 
-// --- GitLab & Deployment ---
+// --- GitLab & deployment ---
 
 type GitLabSource struct {
 	ID          int64
@@ -103,7 +103,7 @@ type ProductEnvironment struct {
 	ProductID        int64
 	EnvironmentID    int64
 	Price            float64
-	Currency         string // Leitwährung
+	Currency         string // billing currency
 	CostCenterMode   CostCenterMode
 	ForcedCostCenter bool
 }
@@ -121,7 +121,7 @@ type ProductWebhook struct {
 	ExecOrder     int
 }
 
-// --- Kostenstellen ---
+// --- Cost centres ---
 
 type CostCenter struct {
 	ID     int64
@@ -138,7 +138,7 @@ const (
 	CostCenterModeOverhead CostCenterMode = "overhead"
 )
 
-// --- Projekte ---
+// --- Projects ---
 
 type Project struct {
 	ID           int64
@@ -149,7 +149,7 @@ type Project struct {
 	CreatedAt    time.Time
 }
 
-// --- Bestellungen ---
+// --- Orders ---
 
 type OrderStatus string
 
@@ -179,7 +179,7 @@ type Order struct {
 	UpdatedAt     time.Time
 }
 
-// --- Infrastruktur ---
+// --- Infrastructure ---
 
 type InfrastructureElement struct {
 	ID            int64

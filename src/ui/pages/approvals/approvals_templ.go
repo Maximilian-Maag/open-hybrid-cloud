@@ -56,7 +56,7 @@ func Approvals(vd view.ApprovalsView) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("approvals.title", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/approvals/approvals.templ`, Line: 14, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/approvals/approvals.templ`, Line: 14, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -69,7 +69,7 @@ func Approvals(vd view.ApprovalsView) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("approvals.subtitle", vd.Lang))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/approvals/approvals.templ`, Line: 15, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/approvals/approvals.templ`, Line: 15, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -174,7 +174,7 @@ func approvalCard(o model.Order, lang string) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("approvals.order", lang))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/approvals/approvals.templ`, Line: 38, Col: 78}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/approvals/approvals.templ`, Line: 38, Col: 78}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -187,7 +187,7 @@ func approvalCard(o model.Order, lang string) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(o.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/approvals/approvals.templ`, Line: 38, Col: 100}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/approvals/approvals.templ`, Line: 38, Col: 100}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -200,7 +200,7 @@ func approvalCard(o model.Order, lang string) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(o.CreatedAt.Format("02.01.2006 15:04"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/approvals/approvals.templ`, Line: 39, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/approvals/approvals.templ`, Line: 39, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -213,7 +213,7 @@ func approvalCard(o model.Order, lang string) templ.Component {
 		var templ_7745c5c3_Var11 templ.SafeURL
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/approvals/" + fmt.Sprint(o.ID) + "/approve"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/approvals/approvals.templ`, Line: 42, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/approvals/approvals.templ`, Line: 42, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -234,7 +234,7 @@ func approvalCard(o model.Order, lang string) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("action.reject", lang))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/approvals/approvals.templ`, Line: 53, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/approvals/approvals.templ`, Line: 53, Col: 36}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -247,7 +247,7 @@ func approvalCard(o model.Order, lang string) templ.Component {
 		var templ_7745c5c3_Var13 templ.SafeURL
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/approvals/" + fmt.Sprint(o.ID) + "/reject"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/pages/approvals/approvals.templ`, Line: 56, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/approvals/approvals.templ`, Line: 56, Col: 89}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {

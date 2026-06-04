@@ -3,17 +3,17 @@
 <div class="mb-6 flex items-center justify-between">
     <div>
         <h2 class="text-2xl font-bold">{{t "admin.currencies" .Lang}}</h2>
-        <p class="text-base-content/60 text-sm mt-1">{{t "admin.currencies_subtitle" .Lang}}</p>
+        <p class="text-slate-500 text-sm mt-1">{{t "admin.currencies_subtitle" .Lang}}</p>
     </div>
     <form method="POST" action="/admin/currencies/refresh">
-        <button type="submit" class="btn btn-primary btn-sm">{{t "admin.refresh_rates" $.Lang}}</button>
+        <button type="submit" class="ds-btn-sm ds-btn-primary">{{t "admin.refresh_rates" $.Lang}}</button>
     </form>
 </div>
 
 {{with .Data}}
 {{if .Rates}}
 <div class="overflow-x-auto">
-    <table class="table table-sm">
+    <table class="ds-table">
         <thead>
             <tr>
                 <th>{{t "admin.currency_code" $.Lang}}</th>
@@ -31,7 +31,7 @@
     </table>
 </div>
 {{else}}
-<div class="text-center py-16 text-base-content/50">{{t "admin.no_rates" $.Lang}}</div>
+<div class="text-center py-16 text-slate-400">{{t "admin.no_rates" $.Lang}}</div>
 {{end}}
 {{end}}
 {{end}}

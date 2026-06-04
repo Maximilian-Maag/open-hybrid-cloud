@@ -2,30 +2,30 @@
 {{define "content"}}
 <div class="flex items-center justify-between mb-6">
     <div>
-        <a href="/admin" class="btn btn-ghost btn-sm mb-2">{{t "admin.back" .Lang}}</a>
+        <a href="/admin" class="ds-btn-sm ds-btn-ghost mb-2">{{t "admin.back" .Lang}}</a>
         <h2 class="text-2xl font-bold">{{t "admin.products" .Lang}}</h2>
     </div>
-    <a href="/admin/products/new" class="btn btn-primary btn-sm">+ {{t "admin.new_product" .Lang}}</a>
+    <a href="/admin/products/new" class="ds-btn-sm ds-btn-primary">+ {{t "admin.new_product" .Lang}}</a>
 </div>
 
 {{with .Data}}
 {{if .Products}}
 <div class="overflow-x-auto">
-    <table class="table">
+    <table class="ds-table">
         <thead><tr><th>{{t "common.name" $.Lang}}</th><th>Kategorie</th><th></th></tr></thead>
         <tbody>
         {{range .Products}}
-        <tr class="hover">
-            <td>{{if .Name}}{{.Name}}{{else}}<span class="text-base-content/40">—</span>{{end}}</td>
-            <td class="text-sm text-base-content/60">
+        <tr>
+            <td>{{if .Name}}{{.Name}}{{else}}<span class="text-slate-300">—</span>{{end}}</td>
+            <td class="text-sm text-slate-500">
                 {{$cat := index $.Data.CatNames .CategoryID}}
-                {{if $cat}}{{$cat}}{{else}}<span class="text-base-content/30">—</span>{{end}}
+                {{if $cat}}{{$cat}}{{else}}<span class="text-slate-300">—</span>{{end}}
             </td>
             <td class="flex gap-1">
-                <a href="/admin/products/{{.ID}}" class="btn btn-ghost btn-xs">{{t "common.edit" $.Lang}}</a>
+                <a href="/admin/products/{{.ID}}" class="ds-btn-xs ds-btn-ghost">{{t "common.edit" $.Lang}}</a>
                 <form method="POST" action="/admin/products/{{.ID}}/delete"
                       onsubmit="return confirm('{{t "admin.confirm_del_prod" $.Lang}}')">
-                    <button type="submit" class="btn btn-ghost btn-xs text-error">{{t "common.delete" $.Lang}}</button>
+                    <button type="submit" class="ds-btn-xs ds-btn-danger">{{t "common.delete" $.Lang}}</button>
                 </form>
             </td>
         </tr>
@@ -34,9 +34,9 @@
     </table>
 </div>
 {{else}}
-<div class="text-center py-12 text-base-content/50">
+<div class="text-center py-12 text-slate-400">
     <p>{{t "admin.no_products" $.Lang}}</p>
-    <a href="/admin/products/new" class="btn btn-primary btn-sm mt-4">{{t "admin.first_product" $.Lang}}</a>
+    <a href="/admin/products/new" class="ds-btn-sm ds-btn-primary mt-4">{{t "admin.first_product" $.Lang}}</a>
 </div>
 {{end}}
 {{end}}

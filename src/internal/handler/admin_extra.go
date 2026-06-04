@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/porr-ag/infra-webshop/src/internal/aitranslation"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
 	"github.com/porr-ag/infra-webshop/src/internal/model"
 	"github.com/porr-ag/infra-webshop/src/internal/service"
 	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/porr-ag/infra-webshop/src/ui/comp"
 	adminpages "github.com/porr-ag/infra-webshop/src/ui/pages/admin"
 	auditpages "github.com/porr-ag/infra-webshop/src/ui/pages/audit"
 )
@@ -29,6 +31,7 @@ func (h *Handler) adminUserEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminUserUpdate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	u, _ := h.users.GetByID(r.Context(), id)
 	if u == nil {
@@ -39,28 +42,30 @@ func (h *Handler) adminUserUpdate(w http.ResponseWriter, r *http.Request) {
 	u.Email = r.FormValue("email")
 	u.Role = model.Role(r.FormValue("role"))
 	if err := h.users.Update(r.Context(), u); err != nil {
-		h.redirectWithFlash(w, r, "/admin/users/"+strconv.FormatInt(id, 10)+"/edit", "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/users/"+strconv.FormatInt(id, 10)+"/edit", "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/users", "success", "Benutzer aktualisiert.")
+	h.redirectWithFlash(w, r, "/admin/users", "success", i18n.T("flash.user_updated", lang))
 }
 
 func (h *Handler) adminUserDeactivate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err := h.users.SetActive(r.Context(), id, false); err != nil {
-		h.redirectWithFlash(w, r, "/admin/users", "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/users", "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/users", "success", "Benutzer deaktiviert.")
+	h.redirectWithFlash(w, r, "/admin/users", "success", i18n.T("flash.user_deactivated", lang))
 }
 
 func (h *Handler) adminUserDelete(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err := h.users.Delete(r.Context(), id); err != nil {
-		h.redirectWithFlash(w, r, "/admin/users", "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/users", "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/users", "success", "Benutzer gelöscht.")
+	h.redirectWithFlash(w, r, "/admin/users", "success", i18n.T("flash.user_deleted", lang))
 }
 
 // ---- Global parameters ----
@@ -74,6 +79,7 @@ func (h *Handler) adminParameters(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminParameterCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	p := &model.Parameter{
 		Scope:        model.ParameterScopeGlobal,
 		ScopeID:      0,
@@ -84,20 +90,41 @@ func (h *Handler) adminParameterCreate(w http.ResponseWriter, r *http.Request) {
 		Required:     r.FormValue("required") == "on",
 		Sensitive:    r.FormValue("sensitive") == "on",
 	}
+	var flashKind, flashMsg string
 	if err := h.parameters.Save(r.Context(), p); err != nil {
-		h.redirectWithFlash(w, r, "/admin/parameters", "error", "Fehler: "+err.Error())
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
+	} else {
+		flashKind, flashMsg = "success", i18n.T("flash.parameter_created", lang)
+	}
+	if isHTMX(r) {
+		params, _ := h.parameters.FindByScope(r.Context(), model.ParameterScopeGlobal, 0)
+		renderPartials(r.Context(), w,
+			adminpages.ParameterList(params, "/admin/parameters", lang),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/parameters", "success", "Parameter erstellt.")
+	h.redirectWithFlash(w, r, "/admin/parameters", flashKind, flashMsg)
 }
 
 func (h *Handler) adminParameterDelete(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	var flashKind, flashMsg string
 	if err := h.parameters.Delete(r.Context(), id); err != nil {
-		h.redirectWithFlash(w, r, "/admin/parameters", "error", "Fehler: "+err.Error())
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
+	} else {
+		flashKind, flashMsg = "success", i18n.T("flash.parameter_deleted", lang)
+	}
+	if isHTMX(r) {
+		params, _ := h.parameters.FindByScope(r.Context(), model.ParameterScopeGlobal, 0)
+		renderPartials(r.Context(), w,
+			adminpages.ParameterList(params, "/admin/parameters", lang),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, "/admin/parameters", "success", "Parameter gelöscht.")
+	h.redirectWithFlash(w, r, "/admin/parameters", flashKind, flashMsg)
 }
 
 // ---- Category parameters ----
@@ -118,6 +145,7 @@ func (h *Handler) adminCategoryParameters(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) adminCategoryParameterCreate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	catID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	p := &model.Parameter{
 		Scope:        model.ParameterScopeCategory,
@@ -130,22 +158,45 @@ func (h *Handler) adminCategoryParameterCreate(w http.ResponseWriter, r *http.Re
 		Sensitive:    r.FormValue("sensitive") == "on",
 	}
 	back := "/admin/categories/" + strconv.FormatInt(catID, 10) + "/parameters"
+	deleteBase := back
+	var flashKind, flashMsg string
 	if err := h.parameters.Save(r.Context(), p); err != nil {
-		h.redirectWithFlash(w, r, back, "error", "Fehler: "+err.Error())
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
+	} else {
+		flashKind, flashMsg = "success", i18n.T("flash.parameter_created", lang)
+	}
+	if isHTMX(r) {
+		params, _ := h.parameters.FindByScope(r.Context(), model.ParameterScopeCategory, catID)
+		renderPartials(r.Context(), w,
+			adminpages.ParameterList(params, deleteBase, lang),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, back, "success", "Parameter erstellt.")
+	h.redirectWithFlash(w, r, back, flashKind, flashMsg)
 }
 
 func (h *Handler) adminCategoryParameterDelete(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	catID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	pid, _ := strconv.ParseInt(r.PathValue("pid"), 10, 64)
 	back := "/admin/categories/" + strconv.FormatInt(catID, 10) + "/parameters"
+	deleteBase := back
+	var flashKind, flashMsg string
 	if err := h.parameters.Delete(r.Context(), pid); err != nil {
-		h.redirectWithFlash(w, r, back, "error", "Fehler: "+err.Error())
+		flashKind, flashMsg = "error", i18n.T("flash.error", lang)+": "+err.Error()
+	} else {
+		flashKind, flashMsg = "success", i18n.T("flash.parameter_deleted", lang)
+	}
+	if isHTMX(r) {
+		params, _ := h.parameters.FindByScope(r.Context(), model.ParameterScopeCategory, catID)
+		renderPartials(r.Context(), w,
+			adminpages.ParameterList(params, deleteBase, lang),
+			comp.FlashOOB(flashKind, flashMsg),
+		)
 		return
 	}
-	h.redirectWithFlash(w, r, back, "success", "Parameter gelöscht.")
+	h.redirectWithFlash(w, r, back, flashKind, flashMsg)
 }
 
 // ---- SMTP config ----
@@ -164,8 +215,9 @@ func (h *Handler) adminSMTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminSMTPSave(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	if h.appConfigRepo == nil {
-		h.redirectWithFlash(w, r, "/admin/smtp", "error", "Config repository not available.")
+		h.redirectWithFlash(w, r, "/admin/smtp", "error", i18n.T("flash.config_unavailable", lang))
 		return
 	}
 	c, _ := h.appConfigRepo.Load(r.Context())
@@ -185,13 +237,13 @@ func (h *Handler) adminSMTPSave(w http.ResponseWriter, r *http.Request) {
 	c.SMTPTLS = r.FormValue("smtp_tls") == "on"
 
 	if err := h.appConfigRepo.Save(r.Context(), c); err != nil {
-		h.redirectWithFlash(w, r, "/admin/smtp", "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/smtp", "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
 	if h.notifier != nil {
 		h.notifier.Reconfigure(c.SMTPHost, c.SMTPPort, c.SMTPFrom, c.SMTPUsername, c.SMTPPassword, c.SMTPTLS)
 	}
-	h.redirectWithFlash(w, r, "/admin/smtp", "success", "SMTP-Konfiguration gespeichert.")
+	h.redirectWithFlash(w, r, "/admin/smtp", "success", i18n.T("flash.smtp_saved", lang))
 }
 
 // ---- AI translation config ----
@@ -210,8 +262,9 @@ func (h *Handler) adminAIConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) adminAIConfigSave(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	if h.appConfigRepo == nil {
-		h.redirectWithFlash(w, r, "/admin/ai-config", "error", "Config repository not available.")
+		h.redirectWithFlash(w, r, "/admin/ai-config", "error", i18n.T("flash.config_unavailable", lang))
 		return
 	}
 	c, _ := h.appConfigRepo.Load(r.Context())
@@ -226,11 +279,11 @@ func (h *Handler) adminAIConfigSave(w http.ResponseWriter, r *http.Request) {
 	c.AIModel = r.FormValue("ai_model")
 
 	if err := h.appConfigRepo.Save(r.Context(), c); err != nil {
-		h.redirectWithFlash(w, r, "/admin/ai-config", "error", "Fehler: "+err.Error())
+		h.redirectWithFlash(w, r, "/admin/ai-config", "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
 	h.translator = aitranslation.NewTranslator(c.AIProvider, c.AIEndpoint, c.AIAPIKey, c.AIModel)
-	h.redirectWithFlash(w, r, "/admin/ai-config", "success", "KI-Konfiguration gespeichert.")
+	h.redirectWithFlash(w, r, "/admin/ai-config", "success", i18n.T("flash.ai_config_saved", lang))
 }
 
 // ---- Audit log with filter ----
@@ -283,9 +336,7 @@ func (h *Handler) auditLogFiltered(w http.ResponseWriter, r *http.Request) {
 
 	start := (page - 1) * auditPerPage
 	end := start + auditPerPage
-	if end > totalCount {
-		end = totalCount
-	}
+	end = min(end, totalCount)
 	pageEntries := allEntries[start:end]
 
 	filterQuery := "user_id=" + q.Get("user_id") +

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/porr-ag/infra-webshop/src/internal/auth"
+	"github.com/porr-ag/infra-webshop/src/internal/i18n"
 	"github.com/porr-ag/infra-webshop/src/internal/model"
 	"github.com/porr-ag/infra-webshop/src/internal/view"
 	authpages "github.com/porr-ag/infra-webshop/src/ui/pages/auth"
@@ -21,11 +22,12 @@ func (h *Handler) loginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
 	ip := remoteIP(r)
 	if !h.loginRL.allowed(ip) {
 		renderTempl(w, r, authpages.Login(view.LoginView{
 			PageData:    h.buildPageData(w, r),
-			Error:       "Zu viele fehlgeschlagene Anmeldeversuche. Bitte warten Sie 15 Minuten.",
+			Error:       i18n.T("flash.login_rate_limit", lang),
 			OIDCEnabled: h.oidc != nil,
 		}))
 		return
@@ -39,7 +41,7 @@ func (h *Handler) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		h.loginRL.record(ip)
 		renderTempl(w, r, authpages.Login(view.LoginView{
 			PageData:    h.buildPageData(w, r),
-			Error:       "Ungültige E-Mail oder Passwort.",
+			Error:       i18n.T("flash.login_invalid", lang),
 			OIDCEnabled: h.oidc != nil,
 		}))
 		return

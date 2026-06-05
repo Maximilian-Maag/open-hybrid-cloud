@@ -1,6 +1,6 @@
 package view
 
-import "github.com/porr-ag/infra-webshop/src/internal/model"
+import "github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
 
 // --- Home ---
 

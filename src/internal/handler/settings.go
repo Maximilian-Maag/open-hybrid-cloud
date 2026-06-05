@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/porr-ag/infra-webshop/src/internal/i18n"
-	"github.com/porr-ag/infra-webshop/src/internal/view"
-	settingspages "github.com/porr-ag/infra-webshop/src/ui/pages/settings"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/i18n"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/view"
+	settingspages "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/pages/settings"
 )
 
 func (h *Handler) profilePage(w http.ResponseWriter, r *http.Request) {

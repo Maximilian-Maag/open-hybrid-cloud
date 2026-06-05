@@ -291,7 +291,7 @@
         "environment" : "Kubernetes",
         "id" : "101",
         "instances" : "1",
-        "name" : "infra-webshop",
+        "name" : "open-hybrid-cloud",
         "properties" : {
           "structurizr.dsl.identifier" : "86fbd37a-b769-496c-9a1c-3964c0b6dd73"
         },

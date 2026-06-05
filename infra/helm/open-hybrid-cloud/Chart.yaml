@@ -1,0 +1,12 @@
+apiVersion: v2
+name: open-hybrid-cloud
+description: Open Hybrid Cloud Infrastructure Self-Service Webshop
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - open-hybrid-cloud
+  - infrastructure
+  - self-service
+maintainers:
+  - name: Open Hybrid Cloud Digital Unit

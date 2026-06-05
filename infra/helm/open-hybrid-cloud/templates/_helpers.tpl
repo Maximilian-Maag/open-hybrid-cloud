@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "infra-webshop.name" -}}
+{{- define "open-hybrid-cloud.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
 */}}
-{{- define "infra-webshop.fullname" -}}
+{{- define "open-hybrid-cloud.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -24,16 +24,16 @@ Create a default fully qualified app name.
 {{/*
 Create chart label value.
 */}}
-{{- define "infra-webshop.chart" -}}
+{{- define "open-hybrid-cloud.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels.
 */}}
-{{- define "infra-webshop.labels" -}}
-helm.sh/chart: {{ include "infra-webshop.chart" . }}
-{{ include "infra-webshop.selectorLabels" . }}
+{{- define "open-hybrid-cloud.labels" -}}
+helm.sh/chart: {{ include "open-hybrid-cloud.chart" . }}
+{{ include "open-hybrid-cloud.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -43,15 +43,15 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels.
 */}}
-{{- define "infra-webshop.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "infra-webshop.name" . }}
+{{- define "open-hybrid-cloud.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "open-hybrid-cloud.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Image reference (repository:tag, falling back to appVersion).
 */}}
-{{- define "infra-webshop.image" -}}
+{{- define "open-hybrid-cloud.image" -}}
 {{- $tag := .Values.image.tag | default .Chart.AppVersion }}
 {{- printf "%s:%s" .Values.image.repository $tag }}
 {{- end }}

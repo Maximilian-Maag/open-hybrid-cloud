@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/porr-ag/infra-webshop/src/internal/auth"
-	"github.com/porr-ag/infra-webshop/src/internal/i18n"
-	"github.com/porr-ag/infra-webshop/src/internal/model"
-	"github.com/porr-ag/infra-webshop/src/internal/view"
-	approvalpages "github.com/porr-ag/infra-webshop/src/ui/pages/approvals"
-	orderpages "github.com/porr-ag/infra-webshop/src/ui/pages/orders"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/auth"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/i18n"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/view"
+	approvalpages "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/pages/approvals"
+	orderpages "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/pages/orders"
 )
 
 func (h *Handler) orderList(w http.ResponseWriter, r *http.Request) {

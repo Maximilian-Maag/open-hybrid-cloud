@@ -8,10 +8,10 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/porr-ag/infra-webshop/src/internal/gitlab"
-	"github.com/porr-ag/infra-webshop/src/internal/model"
-	"github.com/porr-ag/infra-webshop/src/internal/repository"
-	"github.com/porr-ag/infra-webshop/src/internal/service"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/gitlab"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/repository"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/service"
 )
 
 var projectIDReOrder = regexp.MustCompile(`/projects/(\d+)/`)

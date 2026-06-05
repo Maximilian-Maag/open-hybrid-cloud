@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "infra-webshop.fullname" . }}
+  name: {{ include "open-hybrid-cloud.fullname" . }}
   labels:
-    {{- include "infra-webshop.labels" . | nindent 4 }}
+    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      {{- include "infra-webshop.selectorLabels" . | nindent 6 }}
+      {{- include "open-hybrid-cloud.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -20,7 +20,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "infra-webshop.selectorLabels" . | nindent 8 }}
+        {{- include "open-hybrid-cloud.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.podSecurityContext }}
       securityContext:
@@ -28,7 +28,7 @@ spec:
       {{- end }}
       containers:
         - name: {{ .Chart.Name }}
-          image: {{ include "infra-webshop.image" . }}
+          image: {{ include "open-hybrid-cloud.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
@@ -36,7 +36,7 @@ spec:
               protocol: TCP
           envFrom:
             - secretRef:
-                name: {{ include "infra-webshop.fullname" . }}
+                name: {{ include "open-hybrid-cloud.fullname" . }}
           livenessProbe:
             httpGet:
               path: /health

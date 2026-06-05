@@ -83,8 +83,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/infra-webshop:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/infra-webshop:${{ env.SHORT_SHA }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:${{ env.SHORT_SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -113,9 +113,9 @@ jobs:
             ## Docker Image
 
             ```bash
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/infra-webshop:${{ env.SHORT_SHA }}
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:${{ env.SHORT_SHA }}
             # or always-latest:
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/infra-webshop:latest
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:latest
             ```
 
             ## Binaries

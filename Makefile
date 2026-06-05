@@ -82,7 +82,7 @@ install-requirements:
 	@echo "==> Done. If docker was freshly installed, log out and back in."
 
 docker-build:
-	docker build -t infra-webshop:latest -f infra/Dockerfile .
+	docker build -t open-hybrid-cloud:latest -f infra/Dockerfile .
 
 dev: $(SRC)/node_modules
 	-pkill -INT -f '$(SRC)/cmd/server' 2>/dev/null; true

@@ -1,4 +1,4 @@
-module github.com/porr-ag/infra-webshop
+module github.com/open-hybrid-cloud/open-hybrid-cloud
 
 go 1.25.0
 

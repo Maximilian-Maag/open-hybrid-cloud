@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/porr-ag/infra-webshop/src/internal/view"
-	catalogpages "github.com/porr-ag/infra-webshop/src/ui/pages/catalog"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/view"
+	catalogpages "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/pages/catalog"
 )
 
 func (h *Handler) catalog(w http.ResponseWriter, r *http.Request) {

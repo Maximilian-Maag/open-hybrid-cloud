@@ -6,7 +6,7 @@ import (
 
 	"github.com/a-h/templ"
 
-	"github.com/porr-ag/infra-webshop/src/internal/view"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/view"
 )
 
 // isHTMX reports whether the request was made by HTMX.

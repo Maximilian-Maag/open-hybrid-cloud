@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/porr-ag/infra-webshop/src/internal/model"
-	"github.com/porr-ag/infra-webshop/src/internal/view"
-	homepages "github.com/porr-ag/infra-webshop/src/ui/pages/home"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/view"
+	homepages "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/pages/home"
 )
 
 func (h *Handler) home(w http.ResponseWriter, r *http.Request) {

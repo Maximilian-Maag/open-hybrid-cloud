@@ -5,14 +5,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/porr-ag/infra-webshop/src/internal/aitranslation"
-	"github.com/porr-ag/infra-webshop/src/internal/i18n"
-	"github.com/porr-ag/infra-webshop/src/internal/model"
-	"github.com/porr-ag/infra-webshop/src/internal/service"
-	"github.com/porr-ag/infra-webshop/src/internal/view"
-	"github.com/porr-ag/infra-webshop/src/ui/comp"
-	adminpages "github.com/porr-ag/infra-webshop/src/ui/pages/admin"
-	auditpages "github.com/porr-ag/infra-webshop/src/ui/pages/audit"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/aitranslation"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/i18n"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/service"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/view"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/comp"
+	adminpages "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/pages/admin"
+	auditpages "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/pages/audit"
 )
 
 // ---- User edit / deactivate ----

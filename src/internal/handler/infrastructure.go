@@ -4,11 +4,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/porr-ag/infra-webshop/src/internal/auth"
-	"github.com/porr-ag/infra-webshop/src/internal/i18n"
-	"github.com/porr-ag/infra-webshop/src/internal/model"
-	"github.com/porr-ag/infra-webshop/src/internal/view"
-	infrapages "github.com/porr-ag/infra-webshop/src/ui/pages/infra"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/auth"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/i18n"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/view"
+	infrapages "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/pages/infra"
 )
 
 func (h *Handler) infrastructureList(w http.ResponseWriter, r *http.Request) {

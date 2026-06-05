@@ -1,7 +1,7 @@
 replicaCount: 2
 
 image:
-  repository: porrag/infra-webshop
+  repository: open-hybrid-cloud/open-hybrid-cloud
   pullPolicy: IfNotPresent
   # Overrides Chart.appVersion when set
   tag: ""
@@ -71,7 +71,7 @@ ingress:
         - path: /
           pathType: Prefix
   tls:
-    - secretName: infra-webshop-tls
+    - secretName: open-hybrid-cloud-tls
       hosts:
         - shop.example.com
 

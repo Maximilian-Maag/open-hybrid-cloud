@@ -10,9 +10,9 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import (
 	"fmt"
-	"github.com/porr-ag/infra-webshop/src/internal/i18n"
-	"github.com/porr-ag/infra-webshop/src/internal/view"
-	"github.com/porr-ag/infra-webshop/src/ui/comp"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/i18n"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/view"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/comp"
 )
 
 func AdminCurrencies(vd view.AdminCurrenciesView) templ.Component {

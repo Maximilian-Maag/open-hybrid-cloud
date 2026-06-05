@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/porr-ag/infra-webshop/src/internal/model"
-	"github.com/porr-ag/infra-webshop/src/internal/repository"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/repository"
 )
 
 type stubUserRepo struct {

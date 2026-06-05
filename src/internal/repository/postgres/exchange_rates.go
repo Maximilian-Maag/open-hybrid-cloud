@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/porr-ag/infra-webshop/src/internal/repository"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/repository"
 )
 
 type exchangeRateRepo struct{ pool *pgxpool.Pool }

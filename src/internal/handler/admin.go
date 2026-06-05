@@ -9,14 +9,14 @@ import (
 
 	"github.com/go-pdf/fpdf"
 
-	"github.com/porr-ag/infra-webshop/src/internal/auth"
-	"github.com/porr-ag/infra-webshop/src/internal/i18n"
-	"github.com/porr-ag/infra-webshop/src/internal/model"
-	"github.com/porr-ag/infra-webshop/src/internal/service"
-	"github.com/porr-ag/infra-webshop/src/internal/view"
-	"github.com/porr-ag/infra-webshop/src/ui/comp"
-	adminpages "github.com/porr-ag/infra-webshop/src/ui/pages/admin"
-	miscpages "github.com/porr-ag/infra-webshop/src/ui/pages/misc"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/auth"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/i18n"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/service"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/view"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/comp"
+	adminpages "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/pages/admin"
+	miscpages "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/pages/misc"
 )
 
 func (h *Handler) adminDashboard(w http.ResponseWriter, r *http.Request) {

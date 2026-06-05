@@ -58,7 +58,7 @@ func Load() *Config {
 
 		SMTPHost:     getEnv("SMTP_HOST", "localhost"),
 		SMTPPort:     getEnv("SMTP_PORT", "1025"),
-		SMTPFrom:     getEnv("SMTP_FROM", "noreply@infra-webshop.local"),
+		SMTPFrom:     getEnv("SMTP_FROM", "noreply@open-hybrid-cloud.local"),
 		SMTPUsername: os.Getenv("SMTP_USERNAME"),
 		SMTPPassword: os.Getenv("SMTP_PASSWORD"),
 		SMTPTLS:      os.Getenv("SMTP_TLS") == "true",

@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
 )
 
 // --- password ---

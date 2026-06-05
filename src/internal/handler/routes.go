@@ -4,13 +4,13 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/porr-ag/infra-webshop/src/internal/aitranslation"
-	"github.com/porr-ag/infra-webshop/src/internal/auth"
-	"github.com/porr-ag/infra-webshop/src/internal/config"
-	"github.com/porr-ag/infra-webshop/src/internal/exchange"
-	"github.com/porr-ag/infra-webshop/src/internal/notification"
-	"github.com/porr-ag/infra-webshop/src/internal/repository"
-	"github.com/porr-ag/infra-webshop/src/internal/service"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/aitranslation"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/auth"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/config"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/exchange"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/notification"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/repository"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/service"
 )
 
 type Handler struct {

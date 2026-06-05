@@ -4,9 +4,9 @@ package audit
 import (
 	"context"
 
-	"github.com/porr-ag/infra-webshop/src/internal/model"
-	"github.com/porr-ag/infra-webshop/src/internal/repository"
-	"github.com/porr-ag/infra-webshop/src/internal/service"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/repository"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/service"
 )
 
 type auditService struct {

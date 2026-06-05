@@ -8,7 +8,7 @@ import (
 
 	"github.com/gorilla/securecookie"
 
-	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
 )
 
 const cookieName = "infra_session"

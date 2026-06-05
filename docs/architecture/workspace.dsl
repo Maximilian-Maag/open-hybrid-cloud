@@ -140,7 +140,7 @@ workspace "Infra-Webshop" "Self-service portal for ordering, managing and decomm
 
         deploymentEnvironment "Kubernetes" {
             deploymentNode "Kubernetes Cluster" "Production cluster" "Kubernetes" {
-                deploymentNode "infra-webshop" "Application namespace" "Kubernetes Namespace" {
+                deploymentNode "open-hybrid-cloud" "Application namespace" "Kubernetes Namespace" {
                     deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes external traffic to the webshop service." "Nginx Ingress / cert-manager" {
                     }
                     deploymentNode "webshop Deployment" "Stateless Go pods, horizontally scalable. Polling coordinated via PostgreSQL locks." "Kubernetes Deployment" {

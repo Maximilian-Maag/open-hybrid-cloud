@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
 )
 
 // brandCache holds the current branding, hot-reloaded when admin saves.

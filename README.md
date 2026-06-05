@@ -113,7 +113,7 @@ Logged events: order, approval, rejection (with comment), deployment, decommissi
 ## Project Structure
 
 ```
-infra-webshop/
+open-hybrid-cloud/
 ├── src/                         # Go + Node source
 │   ├── cmd/
 │   │   ├── server/              # HTTP server entry point
@@ -145,7 +145,7 @@ infra-webshop/
 │   │   ├── nginx.conf.example   # Nginx configuration template
 │   │   └── .env.example         # Production environment variables
 │   └── helm/
-│       └── infra-webshop/       # Helm chart for Kubernetes deployment
+│       └── open-hybrid-cloud/       # Helm chart for Kubernetes deployment
 ├── docs/
 │   ├── workspace.dsl            # Structurizr C4 architecture
 │   ├── requirements/
@@ -220,7 +220,7 @@ This helper creates temporary product, order, and infrastructure rows and then d
 
 ```bash
 git clone <repo-url>
-cd infra-webshop
+cd open-hybrid-cloud
 ```
 
 ### 2. Configure Environment Variables

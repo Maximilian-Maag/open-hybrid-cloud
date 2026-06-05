@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/porr-ag/infra-webshop/src/internal/gitlab"
-	"github.com/porr-ag/infra-webshop/src/internal/i18n"
-	"github.com/porr-ag/infra-webshop/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/gitlab"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/i18n"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
 )
 
 func (h *Handler) gitlabClientFromSource(r *http.Request) (*gitlab.Client, error) {

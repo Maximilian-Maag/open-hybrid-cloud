@@ -8,7 +8,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: infra-webshop-nginx
+    container_name: open-hybrid-cloud-nginx
     ports:
       - "80:80"
       - "443:443"
@@ -20,8 +20,8 @@ services:
     restart: unless-stopped
 
   webshop:
-    image: porrag/infra-webshop:latest
-    container_name: infra-webshop-app
+    image: open-hybrid-cloud/open-hybrid-cloud:latest
+    container_name: open-hybrid-cloud-app
     expose:
       - "8080"
     environment:
@@ -51,7 +51,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: infra-webshop-postgres
+    container_name: open-hybrid-cloud-postgres
     environment:
       POSTGRES_DB: infrawebshop
       POSTGRES_USER: postgres
@@ -67,7 +67,7 @@ services:
 
   watchtower:
     image: containrrr/watchtower:latest
-    container_name: infra-webshop-watchtower
+    container_name: open-hybrid-cloud-watchtower
     environment:
       DOCKER_API_VERSION: "1.47"
     volumes:

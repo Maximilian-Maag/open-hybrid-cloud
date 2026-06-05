@@ -2,9 +2,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "infra-webshop.fullname" . }}-migrate
+  name: {{ include "open-hybrid-cloud.fullname" . }}-migrate
   labels:
-    {{- include "infra-webshop.labels" . | nindent 4 }}
+    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
@@ -14,7 +14,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "infra-webshop.selectorLabels" . | nindent 8 }}
+        {{- include "open-hybrid-cloud.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never
@@ -24,12 +24,12 @@ spec:
       {{- end }}
       containers:
         - name: migrate
-          image: {{ include "infra-webshop.image" . }}
+          image: {{ include "open-hybrid-cloud.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/migrate"]
           envFrom:
             - secretRef:
-                name: {{ include "infra-webshop.fullname" . }}
+                name: {{ include "open-hybrid-cloud.fullname" . }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

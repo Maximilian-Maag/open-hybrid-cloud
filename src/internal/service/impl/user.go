@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/porr-ag/infra-webshop/src/internal/auth"
-	"github.com/porr-ag/infra-webshop/src/internal/model"
-	"github.com/porr-ag/infra-webshop/src/internal/repository"
-	"github.com/porr-ag/infra-webshop/src/internal/service"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/auth"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/model"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/repository"
+	"github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/service"
 )
 
 type userService struct {

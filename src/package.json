@@ -1,5 +1,5 @@
 {
-  "name": "infra-webshop",
+  "name": "open-hybrid-cloud",
   "private": true,
   "scripts": {
     "build:css": "BROWSERSLIST_IGNORE_OLD_DATA=1 tailwindcss -i input.css -o ui/static/css/style.css --minify",

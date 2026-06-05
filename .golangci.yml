@@ -21,4 +21,4 @@ linters-settings:
   exhaustive:
     default-signifies-exhaustive: true
   goimports:
-    local-prefixes: github.com/porr-ag/infra-webshop
+    local-prefixes: github.com/open-hybrid-cloud/open-hybrid-cloud

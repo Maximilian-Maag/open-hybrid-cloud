@@ -138,7 +138,7 @@ func (s *Service) sendTLSwith(addr, host string, to []string, msg []byte) error 
 
 func (s *Service) findAdminEmails(ctx context.Context) []string {
 	var emails []string
-	for _, role := range []model.Role{model.RoleAdmin, model.RoleShopAdmin} {
+	for _, role := range []model.Role{model.RoleAdmin, model.RoleRoot} {
 		users, err := s.users.FindByRole(ctx, role)
 		if err != nil {
 			continue

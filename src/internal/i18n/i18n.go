@@ -1891,12 +1891,12 @@ var messages = map[string]map[string]string{
 		"lv": "Loma", "lt": "Vaidmuo", "mt": "Rwol", "ga": "Ról", "ru": "Роль",
 	},
 	"admin.role_admin": {
-		"de": "Webshop Admin", "en": "Webshop Admin", "fr": "Admin Webshop", "it": "Admin Webshop",
-		"es": "Admin Webshop", "pt": "Admin Webshop", "nl": "Webshop Admin", "pl": "Admin Webshop",
-		"cs": "Admin Webshop", "sk": "Admin Webshop", "sl": "Admin Webshop", "hr": "Admin Webshop",
-		"ro": "Admin Webshop", "hu": "Webshop Admin", "bg": "Уебшоп Админ", "el": "Διαχειριστής Webshop",
-		"fi": "Webshop Admin", "sv": "Webshop Admin", "da": "Webshop Admin", "et": "Webshop Admin",
-		"lv": "Webshop Admin", "lt": "Webshop Admin", "mt": "Admin tal-Webshop", "ga": "Riarthóir Webshop", "ru": "Администратор Webshop",
+		"de": "Root", "en": "Root", "fr": "Root", "it": "Root",
+		"es": "Root", "pt": "Root", "nl": "Root", "pl": "Root",
+		"cs": "Root", "sk": "Root", "sl": "Root", "hr": "Root",
+		"ro": "Root", "hu": "Root", "bg": "Root", "el": "Root",
+		"fi": "Root", "sv": "Root", "da": "Root", "et": "Root",
+		"lv": "Root", "lt": "Root", "mt": "Root", "ga": "Root", "ru": "Root",
 	},
 	"admin.role_du": {
 		"de": "Admin", "en": "Admin", "fr": "Admin", "it": "Admin",

@@ -102,12 +102,12 @@ templ userMenu(pd view.PageData) {
 		<div class="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1">
 			<a href="/orders" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Bestellungen</a>
 			<a href="/projects" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Projekte</a>
-			if pd.Session.Role == "admin" || pd.Session.Role == "shop_admin" {
+			if pd.Session.Role == "admin" || pd.Session.Role == "root" {
 				<hr class="my-1 border-slate-100"/>
 				<a href="/approvals" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Genehmigungen</a>
 				<a href="/audit" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Audit</a>
 			}
-			if pd.Session.Role == "shop_admin" {
+			if pd.Session.Role == "root" {
 				<hr class="my-1 border-slate-100"/>
 				<a href="/admin" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Admin</a>
 			}
@@ -160,11 +160,11 @@ templ layoutNav(pd view.PageData) {
 			<a href="/orders" class={ navLinkClass(pd.Path, "/orders") }>Bestellungen</a>
 			<a href="/projects" class={ navLinkClass(pd.Path, "/projects") }>Projekte</a>
 			<a href="/infrastructure" class={ navLinkClass(pd.Path, "/infrastructure") }>Infrastruktur</a>
-			if pd.Session != nil && (pd.Session.Role == "admin" || pd.Session.Role == "shop_admin") {
+			if pd.Session != nil && (pd.Session.Role == "admin" || pd.Session.Role == "root") {
 				<a href="/approvals" class={ navLinkClass(pd.Path, "/approvals") }>Genehmigungen</a>
 				<a href="/audit" class={ navLinkClass(pd.Path, "/audit") }>Audit</a>
 			}
-			if pd.Session != nil && pd.Session.Role == "shop_admin" {
+			if pd.Session != nil && pd.Session.Role == "root" {
 				<a href="/admin" class={ navLinkClass(pd.Path, "/admin") }>Admin</a>
 			}
 		</nav>

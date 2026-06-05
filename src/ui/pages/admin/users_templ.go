@@ -238,14 +238,14 @@ func AdminUsers(vd view.AdminUsersView) templ.Component {
 								}()
 							}
 							ctx = templ.InitializeContext(ctx)
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<option value=\"shop_admin\">")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<option value=\"root\">")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
 							var templ_7745c5c3_Var13 string
 							templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_admin", vd.Lang))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 49, Col: 72}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 49, Col: 66}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 							if templ_7745c5c3_Err != nil {
@@ -401,7 +401,7 @@ func adminUserRow(u model.User, lang string) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		switch string(u.Role) {
-		case "shop_admin":
+		case "root":
 			templ_7745c5c3_Err = comp.Badge(i18n.T("admin.role_admin", lang), comp.BadgeRed).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -598,15 +598,15 @@ func AdminUserEdit(vd view.AdminUserEditView) templ.Component {
 								}()
 							}
 							ctx = templ.InitializeContext(ctx)
-							if string(vd.EditUser.Role) == "shop_admin" {
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<option value=\"shop_admin\" selected>")
+							if string(vd.EditUser.Role) == "root" {
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<option value=\"root\" selected>")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
 								var templ_7745c5c3_Var29 string
 								templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_admin", vd.Lang))
 								if templ_7745c5c3_Err != nil {
-									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 108, Col: 82}
+									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 108, Col: 76}
 								}
 								_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 								if templ_7745c5c3_Err != nil {
@@ -617,14 +617,14 @@ func AdminUserEdit(vd view.AdminUserEditView) templ.Component {
 									return templ_7745c5c3_Err
 								}
 							} else {
-								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<option value=\"shop_admin\">")
+								templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<option value=\"root\">")
 								if templ_7745c5c3_Err != nil {
 									return templ_7745c5c3_Err
 								}
 								var templ_7745c5c3_Var30 string
 								templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_admin", vd.Lang))
 								if templ_7745c5c3_Err != nil {
-									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 110, Col: 73}
+									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 110, Col: 67}
 								}
 								_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 								if templ_7745c5c3_Err != nil {

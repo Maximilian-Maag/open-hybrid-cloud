@@ -325,7 +325,7 @@ func canDeleteProject(s *auth.SessionData, p model.Project) bool {
 	if s == nil {
 		return false
 	}
-	return string(s.Role) == "shop_admin" || string(s.Role) == "admin" ||
+	return string(s.Role) == "root" || string(s.Role) == "admin" ||
 		(string(s.Role) == "project_leader" && p.OwnerID == s.UserID)
 }
 

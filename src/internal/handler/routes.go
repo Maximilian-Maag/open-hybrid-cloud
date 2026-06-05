@@ -108,7 +108,7 @@ func New(d Deps) *Handler {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	req := h.sessions.Require
 	admin := func(next http.HandlerFunc) http.Handler {
-		return h.sessions.RequireRole("shop_admin", http.HandlerFunc(next))
+		return h.sessions.RequireRole("root", http.HandlerFunc(next))
 	}
 	duAdmin := func(next http.HandlerFunc) http.Handler {
 		return h.sessions.RequireRole("admin", http.HandlerFunc(next))

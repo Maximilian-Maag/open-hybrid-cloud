@@ -137,8 +137,8 @@ func bootstrapAdmin(ctx context.Context, users interface {
 	}
 	u := &model.User{
 		Email: cfg.AdminEmail,
-		Name:  "Webshop Admin",
-		Role:  model.RoleShopAdmin,
+		Name:  "Root",
+		Role:  model.RoleRoot,
 	}
 	if err := users.Create(ctx, u, cfg.AdminPassword); err != nil {
 		slog.Error("bootstrap admin failed", "err", err)

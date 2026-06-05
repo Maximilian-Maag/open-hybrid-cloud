@@ -33,7 +33,7 @@
         <a href="/projects" class="ds-btn-md ds-btn-ghost">{{t "common.cancel" $.Lang}}</a>
     </div>
     {{if $.Session}}
-    {{if or (eq $.Session.Role "shop_admin") (eq $.Session.Role "admin") (and (eq $.Session.Role "project_leader") (eq .Project.OwnerID $.Session.UserID))}}
+    {{if or (eq $.Session.Role "root") (eq $.Session.Role "admin") (and (eq $.Session.Role "project_leader") (eq .Project.OwnerID $.Session.UserID))}}
     <div class="mt-4">
         <form method="POST" action="/projects/{{.Project.ID}}/delete" onsubmit="return confirm('{{t "admin.confirm_delete" $.Lang}}')">
             <button type="submit" class="ds-btn-md ds-btn-ghost text-red-600">{{t "common.delete" $.Lang}}</button>

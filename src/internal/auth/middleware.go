@@ -32,12 +32,12 @@ func (s *SessionStore) RequireRole(role model.Role, next http.Handler) http.Hand
 }
 
 // hasRole returns true if actual meets or exceeds required level.
-// Role hierarchy: shop_admin > admin > project_leader
+// Role hierarchy: root > admin > project_leader
 func hasRole(actual, required model.Role) bool {
 	rank := map[model.Role]int{
 		model.RoleProjectLeader: 1,
 		model.RoleAdmin:         2,
-		model.RoleShopAdmin:     3,
+		model.RoleRoot:          3,
 	}
 	return rank[actual] >= rank[required]
 }

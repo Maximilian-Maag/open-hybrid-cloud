@@ -24,7 +24,7 @@
                     <td>{{.Name}}</td>
                     <td class="text-sm">{{.Email}}</td>
                     <td>
-                        {{if eq (printf "%s" .Role) "shop_admin"}}<span class="ds-badge-red">{{t "admin.role_admin" $.Lang}}</span>
+                        {{if eq (printf "%s" .Role) "root"}}<span class="ds-badge-red">{{t "admin.role_admin" $.Lang}}</span>
                         {{else if eq (printf "%s" .Role) "admin"}}<span class="ds-badge-yellow">{{t "admin.role_du" $.Lang}}</span>
                         {{else}}<span class="ds-badge-gray">{{t "admin.role_pl" $.Lang}}</span>{{end}}
                     </td>
@@ -57,7 +57,7 @@
                 <div class="ds-field">
                     <label for="new-user-role" class="ds-label">{{t "admin.role" .Lang}}</label>
                     <select id="new-user-role" name="role" class="ds-select">
-                        <option value="shop_admin">{{t "admin.role_admin" .Lang}}</option>
+                        <option value="root">{{t "admin.role_admin" .Lang}}</option>
                         <option value="admin">{{t "admin.role_du" .Lang}}</option>
                         <option value="project_leader">{{t "admin.role_pl" .Lang}}</option>
                     </select>

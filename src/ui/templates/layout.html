@@ -86,12 +86,12 @@
                      style="display:none">
                     <a href="/orders" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.orders" .Lang}}</a>
                     <a href="/projects" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.projects" .Lang}}</a>
-                    {{if or (eq .Session.Role "admin") (eq .Session.Role "shop_admin")}}
+                    {{if or (eq .Session.Role "admin") (eq .Session.Role "root")}}
                     <hr class="my-1 border-gray-100" role="separator" />
                     <a href="/approvals" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.approvals" .Lang}}</a>
                     <a href="/audit" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.audit" .Lang}}</a>
                     {{end}}
-                    {{if eq .Session.Role "shop_admin"}}
+                    {{if eq .Session.Role "root"}}
                     <hr class="my-1 border-gray-100" role="separator" />
                     <a href="/admin" role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{t "nav.admin" .Lang}}</a>
                     {{end}}
@@ -134,11 +134,11 @@
             <a href="/orders" class="nav-lnk text-sm px-2 py-0.5 rounded whitespace-nowrap {{if hasPrefix .Path "/orders"}}active{{end}}">{{t "nav.orders" .Lang}}</a>
             <a href="/projects" class="nav-lnk text-sm px-2 py-0.5 rounded whitespace-nowrap {{if hasPrefix .Path "/projects"}}active{{end}}">{{t "nav.projects" .Lang}}</a>
             <a href="/infrastructure" class="nav-lnk text-sm px-2 py-0.5 rounded whitespace-nowrap {{if hasPrefix .Path "/infrastructure"}}active{{end}}">{{t "nav.infra" .Lang}}</a>
-            {{if or (eq .Session.Role "admin") (eq .Session.Role "shop_admin")}}
+            {{if or (eq .Session.Role "admin") (eq .Session.Role "root")}}
             <a href="/approvals" class="nav-lnk text-sm px-2 py-0.5 rounded whitespace-nowrap {{if hasPrefix .Path "/approvals"}}active{{end}}">{{t "nav.approvals" .Lang}}</a>
             <a href="/audit" class="nav-lnk text-sm px-2 py-0.5 rounded whitespace-nowrap {{if hasPrefix .Path "/audit"}}active{{end}}">{{t "nav.audit" .Lang}}</a>
             {{end}}
-            {{if eq .Session.Role "shop_admin"}}
+            {{if eq .Session.Role "root"}}
             <a href="/admin" class="nav-lnk text-sm px-2 py-0.5 rounded whitespace-nowrap {{if hasPrefix .Path "/admin"}}active{{end}}">{{t "nav.admin" .Lang}}</a>
             {{end}}
         </nav>

@@ -40,7 +40,7 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var projects []model.Project
-	if sess.Role == model.RoleAdmin || sess.Role == model.RoleShopAdmin {
+	if sess.Role == model.RoleAdmin || sess.Role == model.RoleRoot {
 		projects, _ = h.projects.ListAll(r.Context())
 	} else {
 		projects, _ = h.projects.ListByOwner(r.Context(), sess.UserID)
@@ -97,7 +97,7 @@ func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
 		Parameters:    params,
 	}
 
-	if sess.Role == model.RoleAdmin || sess.Role == model.RoleShopAdmin {
+	if sess.Role == model.RoleAdmin || sess.Role == model.RoleRoot {
 		o.Status = model.OrderStatusPendingApproval
 		if err := h.orders.Create(r.Context(), o); err != nil {
 			h.redirectWithFlash(w, r, "/orders/new", "error", i18n.T("flash.order_create_error", lang))

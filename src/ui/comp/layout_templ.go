@@ -292,13 +292,13 @@ func userMenu(pd view.PageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if pd.Session.Role == "admin" || pd.Session.Role == "shop_admin" {
+		if pd.Session.Role == "admin" || pd.Session.Role == "root" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<hr class=\"my-1 border-slate-100\"><a href=\"/approvals\" class=\"block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50\">Genehmigungen</a> <a href=\"/audit\" class=\"block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50\">Audit</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		if pd.Session.Role == "shop_admin" {
+		if pd.Session.Role == "root" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<hr class=\"my-1 border-slate-100\"><a href=\"/admin\" class=\"block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50\">Admin</a>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -568,7 +568,7 @@ func layoutNav(pd view.PageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if pd.Session != nil && (pd.Session.Role == "admin" || pd.Session.Role == "shop_admin") {
+		if pd.Session != nil && (pd.Session.Role == "admin" || pd.Session.Role == "root") {
 			var templ_7745c5c3_Var30 = []any{navLinkClass(pd.Path, "/approvals")}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var30...)
 			if templ_7745c5c3_Err != nil {
@@ -614,7 +614,7 @@ func layoutNav(pd view.PageData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		if pd.Session != nil && pd.Session.Role == "shop_admin" {
+		if pd.Session != nil && pd.Session.Role == "root" {
 			var templ_7745c5c3_Var34 = []any{navLinkClass(pd.Path, "/admin")}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var34...)
 			if templ_7745c5c3_Err != nil {

@@ -9,7 +9,7 @@ type Role string
 const (
 	RoleAdmin         Role = "admin"
 	RoleProjectLeader Role = "project_leader"
-	RoleShopAdmin     Role = "shop_admin"
+	RoleRoot          Role = "root"
 )
 
 // --- Users ---

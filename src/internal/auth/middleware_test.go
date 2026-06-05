@@ -17,7 +17,7 @@ func TestHasRole_exactMatch(t *testing.T) {
 	}{
 		{model.RoleProjectLeader, model.RoleProjectLeader, true},
 		{model.RoleAdmin, model.RoleAdmin, true},
-		{model.RoleShopAdmin, model.RoleShopAdmin, true},
+		{model.RoleRoot, model.RoleRoot, true},
 	}
 	for _, tc := range cases {
 		if got := hasRole(tc.actual, tc.required); got != tc.want {
@@ -31,12 +31,12 @@ func TestHasRole_hierarchy(t *testing.T) {
 		actual, required model.Role
 		want             bool
 	}{
-		{model.RoleShopAdmin, model.RoleAdmin, true},
-		{model.RoleShopAdmin, model.RoleProjectLeader, true},
+		{model.RoleRoot, model.RoleAdmin, true},
+		{model.RoleRoot, model.RoleProjectLeader, true},
 		{model.RoleAdmin, model.RoleProjectLeader, true},
-		{model.RoleAdmin, model.RoleShopAdmin, false},
+		{model.RoleAdmin, model.RoleRoot, false},
 		{model.RoleProjectLeader, model.RoleAdmin, false},
-		{model.RoleProjectLeader, model.RoleShopAdmin, false},
+		{model.RoleProjectLeader, model.RoleRoot, false},
 	}
 	for _, tc := range cases {
 		if got := hasRole(tc.actual, tc.required); got != tc.want {
@@ -101,7 +101,7 @@ func TestRequire_allowsValidSession(t *testing.T) {
 
 func TestRequireRole_forbidsInsufficientRole(t *testing.T) {
 	store := NewSessionStore("a-32-byte-secret-for-testing-ok!")
-	handler := store.RequireRole(model.RoleShopAdmin, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := store.RequireRole(model.RoleRoot, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -130,7 +130,7 @@ func TestRequireRole_allowsSufficientRole(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	_ = store.Set(rec, SessionData{UserID: 1, Email: "user@example.com", Role: model.RoleShopAdmin})
+	_ = store.Set(rec, SessionData{UserID: 1, Email: "user@example.com", Role: model.RoleRoot})
 
 	req := httptest.NewRequest(http.MethodGet, "/admin-area", nil)
 	for _, c := range rec.Result().Cookies() {

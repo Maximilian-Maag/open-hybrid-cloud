@@ -46,7 +46,7 @@ templ AdminUsers(vd view.AdminUsersView) {
 						}
 						@comp.Field(i18n.T("admin.role", vd.Lang), "role", false) {
 							@comp.Select("role", templ.Attributes{}) {
-								<option value="shop_admin">{ i18n.T("admin.role_admin", vd.Lang) }</option>
+								<option value="root">{ i18n.T("admin.role_admin", vd.Lang) }</option>
 								<option value="admin">{ i18n.T("admin.role_du", vd.Lang) }</option>
 								<option value="project_leader">{ i18n.T("admin.role_pl", vd.Lang) }</option>
 							}
@@ -68,7 +68,7 @@ templ adminUserRow(u model.User, lang string) {
 		<td class="px-4 py-3 text-slate-500 text-xs">{ u.Email }</td>
 		<td class="px-4 py-3">
 			switch string(u.Role) {
-			case "shop_admin":
+			case "root":
 				@comp.Badge(i18n.T("admin.role_admin", lang), comp.BadgeRed)
 			case "admin":
 				@comp.Badge(i18n.T("admin.role_du", lang), comp.BadgeYellow)
@@ -104,10 +104,10 @@ templ AdminUserEdit(vd view.AdminUserEditView) {
 						}
 						@comp.Field(i18n.T("admin.role", vd.Lang), "role", false) {
 							@comp.Select("role", templ.Attributes{}) {
-								if string(vd.EditUser.Role) == "shop_admin" {
-									<option value="shop_admin" selected>{ i18n.T("admin.role_admin", vd.Lang) }</option>
+								if string(vd.EditUser.Role) == "root" {
+									<option value="root" selected>{ i18n.T("admin.role_admin", vd.Lang) }</option>
 								} else {
-									<option value="shop_admin">{ i18n.T("admin.role_admin", vd.Lang) }</option>
+									<option value="root">{ i18n.T("admin.role_admin", vd.Lang) }</option>
 								}
 								if string(vd.EditUser.Role) == "admin" {
 									<option value="admin" selected>{ i18n.T("admin.role_du", vd.Lang) }</option>

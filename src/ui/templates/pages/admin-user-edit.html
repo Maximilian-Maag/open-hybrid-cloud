@@ -23,7 +23,7 @@
                 <div class="ds-field">
                     <label for="edit-user-role" class="ds-label">{{t "admin.role" $.Lang}}</label>
                     <select id="edit-user-role" name="role" class="ds-select">
-                        <option value="shop_admin" {{if eq (printf "%s" .EditUser.Role) "shop_admin"}}selected{{end}}>{{t "admin.role_admin" $.Lang}}</option>
+                        <option value="root" {{if eq (printf "%s" .EditUser.Role) "root"}}selected{{end}}>{{t "admin.role_admin" $.Lang}}</option>
                         <option value="admin" {{if eq (printf "%s" .EditUser.Role) "admin"}}selected{{end}}>{{t "admin.role_du" $.Lang}}</option>
                         <option value="project_leader" {{if eq (printf "%s" .EditUser.Role) "project_leader"}}selected{{end}}>{{t "admin.role_pl" $.Lang}}</option>
                     </select>

@@ -243,9 +243,9 @@ func AdminUsers(vd view.AdminUsersView) templ.Component {
 								return templ_7745c5c3_Err
 							}
 							var templ_7745c5c3_Var13 string
-							templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_admin", vd.Lang))
+							templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_root", vd.Lang))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 49, Col: 66}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 49, Col: 65}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 							if templ_7745c5c3_Err != nil {
@@ -256,9 +256,9 @@ func AdminUsers(vd view.AdminUsersView) templ.Component {
 								return templ_7745c5c3_Err
 							}
 							var templ_7745c5c3_Var14 string
-							templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_du", vd.Lang))
+							templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_admin", vd.Lang))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 50, Col: 64}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 50, Col: 67}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 							if templ_7745c5c3_Err != nil {
@@ -402,12 +402,12 @@ func adminUserRow(u model.User, lang string) templ.Component {
 		}
 		switch string(u.Role) {
 		case "root":
-			templ_7745c5c3_Err = comp.Badge(i18n.T("admin.role_admin", lang), comp.BadgeRed).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = comp.Badge(i18n.T("admin.role_root", lang), comp.BadgeRed).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		case "admin":
-			templ_7745c5c3_Err = comp.Badge(i18n.T("admin.role_du", lang), comp.BadgeYellow).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = comp.Badge(i18n.T("admin.role_admin", lang), comp.BadgeYellow).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -604,9 +604,9 @@ func AdminUserEdit(vd view.AdminUserEditView) templ.Component {
 									return templ_7745c5c3_Err
 								}
 								var templ_7745c5c3_Var29 string
-								templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_admin", vd.Lang))
+								templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_root", vd.Lang))
 								if templ_7745c5c3_Err != nil {
-									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 108, Col: 76}
+									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 108, Col: 75}
 								}
 								_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 								if templ_7745c5c3_Err != nil {
@@ -622,9 +622,9 @@ func AdminUserEdit(vd view.AdminUserEditView) templ.Component {
 									return templ_7745c5c3_Err
 								}
 								var templ_7745c5c3_Var30 string
-								templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_admin", vd.Lang))
+								templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_root", vd.Lang))
 								if templ_7745c5c3_Err != nil {
-									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 110, Col: 67}
+									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 110, Col: 66}
 								}
 								_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 								if templ_7745c5c3_Err != nil {
@@ -645,9 +645,9 @@ func AdminUserEdit(vd view.AdminUserEditView) templ.Component {
 									return templ_7745c5c3_Err
 								}
 								var templ_7745c5c3_Var31 string
-								templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_du", vd.Lang))
+								templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_admin", vd.Lang))
 								if templ_7745c5c3_Err != nil {
-									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 113, Col: 74}
+									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 113, Col: 77}
 								}
 								_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 								if templ_7745c5c3_Err != nil {
@@ -663,9 +663,9 @@ func AdminUserEdit(vd view.AdminUserEditView) templ.Component {
 									return templ_7745c5c3_Err
 								}
 								var templ_7745c5c3_Var32 string
-								templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_du", vd.Lang))
+								templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(i18n.T("admin.role_admin", vd.Lang))
 								if templ_7745c5c3_Err != nil {
-									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 115, Col: 65}
+									return templ.Error{Err: templ_7745c5c3_Err, FileName: `src/ui/pages/admin/users.templ`, Line: 115, Col: 68}
 								}
 								_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 								if templ_7745c5c3_Err != nil {

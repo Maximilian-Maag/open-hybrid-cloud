@@ -1890,7 +1890,7 @@ var messages = map[string]map[string]string{
 		"fi": "Rooli", "sv": "Roll", "da": "Rolle", "et": "Roll",
 		"lv": "Loma", "lt": "Vaidmuo", "mt": "Rwol", "ga": "Ról", "ru": "Роль",
 	},
-	"admin.role_admin": {
+	"admin.role_root": {
 		"de": "Root", "en": "Root", "fr": "Root", "it": "Root",
 		"es": "Root", "pt": "Root", "nl": "Root", "pl": "Root",
 		"cs": "Root", "sk": "Root", "sl": "Root", "hr": "Root",
@@ -1898,7 +1898,7 @@ var messages = map[string]map[string]string{
 		"fi": "Root", "sv": "Root", "da": "Root", "et": "Root",
 		"lv": "Root", "lt": "Root", "mt": "Root", "ga": "Root", "ru": "Root",
 	},
-	"admin.role_du": {
+	"admin.role_admin": {
 		"de": "Admin", "en": "Admin", "fr": "Admin", "it": "Admin",
 		"es": "Admin", "pt": "Admin", "nl": "Admin", "pl": "Admin",
 		"cs": "Admin", "sk": "Admin", "sl": "Admin", "hr": "Admin",

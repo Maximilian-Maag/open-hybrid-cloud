@@ -66,6 +66,9 @@ func buildVars(params map[string]string, extraKey, extraVal string) []map[string
 	vars := make([]map[string]string, 0, len(params)+1)
 	vars = append(vars, map[string]string{"key": extraKey, "value": extraVal})
 	for k, v := range params {
+		if k == "" {
+			continue
+		}
 		key := strings.ToUpper(k)
 		if reserved[key] {
 			continue

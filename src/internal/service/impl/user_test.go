@@ -31,6 +31,9 @@ func (r *stubUserRepo) FindByEmail(ctx context.Context, email string) (*model.Us
 	return nil, nil
 }
 func (r *stubUserRepo) FindBySSOSub(ctx context.Context, sub string) (*model.User, error) {
+	if r.saved != nil && r.saved.SSOSub == sub {
+		return r.saved, nil
+	}
 	return nil, nil
 }
 func (r *stubUserRepo) FindByRole(ctx context.Context, role model.Role) ([]model.User, error) {
@@ -155,5 +158,56 @@ func TestUserService_SetActive_positive(t *testing.T) {
 	}
 	if err := svc.SetActive(context.Background(), repo.saved.ID, true); err != nil {
 		t.Fatalf("SetActive(true): %v", err)
+	}
+}
+
+func TestUserService_Create_noPassword_hashEmpty(t *testing.T) {
+	repo := &stubUserRepo{}
+	svc := NewUserService(repo)
+
+	u := &model.User{Email: "sso@example.com", SSOSub: "sub123"}
+	if err := svc.Create(context.Background(), u, ""); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if repo.saved.PasswordHash != "" {
+		t.Error("expected empty PasswordHash when no password is provided")
+	}
+}
+
+func TestUserService_UpsertSSO_createsNewUser(t *testing.T) {
+	repo := &stubUserRepo{}
+	svc := NewUserService(repo)
+
+	u, err := svc.UpsertSSO(context.Background(), "sub-new", "new@example.com", "New User", model.RoleProjectLeader)
+	if err != nil {
+		t.Fatalf("UpsertSSO: %v", err)
+	}
+	if u == nil {
+		t.Fatal("expected user, got nil")
+	}
+	if u.Email != "new@example.com" {
+		t.Errorf("Email: want 'new@example.com', got %q", u.Email)
+	}
+	if u.SSOSub != "sub-new" {
+		t.Errorf("SSOSub: want 'sub-new', got %q", u.SSOSub)
+	}
+}
+
+func TestUserService_UpsertSSO_returnsExistingUser(t *testing.T) {
+	repo := &stubUserRepo{}
+	svc := NewUserService(repo)
+
+	// Create user first so FindBySSOSub will find it.
+	_ = svc.Create(context.Background(), &model.User{Email: "existing@example.com", SSOSub: "sub-existing"}, "")
+
+	u, err := svc.UpsertSSO(context.Background(), "sub-existing", "existing@example.com", "Existing", model.RoleAdmin)
+	if err != nil {
+		t.Fatalf("UpsertSSO: %v", err)
+	}
+	if u == nil {
+		t.Fatal("expected user, got nil")
+	}
+	if u.Email != "existing@example.com" {
+		t.Errorf("UpsertSSO: returned wrong user, email = %q", u.Email)
 	}
 }

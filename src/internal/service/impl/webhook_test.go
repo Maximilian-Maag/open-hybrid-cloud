@@ -95,3 +95,21 @@ func TestFireWebhook_positive_formEncoded(t *testing.T) {
 		t.Fatalf("pid: want 123, got %q", pid)
 	}
 }
+
+func TestFireWebhook_negative_emptyURL(t *testing.T) {
+	_, err := fireWebhook(context.Background(), &http.Client{}, "", "token", nil)
+	if err == nil {
+		t.Error("expected error for empty URL, got nil")
+	}
+}
+
+func TestBuildVars_emptyKeyIsSkipped(t *testing.T) {
+	params := map[string]string{"": "value", "region": "eu"}
+	vars := buildVars(params, "ORDER_ID", "1")
+
+	for _, v := range vars {
+		if v["key"] == "" {
+			t.Error("buildVars: empty key must not appear in result")
+		}
+	}
+}

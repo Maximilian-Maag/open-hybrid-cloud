@@ -160,3 +160,58 @@ func TestOrderService_Approve_negative_orderNotFound(t *testing.T) {
 		t.Error("expected error when approving non-existent order, got nil")
 	}
 }
+
+func TestOrderService_Reject_positive(t *testing.T) {
+	svc := NewOrderService(newStubOrderRepo(), &stubInfraRepo2{}, &stubEnvRepo{}, &stubGitLabSourceRepo{}, &stubWebhookRepo{}, &stubAudit{})
+
+	err := svc.Reject(context.Background(), 1, 99, "budget exceeded")
+	if err != nil {
+		t.Fatalf("Reject: unexpected error: %v", err)
+	}
+}
+
+func TestOrderService_Create_setsStatusPendingApproval(t *testing.T) {
+	svc := NewOrderService(newStubOrderRepo(), &stubInfraRepo2{}, &stubEnvRepo{}, &stubGitLabSourceRepo{}, &stubWebhookRepo{}, &stubAudit{})
+
+	o := &model.Order{ProjectID: 1, ProductID: 2, UserID: 3}
+	if err := svc.Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if o.Status != model.OrderStatusPendingApproval {
+		t.Errorf("Status: want %q, got %q", model.OrderStatusPendingApproval, o.Status)
+	}
+}
+
+func TestExtractProjectID_positive(t *testing.T) {
+	tests := []struct {
+		url  string
+		want int64
+	}{
+		{"https://gitlab.example.com/projects/123/trigger/pipeline", 123},
+		{"https://gitlab.example.com/projects/1/trigger/pipeline", 1},
+		{"https://gitlab.example.com/projects/99999/trigger/pipeline", 99999},
+	}
+	for _, tc := range tests {
+		got, err := extractProjectID(tc.url)
+		if err != nil {
+			t.Errorf("extractProjectID(%q): unexpected error: %v", tc.url, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("extractProjectID(%q): got %d, want %d", tc.url, got, tc.want)
+		}
+	}
+}
+
+func TestExtractProjectID_negative_noMatch(t *testing.T) {
+	urls := []string{
+		"https://gitlab.example.com/api/v4/trigger",
+		"",
+		"https://example.com/projects/",
+	}
+	for _, u := range urls {
+		if _, err := extractProjectID(u); err == nil {
+			t.Errorf("extractProjectID(%q): expected error, got nil", u)
+		}
+	}
+}

@@ -80,3 +80,50 @@ func TestProductService_GetByID_negative_notFound(t *testing.T) {
 		t.Errorf("expected nil for unknown ID, got %+v", p)
 	}
 }
+
+func TestProductService_GetByID_fallsBackToBaseLanguage(t *testing.T) {
+	prod := &model.Product{ID: 10, CategoryID: 1, BaseLanguage: "de"}
+	trans := &model.ProductTranslation{ProductID: 10, LanguageCode: "de", Name: "Netzwerk", Description: "Ein Netz"}
+	svc := NewProductService(&stubProductRepo{product: prod}, &stubTranslationRepo{translation: trans})
+
+	// Request English, but only German translation exists — should fall back to "de".
+	p, err := svc.GetByID(context.Background(), 10, "en")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if p == nil {
+		t.Fatal("expected product, got nil")
+	}
+	if p.Name != "Netzwerk" {
+		t.Errorf("Name: want 'Netzwerk' (base language fallback), got %q", p.Name)
+	}
+}
+
+func TestProductService_ListAll_withTranslations(t *testing.T) {
+	prod := &model.Product{ID: 7, CategoryID: 2, BaseLanguage: "de"}
+	trans := &model.ProductTranslation{ProductID: 7, LanguageCode: "de", Name: "Storage", Description: "Speicher"}
+	svc := NewProductService(&stubProductRepo{product: prod}, &stubTranslationRepo{translation: trans})
+
+	prods, err := svc.ListAll(context.Background(), "de")
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if len(prods) != 1 {
+		t.Fatalf("ListAll: want 1 product, got %d", len(prods))
+	}
+	if prods[0].Name != "Storage" {
+		t.Errorf("Name: want 'Storage', got %q", prods[0].Name)
+	}
+}
+
+func TestProductService_ListAll_empty(t *testing.T) {
+	svc := NewProductService(&stubProductRepo{}, &stubTranslationRepo{})
+
+	prods, err := svc.ListAll(context.Background(), "de")
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if len(prods) != 0 {
+		t.Errorf("ListAll: want 0 products, got %d", len(prods))
+	}
+}

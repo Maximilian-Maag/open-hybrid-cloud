@@ -1,4 +1,4 @@
-.PHONY: help build run migrate css css-watch templ test vet lint install-requirements docker-build dev dev-down clean docs docs-clean
+.PHONY: help build run migrate css css-watch templ test e2e vet lint install-requirements docker-build dev dev-down clean docs docs-clean
 
 SERVER        := ./server
 MIGRATE       := ./migrate
@@ -15,7 +15,8 @@ help:
 	@echo "  css          generate Tailwind CSS once"
 	@echo "  css-watch    generate Tailwind CSS in watch mode"
 	@echo "  templ        compile templ files to Go"
-	@echo "  test         run tests"
+	@echo "  test         run unit + integration tests"
+	@echo "  e2e          run Playwright end-to-end tests (requires Docker)"
 	@echo "  vet          run go vet"
 	@echo "  lint         run golangci-lint"
 	@echo "  docker-build build Docker image"
@@ -49,6 +50,9 @@ $(SRC)/node_modules:
 
 test:
 	go test ./...
+
+e2e:
+	go test -v -timeout 300s ./$(SRC)/e2e/...
 
 vet:
 	go vet ./...

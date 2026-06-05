@@ -533,7 +533,7 @@ var messages = map[string]map[string]string{
 		"mt": "L-ebda prodotti disponibbli għalissa", "ga": "Níl táirgí ar fáil go fóill", "ru": "Продукты пока недоступны",
 	},
 	"catalog.no_products_hint": {
-		"de": "Der Webshop Admin muss zuerst Produkte und Kategorien anlegen.", "en": "The webshop admin needs to create products and categories first.",
+		"de": "Der Root-Account muss zuerst Produkte und Kategorien anlegen.", "en": "The root account needs to create products and categories first.",
 		"fr": "L'administrateur doit d'abord créer des produits et des catégories.", "it": "L'amministratore deve prima creare prodotti e categorie.",
 		"es": "El administrador debe crear primero productos y categorías.", "pt": "O administrador precisa criar produtos e categorias primeiro.",
 		"nl": "De beheerder moet eerst producten en categorieën aanmaken.", "pl": "Administrator musi najpierw utworzyć produkty i kategorie.",
@@ -1231,12 +1231,12 @@ var messages = map[string]map[string]string{
 		"lv": "← Admin", "lt": "← Admin", "mt": "← Admin", "ga": "← Riarthóir", "ru": "← Админ",
 	},
 	"admin.title": {
-		"de": "Webshop Admin", "en": "Webshop Admin", "fr": "Admin Webshop", "it": "Admin Webshop",
-		"es": "Admin Webshop", "pt": "Admin Webshop", "nl": "Webshop Admin", "pl": "Admin Webshop",
-		"cs": "Admin Webshop", "sk": "Admin Webshop", "sl": "Admin Webshop", "hr": "Admin Webshop",
-		"ro": "Admin Webshop", "hu": "Webshop Admin", "bg": "Уебшоп Админ", "el": "Διαχειριστής Webshop",
-		"fi": "Webshop Admin", "sv": "Webshop Admin", "da": "Webshop Admin", "et": "Webshop Admin",
-		"lv": "Webshop Admin", "lt": "Webshop Admin", "mt": "Admin tal-Webshop", "ga": "Riarthóir Webshop", "ru": "Администратор Webshop",
+		"de": "Administration", "en": "Administration", "fr": "Administration", "it": "Amministrazione",
+		"es": "Administración", "pt": "Administração", "nl": "Beheer", "pl": "Administracja",
+		"cs": "Správa", "sk": "Správa", "sl": "Upravljanje", "hr": "Administracija",
+		"ro": "Administrare", "hu": "Adminisztráció", "bg": "Администрация", "el": "Διαχείριση",
+		"fi": "Hallinto", "sv": "Administration", "da": "Administration", "et": "Haldus",
+		"lv": "Administrācija", "lt": "Administravimas", "mt": "Amministrazzjoni", "ga": "Riarachán", "ru": "Администрация",
 	},
 	"admin.categories": {
 		"de": "Kategorien", "en": "Categories", "fr": "Catégories", "it": "Categorie",

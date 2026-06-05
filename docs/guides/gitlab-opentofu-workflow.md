@@ -449,7 +449,7 @@ ALTER TABLE orders ALTER COLUMN pipeline_id SET DEFAULT '[]';
 
 The order is considered **completed** when all stored pipeline IDs reach `success`; **failed** when any reaches `failed` or `canceled`.
 
-### Webshop Admin UI
+### Root UI
 
 The product edit page (`Admin → Products → Edit`) gains a **Webhooks** section per environment where the admin can add, reorder, and delete webhook entries. This replaces the single webhook URL that is currently on the `DeploymentEnvironment`.
 

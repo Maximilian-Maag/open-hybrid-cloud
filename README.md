@@ -21,7 +21,7 @@ Self-service portal through which Admins and project managers can order, manage,
 |------|-------------|
 | **Admin** | Can order directly, approve/reject all orders, view all projects and infrastructure. SSO via Entra ID. |
 | **Project Manager** | Can place orders (approval by Admin required), manage own projects and infrastructure. SSO via Entra ID. |
-| **Webshop Admin** | Manages the product catalog, system configuration, and users. Can view all projects. Local account. |
+| **Root** | Manages the product catalog, system configuration, and users. Can view all projects. Local account. |
 
 ## Order Process
 
@@ -54,13 +54,13 @@ Global Parameters          → apply to all products, all environments
               └── Environment-specific Parameters
 ```
 
-**variables.tf Import:** The Webshop Admin can browse repos on configured GitLab sources and select `variables.tf` files. Parameters are extracted via an HCL parser (`hashicorp/hcl/v2`) (name, type, description, default value, validation, sensitive flag).
+**variables.tf Import:** The Root can browse repos on configured GitLab sources and select `variables.tf` files. Parameters are extracted via an HCL parser (`hashicorp/hcl/v2`) (name, type, description, default value, validation, sensitive flag).
 
 **Deployment Environments:** Each environment (e.g. "AWS Frankfurt", "On-Premise Vienna") references a configured GitLab source. A product can be available in multiple environments, each with its own repo/webhook and pricing.
 
 ## Cost Centers
 
-Selectable per order line item — configured by the Webshop Admin:
+Selectable per order line item — configured by the Root:
 
 | Mode | Meaning |
 |------|---------|
@@ -68,7 +68,7 @@ Selectable per order line item — configured by the Webshop Admin:
 | **Selection** | Orderer selects from a maintained list |
 | **Overhead Cost Center** | Fixed overhead account |
 
-The Webshop Admin can set a default mode and either enforce it or suggest it only.
+The Root can set a default mode and either enforce it or suggest it only.
 
 ## Prices & Currencies
 
@@ -83,7 +83,7 @@ The Webshop Admin can set a default mode and either enforce it or suggest it onl
 - Product content: `product_translations` table (product_id, language_code, name, description)
 - Language selection: user preference in session, fallback to Accept-Language header
 
-**AI Translation (optional):** The Webshop Admin configures an AI provider (endpoint, API key, model). When a provider is configured, the admin can have product content translated with a single click and manually review it before saving.
+**AI Translation (optional):** The Root configures an AI provider (endpoint, API key, model). When a provider is configured, the admin can have product content translated with a single click and manually review it before saving.
 
 | Provider | Type |
 |----------|------|
@@ -94,7 +94,7 @@ The Webshop Admin can set a default mode and either enforce it or suggest it onl
 
 ## Audit Log
 
-Immutable compliance record of all actions. Viewable by Admin and Webshop Admin. Export as **CSV** or **PDF**.
+Immutable compliance record of all actions. Viewable by Admin and Root. Export as **CSV** or **PDF**.
 
 Logged events: order, approval, rejection (with comment), deployment, decommissioning, configuration changes.
 
@@ -151,7 +151,7 @@ open-hybrid-cloud/
 │   ├── requirements/
 │   │   └── requirements.md      # Requirements document
 │   └── guides/
-│       ├── webshop-admin.md     # Webshop Admin manual
+│       ├── webshop-admin.md     # Root manual
 │       ├── admin.md             # Admin manual
 │       └── gitlab-opentofu-workflow.md
 ├── .env.example                 # Local development
@@ -234,7 +234,7 @@ At minimum, set the following values in `.env`:
 | Variable | Description |
 |----------|-------------|
 | `SESSION_SECRET` | Random string (at least 32 characters) |
-| `ADMIN_PASSWORD` | Initial password for the Webshop Admin |
+| `ADMIN_PASSWORD` | Initial password for the Root |
 
 Entra ID (`ENTRA_*`) is **optional** for local development — the local admin account works without SSO.
 
@@ -275,7 +275,7 @@ make run
 ```
 
 The application is available at [http://localhost:8080](http://localhost:8080).
-Log in as Webshop Admin using the credentials set in `.env`.
+Log in as Root using the credentials set in `.env`.
 
 ### Run Tests
 
@@ -340,6 +340,6 @@ The container image is pulled from the private DockerHub registry — an `imageP
 |----------|------|
 | Architecture (C4) | `docs/architecture/workspace.dsl` |
 | Requirements | `docs/requirements/requirements.md` |
-| Webshop Admin Manual | `docs/guides/webshop-admin.md` |
+| Root Manual | `docs/guides/root.md` |
 | Admin Manual | `docs/guides/admin.md` |
 | GitLab & OpenTofu Integration | `docs/guides/gitlab-opentofu-workflow.md` |

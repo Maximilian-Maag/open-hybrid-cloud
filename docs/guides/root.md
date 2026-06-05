@@ -1,14 +1,14 @@
-# Webshop Admin Guide
+# Root Guide
 
 ## Overview
 
-The Webshop Admin is responsible for:
+The Root account is responsible for:
 - Configuring and maintaining the product catalog
 - System configuration (GitLab integration, environments, currencies, AI providers, SMTP)
 - Managing local user accounts
 - Viewing and exporting the audit log
 
-The Webshop Admin uses a **local account** (no SSO).
+The Root account uses a **local account** (no SSO).
 
 ---
 
@@ -170,7 +170,7 @@ Under **Administration → Users**:
 - Create local user accounts (name, email, password, role)
 - Edit or deactivate existing accounts
 - SSO users (Admins and project leaders via Entra ID) are created automatically on first login and appear in this list as well
-- Roles: **Admin**, **Project Leader**, **Webshop Admin**
+- Roles: **Admin**, **Project Leader**, **Root**
 
 ---
 
@@ -189,7 +189,7 @@ Under **Administration → Audit Log**:
 Under **Infrastructure**:
 
 - Complete overview of all deployed infrastructure elements, grouped by project and environment
-- As Webshop Admin all projects are visible (including those of other users)
+- As Root all projects are visible (including those of other users)
 - Decommissioning is available via the infrastructure overview (destroy webhook)
 
 ---

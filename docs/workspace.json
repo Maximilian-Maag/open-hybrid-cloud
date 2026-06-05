@@ -397,9 +397,9 @@
       "description" : "Administrator der Digital Unit. Kann alle Bestellungen, Projekte und Infrastruktur einsehen, direkt bestellen und Bestellungen von Projektleitern freigeben oder ablehnen.",
       "id" : "1",
       "location" : "Unspecified",
-      "name" : "DU Admin",
+      "name" : "Admin",
       "properties" : {
-        "structurizr.dsl.identifier" : "du_admin"
+        "structurizr.dsl.identifier" : "admin"
       },
       "relationships" : [ {
         "description" : "Bestellt IT Infrastruktur direkt, gibt Bestellungen frei, überwacht alle Projekte",
@@ -462,9 +462,9 @@
       "description" : "Verwaltet Produktkatalog, Systemkonfiguration und lokale Benutzeraccounts. Sieht alle Projekte und Infrastruktur. Nutzt lokalen Account.",
       "id" : "2",
       "location" : "Unspecified",
-      "name" : "Webshop Admin",
+      "name" : "Root",
       "properties" : {
-        "structurizr.dsl.identifier" : "shop_admin"
+        "structurizr.dsl.identifier" : "root"
       },
       "relationships" : [ {
         "description" : "Verwaltet Produktkatalog, Systemkonfiguration und Benutzer",
@@ -506,7 +506,7 @@
       } ],
       "tags" : "Element,Person"
     }, {
-      "description" : "Kann Bestellungen aufgeben (Freigabe durch DU Admin erforderlich), eigene Infrastruktur dekommissionieren und Projekte verwalten. Sieht ausschließlich eigene Projekte, Bestellungen und Infrastruktur.",
+      "description" : "Kann Bestellungen aufgeben (Freigabe durch Admin erforderlich), eigene Infrastruktur dekommissionieren und Projekte verwalten. Sieht ausschließlich eigene Projekte, Bestellungen und Infrastruktur.",
       "id" : "3",
       "location" : "Unspecified",
       "name" : "Projektleiter",
@@ -570,7 +570,7 @@
       },
       "tags" : "Element,Software System,Existing System"
     }, {
-      "description" : "SSO Identity Provider (OIDC) für die Authentifizierung von DU Admins und Projektleitern.",
+      "description" : "SSO Identity Provider (OIDC) für die Authentifizierung von Admins und Projektleitern.",
       "documentation" : { },
       "id" : "5",
       "location" : "Unspecified",
@@ -612,7 +612,7 @@
     }, {
       "containers" : [ {
         "components" : [ {
-          "description" : "OIDC-Login via Entra ID (Authorization Code Flow) für DU Admins und Projektleiter. Lokale Account-Anmeldung für Webshop Admin. Verwaltet Sessions und Rollen in verschlüsseltem HttpOnly-Cookie.",
+          "description" : "OIDC-Login via Entra ID (Authorization Code Flow) für Admins und Projektleiter. Lokale Account-Anmeldung für Root. Verwaltet Sessions und Rollen in verschlüsseltem HttpOnly-Cookie.",
           "documentation" : { },
           "id" : "11",
           "name" : "Authentifizierung",
@@ -651,7 +651,7 @@
           } ],
           "tags" : "Element,Component"
         }, {
-          "description" : "Bestellformular mit dynamisch generierten Parametern aus globalen, Kategorie- und Produkt-Parametersets sowie umgebungsspezifischen Parametern. Projektzuordnung und Kostenstellen-Zuordnung je Position. DU Admins deployen direkt via Provisioning-Webhook. Projektleiter-Bestellungen warten auf Freigabe.",
+          "description" : "Bestellformular mit dynamisch generierten Parametern aus globalen, Kategorie- und Produkt-Parametersets sowie umgebungsspezifischen Parametern. Projektzuordnung und Kostenstellen-Zuordnung je Position. Admins deployen direkt via Provisioning-Webhook. Projektleiter-Bestellungen warten auf Freigabe.",
           "documentation" : { },
           "id" : "13",
           "name" : "Bestellung",
@@ -665,7 +665,7 @@
             "sourceId" : "13",
             "tags" : "Relationship"
           }, {
-            "description" : "Löst Provisioning-Webhook aus (Direktbestellung DU Admin)",
+            "description" : "Löst Provisioning-Webhook aus (Direktbestellung Admin)",
             "destinationId" : "4",
             "id" : "50",
             "sourceId" : "13",
@@ -686,7 +686,7 @@
           } ],
           "tags" : "Element,Component"
         }, {
-          "description" : "Übersicht offener Bestellungen von Projektleitern für DU Admins. Jeder DU Admin kann freigeben oder ablehnen. Ablehnung erfordert Pflichtkommentar. Freigabe löst GitLab Provisioning-Webhook aus.",
+          "description" : "Übersicht offener Bestellungen von Projektleitern für Admins. Jeder Admin kann freigeben oder ablehnen. Ablehnung erfordert Pflichtkommentar. Freigabe löst GitLab Provisioning-Webhook aus.",
           "documentation" : { },
           "id" : "14",
           "name" : "Freigabe",
@@ -721,7 +721,7 @@
           } ],
           "tags" : "Element,Component"
         }, {
-          "description" : "Zeigt deployte Infrastrukturelemente gruppiert nach Projekt und Deployment-Umgebung. DU Admin und Webshop Admin sehen alles, Projektleiter nur eigene. Dekommissionierung via GitLab Destroy-Webhook. Bestehendes Projekt als Bestellvorlage nutzbar.",
+          "description" : "Zeigt deployte Infrastrukturelemente gruppiert nach Projekt und Deployment-Umgebung. Admin und Root sehen alles, Projektleiter nur eigene. Dekommissionierung via GitLab Destroy-Webhook. Bestehendes Projekt als Bestellvorlage nutzbar.",
           "documentation" : { },
           "id" : "15",
           "name" : "Infrastrukturübersicht",
@@ -766,7 +766,7 @@
           } ],
           "tags" : "Element,Component"
         }, {
-          "description" : "Unveränderliches Compliance-Protokoll aller Aktionen: Bestellung, Freigabe, Ablehnung mit Kommentar, Deployment, Dekommissionierung. Für DU Admin und Webshop Admin einsehbar und filterbar. Export als CSV oder PDF wählbar.",
+          "description" : "Unveränderliches Compliance-Protokoll aller Aktionen: Bestellung, Freigabe, Ablehnung mit Kommentar, Deployment, Dekommissionierung. Für Admin und Root einsehbar und filterbar. Export als CSV oder PDF wählbar.",
           "documentation" : { },
           "id" : "17",
           "name" : "Audit-Log",
@@ -782,7 +782,7 @@
           } ],
           "tags" : "Element,Component"
         }, {
-          "description" : "Versendet transaktionale E-Mails. Bestelleingang: Bestätigung an Besteller und Freigabe-Anfrage an alle DU Admins (nur Projektleiter). Freigabe oder Ablehnung mit Kommentar: an Besteller. Deployment abgeschlossen: an Besteller. Deployment fehlgeschlagen: an Besteller und alle DU Admins. Dekommissionierung abgeschlossen: an Besteller.",
+          "description" : "Versendet transaktionale E-Mails. Bestelleingang: Bestätigung an Besteller und Freigabe-Anfrage an alle Admins (nur Projektleiter). Freigabe oder Ablehnung mit Kommentar: an Besteller. Deployment abgeschlossen: an Besteller. Deployment fehlgeschlagen: an Besteller und alle Admins. Dekommissionierung abgeschlossen: an Besteller.",
           "documentation" : { },
           "id" : "18",
           "name" : "Benachrichtigung",
@@ -940,7 +940,7 @@
         "tags" : "Element,Container,Database",
         "technology" : "PostgreSQL"
       } ],
-      "description" : "Self-Service Portal über das DU Admins und Projektleiter IT Infrastruktur bestellen, verwalten und dekommissionieren können.",
+      "description" : "Self-Service Portal über das Admins und Projektleiter IT Infrastruktur bestellen, verwalten und dekommissionieren können.",
       "documentation" : { },
       "id" : "9",
       "location" : "Unspecified",
@@ -956,7 +956,7 @@
         "tags" : "Relationship",
         "technology" : "JSON/HTTPS"
       }, {
-        "description" : "Authentifiziert DU Admins und Projektleiter",
+        "description" : "Authentifiziert Admins und Projektleiter",
         "destinationId" : "5",
         "id" : "26",
         "sourceId" : "9",

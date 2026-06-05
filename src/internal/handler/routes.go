@@ -146,7 +146,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /approvals/{id}/approve", duAdmin(h.approvalApprove))
 	mux.Handle("POST /approvals/{id}/reject", duAdmin(h.approvalReject))
 
-	// Webshop Admin
+	// Root
 	mux.Handle("GET /admin", admin(h.adminDashboard))
 	mux.Handle("GET /admin/categories", admin(h.adminCategories))
 	mux.Handle("POST /admin/categories", admin(h.adminCategoryCreate))

@@ -6,12 +6,12 @@
 
 | ID | Requirement |
 |----|-------------|
-| FA-01.1 | The system recognizes three roles: **Admin**, **Project Manager**, and **Webshop Admin**. |
+| FA-01.1 | The system recognizes three roles: **Admin**, **Project Manager**, and **Root**. |
 | FA-01.2 | Admins and Project Managers authenticate via SSO using Microsoft Entra ID (OIDC). |
-| FA-01.3 | The Webshop Admin uses a local account. Local accounts can only be created by the Webshop Admin. |
+| FA-01.3 | The Root uses a local account. Local accounts can only be created by the Root. |
 | FA-01.4 | Admins can see all orders, projects, and infrastructure elements of all users. |
 | FA-01.5 | Project Managers can only see their own orders, projects, and infrastructure elements. |
-| FA-01.6 | The Webshop Admin can see all projects and infrastructure elements, but cannot place orders. |
+| FA-01.6 | The Root can see all projects and infrastructure elements, but cannot place orders. |
 
 ---
 
@@ -19,7 +19,7 @@
 
 | ID | Requirement |
 |----|-------------|
-| FA-02.1 | Products are organized into categories. Categories are manageable by the Webshop Admin. |
+| FA-02.1 | Products are organized into categories. Categories are manageable by the Root. |
 | FA-02.2 | Each product has: name, description, image, category, parameter sets, and prices per deployment environment. |
 | FA-02.3 | Product images are stored in the database (PostgreSQL `bytea`). |
 | FA-02.4 | Product content (name, description) is multilingual (all 24 EU official languages + Russian). |
@@ -33,7 +33,7 @@
 | ID | Requirement |
 |----|-------------|
 | FA-03.1 | The translation feature is optional. Without a configured AI provider, it is hidden. |
-| FA-03.2 | The Webshop Admin selects an AI provider in the admin panel and provides the endpoint, API key, and model. |
+| FA-03.2 | The Root selects an AI provider in the admin panel and provides the endpoint, API key, and model. |
 | FA-03.3 | Supported providers: Claude (Anthropic), OpenAI, Azure OpenAI (Cloud); Ollama, LocalAI (On-Premise). |
 | FA-03.4 | The admin creates product content in a base language and can trigger AI translation with a single click. |
 | FA-03.5 | All AI-generated translations can be manually corrected before saving. |
@@ -45,7 +45,7 @@
 | ID | Requirement |
 |----|-------------|
 | FA-04.1 | Parameters are inherited in a hierarchy: Global → Category → Product → Environment. |
-| FA-04.2 | When creating a product, the Webshop Admin can import `variables.tf` files from configured GitLab repositories. Parameters are extracted via an HCL parser (name, type, description, default value, validation, sensitive flag). |
+| FA-04.2 | When creating a product, the Root can import `variables.tf` files from configured GitLab repositories. Parameters are extracted via an HCL parser (name, type, description, default value, validation, sensitive flag). |
 | FA-04.3 | Parameters can be created, edited, and deleted manually. |
 | FA-04.4 | Global parameter sets can be defined that apply to all products and environments. |
 | FA-04.5 | Category parameter sets can be defined that apply to all products within a category. |
@@ -60,7 +60,7 @@
 | FA-05.1 | Multiple GitLab instances can be configured as sources (name, URL, access token). |
 | FA-05.2 | Multiple deployment environments can be configured (e.g., "AWS Frankfurt", "On-Premise Vienna"). |
 | FA-05.3 | Each deployment environment references a GitLab source and a specific repo/webhook. |
-| FA-05.4 | When creating a product, the Webshop Admin can browse repositories on configured GitLab sources and select `variables.tf` files. |
+| FA-05.4 | When creating a product, the Root can browse repositories on configured GitLab sources and select `variables.tf` files. |
 
 ---
 
@@ -94,7 +94,7 @@
 | ID | Requirement |
 |----|-------------|
 | FA-08.1 | Deployed infrastructure elements are displayed grouped by project and deployment environment. |
-| FA-08.2 | Admins and Webshop Admins can see all projects. Project Managers only see their own. |
+| FA-08.2 | Admins and Root users can see all projects. Project Managers only see their own. |
 | FA-08.3 | Each infrastructure element shows: product, environment, order parameters, status, price, cost center. |
 
 ---
@@ -120,9 +120,9 @@
 |----|-------------|
 | FA-10.1 | Users can create and manage projects. |
 | FA-10.2 | Project Managers must be able to assign a cost center to each project. |
-| FA-10.3 | The Webshop Admin maintains a list of available cost centers. |
-| FA-10.4 | The Webshop Admin can configure the cost center assignment mode per product: **Project** (cost center of the project), **Selection** (orderer selects from list), **Shared Cost Center** (fixed overhead). |
-| FA-10.5 | The Webshop Admin can set a mode as default and either enforce it or only suggest it. |
+| FA-10.3 | The Root maintains a list of available cost centers. |
+| FA-10.4 | The Root can configure the cost center assignment mode per product: **Project** (cost center of the project), **Selection** (orderer selects from list), **Shared Cost Center** (fixed overhead). |
+| FA-10.5 | The Root can set a mode as default and either enforce it or only suggest it. |
 
 ---
 
@@ -135,7 +135,7 @@
 | FA-11.3 | The base currency is globally configurable (default: EUR). |
 | FA-11.4 | The displayed currency is based on the user's locale (e.g., pl → PLN, cs → CZK). |
 | FA-11.5 | Exchange rates are fetched from an external API and cached in the database. |
-| FA-11.6 | The Webshop Admin can manually refresh the exchange rates. |
+| FA-11.6 | The Root can manually refresh the exchange rates. |
 
 ---
 
@@ -168,7 +168,7 @@
 | ID | Requirement |
 |----|-------------|
 | FA-14.1 | All relevant actions are logged immutably: order, approval, rejection (with comment), deployment start, deployment completion, deployment failure, decommissioning, configuration changes. |
-| FA-14.2 | The audit log is viewable and filterable by Admins and Webshop Admins. |
+| FA-14.2 | The audit log is viewable and filterable by Admins and Root users. |
 | FA-14.3 | The audit log can be exported as CSV or PDF. The format is selectable at export time. |
 
 ---
@@ -205,7 +205,7 @@
 | ID | Requirement |
 |----|-------------|
 | NFA-03.1 | SSO authentication is performed via Microsoft Entra ID using the OpenID Connect Authorization Code Flow. |
-| NFA-03.2 | Local accounts are exclusively intended for the Webshop Admin. |
+| NFA-03.2 | Local accounts are exclusively intended for the Root. |
 | NFA-03.3 | All external connections (GitLab, Entra ID, SMTP, APIs) use HTTPS/TLS. |
 | NFA-03.4 | API keys and secrets (GitLab tokens, SMTP credentials, session secret) are configured exclusively via environment variables. |
 

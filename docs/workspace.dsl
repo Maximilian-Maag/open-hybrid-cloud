@@ -1,4 +1,4 @@
-workspace "Infra-Webshop" "Self-Service Portal zum Bestellen, Verwalten und Dekommissionieren von IT Infrastruktur. Go + HTMX, Single Container." {
+workspace "Open Hybrid Cloud" "Self-Service Portal zum Bestellen, Verwalten und Dekommissionieren von IT Infrastruktur. Go + HTMX, Single Container." {
 
     model {
         du_admin = person "DU Admin" "Administrator der Digital Unit. Kann alle Bestellungen, Projekte und Infrastruktur einsehen, direkt bestellen und Bestellungen von Projektleitern freigeben oder ablehnen." "Person"
@@ -11,7 +11,7 @@ workspace "Infra-Webshop" "Self-Service Portal zum Bestellen, Verwalten und Deko
         smtp = softwaresystem "Mail Server" "SMTP-Server für transaktionale E-Mails: Bestellbestätigung, Freigabe-Anfrage, Freigabe/Ablehnung, Deployment-Abschluss und Fehlermeldungen." "Existing System"
         exchange_rate_api = softwaresystem "Wechselkurs-API" "Externe API für aktuelle Wechselkurse. Basis für die Umrechnung von der konfigurierten Leitwährung in die Anzeigewährung je Benutzer-Locale." "Existing System"
 
-        webshop = softwaresystem "Infra-Webshop" "Self-Service Portal über das DU Admins und Projektleiter IT Infrastruktur bestellen, verwalten und dekommissionieren können." {
+        webshop = softwaresystem "Open Hybrid Cloud" "Self-Service Portal über das DU Admins und Projektleiter IT Infrastruktur bestellen, verwalten und dekommissionieren können." {
 
             app = container "Webshop" "Go-Server der HTML-Templates serverseitig rendert und via HTMX als Fragmente ausliefert. Enthält UI, Geschäftslogik, GitLab-Integration und alle Hintergrundprozesse in einem stateless Container." "Go / HTMX / Tailwind CSS" {
 
@@ -170,7 +170,7 @@ workspace "Infra-Webshop" "Self-Service Portal zum Bestellen, Verwalten und Deko
         systemcontext webshop "SystemContext" {
             include *
             autoLayout
-            description "Systemkontext: Infra-Webshop und alle externen Systeme"
+            description "Systemkontext: Open Hybrid Cloud und alle externen Systeme"
         }
 
         container webshop "Container" {

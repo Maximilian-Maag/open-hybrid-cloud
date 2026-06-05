@@ -1,4 +1,4 @@
-# Infra-Webshop
+# Open Hybrid Cloud
 
 Self-service portal through which Admins and project managers can order, manage, and decommission IT infrastructure. The webshop triggers GitLab CI/CD pipelines via webhook, which deploy the desired infrastructure using OpenTofu.
 

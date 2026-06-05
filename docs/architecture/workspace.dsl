@@ -1,4 +1,4 @@
-workspace "Infra-Webshop" "Self-service portal for ordering, managing and decommissioning IT infrastructure. Go + HTMX, single container." {
+workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and decommissioning IT infrastructure. Go + HTMX, single container." {
 
     model {
         du_admin = person "Admin" "Administrator. Can view all orders, projects and infrastructure, order directly and approve or reject orders from project leaders." "Person"
@@ -11,7 +11,7 @@ workspace "Infra-Webshop" "Self-service portal for ordering, managing and decomm
         smtp = softwaresystem "Mail Server" "SMTP server for transactional emails: order confirmation, approval request, approval/rejection, deployment completion and error notifications." "Existing System"
         exchange_rate_api = softwaresystem "Exchange Rate API" "External API for current exchange rates. Used to convert from the configured base currency to the display currency per user locale." "Existing System"
 
-        webshop = softwaresystem "Infra-Webshop" "Self-service portal through which admins and project leaders can order, manage and decommission IT infrastructure." {
+        webshop = softwaresystem "Open Hybrid Cloud" "Self-service portal through which admins and project leaders can order, manage and decommission IT infrastructure." {
 
             app = container "Webshop" "Go server that renders HTML templates server-side and delivers them as fragments via HTMX. Contains UI, business logic, GitLab integration and all background processes in a single stateless container." "Go / HTMX / Tailwind / DaisyUI" {
 
@@ -170,7 +170,7 @@ workspace "Infra-Webshop" "Self-service portal for ordering, managing and decomm
         systemcontext webshop "SystemContext" {
             include *
             autoLayout
-            description "System context: Infra-Webshop and all external systems"
+            description "System context: Open Hybrid Cloud and all external systems"
         }
 
         container webshop "Container" {

@@ -1,4 +1,4 @@
-# Requirements Infra-Webshop
+# Requirements Open Hybrid Cloud
 
 ## 1. Functional Requirements
 

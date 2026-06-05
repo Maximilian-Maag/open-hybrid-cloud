@@ -2240,6 +2240,7 @@ starts the Go server with live environment variables from \file{.env}.
     \code{make dev-down}   & Stop DB + server \\
     \code{make clean}      & Remove build artefacts \\
     \code{make docs}       & Compile the LaTeX handbook to PDF \\
+    \code{make e2e}        & Run Playwright end-to-end tests (requires Docker) \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -2265,6 +2266,7 @@ open-hybrid-cloud/
 |   +-- server/         # main.go -- server entry point
 |   +-- migrate/        # main.go -- migration runner
 |   +-- smoke/          # main.go -- smoke test runner
++-- e2e/                # Playwright end-to-end tests (src/e2e/)
 +-- docs/               # Documentation (this handbook)
 |   +-- handbook.tex
 |   +-- handbook.pdf    # compiled output
@@ -2683,6 +2685,709 @@ CREATE TABLE IF NOT EXISTS app_config (
 
 \warnbox{Never modify a migration that has already been applied to
 production. Always create a new migration file for schema changes.}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Testing}
+\label{ch:testing}
+
+The project uses three complementary test layers.  All three are invoked
+automatically in CI; locally the most common commands are
+\code{make test} (fast, no Docker needed) and \code{make e2e} (full
+browser stack, requires Docker).
+
+% ─────────────────────────────────────────────────────────────
+\section{Unit Tests}
+\label{sec:unit-tests}
+
+Unit tests live next to the code they test (\file{*\_test.go}) and use
+Go's standard \code{testing} package.  They cover:
+
+\begin{itemize}
+  \item \textbf{Service layer} (\file{internal/service/impl/}) ---
+        all service methods are tested with in-memory stubs that
+        implement the repository interfaces.  No database, no network.
+  \item \textbf{Handler helpers} (\file{internal/handler/}) ---
+        language detection (\code{parseAcceptLanguage},
+        \code{detectLang}) and the login rate-limiter are tested with
+        direct function calls.
+  \item \textbf{Polling worker} (\file{internal/polling/}) ---
+        \code{extractProjectID} is tested with table-driven cases.
+\end{itemize}
+
+Run unit tests:
+\begin{lstlisting}[style=bash]
+make test          # runs go test ./...
+make vet           # go vet (zero warnings required)
+make lint          # golangci-lint
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────
+\section{Integration Tests (testcontainers-go)}
+\label{sec:integration-tests}
+
+Repository-layer tests in \file{internal/repository/postgres/} spin up
+a real \textbf{PostgreSQL 16 Alpine} container via
+\href{https://golang.testcontainers.org}{testcontainers-go} and run all
+migrations before the first test.
+
+\subsection*{TestMain}
+
+\begin{lstlisting}[style=go]
+// testmain_test.go
+func TestMain(m *testing.M) {
+    ctr, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+        tcpostgres.WithDatabase("testdb"),
+        testcontainers.WithWaitStrategy(
+            wait.ForLog("database system is ready to accept connections").
+                WithOccurrence(2).WithStartupTimeout(60*time.Second),
+        ),
+    )
+    // runs migrations, opens pgxpool
+    os.Exit(m.Run())
+}
+\end{lstlisting}
+
+\subsection*{Test isolation}
+
+Every test that writes data calls \code{resetDB(t)} first, which
+truncates all data tables and restarts identity sequences:
+
+\begin{lstlisting}[style=go]
+func resetDB(t *testing.T) {
+    _, err := testPool.Exec(ctx,
+        "TRUNCATE audit_log, orders, products, ... RESTART IDENTITY CASCADE")
+}
+\end{lstlisting}
+
+\subsection*{Fixture helper}
+
+Tests that need FK-dependent data call \code{newFixture(t)}, which
+creates the full dependency chain in one call:
+
+\begin{lstlisting}
+gitlab_source -> deployment_environment -> user
+             -> category -> product -> project
+\end{lstlisting}
+
+Integration tests require Docker; if the container cannot start the
+test binary exits with code~0 (skip, not fail) so CI stays green on
+environments without Docker.
+
+% ─────────────────────────────────────────────────────────────
+\section{End-to-End Tests with Playwright}
+\label{sec:e2e-tests}
+
+End-to-end tests live in \file{src/e2e/} and drive a real
+\textbf{Chromium} browser via
+\href{https://github.com/playwright-community/playwright-go}{playwright-go}.
+The full application stack --- PostgreSQL, all migrations, all service
+wiring --- is started in-process for each test run.
+
+\subsection*{Architecture}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  box/.style={rectangle, rounded corners=4pt, draw=ohc-blue!50,
+              fill=ohc-blue!8, minimum width=3.0cm, minimum height=0.9cm,
+              align=center, font=\small},
+  arr/.style={->, >=Stealth, thick, ohc-blue!60},
+  node distance=0.6cm and 1.4cm
+]
+  \node[box] (pg)  {Testcontainers\\PostgreSQL};
+  \node[box, right=of pg] (srv) {\texttt{httptest}\\Server};
+  \node[box, right=of srv] (pw)  {Playwright\\Chromium};
+  \node[box, below=of srv] (wh)  {Mock GitLab\\Webhook Server};
+  \draw[arr] (pg)  -- node[above,font=\tiny] {pool} (srv);
+  \draw[arr] (srv) -- node[above,font=\tiny] {HTTP} (pw);
+  \draw[arr] (srv) -- node[left,font=\tiny]  {POST} (wh);
+\end{tikzpicture}
+\caption{E2E test infrastructure}
+\end{figure}
+
+\begin{description}
+  \item[\textbf{Testcontainers PostgreSQL}]
+        A real \code{postgres:16-alpine} container is started by
+        \code{TestMain}.  All 12 migrations run against it and the
+        admin user is bootstrapped (email \code{admin@e2etest.local},
+        password \code{e2eAdmin123!}).
+  \item[\textbf{\texttt{app.New()}}]
+        The server wiring function from \file{internal/app/wire.go}
+        assembles the full dependency graph (repos, services, handlers)
+        and returns an \code{http.Handler}.
+  \item[\textbf{\texttt{httptest.NewServer}}]
+        Wraps the handler in a local HTTP server on a random port.
+        Playwright's \code{BaseURL} is set to this address.
+  \item[\textbf{Mock GitLab webhook server}]
+        Approving an order triggers a GitLab pipeline via HTTP POST.
+        A second \code{httptest.Server} intercepts these calls and
+        returns \code{\{"id":42\}} so the approval flow completes
+        without a real GitLab instance.
+  \item[\textbf{Chromium (headless)}]
+        One browser is launched for the entire test run.  Each test
+        gets its own \emph{browser context} (isolated cookie jar) via
+        \code{newPage(t)}.
+\end{description}
+
+\subsection*{Test file overview}
+
+\begin{table}[H]
+  \centering
+  \caption{E2E test files}
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    \textbf{File} & \textbf{Tests} & \textbf{What is verified} \\
+    \midrule
+    \file{auth\_test.go}     & 3 & Login success, invalid credentials, logout dropdown \\
+    \file{approval\_test.go} & 3 & Empty list, Approve button, Reject button \\
+    \file{catalog\_test.go}  & 3 & Page loads, empty state, product navigation \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{Shared helpers}
+
+\begin{description}
+  \item[\code{newPage(t)}]
+        Creates a fresh browser context and page; the context is closed
+        in \code{t.Cleanup}.  Each test gets an empty cookie jar, so
+        sessions never leak between tests.
+  \item[\code{loginAs(t, page, email, password)}]
+        Navigates to \route{/login}, fills both fields, clicks
+        \emph{Submit}, and waits for the redirect to \route{/}.
+  \item[\code{resetData(t)}]
+        Truncates all data tables (except \code{users}) with
+        \code{RESTART IDENTITY CASCADE}, so the bootstrapped admin
+        user survives across tests.
+  \item[\code{seedPendingOrder(t)}]
+        Inserts the full FK chain (gitlab\_source, environment,
+        category, product, project, order) with \code{status =
+        'pending\_approval'}.  Uses \code{webhookBaseURL} so the mock
+        server intercepts the approval webhook call.
+\end{description}
+
+\subsection*{Key selector conventions}
+
+Because approvals use plain HTML \code{<form>} elements (no HTMX),
+tests use stable \textbf{action-attribute selectors}:
+
+\begin{lstlisting}[style=go]
+// approve button for a specific order
+approveForm := page.Locator(
+    fmt.Sprintf(`form[action="/approvals/%d/approve"]`, fix.orderID))
+approveForm.Locator(`button[type="submit"]`).Click()
+
+// reject form is inside a <details> -- open summary first
+page.Locator(`details.mt-4 > summary`).First().Click()
+noteInput := page.Locator(`input[name="note"]`)
+noteInput.WaitFor()            // waits until visible
+noteInput.Fill("reason")
+\end{lstlisting}
+
+After a form submit the 303~redirect reloads the same URL.
+\code{WaitForLoadState(NetworkIdle)} is used instead of
+\code{WaitForURL} (which would return immediately because the URL
+does not change).
+
+\subsection*{Running the tests}
+
+\begin{lstlisting}[style=bash]
+# Headless (CI / default)
+make e2e
+
+# Headed -- watch the browser while tests run
+E2E_HEADED=true make e2e
+
+# First run downloads Chromium (~170 MB) into ~/.cache/ms-playwright/
+\end{lstlisting}
+
+If Docker is unavailable the test binary exits with code~0 (skip, not
+fail), consistent with the integration test policy.
+
+\subsection*{Adding a new E2E test}
+
+\begin{enumerate}
+  \item Call \code{resetData(t)} at the start if the test writes data.
+  \item Use \code{newPage(t)} to get an isolated page.
+  \item Use \code{loginAs} to authenticate if needed.
+  \item Prefer \code{form[action="..."]} and \code{input[name="..."]}
+        selectors over CSS classes (classes change; actions rarely do).
+  \item After a form submit call
+        \code{page.WaitForLoadState(NetworkIdle)} before asserting.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────
+\chapter{Database Schema}
+\label{ch:db-schema}
+
+The schema is built by 12 sequential migrations (see
+Section~\ref{sec:dbmigrations}).  The table below shows the
+\textbf{current effective schema} — i.e.\ the cumulative result of all
+migrations.
+
+% ─────────────────────────────────────────────────────────────
+\section{Table Overview}
+\label{sec:schema-overview}
+
+\begin{table}[H]
+  \centering
+  \caption{All database tables}
+  \begin{tabular}{@{}lp{9cm}@{}}
+    \toprule
+    \textbf{Table} & \textbf{Purpose} \\
+    \midrule
+    \code{users}                    & User accounts (local + SSO) with role-based access \\
+    \code{categories}               & Product catalogue categories \\
+    \code{products}                 & Infrastructure products offered in the catalogue \\
+    \code{product\_translations}    & Multi-language name + description per product \\
+    \code{parameters}               & Configurable inputs for global/category/product scope \\
+    \code{gitlab\_sources}          & GitLab instance credentials (URL + access token) \\
+    \code{deployment\_environments} & Named environments linked to a GitLab source \\
+    \code{product\_environments}    & Junction: which products are available in which environment (with price) \\
+    \code{product\_webhooks}        & Optional per-product pipeline trigger overrides \\
+    \code{cost\_centers}            & Billing cost centres referenced by projects and orders \\
+    \code{projects}                 & User-owned projects that group orders \\
+    \code{orders}                   & Individual infrastructure provisioning requests \\
+    \code{infrastructure\_elements} & Deployed instances tracked per order \\
+    \code{audit\_log}               & Append-only log of significant user actions \\
+    \code{exchange\_rates}          & Cached currency conversion rates \\
+    \code{branding}                 & Single-row branding config (logo, colours, texts) \\
+    \code{app\_config}              & Single-row application config (SMTP, AI) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────
+\section{Detailed Schema}
+\label{sec:schema-detail}
+
+Each table is described with its columns (post all migrations), primary
+key, foreign keys, and notable constraints.
+
+\subsection*{\texttt{users}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}            & BIGSERIAL & --- & PK \\
+    \code{email}         & TEXT      & --- & NOT NULL, UNIQUE \\
+    \code{name}          & TEXT      & --- & NOT NULL \\
+    \code{role}          & TEXT      & --- & CHECK: \code{admin}, \code{project\_leader}, \code{shop\_admin} \\
+    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; set for Entra ID accounts \\
+    \code{password\_hash}& TEXT      & NULL & set for local accounts \\
+    \code{active}        & BOOLEAN   & TRUE & soft-disable without deletion \\
+    \code{created\_at}   & TIMESTAMPTZ & NOW() & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent\textbf{Constraint:} \code{sso\_sub IS NOT NULL OR password\_hash IS NOT NULL}
+(every account must have at least one credential).
+
+\subsection*{\texttt{categories}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}            & BIGSERIAL & --- & PK \\
+    \code{name}          & TEXT      & --- & NOT NULL \\
+    \code{display\_order}& INT       & 0   & controls sidebar sort order \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{products}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}           & BIGSERIAL & ---  & PK \\
+    \code{category\_id} & BIGINT    & ---  & NOT NULL, FK \textrightarrow{} \code{categories(id)} ON DELETE CASCADE \\
+    \code{base\_language}& TEXT     & \code{'de'} & fallback language for translations \\
+    \code{image}        & BYTEA     & NULL & product image stored inline \\
+    \code{created\_at}  & TIMESTAMPTZ & NOW() & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{product\_translations}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{product\_id}    & BIGINT & --- & PK, FK \textrightarrow{} \code{products(id)} ON DELETE CASCADE \\
+    \code{language\_code} & TEXT   & --- & PK, e.g.\ \code{de}, \code{en}, \code{fr} \\
+    \code{name}           & TEXT   & --- & NOT NULL \\
+    \code{description}    & TEXT   & \code{''} & NOT NULL \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{parameters}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}             & BIGSERIAL & --- & PK \\
+    \code{scope}          & TEXT      & --- & CHECK: \code{global}, \code{category}, \code{product} \\
+    \code{scope\_id}      & BIGINT    & 0   & ID of the scoped entity (0 for global) \\
+    \code{environment\_id}& BIGINT    & 0   & 0 = applies to all environments \\
+    \code{name}           & TEXT      & --- & NOT NULL; variable name passed to pipeline \\
+    \code{type}           & TEXT      & --- & CHECK: \code{string}, \code{number}, \code{bool}, \code{dropdown} \\
+    \code{description}    & TEXT      & \code{''} & \\
+    \code{default\_value} & TEXT      & \code{''} & \\
+    \code{required}       & BOOLEAN   & FALSE & \\
+    \code{sensitive}      & BOOLEAN   & FALSE & renders as \code{type="password"} in UI \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{gitlab\_sources}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}           & BIGSERIAL & --- & PK \\
+    \code{name}         & TEXT      & --- & NOT NULL; human-readable label \\
+    \code{url}          & TEXT      & --- & NOT NULL; GitLab base URL \\
+    \code{access\_token}& TEXT      & --- & NOT NULL; stored in plain text \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{deployment\_environments}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}                & BIGSERIAL & ---       & PK \\
+    \code{name}              & TEXT      & ---       & NOT NULL \\
+    \code{description}       & TEXT      & \code{''} & \\
+    \code{gitlab\_source\_id}& BIGINT    & ---       & NOT NULL, FK \textrightarrow{} \code{gitlab\_sources(id)} \\
+    \code{webhook\_url}      & TEXT      & ---       & NOT NULL; GitLab trigger URL \\
+    \code{webhook\_token}    & TEXT      & ---       & NOT NULL; pipeline trigger token \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{product\_environments}}
+
+Junction table linking products to environments with pricing.
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{product\_id}        & BIGINT        & ---          & PK, FK \textrightarrow{} \code{products(id)} CASCADE \\
+    \code{environment\_id}    & BIGINT        & ---          & PK, FK \textrightarrow{} \code{deployment\_environments(id)} \\
+    \code{price}              & NUMERIC(12,2) & 0            & monthly price \\
+    \code{currency}           & TEXT          & \code{'EUR'} & ISO 4217 code \\
+    \code{cost\_center\_mode} & TEXT          & \code{'project'} & CHECK: \code{project}, \code{select}, \code{overhead} \\
+    \code{forced\_cost\_center}& BOOLEAN      & FALSE        & locks cost centre selection in order form \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{product\_webhooks}}
+
+Optional per-product pipeline overrides; if rows exist for a
+product+environment pair they replace the environment's default
+\code{webhook\_url}.  Multiple rows are fired in ascending
+\code{exec\_order}.
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}             & BIGSERIAL & ---       & PK \\
+    \code{product\_id}    & BIGINT    & ---       & NOT NULL, FK \textrightarrow{} \code{products(id)} CASCADE \\
+    \code{environment\_id}& BIGINT    & ---       & NOT NULL, FK \textrightarrow{} \code{deployment\_environments(id)} \\
+    \code{name}           & TEXT      & ---       & NOT NULL; descriptive label \\
+    \code{webhook\_url}   & TEXT      & ---       & NOT NULL \\
+    \code{webhook\_token} & TEXT      & ---       & NOT NULL \\
+    \code{exec\_order}    & INT       & 0         & ascending; ties fire concurrently \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{cost\_centers}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}    & BIGSERIAL & ---  & PK \\
+    \code{code}  & TEXT      & ---  & NOT NULL, UNIQUE; billing code \\
+    \code{name}  & TEXT      & ---  & NOT NULL \\
+    \code{active}& BOOLEAN   & TRUE & inactive centres are hidden in UI \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{projects}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}             & BIGSERIAL   & ---   & PK \\
+    \code{name}           & TEXT        & ---   & NOT NULL \\
+    \code{description}    & TEXT        & \code{''} & \\
+    \code{owner\_id}      & BIGINT      & ---   & NOT NULL, FK \textrightarrow{} \code{users(id)} \\
+    \code{cost\_center\_id}& BIGINT     & NULL  & FK \textrightarrow{} \code{cost\_centers(id)} \\
+    \code{created\_at}    & TIMESTAMPTZ & NOW() & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{orders}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}             & BIGSERIAL   & ---     & PK \\
+    \code{project\_id}    & BIGINT      & ---     & NOT NULL, FK \textrightarrow{} \code{projects(id)} CASCADE \\
+    \code{product\_id}    & BIGINT      & ---     & NOT NULL, FK \textrightarrow{} \code{products(id)} CASCADE \\
+    \code{environment\_id}& BIGINT      & ---     & NOT NULL, FK \textrightarrow{} \code{deployment\_environments(id)} \\
+    \code{user\_id}       & BIGINT      & ---     & NOT NULL, FK \textrightarrow{} \code{users(id)} \\
+    \code{status}         & TEXT        & \code{'pending\_approval'} & see lifecycle below \\
+    \code{parameters}     & JSONB       & \code{'\{\}'} & key/value map; passed to pipeline \\
+    \code{cost\_center\_id}& BIGINT     & NULL    & FK \textrightarrow{} \code{cost\_centers(id)} \\
+    \code{rejection\_note}& TEXT        & \code{''} & filled on rejection \\
+    \code{pipeline\_id}   & JSONB       & \code{'[]'} & array of GitLab pipeline IDs \\
+    \code{created\_at}    & TIMESTAMPTZ & NOW()   & \\
+    \code{updated\_at}    & TIMESTAMPTZ & NOW()   & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent\textbf{Status lifecycle:}
+\code{pending\_approval} \textrightarrow{} \code{approved} / \code{rejected}
+\textrightarrow{} \code{provisioning} \textrightarrow{} \code{completed} / \code{failed}
+\textrightarrow{} \code{decommissioning} \textrightarrow{} \code{decommissioned}.
+
+\subsection*{\texttt{infrastructure\_elements}}
+
+One row per deployed pipeline; created when an order is approved.
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}             & BIGSERIAL   & ---         & PK \\
+    \code{order\_id}      & BIGINT      & ---         & NOT NULL, FK \textrightarrow{} \code{orders(id)} \\
+    \code{project\_id}    & BIGINT      & ---         & NOT NULL, FK \textrightarrow{} \code{projects(id)} CASCADE \\
+    \code{environment\_id}& BIGINT      & ---         & NOT NULL, FK \textrightarrow{} \code{deployment\_environments(id)} \\
+    \code{product\_id}    & BIGINT      & ---         & NOT NULL, FK \textrightarrow{} \code{products(id)} CASCADE \\
+    \code{status}         & TEXT        & \code{'provisioning'} & mirrors order status values \\
+    \code{parameters}     & JSONB       & \code{'\{\}'} & copy of order parameters at deploy time \\
+    \code{pipeline\_id}   & JSONB       & \code{'[]'} & tracked pipeline IDs \\
+    \code{outputs}        & JSONB       & \code{'\{\}'} & key/value map of OpenTofu outputs \\
+    \code{deployed\_at}   & TIMESTAMPTZ & NOW()       & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{audit\_log}}
+
+Append-only; rows are never updated or deleted.
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}         & BIGSERIAL   & ---       & PK \\
+    \code{user\_id}   & BIGINT      & ---       & NOT NULL, FK \textrightarrow{} \code{users(id)} \\
+    \code{action}     & TEXT        & ---       & NOT NULL; e.g.\ \code{order.created} \\
+    \code{entity\_id} & BIGINT      & ---       & NOT NULL; PK of the referenced entity \\
+    \code{details}    & TEXT        & \code{''} & extra context (e.g.\ rejection note) \\
+    \code{created\_at}& TIMESTAMPTZ & NOW()     & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{exchange\_rates}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{currency\_code} & TEXT          & --- & PK; ISO 4217, e.g.\ \code{EUR} \\
+    \code{rate}           & NUMERIC(18,6) & --- & NOT NULL; relative to base currency (EUR = 1.0) \\
+    \code{updated\_at}    & TIMESTAMPTZ   & NOW() & refreshed via \route{POST /admin/currencies/refresh} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{branding}}
+
+Singleton row (\code{id = 1}).  Written via \route{POST /admin/branding}.
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}             & INT   & 1                    & PK, CHECK (id = 1) \\
+    \code{logo\_data}     & BYTEA & NULL                 & uploaded logo image \\
+    \code{logo\_mime}     & TEXT  & \code{'image/png'}   & MIME type of the logo \\
+    \code{primary\_color} & TEXT  & \code{'\#131921'}    & \code{var(--bp)} CSS token \\
+    \code{secondary\_color}& TEXT & \code{'\#febd69'}    & \code{var(--bs)} CSS token \\
+    \code{shop\_name}     & TEXT  & \code{''}            & overrides \code{APP\_NAME} env var \\
+    \code{shop\_subtitle} & TEXT  & \code{''}            & overrides \code{APP\_SUBTITLE} env var \\
+    \code{imprint\_text}  & TEXT  & \code{''}            & rendered on \route{/impressum} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{app\_config}}
+
+Singleton row (\code{id = 1}).  Written via \route{POST /admin/smtp}
+and \route{POST /admin/ai-config}.  DB values override environment
+variables at runtime.
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}           & INT     & 1        & PK, CHECK (id = 1) \\
+    \code{smtp\_host}   & TEXT    & \code{''} & SMTP server hostname \\
+    \code{smtp\_port}   & TEXT    & \code{'587'} & \\
+    \code{smtp\_from}   & TEXT    & \code{''} & sender address \\
+    \code{smtp\_username}& TEXT   & \code{''} & \\
+    \code{smtp\_password}& TEXT   & \code{''} & stored in plain text \\
+    \code{smtp\_tls}    & BOOLEAN & FALSE    & enable STARTTLS \\
+    \code{ai\_provider} & TEXT    & \code{''} & e.g.\ \code{claude}, \code{openai} \\
+    \code{ai\_endpoint} & TEXT    & \code{''} & custom API base URL \\
+    \code{ai\_api\_key} & TEXT    & \code{''} & stored in plain text \\
+    \code{ai\_model}    & TEXT    & \code{''} & model ID string \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────
+\section{Foreign Key Relationships}
+\label{sec:schema-fk}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  tbl/.style={rectangle, draw=ohc-blue!50, fill=ohc-blue!6,
+              rounded corners=3pt, minimum width=3.2cm,
+              minimum height=0.75cm, align=center, font=\small\ttfamily},
+  fk/.style={->, >=Stealth, gray!70, thick},
+  casc/.style={->, >=Stealth, ohc-blue!80, thick, dashed},
+  node distance=0.45cm and 1.6cm
+]
+  % Column 1
+  \node[tbl] (users)    {users};
+  \node[tbl, below=of users]  (cats)  {categories};
+  \node[tbl, below=of cats]   (srcs)  {gitlab\_sources};
+
+  % Column 2
+  \node[tbl, right=2.8cm of users]  (proj) {projects};
+  \node[tbl, below=of proj]         (prods) {products};
+  \node[tbl, below=of prods]        (envs)  {deployment\_environments};
+
+  % Column 3
+  \node[tbl, right=2.8cm of proj]   (orders) {orders};
+  \node[tbl, below=of orders]       (pe)     {product\_environments};
+  \node[tbl, below=of pe]           (pw)     {product\_webhooks};
+
+  % Column 4
+  \node[tbl, right=2.8cm of orders] (infra)  {infrastructure\_elements};
+  \node[tbl, below=of infra]        (audit)  {audit\_log};
+
+  % FKs (solid = normal, dashed = cascade delete)
+  \draw[fk]   (proj)   -- node[above,font=\tiny]{owner}   (users);
+  \draw[casc] (prods)  -- node[above,font=\tiny]{cat}      (cats);
+  \draw[fk]   (envs)   -- node[above,font=\tiny]{source}   (srcs);
+  \draw[casc] (orders) -- node[above,font=\tiny]{proj}     (proj);
+  \draw[casc] (orders.west) to[bend right=20] node[below,font=\tiny]{prod} (prods.east);
+  \draw[fk]   (orders.west) to[bend right=35] node[below,font=\tiny]{env}  (envs.east);
+  \draw[fk]   (orders)      to[bend left=15]  node[above,font=\tiny]{user} (users.east);
+  \draw[casc] (pe)     -- node[right,font=\tiny]{prod}    (prods);
+  \draw[fk]   (pe)     -- node[above,font=\tiny]{env}     (envs);
+  \draw[casc] (pw)     -- node[right,font=\tiny]{prod}    (prods);
+  \draw[fk]   (pw)     -- node[above,font=\tiny]{env}     (envs);
+  \draw[casc] (infra)  -- node[above,font=\tiny]{proj}    (proj);
+  \draw[casc] (infra.west) to[bend left=20] node[above,font=\tiny]{prod} (prods.east);
+  \draw[fk]   (audit)  to[bend left=15]    node[left,font=\tiny]{user}  (users.east);
+\end{tikzpicture}
+\caption{Simplified FK diagram. Dashed arrows = ON DELETE CASCADE; solid arrows = restricted.}
+\end{figure}
+
+\notebox{The cascade policy ensures that deleting a \textbf{product},
+\textbf{project}, or \textbf{category} automatically removes all
+dependent rows (orders, infra elements, translations, etc.) without
+requiring explicit cleanup in application code.}
+
+% ─────────────────────────────────────────────────────────────
+\section{Indexes}
+\label{sec:schema-indexes}
+
+\begin{table}[H]
+  \centering
+  \caption{Non-primary-key indexes}
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    \textbf{Index name} & \textbf{Table} & \textbf{Columns} \\
+    \midrule
+    \code{idx\_products\_category}   & \code{products}               & \code{category\_id} \\
+    \code{idx\_orders\_user}         & \code{orders}                 & \code{user\_id} \\
+    \code{idx\_orders\_status}       & \code{orders}                 & \code{status} \\
+    \code{idx\_orders\_project}      & \code{orders}                 & \code{project\_id} \\
+    \code{idx\_infra\_project}       & \code{infrastructure\_elements} & \code{project\_id} \\
+    \code{idx\_infra\_status}        & \code{infrastructure\_elements} & \code{status} \\
+    \code{idx\_projects\_owner}      & \code{projects}               & \code{owner\_id} \\
+    \code{idx\_audit\_user}          & \code{audit\_log}             & \code{user\_id} \\
+    \code{idx\_audit\_action}        & \code{audit\_log}             & \code{action} \\
+    \code{idx\_parameters\_scope}    & \code{parameters}             & \code{scope, scope\_id, environment\_id} \\
+    \code{idx\_product\_webhooks}    & \code{product\_webhooks}      & \code{product\_id, environment\_id, exec\_order} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Adding a New Feature}

@@ -16,7 +16,7 @@ env:
   # Required
   databaseUrl: ""       # DATABASE_URL  postgres://user:pass@host:5432/db?sslmode=require
   sessionSecret: ""     # SESSION_SECRET  32+ random bytes, hex-encoded
-  adminPassword: ""     # ADMIN_PASSWORD  initial Webshop Admin password
+  adminPassword: ""     # ADMIN_PASSWORD  initial Root account password
 
   # Optional — application settings
   port: "8080"

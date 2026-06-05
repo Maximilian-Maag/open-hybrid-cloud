@@ -3472,47 +3472,130 @@ translation:
 \chapter{HTTP Route Reference}
 \label{app:routes}
 
+All routes are registered in \code{src/internal/handler/routes.go}.
+The \textbf{Role} column uses the following abbreviations:
+
+\begin{itemize}
+  \item \textbf{public} — no authentication required
+  \item \textbf{auth} — any authenticated user
+  \item \textbf{admin} — role \code{admin} (DU Admin) or higher
+  \item \textbf{shop\_admin} — role \code{shop\_admin} only
+\end{itemize}
+
 \footnotesize
-\begin{longtable}{@{}lL{7.5cm}L{4.0cm}l@{}}
+\begin{longtable}{@{}lL{7.8cm}L{4.5cm}l@{}}
   \toprule
   \textbf{Method} & \textbf{Path} & \textbf{Description} & \textbf{Role} \\
   \midrule
   \endhead
-  GET  & \code{/}                              & Home / dashboard                  & auth \\
-  GET  & \code{/catalog}                        & Product catalog                   & auth \\
-  GET  & \code{/catalog/\{id\}}                 & Product detail                    & auth \\
-  GET  & \code{/orders}                         & My orders list                    & auth \\
-  GET  & \code{/orders/new}                     & New order form                    & auth \\
-  POST & \code{/orders/new}                     & Submit order                      & auth \\
-  GET  & \code{/orders/\{id\}}                  & Order detail / status             & auth \\
-  GET  & \code{/projects}                       & Projects list                     & auth \\
-  GET  & \code{/infrastructure}                 & Infrastructure overview           & auth \\
-  POST & \code{/infrastructure/\{id\}/decommission} & Trigger decommission          & auth \\
-  GET  & \code{/settings/profile}               & Profile / change password         & auth \\
-  GET  & \code{/approvals}                      & Approval queue                    & admin \\
-  POST & \code{/approvals/\{id\}/approve}       & Approve order                     & admin \\
-  POST & \code{/approvals/\{id\}/reject}        & Reject order                      & admin \\
-  GET  & \code{/audit}                          & Audit log                         & admin \\
-  GET  & \code{/audit/export}                   & Export audit log                  & admin \\
-  GET  & \code{/admin}                          & Admin dashboard                   & shop\_admin \\
-  GET  & \code{/admin/categories}               & Category list                     & shop\_admin \\
-  GET  & \code{/admin/products}                 & Product list                      & shop\_admin \\
-  GET  & \code{/admin/products/new}             & New product form                  & shop\_admin \\
-  GET  & \code{/admin/products/\{id\}}          & Edit product                      & shop\_admin \\
-  GET  & \code{/admin/environments}             & Environment list                  & shop\_admin \\
-  GET  & \code{/admin/sources}                  & GitLab sources list               & shop\_admin \\
-  GET  & \code{/admin/costcenters}              & Cost center list                  & shop\_admin \\
-  GET  & \code{/admin/users}                    & User list                         & shop\_admin \\
-  GET  & \code{/admin/currencies}               & Currency management               & shop\_admin \\
-  GET  & \code{/admin/parameters}               & Global parameters                 & shop\_admin \\
-  GET  & \code{/admin/smtp}                     & SMTP configuration                & shop\_admin \\
-  GET  & \code{/admin/ai-config}                & AI translation config             & shop\_admin \\
-  GET  & \code{/admin/branding}                 & Shop branding                     & shop\_admin \\
-  GET  & \code{/login}                          & Login page                        & public \\
-  GET  & \code{/auth/callback}                  & OIDC callback                     & public \\
-  POST & \code{/logout}                         & Log out                           & auth \\
+
+  \multicolumn{4}{@{}l}{\textit{Authentication}} \\[2pt]
+  GET  & \code{/login}                                              & Login page                              & public \\
+  POST & \code{/login}                                              & Submit credentials                      & public \\
+  GET  & \code{/auth/callback}                                      & OIDC / Entra ID callback                & public \\
+  POST & \code{/logout}                                             & Destroy session                         & auth \\
+  POST & \code{/lang}                                               & Switch UI language                      & auth \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{General (any authenticated user)}} \\[2pt]
+  GET  & \code{/}                                                   & Home / dashboard                        & auth \\
+  GET  & \code{/catalog}                                            & Product catalog                         & auth \\
+  GET  & \code{/catalog/\{id\}}                                     & Product detail page                     & auth \\
+  GET  & \code{/products/\{id\}/image}                              & Serve product image                     & auth \\
+  GET  & \code{/branding/logo}                                      & Serve shop logo                         & auth \\
+  GET  & \code{/impressum}                                          & Imprint page                            & auth \\
+  GET  & \code{/settings/profile}                                   & Profile \& password change              & auth \\
+  POST & \code{/settings/profile}                                   & Save profile / new password             & auth \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Orders}} \\[2pt]
+  GET  & \code{/orders}                                             & My orders list                          & auth \\
+  GET  & \code{/orders/new}                                         & New order form                          & auth \\
+  POST & \code{/orders/new}                                         & Submit order                            & auth \\
+  GET  & \code{/orders/\{id\}}                                      & Order detail / status                   & auth \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Projects}} \\[2pt]
+  GET  & \code{/projects}                                           & Projects list                           & auth \\
+  GET  & \code{/projects/new}                                       & New project form                        & auth \\
+  POST & \code{/projects/new}                                       & Create project                          & auth \\
+  GET  & \code{/projects/\{id\}}                                    & Project detail                          & auth \\
+  POST & \code{/projects/\{id\}}                                    & Update project                          & auth \\
+  POST & \code{/projects/\{id\}/delete}                             & Delete project                          & auth \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Infrastructure}} \\[2pt]
+  GET  & \code{/infrastructure}                                     & Infrastructure overview                 & auth \\
+  POST & \code{/infrastructure/\{id\}/decommission}                 & Trigger decommissioning                 & auth \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Approvals \& Audit (role: admin)}} \\[2pt]
+  GET  & \code{/approvals}                                          & Approval queue                          & admin \\
+  POST & \code{/approvals/\{id\}/approve}                           & Approve order                           & admin \\
+  POST & \code{/approvals/\{id\}/reject}                            & Reject order with note                  & admin \\
+  GET  & \code{/audit}                                              & Audit log viewer                        & admin \\
+  GET  & \code{/audit/export}                                       & Export audit log (PDF)                  & admin \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Admin — Categories (role: shop\_admin)}} \\[2pt]
+  GET  & \code{/admin}                                              & Admin dashboard                         & shop\_admin \\
+  GET  & \code{/admin/categories}                                   & Category list                           & shop\_admin \\
+  POST & \code{/admin/categories}                                   & Create category                         & shop\_admin \\
+  POST & \code{/admin/categories/\{id\}/delete}                     & Delete category                         & shop\_admin \\
+  GET  & \code{/admin/categories/\{id\}/parameters}                 & Category-level parameters               & shop\_admin \\
+  POST & \code{/admin/categories/\{id\}/parameters}                 & Add category parameter                  & shop\_admin \\
+  POST & \code{/admin/categories/\{id\}/parameters/\{pid\}/delete}  & Delete category parameter               & shop\_admin \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Admin — Products (role: shop\_admin)}} \\[2pt]
+  GET  & \code{/admin/products}                                     & Product list                            & shop\_admin \\
+  GET  & \code{/admin/products/new}                                 & New product form                        & shop\_admin \\
+  POST & \code{/admin/products/new}                                 & Create product                          & shop\_admin \\
+  GET  & \code{/admin/products/\{id\}}                              & Edit product                            & shop\_admin \\
+  POST & \code{/admin/products/\{id\}}                              & Update product                          & shop\_admin \\
+  POST & \code{/admin/products/\{id\}/delete}                       & Delete product                          & shop\_admin \\
+  POST & \code{/admin/products/\{id\}/translate}                    & Trigger AI translation                  & shop\_admin \\
+  GET  & \code{/admin/products/\{id\}/image}                        & Image upload page                       & shop\_admin \\
+  POST & \code{/admin/products/\{id\}/image}                        & Upload product image                    & shop\_admin \\
+  POST & \code{/admin/products/\{id\}/environments}                 & Link product to environment             & shop\_admin \\
+  POST & \code{/admin/products/\{id\}/parameters}                   & Add product parameter                   & shop\_admin \\
+  POST & \code{/admin/products/\{id\}/parameters/delete-all}        & Delete all product parameters           & shop\_admin \\
+  POST & \code{/admin/products/\{id\}/parameters/\{pid\}/delete}    & Delete single product parameter         & shop\_admin \\
+  POST & \code{/admin/products/\{id\}/webhooks}                     & Add product webhook                     & shop\_admin \\
+  POST & \code{/admin/products/\{id\}/webhooks/\{wid\}/delete}      & Delete product webhook                  & shop\_admin \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Admin — Environments, Sources, Cost Centers (role: shop\_admin)}} \\[2pt]
+  GET  & \code{/admin/environments}                                 & Deployment environment list             & shop\_admin \\
+  POST & \code{/admin/environments}                                 & Create environment                      & shop\_admin \\
+  POST & \code{/admin/environments/\{id\}/delete}                   & Delete environment                      & shop\_admin \\
+  GET  & \code{/admin/sources}                                      & GitLab sources list                     & shop\_admin \\
+  POST & \code{/admin/sources}                                      & Create GitLab source                    & shop\_admin \\
+  POST & \code{/admin/sources/\{id\}/delete}                        & Delete GitLab source                    & shop\_admin \\
+  GET  & \code{/admin/costcenters}                                  & Cost center list                        & shop\_admin \\
+  POST & \code{/admin/costcenters}                                  & Create cost center                      & shop\_admin \\
+  POST & \code{/admin/costcenters/\{id\}/delete}                    & Delete cost center                      & shop\_admin \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Admin — Users (role: shop\_admin)}} \\[2pt]
+  GET  & \code{/admin/users}                                        & User list                               & shop\_admin \\
+  POST & \code{/admin/users}                                        & Create user                             & shop\_admin \\
+  GET  & \code{/admin/users/\{id\}/edit}                            & Edit user form                          & shop\_admin \\
+  POST & \code{/admin/users/\{id\}/edit}                            & Save user changes                       & shop\_admin \\
+  POST & \code{/admin/users/\{id\}/deactivate}                      & Deactivate user                         & shop\_admin \\
+  POST & \code{/admin/users/\{id\}/delete}                          & Delete user                             & shop\_admin \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Admin — Parameters, Currencies, GitLab (role: shop\_admin)}} \\[2pt]
+  GET  & \code{/admin/parameters}                                   & Global parameter list                   & shop\_admin \\
+  POST & \code{/admin/parameters}                                   & Create global parameter                 & shop\_admin \\
+  POST & \code{/admin/parameters/\{id\}/delete}                     & Delete global parameter                 & shop\_admin \\
+  GET  & \code{/admin/currencies}                                   & Exchange rate management                & shop\_admin \\
+  POST & \code{/admin/currencies/refresh}                           & Refresh exchange rates                  & shop\_admin \\
+  GET  & \code{/admin/gitlab/projects}                              & Browse GitLab projects (AJAX)           & shop\_admin \\
+  GET  & \code{/admin/gitlab/branches}                              & Browse GitLab branches (AJAX)           & shop\_admin \\
+  GET  & \code{/admin/gitlab/files}                                 & Browse GitLab files (AJAX)              & shop\_admin \\
+  POST & \code{/admin/gitlab/import-vars}                           & Import variables from \code{.tf} file   & shop\_admin \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Admin — Configuration (role: shop\_admin)}} \\[2pt]
+  GET  & \code{/admin/smtp}                                         & SMTP configuration                      & shop\_admin \\
+  POST & \code{/admin/smtp}                                         & Save SMTP settings                      & shop\_admin \\
+  GET  & \code{/admin/ai-config}                                    & AI translation configuration            & shop\_admin \\
+  POST & \code{/admin/ai-config}                                    & Save AI configuration                   & shop\_admin \\
+  GET  & \code{/admin/branding}                                     & Shop branding                           & shop\_admin \\
+  POST & \code{/admin/branding}                                     & Save branding settings                  & shop\_admin \\
   \bottomrule
-  \caption{HTTP route reference (selected)}
+  \caption{Complete HTTP route reference}
   \label{tab:routes}
 \end{longtable}
 

@@ -300,7 +300,7 @@
 
 \section{Purpose of This Handbook}
 
-The Open Hybrid Cloud Infrastructure Webshop is a self-service portal that enables Digital Unit (DU) Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
+The Open Hybrid Cloud Infrastructure Webshop is a self-service portal that enables Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
 
 It covers:
 \begin{itemize}
@@ -315,11 +315,11 @@ It covers:
 \section{Target Audiences}
 
 \begin{description}[leftmargin=3.5cm, style=nextline]
-  \item[\role{DU Admin}]
+  \item[\role{Admin}]
     Responsible for approving orders, monitoring all infrastructure, and
     ordering directly without an approval step. Reads
     Part~\ref{part:admin} and Part~\ref{part:pm}.
-  \item[\role{Webshop Admin}]
+  \item[\role{Root}]
     Responsible for the product catalog, system configuration, and local
     user accounts. Reads Part~\ref{part:admin} entirely.
   \item[\role{Developer}]
@@ -400,9 +400,9 @@ systems it depends on.
 
   % Persons (top)
   \node[c4person, above left=1.8cm and 2.6cm of ws] (dua)
-    {\textbf{DU Admin}\\[4pt]\scriptsize Orders directly, approves/rejects, sees all infrastructure};
+    {\textbf{Admin}\\[4pt]\scriptsize Orders directly, approves/rejects, sees all infrastructure};
   \node[c4person, above=1.8cm of ws] (sa)
-    {\textbf{Webshop Admin}\\[4pt]\scriptsize Manages catalog \& config};
+    {\textbf{Root}\\[4pt]\scriptsize Manages catalog \& config};
   \node[c4person, above right=1.8cm and 2.6cm of ws] (pl)
     {\textbf{Project Manager}\\[4pt]\scriptsize Orders own infrastructure};
 
@@ -436,19 +436,19 @@ systems it depends on.
 \subsection{Actors}
 
 \begin{description}
-  \item[\role{DU Admin} (Digital Unit Administrator)]
+  \item[\role{Admin}]
     Authenticates via Microsoft Entra ID SSO. Has the system role
     \code{admin}. Can order infrastructure directly (no approval required),
     approve or reject orders from Project Managers, view all projects and
     infrastructure, and decommission any resource.
-  \item[\role{Webshop Admin}]
-    Uses a local account (no SSO). Has the system role \code{shop\_admin}.
+  \item[\role{Root}]
+    Uses a local account (no SSO). Has the system role \code{root}.
     Manages the product catalog, system configuration (SMTP, AI, branding,
     currencies), environments, GitLab sources, cost centers, and local
     users. Cannot place orders.
   \item[\role{Project Manager}]
     Authenticates via Entra ID SSO. Has the system role \code{user}.
-    Places orders (which require DU Admin approval), manages their own
+    Places orders (which require Admin approval), manages their own
     projects, and can decommission their own infrastructure.
 \end{description}
 
@@ -462,9 +462,9 @@ systems it depends on.
     provisioning and decommissioning webhooks, and (3) polling pipeline
     status to update order state.
   \item[\textbf{Microsoft Entra ID}]
-    The OIDC identity provider for DU Admins and Project Managers. The
+    The OIDC identity provider for Admins and Project Managers. The
     webshop implements the Authorization Code Flow. Local accounts for
-    Webshop Admins bypass this provider entirely.
+    Root users bypass this provider entirely.
   \item[\textbf{AI Translation API}]
     Optional. Used to auto-translate product names and descriptions into
     all 25 supported languages. Multiple backends are supported:
@@ -506,9 +506,9 @@ systems it depends on.
 
   % Persons (above)
   \node[c4person, above left=1.6cm and 0.4cm of app] (dua)
-    {\textbf{DU Admin}};
+    {\textbf{Admin}};
   \node[c4person, above=1.6cm of app] (sa)
-    {\textbf{Webshop Admin}};
+    {\textbf{Root}};
   \node[c4person, above right=1.6cm and 0.4cm of app] (pl)
     {\textbf{Project Manager}};
 
@@ -610,18 +610,18 @@ its major logical components.
   Auth &
     Handles OIDC Authorization Code Flow (Entra ID) and local password
     login. Issues encrypted, HttpOnly session cookies. Enforces role-based
-    access (\code{admin}, \code{shop\_admin}, \code{user}). \\[4pt]
+    access (\code{admin}, \code{root}, \code{project\_leader}). \\[4pt]
   Catalog &
     Renders products grouped by category. Converts prices from the
     configured base currency to the user's locale currency using stored
     exchange rates. Supports 25 languages via the i18n engine. \\[4pt]
   Order &
     Renders the order form with parameters from global, category, and
-    product parameter sets. Stores orders in PostgreSQL. For DU Admins,
+    product parameter sets. Stores orders in PostgreSQL. For Admins,
     triggers the GitLab provisioning webhook immediately; for Project
     Managers, parks the order for approval. \\[4pt]
   Approval &
-    Lists pending orders for DU Admins. Approve triggers the GitLab
+    Lists pending orders for Admins. Approve triggers the GitLab
     webhook. Reject requires a mandatory comment. Both paths send
     email notifications and write to the audit log. \\[4pt]
   Infrastructure &
@@ -643,7 +643,7 @@ its major logical components.
     Uses PostgreSQL advisory locks so multiple replicas do not
     double-poll. \\[4pt]
   Admin &
-    All Webshop Admin pages: categories, products (CRUD, image upload,
+    All Root pages: categories, products (CRUD, image upload,
     AI translation, webhook management, parameter import from
     \code{variables.tf}), environments, GitLab sources, cost centers,
     currencies, SMTP, AI config, branding, users. \\[4pt]
@@ -674,7 +674,7 @@ its major logical components.
   \item The order service writes the order record with status
         \code{pending\_approval} to PostgreSQL.
   \item The notification service sends an approval-request email to all
-        DU Admins.
+        Admins.
   \item The audit service writes an \code{order\_placed} entry.
   \item Browser redirects to \route{GET /orders/\{id\}} showing the
         \textit{Awaiting Approval} status.
@@ -683,7 +683,7 @@ its major logical components.
 \subsection{Order Approval \& Provisioning Flow}
 
 \begin{enumerate}
-  \item DU Admin opens \route{GET /approvals} and clicks \textbf{Approve}.
+  \item Admin opens \route{GET /approvals} and clicks \textbf{Approve}.
   \item \code{handler.approvalApprove()} calls
         \code{service.OrderService.Approve()}.
   \item The order service updates status to \code{provisioning}, stores
@@ -700,7 +700,7 @@ its major logical components.
   \item When the pipeline completes successfully, the poller sets status
         to \code{completed} and sends a deployment-complete email.
   \item On failure, status becomes \code{failed} and failure emails go
-        to the orderer and all DU Admins.
+        to the orderer and all Admins.
 \end{enumerate}
 
 \subsection{Request–Response Lifecycle (HTMX)}
@@ -1272,7 +1272,7 @@ set with Read/Write API access.}
 \label{sec:webhook}
 
 \begin{enumerate}
-  \item A DU Admin approves an order in the webshop (or places one
+  \item An Admin approves an order in the webshop (or places one
         directly).
   \item For each webhook configured on the product-environment
         combination, the webshop sends:
@@ -1465,8 +1465,8 @@ The webshop is configured entirely via environment variables. Copy
     \midrule
     \env{DATABASE\_URL}     & PostgreSQL DSN                         & Yes \\
     \env{SESSION\_KEY}      & 32-byte hex session encryption key      & Yes \\
-    \env{ADMIN\_EMAIL}      & Initial Webshop Admin email             & Yes \\
-    \env{ADMIN\_PASSWORD}   & Initial Webshop Admin password          & Yes \\
+    \env{ADMIN\_EMAIL}      & Initial Root email             & Yes \\
+    \env{ADMIN\_PASSWORD}   & Initial Root password          & Yes \\
     \env{BASE\_URL}         & Public URL of the webshop               & Yes \\
     \env{OIDC\_CLIENT\_ID}     & Entra ID application client ID      & No  \\
     \env{OIDC\_CLIENT\_SECRET} & Entra ID client secret              & No  \\
@@ -2082,8 +2082,8 @@ browser locale and applying the stored rate.
     \textbf{Role} & \textbf{Description} &
       \textbf{Auth method} & \textbf{DB role} \\
     \midrule
-    DU Admin         & Full access; direct ordering; approval & SSO  & \code{admin} \\
-    Webshop Admin    & Catalog \& config; no ordering          & Local & \code{shop\_admin} \\
+    Admin         & Full access; direct ordering; approval & SSO  & \code{admin} \\
+    Root    & Catalog \& config; no ordering          & Local & \code{root} \\
     Project Manager  & Orders own infra; approval required     & SSO  & \code{user} \\
     \bottomrule
   \end{tabularx}
@@ -2130,8 +2130,8 @@ record of all system actions.
     \textbf{Action} & \textbf{Trigger} \\
     \midrule
     \code{order\_placed}      & User submits an order \\
-    \code{order\_approved}    & DU Admin approves \\
-    \code{order\_rejected}    & DU Admin rejects (with comment) \\
+    \code{order\_approved}    & Admin approves \\
+    \code{order\_rejected}    & Admin rejects (with comment) \\
     \code{order\_deployed}    & Pipeline completes successfully \\
     \code{order\_failed}      & Pipeline fails \\
     \code{decommission\_started}  & User triggers decommission \\
@@ -2975,7 +2975,7 @@ key, foreign keys, and notable constraints.
     \code{id}            & BIGSERIAL & --- & PK \\
     \code{email}         & TEXT      & --- & NOT NULL, UNIQUE \\
     \code{name}          & TEXT      & --- & NOT NULL \\
-    \code{role}          & TEXT      & --- & CHECK: \code{admin}, \code{project\_leader}, \code{shop\_admin} \\
+    \code{role}          & TEXT      & --- & CHECK: \code{admin}, \code{project\_leader}, \code{root} \\
     \code{sso\_sub}      & TEXT      & NULL & UNIQUE; set for Entra ID accounts \\
     \code{password\_hash}& TEXT      & NULL & set for local accounts \\
     \code{active}        & BOOLEAN   & TRUE & soft-disable without deletion \\
@@ -3581,7 +3581,7 @@ make lint
   \node[state, below=0.8cm of pend] (rej) {Rejected};
   \node[state, below=0.8cm of prov] (fail) {Failed};
 
-  \draw[arr] (placed) -- node[c4label,above]{\scriptsize DU Admin\\(direct)} (prov);
+  \draw[arr] (placed) -- node[c4label,above]{\scriptsize Admin\\(direct)} (prov);
   \draw[arr] (placed) -- node[c4label,above]{\scriptsize Project Mgr} (pend);
   \draw[arr] (pend)   -- node[c4label,above]{\scriptsize approved} (prov);
   \draw[arr] (pend)   -- node[c4label,right]{\scriptsize rejected} (rej);
@@ -3605,9 +3605,9 @@ make lint
 \end{enumerate}
 
 As a \role{Project Manager} the order status changes to
-\textit{Pending Approval}. A DU Admin receives an email notification.
+\textit{Pending Approval}. A Admin receives an email notification.
 
-As a \role{DU Admin} the GitLab webhook fires immediately.
+As a \role{Admin} the GitLab webhook fires immediately.
 
 \section{Tracking Status}
 
@@ -3885,7 +3885,7 @@ Use them to avoid repeating parameters shared by related products
 \section{Step 8: Test the Full Order Flow}
 
 \begin{enumerate}
-  \item Log in as a \role{DU Admin} (DU Admins trigger webhooks directly).
+  \item Log in as a \role{Admin} (Admins trigger webhooks directly).
   \item Navigate to \textbf{Catalog} and find the new product.
   \item Click \textbf{Configure}, fill in test parameters, and
         click \textbf{Deploy Now}.
@@ -3912,7 +3912,7 @@ A destroy pipeline permanently deletes cloud resources and their data.}
   \item Log in (or create a test account) as a \role{Project Manager}.
   \item Place an order for the new product.
   \item Verify the order shows \textit{Pending Approval}.
-  \item Switch to the \role{DU Admin} account.
+  \item Switch to the \role{Admin} account.
   \item Approve the order under \textbf{Approvals}.
   \item Verify the webhook fires and provisioning completes.
   \item Verify the Project Manager receives the confirmation email.
@@ -3944,7 +3944,7 @@ order must be associated with a project. Projects have:
 \end{itemize}
 
 \role{Project Managers} see only their own projects.
-\role{DU Admins} and \role{Webshop Admins} see all projects.
+\role{Admins} and \role{Root users} see all projects.
 
 \section{Infrastructure Overview}
 \label{sec:infra-overview}
@@ -4030,7 +4030,7 @@ translation:
   \endhead
   \env{DATABASE\_URL}         & PostgreSQL connection string (DSN)          & Yes \\
   \env{SESSION\_KEY}          & 32-byte hex key for session encryption       & Yes \\
-  \env{ADMIN\_EMAIL}          & Email of the initial Webshop Admin account   & Yes \\
+  \env{ADMIN\_EMAIL}          & Email of the initial Root account   & Yes \\
   \env{ADMIN\_PASSWORD}       & Password of the initial admin account        & Yes \\
   \env{BASE\_URL}             & Public base URL (e.g. \code{https://shop.example.com}) & Yes \\
   \env{PORT}                  & HTTP listen port (default: \code{8080})      & No  \\
@@ -4183,8 +4183,8 @@ The \textbf{Role} column uses the following abbreviations:
 \begin{itemize}
   \item \textbf{public} — no authentication required
   \item \textbf{auth} — any authenticated user
-  \item \textbf{admin} — role \code{admin} (DU Admin) or higher
-  \item \textbf{shop\_admin} — role \code{shop\_admin} only
+  \item \textbf{admin} — role \code{admin} or higher
+  \item \textbf{root} — role \code{root} only
 \end{itemize}
 
 \footnotesize

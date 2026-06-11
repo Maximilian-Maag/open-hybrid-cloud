@@ -300,7 +300,7 @@
 
 \section{Purpose of This Handbook}
 
-The Open Hybrid Cloud Infrastructure Webshop is a self-service portal that enables Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
+Open Hybrid Cloud is an open-source, self-service portal that enables Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. The source code is publicly available at \url{https://github.com/open-hybrid-cloud/open-hybrid-cloud}. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
 
 It covers:
 \begin{itemize}
@@ -1535,12 +1535,11 @@ systemctl enable --now docker
 
 \item \textbf{Clone the repository and build the image.}
 \begin{lstlisting}[style=bash]
-git clone https://gitlab.example.com/open-hybrid-cloud/open-hybrid-cloud.git
+git clone https://github.com/open-hybrid-cloud/open-hybrid-cloud.git
 cd open-hybrid-cloud
 make docker-build
-# or pull from registry:
-docker login registry.gitlab.example.com
-docker pull registry.gitlab.example.com/open-hybrid-cloud/open-hybrid-cloud:latest
+# or pull from Docker Hub:
+docker pull maximilianmaag/open-hybrid-cloud:latest
 \end{lstlisting}
 
 \item \textbf{Create the environment file.}
@@ -1683,7 +1682,7 @@ cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
   \item Nginx Ingress Controller installed (\code{ingress-nginx})
   \item cert-manager installed with a \code{ClusterIssuer} for Let's
         Encrypt or a corporate CA
-  \item The image \code{open-hybrid-cloud/open-hybrid-cloud:\textit{tag}} is publicly
+  \item The image \code{maximilianmaag/open-hybrid-cloud:\textit{tag}} is publicly
         available on Docker Hub — no \code{imagePullSecret} required
 \end{itemize}
 
@@ -1740,7 +1739,7 @@ Table~\ref{tab:helm-values} lists the most important configurable values.
     \toprule
     \textbf{Key} & \textbf{Description} & \textbf{Default} \\
     \midrule
-    \code{image.repository}          & Docker Hub image name          & \code{open-hybrid-cloud/open-hybrid-cloud} \\
+    \code{image.repository}          & Docker Hub image name          & \code{maximilianmaag/open-hybrid-cloud} \\
     \code{image.tag}                  & Image tag (empty = appVersion) & \code{""} \\
     \code{replicaCount}               & Deployment replicas            & \code{2} \\
     \code{env.databaseUrl}            & PostgreSQL DSN (required)      & — \\
@@ -1764,13 +1763,18 @@ Table~\ref{tab:helm-values} lists the most important configurable values.
 kubectl create namespace open-hybrid-cloud
 \end{lstlisting}
 
-\item \textbf{Create the image pull secret (if using a private registry).}
+\item \textbf{(Optional) Create an image pull secret.}
+
+The container image \code{maximilianmaag/open-hybrid-cloud} is publicly
+available on Docker Hub and requires no authentication. Skip this step
+for standard deployments. Only required if you mirror the image to a
+private registry:
 \begin{lstlisting}[style=bash]
-kubectl create secret docker-registry gitlab-registry \
+kubectl create secret docker-registry my-registry-secret \
   --namespace open-hybrid-cloud \
-  --docker-server=registry.gitlab.example.com \
-  --docker-username=<deploy-token-name> \
-  --docker-password=<deploy-token-value>
+  --docker-server=<your-registry> \
+  --docker-username=<username> \
+  --docker-password=<password>
 \end{lstlisting}
 
 \item \textbf{Create the application Secret.}
@@ -1800,11 +1804,9 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      imagePullSecrets:
-        - name: gitlab-registry
       containers:
         - name: migrate
-          image: registry.gitlab.example.com/open-hybrid-cloud/open-hybrid-cloud:latest
+          image: maximilianmaag/open-hybrid-cloud:latest
           command: ["/migrate"]
           envFrom:
             - secretRef:
@@ -1834,11 +1836,9 @@ spec:
       labels:
         app: open-hybrid-cloud
     spec:
-      imagePullSecrets:
-        - name: gitlab-registry
       containers:
         - name: app
-          image: registry.gitlab.example.com/open-hybrid-cloud/open-hybrid-cloud:latest
+          image: maximilianmaag/open-hybrid-cloud:latest
           ports:
             - containerPort: 8080
           envFrom:
@@ -1960,8 +1960,7 @@ make migrate
 go run ./cmd/migrate
 \end{lstlisting}
 
-Migrations are idempotent (\code{IF NOT EXISTS}, \code{IF NOT EXISTS}
-guards). Re-running is safe.
+Migrations are idempotent (\code{IF NOT EXISTS} guards). Re-running is safe.
 
 \section{First Login}
 
@@ -2197,7 +2196,7 @@ A re-login is required afterwards for the Docker group membership to take effect
 
 \begin{lstlisting}[style=bash]
 # Clone and enter the repo
-git clone git@gitlab.example.com:open-hybrid-cloud/open-hybrid-cloud.git
+git clone https://github.com/open-hybrid-cloud/open-hybrid-cloud.git
 cd open-hybrid-cloud
 
 # Install all required tools (Ubuntu / Manjaro)
@@ -3605,7 +3604,7 @@ make lint
 \end{enumerate}
 
 As a \role{Project Manager} the order status changes to
-\textit{Pending Approval}. A Admin receives an email notification.
+\textit{Pending Approval}. An Admin receives an email notification.
 
 As a \role{Admin} the GitLab webhook fires immediately.
 

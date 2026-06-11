@@ -300,7 +300,7 @@
 
 \section{Purpose of This Handbook}
 
-Open Hybrid Cloud is an open-source, self-service portal that enables Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. The source code is publicly available at \url{https://github.com/open-hybrid-cloud/open-hybrid-cloud}. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
+Open Hybrid Cloud is an open-source, self-service portal that enables Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. The source code is publicly available at \url{https://github.com/Maximilian-Maag/open-hybrid-cloud}. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
 
 It covers:
 \begin{itemize}
@@ -1535,7 +1535,7 @@ systemctl enable --now docker
 
 \item \textbf{Clone the repository and build the image.}
 \begin{lstlisting}[style=bash]
-git clone https://github.com/open-hybrid-cloud/open-hybrid-cloud.git
+git clone https://github.com/Maximilian-Maag/open-hybrid-cloud.git
 cd open-hybrid-cloud
 make docker-build
 # or pull from Docker Hub:
@@ -2196,7 +2196,7 @@ A re-login is required afterwards for the Docker group membership to take effect
 
 \begin{lstlisting}[style=bash]
 # Clone and enter the repo
-git clone https://github.com/open-hybrid-cloud/open-hybrid-cloud.git
+git clone https://github.com/Maximilian-Maag/open-hybrid-cloud.git
 cd open-hybrid-cloud
 
 # Install all required tools (Ubuntu / Manjaro)
@@ -3498,9 +3498,9 @@ Create \file{ui/pages/admin/widgets.templ}:
 package admin
 
 import (
-    "github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/i18n"
-    "github.com/open-hybrid-cloud/open-hybrid-cloud/src/internal/view"
-    "github.com/open-hybrid-cloud/open-hybrid-cloud/src/ui/comp"
+    "github.com/Maximilian-Maag/open-hybrid-cloud/src/internal/i18n"
+    "github.com/Maximilian-Maag/open-hybrid-cloud/src/internal/view"
+    "github.com/Maximilian-Maag/open-hybrid-cloud/src/ui/comp"
 )
 
 templ AdminWidgets(vd view.AdminWidgetsView) {

@@ -2,7 +2,7 @@ name: CD — Release
 
 on:
   push:
-    branches: [main]
+    branches: [dev, staging, main]
 
 permissions:
   contents: write   # create releases and upload assets
@@ -15,9 +15,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Compute short SHA ───────────────────────────────────────────────────
-      - name: Set short SHA
-        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      # ── Compute tags ────────────────────────────────────────────────────────
+      - name: Set Docker tags
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_ENV"
+          case "${GITHUB_REF_NAME}" in
+            main)
+              echo "DOCKER_TAG=latest"             >> "$GITHUB_ENV"
+              echo "DOCKER_SHA_TAG=${SHORT_SHA}"   >> "$GITHUB_ENV"
+              ;;
+            staging)
+              echo "DOCKER_TAG=staging"                    >> "$GITHUB_ENV"
+              echo "DOCKER_SHA_TAG=staging-${SHORT_SHA}"  >> "$GITHUB_ENV"
+              ;;
+            dev)
+              echo "DOCKER_TAG=dev"                    >> "$GITHUB_ENV"
+              echo "DOCKER_SHA_TAG=dev-${SHORT_SHA}"  >> "$GITHUB_ENV"
+              ;;
+          esac
 
       # ── CSS ─────────────────────────────────────────────────────────────────
       - name: Set up Node
@@ -30,7 +46,7 @@ jobs:
       - name: Build CSS
         run: npm ci --prefix src && npm run build:css --prefix src
 
-      # ── Go binaries (linux/amd64 + linux/arm64) ──────────────────────────
+      # ── Go binaries (main only) ──────────────────────────────────────────────
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -38,6 +54,7 @@ jobs:
           cache: true
 
       - name: Build server binary (linux/amd64)
+        if: github.ref_name == 'main'
         env:
           CGO_ENABLED: "0"
           GOOS: linux
@@ -45,6 +62,7 @@ jobs:
         run: go build -ldflags="-s -w" -o dist/server-linux-amd64 ./src/cmd/server
 
       - name: Build migrate binary (linux/amd64)
+        if: github.ref_name == 'main'
         env:
           CGO_ENABLED: "0"
           GOOS: linux
@@ -52,6 +70,7 @@ jobs:
         run: go build -ldflags="-s -w" -o dist/migrate-linux-amd64 ./src/cmd/migrate
 
       - name: Build server binary (linux/arm64)
+        if: github.ref_name == 'main'
         env:
           CGO_ENABLED: "0"
           GOOS: linux
@@ -59,6 +78,7 @@ jobs:
         run: go build -ldflags="-s -w" -o dist/server-linux-arm64 ./src/cmd/server
 
       - name: Build migrate binary (linux/arm64)
+        if: github.ref_name == 'main'
         env:
           CGO_ENABLED: "0"
           GOOS: linux
@@ -83,21 +103,23 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:${{ env.SHORT_SHA }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:${{ env.DOCKER_TAG }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:${{ env.DOCKER_SHA_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ── Handbook PDF ────────────────────────────────────────────────────────
+      # ── Handbook PDF (main only) ─────────────────────────────────────────────
       - name: Compile handbook (LaTeX)
+        if: github.ref_name == 'main'
         uses: xu-cheng/latex-action@v3
         with:
           root_file: handbook.tex
           working_directory: docs
           args: -pdf -interaction=nonstopmode -halt-on-error
 
-      # ── GitHub Release ──────────────────────────────────────────────────────
+      # ── GitHub Release (main only) ──────────────────────────────────────────
       - name: Create GitHub Release
+        if: github.ref_name == 'main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: release-${{ github.run_number }}

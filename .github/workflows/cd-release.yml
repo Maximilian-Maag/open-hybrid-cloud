@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       # ── Compute tags ────────────────────────────────────────────────────────
       - name: Set Docker tags
@@ -37,7 +37,7 @@ jobs:
 
       # ── CSS ─────────────────────────────────────────────────────────────────
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
@@ -48,7 +48,7 @@ jobs:
 
       # ── Go binaries (main only) ──────────────────────────────────────────────
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -87,16 +87,16 @@ jobs:
 
       # ── Docker image → Docker Hub ───────────────────────────────────────────
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: infra/Dockerfile
@@ -111,7 +111,7 @@ jobs:
       # ── Handbook PDF (main only) ─────────────────────────────────────────────
       - name: Compile handbook (LaTeX)
         if: github.ref_name == 'main'
-        uses: xu-cheng/latex-action@v3
+        uses: xu-cheng/latex-action@e2f99d4b3685b0da93f97e1b86ad8fab81105098 # v3
         with:
           root_file: handbook.tex
           working_directory: docs
@@ -120,7 +120,7 @@ jobs:
       # ── GitHub Release (main only) ──────────────────────────────────────────
       - name: Create GitHub Release
         if: github.ref_name == 'main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: release-${{ github.run_number }}
           name: "Release #${{ github.run_number }} (${{ env.SHORT_SHA }})"

@@ -151,7 +151,7 @@ open-hybrid-cloud/
 │   ├── requirements/
 │   │   └── requirements.md      # Requirements document
 │   └── guides/
-│       ├── webshop-admin.md     # Root manual
+│       ├── root.md              # Root manual
 │       ├── admin.md             # Admin manual
 │       └── gitlab-opentofu-workflow.md
 ├── .env.example                 # Local development
@@ -285,7 +285,7 @@ make test
 
 ## Deployment
 
-Both environments use the same stateless container image from the private DockerHub registry.
+Both environments use the same stateless container image, publicly available on Docker Hub as `maximilianmaag/open-hybrid-cloud`.
 
 ### Docker Host
 
@@ -294,7 +294,6 @@ Configuration and files are located under `infra/docker-host/`.
 **Server Prerequisites:**
 - Docker + Docker Compose
 - Valid TLS certificate (e.g. Let's Encrypt via certbot)
-- Access to the private DockerHub registry
 
 **Initial Setup:**
 
@@ -314,10 +313,7 @@ cp nginx.conf.example nginx.conf
 mkdir certs
 # Copy fullchain.pem and privkey.pem into ./certs/
 
-# 5. DockerHub login (private image)
-docker login
-
-# 6. Start the application
+# 5. Start the application
 docker compose up -d
 ```
 
@@ -332,7 +328,7 @@ docker compose up -d --no-deps webshop
 
 Nginx Ingress Controller + cert-manager handle TLS termination. Horizontal scaling via Kubernetes Deployment. PostgreSQL as a StatefulSet with persistent volume.
 
-The container image is pulled from the private DockerHub registry — an `imagePullSecret` with DockerHub credentials must be present in the namespace.
+The container image `maximilianmaag/open-hybrid-cloud` is publicly available on Docker Hub — no `imagePullSecret` is required.
 
 ## Documentation
 

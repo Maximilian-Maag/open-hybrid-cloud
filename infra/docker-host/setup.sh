@@ -75,13 +75,17 @@ check_config_files() {
   fi
 }
 
-docker_login_if_needed() {
-  if ! docker info 2>/dev/null | grep -q "Username:"; then
-    info "Not logged in to Docker Hub — running docker login..."
-    docker login
-  else
-    info "Already logged in to Docker Hub."
-  fi
+
+ask_environment() {
+  info "Please select the environment:"
+  select env in "dev" "staging" "production"; do
+    case $env in
+      dev ) export IMAGE_TAG="dev"; break;;
+      staging ) export IMAGE_TAG="staging"; break;;
+      production ) export IMAGE_TAG="latest"; break;;
+    esac
+  done
+  info "Using image tag: $IMAGE_TAG"
 }
 
 compose_up() {
@@ -99,7 +103,7 @@ cmd_install() {
   require_debian
   install_docker
   check_config_files
-  docker_login_if_needed
+  ask_environment
   compose_up
   echo
   info "Installation complete."
@@ -109,6 +113,7 @@ cmd_upgrade() {
   require_root
   upgrade_docker
   info "Restarting containers with latest images..."
+  ask_environment
   compose_up
   echo
   info "Upgrade complete."

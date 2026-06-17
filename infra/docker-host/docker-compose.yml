@@ -72,7 +72,6 @@ services:
       DOCKER_API_VERSION: "1.47"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /root/.docker/config.json:/config.json:ro
     command: --cleanup --interval 300 --label-enable
     restart: unless-stopped
 

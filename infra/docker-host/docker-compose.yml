@@ -20,13 +20,13 @@ services:
     restart: unless-stopped
 
   webshop:
-    image: maximilianmaag/open-hybrid-cloud:latest
+    image: maximilianmaag/open-hybrid-cloud:${IMAGE_TAG:-latest}
     container_name: open-hybrid-cloud-app
     expose:
       - "8080"
     environment:
       PORT: "8080"
-      DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/infrawebshop?sslmode=disable"
+      DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/openhybridcloud?sslmode=disable"
       SESSION_SECRET: "${SESSION_SECRET}"
       ADMIN_EMAIL: "${ADMIN_EMAIL}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
@@ -53,7 +53,7 @@ services:
     image: postgres:16-alpine
     container_name: open-hybrid-cloud-postgres
     environment:
-      POSTGRES_DB: infrawebshop
+      POSTGRES_DB: openhybridcloud
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
     volumes:
@@ -72,7 +72,6 @@ services:
       DOCKER_API_VERSION: "1.47"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /root/.docker/config.json:/config.json:ro
     command: --cleanup --interval 300 --label-enable
     restart: unless-stopped
 

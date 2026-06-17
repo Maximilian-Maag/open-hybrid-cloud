@@ -15,7 +15,7 @@ services:
     image: postgres:16-alpine
     container_name: open-hybrid-cloud-postgres
     environment:
-      POSTGRES_DB: infrawebshop
+      POSTGRES_DB: openhybridcloud
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
@@ -24,7 +24,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d infrawebshop"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d openhybridcloud"]
       interval: 2s
       timeout: 5s
       retries: 15

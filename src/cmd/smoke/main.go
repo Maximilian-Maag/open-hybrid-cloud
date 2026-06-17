@@ -11,7 +11,7 @@ import (
 func main() {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable"
+		dbURL = "postgres://postgres:postgres@localhost:5432/openhybridcloud?sslmode=disable"
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dbURL)

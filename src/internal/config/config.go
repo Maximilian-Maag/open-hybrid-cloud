@@ -42,9 +42,9 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:        getEnv("PORT", "8080"),
-		AppName:     getEnv("APP_NAME", "Infra Webshop"),
+		AppName:     getEnv("APP_NAME", "Open Hybrid Cloud"),
 		AppSubtitle: getEnv("APP_SUBTITLE", "Infrastructure Self-Service"),
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable"),
+		DatabaseURL: getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/openhybridcloud?sslmode=disable"),
 
 		SessionSecret: mustGetEnv("SESSION_SECRET"),
 

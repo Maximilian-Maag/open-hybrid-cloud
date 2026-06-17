@@ -80,12 +80,22 @@ ask_environment() {
   info "Please select the environment:"
   select env in "dev" "staging" "production"; do
     case $env in
-      dev ) export IMAGE_TAG="dev"; break;;
-      staging ) export IMAGE_TAG="staging"; break;;
-      production ) export IMAGE_TAG="latest"; break;;
+      dev ) IMAGE_TAG="dev"; break;;
+      staging ) IMAGE_TAG="staging"; break;;
+      production ) IMAGE_TAG="latest"; break;;
     esac
   done
-  info "Using image tag: $IMAGE_TAG"
+
+  if grep -q "^IMAGE_TAG=" "$SCRIPT_DIR/.env"; then
+    info "Updating IMAGE_TAG in .env file to $IMAGE_TAG..."
+    sed -i "s~^IMAGE_TAG=.*~IMAGE_TAG=$IMAGE_TAG~" "$SCRIPT_DIR/.env"
+  else
+    info "Adding IMAGE_TAG to .env file..."
+    echo "" >> "$SCRIPT_DIR/.env"
+    echo "# Image tag to use for the webshop service (dev, staging, latest)" >> "$SCRIPT_DIR/.env"
+    echo "IMAGE_TAG=$IMAGE_TAG" >> "$SCRIPT_DIR/.env"
+  fi
+  info "Image tag set to: $IMAGE_TAG"
 }
 
 compose_up() {

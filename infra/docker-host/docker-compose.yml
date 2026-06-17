@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
   webshop:
-    image: maximilianmaag/open-hybrid-cloud:latest
+    image: maximilianmaag/open-hybrid-cloud:${IMAGE_TAG:-latest}
     container_name: open-hybrid-cloud-app
     expose:
       - "8080"

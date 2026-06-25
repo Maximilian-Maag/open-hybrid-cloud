@@ -10,8 +10,8 @@
 @layer base {
   :root {
     /* Brand colours — overridden at runtime via inline style on <html> */
-    --bp: #131921;
-    --bs: #febd69;
+    --bp: #0f172a;
+    --bs: #0ea5e9;
   }
 
   *,

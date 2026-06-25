@@ -1694,6 +1694,30 @@ var messages = map[string]map[string]string{
 	},
 
 	// Admin — cost centers
+	"admin.price": {
+		"de": "Preis", "en": "Price", "fr": "Prix", "it": "Prezzo",
+		"es": "Precio", "pt": "Preço", "nl": "Prijs", "pl": "Cena",
+		"cs": "Cena", "sk": "Cena", "sl": "Cena", "hr": "Cijena",
+		"ro": "Preț", "hu": "Ár", "bg": "Цена", "el": "Τιμή",
+		"fi": "Hinta", "sv": "Pris", "da": "Pris", "et": "Hind",
+		"lv": "Cena", "lt": "Kaina", "mt": "Prezz", "ga": "Praghas", "ru": "Цена",
+	},
+	"admin.currency": {
+		"de": "Währung", "en": "Currency", "fr": "Devise", "it": "Valuta",
+		"es": "Divisa", "pt": "Moeda", "nl": "Valuta", "pl": "Waluta",
+		"cs": "Měna", "sk": "Mena", "sl": "Valuta", "hr": "Valuta",
+		"ro": "Monedă", "hu": "Pénznem", "bg": "Валута", "el": "Νόμισμα",
+		"fi": "Valuutta", "sv": "Valuta", "da": "Valuta", "et": "Valuuta",
+		"lv": "Valūta", "lt": "Valiuta", "mt": "Munita", "ga": "Airgeadra", "ru": "Валюта",
+	},
+	"admin.add": {
+		"de": "Hinzufügen", "en": "Add", "fr": "Ajouter", "it": "Aggiungi",
+		"es": "Añadir", "pt": "Adicionar", "nl": "Toevoegen", "pl": "Dodaj",
+		"cs": "Přidat", "sk": "Pridať", "sl": "Dodaj", "hr": "Dodaj",
+		"ro": "Adaugă", "hu": "Hozzáadás", "bg": "Добави", "el": "Προσθήκη",
+		"fi": "Lisää", "sv": "Lägg till", "da": "Tilføj", "et": "Lisa",
+		"lv": "Pievienot", "lt": "Pridėti", "mt": "Żid", "ga": "Cuir leis", "ru": "Добавить",
+	},
 	"admin.cost_centers": {
 		"de": "Kostenstellen", "en": "Cost Centers", "fr": "Centres de coûts", "it": "Centri di costo",
 		"es": "Centros de costes", "pt": "Centros de custos", "nl": "Kostenplaatsen", "pl": "Centra kosztów",

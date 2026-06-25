@@ -192,6 +192,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.Handle("POST /admin/products/{id}/webhooks", admin(h.adminProductWebhookCreate))
 	mux.Handle("POST /admin/products/{id}/environments", admin(h.adminProductEnvironmentCreate))
+	mux.Handle("POST /admin/products/{id}/environments/{eid}", admin(h.adminProductEnvironmentUpdate))
 	mux.Handle("POST /admin/products/{id}/parameters", admin(h.adminProductParameterCreate))
 	mux.Handle("POST /admin/products/{id}/parameters/delete-all", admin(h.adminProductParameterDeleteAll))
 	mux.Handle("POST /admin/products/{id}/parameters/{pid}/delete", admin(h.adminProductParameterDelete))

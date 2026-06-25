@@ -184,7 +184,9 @@ templ OrderNew(vd view.OrderNewView) {
 					{ i18n.T("order_new.new_project", vd.Lang) }
 				</a>
 			}
-			if len(vd.CostCenters) > 0 {
+			if vd.ProductEnv != nil && vd.ProductEnv.ForcedCostCenter && vd.ProductEnv.CostCenterMode == model.CostCenterModeProject {
+				<p class="text-sm text-slate-500 italic">{ i18n.T("order_new.cc_forced_project", vd.Lang) }</p>
+			} else if len(vd.CostCenters) > 0 {
 				@comp.Field(i18n.T("order_new.cost_center", vd.Lang), "cost_center_id", false) {
 					@comp.Select("cost_center_id", templ.Attributes{}) {
 						<option value="">{ i18n.T("order_new.by_project", vd.Lang) }</option>

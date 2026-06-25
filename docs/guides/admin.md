@@ -18,6 +18,8 @@ As an Admin you can:
 3. Complete the Microsoft Entra ID login with your corporate account credentials
 4. On first login: confirm consent for the application
 
+> **Note:** Login attempts are rate-limited per IP address to prevent brute-force attacks. If too many failed attempts occur from the same IP, subsequent attempts will be temporarily blocked.
+
 ---
 
 ## 2. Product Catalog
@@ -87,6 +89,7 @@ Under **Infrastructure**:
 - All deployed infrastructure elements across all projects and environments
 - Grouped by project and deployment environment
 - Per element: product, parameters, status, price, cost center, order date, ordered by
+- Once provisioning completes successfully, **OpenTofu outputs** (e.g. IP addresses, hostnames, resource IDs) are displayed on the infrastructure element detail page. These outputs are written by the GitLab pipeline after a successful apply and stored per element.
 
 ### 5.1 Decommissioning Infrastructure
 
@@ -136,3 +139,20 @@ As an Admin you automatically receive emails for:
 |-------|-------------|
 | New order (from project leader) | Approval request with link to the order |
 | Deployment failed | Error details and link to the pipeline |
+
+---
+
+## 9. Settings / Profile
+
+Under **Settings → Profile** (`/settings/profile`):
+
+### 9.1 Password Change
+
+1. Enter your **current password**
+2. Enter a **new password** (minimum 8 characters)
+3. Confirm the new password — both fields must match
+4. Click **Save**
+
+### 9.2 Language
+
+Use the language selector in the navigation bar to change the UI language. The selected language is stored in your session and applied to all UI texts. Product content is loaded in the selected language when a translation is available.

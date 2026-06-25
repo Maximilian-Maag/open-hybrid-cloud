@@ -170,6 +170,40 @@
 | FA-14.1 | All relevant actions are logged immutably: order, approval, rejection (with comment), deployment start, deployment completion, deployment failure, decommissioning, configuration changes. |
 | FA-14.2 | The audit log is viewable and filterable by Admins and Root users. |
 | FA-14.3 | The audit log can be exported as CSV or PDF. The format is selectable at export time. |
+| FA-14.4 | The audit log is paginated (50 entries per page) and filterable by user, action type, and date range. |
+
+---
+
+### FA-15 Branding
+
+| ID | Requirement |
+|----|-------------|
+| FA-15.1 | The Root can configure primary color, secondary/accent color, logo (PNG/SVG), shop name, subtitle/tagline, and imprint text via `/admin/branding`. |
+| FA-15.2 | The logo is served at `/branding/logo`. When a logo is uploaded it replaces the shop name text in the header. |
+| FA-15.3 | The imprint text is publicly accessible at `/impressum` without requiring a login. If no imprint text is configured, the footer link is hidden. |
+| FA-15.4 | Shop name and subtitle configured via the branding UI override the `APP_NAME` and `APP_SUBTITLE` environment variables at runtime. |
+
+---
+
+### FA-16 Multiple Webhooks per Product-Environment
+
+| ID | Requirement |
+|----|-------------|
+| FA-16.1 | A product can have multiple webhook endpoints configured per deployment environment, stored in the `product_webhooks` table. |
+| FA-16.2 | Each webhook entry has: name, webhook URL, webhook token, and execution order (`exec_order`). |
+| FA-16.3 | Webhooks with the same `exec_order` value fire concurrently. Webhooks with a lower `exec_order` fire before those with a higher value. |
+| FA-16.4 | If no `product_webhooks` rows are configured for a given product-environment combination, the system falls back to the deployment environment's default webhook URL. |
+| FA-16.5 | Product webhooks are managed via the admin UI at `POST /admin/products/{id}/webhooks` and deleted via `POST /admin/products/{id}/webhooks/{wid}/delete`. |
+
+---
+
+### FA-17 Infrastructure Outputs
+
+| ID | Requirement |
+|----|-------------|
+| FA-17.1 | After a successful OpenTofu apply, the GitLab pipeline writes key-value outputs in a format the polling service can read. |
+| FA-17.2 | Outputs are stored per infrastructure element in `infrastructure_elements.outputs` (JSONB). |
+| FA-17.3 | Outputs (e.g. IP addresses, hostnames, resource IDs) are displayed on the order detail page and the infrastructure element detail page. |
 
 ---
 
@@ -181,8 +215,8 @@
 |----|-------------|
 | NFA-01.1 | The application runs as a single stateless Docker container. |
 | NFA-01.2 | **Docker Host:** An Nginx container (official image) handles HTTPS termination and forwards requests via reverse proxy. |
-| NFA-01.3 | **Docker Host:** The application image is stored in a private DockerHub registry. The Docker daemon must be authenticated via `docker login` before startup. All other images (nginx, postgres) are official images. |
-| NFA-01.4 | **Kubernetes:** Nginx Ingress Controller + cert-manager handle TLS termination (Let's Encrypt or internal CA). The private image is pulled via an `imagePullSecret` in the namespace. |
+| NFA-01.3 | **Docker Host:** The application image (`maximilianmaag/open-hybrid-cloud`) is publicly available on Docker Hub — no registry authentication required. All other images (nginx, postgres) are official images. |
+| NFA-01.4 | **Kubernetes:** Nginx Ingress Controller + cert-manager handle TLS termination (Let's Encrypt or internal CA). No `imagePullSecret` is required; the image is public. |
 | NFA-01.5 | Configuration is done exclusively via environment variables (12-Factor App). No configuration files inside the container. |
 | NFA-01.6 | The GitLab server is reachable via a configurable URL. |
 | NFA-01.7 | The deployment configuration for the Docker Host is located under `infra/docker-host/` and contains: `docker-compose.yml`, `nginx.conf.example`, and `.env.example`. |
@@ -218,3 +252,21 @@
 | NFA-04.1 | All webshop data is stored in PostgreSQL. No filesystem dependencies at runtime. |
 | NFA-04.2 | Product images are stored as `bytea` in PostgreSQL. |
 | NFA-04.3 | The audit log is immutable (no UPDATE/DELETE operations on audit entries). |
+
+---
+
+### NFA-05 Security
+
+| ID | Requirement |
+|----|-------------|
+| NFA-05.1 | Login attempts are rate-limited per IP address to prevent brute-force attacks. |
+
+---
+
+### NFA-06 Configuration Persistence
+
+| ID | Requirement |
+|----|-------------|
+| NFA-06.1 | SMTP and AI translation configuration can be updated via the Root UI and is persisted in the `app_config` database table. |
+| NFA-06.2 | Database-stored configuration overrides the corresponding environment variable defaults at runtime and persists across container restarts. |
+| NFA-06.3 | If a credential field (SMTP password, AI API key) is left blank during a UI update, the existing stored value is preserved. |

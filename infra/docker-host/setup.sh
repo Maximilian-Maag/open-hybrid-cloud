@@ -75,13 +75,27 @@ check_config_files() {
   fi
 }
 
-docker_login_if_needed() {
-  if ! docker info 2>/dev/null | grep -q "Username:"; then
-    info "Not logged in to Docker Hub — running docker login..."
-    docker login
+
+ask_environment() {
+  info "Please select the environment:"
+  select env in "dev" "staging" "production"; do
+    case $env in
+      dev ) IMAGE_TAG="dev"; break;;
+      staging ) IMAGE_TAG="staging"; break;;
+      production ) IMAGE_TAG="latest"; break;;
+    esac
+  done
+
+  if grep -q "^IMAGE_TAG=" "$SCRIPT_DIR/.env"; then
+    info "Updating IMAGE_TAG in .env file to $IMAGE_TAG..."
+    sed -i "s~^IMAGE_TAG=.*~IMAGE_TAG=$IMAGE_TAG~" "$SCRIPT_DIR/.env"
   else
-    info "Already logged in to Docker Hub."
+    info "Adding IMAGE_TAG to .env file..."
+    echo "" >> "$SCRIPT_DIR/.env"
+    echo "# Image tag to use for the webshop service (dev, staging, latest)" >> "$SCRIPT_DIR/.env"
+    echo "IMAGE_TAG=$IMAGE_TAG" >> "$SCRIPT_DIR/.env"
   fi
+  info "Image tag set to: $IMAGE_TAG"
 }
 
 compose_up() {
@@ -99,7 +113,7 @@ cmd_install() {
   require_debian
   install_docker
   check_config_files
-  docker_login_if_needed
+  ask_environment
   compose_up
   echo
   info "Installation complete."
@@ -109,6 +123,7 @@ cmd_upgrade() {
   require_root
   upgrade_docker
   info "Restarting containers with latest images..."
+  ask_environment
   compose_up
   echo
   info "Upgrade complete."

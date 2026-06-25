@@ -208,7 +208,7 @@ The repository includes a smoke test command in `cmd/smoke/`.
 Run it against a local database to verify product deletion cleanup:
 
 ```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable \
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/openhybridcloud?sslmode=disable \
   go run ./cmd/smoke
 ```
 
@@ -320,8 +320,8 @@ docker compose up -d
 **Updating the Image:**
 
 ```bash
-docker compose pull webshop
-docker compose up -d --no-deps webshop
+docker compose pull open-hybrid-cloud
+docker compose up -d --no-deps open-hybrid-cloud
 ```
 
 ### Kubernetes

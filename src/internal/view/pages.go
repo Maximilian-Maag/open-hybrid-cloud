@@ -78,6 +78,7 @@ type OrderNewView struct {
 	PageData
 	Product         *model.Product
 	Environment     *model.DeploymentEnvironment
+	ProductEnv      *model.ProductEnvironment
 	Projects        []model.Project
 	Parameters      []model.Parameter
 	CostCenters     []model.CostCenter

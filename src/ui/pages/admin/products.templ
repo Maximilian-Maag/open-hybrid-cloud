@@ -166,17 +166,33 @@ templ AdminProductEdit(vd view.AdminProductEditView) {
 					@comp.Card() {
 						@comp.CardHeader(i18n.T("admin.avail_envs", vd.Lang))
 						@comp.CardBody() {
-							<div class="space-y-1 text-sm divide-y divide-slate-50">
+							<div class="space-y-3 divide-y divide-slate-100">
 								for _, pe := range vd.ProductEnvs {
-									<div class="flex justify-between items-center py-1.5">
-										<span class="text-slate-700">
-											if name, ok := vd.EnvNames[pe.EnvironmentID]; ok {
-												{ name }
-											} else {
-												{ fmt.Sprint(pe.EnvironmentID) }
+									<div class="pt-3 first:pt-0">
+										<div class="flex justify-between items-center mb-2">
+											<span class="font-medium text-slate-700">
+												if name, ok := vd.EnvNames[pe.EnvironmentID]; ok {
+													{ name }
+												} else {
+													{ fmt.Sprint(pe.EnvironmentID) }
+												}
+											</span>
+											<span class="font-mono text-xs text-slate-400">{ fmt.Sprintf("%.2f", pe.Price) } { pe.Currency }</span>
+										</div>
+										<form method="POST" action={ templ.URL("/admin/products/" + fmt.Sprint(vd.Product.ID) + "/environments/" + fmt.Sprint(pe.EnvironmentID)) } class="flex flex-wrap gap-3 items-end">
+											@comp.Field(i18n.T("admin.cost_center_mode", vd.Lang), "cost_center_mode", false) {
+												@comp.Select("cost_center_mode", templ.Attributes{}) {
+													<option value="project" selected?={ pe.CostCenterMode == "project" }>{ i18n.T("admin.cc_mode_project", vd.Lang) }</option>
+													<option value="select" selected?={ pe.CostCenterMode == "select" }>{ i18n.T("admin.cc_mode_select", vd.Lang) }</option>
+													<option value="overhead" selected?={ pe.CostCenterMode == "overhead" }>{ i18n.T("admin.cc_mode_overhead", vd.Lang) }</option>
+												}
 											}
-										</span>
-										<span class="font-mono text-xs text-slate-400">{ fmt.Sprintf("%.2f", pe.Price) } { pe.Currency }</span>
+											<label class="flex items-center gap-2 text-sm text-slate-700 pb-1">
+												<input type="checkbox" name="forced_cost_center" class="ds-checkbox" checked?={ pe.ForcedCostCenter }/>
+												{ i18n.T("admin.force_cost_center", vd.Lang) }
+											</label>
+											@comp.Btn(i18n.T("common.save", vd.Lang), comp.VSecondary, comp.SzXS, templ.Attributes{"type": "submit"})
+										</form>
 									</div>
 								}
 							</div>
@@ -202,6 +218,17 @@ templ AdminProductEdit(vd view.AdminProductEditView) {
 								@comp.Field("Währung", "currency", false) {
 									@comp.Input("currency", "text", "EUR", "EUR", templ.Attributes{})
 								}
+								@comp.Field(i18n.T("admin.cost_center_mode", vd.Lang), "cost_center_mode", false) {
+									@comp.Select("cost_center_mode", templ.Attributes{}) {
+										<option value="project">{ i18n.T("admin.cc_mode_project", vd.Lang) }</option>
+										<option value="select">{ i18n.T("admin.cc_mode_select", vd.Lang) }</option>
+										<option value="overhead">{ i18n.T("admin.cc_mode_overhead", vd.Lang) }</option>
+									}
+								}
+								<label class="flex items-center gap-2 text-sm text-slate-700">
+									<input type="checkbox" name="forced_cost_center" class="ds-checkbox"/>
+									{ i18n.T("admin.force_cost_center", vd.Lang) }
+								</label>
 								@comp.Btn("Hinzufügen", comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
 							</form>
 						}

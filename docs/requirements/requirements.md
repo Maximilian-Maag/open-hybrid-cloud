@@ -185,7 +185,7 @@
 | NFA-01.4 | **Kubernetes:** Nginx Ingress Controller + cert-manager handle TLS termination (Let's Encrypt or internal CA). The private image is pulled via an `imagePullSecret` in the namespace. |
 | NFA-01.5 | Configuration is done exclusively via environment variables (12-Factor App). No configuration files inside the container. |
 | NFA-01.6 | The GitLab server is reachable via a configurable URL. |
-| NFA-01.7 | The deployment configuration for the Docker Host is located under `deploy/docker-host/` and contains: `docker-compose.yml`, `nginx.conf.example`, and `.env.example`. |
+| NFA-01.7 | The deployment configuration for the Docker Host is located under `infra/docker-host/` and contains: `docker-compose.yml`, `nginx.conf.example`, and `.env.example`. |
 
 ---
 

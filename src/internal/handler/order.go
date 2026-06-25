@@ -51,12 +51,14 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 
 	product, _ := h.products.GetByID(r.Context(), productID, h.lang(r))
 	env, _ := h.environments.FindByID(r.Context(), envID)
+	productEnv, _ := h.productEnvs.FindByProductAndEnv(r.Context(), productID, envID)
 	costCenters, _ := h.costCenters.FindAll(r.Context())
 
 	renderTempl(w, r, orderpages.OrderNew(view.OrderNewView{
 		PageData:        h.buildPageData(w, r),
 		Product:         product,
 		Environment:     env,
+		ProductEnv:      productEnv,
 		Projects:        projects,
 		Parameters:      append(globalParams, params...),
 		CostCenters:     costCenters,
@@ -76,6 +78,14 @@ func (h *Handler) orderCreate(w http.ResponseWriter, r *http.Request) {
 	envID, _ := strconv.ParseInt(r.FormValue("environment_id"), 10, 64)
 	projectID, _ := strconv.ParseInt(r.FormValue("project_id"), 10, 64)
 	ccID, _ := strconv.ParseInt(r.FormValue("cost_center_id"), 10, 64)
+
+	if pe, err := h.productEnvs.FindByProductAndEnv(r.Context(), productID, envID); err == nil && pe != nil && pe.ForcedCostCenter {
+		if pe.CostCenterMode == model.CostCenterModeProject {
+			if proj, err := h.projects.GetByID(r.Context(), projectID); err == nil && proj != nil {
+				ccID = proj.CostCenterID
+			}
+		}
+	}
 
 	params := map[string]string{}
 	reserved := map[string]bool{

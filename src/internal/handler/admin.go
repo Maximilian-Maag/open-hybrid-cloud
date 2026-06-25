@@ -215,19 +215,49 @@ func (h *Handler) adminProductEnvironmentCreate(w http.ResponseWriter, r *http.R
 	if currency == "" {
 		currency = "EUR"
 	}
+	ccMode := model.CostCenterMode(r.FormValue("cost_center_mode"))
+	if ccMode != model.CostCenterModeProject && ccMode != model.CostCenterModeSelect && ccMode != model.CostCenterModeOverhead {
+		ccMode = model.CostCenterModeProject
+	}
 	pe := &model.ProductEnvironment{
 		ProductID:        productID,
 		EnvironmentID:    environmentID,
 		Price:            price,
 		Currency:         currency,
-		CostCenterMode:   model.CostCenterModeProject,
-		ForcedCostCenter: false,
+		CostCenterMode:   ccMode,
+		ForcedCostCenter: r.FormValue("forced_cost_center") == "on",
 	}
 	if err := h.productEnvs.Upsert(r.Context(), pe); err != nil {
 		h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "error", i18n.T("flash.error", lang)+": "+err.Error())
 		return
 	}
 	h.redirectWithFlash(w, r, "/admin/products/"+strconv.FormatInt(productID, 10), "success", i18n.T("flash.env_added", lang))
+}
+
+func (h *Handler) adminProductEnvironmentUpdate(w http.ResponseWriter, r *http.Request) {
+	lang := h.lang(r)
+	productID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	envID, _ := strconv.ParseInt(r.PathValue("eid"), 10, 64)
+	redirect := "/admin/products/" + strconv.FormatInt(productID, 10)
+
+	pe, err := h.productEnvs.FindByProductAndEnv(r.Context(), productID, envID)
+	if err != nil || pe == nil {
+		h.redirectWithFlash(w, r, redirect, "error", i18n.T("flash.error", lang))
+		return
+	}
+
+	ccMode := model.CostCenterMode(r.FormValue("cost_center_mode"))
+	if ccMode != model.CostCenterModeProject && ccMode != model.CostCenterModeSelect && ccMode != model.CostCenterModeOverhead {
+		ccMode = model.CostCenterModeProject
+	}
+	pe.CostCenterMode = ccMode
+	pe.ForcedCostCenter = r.FormValue("forced_cost_center") == "on"
+
+	if err := h.productEnvs.Upsert(r.Context(), pe); err != nil {
+		h.redirectWithFlash(w, r, redirect, "error", i18n.T("flash.error", lang)+": "+err.Error())
+		return
+	}
+	h.redirectWithFlash(w, r, redirect, "success", i18n.T("flash.env_updated", lang))
 }
 
 func (h *Handler) adminProductParameterCreate(w http.ResponseWriter, r *http.Request) {

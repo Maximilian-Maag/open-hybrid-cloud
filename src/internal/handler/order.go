@@ -46,13 +46,17 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 		projects, _ = h.projects.ListByOwner(r.Context(), sess.UserID)
 	}
 
-	params, _ := h.parameters.FindByScope(r.Context(), "product", productID)
-	globalParams, _ := h.parameters.FindByScope(r.Context(), "global", 0)
-
 	product, _ := h.products.GetByID(r.Context(), productID, h.lang(r))
 	env, _ := h.environments.FindByID(r.Context(), envID)
 	productEnv, _ := h.productEnvs.FindByProductAndEnv(r.Context(), productID, envID)
 	costCenters, _ := h.costCenters.FindAll(r.Context())
+
+	globalParams, _ := h.parameters.FindByScopeAndEnv(r.Context(), model.ParameterScopeGlobal, 0, envID)
+	var categoryParams []model.Parameter
+	if product != nil {
+		categoryParams, _ = h.parameters.FindByScopeAndEnv(r.Context(), model.ParameterScopeCategory, product.CategoryID, envID)
+	}
+	productParams, _ := h.parameters.FindByScopeAndEnv(r.Context(), model.ParameterScopeProduct, productID, envID)
 
 	renderTempl(w, r, orderpages.OrderNew(view.OrderNewView{
 		PageData:        h.buildPageData(w, r),
@@ -60,7 +64,7 @@ func (h *Handler) orderNew(w http.ResponseWriter, r *http.Request) {
 		Environment:     env,
 		ProductEnv:      productEnv,
 		Projects:        projects,
-		Parameters:      append(globalParams, params...),
+		Parameters:      append(append(globalParams, categoryParams...), productParams...),
 		CostCenters:     costCenters,
 		PrefilledParams: prefilledParams,
 	}))

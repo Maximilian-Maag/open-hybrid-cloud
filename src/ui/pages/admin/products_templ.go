@@ -1395,7 +1395,7 @@ func AdminProductEdit(vd view.AdminProductEditView) templ.Component {
 							}
 							return nil
 						})
-						templ_7745c5c3_Err = comp.Field("Preis", "price", false).Render(templ.WithChildren(ctx, templ_7745c5c3_Var70), templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = comp.Field(i18n.T("admin.price", vd.Lang), "price", false).Render(templ.WithChildren(ctx, templ_7745c5c3_Var70), templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -1417,7 +1417,7 @@ func AdminProductEdit(vd view.AdminProductEditView) templ.Component {
 							}
 							return nil
 						})
-						templ_7745c5c3_Err = comp.Field("Währung", "currency", false).Render(templ.WithChildren(ctx, templ_7745c5c3_Var71), templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = comp.Field(i18n.T("admin.currency", vd.Lang), "currency", false).Render(templ.WithChildren(ctx, templ_7745c5c3_Var71), templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
@@ -1517,7 +1517,7 @@ func AdminProductEdit(vd view.AdminProductEditView) templ.Component {
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = comp.Btn("Hinzufügen", comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"}).Render(ctx, templ_7745c5c3_Buffer)
+						templ_7745c5c3_Err = comp.Btn(i18n.T("admin.add", vd.Lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"}).Render(ctx, templ_7745c5c3_Buffer)
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}

@@ -212,10 +212,10 @@ templ AdminProductEdit(vd view.AdminProductEditView) {
 										}
 									}
 								}
-								@comp.Field("Preis", "price", false) {
+								@comp.Field(i18n.T("admin.price", vd.Lang), "price", false) {
 									@comp.Input("price", "number", "0.00", "0.00", templ.Attributes{"step": "0.01"})
 								}
-								@comp.Field("Währung", "currency", false) {
+								@comp.Field(i18n.T("admin.currency", vd.Lang), "currency", false) {
 									@comp.Input("currency", "text", "EUR", "EUR", templ.Attributes{})
 								}
 								@comp.Field(i18n.T("admin.cost_center_mode", vd.Lang), "cost_center_mode", false) {
@@ -229,7 +229,7 @@ templ AdminProductEdit(vd view.AdminProductEditView) {
 									<input type="checkbox" name="forced_cost_center" class="ds-checkbox"/>
 									{ i18n.T("admin.force_cost_center", vd.Lang) }
 								</label>
-								@comp.Btn("Hinzufügen", comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
+								@comp.Btn(i18n.T("admin.add", vd.Lang), comp.VPrimary, comp.SzSM, templ.Attributes{"type": "submit"})
 							</form>
 						}
 					}

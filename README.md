@@ -15,6 +15,37 @@ Self-service portal through which Admins and project managers can order, manage,
 | Deployment            | Single Container (scratch image)         |
 | IaC                   | OpenTofu (via GitLab CI)                 |
 
+## Environment Variables
+
+| Variable | Default | Required | Description |
+|----------|---------|----------|-------------|
+| `PORT` | `8080` | No | HTTP server port |
+| `APP_NAME` | `Open Hybrid Cloud` | No | Application name shown in the header and browser title |
+| `APP_SUBTITLE` | `Infrastructure Self-Service` | No | Subtitle shown in the footer |
+| `DATABASE_URL` | — | **Yes** | PostgreSQL connection string (`postgres://user:pass@host/db?sslmode=...`) |
+| `SESSION_SECRET` | — | **Yes** | Random string, minimum 32 characters, used to sign session cookies |
+| `ADMIN_EMAIL` | `admin@example.com` | No | Email address of the Root local account |
+| `ADMIN_PASSWORD` | — | **Yes** | Initial password for the Root local account |
+| `ENTRA_TENANT_ID` | — | No | Microsoft Entra ID tenant ID (OIDC) |
+| `ENTRA_CLIENT_ID` | — | No | Entra ID application (client) ID |
+| `ENTRA_CLIENT_SECRET` | — | No | Entra ID client secret |
+| `ENTRA_REDIRECT_URL` | `http://localhost:8080/auth/callback` | No | OAuth2 redirect URL registered in Entra ID |
+| `SMTP_HOST` | `localhost` | No | SMTP server hostname |
+| `SMTP_PORT` | `1025` | No | SMTP server port |
+| `SMTP_FROM` | `noreply@open-hybrid-cloud.local` | No | Sender address for outgoing emails |
+| `SMTP_USERNAME` | — | No | SMTP authentication username |
+| `SMTP_PASSWORD` | — | No | SMTP authentication password |
+| `SMTP_TLS` | `false` | No | Enable TLS for the SMTP connection |
+| `EXCHANGE_RATE_API_URL` | `https://api.exchangerate.host/latest` | No | URL of the exchange rate API |
+| `EXCHANGE_RATE_API_KEY` | — | No | API key for the exchange rate service |
+| `BASE_CURRENCY` | `EUR` | No | Lead currency in which product prices are stored |
+| `AI_PROVIDER` | `claude` | No | AI translation provider (`claude`, `openai`, `azure`, `ollama`, `localai`) |
+| `AI_API_KEY` | — | No | API key for cloud AI providers |
+| `AI_ENDPOINT` | — | No | API endpoint — required for `azure` and `ollama`; optional for others |
+| `AI_MODEL` | `claude-haiku-4-5-20251001` | No | Model identifier passed to the AI provider |
+
+> **Note on SMTP and AI configuration:** These settings can also be updated via the Root UI under **Administration → Email** and **Administration → AI Translation**. Values saved through the UI are stored in the `app_config` database table and override the environment variable defaults at runtime. They persist across container restarts. If the password field is left blank on a UI update, the existing stored password is preserved.
+
 ## Roles
 
 | Role | Description |
@@ -58,6 +89,10 @@ Global Parameters          → apply to all products, all environments
 
 **Deployment Environments:** Each environment (e.g. "AWS Frankfurt", "On-Premise Vienna") references a configured GitLab source. A product can be available in multiple environments, each with its own repo/webhook and pricing.
 
+**Multiple Webhooks per Product-Environment:** A product can have multiple webhook endpoints configured per deployment environment, stored in the `product_webhooks` table (name, URL, token, execution order). Webhooks with the same `exec_order` fire concurrently; a lower `exec_order` fires first. If no `product_webhooks` rows exist for a given product-environment combination, the system falls back to the deployment environment's default webhook URL.
+
+**Infrastructure Outputs:** After a successful OpenTofu apply, the pipeline writes key-value outputs that are stored in `infrastructure_elements.outputs` (JSONB). These outputs (e.g. IP addresses, hostnames) are displayed on the order detail page and the infrastructure element detail page.
+
 ## Cost Centers
 
 Selectable per order line item — configured by the Root:
@@ -92,11 +127,15 @@ The Root can set a default mode and either enforce it or suggest it only.
 | Ollama | On-Premise |
 | LocalAI | On-Premise |
 
+## Settings / Profile
+
+All authenticated users have a profile page at `/settings/profile`. From there, users can change their password (current password required, new password minimum 8 characters) and set their UI language preference. The language can also be switched via the language selector in the navigation bar.
+
 ## Audit Log
 
-Immutable compliance record of all actions. Viewable by Admin and Root. Export as **CSV** or **PDF**.
+Immutable compliance record of all actions. Viewable by Admin and Root. Paginated — 50 entries per page. Filterable by user, action type, and date range. Export as **CSV** or **PDF**.
 
-Logged events: order, approval, rejection (with comment), deployment, decommissioning, configuration changes.
+Logged action types: `order.created`, `order.approved`, `order.rejected`, `order.deployed`, `order.failed`, `infra.decommissioned`, `config.changed`.
 
 ## Architecture Decisions
 
@@ -147,7 +186,8 @@ open-hybrid-cloud/
 │   └── helm/
 │       └── open-hybrid-cloud/       # Helm chart for Kubernetes deployment
 ├── docs/
-│   ├── workspace.dsl            # Structurizr C4 architecture
+│   ├── architecture/
+│   │   └── workspace.dsl        # Structurizr C4 architecture
 │   ├── requirements/
 │   │   └── requirements.md      # Requirements document
 │   └── guides/

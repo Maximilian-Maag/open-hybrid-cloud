@@ -358,7 +358,7 @@ the PostgreSQL layer, enabling horizontal scaling without coordination.
     \toprule
     \textbf{Layer} & \textbf{Technology} & \textbf{Version} \\
     \midrule
-    Backend        & Go                       & 1.22+ \\
+    Backend        & Go                       & 1.23+ \\
     Templates      & templ                    & 0.3+ \\
     Frontend       & HTMX                     & 2.0 \\
     CSS            & Tailwind CSS             & 3.x \\
@@ -447,7 +447,7 @@ systems it depends on.
     currencies), environments, GitLab sources, cost centers, and local
     users. Cannot place orders.
   \item[\role{Project Manager}]
-    Authenticates via Entra ID SSO. Has the system role \code{user}.
+    Authenticates via Entra ID SSO. Has the system role \code{project\_leader}.
     Places orders (which require Admin approval), manages their own
     projects, and can decommission their own infrastructure.
 \end{description}
@@ -497,7 +497,7 @@ systems it depends on.
      \scriptsize Renders HTML server-side.\\
      Handles auth, catalog, orders,\\
      admin, polling, notifications.\\[4pt]
-     \scriptsize\textit{Go 1.22 · net/http · HTMX}};
+     \scriptsize\textit{Go 1.23 · net/http · HTMX}};
 
   % Database
   \node[c4database, right=2.2cm of app] (db)
@@ -725,7 +725,7 @@ return only the relevant HTML snippet, which HTMX swaps into the DOM.
         dependencies — ideal for Docker-based deployment.
   \item Low memory footprint and predictable garbage collection enable
         running multiple polling goroutines without resource pressure.
-  \item The standard library \code{net/http} in Go 1.22+ provides
+  \item The standard library \code{net/http} in Go 1.23+ provides
         pattern-matching routing (\code{"GET /path/\{id\}"}) sufficient
         for this use case, removing the need for a router dependency.
   \item \code{html/template} provides automatic context-aware escaping,
@@ -2038,9 +2038,9 @@ Under \textbf{Administration → Shop Design} (\route{/admin/branding}):
 \begin{itemize}
   \item \textbf{Shop Name} and \textbf{Subtitle} — shown in the header.
   \item \textbf{Primary Color} — header, footer, navigation
-        (default: \code{\#131921}).
+        (default: \code{\#0f172a}).
   \item \textbf{Accent Color} — buttons and call-to-action elements
-        (default: \code{\#febd69}).
+        (default: \code{\#0ea5e9}).
   \item \textbf{Logo} — PNG or SVG, displayed in the header; replaces
         the shop name text if present.
   \item \textbf{Imprint} — HTML-formatted legal imprint text, shown at
@@ -2083,7 +2083,7 @@ browser locale and applying the stored rate.
     \midrule
     Admin         & Full access; direct ordering; approval & SSO  & \code{admin} \\
     Root    & Catalog \& config; no ordering          & Local & \code{root} \\
-    Project Manager  & Orders own infra; approval required     & SSO  & \code{user} \\
+    Project Manager  & Orders own infra; approval required     & SSO  & \code{project\_leader} \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -2390,11 +2390,11 @@ framework, no runtime dependencies.
 Two CSS custom properties drive every coloured surface:
 
 \begin{description}
-  \item[\code{var(--bp)}] Brand primary colour (default \code{\#131921},
-        the dark header). Used for header, navigation, footer, active
+  \item[\code{var(--bp)}] Brand primary colour (default \code{\#0f172a},
+        dark slate). Used for header, navigation, footer, active
         highlights, and price text.
   \item[\code{var(--bs)}] Brand secondary / accent colour (default
-        \code{\#febd69}, amber). Used for CTA buttons, active language
+        \code{\#0ea5e9}, sky blue). Used for CTA buttons, active language
         badges, and focus rings.
 \end{description}
 
@@ -2408,7 +2408,7 @@ variables rather than hardcoding colours:
 <a style="color:var(--bs)">...</a>
 
 <!-- wrong: breaks custom branding -->
-<div class="bg-[#131921]">...</div>
+<div class="bg-[#0f172a]">...</div>
 \end{lstlisting}
 
 \subsection*{Layout Shell (\texttt{comp.Layout})}
@@ -3269,8 +3269,8 @@ Singleton row (\code{id = 1}).  Written via \route{POST /admin/branding}.
     \code{id}             & INT   & 1                    & PK, CHECK (id = 1) \\
     \code{logo\_data}     & BYTEA & NULL                 & uploaded logo image \\
     \code{logo\_mime}     & TEXT  & \code{'image/png'}   & MIME type of the logo \\
-    \code{primary\_color} & TEXT  & \code{'\#131921'}    & \code{var(--bp)} CSS token \\
-    \code{secondary\_color}& TEXT & \code{'\#febd69'}    & \code{var(--bs)} CSS token \\
+    \code{primary\_color} & TEXT  & \code{'\#0f172a'}    & \code{var(--bp)} CSS token \\
+    \code{secondary\_color}& TEXT & \code{'\#0ea5e9'}    & \code{var(--bs)} CSS token \\
     \code{shop\_name}     & TEXT  & \code{''}            & overrides \code{APP\_NAME} env var \\
     \code{shop\_subtitle} & TEXT  & \code{''}            & overrides \code{APP\_SUBTITLE} env var \\
     \code{imprint\_text}  & TEXT  & \code{''}            & rendered on \route{/impressum} \\
@@ -4319,7 +4319,7 @@ it.
   FA-01 & User authentication (local + SSO) &
     \file{internal/service/impl/user.go}, \file{internal/handler/auth.go} &
     \S\ref{ch:users} \\
-  FA-02 & Role-based access control (admin, user, pm) &
+  FA-02 & Role-based access control (admin, root, project\_leader) &
     \file{internal/middleware/auth.go}, \file{internal/model/user.go} &
     \S\ref{ch:users} \\
   FA-03 & Product catalog with categories &

@@ -1,11 +1,11 @@
-workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and decommissioning IT infrastructure. Go + HTMX, single container." {
+workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and decommissioning IT infrastructure. Next.js frontend + Next.js REST API backend, two containers." {
 
     model {
-        du_admin = person "Admin" "Administrator. Can view all orders, projects and infrastructure, order directly and approve or reject orders from project leaders." "Person"
-        shop_admin = person "Webshop Admin" "Manages the product catalog, system configuration and local user accounts. Can view all projects and infrastructure. Uses a local account." "Person"
-        project_leader = person "Project Leader" "Can place orders (approval by Admin required), decommission own infrastructure and manage projects. Can only view own projects, orders and infrastructure." "Person"
+        admin = person "Admin" "Administrator. Can view all orders, projects and infrastructure, order directly and approve or reject orders from project managers." "Person"
+        root = person "Root" "Manages the product catalog, system configuration and local user accounts. Can view all projects and infrastructure. Uses a local account." "Person"
+        project_manager = person "Project Manager" "Can place orders (approval by Admin required), decommission own infrastructure and manage projects. Can only view own projects, orders and infrastructure." "Person"
 
-        gitlab = softwaresystem "GitLab" "Multiple configurable GitLab instances as sources for OpenTofu modules. Receives provisioning and destroy webhooks, executes OpenTofu workflows and provides an API for the repository browser and pipeline status." "Existing System"
+        gitlab = softwaresystem "GitLab" "Multiple configurable GitLab instances as sources for OpenTofu modules. Receives provisioning and destroy webhooks, executes OpenTofu workflows, provides an API for the repository browser and pushes pipeline status events back to the Backend API via webhooks." "Existing System"
         oidc_provider = softwaresystem "Microsoft Entra ID" "SSO identity provider (OIDC) for authenticating admins and project leaders." "Existing System"
         ai_translation = softwaresystem "AI Translation Service" "Configurable AI provider for translating product content into all EU languages and Russian. Cloud: Claude, OpenAI, Azure OpenAI. On-premise: Ollama, LocalAI. Optional — hidden when not configured." "Existing System"
         smtp = softwaresystem "Mail Server" "SMTP server for transactional emails: order confirmation, approval request, approval/rejection, deployment completion and error notifications." "Existing System"
@@ -13,112 +13,138 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
 
         webshop = softwaresystem "Open Hybrid Cloud" "Self-service portal through which admins and project leaders can order, manage and decommission IT infrastructure." {
 
-            app = container "Webshop" "Go server that renders HTML templates server-side and delivers them as fragments via HTMX. Contains UI, business logic, GitLab integration and all background processes in a single stateless container." "Go / HTMX / Tailwind / DaisyUI" {
+            frontend = container "Frontend" "Next.js application serving the React UI. Handles routing, server-side rendering and client-side interactivity. Communicates exclusively with the Backend API via REST. Manages user sessions via NextAuth.js." "Next.js / React / Tailwind CSS / NextAuth.js" {
 
-                auth = component "Authentication" "OIDC login via Entra ID (Authorization Code Flow) for admins and project leaders. Local account login for Webshop Admin. Manages sessions and roles in an encrypted HttpOnly cookie."
-
-                catalog = component "Product Catalog" "Displays infrastructure products by category with image, multilingual description and price. Price shown in the user's locale currency — converted from the base currency using stored exchange rates. When ordering: selection of the available deployment environment, display of environment-specific parameters."
-
-                order = component "Order" "Order form with dynamically generated parameters from global, category and product parameter sets as well as environment-specific parameters. Project assignment and cost centre assignment per line item. Admins deploy directly via provisioning webhook. Project leader orders await approval."
-
-                approval = component "Approval" "Overview of pending orders from project leaders for admins. Any admin can approve or reject. Rejection requires a mandatory comment. Approval triggers the GitLab provisioning webhook."
-
-                infrastructure = component "Infrastructure Overview" "Displays deployed infrastructure items grouped by project and deployment environment. Admin and Webshop Admin see everything, project leaders see only their own. Decommissioning via GitLab destroy webhook. Existing project usable as an order template."
-
-                status = component "Order Status" "Delivers HTMX polling fragments for the live status of running provisioning and decommissioning workflows."
-
-                audit = component "Audit Log" "Immutable compliance record of all actions: order, approval, rejection with comment, deployment, decommissioning. Viewable and filterable by Admin and Webshop Admin. Export as CSV or PDF."
-
-                notification = component "Notification" "Sends transactional emails. Order received: confirmation to the orderer and approval request to all admins (project leaders only). Approval or rejection with comment: to the orderer. Deployment completed: to the orderer. Deployment failed: to the orderer and all admins. Decommissioning completed: to the orderer."
-
-                admin = component "Administration" "Management of: product categories, products (image, multilingual content, parameter sets, prices per product and environment, cost centre configuration per product), global parameter sets, GitLab sources (URL and token per instance), deployment environments, cost centre list, base currency, AI provider configuration, SMTP configuration and local user accounts. Browses repositories on configured GitLab sources via the GitLab API and imports variables.tf files for product parameters (HCL parser). Shop branding management: logo upload (PNG/SVG, stored as BYTEA), primary color (header/footer), accent color (buttons), shop name, subtitle and imprint text — all stored in DB and cached in-process."
-
-                polling = component "GitLab Polling" "Goroutine pool that periodically queries the GitLab API for pipeline status, updates order and infrastructure status and triggers notifications on status changes. Coordinated via PostgreSQL locks — safe with multiple container replicas. Tracks multiple concurrent GitLab pipeline IDs per order (JSONB array)."
+                ui_auth = component "Auth Pages" "Login page supporting local credentials and SSO. NextAuth.js manages session lifecycle and executes the OIDC Authorization Code Flow with Entra ID. JWT stored in an encrypted HttpOnly cookie and forwarded as a Bearer token to the Backend API."
+                ui_catalog = component "Catalog" "Product grid filtered by category with search. Displays image, multilingual name, description and price converted to the user's locale currency. Environment selection and parameter form when placing an order."
+                ui_orders = component "Orders" "Order creation form with dynamically rendered parameter fields. Project and cost centre assignment. Order list with status indicators and detail view with live status polling."
+                ui_approvals = component "Approvals" "Pending order queue for admins. Inline approve and reject actions. Rejection requires a mandatory comment."
+                ui_infrastructure = component "Infrastructure" "Deployed infrastructure items grouped by project and environment. Shows OpenTofu outputs. Decommission trigger with confirmation."
+                ui_audit = component "Audit Log" "Filterable compliance log. Filter by user, action and date range. Export as CSV or PDF."
+                ui_admin = component "Administration" "Full product catalog management: categories, products, images, multilingual content, parameter sets, prices per environment, cost centre configuration, GitLab sources, deployment environments, users, branding, SMTP, AI provider and exchange rates."
+                ui_settings = component "Settings" "User profile update and password change."
             }
 
-            database = container "Database" "Persistence of all webshop data: product categories, products (image as bytea, webhook reference), product translations (per language code), parameter sets (global, category, product, environment), GitLab sources, deployment environments, prices per product and environment, cost centres, exchange rates, projects (with cost centre), orders (including approval workflow and rejection comment), infrastructure items, pipeline IDs as JSONB array (multiple concurrent pipelines per order), audit log, local users, branding (logo as BYTEA, colors, shop name, imprint text) and product webhooks (multiple per product+environment, ordered by exec_order)." "PostgreSQL" "Database"
+            backend = container "Backend API" "Next.js application exposing a RESTful API. Contains all business logic, database access and external system integrations. Purely functional — no classes, pure functions, immutable data, neverthrow for error handling. OpenAPI 3.0 spec auto-generated from Zod schemas via @asteasolutions/zod-to-openapi and served as Swagger UI at /api/docs." "Next.js / TypeScript / Drizzle ORM / Zod / JWT" {
+
+                api_auth = component "Auth API" "POST /api/auth/login: verifies bcrypt password, issues signed JWT. GET /api/auth/callback: handles Entra ID OIDC callback, upserts SSO user, issues JWT. JWT validation middleware applied to all protected routes. Role hierarchy: root > admin > project_manager."
+                api_catalog = component "Catalog API" "GET /api/catalog: paginated product list with category filter and full-text search. GET /api/catalog/{id}: product detail with environment options, prices and parameters. GET /api/products/{id}/image: product image binary."
+                api_orders = component "Orders API" "POST /api/orders: validates parameters, assigns project and cost centre, creates order. Admin orders auto-approve and trigger CI provider pipeline immediately. GET /api/orders and GET /api/orders/{id}: order list and detail with pipeline status."
+                api_approvals = component "Approvals API" "GET /api/approvals: pending orders for admins. POST /api/approvals/{id}/approve: triggers CI provider pipeline, transitions order to provisioning. POST /api/approvals/{id}/reject: stores rejection comment, notifies orderer."
+                api_infrastructure = component "Infrastructure API" "GET /api/infrastructure: infrastructure elements filtered by role. POST /api/infrastructure/{id}/decommission: triggers CI provider destroy pipeline, transitions element to decommissioning."
+                api_admin = component "Administration API" "Full CRUD under /api/admin/* for: categories, products, product translations, parameters, environments, CI sources (GitLab/GitHub/Bitbucket), cost centres, users, branding, app config (SMTP, AI provider). GET /api/admin/ci/*: repository browser proxy to CI provider API. POST /api/admin/ci/import-vars: parses variables.tf and creates parameters."
+                api_webhook = component "CI Webhook Receiver" "Receives inbound pipeline status events pushed by CI providers. POST /api/webhooks/gitlab/pipeline, /api/webhooks/github/workflow, /api/webhooks/bitbucket/pipeline. Verifies provider-specific signatures (token or HMAC-SHA256). Normalises payload to a common PipelineEvent type. On success: fetches job trace, parses OpenTofu outputs, transitions order or infrastructure element to completed/decommissioned, logs audit entry, triggers notification. On failure: transitions to failed, logs audit entry, triggers notification."
+                api_audit = component "Audit API" "POST /api/audit: writes immutable audit entry (called internally after every significant action). GET /api/audit: filterable log for admins. GET /api/audit/export: streams CSV or PDF."
+                api_notification = component "Notification" "Sends transactional emails via Nodemailer. Events: OrderCreated (orderer + all admins for project leaders), OrderApproved, OrderRejected (orderer), ProvisioningCompleted, ProvisioningFailed (orderer + all admins), Decommissioned (orderer)."
+                api_ai = component "AI Translation" "POST /api/admin/products/{id}/translate: sends product content to the configured AI provider and writes translations for all 25 supported languages. Supports Claude, OpenAI, Azure OpenAI, Ollama and LocalAI via a shared prompt/response format."
+                api_exchange = component "Exchange Rates" "POST /api/admin/currencies/refresh: fetches current rates from external API and stores them. GET /api/exchange/{from}/{to}: converts amounts using cached rates."
+                api_ci = component "CI Provider Client" "Internal module providing a unified interface over multiple CI provider APIs. Supports GitLab API v4, GitHub REST API and Bitbucket API 2.0. Methods: list repositories/branches/files, trigger pipeline, fetch job trace, parse OpenTofu outputs. Implemented as a discriminated union dispatch — no classes."
+                api_docs = component "OpenAPI / Swagger UI" "GET /api/docs: Swagger UI. GET /api/docs/spec: OpenAPI 3.0 JSON spec auto-generated from Zod request and response schemas registered via @asteasolutions/zod-to-openapi."
+            }
+
+            database = container "Database" "Persistence of all portal data: product categories, products (image as BYTEA), product translations (per BCP-47 language code), parameter sets (global, category, product and environment scope), GitLab sources, deployment environments, product webhooks (multiple per product+environment ordered by exec_order), prices per product and environment, cost centres, exchange rates, projects, orders (parameters as JSONB, pipeline IDs as JSONB array, rejection comment), infrastructure elements (parameters, pipeline IDs and OpenTofu outputs as JSONB), audit log, local users (bcrypt hashed passwords, SSO subject), branding (logo as BYTEA, colors, shop name, imprint) and app config (SMTP, AI provider)." "PostgreSQL 16" "Database"
         }
 
-        # Relationships between persons and systems
-        du_admin -> webshop "Orders IT infrastructure directly, approves orders, monitors all projects"
-        shop_admin -> webshop "Manages product catalog, system configuration and users"
-        project_leader -> webshop "Orders and manages own IT infrastructure"
-        webshop -> gitlab "Browses repositories, triggers webhooks, polls pipeline status" "JSON/HTTPS"
+        # Relationships — system level
+        admin -> webshop "Orders IT infrastructure directly, approves orders, monitors all projects"
+        root -> webshop "Manages product catalog, system configuration and users"
+        project_manager -> webshop "Orders and manages own IT infrastructure"
+        webshop -> gitlab "Browses repositories, triggers pipelines" "JSON/HTTPS"
+        gitlab -> webshop "Pushes pipeline status events via webhook" "JSON/HTTPS"
         webshop -> oidc_provider "Authenticates admins and project leaders" "OIDC/HTTPS"
         webshop -> ai_translation "Translates product content (optional, configurable)" "JSON/HTTPS"
         webshop -> smtp "Sends transactional emails" "SMTP"
         webshop -> exchange_rate_api "Fetches current exchange rates" "JSON/HTTPS"
 
-        # Relationships between containers
-        du_admin -> app "Uses web interface" "HTTPS"
-        shop_admin -> app "Manages shop" "HTTPS"
-        project_leader -> app "Uses web interface" "HTTPS"
-        app -> database "Reads and writes data" "SQL/TCP"
-        app -> gitlab "Trigger webhooks, browse repositories, poll pipeline status" "JSON/HTTPS"
-        app -> oidc_provider "OIDC Authorization Code Flow" "HTTPS"
-        app -> ai_translation "AI translation (optional)" "JSON/HTTPS"
-        app -> smtp "Send emails" "SMTP"
-        app -> exchange_rate_api "Fetch exchange rates" "JSON/HTTPS"
+        # Relationships — container level
+        admin -> frontend "Uses web interface" "HTTPS"
+        root -> frontend "Manages shop" "HTTPS"
+        project_manager -> frontend "Uses web interface" "HTTPS"
+        frontend -> backend "All data and actions via REST API" "JSON/HTTPS"
+        backend -> database "Reads and writes all portal data" "SQL/TCP"
+        backend -> gitlab "Triggers pipelines, browses repositories, fetches job traces" "JSON/HTTPS"
+        gitlab -> backend "Pushes pipeline status events via webhook" "JSON/HTTPS"
+        backend -> oidc_provider "OIDC Authorization Code Flow" "OIDC/HTTPS"
+        backend -> ai_translation "AI translation requests (optional)" "JSON/HTTPS"
+        backend -> smtp "Sends transactional emails via Nodemailer" "SMTP"
+        backend -> exchange_rate_api "Fetches current exchange rates" "JSON/HTTPS"
 
-        # Relationships between components
-        du_admin -> auth "Logs in via SSO"
-        project_leader -> auth "Logs in via SSO"
-        shop_admin -> auth "Logs in with local account"
-        auth -> oidc_provider "Authorization Code Flow" "OIDC/HTTPS"
-        auth -> database "Reads users and roles, writes sessions"
+        # Relationships — frontend components
+        admin -> ui_auth "Logs in via SSO or local account"
+        project_manager -> ui_auth "Logs in via SSO"
+        root -> ui_auth "Logs in with local account"
+        ui_auth -> backend "POST /api/auth/login, GET /api/auth/callback" "JSON/HTTPS"
+        ui_auth -> oidc_provider "OIDC Authorization Code Flow via NextAuth.js" "OIDC/HTTPS"
 
-        du_admin -> catalog "Browses infrastructure products"
-        project_leader -> catalog "Browses infrastructure products"
-        catalog -> database "Reads products, categories, prices and exchange rates"
+        admin -> ui_catalog "Browses infrastructure products"
+        project_manager -> ui_catalog "Browses infrastructure products"
+        ui_catalog -> backend "GET /api/catalog, GET /api/catalog/{id}" "JSON/HTTPS"
 
-        du_admin -> order "Orders directly without approval"
-        project_leader -> order "Places order, order awaits approval"
-        order -> database "Stores order with parameters, project assignment and cost centres"
-        order -> gitlab "Triggers provisioning webhook (direct order by Admin)" "JSON/HTTPS"
-        order -> notification "Triggers order received notifications"
-        order -> audit "Logs the order"
+        admin -> ui_orders "Orders directly without approval"
+        project_manager -> ui_orders "Places order, awaits approval"
+        ui_orders -> backend "POST /api/orders, GET /api/orders, GET /api/orders/{id}" "JSON/HTTPS"
 
-        du_admin -> approval "Reviews and decides on pending orders"
-        approval -> database "Reads pending orders, writes approval or rejection with comment"
-        approval -> gitlab "Triggers provisioning webhook after approval" "JSON/HTTPS"
-        approval -> notification "Triggers approval or rejection notification"
-        approval -> audit "Logs approval or rejection with comment"
+        admin -> ui_approvals "Reviews and decides on pending orders"
+        ui_approvals -> backend "GET /api/approvals, POST /api/approvals/{id}/approve, POST /api/approvals/{id}/reject" "JSON/HTTPS"
 
-        du_admin -> infrastructure "Views all projects and infrastructure"
-        shop_admin -> infrastructure "Views all projects and infrastructure"
-        project_leader -> infrastructure "Views only own projects and infrastructure"
-        infrastructure -> database "Reads infrastructure items, projects and environments"
-        infrastructure -> gitlab "Triggers destroy webhook for decommissioning" "JSON/HTTPS"
-        infrastructure -> audit "Logs the decommissioning"
+        admin -> ui_infrastructure "Views all projects and infrastructure"
+        root -> ui_infrastructure "Views all projects and infrastructure"
+        project_manager -> ui_infrastructure "Views own projects and infrastructure"
+        ui_infrastructure -> backend "GET /api/infrastructure, POST /api/infrastructure/{id}/decommission" "JSON/HTTPS"
 
-        du_admin -> status "Tracks deployment status"
-        project_leader -> status "Tracks status of own deployments"
-        status -> database "Reads pipeline status"
+        admin -> ui_audit "Views and exports the audit log"
+        root -> ui_audit "Views and exports the audit log"
+        ui_audit -> backend "GET /api/audit, GET /api/audit/export" "JSON/HTTPS"
 
-        du_admin -> audit "Views and exports the audit log"
-        shop_admin -> audit "Views and exports the audit log"
-        audit -> database "Reads and writes audit entries"
+        root -> ui_admin "Manages catalog, configuration and users"
+        ui_admin -> backend "REST API calls to /api/admin/*" "JSON/HTTPS"
 
-        notification -> smtp "Sends emails" "SMTP"
-        notification -> database "Reads recipient addresses, logs sent messages"
+        admin -> ui_settings "Updates profile and password"
+        project_manager -> ui_settings "Updates profile and password"
+        ui_settings -> backend "GET /api/users/me, PUT /api/users/me, PUT /api/users/me/password" "JSON/HTTPS"
 
-        shop_admin -> admin "Manages catalog, configuration and users"
-        admin -> database "CRUD products, categories, parameters, environments, GitLab sources, cost centres, currencies, users"
-        admin -> gitlab "Browses repositories and reads variables.tf for product parameters" "JSON/HTTPS"
-        admin -> ai_translation "Triggers optional AI translation" "JSON/HTTPS"
-        admin -> exchange_rate_api "Updates stored exchange rates" "JSON/HTTPS"
+        # Relationships — backend components
+        api_auth -> database "Verifies credentials, upserts SSO users, reads roles" "SQL/TCP"
+        api_auth -> oidc_provider "Validates OIDC ID token" "OIDC/HTTPS"
+        api_catalog -> database "Reads products, categories, translations, prices, exchange rates" "SQL/TCP"
+        api_orders -> database "Creates and reads orders with parameters" "SQL/TCP"
+        api_orders -> api_ci "Triggers provisioning pipeline for direct admin orders" "internal"
+        api_orders -> api_notification "Triggers order received notification" "internal"
+        api_orders -> api_audit "Logs order creation" "internal"
+        api_approvals -> database "Reads pending orders, writes approval or rejection" "SQL/TCP"
+        api_approvals -> api_ci "Triggers provisioning pipeline on approval" "internal"
+        api_approvals -> api_notification "Triggers approval or rejection notification" "internal"
+        api_approvals -> api_audit "Logs approval or rejection with comment" "internal"
+        api_infrastructure -> database "Reads infrastructure elements, projects, environments" "SQL/TCP"
+        api_infrastructure -> api_ci "Triggers destroy pipeline for decommissioning" "internal"
+        api_infrastructure -> api_audit "Logs decommission request" "internal"
+        api_admin -> database "CRUD for all catalog and configuration entities" "SQL/TCP"
+        api_admin -> api_ci "Browses repositories, imports variables.tf" "internal"
+        api_admin -> api_ai "Triggers AI translation for a product" "internal"
+        api_admin -> api_exchange "Refreshes stored exchange rates" "internal"
+        gitlab -> api_webhook "Pushes pipeline status events" "JSON/HTTPS"
+        api_webhook -> database "Writes status transitions and OpenTofu outputs" "SQL/TCP"
+        api_webhook -> api_ci "Fetches job trace to parse OpenTofu outputs on success" "internal"
+        api_webhook -> api_notification "Triggers completion or failure notification" "internal"
+        api_webhook -> api_audit "Logs pipeline status transition" "internal"
+        api_audit -> database "Reads and writes audit entries" "SQL/TCP"
+        api_notification -> smtp "Dispatches emails via Nodemailer" "SMTP"
+        api_notification -> database "Reads recipient addresses" "SQL/TCP"
+        api_ai -> ai_translation "Calls configured AI provider API" "JSON/HTTPS"
+        api_exchange -> exchange_rate_api "Fetches current rates" "JSON/HTTPS"
+        api_exchange -> database "Stores and reads cached rates" "SQL/TCP"
+        api_ci -> gitlab "CI provider API calls (GitLab v4, GitHub REST, Bitbucket 2.0)" "JSON/HTTPS"
 
-        polling -> gitlab "Polls pipeline status of all running workflows" "JSON/HTTPS"
-        polling -> database "Updates order and infrastructure status"
-        polling -> notification "Triggers notifications on status changes"
-        polling -> audit "Logs status transitions"
-
+        # Deployment — Docker Host
         deploymentEnvironment "Docker Host" {
             deploymentNode "Docker Host" "Single server for local development and initial deployment" "Docker Engine" {
-                deploymentNode "nginx" "HTTPS termination and reverse proxy" "Docker Container / Nginx" {
+                deploymentNode "nginx" "HTTPS termination and reverse proxy. Routes / to frontend, /api/* to backend." "Docker Container / Nginx" {
                 }
-                deploymentNode "webshop" "Go webshop server" "Docker Container" {
-                    containerInstance app
+                deploymentNode "frontend" "Next.js frontend server" "Docker Container / Node.js" {
+                    containerInstance frontend
+                }
+                deploymentNode "backend" "Next.js API server" "Docker Container / Node.js" {
+                    containerInstance backend
                 }
                 deploymentNode "postgres" "Database" "Docker Container" {
                     containerInstance database
@@ -138,13 +164,17 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
             }
         }
 
+        # Deployment — Kubernetes
         deploymentEnvironment "Kubernetes" {
             deploymentNode "Kubernetes Cluster" "Production cluster" "Kubernetes" {
                 deploymentNode "open-hybrid-cloud" "Application namespace" "Kubernetes Namespace" {
-                    deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes external traffic to the webshop service." "Nginx Ingress / cert-manager" {
+                    deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes / to frontend service, /api/* to backend service." "Nginx Ingress / cert-manager" {
                     }
-                    deploymentNode "webshop Deployment" "Stateless Go pods, horizontally scalable. Polling coordinated via PostgreSQL locks." "Kubernetes Deployment" {
-                        containerInstance app
+                    deploymentNode "frontend Deployment" "Next.js frontend pods, horizontally scalable." "Kubernetes Deployment" {
+                        containerInstance frontend
+                    }
+                    deploymentNode "backend Deployment" "Next.js API pods, horizontally scalable. Stateless — all state in PostgreSQL. Receives inbound CI provider webhooks directly." "Kubernetes Deployment" {
+                        containerInstance backend
                     }
                     deploymentNode "postgres StatefulSet" "PostgreSQL with persistent volume" "Kubernetes StatefulSet" {
                         containerInstance database
@@ -176,13 +206,19 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         container webshop "Container" {
             include *
             autoLayout
-            description "Container diagram: Go webshop server and PostgreSQL database"
+            description "Container diagram: Next.js frontend, Next.js backend API and PostgreSQL database"
         }
 
-        component app "Component_App" {
+        component frontend "Component_Frontend" {
             include *
             autoLayout
-            description "Component diagram: Go webshop server"
+            description "Component diagram: Next.js frontend application"
+        }
+
+        component backend "Component_Backend" {
+            include *
+            autoLayout
+            description "Component diagram: Next.js backend API"
         }
 
         deployment webshop "Docker Host" "Deployment_DockerHost" {

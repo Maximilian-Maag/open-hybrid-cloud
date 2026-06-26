@@ -14,7 +14,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "open-hybrid-cloud.selectorLabels" . | nindent 8 }}
+        {{- include "open-hybrid-cloud.backend.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never
@@ -24,13 +24,18 @@ spec:
       {{- end }}
       containers:
         - name: migrate
-          image: {{ include "open-hybrid-cloud.image" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["/migrate"]
-          envFrom:
-            - secretRef:
-                name: {{ include "open-hybrid-cloud.fullname" . }}
-          {{- with .Values.resources }}
+          image: {{ include "open-hybrid-cloud.backend.image" . }}
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          # drizzle-kit migrate is run via the backend package script
+          command: ["node", "-e", "require('./apps/backend/node_modules/.bin/drizzle-kit')"]
+          args: ["migrate"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  key: DATABASE_URL
+          {{- with .Values.backend.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}

@@ -1,0 +1,15 @@
+{
+  "name": "GitLab pipeline jobs list",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/projects/[0-9]+/pipelines/[0-9]+/jobs"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": [
+      { "id": 101, "name": "plan", "status": "success", "pipeline": { "id": 42 } },
+      { "id": 102, "name": "apply", "status": "success", "pipeline": { "id": 42 } }
+    ],
+    "headers": { "Content-Type": "application/json" }
+  }
+}

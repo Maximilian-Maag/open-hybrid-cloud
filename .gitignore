@@ -21,6 +21,14 @@ deploy/docker-host/.env
 # Generiertes CSS (wird via Tailwind CLI erzeugt)
 src/ui/static/css/style.css
 
+# Next.js
+apps/*/node_modules
+apps/*/.next
+apps/*/out
+packages/*/node_modules
+node_modules
+apps/**/.env
+
 # Node.js
 node_modules/
 

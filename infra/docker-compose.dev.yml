@@ -1,0 +1,75 @@
+# Local development — mocks all external systems.
+# The Next.js apps run locally via `pnpm dev`, not in Docker.
+# Start with: docker compose -f infra/docker-compose.dev.yml up -d
+
+services:
+
+  # ── Database ──────────────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ohc-postgres
+    environment:
+      POSTGRES_DB: open_hybrid_cloud
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d open_hybrid_cloud"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    networks:
+      - dev
+
+  # ── SMTP mock (catches all outgoing emails) ───────────────────────────────────
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: ohc-mailpit
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI → http://localhost:8025
+    networks:
+      - dev
+
+  # ── CI provider + Exchange Rate API mock (WireMock) ───────────────────────────
+  # Mocks: GitLab API v4, GitHub API, Bitbucket API, Exchange Rate API
+  # Admin UI → http://localhost:8080/__admin
+  # To simulate a completed pipeline, POST to:
+  #   http://localhost:3001/api/webhooks/gitlab/pipeline
+  # with body: {"object_kind":"pipeline","object_attributes":{"id":"42","status":"success"}}
+  # and header: X-Gitlab-Token: dev-webhook-token
+
+  wiremock:
+    image: wiremock/wiremock:latest
+    container_name: ohc-wiremock
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./wiremock/mappings:/home/wiremock/mappings:ro
+    command: ["--verbose", "--global-response-templating"]
+    networks:
+      - dev
+
+  # ── Architecture documentation ────────────────────────────────────────────────
+
+  structurizr-lite:
+    image: structurizr/lite
+    container_name: ohc-structurizr
+    ports:
+      - "8088:8080"   # Web UI → http://localhost:8088
+    volumes:
+      - ../docs/architecture:/usr/local/structurizr
+    networks:
+      - dev
+
+volumes:
+  postgres_data:
+
+networks:
+  dev:
+    driver: bridge

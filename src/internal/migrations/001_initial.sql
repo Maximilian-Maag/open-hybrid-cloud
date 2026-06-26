@@ -1,10 +1,11 @@
--- 001_initial.sql: Vollständiges initiales Datenbankschema
+-- 001_initial.sql: Complete initial schema (consolidated)
 
 CREATE TABLE users (
     id            BIGSERIAL PRIMARY KEY,
     email         TEXT NOT NULL UNIQUE,
     name          TEXT NOT NULL,
-    role          TEXT NOT NULL CHECK (role IN ('du_admin', 'project_leader', 'shop_admin')),
+    role          TEXT NOT NULL CHECK (role IN ('admin', 'project_manager', 'root')),
+    active        BOOLEAN NOT NULL DEFAULT TRUE,
     sso_sub       TEXT UNIQUE,
     password_hash TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -19,7 +20,7 @@ CREATE TABLE categories (
 
 CREATE TABLE products (
     id            BIGSERIAL PRIMARY KEY,
-    category_id   BIGINT NOT NULL REFERENCES categories(id),
+    category_id   BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
     base_language TEXT NOT NULL DEFAULT 'de',
     image         BYTEA,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -34,31 +35,33 @@ CREATE TABLE product_translations (
 );
 
 CREATE TABLE parameters (
-    id            BIGSERIAL PRIMARY KEY,
-    scope         TEXT NOT NULL CHECK (scope IN ('global', 'category', 'product')),
-    scope_id      BIGINT NOT NULL DEFAULT 0,
-    name          TEXT NOT NULL,
-    type          TEXT NOT NULL CHECK (type IN ('string', 'number', 'bool', 'dropdown')),
-    description   TEXT NOT NULL DEFAULT '',
-    default_value TEXT NOT NULL DEFAULT '',
-    required      BOOLEAN NOT NULL DEFAULT FALSE,
-    sensitive     BOOLEAN NOT NULL DEFAULT FALSE
+    id             BIGSERIAL PRIMARY KEY,
+    scope          TEXT NOT NULL CHECK (scope IN ('global', 'category', 'product')),
+    scope_id       BIGINT NOT NULL DEFAULT 0,
+    environment_id BIGINT,
+    name           TEXT NOT NULL,
+    type           TEXT NOT NULL CHECK (type IN ('string', 'number', 'bool', 'dropdown')),
+    description    TEXT NOT NULL DEFAULT '',
+    default_value  TEXT NOT NULL DEFAULT '',
+    required       BOOLEAN NOT NULL DEFAULT FALSE,
+    sensitive      BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-CREATE TABLE gitlab_sources (
+CREATE TABLE ci_sources (
     id           BIGSERIAL PRIMARY KEY,
     name         TEXT NOT NULL,
     url          TEXT NOT NULL,
-    access_token TEXT NOT NULL
+    access_token TEXT NOT NULL,
+    provider     TEXT NOT NULL DEFAULT 'gitlab' CHECK (provider IN ('gitlab', 'github', 'bitbucket'))
 );
 
 CREATE TABLE deployment_environments (
-    id               BIGSERIAL PRIMARY KEY,
-    name             TEXT NOT NULL,
-    description      TEXT NOT NULL DEFAULT '',
-    gitlab_source_id BIGINT NOT NULL REFERENCES gitlab_sources(id),
-    webhook_url      TEXT NOT NULL,
-    webhook_token    TEXT NOT NULL
+    id            BIGSERIAL PRIMARY KEY,
+    name          TEXT NOT NULL,
+    description   TEXT NOT NULL DEFAULT '',
+    ci_source_id  BIGINT NOT NULL REFERENCES ci_sources(id),
+    webhook_url   TEXT NOT NULL,
+    webhook_token TEXT NOT NULL
 );
 
 CREATE TABLE product_environments (
@@ -69,6 +72,16 @@ CREATE TABLE product_environments (
     cost_center_mode   TEXT NOT NULL DEFAULT 'project' CHECK (cost_center_mode IN ('project', 'select', 'overhead')),
     forced_cost_center BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (product_id, environment_id)
+);
+
+CREATE TABLE product_webhooks (
+    id             BIGSERIAL PRIMARY KEY,
+    product_id     BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
+    name           TEXT NOT NULL,
+    webhook_url    TEXT NOT NULL,
+    webhook_token  TEXT NOT NULL,
+    exec_order     INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE cost_centers (
@@ -89,15 +102,15 @@ CREATE TABLE projects (
 
 CREATE TABLE orders (
     id             BIGSERIAL PRIMARY KEY,
-    project_id     BIGINT NOT NULL REFERENCES projects(id),
-    product_id     BIGINT NOT NULL REFERENCES products(id),
+    project_id     BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    product_id     BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
     user_id        BIGINT NOT NULL REFERENCES users(id),
-    status         TEXT NOT NULL DEFAULT 'pending_approval',
+    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'provisioning', 'completed', 'failed', 'rejected')),
     parameters     JSONB NOT NULL DEFAULT '{}',
     cost_center_id BIGINT REFERENCES cost_centers(id),
-    rejection_note TEXT NOT NULL DEFAULT '',
-    pipeline_id    TEXT NOT NULL DEFAULT '',
+    rejection_note TEXT,
+    pipeline_id    JSONB NOT NULL DEFAULT '[]',
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -105,22 +118,61 @@ CREATE TABLE orders (
 CREATE TABLE infrastructure_elements (
     id             BIGSERIAL PRIMARY KEY,
     order_id       BIGINT NOT NULL REFERENCES orders(id),
-    project_id     BIGINT NOT NULL REFERENCES projects(id),
+    project_id     BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
-    product_id     BIGINT NOT NULL REFERENCES products(id),
-    status         TEXT NOT NULL DEFAULT 'provisioning',
+    product_id     BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'decommissioning', 'decommissioned')),
     parameters     JSONB NOT NULL DEFAULT '{}',
+    pipeline_id    JSONB NOT NULL DEFAULT '[]',
+    outputs        JSONB NOT NULL DEFAULT '{}',
     deployed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE exchange_rates (
+    currency_code TEXT PRIMARY KEY,
+    rate          NUMERIC(18,6) NOT NULL,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO exchange_rates (currency_code, rate) VALUES ('EUR', 1.000000);
+
 CREATE TABLE audit_log (
     id         BIGSERIAL PRIMARY KEY,
-    user_id    BIGINT NOT NULL REFERENCES users(id),
+    user_id    BIGINT REFERENCES users(id),
     action     TEXT NOT NULL,
-    entity_id  BIGINT NOT NULL,
+    entity_id  BIGINT,
     details    TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE branding (
+    id              INT PRIMARY KEY DEFAULT 1,
+    logo_data       BYTEA,
+    logo_mime       TEXT,
+    primary_color   TEXT NOT NULL DEFAULT '#1e40af',
+    secondary_color TEXT NOT NULL DEFAULT '#3b82f6',
+    shop_name       TEXT NOT NULL DEFAULT 'Open Hybrid Cloud',
+    shop_subtitle   TEXT NOT NULL DEFAULT '',
+    imprint_text    TEXT NOT NULL DEFAULT ''
+);
+
+INSERT INTO branding (id) VALUES (1);
+
+CREATE TABLE app_config (
+    id           INT PRIMARY KEY DEFAULT 1,
+    smtp_host    TEXT,
+    smtp_port    INT,
+    smtp_from    TEXT,
+    smtp_user    TEXT,
+    smtp_pass    TEXT,
+    smtp_tls     BOOLEAN DEFAULT TRUE,
+    ai_provider  TEXT,
+    ai_endpoint  TEXT,
+    ai_api_key   TEXT,
+    ai_model     TEXT
+);
+
+INSERT INTO app_config (id) VALUES (1);
 
 -- Indexes
 CREATE INDEX idx_products_category   ON products(category_id);

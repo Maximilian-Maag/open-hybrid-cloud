@@ -1,0 +1,29 @@
+import { db } from '@/lib/db/client'
+import { users } from '@/lib/db/schema'
+import bcrypt from 'bcryptjs'
+
+let bootstrapped = false
+
+export const runBootstrap = async (): Promise<void> => {
+  if (bootstrapped) return
+  bootstrapped = true
+
+  const email = process.env.ADMIN_EMAIL
+  const password = process.env.ADMIN_PASSWORD
+
+  if (!email || !password) return
+
+  const existing = await db.select({ id: users.id }).from(users).limit(1)
+  if (existing.length > 0) return
+
+  const passwordHash = await bcrypt.hash(password, 12)
+  await db.insert(users).values({
+    email,
+    name: 'Root Admin',
+    role: 'root',
+    passwordHash,
+    active: true,
+  })
+
+  console.log(`[bootstrap] Root user created: ${email}`)
+}

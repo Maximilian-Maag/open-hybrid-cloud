@@ -20,7 +20,7 @@ export async function GET(
     return new NextResponse(null, { status: 404 })
   }
 
-  return new NextResponse(rows[0].image, {
+  return new NextResponse(new Uint8Array(rows[0].image), {
     headers: {
       'Content-Type': 'image/png',
       'Cache-Control': 'public, max-age=3600',

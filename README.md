@@ -1,284 +1,173 @@
 # Open Hybrid Cloud
 
-Self-service portal through which Admins and project managers can order, manage, and decommission IT infrastructure. The webshop triggers GitLab CI/CD pipelines via webhook, which deploy the desired infrastructure using OpenTofu.
+Self-service portal through which Admins and Project Managers can order, manage, and decommission IT infrastructure. The backend triggers CI/CD pipelines (GitLab, GitHub, Bitbucket) via webhook, which deploy the desired infrastructure using OpenTofu. Pipeline status is pushed back to the backend via CI provider webhooks — no polling worker required.
 
 ## Technology Stack
 
-| Layer                 | Technology                               |
-|-----------------------|------------------------------------------|
-| Server                | Go                                       |
-| UI                    | HTMX + Tailwind CSS                      |
-| Localization          | go-i18n (24 EU languages + Russian)      |
-| AI Translation        | Adapter (Claude, OpenAI, Ollama, …)      |
-| Database              | PostgreSQL                               |
-| Authentication        | Microsoft Entra ID (OIDC)                |
-| Deployment            | Single Container (scratch image)         |
-| IaC                   | OpenTofu (via GitLab CI)                 |
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 15 · React 19 · Tailwind CSS v4 · NextAuth.js v5 |
+| Backend | Next.js 15 · Drizzle ORM · Zod · JWT (jose) |
+| Shared types | TypeScript workspace package (`packages/types`) |
+| Database | PostgreSQL 16 |
+| CI integration | GitLab · GitHub · Bitbucket (webhook-based) |
+| Package manager | pnpm (workspaces) |
+| Deployment | Two containers: `frontend` + `backend` |
 
-## Environment Variables
+## Architecture
 
-| Variable | Default | Required | Description |
-|----------|---------|----------|-------------|
-| `PORT` | `8080` | No | HTTP server port |
-| `APP_NAME` | `Open Hybrid Cloud` | No | Application name shown in the header and browser title |
-| `APP_SUBTITLE` | `Infrastructure Self-Service` | No | Subtitle shown in the footer |
-| `DATABASE_URL` | — | **Yes** | PostgreSQL connection string (`postgres://user:pass@host/db?sslmode=...`) |
-| `SESSION_SECRET` | — | **Yes** | Random string, minimum 32 characters, used to sign session cookies |
-| `ADMIN_EMAIL` | `admin@example.com` | No | Email address of the Root local account |
-| `ADMIN_PASSWORD` | — | **Yes** | Initial password for the Root local account |
-| `ENTRA_TENANT_ID` | — | No | Microsoft Entra ID tenant ID (OIDC) |
-| `ENTRA_CLIENT_ID` | — | No | Entra ID application (client) ID |
-| `ENTRA_CLIENT_SECRET` | — | No | Entra ID client secret |
-| `ENTRA_REDIRECT_URL` | `http://localhost:8080/auth/callback` | No | OAuth2 redirect URL registered in Entra ID |
-| `SMTP_HOST` | `localhost` | No | SMTP server hostname |
-| `SMTP_PORT` | `1025` | No | SMTP server port |
-| `SMTP_FROM` | `noreply@open-hybrid-cloud.local` | No | Sender address for outgoing emails |
-| `SMTP_USERNAME` | — | No | SMTP authentication username |
-| `SMTP_PASSWORD` | — | No | SMTP authentication password |
-| `SMTP_TLS` | `false` | No | Enable TLS for the SMTP connection |
-| `EXCHANGE_RATE_API_URL` | `https://api.exchangerate.host/latest` | No | URL of the exchange rate API |
-| `EXCHANGE_RATE_API_KEY` | — | No | API key for the exchange rate service |
-| `BASE_CURRENCY` | `EUR` | No | Lead currency in which product prices are stored |
-| `AI_PROVIDER` | `claude` | No | AI translation provider (`claude`, `openai`, `azure`, `ollama`, `localai`) |
-| `AI_API_KEY` | — | No | API key for cloud AI providers |
-| `AI_ENDPOINT` | — | No | API endpoint — required for `azure` and `ollama`; optional for others |
-| `AI_MODEL` | `claude-haiku-4-5-20251001` | No | Model identifier passed to the AI provider |
+```
+Browser → Frontend (Next.js / NextAuth) → Backend REST API (Next.js)
+                                               ↕
+                                          PostgreSQL
+                                               ↕
+                              GitLab / GitHub / Bitbucket  (outbound triggers)
+                              GitLab / GitHub / Bitbucket  (inbound webhooks → /api/webhooks/{provider}/pipeline)
+                                          Exchange Rate API
+                                          SMTP
+```
 
-> **Note on SMTP and AI configuration:** These settings can also be updated via the Root UI under **Administration → Email** and **Administration → AI Translation**. Values saved through the UI are stored in the `app_config` database table and override the environment variable defaults at runtime. They persist across container restarts. If the password field is left blank on a UI update, the existing stored password is preserved.
+Only the backend container communicates with external systems.
 
 ## Roles
 
 | Role | Description |
 |------|-------------|
-| **Admin** | Can order directly, approve/reject all orders, view all projects and infrastructure. SSO via Entra ID. |
-| **Project Manager** | Can place orders (approval by Admin required), manage own projects and infrastructure. SSO via Entra ID. |
-| **Root** | Manages the product catalog, system configuration, and users. Can view all projects. Local account. |
+| **root** | Manages the product catalog, system configuration, and users. Local account only. |
+| **admin** | Can order directly, approve/reject all orders, view all projects and infrastructure. |
+| **project_manager** | Can place orders (approval by Admin required), manage own projects and infrastructure. |
 
 ## Order Process
 
 ```
-Project Manager:  Orders → Pending Approval → [Approved] → Provisioning → Completed
-                                             ↘ [Rejected + Mandatory Comment]
+project_manager:  Orders → Pending Approval → [Approved] → Provisioning → Completed
+                                            ↘ [Rejected + Mandatory Comment]
 
-Admin:            Orders → Provisioning → Completed
+admin:            Orders → Provisioning → Completed
 ```
 
-## Email Notifications
+## Environment Variables
 
-| Event | Recipients |
-|-------|-----------|
-| Order received (Project Manager) | Orderer (confirmation) + all Admins (approval request) |
-| Order received (Admin) | Orderer (confirmation) |
-| Approval granted | Orderer |
-| Rejection with comment | Orderer |
-| Deployment completed | Orderer |
-| Deployment failed | Orderer + all Admins |
-| Decommissioning completed | Orderer |
+### Backend (`apps/backend/.env`)
 
-## Product Configuration
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `JWT_SECRET` | Yes | HS256 signing secret (min. 32 chars) |
+| `ADMIN_EMAIL` | Yes | Email of the initial root account |
+| `ADMIN_PASSWORD` | Yes | Password of the initial root account |
+| `FRONTEND_URL` | No | Frontend origin for CORS (default: `http://localhost:3000`) |
+| `SMTP_HOST` | No | SMTP server hostname |
+| `SMTP_PORT` | No | SMTP server port (default: `1025`) |
+| `SMTP_FROM` | No | Sender address |
+| `SMTP_USER` | No | SMTP authentication username |
+| `SMTP_PASS` | No | SMTP authentication password |
+| `SMTP_TLS` | No | Enable TLS (`true`/`false`, default: `false`) |
+| `EXCHANGE_RATE_API_URL` | No | Exchange rate API endpoint |
+| `ENTRA_TENANT_ID` | No | Microsoft Entra ID tenant ID (SSO) |
+| `ENTRA_CLIENT_ID` | No | Entra ID application client ID |
+| `ENTRA_CLIENT_SECRET` | No | Entra ID client secret |
 
-**Parameter Inheritance:**
-```
-Global Parameters          → apply to all products, all environments
-  └── Category Parameters  → apply to all products in a category
-        └── Product Parameters (from variables.tf + manual)
-              └── Environment-specific Parameters
-```
+### Frontend (`apps/frontend/.env`)
 
-**variables.tf Import:** The Root can browse repos on configured GitLab sources and select `variables.tf` files. Parameters are extracted via an HCL parser (`hashicorp/hcl/v2`) (name, type, description, default value, validation, sensitive flag).
-
-**Deployment Environments:** Each environment (e.g. "AWS Frankfurt", "On-Premise Vienna") references a configured GitLab source. A product can be available in multiple environments, each with its own repo/webhook and pricing.
-
-**Multiple Webhooks per Product-Environment:** A product can have multiple webhook endpoints configured per deployment environment, stored in the `product_webhooks` table (name, URL, token, execution order). Webhooks with the same `exec_order` fire concurrently; a lower `exec_order` fires first. If no `product_webhooks` rows exist for a given product-environment combination, the system falls back to the deployment environment's default webhook URL.
-
-**Infrastructure Outputs:** After a successful OpenTofu apply, the pipeline writes key-value outputs that are stored in `infrastructure_elements.outputs` (JSONB). These outputs (e.g. IP addresses, hostnames) are displayed on the order detail page and the infrastructure element detail page.
-
-## Cost Centers
-
-Selectable per order line item — configured by the Root:
-
-| Mode | Meaning |
-|------|---------|
-| **Project** | Charged to the project's cost center (project manager must set the cost center on the project) |
-| **Selection** | Orderer selects from a maintained list |
-| **Overhead Cost Center** | Fixed overhead account |
-
-The Root can set a default mode and either enforce it or suggest it only.
-
-## Prices & Currencies
-
-- Prices are stored per product and environment in the lead currency (e.g. VM Azure: 70 EUR, VM On-Prem: 20 EUR)
-- Lead currency is globally configurable
-- Displayed currency follows the user's locale (pl → PLN, cs → CZK, …)
-- Exchange rates via external API, cached in DB
-
-## Localization
-
-- UI texts: `go-i18n` with JSON files per language
-- Product content: `product_translations` table (product_id, language_code, name, description)
-- Language selection: user preference in session, fallback to Accept-Language header
-
-**AI Translation (optional):** The Root configures an AI provider (endpoint, API key, model). When a provider is configured, the admin can have product content translated with a single click and manually review it before saving.
-
-| Provider | Type |
-|----------|------|
-| Claude (Anthropic) | Cloud |
-| OpenAI / Azure OpenAI | Cloud |
-| Ollama | On-Premise |
-| LocalAI | On-Premise |
-
-## Settings / Profile
-
-All authenticated users have a profile page at `/settings/profile`. From there, users can change their password (current password required, new password minimum 8 characters) and set their UI language preference. The language can also be switched via the language selector in the navigation bar.
-
-## Audit Log
-
-Immutable compliance record of all actions. Viewable by Admin and Root. Paginated — 50 entries per page. Filterable by user, action type, and date range. Export as **CSV** or **PDF**.
-
-Logged action types: `order.created`, `order.approved`, `order.rejected`, `order.deployed`, `order.failed`, `infra.decommissioned`, `config.changed`.
-
-## Architecture Decisions
-
-**Go + HTMX** — Server-side rendering, HTML fragments via HTMX. No SPA framework, no client-side state.
-
-**Tailwind CSS** — Responsive UI with a custom component design system (`ui/comp/`). CSS is generated during the Docker build stage via Node.js and embedded via `go:embed`.
-
-**Single Container** — Go binary serves templates, static assets, and API logic in one container. Stateless, horizontally scalable.
-
-**PostgreSQL as Single Source of Truth** — All data in PostgreSQL: product images as `bytea`, audit log, jobs for polling coordination via PostgreSQL locks.
-
-**HCL Parser** — `hashicorp/hcl/v2` parses `variables.tf` files directly in the backend.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NEXT_PUBLIC_API_URL` | Yes | Backend URL reachable from the browser |
+| `API_URL` | Yes | Backend URL reachable from the frontend server (SSR) |
+| `NEXTAUTH_URL` | Yes | Canonical frontend URL |
+| `NEXTAUTH_SECRET` | Yes | NextAuth.js signing secret (min. 32 chars) |
 
 ## Project Structure
 
 ```
 open-hybrid-cloud/
-├── src/                         # Go + Node source
-│   ├── cmd/
-│   │   ├── server/              # HTTP server entry point
-│   │   └── migrate/             # Database migration tool
-│   ├── internal/
-│   │   ├── config/              # Configuration via environment variables
-│   │   ├── handler/             # HTTP handlers (HTMX endpoints)
-│   │   ├── service/             # Business logic interfaces
-│   │   ├── repository/          # Database access interfaces
-│   │   ├── model/               # Domain types
-│   │   ├── polling/             # GitLab polling worker (goroutines)
-│   │   ├── notification/        # Email dispatch
-│   │   └── audit/               # Audit log
-│   ├── ui/                      # go:embed root
-│   │   ├── ui.go                # embed.FS declarations
-│   │   ├── comp/                # Reusable templ components (design system)
-│   │   ├── pages/               # Templ page templates
-│   │   ├── templates/           # Legacy HTML templates (fallback)
-│   │   └── static/
-│   │       └── css/             # Generated Tailwind CSS
-│   ├── input.css                # Tailwind input file
-│   ├── tailwind.config.js
-│   └── package.json
+├── apps/
+│   ├── backend/                  # Next.js API-only app (port 3001)
+│   │   ├── src/
+│   │   │   ├── app/api/          # REST endpoints (route handlers)
+│   │   │   └── lib/
+│   │   │       ├── auth/         # JWT sign/verify, role middleware
+│   │   │       ├── bootstrap/    # Root user seed on first start
+│   │   │       ├── ci/           # GitLab/GitHub/Bitbucket dispatch
+│   │   │       ├── db/           # Drizzle client + schema
+│   │   │       ├── email/        # nodemailer notifications
+│   │   │       └── webhook/      # CI pipeline event handler
+│   │   ├── Dockerfile
+│   │   └── drizzle.config.ts
+│   └── frontend/                 # Next.js UI app (port 3000)
+│       ├── src/
+│       │   ├── app/              # App Router pages
+│       │   └── lib/
+│       │       ├── api.ts        # Typed fetch wrappers
+│       │       └── auth.ts       # NextAuth.js config
+│       └── Dockerfile
+├── packages/
+│   └── types/                    # Shared TypeScript interfaces
 ├── infra/
-│   ├── Dockerfile
-│   ├── docker-compose.yml       # Local development environment
-│   ├── docker-host/
-│   │   ├── docker-compose.yml   # Production deployment on Docker host
-│   │   ├── nginx.conf.example   # Nginx configuration template
-│   │   └── .env.example         # Production environment variables
-│   └── helm/
-│       └── open-hybrid-cloud/       # Helm chart for Kubernetes deployment
+│   ├── docker-compose.dev.yml    # Local dev: postgres, mailpit, wiremock, structurizr
+│   ├── docker-compose.yml        # Docker host deployment
+│   ├── nginx/                    # Reverse proxy config
+│   ├── wiremock/                 # External API stubs for local dev
+│   └── helm/                     # Kubernetes Helm chart
 ├── docs/
 │   ├── architecture/
-│   │   └── workspace.dsl        # Structurizr C4 architecture
+│   │   └── workspace.dsl         # Structurizr C4 architecture
 │   ├── requirements/
-│   │   └── requirements.md      # Requirements document
+│   │   └── requirements.md
 │   └── guides/
-│       ├── root.md              # Root manual
-│       ├── admin.md             # Admin manual
+│       ├── root.md
+│       ├── admin.md
 │       └── gitlab-opentofu-workflow.md
-├── .env.example                 # Local development
-├── go.mod
-└── Makefile
+├── Makefile
+├── package.json
+└── pnpm-workspace.yaml
 ```
 
 ## Local Development
 
 ### Prerequisites
 
-| Tool | Version | Installation |
-|------|---------|--------------|
-| Go | 1.23+ | [go.dev/dl](https://go.dev/dl/) |
-| Node.js | 20+ | [nodejs.org](https://nodejs.org/) |
-| Docker + Docker Compose | current | [docs.docker.com](https://docs.docker.com/get-docker/) |
-| GNU Make | current | Pre-installed on Linux/macOS |
+| Tool | Version |
+|------|---------|
+| Node.js | 22+ |
+| pnpm | 9+ |
+| Docker + Docker Compose | current |
 
-On **Ubuntu** or **Manjaro** all prerequisites can be installed with a single command:
+Install pnpm if not already installed:
 
 ```bash
-make install-requirements
+curl -fsSL https://get.pnpm.io/install.sh | sh -
 ```
-
-This installs Go, Node.js, npm, Docker, Docker Compose, and the required Go tools (`goimports`, `golangci-lint`) via the native package manager. A re-login is required afterwards for the Docker group membership to take effect.
-
-> **Note (Ubuntu):** `golang-go` from the Ubuntu repositories may be slightly behind the latest release. If Go 1.23+ is not available in your Ubuntu version, install it manually from [go.dev/dl](https://go.dev/dl/).
 
 ### Make Targets
 
 ```bash
-make help         # Show all available targets
+make help
 ```
 
 | Target | Description |
 |--------|-------------|
-| `make build` | Compile CSS + both Go binaries |
-| `make run` | Start development server (`go run`) |
-| `make migrate` | Run database migrations |
-| `make css` | Generate Tailwind CSS once |
-| `make css-watch` | Tailwind CSS in watch mode (UI development) |
-| `make test` | Run tests |
-| `make vet` | Run `go vet` |
-| `make lint` | Run `golangci-lint` (requires `golangci-lint` in `PATH`) |
-| `make install-requirements` | Install all required tools and packages (Ubuntu and Manjaro) |
-| `make docker-build` | Build Docker image |
-| `make dev` | Start local services (Postgres, Mailpit, Structurizr) |
-| `make dev-down` | Stop local services |
+| `make install` | Install all workspace dependencies |
+| `make dev` | Start infra containers (postgres, mailpit, wiremock, structurizr) |
+| `make dev-down` | Stop infra containers |
+| `make build` | Build all apps |
+| `make lint` | Lint all apps |
+| `make type-check` | TypeScript type-check all apps |
+| `make docker-build` | Build both Docker images locally |
+| `make db-push` | Push Drizzle schema to the database |
+| `make db-studio` | Open Drizzle Studio |
+| `make docs` | Compile technical handbook to PDF |
 | `make clean` | Remove build artifacts |
 
-### Smoke Test Runner
-
-The repository includes a smoke test command in `cmd/smoke/`.
-Run it against a local database to verify product deletion cleanup:
-
-```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/openhybridcloud?sslmode=disable \
-  go run ./cmd/smoke
-```
-
-This helper creates temporary product, order, and infrastructure rows and then deletes the product to validate cascading cleanup behavior.
-
-`npm install` is run automatically when `node_modules/` is missing.
-
-### 1. Clone the Repository
+### 1. Clone and Install
 
 ```bash
 git clone <repo-url>
 cd open-hybrid-cloud
+make install
 ```
 
-### 2. Configure Environment Variables
-
-```bash
-cp .env.example .env
-```
-
-At minimum, set the following values in `.env`:
-
-| Variable | Description |
-|----------|-------------|
-| `SESSION_SECRET` | Random string (at least 32 characters) |
-| `ADMIN_PASSWORD` | Initial password for the Root |
-
-Entra ID (`ENTRA_*`) is **optional** for local development — the local admin account works without SSO.
-
-### 3. Start Local Services
+### 2. Start Infrastructure
 
 ```bash
 make dev
@@ -287,88 +176,84 @@ make dev
 | Service | URL | Description |
 |---------|-----|-------------|
 | PostgreSQL | `localhost:5432` | Database |
-| Mailpit Web UI | [http://localhost:8025](http://localhost:8025) | View all sent emails locally |
-| Structurizr Lite | [http://localhost:8088](http://localhost:8088) | C4 architecture diagrams |
+| Mailpit | http://localhost:8025 | Catch-all SMTP — view sent emails |
+| WireMock | http://localhost:8080 | GitLab API + Exchange Rate API stubs |
+| Structurizr Lite | http://localhost:8088 | C4 architecture diagrams |
 
-### 4. Run Database Migrations
+### 3. Configure Environment
+
+Copy the example env files (already filled with local dev values):
 
 ```bash
-make migrate
+cp apps/backend/.env.example apps/backend/.env
+cp apps/frontend/.env.example apps/frontend/.env
 ```
 
-### 5. Generate CSS
+Or use the provided `.env` files directly — they contain working local development defaults.
+
+### 4. Push Database Schema
 
 ```bash
-make css
+make db-push
 ```
 
-During development with watch mode (in a separate terminal):
+### 5. Start the Apps
 
 ```bash
-make css-watch
+pnpm dev
 ```
 
-### 6. Start the Server
+- Frontend: http://localhost:3000
+- Backend: http://localhost:3001
+- API docs: http://localhost:3001/api/docs
+
+Log in with the credentials from `apps/backend/.env` (`ADMIN_EMAIL` / `ADMIN_PASSWORD`). The root user is created automatically on first startup.
+
+### Simulating a Pipeline Webhook (dev)
+
+WireMock stubs the CI provider APIs. To simulate a pipeline completing, POST to the backend webhook endpoint:
 
 ```bash
-make run
-```
-
-The application is available at [http://localhost:8080](http://localhost:8080).
-Log in as Root using the credentials set in `.env`.
-
-### Run Tests
-
-```bash
-make test
+curl -X POST http://localhost:3001/api/webhooks/gitlab/pipeline \
+  -H "Content-Type: application/json" \
+  -H "X-Gitlab-Token: dev-webhook-token" \
+  -d '{"object_kind":"pipeline","object_attributes":{"id":"42","status":"success"}}'
 ```
 
 ## Deployment
 
-Both environments use the same stateless container image, publicly available on Docker Hub as `maximilianmaag/open-hybrid-cloud`.
-
 ### Docker Host
 
-Configuration and files are located under `infra/docker-host/`.
-
-**Server Prerequisites:**
-- Docker + Docker Compose
-- Valid TLS certificate (e.g. Let's Encrypt via certbot)
-
-**Initial Setup:**
-
 ```bash
-# 1. Clone the repository onto the server or copy the infra/ folder
-cd infra/docker-host
-
-# 2. Configure environment variables
-cp .env.example .env
-# Fill .env with actual values
-
-# 3. Create Nginx configuration
-cp nginx.conf.example nginx.conf
-# Adjust server_name and ssl_certificate paths in nginx.conf
-
-# 4. Place TLS certificates
-mkdir certs
-# Copy fullchain.pem and privkey.pem into ./certs/
-
-# 5. Start the application
+cd infra
 docker compose up -d
 ```
 
-**Updating the Image:**
+Configure `apps/backend/.env` and `apps/frontend/.env` with production values before starting. Nginx (`infra/nginx/`) handles reverse proxying. See `infra/docker-compose.yml` for the full service definition.
+
+**Updating:**
 
 ```bash
-docker compose pull open-hybrid-cloud
-docker compose up -d --no-deps open-hybrid-cloud
+docker compose pull
+docker compose up -d
 ```
 
 ### Kubernetes
 
-Nginx Ingress Controller + cert-manager handle TLS termination. Horizontal scaling via Kubernetes Deployment. PostgreSQL as a StatefulSet with persistent volume.
+See `infra/helm/` for the Helm chart. The images are published to Docker Hub:
 
-The container image `maximilianmaag/open-hybrid-cloud` is publicly available on Docker Hub — no `imagePullSecret` is required.
+- `maximilianmaag/open-hybrid-cloud-backend`
+- `maximilianmaag/open-hybrid-cloud-frontend`
+
+## CI/CD
+
+| Trigger | Pipeline |
+|---------|----------|
+| Pull request | Type-check + lint + build (`.github/workflows/ci.yml`) |
+| Push to `dev`/`staging`/`main` | Build & push Docker images (`.github/workflows/cd-release.yml`) |
+| Push to `main` | Additionally publishes a GitHub Release with `docs/handbook.pdf` |
+
+Required GitHub secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
 
 ## Documentation
 
@@ -379,3 +264,4 @@ The container image `maximilianmaag/open-hybrid-cloud` is publicly available on 
 | Root Manual | `docs/guides/root.md` |
 | Admin Manual | `docs/guides/admin.md` |
 | GitLab & OpenTofu Integration | `docs/guides/gitlab-opentofu-workflow.md` |
+| Technical Handbook (PDF) | `docs/handbook.pdf` |

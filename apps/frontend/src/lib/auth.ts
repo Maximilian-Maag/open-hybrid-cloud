@@ -16,8 +16,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            email: credentials.email,
-            password: credentials.password,
+            email: String(credentials.email ?? ''),
+            password: String(credentials.password ?? ''),
           } satisfies LoginRequest),
         })
         if (!res.ok) return null
@@ -35,14 +35,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     jwt({ token, user }) {
       if (user) {
-        token.role = (user as { role: Role }).role
-        token.apiToken = (user as { apiToken: string }).apiToken
+        const u = user as { role: Role; apiToken: string }
+        token['role'] = u.role
+        token['apiToken'] = u.apiToken
       }
       return token
     },
     session({ session, token }) {
-      ;(session as unknown as { apiToken: string }).apiToken = token.apiToken as string
-      ;(session.user as unknown as { role: Role }).role = token.role as Role
+      session.apiToken = token['apiToken'] as string | undefined
+      session.user.role = token['role'] as Role | undefined
       return session
     },
   },

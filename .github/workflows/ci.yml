@@ -4,10 +4,57 @@ on:
   pull_request:
 
 jobs:
+  # ── Type-check & Lint ────────────────────────────────────────────────────────
+  check:
+    name: Type-check & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b7022c3f3971ac19bd5e2ad3e3e6e4fa71b # v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "store=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check backend
+        run: pnpm --filter backend exec tsc --noEmit
+
+      - name: Type-check frontend
+        run: pnpm --filter frontend exec tsc --noEmit
+
+      - name: Lint backend
+        run: pnpm --filter backend lint
+
+      - name: Lint frontend
+        run: pnpm --filter frontend lint
+
   # ── Build ────────────────────────────────────────────────────────────────────
   build:
     name: Build
     runs-on: ubuntu-latest
+    needs: [check]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -16,81 +63,30 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: src/package-lock.json
+          node-version: 22
 
-      - name: Build CSS
-        run: npm ci --prefix src && npm run build:css --prefix src
-
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b7022c3f3971ac19bd5e2ad3e3e6e4fa71b # v4
         with:
-          go-version-file: go.mod
-          cache: true
+          version: 9
+          run_install: false
 
-      - name: go build
-        run: go build ./...
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "store=$(pnpm store path)" >> "$GITHUB_OUTPUT"
 
-      - name: go vet
-        run: go vet ./...
-
-  # ── Test ─────────────────────────────────────────────────────────────────────
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Cache pnpm store
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
-          persist-credentials: false
+          path: ${{ steps.pnpm-cache.outputs.store }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
 
-      - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: src/package-lock.json
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Build CSS
-        run: npm ci --prefix src && npm run build:css --prefix src
+      - name: Build backend
+        run: pnpm --filter backend build
 
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: go test
-        run: go test -v -count=1 -race -timeout 300s $(go list ./... | grep -v '/e2e')
-
-  # ── E2E ──────────────────────────────────────────────────────────────────────
-  e2e:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: src/package-lock.json
-
-      - name: Build CSS
-        run: npm ci --prefix src && npm run build:css --prefix src
-
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install Playwright browser + system dependencies
-        run: go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install --with-deps chromium
-
-      - name: go test (e2e)
-        run: go test -v -count=1 -timeout 600s ./src/e2e/...
+      - name: Build frontend
+        run: pnpm --filter frontend build

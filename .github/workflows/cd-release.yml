@@ -8,63 +8,45 @@ permissions:
   contents: read
 
 jobs:
-  # ── Build & Push Docker ─────────────────────────────────────────────────────
-  build:
-    name: Build & Push Docker
+  # ── Compute tags ─────────────────────────────────────────────────────────────
+  tags:
+    name: Compute tags
     runs-on: ubuntu-latest
     outputs:
       short-sha: ${{ steps.tags.outputs.short_sha }}
-      docker-sha-tag: ${{ steps.tags.outputs.docker_sha_tag }}
+      tag: ${{ steps.tags.outputs.tag }}
+      sha-tag: ${{ steps.tags.outputs.sha_tag }}
+    steps:
+      - name: Set Docker tags
+        id: tags
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          case "${GITHUB_REF_NAME}" in
+            main)
+              echo "tag=latest"            >> "$GITHUB_OUTPUT"
+              echo "sha_tag=${SHORT_SHA}"  >> "$GITHUB_OUTPUT"
+              ;;
+            staging)
+              echo "tag=staging"                    >> "$GITHUB_OUTPUT"
+              echo "sha_tag=staging-${SHORT_SHA}"   >> "$GITHUB_OUTPUT"
+              ;;
+            dev)
+              echo "tag=dev"                        >> "$GITHUB_OUTPUT"
+              echo "sha_tag=dev-${SHORT_SHA}"       >> "$GITHUB_OUTPUT"
+              ;;
+          esac
 
+  # ── Build & Push — Backend ───────────────────────────────────────────────────
+  build-backend:
+    name: Build & Push Backend
+    runs-on: ubuntu-latest
+    needs: [tags]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
-      # ── Compute tags ──────────────────────────────────────────────────────────
-      - name: Set Docker tags
-        id: tags
-        run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
-          echo "SHORT_SHA=${SHORT_SHA}"  >> "$GITHUB_ENV"
-          echo "short_sha=${SHORT_SHA}"  >> "$GITHUB_OUTPUT"
-          case "${GITHUB_REF_NAME}" in
-            main)
-              echo "DOCKER_TAG=latest"           >> "$GITHUB_ENV"
-              echo "DOCKER_SHA_TAG=${SHORT_SHA}" >> "$GITHUB_ENV"
-              echo "docker_sha_tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-              ;;
-            staging)
-              echo "DOCKER_TAG=staging"                   >> "$GITHUB_ENV"
-              echo "DOCKER_SHA_TAG=staging-${SHORT_SHA}" >> "$GITHUB_ENV"
-              echo "docker_sha_tag=staging-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-              ;;
-            dev)
-              echo "DOCKER_TAG=dev"                   >> "$GITHUB_ENV"
-              echo "DOCKER_SHA_TAG=dev-${SHORT_SHA}" >> "$GITHUB_ENV"
-              echo "docker_sha_tag=dev-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-              ;;
-          esac
-
-      # ── CSS ───────────────────────────────────────────────────────────────────
-      - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: src/package-lock.json
-
-      - name: Build CSS
-        run: npm ci --prefix src && npm run build:css --prefix src
-
-      # ── Go ────────────────────────────────────────────────────────────────────
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      # ── Docker image → Docker Hub ─────────────────────────────────────────────
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
@@ -74,24 +56,56 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push backend image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          file: infra/Dockerfile
+          file: apps/backend/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:${{ env.DOCKER_TAG }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:${{ env.DOCKER_SHA_TAG }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-backend:${{ needs.tags.outputs.tag }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-backend:${{ needs.tags.outputs.sha-tag }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  # ── Build & Push — Frontend ──────────────────────────────────────────────────
+  build-frontend:
+    name: Build & Push Frontend
+    runs-on: ubuntu-latest
+    needs: [tags]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/frontend/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-frontend:${{ needs.tags.outputs.tag }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-frontend:${{ needs.tags.outputs.sha-tag }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
   # ── Publish GitHub Release (main only) ───────────────────────────────────────
   release:
     name: Publish GitHub Release
     if: github.ref_name == 'main'
-    needs: [build]
+    needs: [tags, build-backend, build-frontend]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -101,53 +115,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # ── CSS ───────────────────────────────────────────────────────────────────
-      - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: src/package-lock.json
-
-      - name: Build CSS
-        run: npm ci --prefix src && npm run build:css --prefix src
-
-      # ── Go binaries ───────────────────────────────────────────────────────────
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Build server binary (linux/amd64)
-        env:
-          CGO_ENABLED: "0"
-          GOOS: linux
-          GOARCH: amd64
-        run: go build -ldflags="-s -w" -o dist/server-linux-amd64 ./src/cmd/server
-
-      - name: Build migrate binary (linux/amd64)
-        env:
-          CGO_ENABLED: "0"
-          GOOS: linux
-          GOARCH: amd64
-        run: go build -ldflags="-s -w" -o dist/migrate-linux-amd64 ./src/cmd/migrate
-
-      - name: Build server binary (linux/arm64)
-        env:
-          CGO_ENABLED: "0"
-          GOOS: linux
-          GOARCH: arm64
-        run: go build -ldflags="-s -w" -o dist/server-linux-arm64 ./src/cmd/server
-
-      - name: Build migrate binary (linux/arm64)
-        env:
-          CGO_ENABLED: "0"
-          GOOS: linux
-          GOARCH: arm64
-        run: go build -ldflags="-s -w" -o dist/migrate-linux-arm64 ./src/cmd/migrate
-
-      # ── Handbook PDF ──────────────────────────────────────────────────────────
       - name: Compile handbook (LaTeX)
         uses: xu-cheng/latex-action@e2f99d4b3685b0da93f97e1b86ad8fab81105098 # v3
         with:
@@ -155,45 +122,32 @@ jobs:
           working_directory: docs
           args: -pdf -interaction=nonstopmode -halt-on-error
 
-      # ── GitHub Release ────────────────────────────────────────────────────────
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: release-${{ github.run_number }}
-          name: "Release #${{ github.run_number }} (${{ needs.build.outputs.short-sha }})"
+          name: "Release #${{ github.run_number }} (${{ needs.tags.outputs.short-sha }})"
           body: |
             ## Commit
 
             ${{ github.event.head_commit.message }}
 
-            **SHA:** [`${{ needs.build.outputs.short-sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+            **SHA:** [`${{ needs.tags.outputs.short-sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
 
-            ## Docker Image
+            ## Docker Images
 
             ```bash
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:${{ needs.build.outputs.docker-sha-tag }}
-            # or always-latest:
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud:latest
+            # Backend
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-backend:${{ needs.tags.outputs.sha-tag }}
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-backend:latest
+
+            # Frontend
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-frontend:${{ needs.tags.outputs.sha-tag }}
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-frontend:latest
             ```
 
-            ## Binaries
-
-            | File | Platform |
-            |------|----------|
-            | `server-linux-amd64` | Linux x86-64 (server) |
-            | `server-linux-arm64` | Linux ARM64 (server) |
-            | `migrate-linux-amd64` | Linux x86-64 (DB migration tool) |
-            | `migrate-linux-arm64` | Linux ARM64 (DB migration tool) |
-
-            Run migrations before starting the server for the first time or after an upgrade:
-            ```bash
-            DATABASE_URL="postgres://..." ./migrate-linux-amd64
-            ```
+            See `infra/docker-compose.yml` for the full Docker host deployment configuration.
           files: |
-            dist/server-linux-amd64
-            dist/server-linux-arm64
-            dist/migrate-linux-amd64
-            dist/migrate-linux-arm64
             docs/handbook.pdf
           draft: false
           prerelease: false

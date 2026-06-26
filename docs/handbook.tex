@@ -343,12 +343,12 @@ It covers:
 
 \section{System At a Glance}
 
-The webshop is a single Go binary that renders HTML server-side and
-delivers page fragments via HTMX for a responsive, app-like feel.
-Orders are fulfilled by triggering GitLab CI/CD pipelines that run
-OpenTofu (a Terraform-compatible open-source tool) to provision or
-destroy cloud resources on Linode/Akamai. The system is stateless above
-the PostgreSQL layer, enabling horizontal scaling without coordination.
+The webshop is a Next.js monorepo with a dedicated backend API and a
+React-based frontend. Orders are fulfilled by triggering CI/CD pipelines
+(GitLab, GitHub, or Bitbucket) that run OpenTofu (a
+Terraform-compatible open-source tool) to provision or destroy cloud
+resources on Linode/Akamai. Pipeline status is reported back via
+webhooks rather than polling.
 
 \begin{table}[H]
   \centering
@@ -358,17 +358,19 @@ the PostgreSQL layer, enabling horizontal scaling without coordination.
     \toprule
     \textbf{Layer} & \textbf{Technology} & \textbf{Version} \\
     \midrule
-    Backend        & Go                       & 1.23+ \\
-    Templates      & templ                    & 0.3+ \\
-    Frontend       & HTMX                     & 2.0 \\
-    CSS            & Tailwind CSS             & 3.x \\
+    Runtime        & Node.js                  & 22+ \\
+    Backend        & Next.js 15 (API-only)    & 15.x \\
+    Frontend       & Next.js 15 + React       & 15.x / 19.x \\
+    CSS            & Tailwind CSS v4          & 4.x \\
+    Package Mgr    & pnpm (workspace)         & 9.x \\
+    ORM            & Drizzle ORM              & — \\
     Database       & PostgreSQL               & 15+ \\
-    DB Driver      & pgx/v5 (jackc)           & 5.x \\
+    Auth (backend) & JWT HS256 (jose)         & 24 h expiry \\
+    Auth (frontend)& NextAuth v5              & 5.x \\
     IaC            & OpenTofu                 & 1.9+ \\
     Cloud          & Linode/Akamai            & — \\
-    CI/CD          & GitLab CE                & 16+ \\
+    CI/CD          & GitLab / GitHub / Bitbucket & 16+ / — / — \\
     State Backend  & GitLab Managed TF State  & — \\
-    Auth           & OIDC (Entra ID) + local  & — \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -396,7 +398,7 @@ systems it depends on.
   \node[c4system, text width=4cm, minimum height=2.4cm] (ws)
     {\textbf{Open Hybrid Cloud}\\[4pt]
      \scriptsize Self-service portal for ordering, managing and decommissioning IT infrastructure.\\
-     \scriptsize Go · HTMX · PostgreSQL};
+     \scriptsize Next.js · React · PostgreSQL};
 
   % Persons (top)
   \node[c4person, above left=1.8cm and 2.6cm of ws] (dua)
@@ -408,11 +410,9 @@ systems it depends on.
 
   % External systems (bottom row)
   \node[c4external, below left=2.0cm and 4.0cm of ws] (gl)
-    {\textbf{GitLab}\\[4pt]\scriptsize Webhook target, repo browser, pipeline status};
-  \node[c4external, below left=2.0cm and 0.8cm of ws] (oidc)
-    {\textbf{Microsoft Entra ID}\\[4pt]\scriptsize OIDC SSO provider};
-  \node[c4external, below right=2.0cm and 0.8cm of ws] (ai)
-    {\textbf{AI Translation API}\\[4pt]\scriptsize Claude/OpenAI/Ollama (optional)};
+    {\textbf{CI Provider}\\[4pt]\scriptsize GitLab / GitHub / Bitbucket — webhook target, repo browser};
+  \node[c4external, below right=2.0cm and 0.8cm of ws] (er)
+    {\textbf{Exchange Rate API}\\[4pt]\scriptsize Currency conversion rates (optional)};
   \node[c4external, below right=2.0cm and 4.0cm of ws] (smtp)
     {\textbf{Mail Server}\\[4pt]\scriptsize SMTP transactional email};
 
@@ -424,8 +424,7 @@ systems it depends on.
   % Arrows — webshop to external
   \draw[c4arrow] (ws) -- node[c4label, left=1pt, align=right]
     {Webhooks, API\\JSON/HTTPS} (gl);
-  \draw[c4arrow] (ws) -- node[c4label, right=1pt]{OIDC/HTTPS} (oidc);
-  \draw[c4arrow] (ws) -- node[c4label, left=1pt]{JSON/HTTPS} (ai);
+  \draw[c4arrow] (ws) -- node[c4label, right=1pt]{JSON/HTTPS} (er);
   \draw[c4arrow] (ws) -- node[c4label, right=1pt]{SMTP} (smtp);
 
 \end{tikzpicture}}%
@@ -437,44 +436,40 @@ systems it depends on.
 
 \begin{description}
   \item[\role{Admin}]
-    Authenticates via Microsoft Entra ID SSO. Has the system role
+    Authenticates via local account with JWT. Has the system role
     \code{admin}. Can order infrastructure directly (no approval required),
     approve or reject orders from Project Managers, view all projects and
     infrastructure, and decommission any resource.
   \item[\role{Root}]
-    Uses a local account (no SSO). Has the system role \code{root}.
-    Manages the product catalog, system configuration (SMTP, AI, branding,
-    currencies), environments, GitLab sources, cost centers, and local
+    Uses a local account. Has the system role \code{root}.
+    Manages the product catalog, system configuration (SMTP, branding,
+    currencies), environments, CI sources, cost centers, and local
     users. Cannot place orders.
   \item[\role{Project Manager}]
-    Authenticates via Entra ID SSO. Has the system role \code{project\_leader}.
-    Places orders (which require Admin approval), manages their own
-    projects, and can decommission their own infrastructure.
+    Authenticates via local account with JWT. Has the system role
+    \code{project\_manager}. Places orders (which require Admin
+    approval), manages their own projects, and can decommission their
+    own infrastructure.
 \end{description}
 
 \subsection{External Systems}
 
 \begin{description}
-  \item[\textbf{GitLab}]
-    One or more self-hosted or cloud GitLab instances. The webshop
-    connects to GitLab for three purposes: (1) browsing repositories and
-    importing \code{variables.tf} parameter definitions, (2) triggering
-    provisioning and decommissioning webhooks, and (3) polling pipeline
-    status to update order state.
-  \item[\textbf{Microsoft Entra ID}]
-    The OIDC identity provider for Admins and Project Managers. The
-    webshop implements the Authorization Code Flow. Local accounts for
-    Root users bypass this provider entirely.
-  \item[\textbf{AI Translation API}]
-    Optional. Used to auto-translate product names and descriptions into
-    all 25 supported languages. Multiple backends are supported:
-    cloud-based (Claude, OpenAI, Azure OpenAI) and on-premise
-    (Ollama, LocalAI). The feature is hidden when no provider is
-    configured.
+  \item[\textbf{CI Provider (GitLab / GitHub / Bitbucket)}]
+    One or more self-hosted or cloud CI provider instances. The webshop
+    connects for two purposes: (1) browsing repositories and importing
+    \code{variables.tf} parameter definitions via the GitLab API, and
+    (2) triggering provisioning and decommissioning webhooks. Pipeline
+    status is reported back to the webshop via inbound webhook events
+    (\route{POST /api/webhooks/\{provider\}/pipeline}).
+  \item[\textbf{Exchange Rate API}]
+    Optional. Any HTTP JSON exchange rate endpoint. Used to refresh
+    currency conversion rates. Configured via
+    \env{EXCHANGE\_RATE\_API\_URL} and \env{EXCHANGE\_RATE\_API\_KEY}.
   \item[\textbf{Mail Server}]
     Any SMTP server. Sends order confirmations, approval request
     notifications, approval/rejection notices, deployment completion
-    alerts, and failure notifications.
+    alerts, and failure notifications. Delivered via nodemailer.
 \end{description}
 
 % ── Level 2 ──────────────────────────────────────────────────
@@ -487,63 +482,77 @@ systems it depends on.
 
   % System boundary
   \begin{scope}[on background layer]
-    \node[c4boundary, fit={(0,-0.5)(10,6.5)}, inner sep=0.6cm,
+    \node[c4boundary, fit={(-0.5,-0.5)(12,6.5)}, inner sep=0.6cm,
           label={[font=\small\itshape]above left:Open Hybrid Cloud System}] (bound) {};
   \end{scope}
 
-  % Go application
-  \node[c4container, text width=4.2cm, minimum height=3.2cm] (app) at (3,3)
-    {\textbf{Webshop Application}\\[4pt]
-     \scriptsize Renders HTML server-side.\\
-     Handles auth, catalog, orders,\\
-     admin, polling, notifications.\\[4pt]
-     \scriptsize\textit{Go 1.23 · net/http · HTMX}};
+  % Frontend container
+  \node[c4container, text width=3.6cm, minimum height=3.0cm] (fe) at (2,3)
+    {\textbf{Frontend}\\[4pt]
+     \scriptsize React UI, App Router pages,\\
+     NextAuth v5 session,\\
+     typed API client.\\[4pt]
+     \scriptsize\textit{Next.js 15 · React 19 · :3000}};
+
+  % Backend container
+  \node[c4container, text width=3.6cm, minimum height=3.0cm] (be) at (7,3)
+    {\textbf{Backend API}\\[4pt]
+     \scriptsize REST route handlers,\\
+     JWT auth middleware,\\
+     Drizzle ORM, webhooks,\\
+     notifications.\\[4pt]
+     \scriptsize\textit{Next.js 15 · Node.js 22 · :3001}};
 
   % Database
-  \node[c4database, right=2.2cm of app] (db)
+  \node[c4database, right=2.2cm of be] (db)
     {\textbf{PostgreSQL}\\[4pt]
      \scriptsize All persistent data};
 
   % Persons (above)
-  \node[c4person, above left=1.6cm and 0.4cm of app] (dua)
+  \node[c4person, above left=1.6cm and 0.4cm of fe] (dua)
     {\textbf{Admin}};
-  \node[c4person, above=1.6cm of app] (sa)
+  \node[c4person, above=1.6cm of fe] (sa)
     {\textbf{Root}};
-  \node[c4person, above right=1.6cm and 0.4cm of app] (pl)
+  \node[c4person, above right=1.6cm and 0.4cm of fe] (pl)
     {\textbf{Project Manager}};
 
   % External below
-  \node[c4external, below left=1.6cm and 1.5cm of app, text width=2.8cm] (gl)
-    {\textbf{GitLab}};
-  \node[c4external, below=1.6cm of app, text width=2.8cm] (oidc)
-    {\textbf{Entra ID}};
-  \node[c4external, below right=1.6cm and 1.5cm of app, text width=2.8cm] (smtp)
+  \node[c4external, below left=1.6cm and 0.5cm of be, text width=2.8cm] (ci)
+    {\textbf{CI Provider}};
+  \node[c4external, below right=1.6cm and 0.5cm of be, text width=2.8cm] (smtp)
     {\textbf{SMTP}};
 
   % Arrows
-  \draw[c4arrow] (dua) -- (app);
-  \draw[c4arrow] (sa)  -- (app);
-  \draw[c4arrow] (pl)  -- (app);
-  \draw[c4arrow] (app) -- node[c4label,above]{SQL/TCP} (db);
-  \draw[c4arrow] (app) -- node[c4label,right=2pt]{JSON/HTTPS} (gl);
-  \draw[c4arrow] (app) -- node[c4label,right=2pt]{OIDC} (oidc);
-  \draw[c4arrow] (app) -- node[c4label,right=2pt]{SMTP} (smtp);
+  \draw[c4arrow] (dua) -- (fe);
+  \draw[c4arrow] (sa)  -- (fe);
+  \draw[c4arrow] (pl)  -- (fe);
+  \draw[c4arrow] (fe) -- node[c4label,above]{REST/HTTPS} (be);
+  \draw[c4arrow] (be) -- node[c4label,above]{Drizzle/TCP} (db);
+  \draw[c4arrow] (be) -- node[c4label,right=2pt]{JSON/HTTPS} (ci);
+  \draw[c4arrow] (be) -- node[c4label,right=2pt]{SMTP} (smtp);
 
 \end{tikzpicture}
 \caption{C4 Level 2 — Container Diagram}
 \label{fig:c4-l2}
 \end{figure}
 
-The system has exactly two containers:
+The system has three containers (plus the shared database):
 
 \begin{description}
-  \item[\textbf{Webshop Application}]
-    A single stateless Go binary. It handles HTTP requests, renders HTML
-    via \code{templ} components, serves HTMX fragments, coordinates all
-    business logic, runs the GitLab polling goroutines, and manages
-    outbound SMTP. Being stateless above the database layer means
-    multiple replicas can run behind a load balancer without any
-    coordination layer.
+  \item[\textbf{Frontend} (port 3000)]
+    A Next.js 15 application serving the React UI via the App Router.
+    All pages are React Server Components or client components. It
+    communicates with the backend exclusively via typed fetch wrappers
+    in \file{src/lib/api.ts}. Authentication state is managed by
+    NextAuth v5, which stores the JWT received from the backend in a
+    secure server-side session.
+  \item[\textbf{Backend API} (port 3001)]
+    A Next.js 15 application running in API-only mode — no UI pages.
+    Route handlers under \file{src/app/api/} expose the full REST
+    surface. JWT middleware (\file{src/lib/auth/}) verifies every
+    authenticated request. Drizzle ORM manages all database access.
+    The webhook handler (\file{src/lib/webhook/}) processes inbound
+    pipeline status events from CI providers.
   \item[\textbf{PostgreSQL Database}]
     The single source of truth. Stores the product catalog, orders,
     infrastructure state, audit log, branding, configuration, users, and
@@ -554,7 +563,7 @@ The system has exactly two containers:
 \section{Level 3 — Component Diagram}
 \label{sec:c4-l3}
 
-Figure~\ref{fig:c4-l3} decomposes the Go application container into
+Figure~\ref{fig:c4-l3} decomposes the backend API container into
 its major logical components.
 
 \begin{figure}[H]
@@ -562,41 +571,41 @@ its major logical components.
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[node distance=0.7cm and 0.6cm]
 
-  % Top row
+  % Top row — route handler groups
   \node[c4component] (auth)
-    {\textbf{Auth}\\[2pt]\scriptsize OIDC + local session};
+    {\textbf{Auth Routes}\\[2pt]\scriptsize login, me, logout};
   \node[c4component, right=of auth] (catalog)
-    {\textbf{Catalog}\\[2pt]\scriptsize Products, categories, pricing};
+    {\textbf{Catalog Routes}\\[2pt]\scriptsize Products, categories, pricing};
   \node[c4component, right=of catalog] (order)
-    {\textbf{Order}\\[2pt]\scriptsize Form, webhook dispatch};
-  \node[c4component, right=of order] (approval)
-    {\textbf{Approval}\\[2pt]\scriptsize Approve/reject flow};
-  \node[c4component, right=of approval] (infra)
-    {\textbf{Infrastructure}\\[2pt]\scriptsize Overview, decommission};
+    {\textbf{Order Routes}\\[2pt]\scriptsize Place, approve, reject};
+  \node[c4component, right=of order] (infra)
+    {\textbf{Infrastructure Routes}\\[2pt]\scriptsize Overview, decommission};
+  \node[c4component, right=of infra] (admin)
+    {\textbf{Admin Routes}\\[2pt]\scriptsize Catalog \& config mgmt};
 
-  % Middle row
-  \node[c4component, below=0.9cm of auth] (audit)
-    {\textbf{Audit}\\[2pt]\scriptsize Immutable log, export};
-  \node[c4component, right=of audit] (notif)
-    {\textbf{Notification}\\[2pt]\scriptsize SMTP email dispatch};
-  \node[c4component, right=of notif] (polling)
-    {\textbf{GitLab Polling}\\[2pt]\scriptsize Pipeline status sync};
-  \node[c4component, right=of polling] (admin)
-    {\textbf{Admin}\\[2pt]\scriptsize Catalog \& config mgmt};
-  \node[c4component, right=of admin] (aitrans)
-    {\textbf{AI Translation}\\[2pt]\scriptsize Pluggable translator};
+  % Middle row — lib modules
+  \node[c4component, below=0.9cm of auth] (jwtmw)
+    {\textbf{JWT Middleware}\\[2pt]\scriptsize Verify token, role guards};
+  \node[c4component, right=of jwtmw] (ci)
+    {\textbf{CI Dispatch}\\[2pt]\scriptsize GitLab/GitHub/Bitbucket};
+  \node[c4component, right=of ci] (webhook)
+    {\textbf{Webhook Handler}\\[2pt]\scriptsize Inbound pipeline events};
+  \node[c4component, right=of webhook] (email)
+    {\textbf{Email}\\[2pt]\scriptsize nodemailer SMTP};
+  \node[c4component, right=of email] (bootstrap)
+    {\textbf{Bootstrap}\\[2pt]\scriptsize Root user seed};
 
-  % Bottom row — repositories
-  \node[c4database, below=0.9cm of audit, text width=2.4cm] (repo)
-    {\textbf{Repositories}\\[2pt]\scriptsize pgx/v5 SQL layer};
+  % Bottom row — data layer
+  \node[c4database, below=0.9cm of jwtmw, text width=2.8cm] (drizzle)
+    {\textbf{Drizzle ORM}\\[2pt]\scriptsize Schema + typed queries};
 
-  % Arrows: components to repo
-  \foreach \n in {auth, catalog, order, approval, infra, audit, notif, polling, admin, aitrans}
-    \draw[->, thick, draw=gray!40, dashed] (\n) -- (repo);
+  % Arrows: components to drizzle
+  \foreach \n in {auth, catalog, order, infra, admin, jwtmw, ci, webhook, email, bootstrap}
+    \draw[->, thick, draw=gray!40, dashed] (\n) -- (drizzle);
 
 \end{tikzpicture}
 }
-\caption{C4 Level 3 — Component Diagram (Webshop Application)}
+\caption{C4 Level 3 — Component Diagram (Backend API)}
 \label{fig:c4-l3}
 \end{figure}
 
@@ -607,55 +616,51 @@ its major logical components.
   \textbf{Component} & \textbf{Responsibility} \\
   \midrule
   \endhead
-  Auth &
-    Handles OIDC Authorization Code Flow (Entra ID) and local password
-    login. Issues encrypted, HttpOnly session cookies. Enforces role-based
-    access (\code{admin}, \code{root}, \code{project\_leader}). \\[4pt]
-  Catalog &
-    Renders products grouped by category. Converts prices from the
-    configured base currency to the user's locale currency using stored
-    exchange rates. Supports 25 languages via the i18n engine. \\[4pt]
-  Order &
-    Renders the order form with parameters from global, category, and
-    product parameter sets. Stores orders in PostgreSQL. For Admins,
-    triggers the GitLab provisioning webhook immediately; for Project
-    Managers, parks the order for approval. \\[4pt]
-  Approval &
-    Lists pending orders for Admins. Approve triggers the GitLab
-    webhook. Reject requires a mandatory comment. Both paths send
-    email notifications and write to the audit log. \\[4pt]
-  Infrastructure &
-    Shows deployed resources grouped by project and environment.
-    Role-scoped: Project Managers see only their own. Triggers the
-    GitLab destroy webhook for decommissioning. Supports
-    ``use as template'' to pre-fill a new order. \\[4pt]
-  Audit &
-    Append-only log of all system actions. Filterable by date range,
-    user, and action type. Exportable as CSV or PDF. \\[4pt]
-  Notification &
-    Wraps SMTP email delivery. Silently no-ops when SMTP is not
-    configured. SMTP credentials are live-reloadable from the database
-    without a server restart. \\[4pt]
-  GitLab Polling &
-    Goroutine pool that periodically queries the GitLab Pipelines API for
-    in-flight orders. Updates order and infrastructure state on
-    completion or failure, then triggers email notifications.
-    Uses PostgreSQL advisory locks so multiple replicas do not
-    double-poll. \\[4pt]
-  Admin &
-    All Root pages: categories, products (CRUD, image upload,
-    AI translation, webhook management, parameter import from
-    \code{variables.tf}), environments, GitLab sources, cost centers,
-    currencies, SMTP, AI config, branding, users. \\[4pt]
-  AI Translation &
-    Pluggable interface (\code{aitranslation.Translator}). Concrete
-    implementations for Claude, OpenAI, Azure OpenAI, Ollama, and LocalAI.
-    Selected and instantiated at startup from the database configuration;
-    swappable at runtime via the Admin UI. \\[4pt]
-  Repositories &
-    Thin SQL layer using \code{pgx/v5}. One repository interface per
-    aggregate root (User, Product, Order, etc.). Implementations in
-    \file{internal/repository/postgres/}. \\
+  Auth Routes &
+    \route{POST /api/auth/login} validates credentials with bcryptjs,
+    issues a signed HS256 JWT (24 h). \route{GET /api/auth/me} returns
+    the caller's profile. \route{POST /api/auth/logout} is a stateless
+    no-op (JWT expiry handles invalidation). \\[4pt]
+  Catalog Routes &
+    Returns products grouped by category (\route{GET /api/catalog}).
+    Converts prices using stored exchange rates. \\[4pt]
+  Order Routes &
+    \route{POST /api/catalog/:id/order} creates an order and dispatches
+    the CI webhook immediately for Admins, or parks it for approval for
+    Project Managers. \route{POST /api/orders/:id/approve} and
+    \route{POST /api/orders/:id/reject} complete the approval flow with
+    email notifications and audit writes. \\[4pt]
+  Infrastructure Routes &
+    Shows deployed resources role-scoped by caller. Triggers the CI
+    destroy webhook for decommissioning. Supports ``use as template''
+    to pre-fill a new order. \\[4pt]
+  Admin Routes &
+    All Root-only pages: categories, products (CRUD, image upload,
+    webhook management, parameter import from \code{variables.tf} via
+    GitLab API), environments, CI sources, cost centers, currencies,
+    SMTP config, branding, users. \\[4pt]
+  JWT Middleware &
+    Verifies Bearer tokens on every authenticated route using the
+    \code{jose} library. Exports typed role guard wrappers
+    (\code{requireAdmin}, \code{requireRoot}) used by route handlers. \\[4pt]
+  CI Dispatch &
+    Provider-agnostic module in \file{src/lib/ci/} that sends HTTP
+    POST webhooks to GitLab, GitHub, or Bitbucket pipeline trigger
+    endpoints with OpenTofu parameters as JSON. \\[4pt]
+  Webhook Handler &
+    Inbound handler at \route{POST /api/webhooks/\{provider\}/pipeline}.
+    Maps CI pipeline status events to order/infrastructure state updates
+    and dispatches email notifications on completion or failure. \\[4pt]
+  Email &
+    Wraps nodemailer. Silently no-ops when SMTP is not configured.
+    Configuration is read from environment variables. \\[4pt]
+  Bootstrap &
+    On startup, seeds the initial Root account from
+    \env{ADMIN\_EMAIL} / \env{ADMIN\_PASSWORD} if no users exist. \\[4pt]
+  Drizzle ORM &
+    Schema definitions and typed query builders in
+    \file{src/lib/db/}. All database access goes through Drizzle;
+    raw SQL is not used. \\
   \bottomrule
   \caption{Component descriptions}
   \label{tab:components}
@@ -668,230 +673,154 @@ its major logical components.
 \subsection{Order Placement Flow (Project Manager)}
 
 \begin{enumerate}
-  \item Browser submits \route{POST /orders/new}.
-  \item \code{handler.orderCreate()} validates input, calls
-        \code{service.OrderService.Create()}.
-  \item The order service writes the order record with status
-        \code{pending\_approval} to PostgreSQL.
-  \item The notification service sends an approval-request email to all
-        Admins.
-  \item The audit service writes an \code{order\_placed} entry.
-  \item Browser redirects to \route{GET /orders/\{id\}} showing the
-        \textit{Awaiting Approval} status.
+  \item Frontend calls \route{POST /api/catalog/:id/order} with JWT in
+        the \code{Authorization} header.
+  \item The backend route handler validates the JWT via middleware,
+        verifies the request body, and writes an order record with
+        status \code{pending\_approval} to PostgreSQL via Drizzle.
+  \item The notification module sends an approval-request email to all
+        Admins via nodemailer.
+  \item An \code{order\_placed} row is appended to the audit log.
+  \item The handler returns the new order ID; the frontend navigates
+        to the order detail page showing \textit{Awaiting Approval}.
 \end{enumerate}
 
 \subsection{Order Approval \& Provisioning Flow}
 
 \begin{enumerate}
-  \item Admin opens \route{GET /approvals} and clicks \textbf{Approve}.
-  \item \code{handler.approvalApprove()} calls
-        \code{service.OrderService.Approve()}.
-  \item The order service updates status to \code{provisioning}, stores
-        the webhook URLs from the product-environment configuration.
+  \item Admin calls \route{POST /api/orders/:id/approve}.
+  \item The backend handler updates the order status to
+        \code{provisioning} and reads the webhook configuration for the
+        product-environment pair.
   \item For each configured webhook (ordered by \code{exec\_order}): an
-        HTTP POST is sent to the GitLab webhook URL with the Linode/Tofu
-        parameters as JSON.
-  \item GitLab receives the trigger, starts a pipeline, returns a
-        pipeline ID.
-  \item The webshop stores the pipeline ID(s) in the JSONB
-        \code{pipeline\_ids} column.
-  \item The GitLab Polling goroutine detects the in-flight pipeline and
-        starts querying the Pipelines API every 30 seconds.
-  \item When the pipeline completes successfully, the poller sets status
-        to \code{completed} and sends a deployment-complete email.
-  \item On failure, status becomes \code{failed} and failure emails go
-        to the orderer and all Admins.
+        HTTP POST is sent to the CI provider trigger URL with the
+        OpenTofu parameters as JSON.
+  \item The CI provider starts a pipeline and returns a pipeline ID.
+  \item The backend stores the pipeline ID(s) in the
+        \code{pipeline\_ids} JSONB column.
+  \item When the CI pipeline completes, the provider calls
+        \route{POST /api/webhooks/\{provider\}/pipeline} with the
+        result. The webhook handler updates order and infrastructure
+        state and sends a deployment-complete email.
+  \item On pipeline failure, status becomes \code{failed} and failure
+        emails go to the orderer and all Admins.
 \end{enumerate}
 
-\subsection{Request–Response Lifecycle (HTMX)}
+\subsection{Request–Response Lifecycle (Next.js)}
 
-Most user interactions either perform a full page load (navigation) or
-return an HTML fragment (HTMX). The server detects HTMX requests via the
-\code{HX-Request} header. Full renders compose a templ \code{Layout}
-component around the page component. Fragments skip the layout and
-return only the relevant HTML snippet, which HTMX swaps into the DOM.
+User interactions are handled by React Server Components or client
+components that call the backend REST API via typed wrappers in
+\file{src/lib/api.ts}. The backend returns JSON; the frontend
+re-renders the affected React subtree. NextAuth v5 maintains the
+user session in an encrypted server-side cookie; the session token
+is forwarded as a Bearer JWT on every backend API call.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Design Decisions \& Technology Rationale}
 \label{ch:design}
 
-\section{Go as Application Language}
+\section{Next.js Monorepo}
 
-\textbf{Decision:} The entire backend is written in Go.
-
-\textbf{Rationale:}
-\begin{itemize}
-  \item Compiles to a single self-contained binary with no runtime
-        dependencies — ideal for Docker-based deployment.
-  \item Low memory footprint and predictable garbage collection enable
-        running multiple polling goroutines without resource pressure.
-  \item The standard library \code{net/http} in Go 1.23+ provides
-        pattern-matching routing (\code{"GET /path/\{id\}"}) sufficient
-        for this use case, removing the need for a router dependency.
-  \item \code{html/template} provides automatic context-aware escaping,
-        eliminating entire classes of XSS vulnerabilities.
-  \item Goroutines provide a natural model for the concurrent GitLab
-        pipeline polling without callback complexity.
-\end{itemize}
-
-\textbf{Alternative considered:} Python/FastAPI with Jinja2. Rejected
-because the deployment story is more complex (virtualenv, interpreter)
-and concurrency requires async, which increases cognitive overhead.
-
-\section{Server-Side Rendering with HTMX}
-
-\textbf{Decision:} Pages are rendered server-side; dynamic updates use
-HTMX HTML fragments rather than a JavaScript SPA framework.
+\textbf{Decision:} The application is structured as a pnpm workspace
+monorepo with two Next.js applications (\code{apps/backend} and
+\code{apps/frontend}) and a shared types package
+(\code{packages/types}).
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item No JSON API surface to design, document, or secure separately —
-        the server owns both data and presentation.
-  \item Progressive enhancement: the UI degrades gracefully if JS is
-        unavailable.
-  \item HTMX's \code{hx-get}/\code{hx-post} attributes on HTML elements
-        cover the interactivity requirements (live status polling,
-        inline form submission, partial page swaps) without React or Vue
-        build pipelines.
-  \item Template-level security: Go's \code{html/template} auto-escapes
-        all inserted values, preventing XSS by construction.
+  \item TypeScript is shared end-to-end: the same interface definitions
+        in \file{packages/types/} are consumed by both the backend route
+        handlers and the frontend API client, making type drift a
+        compile error rather than a runtime surprise.
+  \item Separating the backend and frontend into distinct Next.js
+        applications allows each to have an independent Dockerfile,
+        independent environment variables, and an independent deploy
+        cycle. The frontend can be updated without touching the API
+        container.
+  \item Next.js App Router (both apps) provides file-system-based
+        routing, React Server Components, and built-in streaming without
+        additional framework glue.
+  \item pnpm workspaces deduplicate \code{node\_modules} across
+        packages, reducing install size and ensuring consistent package
+        versions across the monorepo.
 \end{itemize}
 
-\section{templ for Type-Safe HTML Components}
+\section{React 19 with App Router}
 
-\textbf{Decision:} All HTML pages and UI components are authored as
-\code{.templ} files and compiled to Go by the \code{templ} CLI. The
-\code{html/template} package is no longer used for page rendering.
+\textbf{Decision:} The frontend is a Next.js 15 application using
+React 19 Server and Client Components via the App Router.
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item \textbf{Compile-time type safety:} Each page receives a concrete
-        typed view struct (e.g.\ \code{view.OrderListView}). Passing the
-        wrong data to a component is a compile error, not a runtime
-        \code{nil} panic or a missing-key silently rendering empty.
-  \item \textbf{No map[string]any:} The old \code{html/template} approach
-        required every handler to pass \code{map[string]any\{\}} to
-        \code{h.render()}, providing no compile-time guarantee that the
-        template would find the keys it expected.
-  \item \textbf{Composable components:} templ supports Go functions as
-        components with typed parameters, children slots, and helper
-        functions — the same mental model as React components but compiled
-        to plain Go without a JS build step.
-  \item \textbf{XSS safety preserved:} templ auto-escapes all string
-        interpolations by default, maintaining the same security guarantee
-        as \code{html/template}.
-  \item \textbf{IDE support:} The templ VS Code extension provides syntax
-        highlighting, autocompletion, and go-to-definition inside
-        \code{.templ} files.
+  \item \textbf{Type-safe API layer:} All backend calls are made through
+        typed wrappers in \file{src/lib/api.ts}. The shared
+        \code{packages/types} interfaces guarantee that the shape of
+        every response is verified at compile time.
+  \item \textbf{Server Components by default:} Data-fetching pages are
+        React Server Components that call the backend on the server,
+        avoiding client-side waterfall requests and keeping JWTs
+        server-side.
+  \item \textbf{Incremental interactivity:} Only the components that
+        require event handlers or browser APIs are marked
+        \code{"use client"}, minimising the client-side JavaScript
+        bundle.
 \end{itemize}
 
-\textbf{Design system:} A shared component library under
-\file{ui/comp/} (\code{comp.Btn}, \code{comp.Card}, \code{comp.Badge},
-\code{comp.Field}, etc.) provides a consistent visual language. Page
-components under \file{ui/pages/} compose these primitives and receive
-typed view models from the handler layer.
+\section{Tailwind CSS v4}
 
-\section{Tailwind CSS without DaisyUI}
-
-\textbf{Decision:} Pure Tailwind CSS utility classes; DaisyUI was
-removed after the migration to templ was complete.
+\textbf{Decision:} Tailwind CSS v4 is used for all styling via the
+single \code{@import "tailwindcss"} directive. No DaisyUI. No
+separate build step.
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item \textbf{Theme collision:} DaisyUI ships its own CSS custom
-        properties (\code{--b1}, \code{--p}, \code{--s}, …) which
-        conflicted with the application's own branding variables
-        (\code{--bp}, \code{--bs}). Keeping both required workarounds
-        and caused unpredictable cascade ordering.
-  \item \textbf{Specificity fights:} DaisyUI's component classes
-        (\code{btn}, \code{badge}, \code{card}) carry higher specificity
-        than plain utilities, making it hard to override individual
-        properties without \code{!important} or extra wrapper classes.
-  \item \textbf{Bundle size and opacity:} DaisyUI adds several hundred
-        kilobytes of pre-defined component CSS. Tailwind's content-scan
-        only purges \emph{unused} utilities; DaisyUI component styles are
-        included unconditionally, inflating the bundle with styles that
-        the templ components never use.
-  \item \textbf{Design independence:} The hand-authored component library
-        in \file{ui/comp/} uses only Tailwind utilities, making every
-        style decision explicit and auditable. There are no hidden
-        DaisyUI defaults to debug.
+  \item \textbf{Zero-config build:} Tailwind v4 uses a native CSS
+        engine that requires only the single import; there is no
+        \code{tailwind.config.js} or separate \code{build:css} command.
+        Next.js handles the PostCSS pass automatically.
+  \item \textbf{Design independence:} Pure utility classes keep every
+        style decision explicit and auditable. Brand tokens
+        (\code{var(--bp)}, \code{var(--bs)}) drive themed surfaces
+        without conflicting with a component library's own custom
+        properties.
 \end{itemize}
 
-\textbf{What replaced it:} The \file{ui/comp/} package provides the
-same functional coverage (buttons, badges, cards, form inputs,
-checkboxes, layout shell) using only Tailwind utilities and the two
-brand CSS variables \code{var(--bp)} and \code{var(--bs)}.
+\section{PostgreSQL with Drizzle ORM}
 
-\section{No Alpine.js}
-
-\textbf{Decision:} Alpine.js was removed from the project. The only
-remaining JavaScript beyond HTMX is the CDN-loaded Alpine.js on the
-branding admin page, where it powers the live colour preview.
+\textbf{Decision:} PostgreSQL 15+, accessed via the Drizzle ORM with
+the \code{postgres} Node.js driver.
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item \textbf{All use cases replaced by HTML:} Every place Alpine.js
-        was used — collapsible sections, toggle visibility, show/hide
-        forms — can be handled by the native \code{<details>/\allowbreak<summary>}
-        element. This is a zero-JavaScript, zero-dependency solution that
-        is accessible by default and degrades gracefully in all browsers.
-  \item \textbf{Reduced attack surface:} Alpine.js evaluates expressions
-        from HTML attributes (\code{x-data}, \code{x-show},
-        \code{x-on:click}). Any XSS that manages to inject an attribute
-        becomes executable code. Removing Alpine.js eliminates this
-        vector.
-  \item \textbf{Dependency hygiene:} Alpine.js loaded from a CDN
-        introduces a third-party supply-chain dependency on every page
-        load. Removing it means the only external script is HTMX, which
-        is already trusted as a core dependency.
-  \item \textbf{Consistency:} Mixing two reactive JavaScript libraries
-        (HTMX and Alpine) creates a mental model split: developers must
-        decide which tool owns each interactive behaviour. Pure
-        HTMX + HTML is a single coherent model.
+  \item \textbf{Type-safe queries:} Drizzle generates TypeScript types
+        from the schema definition in \file{src/lib/db/schema.ts}.
+        Every query result is typed; shape mismatches are caught by the
+        TypeScript compiler.
+  \item \textbf{Schema as code:} \code{drizzle-kit push} applies the
+        schema diff directly, removing the need for manually written SQL
+        migration files while keeping the schema version-controlled.
+  \item \textbf{Thin abstraction:} Drizzle stays close to SQL semantics
+        (no opaque magic), making it straightforward to write efficient
+        queries for JSONB columns, upserts, and aggregations.
+  \item BYTEA columns store product images and the branding logo
+        directly in the database, eliminating a separate object store at
+        this scale.
 \end{itemize}
 
-\textbf{Exception:} The admin branding page (\route{/admin/branding})
-retains Alpine.js loaded via CDN script tag. It drives a live
-colour-preview widget where two colour inputs immediately update a
-mock header element without a server round-trip. This is the one
-genuine use case for in-page reactive state that cannot be reasonably
-replaced by \code{<details>} or HTMX alone.
+\section{Two-Container Architecture}
 
-\section{PostgreSQL with pgx (No ORM)}
-
-\textbf{Decision:} PostgreSQL 15+, accessed via \code{pgx/v5} with
-hand-written SQL. No ORM.
+\textbf{Decision:} The backend API and the frontend UI run in separate
+containers (\code{apps/backend/Dockerfile} and
+\code{apps/frontend/Dockerfile}).
 
 \textbf{Rationale:}
-\begin{itemize}
-  \item JSONB arrays for \code{pipeline\_ids} allow storing multiple
-        concurrent pipeline references per order without a join table,
-        while retaining full query ability.
-  \item BYTEA columns store product images and the branding logo directly
-        in the database, eliminating a separate object store for this scale.
-  \item Direct SQL gives precise control over query shape and enables
-        \code{ON CONFLICT DO UPDATE} (upserts) for the branding and
-        app-config singleton rows.
-  \item PostgreSQL advisory locks coordinate the polling goroutines across
-        multiple replicas without an additional message broker.
-  \item pgx is the highest-performance PostgreSQL driver for Go; it
-        avoids the \code{database/sql} reflection overhead.
-\end{itemize}
-
-\section{Single-Container Architecture}
-
-\textbf{Decision:} The entire application (HTTP server, background
-polling, notification dispatch) runs in a single container.
-
-\textbf{Rationale:}
-At the anticipated load (tens of users, hundreds of orders per month),
-microservice decomposition would add operational complexity (service
-discovery, inter-service auth, distributed tracing) without meaningful
-benefit. The single-binary model keeps deployment simple: one
-\code{docker run} or one Kubernetes \code{Deployment} object.
-Horizontal scaling is achieved by running multiple replicas; PostgreSQL
-advisory locks ensure the polling goroutines do not duplicate work.
+Separating concerns at the container boundary gives each part its own
+deployment, scaling, and environment-variable scope. The frontend never
+holds database credentials; the backend never renders HTML. Nginx
+(or any reverse proxy) routes \code{/api/*} to port 3001 and all other
+paths to port 3000. At the anticipated load (tens of users, hundreds
+of orders per month), this split adds minimal operational overhead
+while making the security boundary explicit.
 
 \section{OpenTofu over Terraform}
 

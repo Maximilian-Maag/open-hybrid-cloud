@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { categories } from '@/lib/db/schema'
-import { asc } from 'drizzle-orm'
+import { toResponse } from '@/lib/http'
+import { listCategories, createCategory } from '@/lib/services/admin/categories'
 
 const CreateCategorySchema = z.object({
   name: z.string().min(1),
@@ -14,12 +13,7 @@ export async function GET(req: NextRequest) {
   const session = await requireRole('root')(req)
   if (!isAuth(session)) return session
 
-  const rows = await db
-    .select()
-    .from(categories)
-    .orderBy(asc(categories.displayOrder), asc(categories.name))
-
-  return NextResponse.json(rows)
+  return toResponse(await listCategories())
 }
 
 export async function POST(req: NextRequest) {
@@ -32,10 +26,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [category] = await db
-    .insert(categories)
-    .values({ name: parsed.data.name, displayOrder: parsed.data.displayOrder })
-    .returning()
-
-  return NextResponse.json(category, { status: 201 })
+  return toResponse(await createCategory(parsed.data), 201)
 }

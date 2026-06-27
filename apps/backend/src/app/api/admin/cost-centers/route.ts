@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { costCenters } from '@/lib/db/schema'
+import { toResponse } from '@/lib/http'
+import { listCostCenters, createCostCenter } from '@/lib/services/admin/costCenters'
 
 const CreateCostCenterSchema = z.object({
   code: z.string().min(1),
@@ -14,12 +14,7 @@ export async function GET(req: NextRequest) {
   const session = await requireRole('admin')(req)
   if (!isAuth(session)) return session
 
-  const rows = await db
-    .select()
-    .from(costCenters)
-    .orderBy(costCenters.code)
-
-  return NextResponse.json(rows)
+  return toResponse(await listCostCenters())
 }
 
 export async function POST(req: NextRequest) {
@@ -32,6 +27,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [cc] = await db.insert(costCenters).values(parsed.data).returning()
-  return NextResponse.json(cc, { status: 201 })
+  return toResponse(await createCostCenter(parsed.data), 201)
 }

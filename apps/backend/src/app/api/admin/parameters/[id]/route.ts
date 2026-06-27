@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { parameters } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { toResponse } from '@/lib/http'
+import { updateParameter, deleteParameter } from '@/lib/services/admin/parameters'
 
 const UpdateParameterSchema = z.object({
   name: z.string().min(1).optional(),
@@ -29,14 +28,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [updated] = await db
-    .update(parameters)
-    .set(parsed.data)
-    .where(eq(parameters.id, parseInt(id, 10)))
-    .returning()
-
-  if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(updated)
+  return toResponse(await updateParameter(parseInt(id, 10), parsed.data))
 }
 
 export async function DELETE(
@@ -47,11 +39,5 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const deleted = await db
-    .delete(parameters)
-    .where(eq(parameters.id, parseInt(id, 10)))
-    .returning({ id: parameters.id })
-
-  if (!deleted.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json({ success: true })
+  return toResponse(await deleteParameter(parseInt(id, 10)))
 }

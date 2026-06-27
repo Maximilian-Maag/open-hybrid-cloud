@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { deploymentEnvironments, ciSources } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { toResponse } from '@/lib/http'
+import { listEnvironments, createEnvironment } from '@/lib/services/admin/environments'
 
 const CreateEnvironmentSchema = z.object({
   name: z.string().min(1),
@@ -17,20 +16,7 @@ export async function GET(req: NextRequest) {
   const session = await requireRole('admin')(req)
   if (!isAuth(session)) return session
 
-  const rows = await db
-    .select({
-      id: deploymentEnvironments.id,
-      name: deploymentEnvironments.name,
-      description: deploymentEnvironments.description,
-      ciSourceId: deploymentEnvironments.ciSourceId,
-      webhookUrl: deploymentEnvironments.webhookUrl,
-      ciSourceName: ciSources.name,
-    })
-    .from(deploymentEnvironments)
-    .leftJoin(ciSources, eq(deploymentEnvironments.ciSourceId, ciSources.id))
-    .orderBy(deploymentEnvironments.name)
-
-  return NextResponse.json(rows)
+  return toResponse(await listEnvironments())
 }
 
 export async function POST(req: NextRequest) {
@@ -43,10 +29,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [env] = await db
-    .insert(deploymentEnvironments)
-    .values(parsed.data)
-    .returning()
-
-  return NextResponse.json(env, { status: 201 })
+  return toResponse(await createEnvironment(parsed.data), 201)
 }

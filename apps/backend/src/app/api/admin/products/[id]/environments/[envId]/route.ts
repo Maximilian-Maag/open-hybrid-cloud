@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { productEnvironments } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { toResponse } from '@/lib/http'
+import { updateProductEnvironment, deleteProductEnvironment } from '@/lib/services/admin/products'
 
 const UpdateProductEnvironmentSchema = z.object({
   price: z.string().optional(),
@@ -20,28 +19,13 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id, envId } = await params
-  const productId = parseInt(id, 10)
-  const environmentId = parseInt(envId, 10)
-
   const body = await req.json().catch(() => null)
   const parsed = UpdateProductEnvironmentSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [updated] = await db
-    .update(productEnvironments)
-    .set(parsed.data)
-    .where(
-      and(
-        eq(productEnvironments.productId, productId),
-        eq(productEnvironments.environmentId, environmentId),
-      ),
-    )
-    .returning()
-
-  if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(updated)
+  return toResponse(await updateProductEnvironment(parseInt(id, 10), parseInt(envId, 10), parsed.data))
 }
 
 export async function DELETE(
@@ -52,19 +36,5 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id, envId } = await params
-  const productId = parseInt(id, 10)
-  const environmentId = parseInt(envId, 10)
-
-  const deleted = await db
-    .delete(productEnvironments)
-    .where(
-      and(
-        eq(productEnvironments.productId, productId),
-        eq(productEnvironments.environmentId, environmentId),
-      ),
-    )
-    .returning({ productId: productEnvironments.productId })
-
-  if (!deleted.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json({ success: true })
+  return toResponse(await deleteProductEnvironment(parseInt(id, 10), parseInt(envId, 10)))
 }

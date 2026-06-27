@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { ciSources } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { toResponse } from '@/lib/http'
+import { getCiSourceById, updateCiSource, deleteCiSource } from '@/lib/services/admin/ciSources'
 
 const UpdateCiSourceSchema = z.object({
   name: z.string().min(1).optional(),
@@ -20,20 +19,7 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const rows = await db
-    .select({
-      id: ciSources.id,
-      name: ciSources.name,
-      url: ciSources.url,
-      provider: ciSources.provider,
-      // Never return accessToken
-    })
-    .from(ciSources)
-    .where(eq(ciSources.id, parseInt(id, 10)))
-    .limit(1)
-
-  if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(rows[0])
+  return toResponse(await getCiSourceById(parseInt(id, 10)))
 }
 
 export async function PUT(
@@ -50,19 +36,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [updated] = await db
-    .update(ciSources)
-    .set(parsed.data)
-    .where(eq(ciSources.id, parseInt(id, 10)))
-    .returning({
-      id: ciSources.id,
-      name: ciSources.name,
-      url: ciSources.url,
-      provider: ciSources.provider,
-    })
-
-  if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(updated)
+  return toResponse(await updateCiSource(parseInt(id, 10), parsed.data))
 }
 
 export async function DELETE(
@@ -73,11 +47,5 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const deleted = await db
-    .delete(ciSources)
-    .where(eq(ciSources.id, parseInt(id, 10)))
-    .returning({ id: ciSources.id })
-
-  if (!deleted.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json({ success: true })
+  return toResponse(await deleteCiSource(parseInt(id, 10)))
 }

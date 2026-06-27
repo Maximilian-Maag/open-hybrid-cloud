@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { ciSources } from '@/lib/db/schema'
+import { toResponse } from '@/lib/http'
+import { listCiSources, createCiSource } from '@/lib/services/admin/ciSources'
 
 const CreateCiSourceSchema = z.object({
   name: z.string().min(1),
@@ -15,18 +15,7 @@ export async function GET(req: NextRequest) {
   const session = await requireRole('root')(req)
   if (!isAuth(session)) return session
 
-  const rows = await db
-    .select({
-      id: ciSources.id,
-      name: ciSources.name,
-      url: ciSources.url,
-      provider: ciSources.provider,
-      // Never return accessToken
-    })
-    .from(ciSources)
-    .orderBy(ciSources.name)
-
-  return NextResponse.json(rows)
+  return toResponse(await listCiSources())
 }
 
 export async function POST(req: NextRequest) {
@@ -39,15 +28,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [source] = await db
-    .insert(ciSources)
-    .values(parsed.data)
-    .returning({
-      id: ciSources.id,
-      name: ciSources.name,
-      url: ciSources.url,
-      provider: ciSources.provider,
-    })
-
-  return NextResponse.json(source, { status: 201 })
+  return toResponse(await createCiSource(parsed.data), 201)
 }

@@ -1,10 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { signToken } from '@/lib/auth/jwt'
+import { loginWithCredentials } from '@/lib/services/auth'
 
 const LoginSchema = z.object({
   email: z.string().email(),
@@ -19,26 +18,19 @@ export async function POST(req: NextRequest) {
   }
 
   const { email, password } = parsed.data
+  const result = await loginWithCredentials(email, password)
+
+  if (!result.ok) {
+    return NextResponse.json({ error: result.message }, { status: result.status })
+  }
 
   const rows = await db
-    .select()
+    .select({ id: users.id, email: users.email, name: users.name, role: users.role })
     .from(users)
     .where(eq(users.email, email))
     .limit(1)
 
-  const user = rows[0]
+  const sessionUser = rows[0]
 
-  if (!user || !user.active || !user.passwordHash) {
-    return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
-  }
-
-  const valid = await bcrypt.compare(password, user.passwordHash)
-  if (!valid) {
-    return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
-  }
-
-  const sessionUser = { id: user.id, email: user.email, name: user.name, role: user.role }
-  const token = await signToken(sessionUser)
-
-  return NextResponse.json({ token, user: sessionUser })
+  return NextResponse.json({ token: result.data, user: sessionUser })
 }

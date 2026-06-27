@@ -1,10 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import bcrypt from 'bcryptjs'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { users } from '@/lib/db/schema'
-import { sql } from 'drizzle-orm'
+import { toResponse } from '@/lib/http'
+import { listUsers, createUser } from '@/lib/services/admin/users'
 
 const CreateUserSchema = z.object({
   email: z.string().email(),
@@ -18,20 +16,7 @@ export async function GET(req: NextRequest) {
   const session = await requireRole('root')(req)
   if (!isAuth(session)) return session
 
-  const rows = await db
-    .select({
-      id: users.id,
-      email: users.email,
-      name: users.name,
-      role: users.role,
-      active: users.active,
-      ssoSub: users.ssoSub,
-      createdAt: users.createdAt,
-    })
-    .from(users)
-    .orderBy(sql`${users.createdAt} DESC`)
-
-  return NextResponse.json(rows)
+  return toResponse(await listUsers())
 }
 
 export async function POST(req: NextRequest) {
@@ -44,29 +29,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { email, name, role, password, active } = parsed.data
-  const passwordHash = await bcrypt.hash(password, 12)
-
-  try {
-    const [user] = await db
-      .insert(users)
-      .values({ email, name, role, passwordHash, active })
-      .returning({
-        id: users.id,
-        email: users.email,
-        name: users.name,
-        role: users.role,
-        active: users.active,
-        ssoSub: users.ssoSub,
-        createdAt: users.createdAt,
-      })
-
-    return NextResponse.json(user, { status: 201 })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.includes('unique') || msg.includes('duplicate')) {
-      return NextResponse.json({ error: 'Email already in use' }, { status: 409 })
-    }
-    throw err
-  }
+  return toResponse(await createUser(parsed.data), 201)
 }

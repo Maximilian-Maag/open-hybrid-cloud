@@ -1,8 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { products } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { updateProductImage } from '@/lib/services/admin/products'
 
 export async function PUT(
   req: NextRequest,
@@ -24,10 +22,6 @@ export async function PUT(
   const arrayBuffer = await file.arrayBuffer()
   const buffer = Buffer.from(arrayBuffer)
 
-  await db
-    .update(products)
-    .set({ image: buffer })
-    .where(eq(products.id, productId))
-
+  await updateProductImage(productId, buffer)
   return NextResponse.json({ success: true })
 }

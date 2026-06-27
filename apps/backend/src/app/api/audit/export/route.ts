@@ -1,56 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { auditLog, users } from '@/lib/db/schema'
-import { eq, and, gte, lte, ilike, sql } from 'drizzle-orm'
+import { exportAuditLog, type AuditRow } from '@/lib/services/audit'
 import PDFDocument from 'pdfkit'
-
-interface AuditRow {
-  id: number | null
-  userId: number | null
-  userName: string | null
-  action: string | null
-  entityId: number | null
-  details: string | null
-  createdAt: Date | null
-}
-
-async function fetchRows(req: NextRequest): Promise<AuditRow[]> {
-  const { searchParams } = new URL(req.url)
-  const userId = searchParams.get('userId')
-  const action = searchParams.get('action')
-  const from = searchParams.get('from')
-  const to = searchParams.get('to')
-
-  const conditions = []
-  if (userId) conditions.push(eq(auditLog.userId, Number(userId)))
-  if (action) conditions.push(ilike(auditLog.action, `%${action}%`))
-  if (from) {
-    const d = new Date(from)
-    if (!isNaN(d.getTime())) conditions.push(gte(auditLog.createdAt, d))
-  }
-  if (to) {
-    const d = new Date(`${to}T23:59:59Z`)
-    if (!isNaN(d.getTime())) conditions.push(lte(auditLog.createdAt, d))
-  }
-
-  const where = conditions.length > 0 ? and(...conditions) : undefined
-
-  return db
-    .select({
-      id: auditLog.id,
-      userId: auditLog.userId,
-      userName: users.name,
-      action: auditLog.action,
-      entityId: auditLog.entityId,
-      details: auditLog.details,
-      createdAt: auditLog.createdAt,
-    })
-    .from(auditLog)
-    .leftJoin(users, eq(auditLog.userId, users.id))
-    .where(where)
-    .orderBy(sql`${auditLog.createdAt} ASC`)
-}
 
 function buildCsv(rows: AuditRow[]): string {
   const escape = (value: unknown): string => {
@@ -88,12 +39,10 @@ async function buildPdf(rows: AuditRow[]): Promise<Buffer> {
     doc.on('end', () => resolve(Buffer.concat(chunks)))
     doc.on('error', reject)
 
-    // Header
     doc.fontSize(16).font('Helvetica-Bold').text('Audit Log Export', { align: 'center' })
     doc.fontSize(10).font('Helvetica').text(`Generated: ${new Date().toISOString()}`, { align: 'center' })
     doc.moveDown()
 
-    // Column layout for landscape A4 (width ~762 usable at 40px margins)
     const cols = [
       { label: 'ID',       width: 40 },
       { label: 'User',     width: 100 },
@@ -150,8 +99,17 @@ export async function GET(req: NextRequest) {
   const session = await requireRole('admin')(req)
   if (!isAuth(session)) return session
 
-  const format = new URL(req.url).searchParams.get('format') ?? 'csv'
-  const rows = await fetchRows(req)
+  const { searchParams } = new URL(req.url)
+  const format = searchParams.get('format') ?? 'csv'
+  const userId = searchParams.get('userId') ? parseInt(searchParams.get('userId') ?? '0', 10) : undefined
+  const action = searchParams.get('action') ?? undefined
+  const from = searchParams.get('from') ?? undefined
+  const to = searchParams.get('to') ?? undefined
+
+  const result = await exportAuditLog({ userId, action, from, to })
+  if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
+
+  const rows = result.data
 
   if (format === 'pdf') {
     const pdf = await buildPdf(rows)

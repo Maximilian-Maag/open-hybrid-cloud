@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { parameters } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { toResponse } from '@/lib/http'
+import { listParameters, createParameter } from '@/lib/services/admin/parameters'
 
 const CreateParameterSchema = z.object({
   scope: z.enum(['global', 'category', 'product']),
@@ -23,19 +22,9 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const scope = searchParams.get('scope') as 'global' | 'category' | 'product' | null
-  const scopeId = searchParams.get('scopeId') ? parseInt(searchParams.get('scopeId')!, 10) : undefined
+  const scopeId = searchParams.get('scopeId') ? parseInt(searchParams.get('scopeId') ?? '0', 10) : undefined
 
-  const conditions = []
-  if (scope) conditions.push(eq(parameters.scope, scope))
-  if (scopeId !== undefined) conditions.push(eq(parameters.scopeId, scopeId))
-
-  const rows = await db
-    .select()
-    .from(parameters)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(parameters.scope, parameters.scopeId, parameters.name)
-
-  return NextResponse.json(rows)
+  return toResponse(await listParameters({ scope: scope ?? undefined, scopeId }))
 }
 
 export async function POST(req: NextRequest) {
@@ -48,13 +37,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [param] = await db
-    .insert(parameters)
-    .values({
-      ...parsed.data,
-      environmentId: parsed.data.environmentId ?? null,
-    })
-    .returning()
-
-  return NextResponse.json(param, { status: 201 })
+  return toResponse(await createParameter(parsed.data), 201)
 }

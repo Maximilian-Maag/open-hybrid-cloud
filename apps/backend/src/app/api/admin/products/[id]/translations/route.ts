@@ -1,8 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { productTranslations } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { toResponse } from '@/lib/http'
+import { listTranslations } from '@/lib/services/admin/products'
 
 export async function GET(
   req: NextRequest,
@@ -12,13 +11,5 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const productId = parseInt(id, 10)
-
-  const rows = await db
-    .select()
-    .from(productTranslations)
-    .where(eq(productTranslations.productId, productId))
-    .orderBy(productTranslations.languageCode)
-
-  return NextResponse.json(rows)
+  return toResponse(await listTranslations(parseInt(id, 10)))
 }

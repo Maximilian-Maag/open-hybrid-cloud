@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { categories } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { toResponse } from '@/lib/http'
+import { getCategoryById, updateCategory, deleteCategory } from '@/lib/services/admin/categories'
 
 const UpdateCategorySchema = z.object({
   name: z.string().min(1).optional(),
@@ -18,14 +17,7 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const rows = await db
-    .select()
-    .from(categories)
-    .where(eq(categories.id, parseInt(id, 10)))
-    .limit(1)
-
-  if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(rows[0])
+  return toResponse(await getCategoryById(parseInt(id, 10)))
 }
 
 export async function PUT(
@@ -42,14 +34,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [updated] = await db
-    .update(categories)
-    .set(parsed.data)
-    .where(eq(categories.id, parseInt(id, 10)))
-    .returning()
-
-  if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(updated)
+  return toResponse(await updateCategory(parseInt(id, 10), parsed.data))
 }
 
 export async function DELETE(
@@ -60,11 +45,5 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const deleted = await db
-    .delete(categories)
-    .where(eq(categories.id, parseInt(id, 10)))
-    .returning({ id: categories.id })
-
-  if (!deleted.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json({ success: true })
+  return toResponse(await deleteCategory(parseInt(id, 10)))
 }

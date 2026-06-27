@@ -1,9 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { decodeJwt } from 'jose'
-import { db } from '@/lib/db/client'
-import { users } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
 import { signToken } from '@/lib/auth/jwt'
+import { upsertSsoUser } from '@/lib/services/auth'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -23,7 +21,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Entra ID not configured' }, { status: 500 })
   }
 
-  // Exchange code for tokens
   const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
@@ -61,28 +58,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing claims in ID token' }, { status: 400 })
   }
 
-  // Upsert user by sso_sub
-  const existing = await db
-    .select()
-    .from(users)
-    .where(eq(users.ssoSub, sub))
-    .limit(1)
-
-  let user: typeof existing[0]
-
-  if (existing.length > 0) {
-    const [updated] = await db
-      .update(users)
-      .set({ email, name })
-      .where(eq(users.ssoSub, sub))
-      .returning()
-    user = updated
-  } else {
-    const [created] = await db
-      .insert(users)
-      .values({ email, name, role: 'project_manager', ssoSub: sub, active: true })
-      .returning()
-    user = created
+  const user = await upsertSsoUser(sub, email, name)
+  if (!user) {
+    return NextResponse.redirect(`${frontendUrl}/?error=account_error`)
   }
 
   if (!user.active) {

@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { productTranslations } from '@/lib/db/schema'
+import { toResponse } from '@/lib/http'
+import { upsertTranslation } from '@/lib/services/admin/products'
 
 const UpsertTranslationSchema = z.object({
   name: z.string().min(1),
@@ -17,7 +17,6 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id, lang } = await params
-  const productId = parseInt(id, 10)
 
   const body = await req.json().catch(() => null)
   const parsed = UpsertTranslationSchema.safeParse(body)
@@ -25,19 +24,5 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [row] = await db
-    .insert(productTranslations)
-    .values({
-      productId,
-      languageCode: lang,
-      name: parsed.data.name,
-      description: parsed.data.description,
-    })
-    .onConflictDoUpdate({
-      target: [productTranslations.productId, productTranslations.languageCode],
-      set: { name: parsed.data.name, description: parsed.data.description },
-    })
-    .returning()
-
-  return NextResponse.json(row)
+  return toResponse(await upsertTranslation(parseInt(id, 10), lang, parsed.data))
 }

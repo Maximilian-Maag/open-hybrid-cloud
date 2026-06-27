@@ -1,23 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { branding } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { getBrandingLogo, updateBrandingLogo } from '@/lib/services/admin/branding'
 
 export async function GET() {
-  const rows = await db
-    .select({ logoData: branding.logoData, logoMime: branding.logoMime })
-    .from(branding)
-    .where(eq(branding.id, 1))
-    .limit(1)
+  const result = await getBrandingLogo()
 
-  if (!rows.length || !rows[0].logoData) {
-    return new NextResponse(null, { status: 404 })
-  }
+  if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
+  if (!result.data) return new NextResponse(null, { status: 404 })
 
-  return new NextResponse(new Uint8Array(rows[0].logoData), {
+  return new NextResponse(new Uint8Array(result.data.data), {
     headers: {
-      'Content-Type': rows[0].logoMime ?? 'image/png',
+      'Content-Type': result.data.mime,
       'Cache-Control': 'public, max-age=3600',
     },
   })
@@ -38,13 +31,6 @@ export async function PUT(req: NextRequest) {
   const buffer = Buffer.from(arrayBuffer)
   const mimeType = file.type || 'image/png'
 
-  await db
-    .insert(branding)
-    .values({ id: 1, logoData: buffer, logoMime: mimeType })
-    .onConflictDoUpdate({
-      target: branding.id,
-      set: { logoData: buffer, logoMime: mimeType },
-    })
-
+  await updateBrandingLogo(buffer, mimeType)
   return NextResponse.json({ success: true })
 }

@@ -1,11 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { ciSources } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
-import { getFileContent } from '@/lib/ci'
-import { parseTerraformVariables } from '@/lib/tfparser'
+import { toResponse } from '@/lib/http'
+import { importCiVars } from '@/lib/services/admin/ciSources'
 
 const ImportVarsSchema = z.object({
   branch: z.string().min(1),
@@ -27,25 +24,10 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { branch, filePath } = parsed.data
-
-  const rows = await db
-    .select()
-    .from(ciSources)
-    .where(eq(ciSources.id, parseInt(sourceId, 10)))
-    .limit(1)
-
-  if (!rows.length) return NextResponse.json({ error: 'CI source not found' }, { status: 404 })
-
-  const source = rows[0]
-  const content = await getFileContent(
-    { url: source.url, accessToken: source.accessToken, provider: source.provider },
+  return toResponse(await importCiVars(
+    parseInt(sourceId, 10),
     decodeURIComponent(projectId),
-    branch,
-    filePath,
-  )
-
-  const parameters = parseTerraformVariables(content)
-
-  return NextResponse.json(parameters)
+    parsed.data.branch,
+    parsed.data.filePath,
+  ))
 }

@@ -1,9 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { ciSources } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
-import { listProjects } from '@/lib/ci'
+import { toResponse } from '@/lib/http'
+import { listCiProjects } from '@/lib/services/admin/ciSources'
 
 export async function GET(
   req: NextRequest,
@@ -16,19 +14,5 @@ export async function GET(
   const { searchParams } = new URL(req.url)
   const search = searchParams.get('search') ?? undefined
 
-  const rows = await db
-    .select()
-    .from(ciSources)
-    .where(eq(ciSources.id, parseInt(sourceId, 10)))
-    .limit(1)
-
-  if (!rows.length) return NextResponse.json({ error: 'CI source not found' }, { status: 404 })
-
-  const source = rows[0]
-  const projects = await listProjects(
-    { url: source.url, accessToken: source.accessToken, provider: source.provider },
-    search,
-  )
-
-  return NextResponse.json(projects)
+  return toResponse(await listCiProjects(parseInt(sourceId, 10), search))
 }

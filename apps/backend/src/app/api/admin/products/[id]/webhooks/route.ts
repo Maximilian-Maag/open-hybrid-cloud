@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { db } from '@/lib/db/client'
-import { productWebhooks } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { toResponse } from '@/lib/http'
+import { listProductWebhooks, createProductWebhook } from '@/lib/services/admin/products'
 
 const CreateWebhookSchema = z.object({
   environmentId: z.number().int().positive(),
@@ -21,15 +20,7 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const productId = parseInt(id, 10)
-
-  const rows = await db
-    .select()
-    .from(productWebhooks)
-    .where(eq(productWebhooks.productId, productId))
-    .orderBy(productWebhooks.execOrder)
-
-  return NextResponse.json(rows)
+  return toResponse(await listProductWebhooks(parseInt(id, 10)))
 }
 
 export async function POST(
@@ -40,18 +31,11 @@ export async function POST(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const productId = parseInt(id, 10)
-
   const body = await req.json().catch(() => null)
   const parsed = CreateWebhookSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const [webhook] = await db
-    .insert(productWebhooks)
-    .values({ productId, ...parsed.data })
-    .returning()
-
-  return NextResponse.json(webhook, { status: 201 })
+  return toResponse(await createProductWebhook(parseInt(id, 10), parsed.data), 201)
 }

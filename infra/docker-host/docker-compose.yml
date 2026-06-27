@@ -1,11 +1,15 @@
 version: '3.8'
 
-# Production deployment on Docker host
-# Prerequisite: docker login (private DockerHub image)
-# Configuration: .env file in the same directory (see .env.example)
+# Production deployment on a single Docker host.
+# Prerequisites:
+#   - docker login (to pull images from Docker Hub)
+#   - .env filled in (see .env.example)
+#   - nginx.conf in place (see nginx.conf.example)
+#   - TLS certificates in ./certs/ (fullchain.pem + privkey.pem)
 
 services:
 
+  # ── Reverse proxy ─────────────────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
     container_name: open-hybrid-cloud-nginx
@@ -16,32 +20,51 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro
     depends_on:
-      - webshop
+      - frontend
+      - backend
     restart: unless-stopped
 
-  webshop:
-    image: maximilianmaag/open-hybrid-cloud:${IMAGE_TAG:-latest}
-    container_name: open-hybrid-cloud-app
+  # ── Frontend (Next.js UI) ──────────────────────────────────────────────────────
+  frontend:
+    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-frontend:${IMAGE_TAG:-latest}
+    container_name: open-hybrid-cloud-frontend
     expose:
-      - "8080"
+      - "3000"
     environment:
-      PORT: "8080"
-      DATABASE_URL: "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/openhybridcloud?sslmode=disable"
-      SESSION_SECRET: "${SESSION_SECRET}"
+      NEXTAUTH_URL: "${NEXTAUTH_URL}"
+      NEXTAUTH_SECRET: "${NEXTAUTH_SECRET}"
+      # Server-side URL for frontend → backend communication (internal network)
+      API_URL: "http://backend:3001"
+    depends_on:
+      - backend
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    restart: unless-stopped
+
+  # ── Backend (Next.js API) ──────────────────────────────────────────────────────
+  backend:
+    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-backend:${IMAGE_TAG:-latest}
+    container_name: open-hybrid-cloud-backend
+    expose:
+      - "3001"
+    environment:
+      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/open_hybrid_cloud"
+      JWT_SECRET: "${JWT_SECRET}"
       ADMIN_EMAIL: "${ADMIN_EMAIL}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
-      ENTRA_TENANT_ID: "${ENTRA_TENANT_ID}"
-      ENTRA_CLIENT_ID: "${ENTRA_CLIENT_ID}"
-      ENTRA_CLIENT_SECRET: "${ENTRA_CLIENT_SECRET}"
-      ENTRA_REDIRECT_URL: "${ENTRA_REDIRECT_URL}"
-      SMTP_HOST: "${SMTP_HOST}"
-      SMTP_PORT: "${SMTP_PORT}"
-      SMTP_FROM: "${SMTP_FROM}"
-      SMTP_USERNAME: "${SMTP_USERNAME}"
-      SMTP_PASSWORD: "${SMTP_PASSWORD}"
-      SMTP_TLS: "${SMTP_TLS}"
+      FRONTEND_URL: "${NEXTAUTH_URL}"
       EXCHANGE_RATE_API_URL: "${EXCHANGE_RATE_API_URL}"
-      EXCHANGE_RATE_API_KEY: "${EXCHANGE_RATE_API_KEY}"
+      # Optional — Microsoft Entra ID (OIDC). Leave blank to disable.
+      ENTRA_TENANT_ID: "${ENTRA_TENANT_ID:-}"
+      ENTRA_CLIENT_ID: "${ENTRA_CLIENT_ID:-}"
+      ENTRA_CLIENT_SECRET: "${ENTRA_CLIENT_SECRET:-}"
+      # Optional — SMTP. Leave blank to disable email.
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_FROM: "${SMTP_FROM:-}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      SMTP_TLS: "${SMTP_TLS:-true}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,11 +72,12 @@ services:
       com.centurylinklabs.watchtower.enable: "true"
     restart: unless-stopped
 
+  # ── Database ───────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: open-hybrid-cloud-postgres
     environment:
-      POSTGRES_DB: openhybridcloud
+      POSTGRES_DB: open_hybrid_cloud
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
     volumes:
@@ -65,6 +89,7 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ── Auto-updater ───────────────────────────────────────────────────────────────
   watchtower:
     image: containrrr/watchtower:latest
     container_name: open-hybrid-cloud-watchtower

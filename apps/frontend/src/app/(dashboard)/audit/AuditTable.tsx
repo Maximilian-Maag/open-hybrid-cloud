@@ -11,7 +11,7 @@ interface Props {
   token: string
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
 export function AuditTable({ token }: Props) {
   const [entries, setEntries] = useState<AuditEntry[]>([])

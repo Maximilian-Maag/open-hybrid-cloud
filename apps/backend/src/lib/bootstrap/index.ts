@@ -1,3 +1,5 @@
+import path from 'node:path'
+import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 import bcrypt from 'bcryptjs'
@@ -7,6 +9,8 @@ let bootstrapped = false
 export const runBootstrap = async (): Promise<void> => {
   if (bootstrapped) return
   bootstrapped = true
+
+  await migrate(db, { migrationsFolder: path.join(process.cwd(), 'drizzle') })
 
   const email = process.env.ADMIN_EMAIL
   const password = process.env.ADMIN_PASSWORD

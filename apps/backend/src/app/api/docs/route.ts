@@ -1,6 +1,10 @@
-import { NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
+import { requireAuth, isAuth } from '@/lib/auth/middleware'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const session = await requireAuth(req)
+  if (!isAuth(session)) return session
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>

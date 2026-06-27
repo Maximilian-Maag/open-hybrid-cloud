@@ -281,7 +281,7 @@
     \textbf{Autor}     & Maximilian Jakob Maag B.Sc. \\
     \textbf{Audience}  & Administrators, Developers, Project Managers \\
     \textbf{System}    & Infrastructure Webshop \\
-    \textbf{Stack}     & Go · PostgreSQL · HTMX · OpenTofu · GitLab · Linode \\
+    \textbf{Stack}     & Next.js · TypeScript · PostgreSQL · OpenTofu · GitLab \\
     \textbf{Scope}     & Architecture · Operations · Development · Product Lifecycle \\
     \bottomrule
   \end{tabular}
@@ -2002,25 +2002,21 @@ kubectl get ingress -n open-hybrid-cloud
 
 \end{enumerate}
 
-\notebox{The polling goroutines that track GitLab pipeline status run
-inside each pod. With multiple replicas, advisory locks in PostgreSQL
-(\code{pg\_try\_advisory\_lock}) ensure that only one pod polls each
-pipeline at a time, preventing duplicate status updates.}
+\notebox{The backend is stateless — all state lives in PostgreSQL. Multiple
+replicas can run concurrently without coordination; CI webhook events are
+idempotent so duplicate deliveries are handled safely.}
 
-\section{Database Migrations}
+\section{Database Schema Migrations}
 
-Migrations are versioned SQL files in \file{internal/migrations/}.
-Run migrations before starting the server:
+The schema is managed by Drizzle ORM. Apply it before first start or
+after any schema change:
 
 \begin{lstlisting}[style=bash]
-# Run all pending migrations
-make migrate
-
-# Or directly
-go run ./cmd/migrate
+make db-push
 \end{lstlisting}
 
-Migrations are idempotent (\code{IF NOT EXISTS} guards). Re-running is safe.
+This runs \code{drizzle-kit push} which compares the TypeScript schema
+definition against the live database and applies the diff.
 
 \section{First Login}
 
@@ -2229,28 +2225,11 @@ currently filtered audit log for compliance reporting.
 \section{Prerequisites}
 
 \begin{itemize}
-  \item Go 1.23+
-  \item Node.js 20+ (for Tailwind CSS compilation)
-  \item Docker \& Docker Compose (for local PostgreSQL)
-  \item \code{golangci-lint} (static analysis — installed via \code{make install-requirements})
+  \item Node.js 22+
+  \item pnpm 9+ (\code{npm install -g pnpm})
+  \item Docker \& Docker Compose
   \item \code{pdflatex} or \code{lualatex} (for handbook compilation, optional)
 \end{itemize}
-
-On Ubuntu or Manjaro all prerequisites except \code{pdflatex} can be installed
-with a single command:
-
-\begin{lstlisting}[style=bash]
-make install-requirements
-\end{lstlisting}
-
-This detects the native package manager (\code{pacman} or \code{apt-get}),
-installs Go, Node.js, npm, Docker, and Docker Compose, and then installs the
-Go tools \code{goimports} and \code{golangci-lint} via \code{go install}.
-A re-login is required afterwards for the Docker group membership to take effect.
-
-\notebox{\textbf{Ubuntu note:} The \code{golang-go} package in the Ubuntu repositories
-  may lag behind the latest Go release. If Go~1.23+ is not available, install it
-  manually from \url{https://go.dev/dl/}.}
 
 \section{Quick Start}
 
@@ -2259,22 +2238,26 @@ A re-login is required afterwards for the Docker group membership to take effect
 git clone https://github.com/Maximilian-Maag/open-hybrid-cloud.git
 cd open-hybrid-cloud
 
-# Install all required tools (Ubuntu / Manjaro)
-make install-requirements
+# Install all workspace dependencies
+make install
 
-# Copy and populate environment
-cp .env.example .env
-# Edit .env with your local DB credentials
+# Copy environment files (pre-filled for local dev)
+cp apps/backend/.env.example apps/backend/.env
+cp apps/frontend/.env.example apps/frontend/.env
 
-# Start PostgreSQL and the server in one command
+# Start infrastructure (postgres, mailpit, wiremock, structurizr)
 make dev
 
-# In another terminal: CSS hot-reload
-make css-watch
+# Apply database schema
+make db-push
+
+# Start frontend + backend dev servers
+pnpm dev
 \end{lstlisting}
 
-\code{make dev} starts Docker Compose (PostgreSQL), runs CSS build, then
-starts the Go server with live environment variables from \file{.env}.
+The frontend is available at \url{http://localhost:3000}, the backend API at
+\url{http://localhost:3001}, and the API documentation at
+\url{http://localhost:3001/api/docs}.
 
 \section{Makefile Targets}
 
@@ -2285,33 +2268,20 @@ starts the Go server with live environment variables from \file{.env}.
     \toprule
     \textbf{Target} & \textbf{Action} \\
     \midrule
-    \code{make build}      & Build CSS + Go binary \\
-    \code{make run}        & Start server (requires running DB) \\
-    \code{make migrate}    & Run database migrations \\
-    \code{make css}        & Build Tailwind CSS once \\
-    \code{make css-watch}  & Watch and rebuild CSS on change \\
-    \code{make test}       & Run all Go tests \\
-    \code{make vet}        & Run \code{go vet} \\
-    \code{make lint}       & Run \code{golangci-lint} \\
-    \code{make install-requirements} & Install system packages + Go tools (Ubuntu/Manjaro) \\
-    \code{make docker-build} & Build Docker image \\
-    \code{make dev}        & Start DB + server (development) \\
-    \code{make dev-down}   & Stop DB + server \\
-    \code{make clean}      & Remove build artefacts \\
-    \code{make docs}       & Compile the LaTeX handbook to PDF \\
-    \code{make e2e}        & Run Playwright end-to-end tests (requires Docker) \\
+    \code{make install}      & Install all workspace dependencies \\
+    \code{make dev}          & Start infra containers (postgres, mailpit, wiremock, structurizr) \\
+    \code{make dev-down}     & Stop infra containers \\
+    \code{make build}        & Build all apps \\
+    \code{make lint}         & Lint all apps \\
+    \code{make type-check}   & TypeScript type-check all apps \\
+    \code{make docker-build} & Build both Docker images locally \\
+    \code{make db-push}      & Push Drizzle schema to the database \\
+    \code{make db-studio}    & Open Drizzle Studio \\
+    \code{make docs}         & Compile the LaTeX handbook to PDF \\
+    \code{make clean}        & Remove build artefacts \\
     \bottomrule
   \end{tabular}
 \end{table}
-
-The repository also includes a local smoke test runner in \file{cmd/smoke/}. Run:
-
-\begin{lstlisting}[style=bash]
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable \
-  go run ./cmd/smoke
-\end{lstlisting}
-
-This command creates temporary rows and verifies cascading cleanup for product deletion.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Codebase Structure}
@@ -2321,658 +2291,231 @@ This command creates temporary rows and verifies cascading cleanup for product d
 
 \begin{lstlisting}
 open-hybrid-cloud/
-+-- cmd/
-|   +-- server/         # main.go -- server entry point
-|   +-- migrate/        # main.go -- migration runner
-|   +-- smoke/          # main.go -- smoke test runner
-+-- e2e/                # Playwright end-to-end tests (src/e2e/)
-+-- docs/               # Documentation (this handbook)
++-- apps/
+|   +-- backend/                  # Next.js API-only app (port 3001)
+|   |   +-- src/
+|   |   |   +-- app/api/          # Thin route handlers
+|   |   |   +-- lib/
+|   |   |       +-- auth/         # JWT sign/verify, role middleware
+|   |   |       +-- bootstrap/    # Root user seed on first start
+|   |   |       +-- ci/           # CI provider clients + webhook triggering
+|   |   |       +-- db/           # Drizzle client, schema, query helpers
+|   |   |       +-- http.ts       # toResponse() -- maps Result<T> to NextResponse
+|   |   |       +-- notification/ # Nodemailer email notifications
+|   |   |       +-- services/     # Domain services: all business logic
+|   |   |       |   +-- admin/    # Admin-domain services (catalog, config, ...)
+|   |   |       +-- webhook/      # CI pipeline event handler
+|   |   +-- Dockerfile
+|   |   +-- drizzle.config.ts
+|   +-- frontend/                 # Next.js UI app (port 3000)
+|       +-- src/
+|       |   +-- app/              # App Router pages
+|       |   +-- lib/
+|       |       +-- api.ts        # Typed fetch wrappers
+|       |       +-- auth.ts       # NextAuth.js config
+|       +-- Dockerfile
++-- packages/
+|   +-- types/                    # Shared TypeScript interfaces
++-- infra/
+|   +-- docker-compose.dev.yml    # Local dev: postgres, mailpit, wiremock, structurizr
+|   +-- docker-compose.yml        # Docker host deployment
+|   +-- nginx/                    # Reverse proxy config
+|   +-- wiremock/                 # External API stubs for local dev
+|   +-- helm/                     # Kubernetes Helm chart
++-- e2e/                          # Playwright end-to-end tests
++-- docs/
+|   +-- architecture/
+|   |   +-- workspace.dsl         # Structurizr C4 architecture
 |   +-- handbook.tex
-|   +-- handbook.pdf    # compiled output
-+-- internal/
-|   +-- aitranslation/  # AI translator interface + backends
-|   +-- audit/          # AuditService implementation
-|   +-- auth/           # OIDC, session store, password hashing
-|   +-- config/         # Config struct loaded from env
-|   +-- exchange/       # Currency exchange rate service
-|   +-- handler/        # HTTP handlers and route registration
-|   +-- i18n/           # 25-language key-value translation map
-|   +-- migrations/     # SQL migration files (001_*.sql, ...)
-|   +-- model/          # Shared domain model structs
-|   +-- notification/   # SMTP notification service
-|   +-- repository/     # Repository interfaces
-|   |   +-- postgres/   # pgx/v5 implementations
-|   +-- service/        # Service interfaces
-|       +-- impl/       # Service implementations
-+-- ui/
-    +-- comp/                   # Shared templ component library
-    |   +-- layout.templ        # Full-page layout shell + nav
-    |   +-- badge.templ         # Status badges
-    |   +-- button.templ        # Button variants (Btn, BtnLink, IconBtn)
-    |   +-- card.templ          # Card, CardBody, CardHeader, PageHeader
-    |   +-- form.templ          # Field, Input, Textarea, Select, Checkbox
-    +-- pages/                  # One package per route group
-    |   +-- admin/              # *.templ for all /admin/* pages
-    |   +-- approvals/
-    |   +-- audit/
-    |   +-- auth/
-    |   +-- catalog/
-    |   +-- home/
-    |   +-- infra/
-    |   +-- misc/
-    |   +-- orders/
-    |   +-- projects/
-    |   +-- settings/
-    +-- static/
-    |   +-- css/style.css       # Compiled Tailwind output
-    +-- ui.go                   # embed.FS declarations
+|   +-- handbook.pdf              # compiled output
++-- Makefile
++-- package.json
++-- pnpm-workspace.yaml
 \end{lstlisting}
 
 \section{Layered Architecture}
 
-The code follows a strict layered architecture with downward-only
+The backend follows a strict layered architecture with downward-only
 dependencies:
 
 \[
-\text{Handler} \rightarrow \text{Service} \rightarrow \text{Repository} \rightarrow \text{PostgreSQL}
+\text{Route Handler} \rightarrow \text{Service} \rightarrow \text{Drizzle ORM} \rightarrow \text{PostgreSQL}
 \]
 
 \begin{description}
-  \item[\textbf{Handler layer}] (\file{internal/handler/})
-    HTTP handlers only. Read request, call service, render template.
+  \item[\textbf{Route handlers}] (\file{src/app/api/})
+    Thin HTTP shells: authenticate request, parse and validate body with
+    Zod, call the appropriate service function, return \code{toResponse(result)}.
     No business logic. No SQL.
-  \item[\textbf{Service layer}] (\file{internal/service/})
-    Business rules and orchestration. Calls repositories. Triggers
-    notifications, audit writes, webhook dispatches.
-    Defined as interfaces in \file{service.go}, implemented in
-    \file{impl/}.
-  \item[\textbf{Repository layer}] (\file{internal/repository/})
-    Data access. Defined as interfaces (one per aggregate root).
-    Implemented in \file{postgres/} using pgx. No business logic.
-  \item[\textbf{Model layer}] (\file{internal/model/})
-    Plain Go structs shared across layers. No methods beyond simple
-    helpers.
+  \item[\textbf{Service layer}] (\file{src/lib/services/})
+    All business rules and orchestration. Returns \code{Result<T>} —
+    a discriminated union of \code{Ok<T>} or \code{Err}. Triggers
+    notifications, audit writes, and CI webhook dispatches.
+  \item[\textbf{Shared query helpers}] (\file{src/lib/db/queries.ts})
+    Reusable read-only DB helpers (\code{findProductName},
+    \code{findUserEmail}, \code{findAdminEmails},
+    \code{findCiSourceForEnv}) shared across services and the
+    webhook handler.
+  \item[\textbf{Drizzle ORM}] (\file{src/lib/db/})
+    Type-safe query builder backed by \code{drizzle-kit push} for
+    schema management. The schema definition is the single source of
+    truth; no separate migration files are maintained.
 \end{description}
 
-\section{Template System (templ)}
+\subsection*{\texttt{Result<T>} and \texttt{toResponse}}
 
-All pages are authored as \code{.templ} files and compiled to Go by
-\code{templ generate ./...}. Each \code{.templ} file produces a
-corresponding \code{\_templ.go} file which is committed alongside the
-source.
+All service functions return a \code{Result<T>} discriminated union
+defined in \file{src/lib/services/result.ts}:
 
-Page components receive a typed view struct:
-\begin{lstlisting}[style=go]
-// ui/pages/orders/orders.templ
-templ OrderList(vd view.OrderListView) {
-    @comp.Layout(vd.PageData) {
-        // page content -- type-checked at compile time
-    }
+\begin{lstlisting}[style=ts]
+export type Ok<T>  = { ok: true;  data: T }
+export type Err    = { ok: false; status: number; message: string }
+export type Result<T> = Ok<T> | Err
+
+export const ok  = <T>(data: T): Ok<T> => ({ ok: true, data })
+export const err = (status: number, message: string): Err =>
+  ({ ok: false, status, message })
+\end{lstlisting}
+
+The helper \code{toResponse(result, successStatus?)} in
+\file{src/lib/http.ts} maps a \code{Result} to a \code{NextResponse},
+keeping route handlers free of branching logic:
+
+\begin{lstlisting}[style=ts]
+export async function GET(req: NextRequest) {
+  const session = await requireAuth(req)
+  if (!isAuth(session)) return session
+  return toResponse(await listOrders(session))
 }
 \end{lstlisting}
 
-Handlers assemble the view struct and call \code{renderTempl}:
-\begin{lstlisting}[style=go]
-func (h *Handler) orderList(w http.ResponseWriter, r *http.Request) {
-    orders, _ := h.orders.ListByUser(r.Context(), sess.UserID)
-    renderTempl(w, r, orderpages.OrderList(view.OrderListView{
-        PageData: h.buildPageData(w, r),
-        Orders:   orders,
-    }))
-}
-\end{lstlisting}
-
-\code{buildPageData} assembles the common \code{view.PageData} struct
-providing:
-\begin{description}
-  \item[\code{.Lang}] User's active language code (e.g.\ \code{"de"}).
-  \item[\code{.Brand}] Branding values (colours, shop name, logo flag).
-  \item[\code{.Session}] Current user session (name, role, email).
-  \item[\code{.Flash}] One-time flash message (success/error).
-  \item[\code{.SearchQuery}] Current catalog search term from the URL.
-\end{description}
-
-Translations are called directly in templ files:
-\begin{lstlisting}[style=go]
-{ i18n.T("orders.title", vd.Lang) }  // translated string
-{ string(o.Status) }                  // named type requires cast
-\end{lstlisting}
-
-\section{Design System}
-\label{sec:design-system}
-
-All UI is built from a small, self-contained component library under
-\file{src/ui/comp/}. Components are plain templ functions — no
-framework, no runtime dependencies.
-
-\subsection*{Design Tokens}
-
-Two CSS custom properties drive every coloured surface:
-
-\begin{description}
-  \item[\code{var(--bp)}] Brand primary colour (default \code{\#0f172a},
-        dark slate). Used for header, navigation, footer, active
-        highlights, and price text.
-  \item[\code{var(--bs)}] Brand secondary / accent colour (default
-        \code{\#0ea5e9}, sky blue). Used for CTA buttons, active language
-        badges, and focus rings.
-\end{description}
-
-The values are injected by \code{comp.Layout} as inline CSS custom
-properties on \code{<html>}. Every component should reference these
-variables rather than hardcoding colours:
-
-\begin{lstlisting}[style=go]
-<!-- correct -->
-<div style="background-color:var(--bp)">...</div>
-<a style="color:var(--bs)">...</a>
-
-<!-- wrong: breaks custom branding -->
-<div class="bg-[#0f172a]">...</div>
-\end{lstlisting}
-
-\subsection*{Layout Shell (\texttt{comp.Layout})}
-
-Every page is wrapped in \code{comp.Layout}:
-
-\begin{lstlisting}[style=go]
-templ MyPage(vd view.MyView) {
-    @comp.Layout(vd.PageData) {
-        // page content here
-    }
-}
-\end{lstlisting}
-
-\code{comp.Layout} renders: \texttt{<head>} with meta tags and stylesheets,
-sticky header with brand logo / search bar / user menu / language
-picker, the top navigation bar with role-based links, a flash banner
-slot, the \texttt{<main>} content area (2XL max-width, horizontal
-padding), and the footer. Nothing else should set \code{<html>},
-\code{<head>}, or \code{<body>}.
-
-\subsection*{Page Structure}
-
-\begin{description}
-  \item[\code{comp.PageHeader(title, backHref)}]
-        Full-width page title row with an optional back arrow link.
-        Use at the top of every dedicated page.
-  \item[\code{comp.PageHeaderAction(title, backHref, action)}]
-        Same as above but with an action slot on the right (e.g.\ a
-        primary button).
-  \item[\code{comp.Section(title)}]
-        A titled content group with a subtle separator. Use to divide
-        a page into logical parts.
-  \item[\code{comp.EmptyState(message)}]
-        Centred placeholder message for empty lists or zero results.
-\end{description}
-
-\begin{lstlisting}[style=go]
-@comp.PageHeaderAction("Bestellungen", "/", action) {
-    @comp.BtnLink("Neue Bestellung", "/catalog",
-                  comp.VPrimary, comp.SzMD)
-}
-@comp.Section("Offene Bestellungen") {
-    if len(orders) == 0 {
-        @comp.EmptyState("Keine Bestellungen vorhanden.")
-    }
-    // list rows...
-}
-\end{lstlisting}
-
-\subsection*{Cards}
-
-\begin{description}
-  \item[\code{comp.Card()}]
-        White surface with border and subtle shadow. Use as a generic
-        content container.
-  \item[\code{comp.CardBody()}]
-        Adds consistent padding inside a \code{Card}.
-  \item[\code{comp.CardHeader(title)}]
-        A titled header strip for a card.
-\end{description}
-
-\begin{lstlisting}[style=go]
-@comp.Card() {
-    @comp.CardHeader("Details") {}
-    @comp.CardBody() {
-        // form fields, table, prose, etc.
-    }
-}
-\end{lstlisting}
-
-\subsection*{Buttons}
-
-\begin{description}
-  \item[\code{comp.Btn(label, variant, size, templ.Attributes)}]
-        A \code{<button>} element. Pass extra HTML attributes (e.g.\
-        \code{hx-post}, \code{disabled}) via the fourth argument.
-  \item[\code{comp.BtnLink(label, href, variant, size)}]
-        An \code{<a>} element styled as a button. Use for navigation
-        CTAs.
-  \item[\code{comp.IconBtn(variant, size, templ.Attributes)}]
-        Square icon button; children supply the icon SVG.
-  \item[\code{comp.BtnClass(variant, size)}]
-        Returns just the Tailwind class string. Use when you need to
-        apply button styling to an element not covered by the
-        components above (e.g.\ an HTMX-powered \code{<button>} inside
-        a templ \code{children...} slot).
-\end{description}
-
-\textbf{Variants:}
-
-\begin{tabular}{ll}
-\code{comp.VPrimary}   & Filled, uses \code{var(--bp)} background — main CTAs. \\
-\code{comp.VSecondary} & Outlined border button — secondary actions. \\
-\code{comp.VGhost}     & Transparent, text-only — low-emphasis actions. \\
-\code{comp.VDanger}    & Red filled — destructive actions (delete, reject). \\
-\end{tabular}
-
-\textbf{Sizes:}
-
-\begin{tabular}{ll}
-\code{comp.SzXS} & Extra small — inline or table-row actions. \\
-\code{comp.SzSM} & Small — secondary actions, compact layouts. \\
-\code{comp.SzMD} & Medium (default) — primary page-level CTAs. \\
-\end{tabular}
-
-\begin{lstlisting}[style=go]
-// Primary CTA
-@comp.BtnLink("Jetzt bestellen", "/catalog/"+id,
-              comp.VPrimary, comp.SzMD)
-
-// Danger action with HTMX
-@comp.Btn("Ablehnen", comp.VDanger, comp.SzSM,
-          templ.Attributes{"hx-delete": "/orders/"+id,
-                           "hx-confirm": "Wirklich ablehnen?"})
-
-// Icon button (custom SVG inside)
-@comp.IconBtn(comp.VGhost, comp.SzXS,
-              templ.Attributes{"aria-label": "Bearbeiten"}) {
-    <svg .../>
-}
-\end{lstlisting}
-
-\subsection*{Badges}
-
-\begin{description}
-  \item[\code{comp.Badge(label, color)}]
-        A small inline pill. Use \code{comp.BadgeGreen}, \code{comp.BadgeRed},
-        \code{comp.BadgeYellow}, \code{comp.BadgeBlue}, or
-        \code{comp.BadgeGray} for the \code{color} argument.
-  \item[\code{comp.StatusBadge(status)}]
-        Convenience wrapper that maps an order/resource status string
-        to the appropriate colour via \code{comp.StatusBadgeColor}.
-        No need to branch on status in the template.
-\end{description}
-
-\begin{lstlisting}[style=go]
-// Generic badge
-@comp.Badge("Aktiv", comp.BadgeGreen)
-@comp.Badge("Fehler", comp.BadgeRed)
-
-// Status-aware badge (recommended for orders)
-@comp.StatusBadge(string(order.Status))
-\end{lstlisting}
-
-Status colour mapping (via \code{comp.StatusBadgeColor}):
-
-\begin{tabular}{ll}
-\code{active}, \code{approved}, \code{completed} & Green \\
-\code{pending}                                    & Yellow \\
-\code{failed}, \code{rejected}                    & Red \\
-\code{provisioning}, \code{decommissioning}       & Blue \\
-Everything else                                   & Gray \\
-\end{tabular}
-
-\subsection*{Forms}
-
-All form fields use the components in \file{ui/comp/form.templ} for
-consistent label alignment, spacing, and required-marker rendering.
-
-\begin{description}
-  \item[\code{comp.Field(label, name, required)}]
-        A \code{<label>} + slot wrapper. Place an \code{Input},
-        \code{Select}, or \code{Textarea} inside it.
-  \item[\code{comp.Input(name, type, placeholder, value, attrs)}]
-        Styled \code{<input>}. Pass extra attributes (e.g.\
-        \code{hx-get}, \code{min}, \code{step}) via the last argument.
-  \item[\code{comp.Textarea(name, placeholder, value, rows, attrs)}]
-        Styled \code{<textarea>}.
-  \item[\code{comp.Select(name, attrs)}]
-        Styled \code{<select>} wrapper; children are \code{<option>}
-        elements written inline.
-  \item[\code{comp.Checkbox(name, label, checked)}]
-        A labelled checkbox with correct \code{for}/\code{id} wiring.
-\end{description}
-
-\begin{lstlisting}[style=go]
-<form method="POST" action="/admin/products">
-    @comp.Field("Produktname", "name", true) {
-        @comp.Input("name", "text", "z.B. VM-Platform",
-                    product.Name, nil)
-    }
-    @comp.Field("Beschreibung", "description", false) {
-        @comp.Textarea("description", "", product.Description,
-                       4, nil)
-    }
-    @comp.Field("Kategorie", "category_id", true) {
-        @comp.Select("category_id", nil) {
-            for _, c := range categories {
-                <option value={ fmt.Sprint(c.ID) }
-                        selected?={ c.ID == product.CategoryID }>
-                    { c.Name }
-                </option>
-            }
-        }
-    }
-    @comp.Field("Aktiv", "active", false) {
-        @comp.Checkbox("active", "Produkt ist sichtbar",
-                       product.Active)
-    }
-    @comp.Btn("Speichern", comp.VPrimary, comp.SzMD, nil)
-</form>
-\end{lstlisting}
-
-\subsection*{Flash Messages}
-
-Flash messages are set server-side via \code{redirectWithFlash} and
-rendered automatically by \code{comp.Layout} from \code{pd.Flash}.
-HTMX responses that want to show a flash message use the
-\code{HX-Trigger} response header instead:
-
-\begin{lstlisting}[style=go]
-// In a handler that returns an HTMX partial:
-w.Header().Set("HX-Trigger", `{"showFlash":{"kind":"success",
-    "message":"Gespeichert"}}`)
-\end{lstlisting}
-
-\subsection*{Component Conventions}
-
-\begin{itemize}
-  \item \textbf{Never hardcode colours.} Always use \code{var(--bp)},
-        \code{var(--bs)}, or Tailwind's neutral palette
-        (\code{slate-*}). Hardcoded hex values break custom branding.
-  \item \textbf{Use \code{comp.VPrimary} for the single most important
-        action} on a page. Use \code{comp.VSecondary} or
-        \code{comp.VGhost} for everything else.
-  \item \textbf{No JavaScript.} Interactive disclosure (menus, modals,
-        accordions) uses native \code{<details>/<summary>}.
-        Server-side partial updates use HTMX attributes. Never add
-        \code{<script>} tags to component files.
-  \item \textbf{No inline \code{style} except for brand tokens.}
-        Arbitrary colours, sizes, and spacing belong in Tailwind
-        utility classes, not \code{style=""} attributes.
-  \item \textbf{Prefer \code{comp.StatusBadge} over manual branching.}
-        The mapping is maintained centrally; adding a new status only
-        requires updating \code{comp.StatusBadgeColor}.
-\end{itemize}
-
-\section{Adding Translations}
-
-All UI strings live in \file{internal/i18n/i18n.go} as a
-\code{map[string]map[string]string}. To add a new key:
-
-\begin{lstlisting}[style=go]
-// In translations map:
-"my.new.key": {
-    "en": "English text",
-    "de": "Deutscher Text",
-    "fr": "Texte francais",
-    // ... all 25 language codes
-},
-\end{lstlisting}
-
-Use in templates with \code{\{\{t "my.new.key" .Lang\}\}}.
-
-\section{Database Migrations}
+\section{Database Schema Management}
 \label{sec:dbmigrations}
 
-Migration files follow the naming pattern
-\file{NNN\_description.sql} and are executed in alphabetical order.
-Write migrations defensively:
+The schema is defined in \file{apps/backend/src/lib/db/schema.ts} using
+Drizzle ORM's TypeScript schema builder. Drizzle Kit's \emph{push} mode
+applies the schema directly to the database — no separate SQL migration
+files are maintained.
 
-\begin{lstlisting}[style=sql]
-ALTER TABLE products
-  ADD COLUMN IF NOT EXISTS image_mime TEXT NOT NULL DEFAULT 'image/jpeg';
-
-CREATE TABLE IF NOT EXISTS app_config (
-  id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-  smtp_host TEXT NOT NULL DEFAULT ''
-  -- ...
-);
+\begin{lstlisting}[style=bash]
+make db-push       # applies schema changes to the connected database
+make db-studio     # opens Drizzle Studio (visual schema browser)
 \end{lstlisting}
 
-\warnbox{Never modify a migration that has already been applied to
-production. Always create a new migration file for schema changes.}
+\warnbox{In production, prefer \code{drizzle-kit migrate} with generated
+migration files to retain a full change history. \code{push} is
+suitable for development and initial deployments.}
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Testing}
 \label{ch:testing}
 
-The project uses three complementary test layers.  All three are invoked
-automatically in CI; locally the most common commands are
-\code{make test} (fast, no Docker needed) and \code{make e2e} (full
-browser stack, requires Docker).
+The project uses two complementary test layers, both run automatically
+in CI via \code{pnpm test} and \code{pnpm exec playwright test}.
 
 % ─────────────────────────────────────────────────────────────
-\section{Unit Tests}
+\section{Service and Integration Tests (Vitest)}
 \label{sec:unit-tests}
 
-Unit tests live next to the code they test (\file{*\_test.go}) and use
-Go's standard \code{testing} package.  They cover:
+Tests live alongside the code they cover as \file{*.test.ts} files and
+run under \href{https://vitest.dev}{Vitest}. They target service
+functions directly — no HTTP layer, no mocks for the database.
 
-\begin{itemize}
-  \item \textbf{Service layer} (\file{internal/service/impl/}) ---
-        all service methods are tested with in-memory stubs that
-        implement the repository interfaces.  No database, no network.
-  \item \textbf{Handler helpers} (\file{internal/handler/}) ---
-        language detection (\code{parseAcceptLanguage},
-        \code{detectLang}) and the login rate-limiter are tested with
-        direct function calls.
-  \item \textbf{Polling worker} (\file{internal/polling/}) ---
-        \code{extractProjectID} is tested with table-driven cases.
-\end{itemize}
+\subsection*{Test setup}
 
-Run unit tests:
+A global setup file (\file{src/test/setup.ts}) starts a real
+PostgreSQL container once per test run (via
+\href{https://node.testcontainers.org}{testcontainers}) and exposes
+the connection URL in \code{process.env.DATABASE\_URL}.  A global
+\code{beforeEach} truncates all tables and resets sequences before
+every test so each case starts with a clean slate.
+
+\begin{lstlisting}[style=ts]
+// vitest.config.ts
+export default defineConfig({
+  test: {
+    setupFiles: ['./src/test/setup.ts'],
+    globalSetup: './src/test/globalSetup.ts',
+  },
+})
+\end{lstlisting}
+
+\subsection*{Session helpers}
+
+Tests construct a \code{SessionUser} directly with a small helper
+instead of going through the auth layer:
+
+\begin{lstlisting}[style=ts]
+const makeSession = (overrides?: Partial<SessionUser>): SessionUser => ({
+  id: 1, email: 'test@example.com', name: 'Test',
+  role: 'admin', ...overrides,
+})
+\end{lstlisting}
+
+\subsection*{Mocking side effects}
+
+Services that trigger CI pipelines or send emails are tested with
+\code{vi.mock()} to isolate the unit under test:
+
+\begin{lstlisting}[style=ts]
+vi.mock('@/lib/ci/webhooks', () => ({
+  triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-1']),
+}))
+vi.mock('@/lib/notification', () => ({
+  sendOrderCreated: vi.fn(),
+  sendApprovalRequest: vi.fn(),
+}))
+\end{lstlisting}
+
+Run the test suite:
 \begin{lstlisting}[style=bash]
-make test          # runs go test ./...
-make vet           # go vet (zero warnings required)
-make lint          # golangci-lint
+pnpm --filter backend test          # watch mode
+pnpm --filter backend test --run    # single run (CI)
 \end{lstlisting}
-
-% ─────────────────────────────────────────────────────────────
-\section{Integration Tests (testcontainers-go)}
-\label{sec:integration-tests}
-
-Repository-layer tests in \file{internal/repository/postgres/} spin up
-a real \textbf{PostgreSQL 16 Alpine} container via
-\href{https://golang.testcontainers.org}{testcontainers-go} and run all
-migrations before the first test.
-
-\subsection*{TestMain}
-
-\begin{lstlisting}[style=go]
-// testmain_test.go
-func TestMain(m *testing.M) {
-    ctr, err := tcpostgres.Run(ctx, "postgres:16-alpine",
-        tcpostgres.WithDatabase("testdb"),
-        testcontainers.WithWaitStrategy(
-            wait.ForLog("database system is ready to accept connections").
-                WithOccurrence(2).WithStartupTimeout(60*time.Second),
-        ),
-    )
-    // runs migrations, opens pgxpool
-    os.Exit(m.Run())
-}
-\end{lstlisting}
-
-\subsection*{Test isolation}
-
-Every test that writes data calls \code{resetDB(t)} first, which
-truncates all data tables and restarts identity sequences:
-
-\begin{lstlisting}[style=go]
-func resetDB(t *testing.T) {
-    _, err := testPool.Exec(ctx,
-        "TRUNCATE audit_log, orders, products, ... RESTART IDENTITY CASCADE")
-}
-\end{lstlisting}
-
-\subsection*{Fixture helper}
-
-Tests that need FK-dependent data call \code{newFixture(t)}, which
-creates the full dependency chain in one call:
-
-\begin{lstlisting}
-gitlab_source -> deployment_environment -> user
-             -> category -> product -> project
-\end{lstlisting}
-
-Integration tests require Docker; if the container cannot start the
-test binary exits with code~0 (skip, not fail) so CI stays green on
-environments without Docker.
 
 % ─────────────────────────────────────────────────────────────
 \section{End-to-End Tests with Playwright}
 \label{sec:e2e-tests}
 
-End-to-end tests live in \file{src/e2e/} and drive a real
+End-to-end tests live in \file{e2e/} and drive a real
 \textbf{Chromium} browser via
-\href{https://github.com/playwright-community/playwright-go}{playwright-go}.
-The full application stack --- PostgreSQL, all migrations, all service
-wiring --- is started in-process for each test run.
-
-\subsection*{Architecture}
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  box/.style={rectangle, rounded corners=4pt, draw=ohc-blue!50,
-              fill=ohc-blue!8, minimum width=3.0cm, minimum height=0.9cm,
-              align=center, font=\small},
-  arr/.style={->, >=Stealth, thick, ohc-blue!60},
-  node distance=0.6cm and 1.4cm
-]
-  \node[box] (pg)  {Testcontainers\\PostgreSQL};
-  \node[box, right=of pg] (srv) {\texttt{httptest}\\Server};
-  \node[box, right=of srv] (pw)  {Playwright\\Chromium};
-  \node[box, below=of srv] (wh)  {Mock GitLab\\Webhook Server};
-  \draw[arr] (pg)  -- node[above,font=\tiny] {pool} (srv);
-  \draw[arr] (srv) -- node[above,font=\tiny] {HTTP} (pw);
-  \draw[arr] (srv) -- node[left,font=\tiny]  {POST} (wh);
-\end{tikzpicture}
-\caption{E2E test infrastructure}
-\end{figure}
-
-\begin{description}
-  \item[\textbf{Testcontainers PostgreSQL}]
-        A real \code{postgres:16-alpine} container is started by
-        \code{TestMain}.  All 12 migrations run against it and the
-        admin user is bootstrapped (email \code{admin@e2etest.local},
-        password \code{e2eAdmin123!}).
-  \item[\textbf{\texttt{app.New()}}]
-        The server wiring function from \file{internal/app/wire.go}
-        assembles the full dependency graph (repos, services, handlers)
-        and returns an \code{http.Handler}.
-  \item[\textbf{\texttt{httptest.NewServer}}]
-        Wraps the handler in a local HTTP server on a random port.
-        Playwright's \code{BaseURL} is set to this address.
-  \item[\textbf{Mock GitLab webhook server}]
-        Approving an order triggers a GitLab pipeline via HTTP POST.
-        A second \code{httptest.Server} intercepts these calls and
-        returns \code{\{"id":42\}} so the approval flow completes
-        without a real GitLab instance.
-  \item[\textbf{Chromium (headless)}]
-        One browser is launched for the entire test run.  Each test
-        gets its own \emph{browser context} (isolated cookie jar) via
-        \code{newPage(t)}.
-\end{description}
-
-\subsection*{Test file overview}
+\href{https://playwright.dev}{Playwright for TypeScript}.
 
 \begin{table}[H]
   \centering
   \caption{E2E test files}
-  \begin{tabular}{@{}lll@{}}
+  \begin{tabular}{@{}ll@{}}
     \toprule
-    \textbf{File} & \textbf{Tests} & \textbf{What is verified} \\
+    \textbf{File} & \textbf{What is verified} \\
     \midrule
-    \file{auth\_test.go}     & 3 & Login success, invalid credentials, logout dropdown \\
-    \file{approval\_test.go} & 3 & Empty list, Approve button, Reject button \\
-    \file{catalog\_test.go}  & 3 & Page loads, empty state, product navigation \\
+    \file{login.spec.ts}   & Login success, invalid credentials, logout \\
+    \file{catalog.spec.ts} & Page loads, empty state, product navigation \\
+    \file{admin.spec.ts}   & Admin-only catalog and configuration pages \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\subsection*{Shared helpers}
-
-\begin{description}
-  \item[\code{newPage(t)}]
-        Creates a fresh browser context and page; the context is closed
-        in \code{t.Cleanup}.  Each test gets an empty cookie jar, so
-        sessions never leak between tests.
-  \item[\code{loginAs(t, page, email, password)}]
-        Navigates to \route{/login}, fills both fields, clicks
-        \emph{Submit}, and waits for the redirect to \route{/}.
-  \item[\code{resetData(t)}]
-        Truncates all data tables (except \code{users}) with
-        \code{RESTART IDENTITY CASCADE}, so the bootstrapped admin
-        user survives across tests.
-  \item[\code{seedPendingOrder(t)}]
-        Inserts the full FK chain (gitlab\_source, environment,
-        category, product, project, order) with \code{status =
-        'pending\_approval'}.  Uses \code{webhookBaseURL} so the mock
-        server intercepts the approval webhook call.
-\end{description}
-
-\subsection*{Key selector conventions}
-
-Because approvals use plain HTML \code{<form>} elements (no HTMX),
-tests use stable \textbf{action-attribute selectors}:
-
-\begin{lstlisting}[style=go]
-// approve button for a specific order
-approveForm := page.Locator(
-    fmt.Sprintf(`form[action="/approvals/%d/approve"]`, fix.orderID))
-approveForm.Locator(`button[type="submit"]`).Click()
-
-// reject form is inside a <details> -- open summary first
-page.Locator(`details.mt-4 > summary`).First().Click()
-noteInput := page.Locator(`input[name="note"]`)
-noteInput.WaitFor()            // waits until visible
-noteInput.Fill("reason")
-\end{lstlisting}
-
-After a form submit the 303~redirect reloads the same URL.
-\code{WaitForLoadState(NetworkIdle)} is used instead of
-\code{WaitForURL} (which would return immediately because the URL
-does not change).
-
 \subsection*{Running the tests}
 
 \begin{lstlisting}[style=bash]
-# Headless (CI / default)
-make e2e
+# Requires running frontend + backend + postgres
+pnpm dev            # in one terminal
+npx playwright test # in another terminal
 
-# Headed -- watch the browser while tests run
-E2E_HEADED=true make e2e
-
-# First run downloads Chromium (~170 MB) into ~/.cache/ms-playwright/
+# Headed mode -- watch the browser
+npx playwright test --headed
 \end{lstlisting}
-
-If Docker is unavailable the test binary exits with code~0 (skip, not
-fail), consistent with the integration test policy.
 
 \subsection*{Adding a new E2E test}
 
 \begin{enumerate}
-  \item Call \code{resetData(t)} at the start if the test writes data.
-  \item Use \code{newPage(t)} to get an isolated page.
-  \item Use \code{loginAs} to authenticate if needed.
-  \item Prefer \code{form[action="..."]} and \code{input[name="..."]}
-        selectors over CSS classes (classes change; actions rarely do).
-  \item After a form submit call
-        \code{page.WaitForLoadState(NetworkIdle)} before asserting.
+  \item Create a new \file{*.spec.ts} file in \file{e2e/}.
+  \item Use \code{page.goto()} to navigate; authenticate via the login
+        form if needed.
+  \item Prefer stable selectors: \code{data-testid}, ARIA roles, or
+        exact button text. Avoid CSS classes (they change).
+  \item After a form submit, await \code{page.waitForURL()} or
+        \code{expect(page).toHaveURL()} before asserting page state.
 \end{enumerate}
 
 % ─────────────────────────────────────────────────────────────

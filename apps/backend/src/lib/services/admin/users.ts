@@ -61,8 +61,16 @@ export const createUser = async (input: CreateUserInput): Promise<Result<SafeUse
 
     return ok(user as SafeUser)
   } catch (e) {
-    const msg = e instanceof Error ? e.message : ''
-    if (msg.includes('unique') || msg.includes('duplicate')) {
+    const msgs: string[] = []
+    if (e instanceof Error) {
+      msgs.push(e.message)
+      const cause = (e as { cause?: unknown }).cause
+      if (cause instanceof Error) msgs.push(cause.message)
+      else if (typeof cause === 'object' && cause !== null && 'message' in cause) {
+        msgs.push(String((cause as { message: unknown }).message))
+      }
+    }
+    if (msgs.some((m) => m.includes('unique') || m.includes('duplicate'))) {
       return err(409, 'Email already in use')
     }
     throw e

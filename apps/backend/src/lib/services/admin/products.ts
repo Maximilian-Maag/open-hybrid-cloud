@@ -143,6 +143,14 @@ export const updateProduct = async (
 ): Promise<Result<Product>> => {
   const { name, description, ...productFields } = input
 
+  const existing = await db
+    .select({ id: products.id, baseLanguage: products.baseLanguage })
+    .from(products)
+    .where(eq(products.id, id))
+    .limit(1)
+
+  if (!existing.length) return err(404, 'Not found')
+
   if (Object.keys(productFields).length > 0) {
     await db.update(products).set(productFields).where(eq(products.id, id))
   }

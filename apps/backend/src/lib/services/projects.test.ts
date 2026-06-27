@@ -129,6 +129,16 @@ describe('deleteProject', () => {
     if (!result.ok) expect(result.status).toBe(404)
   })
 
+  it('PM gets 403 when deleting another PM\'s project', async () => {
+    const pm1 = await createUser({ role: 'project_manager', email: 'pm1@test.dev' })
+    const pm2 = await createUser({ role: 'project_manager', email: 'pm2@test.dev' })
+    const p = await seedProject(pm2.id)
+
+    const result = await deleteProject(makeSession(pm1), p.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(403)
+  })
+
   it('deletes the project from DB and returns ok(undefined)', async () => {
     const admin = await createUser({ role: 'admin' })
     const pm = await createUser({ role: 'project_manager', email: 'pm@test.dev' })

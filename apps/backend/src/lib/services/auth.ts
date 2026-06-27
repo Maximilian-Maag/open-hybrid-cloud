@@ -69,6 +69,7 @@ export const updateMe = async (
     .where(eq(users.id, userId))
     .returning(safeUserColumns)
 
+  if (!updated) return err(404, 'User not found')
   return ok(updated as UserProfile)
 }
 

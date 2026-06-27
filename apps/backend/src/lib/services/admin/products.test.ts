@@ -1,10 +1,17 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('@/lib/ai', () => ({
+  translateProduct: vi.fn().mockResolvedValue({}),
+}))
+
 import {
   listProducts,
   createProduct,
   getProductAdmin,
   updateProduct,
   deleteProduct,
+  updateProductImage,
+  translateProductById,
   listTranslations,
   upsertTranslation,
   listProductEnvironments,
@@ -16,6 +23,7 @@ import {
   updateProductWebhook,
   deleteProductWebhook,
 } from './products'
+import { translateProduct } from '@/lib/ai'
 import { db } from '@/lib/db/client'
 import { products, productTranslations } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -25,6 +33,12 @@ import {
   createEnvironment,
   createProduct as seedProduct,
 } from '@/test/helpers'
+
+const mockedTranslate = vi.mocked(translateProduct)
+
+beforeEach(() => {
+  mockedTranslate.mockReset().mockResolvedValue({})
+})
 
 describe('listProducts', () => {
   it('returns all products with English translation', async () => {
@@ -293,5 +307,67 @@ describe('product webhooks', () => {
     if (!created.ok) throw new Error('seed failed')
     const ok = await deleteProductWebhook(p.id, created.data.id)
     expect(ok.ok).toBe(true)
+  })
+})
+
+describe('updateProductImage', () => {
+  it('stores the image buffer in the DB', async () => {
+    const cat = await createCategory()
+    const p = await seedProduct(cat.id, 'Img')
+    const buf = Buffer.from([0x89, 0x50, 0x4e, 0x47])
+
+    const result = await updateProductImage(p.id, buf)
+    expect(result.ok).toBe(true)
+
+    const [row] = await db.select({ image: products.image }).from(products).where(eq(products.id, p.id))
+    expect(row.image).not.toBeNull()
+    if (row.image) expect(Buffer.from(row.image).equals(buf)).toBe(true)
+  })
+})
+
+describe('translateProductById', () => {
+  it('returns 404 for unknown product', async () => {
+    const result = await translateProductById(999_999)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+  })
+
+  it('returns 404 when base translation is missing', async () => {
+    const cat = await createCategory()
+    // Insert product without any translation row
+    const [raw] = await db
+      .insert(products)
+      .values({ categoryId: cat.id, baseLanguage: 'de' })
+      .returning()
+
+    const result = await translateProductById(raw.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+  })
+
+  it('calls translateProduct with base text and upserts returned translations', async () => {
+    const cat = await createCategory()
+    const p = await seedProduct(cat.id, 'Hello')
+
+    mockedTranslate.mockResolvedValueOnce({
+      de: { name: 'Hallo', description: 'Beschreibung' },
+      fr: { name: 'Bonjour', description: 'Description' },
+    })
+
+    const result = await translateProductById(p.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.languages.sort()).toEqual(['de', 'fr'])
+
+    expect(mockedTranslate).toHaveBeenCalledTimes(1)
+
+    const rows = await db
+      .select()
+      .from(productTranslations)
+      .where(eq(productTranslations.productId, p.id))
+    const codes = rows.map((r) => r.languageCode).sort()
+    expect(codes).toContain('de')
+    expect(codes).toContain('fr')
+    const de = rows.find((r) => r.languageCode === 'de')
+    expect(de?.name).toBe('Hallo')
   })
 })

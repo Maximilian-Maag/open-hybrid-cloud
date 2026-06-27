@@ -78,6 +78,12 @@ describe('updateMe', () => {
     const [dbU] = await db.select().from(users).where(eq(users.id, u.id))
     expect(dbU.name).toBe('New Name')
   })
+
+  it('returns 404 for unknown userId', async () => {
+    const result = await updateMe(999_999, { name: 'Ghost' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+  })
 })
 
 describe('changePassword', () => {

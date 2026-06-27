@@ -9,7 +9,7 @@ import {
   sendDecommissioned,
 } from '@/lib/notification'
 import { fetchJobTrace, parseTofuOutputs } from '@/lib/ci'
-import { findProductName, findUserEmail, findCiSourceForEnv } from '@/lib/db/queries'
+import { findProductName, findUserEmail, findCiSourceForEnv, findAdminEmails } from '@/lib/db/queries'
 
 export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> => {
   const pipelineIdJson = JSON.stringify([event.pipelineId])
@@ -125,6 +125,13 @@ export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> =
       const productName = await findProductName(order.productId)
       if (email) {
         await sendProvisioningFailed(email, productName, order.id)
+      }
+
+      const adminEmails = await findAdminEmails()
+      for (const adminEmail of adminEmails) {
+        if (adminEmail !== email) {
+          await sendProvisioningFailed(adminEmail, productName, order.id)
+        }
       }
     }
 

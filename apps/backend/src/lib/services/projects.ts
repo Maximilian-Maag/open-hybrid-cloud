@@ -1,8 +1,9 @@
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
-import { projects, users, costCenters, type Project } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { projects, users, costCenters, infrastructureElements, type Project } from '@/lib/db/schema'
+import { eq, sql, and } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
+import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 
 export interface ProjectRow {
   id: number
@@ -127,11 +128,25 @@ export const deleteProject = async (
   session: SessionUser,
   projectId: number,
 ): Promise<Result<void>> => {
-  const deleted = await db
-    .delete(projects)
-    .where(eq(projects.id, projectId))
-    .returning({ id: projects.id })
+  // ownership check for PMs
+  if (session.role === 'project_manager') {
+    const existing = await db.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, projectId)).limit(1)
+    if (!existing.length) return err(404, 'Project not found')
+    if (existing[0].ownerId !== session.id) return err(403, 'Forbidden')
+  }
 
+  // fire destroy webhooks for all active infra elements
+  const activeInfra = await db
+    .select({ id: infrastructureElements.id, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
+    .from(infrastructureElements)
+    .where(and(eq(infrastructureElements.projectId, projectId), eq(infrastructureElements.status, 'active')))
+
+  for (const infra of activeInfra) {
+    await db.update(infrastructureElements).set({ status: 'decommissioning' }).where(eq(infrastructureElements.id, infra.id))
+    triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy' }).catch(console.error)
+  }
+
+  const deleted = await db.delete(projects).where(eq(projects.id, projectId)).returning({ id: projects.id })
   if (!deleted.length) return err(404, 'Project not found')
   return ok(undefined)
 }

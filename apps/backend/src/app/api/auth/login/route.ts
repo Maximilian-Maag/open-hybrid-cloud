@@ -10,7 +10,39 @@ const LoginSchema = z.object({
   password: z.string().min(1),
 })
 
+const loginAttempts = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_MAX = 10
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
+
+function getClientIp(req: NextRequest): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'unknown'
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const entry = loginAttempts.get(ip)
+  if (!entry || entry.resetAt < now) {
+    loginAttempts.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    return false
+  }
+  if (entry.count >= RATE_LIMIT_MAX) return true
+  entry.count++
+  return false
+}
+
+function resetRateLimit(ip: string): void {
+  loginAttempts.delete(ip)
+}
+
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req)
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: 'Too many login attempts. Try again in 15 minutes.' },
+      { status: 429 },
+    )
+  }
+
   const body = await req.json().catch(() => null)
   const parsed = LoginSchema.safeParse(body)
   if (!parsed.success) {
@@ -23,6 +55,8 @@ export async function POST(req: NextRequest) {
   if (!result.ok) {
     return NextResponse.json({ error: result.message }, { status: result.status })
   }
+
+  resetRateLimit(ip)
 
   const rows = await db
     .select({ id: users.id, email: users.email, name: users.name, role: users.role })

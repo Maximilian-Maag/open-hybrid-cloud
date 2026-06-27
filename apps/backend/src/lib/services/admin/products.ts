@@ -6,6 +6,7 @@ import {
   productWebhooks,
   deploymentEnvironments,
   categories,
+  infrastructureElements,
   type Product,
   type ProductTranslation,
   type ProductEnvironment,
@@ -14,6 +15,7 @@ import {
 import { eq, sql, and } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
+import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 
 export interface ProductAdminRow {
   id: number
@@ -196,11 +198,20 @@ export const updateProduct = async (
 }
 
 export const deleteProduct = async (id: number): Promise<Result<void>> => {
-  const deleted = await db
-    .delete(products)
-    .where(eq(products.id, id))
-    .returning({ id: products.id })
+  const existing = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1)
+  if (!existing.length) return err(404, 'Not found')
 
+  const activeInfra = await db
+    .select({ id: infrastructureElements.id, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
+    .from(infrastructureElements)
+    .where(and(eq(infrastructureElements.productId, id), eq(infrastructureElements.status, 'active')))
+
+  for (const infra of activeInfra) {
+    await db.update(infrastructureElements).set({ status: 'decommissioning' }).where(eq(infrastructureElements.id, infra.id))
+    triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy' }).catch(console.error)
+  }
+
+  const deleted = await db.delete(products).where(eq(products.id, id)).returning({ id: products.id })
   if (!deleted.length) return err(404, 'Not found')
   return ok(undefined)
 }

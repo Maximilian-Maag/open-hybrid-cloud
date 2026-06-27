@@ -6,13 +6,15 @@ import type { InfrastructureElement } from '@open-hybrid-cloud/types'
 import { post } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { t } from '@/lib/i18n'
 
 interface Props {
   item: InfrastructureElement
   token: string
+  lang?: string
 }
 
-export function InfraActions({ item, token }: Props) {
+export function InfraActions({ item, token, lang = 'en' }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -28,7 +30,7 @@ export function InfraActions({ item, token }: Props) {
       setOpen(false)
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to decommission.')
+      setError(err instanceof Error ? err.message : t('orderError', lang))
     } finally {
       setLoading(false)
     }
@@ -37,13 +39,13 @@ export function InfraActions({ item, token }: Props) {
   return (
     <>
       <Button variant="danger" size="sm" onClick={() => setOpen(true)}>
-        Decommission
+        {t('decommission', lang)}
       </Button>
-      <Modal open={open} onClose={() => setOpen(false)} title="Decommission Infrastructure" size="sm">
+      <Modal open={open} onClose={() => setOpen(false)} title={t('decommissionConfirm', lang)} size="sm">
         <p className="text-sm text-slate-600 mb-4">
-          Are you sure you want to decommission{' '}
+          {t('decommissionWarning', lang)}{' '}
           <strong>{item.productName ?? `element #${item.id}`}</strong>?
-          This action cannot be undone.
+          {lang === 'en' && ' This action cannot be undone.'}
         </p>
         {error && (
           <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -51,9 +53,9 @@ export function InfraActions({ item, token }: Props) {
           </div>
         )}
         <div className="flex justify-end gap-3">
-          <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => setOpen(false)}>{t('cancel', lang)}</Button>
           <Button variant="danger" onClick={handleDecommission} disabled={loading}>
-            {loading ? 'Decommissioning…' : 'Decommission'}
+            {loading ? t('decommissioning', lang) : t('decommission', lang)}
           </Button>
         </div>
       </Modal>

@@ -14,15 +14,20 @@ import { post, get } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { ParameterFields } from './ParameterFields'
+import { t } from '@/lib/i18n'
+import { convertPrice } from '@/lib/locale'
 
 interface OrderFormProps {
   product: ProductDetail
   projects: Project[]
   costCenters: CostCenter[]
   token: string
+  lang?: string
+  exchangeRates?: Record<string, number>
+  localeCurrency?: string
 }
 
-export function OrderForm({ product, projects, costCenters, token }: OrderFormProps) {
+export function OrderForm({ product, projects, costCenters, token, lang = 'en', exchangeRates = {}, localeCurrency = 'EUR' }: OrderFormProps) {
   const router = useRouter()
   const [envId, setEnvId] = useState<string>('')
   const [projectId, setProjectId] = useState<string>('')
@@ -54,7 +59,7 @@ export function OrderForm({ product, projects, costCenters, token }: OrderFormPr
   }, [projectId, product.id, token])
 
   function applyTemplate(id: string) {
-    const tpl = templates.find((t) => String(t.id) === id)
+    const tpl = templates.find((tpl) => String(tpl.id) === id)
     if (!tpl) return
     setTemplateId(id)
     setParamValues(tpl.parameters ?? {})
@@ -64,7 +69,7 @@ export function OrderForm({ product, projects, costCenters, token }: OrderFormPr
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!envId || !projectId) {
-      setError('Please select an environment and project.')
+      setError(t('selectEnvProject', lang))
       return
     }
     setLoading(true)
@@ -82,16 +87,24 @@ export function OrderForm({ product, projects, costCenters, token }: OrderFormPr
       router.push('/orders')
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit order.')
+      setError(err instanceof Error ? err.message : t('orderError', lang))
     } finally {
       setLoading(false)
     }
   }
 
+  function formatEnvPrice(env: ProductDetail['environments'][number]): string {
+    const converted = convertPrice(env.price, env.currency, localeCurrency, exchangeRates)
+    if (converted.currency !== env.currency) {
+      return `${converted.amount} ${converted.currency}`
+    }
+    return `${env.price} ${env.currency}`
+  }
+
   if (success) {
     return (
       <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
-        Order submitted successfully! Redirecting…
+        {t('orderSuccess', lang)}
       </div>
     )
   }
@@ -105,33 +118,33 @@ export function OrderForm({ product, projects, costCenters, token }: OrderFormPr
       )}
 
       <Select
-        label="Environment"
+        label={t('environment', lang)}
         required
         value={envId}
         onChange={(e) => setEnvId(e.target.value)}
-        placeholder="Select environment…"
+        placeholder={t('selectEnvironment', lang)}
         options={product.environments.map((env) => ({
           value: env.environmentId,
-          label: `${env.environmentName ?? `Env ${env.environmentId}`} — ${env.price} ${env.currency}`,
+          label: `${env.environmentName ?? `Env ${env.environmentId}`} — ${formatEnvPrice(env)}`,
         }))}
       />
 
       <Select
-        label="Project"
+        label={t('project', lang)}
         required
         value={projectId}
         onChange={(e) => setProjectId(e.target.value)}
-        placeholder="Select project…"
+        placeholder={t('selectProject', lang)}
         options={projects.map((p) => ({ value: p.id, label: p.name }))}
       />
 
       {needsCostCenter && (
         <Select
-          label="Cost Center"
+          label={t('costCenter', lang)}
           required={selectedEnv?.forcedCostCenter}
           value={costCenterId}
           onChange={(e) => setCostCenterId(e.target.value)}
-          placeholder="Select cost center…"
+          placeholder={t('selectCostCenter', lang)}
           options={costCenters
             .filter((cc) => cc.active)
             .map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}` }))}
@@ -141,18 +154,18 @@ export function OrderForm({ product, projects, costCenters, token }: OrderFormPr
       {projectId && templates.length > 0 && (
         <div>
           <Select
-            label="Load parameters from existing deployment (optional)"
+            label={t('loadFromExisting', lang)}
             value={templateId}
             onChange={(e) => applyTemplate(e.target.value)}
-            placeholder="— start fresh —"
-            options={templates.map((t) => ({
-              value: t.id,
-              label: `#${t.id} · ${t.environmentName ?? `Env ${t.environmentId}`} · ${t.deployedAt ? new Date(t.deployedAt).toLocaleDateString() : 'n/a'}`,
+            placeholder={t('startFresh', lang)}
+            options={templates.map((tpl) => ({
+              value: tpl.id,
+              label: `#${tpl.id} · ${tpl.environmentName ?? `Env ${tpl.environmentId}`} · ${tpl.deployedAt ? new Date(tpl.deployedAt).toLocaleDateString() : 'n/a'}`,
             }))}
           />
           {templateId && (
             <p className="mt-1 text-xs text-slate-500">
-              Parameters pre-filled from deployment #{templateId}. Edit as needed before submitting.
+              {t('paramsPrefilled', lang)}{templateId}. Edit as needed before submitting.
             </p>
           )}
         </div>
@@ -160,7 +173,7 @@ export function OrderForm({ product, projects, costCenters, token }: OrderFormPr
 
       {envId && envParameters.length > 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">Parameters</h3>
+          <h3 className="text-sm font-semibold text-slate-700 mb-3">{t('parameters', lang)}</h3>
           <ParameterFields
             parameters={envParameters}
             values={paramValues}
@@ -170,7 +183,7 @@ export function OrderForm({ product, projects, costCenters, token }: OrderFormPr
       )}
 
       <Button type="submit" disabled={loading} className="w-full">
-        {loading ? 'Submitting…' : 'Place Order'}
+        {loading ? t('submitting', lang) : t('placeOrder', lang)}
       </Button>
     </form>
   )

@@ -7,6 +7,12 @@ import type { Product, Category } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
+import { t } from '@/lib/i18n'
+
+function getLang(): string {
+  const match = document.cookie.match(/(?:^|;\s*)lang=([^;]+)/)
+  return match?.[1] ?? navigator.language.split('-')[0] ?? 'en'
+}
 
 export default function CatalogPage() {
   const { data: session } = useSession()
@@ -16,13 +22,18 @@ export default function CatalogPage() {
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [lang, setLang] = useState('en')
+
+  useEffect(() => {
+    setLang(getLang())
+  }, [])
 
   const load = useCallback(async () => {
     if (!token) return
     setLoading(true)
     try {
       const [prods, cats] = await Promise.all([
-        get<Product[]>('/api/catalog?lang=en', token),
+        get<Product[]>(`/api/catalog?lang=${lang}`, token),
         get<Category[]>('/api/admin/categories', token),
       ])
       setProducts(prods ?? [])
@@ -32,7 +43,7 @@ export default function CatalogPage() {
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [token, lang])
 
   useEffect(() => { load() }, [load])
 
@@ -47,12 +58,12 @@ export default function CatalogPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <PageHeader title="Product Catalog" subtitle="Browse and order infrastructure products." />
+      <PageHeader title={t('productCatalog', lang)} subtitle={t('productCatalogSubtitle', lang)} />
 
       <div className="flex flex-col sm:flex-row gap-3">
         <input
           type="search"
-          placeholder="Search products…"
+          placeholder={t('searchProducts', lang)}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -92,7 +103,7 @@ export default function CatalogPage() {
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">No products found.</div>
+        <div className="text-center py-12 text-slate-400">{t('noProducts', lang)}</div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((product) => (
@@ -107,7 +118,7 @@ export default function CatalogPage() {
                   {categories.find((c) => c.id === product.categoryId)?.name ?? 'Uncategorized'}
                 </span>
                 <Link href={`/catalog/${product.id}`}>
-                  <Button size="sm">Order</Button>
+                  <Button size="sm">{t('placeOrder', lang)}</Button>
                 </Link>
               </div>
             </div>

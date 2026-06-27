@@ -1,7 +1,8 @@
 import { db } from '@/lib/db/client'
-import { categories, type Category } from '@/lib/db/schema'
-import { eq, asc } from 'drizzle-orm'
+import { categories, products, infrastructureElements, type Category } from '@/lib/db/schema'
+import { eq, asc, and } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
+import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 
 export interface CreateCategoryInput {
   name: string
@@ -57,11 +58,26 @@ export const updateCategory = async (
 }
 
 export const deleteCategory = async (id: number): Promise<Result<void>> => {
-  const deleted = await db
-    .delete(categories)
-    .where(eq(categories.id, id))
-    .returning({ id: categories.id })
+  const existing = await db.select({ id: categories.id }).from(categories).where(eq(categories.id, id)).limit(1)
+  if (!existing.length) return err(404, 'Not found')
 
+  const activeInfra = await db
+    .select({
+      id: infrastructureElements.id,
+      productId: infrastructureElements.productId,
+      environmentId: infrastructureElements.environmentId,
+      parameters: infrastructureElements.parameters,
+    })
+    .from(infrastructureElements)
+    .innerJoin(products, eq(infrastructureElements.productId, products.id))
+    .where(and(eq(products.categoryId, id), eq(infrastructureElements.status, 'active')))
+
+  for (const infra of activeInfra) {
+    await db.update(infrastructureElements).set({ status: 'decommissioning' }).where(eq(infrastructureElements.id, infra.id))
+    triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy' }).catch(console.error)
+  }
+
+  const deleted = await db.delete(categories).where(eq(categories.id, id)).returning({ id: categories.id })
   if (!deleted.length) return err(404, 'Not found')
   return ok(undefined)
 }

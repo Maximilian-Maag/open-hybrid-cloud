@@ -1,17 +1,31 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import type { InfrastructureElement } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from './InfraActions'
+import { t, isValidLang } from '@/lib/i18n'
+
+async function detectLang(): Promise<string> {
+  const cookieStore = await cookies()
+  const langCookie = cookieStore.get('lang')?.value
+  if (langCookie && isValidLang(langCookie)) return langCookie
+  const hdrs = await headers()
+  const acceptLang = hdrs.get('accept-language') ?? ''
+  const code = acceptLang.split(',')[0]?.split(';')[0]?.trim().split('-')[0].toLowerCase() ?? 'en'
+  if (isValidLang(code)) return code
+  return 'en'
+}
 
 export default async function InfrastructurePage() {
   const session = await auth()
   if (!session) redirect('/login')
 
   const token = (session as unknown as { apiToken: string }).apiToken
+  const lang = await detectLang()
 
   let elements: InfrastructureElement[] = []
   try {
@@ -31,18 +45,18 @@ export default async function InfrastructurePage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <PageHeader
-        title="Infrastructure"
-        subtitle="Deployed infrastructure elements grouped by project."
+        title={t('infrastructureTitle', lang)}
+        subtitle={t('infrastructureSubtitle', lang)}
       />
 
       {elements.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">No infrastructure elements yet.</div>
+        <div className="text-center py-12 text-slate-400">{t('noInfrastructure', lang)}</div>
       ) : (
         Object.entries(byProject).map(([projectName, items]) => (
           <Card key={projectName} title={projectName}>
             <div className="space-y-3">
               {items.map((item) => (
-                <InfraRow key={item.id} item={item} token={token} />
+                <InfraRow key={item.id} item={item} token={token} lang={lang} />
               ))}
             </div>
           </Card>
@@ -52,8 +66,9 @@ export default async function InfrastructurePage() {
   )
 }
 
-function InfraRow({ item, token }: { item: InfrastructureElement; token: string }) {
+function InfraRow({ item, token, lang }: { item: InfrastructureElement; token: string; lang: string }) {
   const outputs = Object.entries(item.outputs ?? {})
+  const outputLabel = outputs.length === 1 ? t('output', lang) : t('outputs', lang)
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="flex items-start justify-between">
@@ -66,12 +81,12 @@ function InfraRow({ item, token }: { item: InfrastructureElement; token: string 
           </div>
           <p className="text-xs text-slate-500">
             {item.environmentName} ·{' '}
-            {item.deployedAt ? new Date(item.deployedAt).toLocaleString() : 'Not deployed'}
+            {item.deployedAt ? new Date(item.deployedAt).toLocaleString() : t('notDeployed', lang)}
           </p>
           {outputs.length > 0 && (
             <details className="mt-2">
               <summary className="cursor-pointer text-xs text-blue-600 hover:text-blue-700 select-none">
-                {outputs.length} output{outputs.length !== 1 ? 's' : ''}
+                {outputs.length} {outputLabel}
               </summary>
               <div className="mt-2 rounded bg-slate-50 p-2 space-y-1">
                 {outputs.map(([k, v]) => (
@@ -84,7 +99,7 @@ function InfraRow({ item, token }: { item: InfrastructureElement; token: string 
             </details>
           )}
         </div>
-        <InfraActions item={item} token={token} />
+        <InfraActions item={item} token={token} lang={lang} />
       </div>
     </div>
   )

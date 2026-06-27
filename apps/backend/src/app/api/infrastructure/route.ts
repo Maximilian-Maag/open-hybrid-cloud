@@ -1,11 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
 import { db } from '@/lib/db/client'
 import {
   infrastructureElements,
   deploymentEnvironments,
   projects,
-  productTranslations,
 } from '@/lib/db/schema'
 import { eq, sql } from 'drizzle-orm'
 
@@ -14,6 +13,18 @@ export async function GET(req: NextRequest) {
   if (!isAuth(session)) return session
 
   const isAdmin = session.role === 'admin' || session.role === 'root'
+  const { searchParams } = new URL(req.url)
+  const filterProductId = searchParams.get('productId')
+  const filterProjectId = searchParams.get('projectId')
+
+  const conditions: ReturnType<typeof sql>[] = []
+  if (!isAdmin) conditions.push(sql`${projects.ownerId} = ${session.id}`)
+  if (filterProductId) conditions.push(sql`${infrastructureElements.productId} = ${Number(filterProductId)}`)
+  if (filterProjectId) conditions.push(sql`${infrastructureElements.projectId} = ${Number(filterProjectId)}`)
+
+  const where = conditions.length > 0
+    ? conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`)
+    : undefined
 
   const rows = await db
     .select({
@@ -42,11 +53,7 @@ export async function GET(req: NextRequest) {
       eq(infrastructureElements.environmentId, deploymentEnvironments.id),
     )
     .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
-    .where(
-      isAdmin
-        ? undefined
-        : sql`${projects.ownerId} = ${session.id}`,
-    )
+    .where(where)
     .orderBy(sql`${infrastructureElements.deployedAt} DESC`)
 
   return NextResponse.json(rows)

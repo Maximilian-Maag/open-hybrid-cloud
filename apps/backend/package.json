@@ -6,11 +6,14 @@
     "dev": "next dev --port 3001",
     "build": "next build",
     "start": "next start --port 3001",
-    "lint": "next lint",
+    "lint": "next lint --max-warnings 0",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.2.0",
@@ -21,6 +24,7 @@
     "neverthrow": "^8.2.0",
     "next": "^15.3.0",
     "nodemailer": "^6.10.0",
+    "pdfkit": "^0.19.1",
     "postgres": "^3.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -30,11 +34,15 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.0.0",
     "@types/nodemailer": "^6.4.17",
+    "@types/pdfkit": "^0.17.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
     "drizzle-kit": "^0.30.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.3.0",
-    "typescript": "^5.7.0"
+    "msw": "^2.14.6",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.9"
   }
 }

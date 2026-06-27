@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type {
   ProductDetail,
@@ -8,8 +8,9 @@ import type {
   CostCenter,
   CreateOrderRequest,
   Order,
+  InfrastructureElement,
 } from '@open-hybrid-cloud/types'
-import { post } from '@/lib/api'
+import { post, get } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { ParameterFields } from './ParameterFields'
@@ -31,12 +32,34 @@ export function OrderForm({ product, projects, costCenters, token }: OrderFormPr
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
+  const [templates, setTemplates] = useState<InfrastructureElement[]>([])
+  const [templateId, setTemplateId] = useState<string>('')
+
   const selectedEnv = product.environments.find((e) => String(e.environmentId) === envId)
   const needsCostCenter =
     selectedEnv?.costCenterMode === 'select' || selectedEnv?.costCenterMode === 'overhead'
   const envParameters = product.parameters.filter(
     (p) => p.environmentId === null || String(p.environmentId) === envId,
   )
+
+  // Load existing deployments for the selected project+product so the user can copy parameters
+  useEffect(() => {
+    if (!projectId) { setTemplates([]); setTemplateId(''); return }
+    get<InfrastructureElement[]>(
+      `/api/infrastructure?productId=${product.id}&projectId=${projectId}`,
+      token,
+    )
+      .then((rows) => { setTemplates(rows ?? []); setTemplateId('') })
+      .catch(() => { setTemplates([]) })
+  }, [projectId, product.id, token])
+
+  function applyTemplate(id: string) {
+    const tpl = templates.find((t) => String(t.id) === id)
+    if (!tpl) return
+    setTemplateId(id)
+    setParamValues(tpl.parameters ?? {})
+    if (String(tpl.environmentId) !== envId) setEnvId(String(tpl.environmentId))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -115,11 +138,32 @@ export function OrderForm({ product, projects, costCenters, token }: OrderFormPr
         />
       )}
 
+      {projectId && templates.length > 0 && (
+        <div>
+          <Select
+            label="Load parameters from existing deployment (optional)"
+            value={templateId}
+            onChange={(e) => applyTemplate(e.target.value)}
+            placeholder="— start fresh —"
+            options={templates.map((t) => ({
+              value: t.id,
+              label: `#${t.id} · ${t.environmentName ?? `Env ${t.environmentId}`} · ${t.deployedAt ? new Date(t.deployedAt).toLocaleDateString() : 'n/a'}`,
+            }))}
+          />
+          {templateId && (
+            <p className="mt-1 text-xs text-slate-500">
+              Parameters pre-filled from deployment #{templateId}. Edit as needed before submitting.
+            </p>
+          )}
+        </div>
+      )}
+
       {envId && envParameters.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Parameters</h3>
           <ParameterFields
             parameters={envParameters}
+            values={paramValues}
             onChange={setParamValues}
           />
         </div>

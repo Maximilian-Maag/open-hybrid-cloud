@@ -56,12 +56,13 @@ export function AuditTable({ token }: Props) {
 
   useEffect(() => { load() }, [load])
 
-  function handleExport() {
+  function handleExport(format: 'csv' | 'pdf') {
     const params = new URLSearchParams()
     if (userFilter) params.set('userId', userFilter)
     if (actionFilter) params.set('action', actionFilter)
     if (fromFilter) params.set('from', fromFilter)
     if (toFilter) params.set('to', toFilter)
+    params.set('format', format)
     window.open(`${API_URL}/api/audit/export?${params.toString()}&token=${token}`, '_blank')
   }
 
@@ -97,9 +98,12 @@ export function AuditTable({ token }: Props) {
         />
       </div>
 
-      <div className="flex justify-end">
-        <Button variant="secondary" size="sm" onClick={handleExport}>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" size="sm" onClick={() => handleExport('csv')}>
           Export CSV
+        </Button>
+        <Button variant="secondary" size="sm" onClick={() => handleExport('pdf')}>
+          Export PDF
         </Button>
       </div>
 

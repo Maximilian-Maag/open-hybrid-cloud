@@ -19,10 +19,17 @@ export function ParameterFields({ parameters, values: externalValues, onChange }
     return init
   })
 
+  // Sync when parent pushes new values (e.g. template pre-fill)
   useEffect(() => {
-    onChange(values)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!externalValues || Object.keys(externalValues).length === 0) return
+    const next: Record<string, string> = {}
+    for (const p of parameters) {
+      next[p.name] = externalValues[p.name] ?? p.defaultValue ?? ''
+    }
+    setValues(next)
+    onChange(next)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalValues])
 
   function update(name: string, value: string) {
     const next = { ...values, [name]: value }

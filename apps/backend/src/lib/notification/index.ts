@@ -38,9 +38,9 @@ const getSmtpSettings = async (): Promise<SmtpSettings | null> => {
 
   const cfg = rows[0]
   smtpSettingsCache = {
-    host: cfg.smtpHost!,
-    port: cfg.smtpPort!,
-    from: cfg.smtpFrom!,
+    host: cfg.smtpHost ?? '',
+    port: cfg.smtpPort ?? 0,
+    from: cfg.smtpFrom ?? '',
     user: cfg.smtpUser ?? '',
     pass: cfg.smtpPass ?? '',
     tls: cfg.smtpTls ?? true,
@@ -86,6 +86,18 @@ export const sendOrderCreated = async (
     to,
     `Order #${orderId} Created — ${productName}`,
     `<p>Your order <strong>#${orderId}</strong> for <strong>${productName}</strong> has been created and is pending approval.</p>`,
+  )
+
+export const sendApprovalRequest = async (
+  to: string,
+  productName: string,
+  orderId: number,
+  ordererName: string,
+): Promise<void> =>
+  send(
+    to,
+    `Approval Required: Order #${orderId} — ${productName}`,
+    `<p><strong>${ordererName}</strong> has placed order <strong>#${orderId}</strong> for <strong>${productName}</strong> and it requires your approval.</p><p>Please log in to review and approve or reject the order.</p>`,
   )
 
 export const sendOrderApproved = async (

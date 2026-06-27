@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
 import { db } from '@/lib/db/client'
@@ -9,12 +9,12 @@ import {
   productTranslations,
   deploymentEnvironments,
   users,
+  ciSources,
 } from '@/lib/db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
-import { sendOrderCreated } from '@/lib/notification'
+import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerPipeline } from '@/lib/ci'
-import { ciSources } from '@/lib/db/schema'
 
 const CreateOrderSchema = z.object({
   projectId: z.number().int().positive(),
@@ -202,13 +202,19 @@ export async function POST(req: NextRequest) {
       await sendOrderCreated(userRows[0].email, productName, order.id)
     }
 
-    // Notify admins
+    // Notify admins that approval is needed
+    const ordererRows = await db
+      .select({ name: users.name })
+      .from(users)
+      .where(eq(users.id, session.id))
+      .limit(1)
+    const ordererName = ordererRows[0]?.name ?? `User #${session.id}`
     const adminRows = await db
       .select({ email: users.email })
       .from(users)
       .where(sql`${users.role} IN ('admin', 'root') AND ${users.active} = true`)
     for (const admin of adminRows) {
-      await sendOrderCreated(admin.email, productName, order.id)
+      await sendApprovalRequest(admin.email, productName, order.id, ordererName)
     }
 
     return NextResponse.json(order, { status: 201 })

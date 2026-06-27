@@ -556,11 +556,17 @@ The system has three containers (plus the shared database):
     secure server-side session.
   \item[\textbf{Backend API} (port 3001)]
     A Next.js 15 application running in API-only mode — no UI pages.
-    Route handlers under \file{src/app/api/} expose the full REST
-    surface. JWT middleware (\file{src/lib/auth/}) verifies every
-    authenticated request. Drizzle ORM manages all database access.
-    The webhook handler (\file{src/lib/webhook/}) processes inbound
-    pipeline status events from CI providers.
+    Route handlers under \file{src/app/api/} are thin shells: each one
+    checks authentication, parses and validates the request body with
+    Zod, delegates to a typed service function in \file{src/lib/services/},
+    and maps the returned \code{Result<T>} to a \code{NextResponse} via
+    \code{toResponse()}. All business logic, state machine transitions,
+    CI orchestration, email notifications, and audit writes live in the
+    service layer, never in route handlers. JWT middleware
+    (\file{src/lib/auth/}) verifies every authenticated request.
+    Drizzle ORM manages all database access. The webhook handler
+    (\file{src/lib/webhook/}) processes inbound pipeline status events
+    from CI providers.
   \item[\textbf{PostgreSQL Database}]
     The single source of truth. Stores the product catalog, orders,
     infrastructure state, audit log, branding, configuration, users, and
@@ -579,9 +585,9 @@ its major logical components.
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[node distance=0.7cm and 0.6cm]
 
-  % Top row — route handler groups
+  % Top row — thin route handler groups
   \node[c4component] (auth)
-    {\textbf{Auth Routes}\\[2pt]\scriptsize login, me, logout};
+    {\textbf{Auth Routes}\\[2pt]\scriptsize login, me, password};
   \node[c4component, right=of auth] (catalog)
     {\textbf{Catalog Routes}\\[2pt]\scriptsize Products, categories, pricing};
   \node[c4component, right=of catalog] (order)
@@ -591,24 +597,49 @@ its major logical components.
   \node[c4component, right=of infra] (admin)
     {\textbf{Admin Routes}\\[2pt]\scriptsize Catalog \& config mgmt};
 
-  % Middle row — lib modules
-  \node[c4component, below=0.9cm of auth] (jwtmw)
+  % Middle row — service layer
+  \node[c4component, below=0.9cm of auth] (sauth)
+    {\textbf{Auth Service}\\[2pt]\scriptsize credentials, SSO upsert};
+  \node[c4component, right=of sauth] (sorder)
+    {\textbf{Order Service}\\[2pt]\scriptsize state machine, CI trigger};
+  \node[c4component, right=of sorder] (sinfra)
+    {\textbf{Infrastructure Service}\\[2pt]\scriptsize decommission logic};
+  \node[c4component, right=of sinfra] (sadmin)
+    {\textbf{Admin Services}\\[2pt]\scriptsize CRUD, exchange, config};
+
+  % Lower-middle row — lib modules
+  \node[c4component, below=0.9cm of sauth] (jwtmw)
     {\textbf{JWT Middleware}\\[2pt]\scriptsize Verify token, role guards};
   \node[c4component, right=of jwtmw] (ci)
     {\textbf{CI Dispatch}\\[2pt]\scriptsize GitLab/GitHub/Bitbucket};
   \node[c4component, right=of ci] (webhook)
     {\textbf{Webhook Handler}\\[2pt]\scriptsize Inbound pipeline events};
   \node[c4component, right=of webhook] (email)
-    {\textbf{Email}\\[2pt]\scriptsize nodemailer SMTP};
-  \node[c4component, right=of email] (bootstrap)
-    {\textbf{Bootstrap}\\[2pt]\scriptsize Root user seed};
+    {\textbf{Notification}\\[2pt]\scriptsize nodemailer SMTP};
+  \node[c4component, right=of email] (queries)
+    {\textbf{Query Helpers}\\[2pt]\scriptsize findProductName, findUserEmail};
 
   % Bottom row — data layer
   \node[c4database, below=0.9cm of jwtmw, text width=2.8cm] (drizzle)
     {\textbf{Drizzle ORM}\\[2pt]\scriptsize Schema + typed queries};
 
-  % Arrows: components to drizzle
-  \foreach \n in {auth, catalog, order, infra, admin, jwtmw, ci, webhook, email, bootstrap}
+  % Arrows: routes → services
+  \draw[->, thick] (auth) -- (sauth);
+  \draw[->, thick] (catalog) -- (sorder);
+  \draw[->, thick] (order) -- (sorder);
+  \draw[->, thick] (infra) -- (sinfra);
+  \draw[->, thick] (admin) -- (sadmin);
+
+  % Arrows: services to lib
+  \foreach \n in {sauth, sorder, sinfra, sadmin}
+    \draw[->, thick, draw=gray!60] (\n) -- (ci);
+  \foreach \n in {sauth, sorder, sinfra, sadmin}
+    \draw[->, thick, draw=gray!60] (\n) -- (email);
+  \foreach \n in {sauth, sorder, sinfra, sadmin}
+    \draw[->, thick, draw=gray!60] (\n) -- (queries);
+
+  % Arrows: everything to drizzle
+  \foreach \n in {jwtmw, ci, webhook, email, queries, sauth, sorder, sinfra, sadmin}
     \draw[->, thick, draw=gray!40, dashed] (\n) -- (drizzle);
 
 \end{tikzpicture}
@@ -619,56 +650,80 @@ its major logical components.
 
 \subsection{Component Descriptions}
 
-\begin{longtable}{@{}L{3.0cm}L{10cm}@{}}
+Route handlers are intentionally thin: they perform authentication, validate the request with
+Zod, call a service function, and return a \code{NextResponse} via \code{toResponse()}.
+All domain logic is in the service layer.
+
+\begin{longtable}{@{}L{3.2cm}L{9.8cm}@{}}
   \toprule
   \textbf{Component} & \textbf{Responsibility} \\
   \midrule
   \endhead
+  \multicolumn{2}{@{}l}{\textit{Route Handlers (\file{src/app/api/})}} \\[2pt]
   Auth Routes &
-    \route{POST /api/auth/login} validates credentials with bcryptjs,
-    issues a signed HS256 JWT (24 h). \route{GET /api/auth/me} returns
-    the caller's profile. \route{POST /api/auth/logout} is a stateless
-    no-op (JWT expiry handles invalidation). \\[4pt]
+    Parse credentials or OIDC callback, call the auth service, return a
+    signed JWT. No business logic inline. \\[4pt]
   Catalog Routes &
-    Returns products grouped by category (\route{GET /api/catalog}).
-    Converts prices using stored exchange rates. \\[4pt]
+    Parse language/filter query params, call the catalog service. \\[4pt]
   Order Routes &
-    \route{POST /api/catalog/:id/order} creates an order and dispatches
-    the CI webhook immediately for Admins, or parks it for approval for
-    Project Managers. \route{POST /api/orders/:id/approve} and
-    \route{POST /api/orders/:id/reject} complete the approval flow with
-    email notifications and audit writes. \\[4pt]
+    Validate \code{CreateOrderSchema} / \code{RejectSchema}, call the orders or
+    approvals service, return the result. \\[4pt]
   Infrastructure Routes &
-    Shows deployed resources role-scoped by caller. Triggers the CI
-    destroy webhook for decommissioning. Supports ``use as template''
-    to pre-fill a new order. \\[4pt]
+    Role-scoped list and decommission trigger; delegates entirely to the
+    infrastructure service. \\[4pt]
   Admin Routes &
-    All Root-only pages: categories, products (CRUD, image upload,
-    webhook management, parameter import from \code{variables.tf} via
-    GitLab API), environments, CI sources, cost centers, currencies,
-    SMTP config, branding, users. \\[4pt]
+    Thin CRUD shells for catalog, environments, CI sources, users, config,
+    and branding — each delegates to the corresponding admin service. \\[6pt]
+  \multicolumn{2}{@{}l}{\textit{Service Layer (\file{src/lib/services/})}} \\[2pt]
+  Auth Service &
+    Verifies bcrypt passwords, upserts SSO users, returns or invalidates JWTs.
+    Returns \code{Result<string>} (token) or a typed error. \\[4pt]
+  Order / Approval Services &
+    Implements the order state machine: \textit{pending} →
+    \textit{provisioning} → \textit{completed} / \textit{failed} / \textit{rejected}.
+    Calls \code{triggerProductWebhooks}, writes the audit log,
+    and dispatches email notifications. \\[4pt]
+  Infrastructure Service &
+    Ownership check for project managers, status guard (\textit{active} only),
+    CI destroy trigger, audit write. \\[4pt]
+  Admin Services &
+    One service file per domain (\file{users}, \file{products}, \file{categories},
+    \file{environments}, \file{ciSources}, \file{parameters}, \file{costCenters},
+    \file{exchangeRates}, \file{config}, \file{branding}).
+    Each returns typed \code{Result<T>} values. \\[6pt]
+  \multicolumn{2}{@{}l}{\textit{Shared Libraries (\file{src/lib/})}} \\[2pt]
+  Result Type &
+    \file{lib/services/result.ts} — \code{Ok<T>} / \code{Err} discriminated union
+    with \code{ok()} and \code{err(status, message)} constructors.
+    \code{lib/http.ts} maps any \code{Result<T>} to a \code{NextResponse}
+    via \code{toResponse()}. \\[4pt]
+  Query Helpers &
+    \file{lib/db/queries.ts} — shared read helpers used across multiple services:
+    \code{findProductName}, \code{findUserEmail}, \code{findAdminEmails},
+    \code{findCiSourceForEnv}. Eliminates repeated join patterns. \\[4pt]
   JWT Middleware &
     Verifies Bearer tokens on every authenticated route using the
     \code{jose} library. Exports typed role guard wrappers
-    (\code{requireAdmin}, \code{requireRoot}) used by route handlers. \\[4pt]
+    (\code{requireRole}, \code{requireAuth}). \\[4pt]
   CI Dispatch &
-    Provider-agnostic module in \file{src/lib/ci/} that sends HTTP
-    POST webhooks to GitLab, GitHub, or Bitbucket pipeline trigger
-    endpoints with OpenTofu parameters as JSON. \\[4pt]
+    Provider-agnostic module in \file{src/lib/ci/} that triggers pipelines via
+    GitLab, GitHub, or Bitbucket APIs. \file{lib/ci/webhooks.ts} exposes
+    \code{triggerProductWebhooks()} — fetches webhooks in \code{exec\_order},
+    calls \code{triggerPipeline} for each, returns pipeline IDs. \\[4pt]
   Webhook Handler &
     Inbound handler at \route{POST /api/webhooks/\{provider\}/pipeline}.
-    Maps CI pipeline status events to order/infrastructure state updates
-    and dispatches email notifications on completion or failure. \\[4pt]
-  Email &
-    Wraps nodemailer. Silently no-ops when SMTP is not configured.
-    Configuration is read from environment variables. \\[4pt]
+    Maps CI pipeline status events to order/infrastructure state updates;
+    fetches job traces to parse OpenTofu outputs on success. \\[4pt]
+  Notification &
+    Wraps nodemailer in \file{src/lib/notification/}. Seven typed send functions;
+    all user-controlled strings are HTML-escaped before embedding.
+    Silently no-ops when SMTP is not configured. \\[4pt]
   Bootstrap &
     On startup, seeds the initial Root account from
     \env{ADMIN\_EMAIL} / \env{ADMIN\_PASSWORD} if no users exist. \\[4pt]
   Drizzle ORM &
     Schema definitions and typed query builders in
-    \file{src/lib/db/}. All database access goes through Drizzle;
-    raw SQL is not used. \\
+    \file{src/lib/db/}. All database access goes through Drizzle. \\
   \bottomrule
   \caption{Component descriptions}
   \label{tab:components}
@@ -681,51 +736,105 @@ its major logical components.
 \subsection{Order Placement Flow (Project Manager)}
 
 \begin{enumerate}
-  \item Frontend calls \route{POST /api/catalog/:id/order} with JWT in
+  \item Frontend calls \route{POST /api/orders} with JWT in
         the \code{Authorization} header.
-  \item The backend route handler validates the JWT via middleware,
-        verifies the request body, and writes an order record with
-        status \code{pending\_approval} to PostgreSQL via Drizzle.
-  \item The notification module sends an approval-request email to all
-        Admins via nodemailer.
-  \item An \code{order\_placed} row is appended to the audit log.
-  \item The handler returns the new order ID; the frontend navigates
-        to the order detail page showing \textit{Awaiting Approval}.
+  \item The route handler verifies the JWT via middleware and validates
+        the request body with Zod's \code{CreateOrderSchema}.
+  \item The handler calls \code{createOrder(session, input)} in
+        \file{lib/services/orders.ts}. The service inserts an order with
+        status \code{pending}, writes an audit entry, sends an order-created
+        email to the orderer, and sends approval-request emails to all
+        active Admins.
+  \item \code{createOrder} returns \code{Ok<CreatedOrder>}; \code{toResponse}
+        serialises it as HTTP 201.
+  \item The frontend navigates to the order detail page showing
+        \textit{Awaiting Approval}.
 \end{enumerate}
 
 \subsection{Order Approval \& Provisioning Flow}
 
 \begin{enumerate}
-  \item Admin calls \route{POST /api/orders/:id/approve}.
-  \item The backend handler updates the order status to
-        \code{provisioning} and reads the webhook configuration for the
-        product-environment pair.
-  \item For each configured webhook (ordered by \code{exec\_order}): an
-        HTTP POST is sent to the CI provider trigger URL with the
-        OpenTofu parameters as JSON.
-  \item The CI provider starts a pipeline and returns a pipeline ID.
-  \item The backend stores the pipeline ID(s) in the
-        \code{pipeline\_ids} JSONB column.
+  \item Admin calls \route{POST /api/approvals/:id/approve}.
+  \item The route handler validates auth and delegates to
+        \code{approveOrder(session, orderId)} in
+        \file{lib/services/approvals.ts}.
+  \item The service fetches the order (returns \code{Err 400} if not
+        \code{pending}), then calls \code{triggerProductWebhooks()} in
+        \file{lib/ci/webhooks.ts}. For each configured webhook ordered by
+        \code{exec\_order}, an HTTP POST is sent to the CI trigger URL with
+        the OpenTofu parameters.
+  \item Returned pipeline IDs are stored in the \code{pipeline\_id} JSONB
+        column; an infra element is created; an audit row is written; the
+        orderer receives an approval email.
   \item When the CI pipeline completes, the provider calls
-        \route{POST /api/webhooks/\{provider\}/pipeline} with the
-        result. The webhook handler updates order and infrastructure
-        state and sends a deployment-complete email.
-  \item On pipeline failure, status becomes \code{failed} and failure
-        emails go to the orderer and all Admins.
+        \route{POST /api/webhooks/\{provider\}/pipeline}. The webhook
+        handler in \file{lib/webhook/handler.ts} transitions the order to
+        \code{completed}, parses OpenTofu outputs from the job trace, and
+        sends a provisioning-complete email.
+  \item On pipeline failure the order transitions to \code{failed} and a
+        failure email is sent to the orderer.
 \end{enumerate}
 
 \subsection{Request–Response Lifecycle (Next.js)}
 
-User interactions are handled by React Server Components or client
-components that call the backend REST API via typed wrappers in
-\file{src/lib/api.ts}. The backend returns JSON; the frontend
-re-renders the affected React subtree. NextAuth v5 maintains the
-user session in an encrypted server-side cookie; the session token
-is forwarded as a Bearer JWT on every backend API call.
+Every backend request follows the same four-step shell:
+
+\begin{enumerate}
+  \item \textbf{Auth} — \code{requireAuth(req)} or \code{requireRole('admin')(req)}
+        verifies the Bearer JWT and returns a typed \code{SessionUser}.
+  \item \textbf{Parse} — Zod \code{safeParse} validates the request body or
+        query params; invalid input returns HTTP 400 immediately.
+  \item \textbf{Service} — the route handler calls the appropriate service
+        function, which performs all DB work, CI calls, emails, and audit
+        writes, and returns \code{Result<T>}.
+  \item \textbf{Respond} — \code{toResponse(result, successStatus)} converts
+        \code{Ok<T>} to \code{200}/\code{201} JSON and \code{Err} to the
+        appropriate HTTP error response.
+\end{enumerate}
+
+User interactions on the frontend are handled by React Server Components or
+client components that call the backend via typed wrappers in
+\file{src/lib/api.ts}. NextAuth v5 stores the JWT in an encrypted
+server-side session cookie and forwards it as a Bearer token on every
+backend call.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Design Decisions \& Technology Rationale}
 \label{ch:design}
+
+\section{Service Layer Architecture}
+\label{sec:service-layer}
+
+\textbf{Decision:} All business logic is extracted from Next.js route handlers
+into typed service functions under \file{src/lib/services/}. Route handlers
+are restricted to three responsibilities: authentication check, Zod validation,
+and returning a \code{NextResponse} via \code{toResponse()}.
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item \textbf{Testability:} Service functions take plain typed inputs and
+        return \code{Result<T>} values. They can be tested directly without
+        constructing \code{NextRequest} objects or mocking the HTTP layer.
+  \item \textbf{Single responsibility:} Route handlers contain no
+        \code{if/else} branches for business rules, no duplicate DB query
+        patterns, and no notification calls. Every policy decision (state
+        machine, ownership check, role guard) is in one place.
+  \item \textbf{Shared infrastructure:} Repeated query patterns that
+        previously appeared six or more times inline (\textit{fetch product
+        name}, \textit{fetch user email}, \textit{get CI source for
+        environment}) are consolidated in \file{lib/db/queries.ts} and
+        called from services and the webhook handler alike.
+  \item \textbf{Explicit error paths:} The \code{Result<T>} discriminated
+        union (\code{Ok<T>} | \code{Err}) makes every failure path visible
+        at the call site. There are no silent \code{null} returns or
+        exception-based control flow for business logic errors.
+\end{itemize}
+
+The pattern is: \code{ok(data)} for success, \code{err(httpStatus, message)}
+for domain errors (not found, forbidden, bad state). Database exceptions from
+Drizzle bubble up as unhandled rejections and are caught by Next.js's error
+boundary, returning a generic 500. This keeps error-handling code proportional
+to the actual surface that needs it.
 
 \section{Next.js Monorepo}
 

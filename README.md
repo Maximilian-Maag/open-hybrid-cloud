@@ -84,13 +84,16 @@ open-hybrid-cloud/
 ├── apps/
 │   ├── backend/                  # Next.js API-only app (port 3001)
 │   │   ├── src/
-│   │   │   ├── app/api/          # REST endpoints (route handlers)
+│   │   │   ├── app/api/          # Thin route handlers (auth → service → toResponse)
 │   │   │   └── lib/
 │   │   │       ├── auth/         # JWT sign/verify, role middleware
 │   │   │       ├── bootstrap/    # Root user seed on first start
-│   │   │       ├── ci/           # GitLab/GitHub/Bitbucket dispatch
-│   │   │       ├── db/           # Drizzle client + schema
-│   │   │       ├── email/        # nodemailer notifications
+│   │   │       ├── ci/           # GitLab/GitHub/Bitbucket dispatch + webhook triggering
+│   │   │       ├── db/           # Drizzle client, schema, shared query helpers
+│   │   │       ├── http.ts       # toResponse() — maps Result<T> to NextResponse
+│   │   │       ├── notification/ # nodemailer email notifications
+│   │   │       ├── services/     # Domain services: all business logic, returns Result<T>
+│   │   │       │   └── admin/    # Admin-domain services (catalog, config, users, …)
 │   │   │       └── webhook/      # CI pipeline event handler
 │   │   ├── Dockerfile
 │   │   └── drizzle.config.ts

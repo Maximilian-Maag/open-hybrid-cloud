@@ -25,20 +25,26 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
                 ui_settings = component "Settings" "User profile update and password change."
             }
 
-            backend = container "Backend API" "RESTful API with all business logic; purely functional, Zod-validated, Drizzle ORM, OpenAPI docs at /api/docs." "Next.js / TypeScript / Drizzle ORM / Zod / JWT" {
+            backend = container "Backend API" "RESTful API; thin route handlers delegate to a typed service layer; Zod-validated inputs; Result<T> error handling; OpenAPI docs at /api/docs." "Next.js / TypeScript / Drizzle ORM / Zod / JWT" {
 
-                api_auth = component "Auth API" "Local and OIDC login issuing signed JWTs; middleware enforces role hierarchy on all routes."
-                api_catalog = component "Catalog API" "Paginated, filterable product list with details, prices and images."
-                api_orders = component "Orders API" "Creates and reads orders; admin orders auto-approve and trigger CI pipeline immediately."
-                api_approvals = component "Approvals API" "Lists pending orders; approve triggers CI pipeline, reject stores comment and notifies."
-                api_infrastructure = component "Infrastructure API" "Lists infrastructure by role; decommission triggers CI destroy pipeline."
-                api_admin = component "Administration API" "Full CRUD for catalog, environments, CI sources, users and system config; repo browser and variables.tf import."
-                api_webhook = component "CI Webhook Receiver" "Receives CI provider pipeline events, verifies signatures, parses outputs and transitions order/infra status."
-                api_audit = component "Audit API" "Writes immutable audit entries; filterable log with CSV/PDF export for admins."
-                api_notification = component "Notification" "Sends transactional emails for order and deployment lifecycle events via Nodemailer."
+                api_auth = component "Auth Routes" "Thin HTTP shell: parse credentials or OIDC callback, call auth service, return signed JWT."
+                api_catalog = component "Catalog Routes" "Thin HTTP shell: parse language/filter params, call catalog service."
+                api_orders = component "Order Routes" "Thin HTTP shell: validate body, call orders or approvals service."
+                api_infrastructure = component "Infrastructure Routes" "Thin HTTP shell: call infrastructure service for list and decommission."
+                api_admin = component "Admin Routes" "Thin HTTP shells for catalog, environments, CI sources, users and config — each delegates to its service."
+                api_webhook = component "CI Webhook Receiver" "Verifies provider signature/token; calls handlePipelineEvent to transition order/infra state and parse OpenTofu outputs."
+                api_audit = component "Audit Routes" "Thin HTTP shell: call audit service for filterable log and CSV/PDF export."
+                svc_orders = component "Orders Service" "State machine: pending → provisioning → completed/failed/rejected. Calls CI trigger, writes audit, sends emails."
+                svc_approvals = component "Approvals Service" "Approve (triggers CI, creates infra element) and reject (stores note, notifies orderer)."
+                svc_infrastructure = component "Infrastructure Service" "Ownership check, status guard, CI destroy trigger, audit write."
+                svc_admin = component "Admin Services" "One service per domain: users, products, categories, environments, ciSources, parameters, costCenters, exchangeRates, config, branding."
+                svc_auth = component "Auth Service" "Bcrypt credential verify, SSO user upsert, JWT issue. Returns Result<T>."
+                lib_queries = component "Query Helpers" "Shared DB reads used across services: findProductName, findUserEmail, findAdminEmails, findCiSourceForEnv."
+                lib_result = component "Result<T> / toResponse" "Ok<T>|Err discriminated union; toResponse() maps Result to NextResponse."
+                api_notification = component "Notification" "Seven typed send functions; HTML-escapes all user strings before embedding in email bodies."
                 api_ai = component "AI Translation" "Translates product content into 25 languages via the configured AI provider."
                 api_exchange = component "Exchange Rates" "Fetches and caches exchange rates; converts amounts between currencies."
-                api_ci = component "CI Provider Client" "Unified client for GitLab, GitHub and Bitbucket: trigger pipelines, browse repos, fetch job traces."
+                api_ci = component "CI Provider Client" "Unified client for GitLab, GitHub and Bitbucket: trigger pipelines, browse repos, fetch job traces. triggerProductWebhooks() orchestrates webhook execOrder."
                 api_docs = component "OpenAPI / Swagger UI" "Swagger UI and OpenAPI 3.0 spec auto-generated from Zod schemas."
             }
 
@@ -104,36 +110,49 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         ui_settings -> backend "GET /api/users/me, PUT /api/users/me, PUT /api/users/me/password" "JSON/HTTPS"
 
         # Relationships — backend components
-        api_auth -> database "Verifies credentials, upserts SSO users, reads roles" "SQL/TCP"
-        api_auth -> oidc_provider "Validates OIDC ID token" "OIDC/HTTPS"
-        api_catalog -> database "Reads products, categories, translations, prices, exchange rates" "SQL/TCP"
-        api_orders -> database "Creates and reads orders with parameters" "SQL/TCP"
-        api_orders -> api_ci "Triggers provisioning pipeline for direct admin orders" "internal"
-        api_orders -> api_notification "Triggers order received notification" "internal"
-        api_orders -> api_audit "Logs order creation" "internal"
-        api_approvals -> database "Reads pending orders, writes approval or rejection" "SQL/TCP"
-        api_approvals -> api_ci "Triggers provisioning pipeline on approval" "internal"
-        api_approvals -> api_notification "Triggers approval or rejection notification" "internal"
-        api_approvals -> api_audit "Logs approval or rejection with comment" "internal"
-        api_infrastructure -> database "Reads infrastructure elements, projects, environments" "SQL/TCP"
-        api_infrastructure -> api_ci "Triggers destroy pipeline for decommissioning" "internal"
-        api_infrastructure -> api_audit "Logs decommission request" "internal"
-        api_admin -> database "CRUD for all catalog and configuration entities" "SQL/TCP"
-        api_admin -> api_ci "Browses repositories, imports variables.tf" "internal"
-        api_admin -> api_ai "Triggers AI translation for a product" "internal"
-        api_admin -> api_exchange "Refreshes stored exchange rates" "internal"
+        # Route handler → service
+        api_auth -> svc_auth "Delegates credential/SSO logic" "internal"
+        api_orders -> svc_orders "Delegates order creation" "internal"
+        api_orders -> svc_approvals "Delegates approve/reject" "internal"
+        api_infrastructure -> svc_infrastructure "Delegates list and decommission" "internal"
+        api_admin -> svc_admin "Delegates all CRUD operations" "internal"
+        api_audit -> lib_queries "Uses shared query helpers" "internal"
+
+        # Services → shared libraries
+        svc_orders -> api_ci "triggerProductWebhooks" "internal"
+        svc_orders -> api_notification "sendOrderCreated, sendApprovalRequest" "internal"
+        svc_orders -> lib_queries "findProductName, findUserEmail, findAdminEmails" "internal"
+        svc_approvals -> api_ci "triggerProductWebhooks" "internal"
+        svc_approvals -> api_notification "sendOrderApproved, sendOrderRejected" "internal"
+        svc_approvals -> lib_queries "findProductName, findUserEmail" "internal"
+        svc_infrastructure -> api_ci "triggerProductWebhooks with TF_ACTION=destroy" "internal"
+        svc_infrastructure -> lib_queries "findCiSourceForEnv" "internal"
+        svc_auth -> oidc_provider "Validates OIDC ID token" "OIDC/HTTPS"
+        svc_admin -> api_ai "Triggers AI translation for a product" "internal"
+        svc_admin -> api_exchange "Refreshes stored exchange rates" "internal"
+        svc_admin -> api_ci "Browses repositories, imports variables.tf" "internal"
+
+        # Webhook handler
         gitlab -> api_webhook "Pushes pipeline status events" "JSON/HTTPS"
         api_webhook -> database "Writes status transitions and OpenTofu outputs" "SQL/TCP"
         api_webhook -> api_ci "Fetches job trace to parse OpenTofu outputs on success" "internal"
         api_webhook -> api_notification "Triggers completion or failure notification" "internal"
-        api_webhook -> api_audit "Logs pipeline status transition" "internal"
-        api_audit -> database "Reads and writes audit entries" "SQL/TCP"
+        api_webhook -> lib_queries "findProductName, findUserEmail, findCiSourceForEnv" "internal"
+
+        # External I/O
         api_notification -> smtp "Dispatches emails via Nodemailer" "SMTP"
-        api_notification -> database "Reads recipient addresses" "SQL/TCP"
         api_ai -> ai_translation "Calls configured AI provider API" "JSON/HTTPS"
         api_exchange -> exchange_rate_api "Fetches current rates" "JSON/HTTPS"
         api_exchange -> database "Stores and reads cached rates" "SQL/TCP"
         api_ci -> gitlab "CI provider API calls (GitLab v4, GitHub REST, Bitbucket 2.0)" "JSON/HTTPS"
+
+        # DB access (all services and helpers)
+        svc_auth -> database "Reads and writes users" "SQL/TCP"
+        svc_orders -> database "Reads and writes orders, infra elements" "SQL/TCP"
+        svc_approvals -> database "Reads and writes orders, infra elements" "SQL/TCP"
+        svc_infrastructure -> database "Reads and writes infra elements, projects" "SQL/TCP"
+        svc_admin -> database "CRUD for all catalog and configuration entities" "SQL/TCP"
+        lib_queries -> database "Shared read queries" "SQL/TCP"
 
         # Deployment — Docker Host
         deploymentEnvironment "Docker Host" {

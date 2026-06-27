@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
 import { db } from '@/lib/db/client'
 import { auditLog, users } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { eq, and, gte, lte, ilike, sql } from 'drizzle-orm'
 import PDFDocument from 'pdfkit'
 
 interface AuditRow {
@@ -23,14 +23,12 @@ async function fetchRows(req: NextRequest): Promise<AuditRow[]> {
   const to = searchParams.get('to')
 
   const conditions = []
-  if (userId) conditions.push(sql`${auditLog.userId} = ${Number(userId)}`)
-  if (action) conditions.push(sql`${auditLog.action} ILIKE ${'%' + action + '%'}`)
-  if (from) conditions.push(sql`${auditLog.createdAt} >= ${new Date(from)}`)
-  if (to) conditions.push(sql`${auditLog.createdAt} <= ${new Date(to + 'T23:59:59Z')}`)
+  if (userId) conditions.push(eq(auditLog.userId, Number(userId)))
+  if (action) conditions.push(ilike(auditLog.action, `%${action}%`))
+  if (from) conditions.push(gte(auditLog.createdAt, new Date(from)))
+  if (to) conditions.push(lte(auditLog.createdAt, new Date(`${to}T23:59:59Z`)))
 
-  const where = conditions.length > 0
-    ? conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`)
-    : undefined
+  const where = conditions.length > 0 ? and(...conditions) : undefined
 
   return db
     .select({

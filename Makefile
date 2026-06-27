@@ -1,5 +1,8 @@
-.PHONY: help install dev dev-down build lint type-check test docker-build-backend docker-build-frontend docker-build db-push db-studio docs docs-clean clean
+.PHONY: help install dev dev-down build lint type-check test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio docs docs-clean clean
 
+# pnpm is installed via standalone script — add its bin dir to PATH so make can find it
+PNPM_HOME ?= $(HOME)/.local/share/pnpm
+export PATH := $(PNPM_HOME)/bin:$(PATH)
 PNPM := pnpm
 
 help:
@@ -11,7 +14,8 @@ help:
 	@echo "  build                 build all workspace packages"
 	@echo "  lint                  lint all apps"
 	@echo "  type-check            TypeScript type-check all apps"
-	@echo "  test                  run tests"
+	@echo "  test                  run unit and integration tests"
+	@echo "  test-e2e              run end-to-end Playwright tests (requires live stack)"
 	@echo "  docker-build-backend  build backend Docker image"
 	@echo "  docker-build-frontend build frontend Docker image"
 	@echo "  docker-build          build both Docker images"
@@ -40,7 +44,11 @@ type-check:
 	$(PNPM) --parallel --filter './apps/*' exec tsc --noEmit
 
 test:
-	$(PNPM) --parallel --filter './apps/*' test --passWithNoTests
+	$(PNPM) --filter backend test
+	$(PNPM) --filter frontend test
+
+test-e2e:
+	$(PNPM) test:e2e
 
 docker-build-backend:
 	docker build -t open-hybrid-cloud-backend:latest -f apps/backend/Dockerfile .

@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose'
 import type { SessionUser } from '@open-hybrid-cloud/types'
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET!)
+const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? '')
 const ALG = 'HS256'
 
 export const signToken = (user: SessionUser): Promise<string> =>

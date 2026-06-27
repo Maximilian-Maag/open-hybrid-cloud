@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { Card } from '@/components/ui/Card'
 
 const adminSections = [
   { href: '/admin/categories', title: 'Categories', description: 'Manage product categories' },

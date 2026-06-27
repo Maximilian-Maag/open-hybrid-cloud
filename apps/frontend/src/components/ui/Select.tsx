@@ -1,4 +1,4 @@
-import { SelectHTMLAttributes } from 'react'
+import type { SelectHTMLAttributes } from 'react'
 
 interface SelectOption {
   value: string | number

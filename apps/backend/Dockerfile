@@ -9,7 +9,7 @@ FROM base AS deps
 RUN npm install -g pnpm
 
 # Copy workspace manifests needed for dependency resolution
-COPY package.json pnpm-workspace.yaml ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/backend/package.json ./apps/backend/package.json
 COPY packages/types/package.json ./packages/types/package.json
 
@@ -35,7 +35,6 @@ ENV NODE_ENV=production
 # standalone output bundles everything needed — just copy it
 COPY --from=builder /app/apps/backend/.next/standalone ./
 COPY --from=builder /app/apps/backend/.next/static ./apps/backend/.next/static
-COPY --from=builder /app/apps/backend/public ./apps/backend/public 2>/dev/null || true
 
 EXPOSE 3001
 

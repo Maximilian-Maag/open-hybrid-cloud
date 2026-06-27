@@ -25,5 +25,5 @@ export const runBootstrap = async (): Promise<void> => {
     active: true,
   })
 
-  console.log(`[bootstrap] Root user created: ${email}`)
+  console.warn(`[bootstrap] Root user created: ${email}`)
 }

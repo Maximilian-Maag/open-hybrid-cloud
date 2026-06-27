@@ -158,6 +158,14 @@
   commentstyle=\color{gray},
   stringstyle=\color{ForestGreen},
 }
+\lstdefinestyle{typescript}{
+  language=Java,
+  morekeywords={export,import,const,let,async,await,type,interface,
+                from,of,extends,implements,as,satisfies,return,true,false},
+  keywordstyle=\color{MidnightBlue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{ForestGreen},
+}
 
 % ── Callout boxes ─────────────────────────────────────────────
 \usepackage[most]{tcolorbox}
@@ -875,86 +883,58 @@ variables (OpenTofu parameters) as JSON. The pipeline configuration
 (\file{.gitlab-ci.yml}) lives in the same repository as the IaC code,
 making the trigger configuration auditable and version-controlled.
 
-\section{Internationalization: 25 Languages}
+\section{JWT Authentication}
 
-\textbf{Decision:} All UI strings are externalized in a key-value i18n
-map covering 25 languages (all EU official languages plus Russian and
-Ukrainian).
-
-\textbf{Rationale:}
-Open Hybrid Cloud operates across Europe. The map is defined in
-\file{internal/i18n/i18n.go} as a Go map literal for compile-time
-completeness checking. Translation of product content (not UI strings)
-is delegated to the optional AI translation service.
-
-\section{Session Security: Encrypted Cookies}
-
-\textbf{Decision:} User sessions are stored in encrypted, signed HTTP
-cookies — not in the database or server-side session store.
+\textbf{Decision:} The backend issues signed JWTs (HS256, 24-hour
+expiry) via the \code{jose} library. The frontend stores the JWT in
+a NextAuth v5 server-side session cookie and forwards it as a
+\code{Bearer} token on every backend API call.
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item No database round-trip on every request to look up a session.
-  \item Horizontal scaling is trivial: no shared session store required.
-  \item The \code{SESSION\_KEY} (32-byte, hex-encoded) is used to both
-        sign and encrypt the cookie content via AES-GCM, so the server
-        can verify integrity without a separate HMAC key.
-  \item Cookies are set with \code{HttpOnly}, \code{Secure}, and
-        \code{SameSite=Lax} to mitigate XSS session theft and CSRF.
-  \item Logout invalidates the session by overwriting the cookie with an
-        empty, expired value — no server-side revocation list needed for
-        the MVP threat model.
+  \item \textbf{Stateless backend:} No session table, no Redis — every
+        authenticated request is self-contained. The backend verifies
+        the JWT signature and extracts the user identity and role from
+        the token payload without a database lookup.
+  \item \textbf{Clean separation:} The backend exposes a pure REST
+        interface; the frontend manages session lifecycle via NextAuth v5.
+        The JWT is the only shared contract between the two containers.
+  \item \textbf{Horizontal scaling:} Any backend replica can verify any
+        token — no sticky sessions or shared session store required.
+  \item \textbf{Logout:} Because JWTs are stateless, logout is
+        implemented by deleting the NextAuth session cookie on the
+        frontend. The short 24-hour expiry limits the window for a
+        captured token. A token revocation list can be added later if
+        needed.
 \end{itemize}
 
-\textbf{Alternative considered:} Server-side sessions in PostgreSQL.
-Rejected to avoid the extra table and join on every authenticated
-request. If revocation of individual sessions at scale is required this
-can be introduced as a future enhancement.
+\textbf{Secret management:} \env{JWT\_SECRET} (backend, min.\ 32 chars)
+signs and verifies tokens. \env{NEXTAUTH\_SECRET} (frontend) encrypts the
+NextAuth session cookie. Both must be kept secret and rotated on breach.
 
 \section{Password Hashing: bcrypt}
 
 \textbf{Decision:} Local user passwords are hashed with bcrypt (cost
-factor~12) via \code{golang.org/x/crypto/bcrypt}.
+factor~12) via the \code{bcryptjs} npm package.
 
 \textbf{Rationale:}
 \begin{itemize}
   \item bcrypt is an adaptive, memory-hard function specifically designed
         for password storage; it is resistant to GPU-accelerated
         dictionary attacks.
-  \item Cost factor~12 takes ~250\,ms on modern hardware — slow enough
-        to deter brute-force while still acceptable for interactive login.
-  \item The Go standard-library-adjacent \code{x/crypto} package is
-        actively maintained by the Go team.
+  \item Cost factor~12 takes approximately 250\,ms on modern hardware —
+        slow enough to deter brute-force attacks while still acceptable
+        for interactive login.
+  \item \code{bcryptjs} is a pure-JavaScript implementation with no
+        native bindings, making it portable across Node.js versions and
+        compatible with Next.js standalone output.
   \item Passwords are never stored in plaintext or with reversible
         encryption.
 \end{itemize}
 
 \textbf{Alternative considered:} Argon2id. More modern, but bcrypt is
-widely understood, well-tested in Go, and sufficient for the low
+widely understood, well-tested in Node.js, and sufficient for the low
 login-volume use case.
-
-\section{Static Asset Embedding: \texttt{embed.FS}}
-
-\textbf{Decision:} HTML templates and static assets (CSS, JS, images)
-are embedded into the Go binary at compile time using the
-\code{//go:embed} directive and \code{embed.FS}.
-
-\textbf{Rationale:}
-\begin{itemize}
-  \item The resulting binary is fully self-contained — no external
-        file system paths need to match the deployment environment.
-  \item Deployment is a single \code{COPY} in the Dockerfile (multi-stage
-        build); no volume mounts are required for templates.
-  \item Template changes are compiled into the binary, so a deployment
-        is always atomic: the binary and its templates are in sync.
-  \item The Go compiler resolves embed paths at build time, making
-        missing-file bugs a compile error rather than a runtime panic.
-\end{itemize}
-
-\textbf{Trade-off:} Hot-reloading templates during development is not
-possible without restarting the server. The \code{make dev} target runs
-the server with \code{go run}, so a simple restart is fast enough for
-the development workflow.
 
 % ─────────────────────────────────────────────────────────────
 %  PART II — INFRASTRUCTURE AS CODE
@@ -1382,37 +1362,63 @@ Single state (\code{observability-prod}). Manual apply.
 
 \section{Environment Variables}
 
-The webshop is configured entirely via environment variables. Copy
-\file{.env.example} to \file{.env} and populate the following:
+The system is configured via two \file{.env} files — one per application
+container. Copy the provided example files and populate the values before
+starting:
+
+\begin{lstlisting}[style=bash]
+cp apps/backend/.env.example  apps/backend/.env
+cp apps/frontend/.env.example apps/frontend/.env
+\end{lstlisting}
+
+\textbf{Backend} (\file{apps/backend/.env}):
 
 \begin{table}[H]
   \centering
-  \caption{Required environment variables}
+  \caption{Backend environment variables}
   \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
     \toprule
     \textbf{Variable} & \textbf{Description} & \textbf{Required} \\
     \midrule
-    \env{DATABASE\_URL}     & PostgreSQL DSN                         & Yes \\
-    \env{SESSION\_KEY}      & 32-byte hex session encryption key      & Yes \\
-    \env{ADMIN\_EMAIL}      & Initial Root email             & Yes \\
-    \env{ADMIN\_PASSWORD}   & Initial Root password          & Yes \\
-    \env{BASE\_URL}         & Public URL of the webshop               & Yes \\
-    \env{OIDC\_CLIENT\_ID}     & Entra ID application client ID      & No  \\
-    \env{OIDC\_CLIENT\_SECRET} & Entra ID client secret              & No  \\
-    \env{OIDC\_ISSUER}         & Entra ID issuer URL                 & No  \\
-    \env{SMTP\_HOST}        & SMTP host (overridable in Admin UI)     & No  \\
-    \env{SMTP\_PORT}        & SMTP port (default 587)                 & No  \\
-    \env{SMTP\_FROM}        & Sender address                          & No  \\
-    \env{SMTP\_USERNAME}    & SMTP username                           & No  \\
-    \env{SMTP\_PASSWORD}    & SMTP password                           & No  \\
-    \env{AI\_PROVIDER}      & AI translation provider (startup only)  & No  \\
+    \env{DATABASE\_URL}       & PostgreSQL DSN                                     & Yes \\
+    \env{JWT\_SECRET}         & HS256 signing secret (min.\ 32 chars)              & Yes \\
+    \env{ADMIN\_EMAIL}        & Initial Root account email                         & Yes \\
+    \env{ADMIN\_PASSWORD}     & Initial Root account password                      & Yes \\
+    \env{FRONTEND\_URL}       & Frontend origin for CORS (default: \code{http://localhost:3000}) & No \\
+    \env{SMTP\_HOST}          & SMTP server hostname                               & No  \\
+    \env{SMTP\_PORT}          & SMTP port (default: \code{1025})                   & No  \\
+    \env{SMTP\_FROM}          & Sender email address                               & No  \\
+    \env{SMTP\_USER}          & SMTP authentication username                       & No  \\
+    \env{SMTP\_PASS}          & SMTP authentication password                       & No  \\
+    \env{SMTP\_TLS}           & \code{true} to enable TLS                         & No  \\
+    \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint                    & No  \\
+    \env{ENTRA\_TENANT\_ID}   & Microsoft Entra ID tenant ID (SSO)                & No  \\
+    \env{ENTRA\_CLIENT\_ID}   & Entra ID application client ID                     & No  \\
+    \env{ENTRA\_CLIENT\_SECRET} & Entra ID client secret                           & No  \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
-\notebox{SMTP and AI translation can also be configured (and overridden)
-through the Admin UI at \route{/admin/smtp} and \route{/admin/ai-config}.
-Database settings take precedence over environment variables at runtime.}
+\textbf{Frontend} (\file{apps/frontend/.env}):
+
+\begin{table}[H]
+  \centering
+  \caption{Frontend environment variables}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
+    \toprule
+    \textbf{Variable} & \textbf{Description} & \textbf{Required} \\
+    \midrule
+    \env{NEXT\_PUBLIC\_API\_URL} & Backend URL reachable from the browser        & Yes \\
+    \env{API\_URL}               & Backend URL reachable from the SSR server     & Yes \\
+    \env{NEXTAUTH\_URL}          & Canonical public URL of the frontend          & Yes \\
+    \env{NEXTAUTH\_SECRET}       & NextAuth session encryption secret (min.\ 32 chars) & Yes \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\notebox{SMTP can be configured (and overridden) through the Admin UI.
+Values saved in the database take precedence over environment variables
+at runtime.}
 
 \section{Deployment on a Docker Host}
 \label{sec:docker-deploy}
@@ -1439,17 +1445,24 @@ host using Docker and an Nginx reverse proxy with TLS termination.
   \node[box, right=1.6cm of client] (nginx) {Nginx\\\scriptsize TLS termination\\reverse proxy};
   \node[box, right=1.6cm of nginx] (app) {open-hybrid-cloud\\\scriptsize Docker\\:8080};
   \node[db, right=1.6cm of app] (pg) {PostgreSQL\\\scriptsize :5432};
+  \node[box, right=1.6cm of nginx] (fe) {Frontend\\\scriptsize Next.js\\:3000};
+  \node[box, right=1.6cm of fe] (be) {Backend API\\\scriptsize Next.js\\:3001};
+  \node[db, right=1.6cm of be] (pg2) {PostgreSQL\\\scriptsize :5432};
   \node[ext, below=1.2cm of nginx] (letsenc) {Let's Encrypt\\\scriptsize or Corporate CA};
 
   \draw[arr] (client) -- node[above,font=\tiny]{HTTPS:443} (nginx);
-  \draw[arr] (nginx)  -- node[above,font=\tiny]{HTTP:8080} (app);
-  \draw[arr] (app)    -- node[above,font=\tiny]{TCP:5432} (pg);
+  \draw[arr] (nginx)  -- node[above,font=\tiny]{:3000} (fe);
+  \draw[arr] (nginx)  -- node[above,font=\tiny]{/api→:3001} (be);
+  \draw[arr] (be)     -- node[above,font=\tiny]{TCP:5432} (pg2);
   \draw[arr, dashed] (letsenc) -- node[right,font=\tiny]{cert} (nginx);
 
 \end{tikzpicture}}%
 \caption{Docker Host deployment architecture}
 \label{fig:docker-arch}
 \end{figure}
+
+Nginx routes \code{/api/*} and \code{/api/webhooks/*} to the backend
+container (port 3001) and all other paths to the frontend (port 3000).
 
 \subsection*{Step-by-Step Deployment Procedure}
 
@@ -1462,32 +1475,29 @@ apt-get install -y docker.io docker-compose-v2
 systemctl enable --now docker
 \end{lstlisting}
 
-\item \textbf{Clone the repository and build the image.}
+\item \textbf{Clone the repository.}
 \begin{lstlisting}[style=bash]
 git clone https://github.com/Maximilian-Maag/open-hybrid-cloud.git
 cd open-hybrid-cloud
-make docker-build
-# or pull from Docker Hub:
-docker pull maximilianmaag/open-hybrid-cloud:latest
 \end{lstlisting}
 
-\item \textbf{Create the environment file.}
+\item \textbf{Configure environment files.}
 \begin{lstlisting}[style=bash]
-cp infra/docker-host/.env.example infra/docker-host/.env
-# Edit .env with a text editor; set at minimum:
-#   DATABASE_URL, SESSION_KEY, ADMIN_EMAIL, ADMIN_PASSWORD, BASE_URL
+# Edit both files with production values
+cp apps/backend/.env.example  apps/backend/.env
+cp apps/frontend/.env.example apps/frontend/.env
+# Required backend vars: DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
+# Required frontend vars: NEXT_PUBLIC_API_URL, API_URL, NEXTAUTH_URL, NEXTAUTH_SECRET
 \end{lstlisting}
 
-\item \textbf{Start PostgreSQL and the application.}
+\item \textbf{Start all containers.}
 \begin{lstlisting}[style=bash]
-cd infra/docker-host
-docker compose up -d
+docker compose -f infra/docker-compose.yml up -d
 \end{lstlisting}
 
-\item \textbf{Run database migrations.}
-\begin{lstlisting}[style=bash]
-docker exec open-hybrid-cloud /migrate
-\end{lstlisting}
+The schema is applied automatically on first startup (Drizzle push runs
+as part of the backend bootstrap). The root user is created from
+\env{ADMIN\_EMAIL} / \env{ADMIN\_PASSWORD} on the first \route{GET /api/health} call.
 
 \item \textbf{Obtain a TLS certificate.}
 
@@ -1506,7 +1516,7 @@ certificate and key at the paths referenced in
 Listing~\ref{lst:nginxconf} shows a minimal but production-ready
 Nginx configuration:
 
-\begin{lstlisting}[style=yaml,caption={infra/docker-host/nginx.conf},label={lst:nginxconf}]
+\begin{lstlisting}[style=yaml,caption={infra/nginx/default.conf},label={lst:nginxconf}]
 server {
     listen 80;
     server_name shop.example.com;
@@ -1524,8 +1534,19 @@ server {
 
     client_max_body_size 10m;
 
+    # Backend API (REST + webhooks)
+    location /api/ {
+        proxy_pass         http://ohc-backend:3001;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    # Frontend (Next.js UI)
     location / {
-        proxy_pass         http://127.0.0.1:8080;
+        proxy_pass         http://ohc-frontend:3000;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
@@ -1558,12 +1579,12 @@ systemctl status certbot.timer
 
 \begin{lstlisting}[style=bash]
 # Backup PostgreSQL
-docker exec webshop-postgres pg_dump -U webshop webshop \
+docker exec ohc-postgres pg_dump -U postgres open_hybrid_cloud \
   | gzip > backup-$(date +%Y%m%d).sql.gz
 
 # Restore
 zcat backup-20260101.sql.gz \
-  | docker exec -i webshop-postgres psql -U webshop webshop
+  | docker exec -i ohc-postgres psql -U postgres open_hybrid_cloud
 \end{lstlisting}
 
 \section{Deployment on Kubernetes}
@@ -1588,16 +1609,16 @@ cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
 
   \node[ext] (client) {Browser};
   \node[svc, right=1.8cm of client] (ing) {Ingress\\(Nginx)};
-  \node[pod, right=1.8cm of ing] (app) {open-hybrid-cloud\\Pod(s)};
-  \node[ext, right=1.8cm of app] (pg) {PostgreSQL\\\scriptsize external};
+  \node[pod, right=1.8cm of ing] (fe) {frontend\\Pod(s)\\\scriptsize :3000};
+  \node[pod, right=1.8cm of fe] (be) {backend\\Pod(s)\\\scriptsize :3001};
+  \node[ext, right=1.8cm of be] (pg) {PostgreSQL\\\scriptsize external};
   \node[svc, below=1.0cm of ing] (cm) {cert-manager\\ClusterIssuer};
-  \node[svc, below=1.0cm of app] (hpa) {HPA};
 
   \draw[arr] (client) -- node[above,font=\tiny]{HTTPS} (ing);
-  \draw[arr] (ing) -- node[above,font=\tiny]{:8080} (app);
-  \draw[arr] (app) -- node[above,font=\tiny]{:5432} (pg);
+  \draw[arr] (ing) -- node[above,font=\tiny]{:3000} (fe);
+  \draw[arr] (ing) -- node[above,font=\tiny]{/api→:3001} (be);
+  \draw[arr] (be) -- node[above,font=\tiny]{:5432} (pg);
   \draw[arr, dashed] (cm) -- (ing);
-  \draw[arr, dashed] (hpa) -- (app);
 
 \end{tikzpicture}}%
 \caption{Kubernetes deployment architecture}
@@ -1611,7 +1632,8 @@ cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
   \item Nginx Ingress Controller installed (\code{ingress-nginx})
   \item cert-manager installed with a \code{ClusterIssuer} for Let's
         Encrypt or a corporate CA
-  \item The image \code{maximilianmaag/open-hybrid-cloud:\textit{tag}} is publicly
+  \item The images \code{maximilianmaag/open-hybrid-cloud-backend} and
+        \code{maximilianmaag/open-hybrid-cloud-frontend} are publicly
         available on Docker Hub — no \code{imagePullSecret} required
 \end{itemize}
 
@@ -1626,9 +1648,11 @@ helm upgrade --install open-hybrid-cloud \
   infra/helm/open-hybrid-cloud \
   --namespace open-hybrid-cloud \
   --create-namespace \
-  --set env.databaseUrl="postgres://user:pass@pg.example.com:5432/webshop?sslmode=require" \
-  --set env.sessionSecret="<32-byte-hex>" \
-  --set env.adminPassword="<initial-password>" \
+  --set backend.env.databaseUrl="postgres://user:pass@pg.example.com:5432/open_hybrid_cloud?sslmode=require" \
+  --set backend.env.jwtSecret="<min-32-char-secret>" \
+  --set backend.env.adminPassword="<initial-password>" \
+  --set frontend.env.nextauthSecret="<min-32-char-secret>" \
+  --set frontend.env.apiUrl="http://open-hybrid-cloud-backend:3001" \
   --set ingress.hosts[0].host=shop.example.com \
   --set ingress.tls[0].hosts[0]=shop.example.com \
   --set ingress.tls[0].secretName=open-hybrid-cloud-tls
@@ -1640,15 +1664,15 @@ rather than as \code{--set} arguments, so they do not appear in shell
 history.}
 
 \begin{lstlisting}[style=bash,caption={Example secrets.values.yaml (do not commit)},label={lst:helm-secrets}]
-env:
-  databaseUrl: "postgres://user:pass@pg.example.com:5432/webshop?sslmode=require"
-  sessionSecret: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
-  adminPassword: "change-me-immediately"
-  entra:
-    tenantId: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-    clientId: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-    clientSecret: "your-client-secret"
-    redirectUrl: "https://shop.example.com/auth/callback"
+backend:
+  env:
+    databaseUrl: "postgres://user:pass@pg.example.com:5432/open_hybrid_cloud?sslmode=require"
+    jwtSecret: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+    adminPassword: "change-me-immediately"
+frontend:
+  env:
+    nextauthSecret: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+    nextauthUrl: "https://shop.example.com"
 \end{lstlisting}
 
 \begin{lstlisting}[style=bash]
@@ -1668,17 +1692,19 @@ Table~\ref{tab:helm-values} lists the most important configurable values.
     \toprule
     \textbf{Key} & \textbf{Description} & \textbf{Default} \\
     \midrule
-    \code{image.repository}          & Docker Hub image name          & \code{maximilianmaag/open-hybrid-cloud} \\
-    \code{image.tag}                  & Image tag (empty = appVersion) & \code{""} \\
-    \code{replicaCount}               & Deployment replicas            & \code{2} \\
-    \code{env.databaseUrl}            & PostgreSQL DSN (required)      & — \\
-    \code{env.sessionSecret}          & Session encryption key (req.)  & — \\
-    \code{env.adminPassword}          & Initial admin password (req.)  & — \\
-    \code{ingress.hosts}              & Ingress host list              & \code{shop.example.com} \\
-    \code{ingress.tls}                & TLS configuration              & (see values.yaml) \\
-    \code{autoscaling.enabled}        & Enable HPA                     & \code{false} \\
-    \code{autoscaling.maxReplicas}    & HPA max replica count          & \code{6} \\
-    \code{migrate.enabled}            & Run DB migrations as hook      & \code{true} \\
+    \code{backend.image.repository}       & Backend Docker Hub image          & \code{maximilianmaag/open-hybrid-cloud-backend} \\
+    \code{backend.image.tag}              & Image tag (empty = appVersion)    & \code{""} \\
+    \code{backend.replicaCount}           & Backend pod replicas              & \code{2} \\
+    \code{backend.env.databaseUrl}        & PostgreSQL DSN (required)         & — \\
+    \code{backend.env.jwtSecret}          & JWT signing secret (required)     & — \\
+    \code{backend.env.adminPassword}      & Initial root password (required)  & — \\
+    \code{frontend.image.repository}      & Frontend Docker Hub image         & \code{maximilianmaag/open-hybrid-cloud-frontend} \\
+    \code{frontend.image.tag}             & Image tag (empty = appVersion)    & \code{""} \\
+    \code{frontend.replicaCount}          & Frontend pod replicas             & \code{2} \\
+    \code{frontend.env.nextauthSecret}    & NextAuth session secret (req.)    & — \\
+    \code{frontend.env.nextauthUrl}       & Public canonical URL              & — \\
+    \code{ingress.hosts}                  & Ingress host list                 & \code{shop.example.com} \\
+    \code{ingress.tls}                    & TLS configuration                 & (see values.yaml) \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -1707,45 +1733,41 @@ kubectl create secret docker-registry my-registry-secret \
 \end{lstlisting}
 
 \item \textbf{Create the application Secret.}
-\begin{lstlisting}[style=yaml,caption={Kubernetes Secret for the webshop},label={lst:k8s-secret}]
+\begin{lstlisting}[style=yaml,caption={Kubernetes Secrets for backend and frontend},label={lst:k8s-secret}]
 apiVersion: v1
 kind: Secret
 metadata:
-  name: open-hybrid-cloud-env
+  name: ohc-backend-env
   namespace: open-hybrid-cloud
 type: Opaque
 stringData:
-  DATABASE_URL: "postgres://webshop:password@pg.example.com:5432/webshop?sslmode=require"
-  SESSION_KEY: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-  ADMIN_EMAIL: "admin@example.com"
+  DATABASE_URL: "postgres://user:password@pg.example.com:5432/open_hybrid_cloud?sslmode=require"
+  JWT_SECRET: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+  ADMIN_EMAIL: "root@example.com"
   ADMIN_PASSWORD: "changeme"
-  BASE_URL: "https://shop.example.com"
-\end{lstlisting}
-
-\item \textbf{Run database migrations as a Kubernetes Job.}
-\begin{lstlisting}[style=yaml,caption={Migration Job},label={lst:k8s-migrate}]
-apiVersion: batch/v1
-kind: Job
+---
+apiVersion: v1
+kind: Secret
 metadata:
-  name: open-hybrid-cloud-migrate
+  name: ohc-frontend-env
   namespace: open-hybrid-cloud
-spec:
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: migrate
-          image: maximilianmaag/open-hybrid-cloud:latest
-          command: ["/migrate"]
-          envFrom:
-            - secretRef:
-                name: open-hybrid-cloud-env
+type: Opaque
+stringData:
+  NEXTAUTH_SECRET: "f0e1d2c3b4a596870001020304050607f0e1d2c3b4a596870001020304050607"
+  NEXTAUTH_URL: "https://shop.example.com"
+  NEXT_PUBLIC_API_URL: "https://shop.example.com/api"
+  API_URL: "http://ohc-backend:3001"
 \end{lstlisting}
 
+\item \textbf{Apply the database schema.}
+
+The schema is pushed automatically by Drizzle on backend startup. No
+separate migration job is required. Verify via the health endpoint once
+the backend pod is running:
 \begin{lstlisting}[style=bash]
-kubectl apply -f migrate-job.yaml
-kubectl wait --for=condition=complete job/open-hybrid-cloud-migrate \
-  -n open-hybrid-cloud --timeout=120s
+kubectl exec -n open-hybrid-cloud deploy/ohc-backend -- \
+  wget -qO- http://localhost:3001/api/health
+# Expected: {"status":"ok"}
 \end{lstlisting}
 
 \item \textbf{Deploy the application.}
@@ -2848,10 +2870,10 @@ fail), consistent with the integration test policy.
 \chapter{Database Schema}
 \label{ch:db-schema}
 
-The schema is built by 12 sequential migrations (see
-Section~\ref{sec:dbmigrations}).  The table below shows the
-\textbf{current effective schema} — i.e.\ the cumulative result of all
-migrations.
+The schema is managed by Drizzle ORM. The authoritative definition is
+in \file{apps/backend/src/lib/db/schema.ts}; \code{make db-push}
+(\code{drizzle-kit push}) applies any schema changes to the database.
+The table below shows the current effective schema.
 
 % ─────────────────────────────────────────────────────────────
 \section{Table Overview}
@@ -2869,8 +2891,8 @@ migrations.
     \code{products}                 & Infrastructure products offered in the catalogue \\
     \code{product\_translations}    & Multi-language name + description per product \\
     \code{parameters}               & Configurable inputs for global/category/product scope \\
-    \code{gitlab\_sources}          & GitLab instance credentials (URL + access token) \\
-    \code{deployment\_environments} & Named environments linked to a GitLab source \\
+    \code{ci\_sources}              & CI provider credentials (GitLab / GitHub / Bitbucket) \\
+    \code{deployment\_environments} & Named environments linked to a CI source \\
     \code{product\_environments}    & Junction: which products are available in which environment (with price) \\
     \code{product\_webhooks}        & Optional per-product pipeline trigger overrides \\
     \code{cost\_centers}            & Billing cost centres referenced by projects and orders \\
@@ -2903,8 +2925,8 @@ key, foreign keys, and notable constraints.
     \code{id}            & BIGSERIAL & --- & PK \\
     \code{email}         & TEXT      & --- & NOT NULL, UNIQUE \\
     \code{name}          & TEXT      & --- & NOT NULL \\
-    \code{role}          & TEXT      & --- & CHECK: \code{admin}, \code{project\_leader}, \code{root} \\
-    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; set for Entra ID accounts \\
+    \code{role}          & TEXT      & --- & CHECK: \code{admin}, \code{project\_manager}, \code{root} \\
+    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; set for SSO accounts \\
     \code{password\_hash}& TEXT      & NULL & set for local accounts \\
     \code{active}        & BOOLEAN   & TRUE & soft-disable without deletion \\
     \code{created\_at}   & TIMESTAMPTZ & NOW() & \\
@@ -2985,7 +3007,10 @@ key, foreign keys, and notable constraints.
   \end{tabular}
 \end{table}
 
-\subsection*{\texttt{gitlab\_sources}}
+\subsection*{\texttt{ci\_sources}}
+
+Formerly \code{gitlab\_sources}. Supports multiple CI providers via the
+\code{provider} discriminator column.
 
 \begin{table}[H]
   \centering\small
@@ -2993,10 +3018,11 @@ key, foreign keys, and notable constraints.
     \toprule
     \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
     \midrule
-    \code{id}           & BIGSERIAL & --- & PK \\
-    \code{name}         & TEXT      & --- & NOT NULL; human-readable label \\
-    \code{url}          & TEXT      & --- & NOT NULL; GitLab base URL \\
-    \code{access\_token}& TEXT      & --- & NOT NULL; stored in plain text \\
+    \code{id}           & BIGSERIAL & ---              & PK \\
+    \code{name}         & TEXT      & ---              & NOT NULL; human-readable label \\
+    \code{provider}     & TEXT      & \code{'gitlab'}  & CHECK: \code{gitlab}, \code{github}, \code{bitbucket} \\
+    \code{url}          & TEXT      & ---              & NOT NULL; CI provider base URL \\
+    \code{access\_token}& TEXT      & ---              & NOT NULL \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -3009,12 +3035,12 @@ key, foreign keys, and notable constraints.
     \toprule
     \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
     \midrule
-    \code{id}                & BIGSERIAL & ---       & PK \\
-    \code{name}              & TEXT      & ---       & NOT NULL \\
-    \code{description}       & TEXT      & \code{''} & \\
-    \code{gitlab\_source\_id}& BIGINT    & ---       & NOT NULL, FK \textrightarrow{} \code{gitlab\_sources(id)} \\
-    \code{webhook\_url}      & TEXT      & ---       & NOT NULL; GitLab trigger URL \\
-    \code{webhook\_token}    & TEXT      & ---       & NOT NULL; pipeline trigger token \\
+    \code{id}              & BIGSERIAL & ---       & PK \\
+    \code{name}            & TEXT      & ---       & NOT NULL \\
+    \code{description}     & TEXT      & \code{''} & \\
+    \code{ci\_source\_id}  & BIGINT    & ---       & NOT NULL, FK \textrightarrow{} \code{ci\_sources(id)} \\
+    \code{webhook\_url}    & TEXT      & ---       & NOT NULL; pipeline trigger URL \\
+    \code{webhook\_token}  & TEXT      & ---       & NOT NULL; pipeline trigger token \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -3321,164 +3347,131 @@ requiring explicit cleanup in application code.}
 \chapter{Adding a New Feature}
 \label{ch:new-feature}
 
-This chapter describes the canonical pattern for adding a feature end-to-end.
+This chapter describes the canonical pattern for adding a feature end-to-end
+in the Next.js monorepo.
 
 \section{Example: Adding a New Admin Page}
 
-\textbf{Goal:} Add an admin page at \route{/admin/widgets} that lists
-and creates widgets stored in a new \code{widgets} database table.
+\textbf{Goal:} Add an admin endpoint that lists and creates widgets stored
+in a new \code{widgets} database table, and a corresponding admin UI page.
 
-\subsection{Step 1: Create the Migration}
+\subsection{Step 1: Add the Table to the Drizzle Schema}
 
-Create \file{internal/migrations/010\_widgets.sql}:
+In \file{apps/backend/src/lib/db/schema.ts}, add the table definition:
 
-\begin{lstlisting}[style=sql]
-CREATE TABLE IF NOT EXISTS widgets (
-  id   BIGSERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
-  active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-\end{lstlisting}
-
-\subsection{Step 2: Add the Model}
-
-In \file{internal/model/model.go}:
-
-\begin{lstlisting}[style=go]
-type Widget struct {
-    ID        int64
-    Name      string
-    Active    bool
-    CreatedAt time.Time
-}
-\end{lstlisting}
-
-\subsection{Step 3: Define the Repository Interface}
-
-In \file{internal/repository/repository.go}:
-
-\begin{lstlisting}[style=go]
-type WidgetRepository interface {
-    FindAll(ctx context.Context) ([]model.Widget, error)
-    Create(ctx context.Context, name string) error
-    Delete(ctx context.Context, id int64) error
-}
-\end{lstlisting}
-
-\subsection{Step 4: Implement the Repository}
-
-Create \file{internal/repository/postgres/widget.go}:
-
-\begin{lstlisting}[style=go]
-type widgetRepo struct{ pool *pgxpool.Pool }
-
-func NewWidgetRepository(pool *pgxpool.Pool) repository.WidgetRepository {
-    return &widgetRepo{pool: pool}
-}
-
-func (r *widgetRepo) FindAll(ctx context.Context) ([]model.Widget, error) {
-    rows, err := r.pool.Query(ctx,
-        `SELECT id, name, active, created_at FROM widgets ORDER BY name`)
-    // ... scan rows into []model.Widget
-}
-\end{lstlisting}
-
-\subsection{Step 5: Add the Handler}
-
-Add to the \code{Handler} struct in \file{routes.go}:
-\begin{lstlisting}[style=go]
-widgets repository.WidgetRepository
-\end{lstlisting}
-
-Add to \code{Deps} struct and wire in \code{New()}.
-Add a view struct in \file{internal/view/pages.go}:
-
-\begin{lstlisting}[style=go]
-type AdminWidgetsView struct {
-    view.PageData
-    Widgets []model.Widget
-}
-\end{lstlisting}
-
-Add handler methods to a new file \file{handler/widgets.go}:
-
-\begin{lstlisting}[style=go]
-func (h *Handler) adminWidgets(w http.ResponseWriter, r *http.Request) {
-    items, _ := h.widgets.FindAll(r.Context())
-    renderTempl(w, r, adminpages.AdminWidgets(view.AdminWidgetsView{
-        PageData: h.buildPageData(w, r),
-        Widgets:  items,
-    }))
-}
-\end{lstlisting}
-
-Register routes in \code{RegisterRoutes}:
-\begin{lstlisting}[style=go]
-mux.Handle("GET /admin/widgets",  admin(h.adminWidgets))
-mux.Handle("POST /admin/widgets", admin(h.adminWidgetCreate))
-\end{lstlisting}
-
-\subsection{Step 6: Create the templ Component}
-
-Create \file{ui/pages/admin/widgets.templ}:
-
-\begin{lstlisting}[style=go]
-package admin
-
-import (
-    "github.com/Maximilian-Maag/open-hybrid-cloud/src/internal/i18n"
-    "github.com/Maximilian-Maag/open-hybrid-cloud/src/internal/view"
-    "github.com/Maximilian-Maag/open-hybrid-cloud/src/ui/comp"
-)
-
-templ AdminWidgets(vd view.AdminWidgetsView) {
-    @comp.Layout(vd.PageData) {
-        @comp.PageHeader(i18n.T("admin.widgets", vd.Lang), "/admin")
-        @comp.Card() {
-            <table class="w-full text-sm">
-                <tbody>
-                    for _, w := range vd.Widgets {
-                        <tr class="hover:bg-slate-50">
-                            <td class="px-4 py-3">{ w.Name }</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    }
-}
-\end{lstlisting}
-
-Run \code{templ generate ./...} to compile to Go, then \code{go build ./...}
-to verify type correctness before running.
-
-\subsection{Step 7: Add i18n Keys}
-
-In \file{internal/i18n/i18n.go}, add the key with all 25 language
-translations.
-
-\subsection{Step 8: Wire Up in main.go}
-
-\begin{lstlisting}[style=go]
-widgetRepo := pgRepo.NewWidgetRepository(pool)
-// ...
-h := handler.New(handler.Deps{
-    // ...
-    Widgets: widgetRepo,
+\begin{lstlisting}[style=typescript]
+export const widgets = pgTable('widgets', {
+  id:        bigserial('id', { mode: 'number' }).primaryKey(),
+  name:      text('name').notNull(),
+  active:    boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true })
+               .notNull().defaultNow(),
 })
 \end{lstlisting}
 
-\subsection{Step 9: Test}
+Apply the schema change:
+\begin{lstlisting}[style=bash]
+make db-push
+\end{lstlisting}
 
-Add test stubs in \file{internal/repository/} (or use the real DB in
-integration tests). Run:
+\subsection{Step 2: Add Shared Types}
+
+In \file{packages/types/src/index.ts}, add the interface:
+
+\begin{lstlisting}[style=typescript]
+export interface Widget {
+  id:        number
+  name:      string
+  active:    boolean
+  createdAt: string
+}
+\end{lstlisting}
+
+\subsection{Step 3: Add the Backend Route Handler}
+
+Create \file{apps/backend/src/app/api/admin/widgets/route.ts}:
+
+\begin{lstlisting}[style=typescript]
+import { NextRequest, NextResponse } from 'next/server'
+import { requireRole, isAuth } from '@/lib/auth/middleware'
+import { db } from '@/lib/db/client'
+import { widgets } from '@/lib/db/schema'
+
+export async function GET(req: NextRequest) {
+  const session = await requireRole('root')(req)
+  if (!isAuth(session)) return session
+
+  const rows = await db.select().from(widgets).orderBy(widgets.name)
+  return NextResponse.json(rows)
+}
+
+export async function POST(req: NextRequest) {
+  const session = await requireRole('root')(req)
+  if (!isAuth(session)) return session
+
+  const { name } = await req.json()
+  if (!name) return NextResponse.json(
+    { error: 'name required' }, { status: 400 })
+
+  const [row] = await db.insert(widgets).values({ name }).returning()
+  return NextResponse.json(row, { status: 201 })
+}
+\end{lstlisting}
+
+\subsection{Step 4: Add the Frontend API Wrapper}
+
+In \file{apps/frontend/src/lib/api.ts}, the generic \code{get} and
+\code{post} wrappers already exist. Call them from any Server Component
+or client action:
+
+\begin{lstlisting}[style=typescript]
+import { get, post } from '@/lib/api'
+import type { Widget } from '@open-hybrid-cloud/types'
+
+export const fetchWidgets = (token: string) =>
+  get<Widget[]>('/api/admin/widgets', token)
+
+export const createWidget = (name: string, token: string) =>
+  post<Widget>('/api/admin/widgets', { name }, token)
+\end{lstlisting}
+
+\subsection{Step 5: Add the Frontend Page}
+
+Create \file{apps/frontend/src/app/admin/widgets/page.tsx}:
+
+\begin{lstlisting}[style=typescript]
+import { auth } from '@/lib/auth'
+import { fetchWidgets } from '@/lib/api/widgets'
+import { redirect } from 'next/navigation'
+
+export default async function AdminWidgetsPage() {
+  const session = await auth()
+  if (!session) redirect('/login')
+
+  const widgets = await fetchWidgets(session.apiToken ?? '')
+
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-4">Widgets</h1>
+      <ul>
+        {widgets.map(w => (
+          <li key={w.id} className="py-2 border-b">{w.name}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+\end{lstlisting}
+
+\subsection{Step 6: Verify}
 
 \begin{lstlisting}[style=bash]
-make test
-make vet
-make lint
+make type-check   # TypeScript must pass clean
+make lint         # ESLint must pass clean
 \end{lstlisting}
+
+Navigate to \url{http://localhost:3000/admin/widgets} and confirm the
+page renders correctly.
 
 % ─────────────────────────────────────────────────────────────
 %  PART V — PROJECT MANAGER GUIDE
@@ -3540,7 +3533,8 @@ As a \role{Admin} the GitLab webhook fires immediately.
 \section{Tracking Status}
 
 After placing an order, navigate to \textbf{My Orders → \{order\}}.
-The status updates live via HTMX polling every 30 seconds.
+Refresh the page to see the latest status. The backend updates the order
+automatically when the CI provider sends a pipeline webhook event.
 
 \section{Using an Existing Deployment as a Template}
 
@@ -3951,34 +3945,47 @@ translation:
 \chapter{Environment Variable Reference}
 \label{app:envvars}
 
+\section*{Backend (\texttt{apps/backend/.env})}
+
 \begin{longtable}{@{}L{4.5cm}L{7.5cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Description} & \textbf{Required} \\
   \midrule
   \endhead
-  \env{DATABASE\_URL}         & PostgreSQL connection string (DSN)          & Yes \\
-  \env{SESSION\_KEY}          & 32-byte hex key for session encryption       & Yes \\
-  \env{ADMIN\_EMAIL}          & Email of the initial Root account   & Yes \\
-  \env{ADMIN\_PASSWORD}       & Password of the initial admin account        & Yes \\
-  \env{BASE\_URL}             & Public base URL (e.g. \code{https://shop.example.com}) & Yes \\
-  \env{PORT}                  & HTTP listen port (default: \code{8080})      & No  \\
-  \env{OIDC\_CLIENT\_ID}      & Entra ID application (client) ID             & No  \\
-  \env{OIDC\_CLIENT\_SECRET}  & Entra ID client secret                       & No  \\
-  \env{OIDC\_ISSUER}          & OIDC issuer URL (\code{https://login.microsoft...}) & No  \\
-  \env{SMTP\_HOST}            & SMTP server hostname                         & No  \\
-  \env{SMTP\_PORT}            & SMTP port (default: \code{587})              & No  \\
-  \env{SMTP\_FROM}            & Sender email address                         & No  \\
-  \env{SMTP\_USERNAME}        & SMTP authentication username                 & No  \\
-  \env{SMTP\_PASSWORD}        & SMTP authentication password                 & No  \\
-  \env{SMTP\_TLS}             & \code{true} to use TLS/SSL                   & No  \\
-  \env{AI\_PROVIDER}          & AI translation provider at startup           & No  \\
-  \env{AI\_ENDPOINT}          & AI API endpoint URL                          & No  \\
-  \env{AI\_API\_KEY}          & AI API key                                   & No  \\
-  \env{AI\_MODEL}             & AI model name                                & No  \\
-  \env{EXCHANGE\_RATE\_KEY}   & Exchange rate API key                        & No  \\
+  \env{DATABASE\_URL}           & PostgreSQL DSN (\code{postgresql://user:pass@host/db}) & Yes \\
+  \env{JWT\_SECRET}             & HS256 signing secret — min.\ 32 characters     & Yes \\
+  \env{ADMIN\_EMAIL}            & Email of the initial Root account               & Yes \\
+  \env{ADMIN\_PASSWORD}         & Password of the initial Root account            & Yes \\
+  \env{FRONTEND\_URL}           & Allowed CORS origin (default: \code{http://localhost:3000}) & No \\
+  \env{SMTP\_HOST}              & SMTP server hostname                            & No  \\
+  \env{SMTP\_PORT}              & SMTP port (default: \code{1025})                & No  \\
+  \env{SMTP\_FROM}              & Sender email address                            & No  \\
+  \env{SMTP\_USER}              & SMTP authentication username                    & No  \\
+  \env{SMTP\_PASS}              & SMTP authentication password                    & No  \\
+  \env{SMTP\_TLS}               & \code{true} to enable SMTP TLS                  & No  \\
+  \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint URL                 & No  \\
+  \env{ENTRA\_TENANT\_ID}       & Microsoft Entra ID tenant ID (future SSO)       & No  \\
+  \env{ENTRA\_CLIENT\_ID}       & Entra ID application (client) ID                & No  \\
+  \env{ENTRA\_CLIENT\_SECRET}   & Entra ID client secret                          & No  \\
   \bottomrule
-  \caption{Environment variable reference}
-  \label{tab:envvars}
+  \caption{Backend environment variable reference}
+  \label{tab:envvars-backend}
+\end{longtable}
+
+\section*{Frontend (\texttt{apps/frontend/.env})}
+
+\begin{longtable}{@{}L{4.5cm}L{7.5cm}l@{}}
+  \toprule
+  \textbf{Variable} & \textbf{Description} & \textbf{Required} \\
+  \midrule
+  \endhead
+  \env{NEXT\_PUBLIC\_API\_URL} & Backend URL reachable from the browser (used for client-side API calls) & Yes \\
+  \env{API\_URL}               & Backend URL reachable from the Next.js SSR server & Yes \\
+  \env{NEXTAUTH\_URL}          & Canonical public URL of the frontend            & Yes \\
+  \env{NEXTAUTH\_SECRET}       & NextAuth session cookie encryption secret (min.\ 32 chars) & Yes \\
+  \bottomrule
+  \caption{Frontend environment variable reference}
+  \label{tab:envvars-frontend}
 \end{longtable}
 
 \chapter{OpenTofu Module Variable Reference}
@@ -4105,13 +4112,16 @@ translation:
 \chapter{HTTP Route Reference}
 \label{app:routes}
 
-All routes are registered in \code{src/internal/handler/routes.go}.
+All backend REST endpoints are Next.js route handlers under
+\file{apps/backend/src/app/api/}. The frontend is a standard Next.js
+App Router application; its pages are not listed here.
+
 The \textbf{Role} column uses the following abbreviations:
 
 \begin{itemize}
   \item \textbf{public} — no authentication required
-  \item \textbf{auth} — any authenticated user
-  \item \textbf{admin} — role \code{admin} or higher
+  \item \textbf{auth} — any authenticated user (any role)
+  \item \textbf{admin} — role \code{admin} or \code{root}
   \item \textbf{root} — role \code{root} only
 \end{itemize}
 
@@ -4122,113 +4132,94 @@ The \textbf{Role} column uses the following abbreviations:
   \midrule
   \endhead
 
-  \multicolumn{4}{@{}l}{\textit{Authentication}} \\[2pt]
-  GET  & \code{/login}                                              & Login page                              & public \\
-  POST & \code{/login}                                              & Submit credentials                      & public \\
-  GET  & \code{/auth/callback}                                      & OIDC / Entra ID callback                & public \\
-  POST & \code{/logout}                                             & Destroy session                         & auth \\
-  POST & \code{/lang}                                               & Switch UI language                      & auth \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Authentication \& Health}} \\[2pt]
+  POST & \code{/api/auth/login}                                      & Issue JWT from credentials              & public \\
+  GET  & \code{/api/auth/me}                                         & Return caller profile                   & auth \\
+  POST & \code{/api/auth/logout}                                     & Stateless no-op (client discards JWT)   & auth \\
+  GET  & \code{/api/health}                                          & Health check + bootstrap trigger        & public \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{General (any authenticated user)}} \\[2pt]
-  GET  & \code{/}                                                   & Home / dashboard                        & auth \\
-  GET  & \code{/catalog}                                            & Product catalog                         & auth \\
-  GET  & \code{/catalog/\{id\}}                                     & Product detail page                     & auth \\
-  GET  & \code{/products/\{id\}/image}                              & Serve product image                     & auth \\
-  GET  & \code{/branding/logo}                                      & Serve shop logo                         & auth \\
-  GET  & \code{/impressum}                                          & Imprint page                            & auth \\
-  GET  & \code{/settings/profile}                                   & Profile \& password change              & auth \\
-  POST & \code{/settings/profile}                                   & Save profile / new password             & auth \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Catalog}} \\[2pt]
+  GET  & \code{/api/catalog}                                         & List products by category               & auth \\
+  GET  & \code{/api/catalog/\{id\}}                                  & Product detail with environments        & auth \\
+  GET  & \code{/api/catalog/\{id\}/image}                            & Serve product image (BYTEA)             & auth \\
+  POST & \code{/api/catalog/\{id\}/order}                            & Place an order                          & auth \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Orders}} \\[2pt]
-  GET  & \code{/orders}                                             & My orders list                          & auth \\
-  GET  & \code{/orders/new}                                         & New order form                          & auth \\
-  POST & \code{/orders/new}                                         & Submit order                            & auth \\
-  GET  & \code{/orders/\{id\}}                                      & Order detail / status                   & auth \\[6pt]
+  GET  & \code{/api/orders}                                          & List orders (role-scoped)               & auth \\
+  GET  & \code{/api/orders/\{id\}}                                   & Order detail                            & auth \\
+  POST & \code{/api/orders/\{id\}/approve}                           & Approve order and trigger pipeline      & admin \\
+  POST & \code{/api/orders/\{id\}/reject}                            & Reject order with mandatory note        & admin \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Projects}} \\[2pt]
-  GET  & \code{/projects}                                           & Projects list                           & auth \\
-  GET  & \code{/projects/new}                                       & New project form                        & auth \\
-  POST & \code{/projects/new}                                       & Create project                          & auth \\
-  GET  & \code{/projects/\{id\}}                                    & Project detail                          & auth \\
-  POST & \code{/projects/\{id\}}                                    & Update project                          & auth \\
-  POST & \code{/projects/\{id\}/delete}                             & Delete project                          & auth \\[6pt]
+  GET  & \code{/api/projects}                                        & List projects (role-scoped)             & auth \\
+  POST & \code{/api/projects}                                        & Create project                          & auth \\
+  GET  & \code{/api/projects/\{id\}}                                 & Project detail                          & auth \\
+  PUT  & \code{/api/projects/\{id\}}                                 & Update project                          & auth \\
+  DELETE & \code{/api/projects/\{id\}}                               & Delete project + cascade decommission   & auth \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Infrastructure}} \\[2pt]
-  GET  & \code{/infrastructure}                                     & Infrastructure overview                 & auth \\
-  POST & \code{/infrastructure/\{id\}/decommission}                 & Trigger decommissioning                 & auth \\[6pt]
+  GET  & \code{/api/infrastructure}                                  & Infrastructure overview (role-scoped)   & auth \\
+  GET  & \code{/api/infrastructure/\{id\}}                           & Infrastructure element detail           & auth \\
+  POST & \code{/api/infrastructure/\{id\}/decommission}              & Trigger destroy pipeline                & auth \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Approvals \& Audit (role: admin)}} \\[2pt]
-  GET  & \code{/approvals}                                          & Approval queue                          & admin \\
-  POST & \code{/approvals/\{id\}/approve}                           & Approve order                           & admin \\
-  POST & \code{/approvals/\{id\}/reject}                            & Reject order with note                  & admin \\
-  GET  & \code{/audit}                                              & Audit log viewer                        & admin \\
-  GET  & \code{/audit/export}                                       & Export audit log (PDF)                  & admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — Users (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/users}                                     & User list                               & root \\
+  POST & \code{/api/admin/users}                                     & Create user                             & root \\
+  PUT  & \code{/api/admin/users/\{id\}}                              & Update user                             & root \\
+  DELETE & \code{/api/admin/users/\{id\}}                            & Delete user                             & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Categories (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin}                                              & Admin dashboard                         & shop\_admin \\
-  GET  & \code{/admin/categories}                                   & Category list                           & shop\_admin \\
-  POST & \code{/admin/categories}                                   & Create category                         & shop\_admin \\
-  POST & \code{/admin/categories/\{id\}/delete}                     & Delete category                         & shop\_admin \\
-  GET  & \code{/admin/categories/\{id\}/parameters}                 & Category-level parameters               & shop\_admin \\
-  POST & \code{/admin/categories/\{id\}/parameters}                 & Add category parameter                  & shop\_admin \\
-  POST & \code{/admin/categories/\{id\}/parameters/\{pid\}/delete}  & Delete category parameter               & shop\_admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — Catalog (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/categories}                                & Category list                           & root \\
+  POST & \code{/api/admin/categories}                                & Create category                         & root \\
+  PUT  & \code{/api/admin/categories/\{id\}}                         & Update category                         & root \\
+  DELETE & \code{/api/admin/categories/\{id\}}                       & Delete category + cascade               & root \\
+  GET  & \code{/api/admin/products}                                  & Product list                            & root \\
+  POST & \code{/api/admin/products}                                  & Create product                          & root \\
+  GET  & \code{/api/admin/products/\{id\}}                           & Product detail (admin view)             & root \\
+  PUT  & \code{/api/admin/products/\{id\}}                           & Update product                          & root \\
+  DELETE & \code{/api/admin/products/\{id\}}                         & Delete product + cascade                & root \\
+  PUT  & \code{/api/admin/products/\{id\}/image}                     & Upload product image                    & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Products (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin/products}                                     & Product list                            & shop\_admin \\
-  GET  & \code{/admin/products/new}                                 & New product form                        & shop\_admin \\
-  POST & \code{/admin/products/new}                                 & Create product                          & shop\_admin \\
-  GET  & \code{/admin/products/\{id\}}                              & Edit product                            & shop\_admin \\
-  POST & \code{/admin/products/\{id\}}                              & Update product                          & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/delete}                       & Delete product                          & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/translate}                    & Trigger AI translation                  & shop\_admin \\
-  GET  & \code{/admin/products/\{id\}/image}                        & Image upload page                       & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/image}                        & Upload product image                    & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/environments}                 & Link product to environment             & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/parameters}                   & Add product parameter                   & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/parameters/delete-all}        & Delete all product parameters           & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/parameters/\{pid\}/delete}    & Delete single product parameter         & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/webhooks}                     & Add product webhook                     & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/webhooks/\{wid\}/delete}      & Delete product webhook                  & shop\_admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — Environments \& CI Sources (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/environments}                              & Deployment environment list             & root \\
+  POST & \code{/api/admin/environments}                              & Create environment                      & root \\
+  PUT  & \code{/api/admin/environments/\{id\}}                       & Update environment                      & root \\
+  DELETE & \code{/api/admin/environments/\{id\}}                     & Delete environment                      & root \\
+  GET  & \code{/api/admin/ci-sources}                                & CI source list                          & root \\
+  POST & \code{/api/admin/ci-sources}                                & Create CI source                        & root \\
+  PUT  & \code{/api/admin/ci-sources/\{id\}}                         & Update CI source                        & root \\
+  DELETE & \code{/api/admin/ci-sources/\{id\}}                       & Delete CI source                        & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Environments, Sources, Cost Centers (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin/environments}                                 & Deployment environment list             & shop\_admin \\
-  POST & \code{/admin/environments}                                 & Create environment                      & shop\_admin \\
-  POST & \code{/admin/environments/\{id\}/delete}                   & Delete environment                      & shop\_admin \\
-  GET  & \code{/admin/sources}                                      & GitLab sources list                     & shop\_admin \\
-  POST & \code{/admin/sources}                                      & Create GitLab source                    & shop\_admin \\
-  POST & \code{/admin/sources/\{id\}/delete}                        & Delete GitLab source                    & shop\_admin \\
-  GET  & \code{/admin/costcenters}                                  & Cost center list                        & shop\_admin \\
-  POST & \code{/admin/costcenters}                                  & Create cost center                      & shop\_admin \\
-  POST & \code{/admin/costcenters/\{id\}/delete}                    & Delete cost center                      & shop\_admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — CI Repository Browser (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/ci/projects}                               & Browse CI provider projects             & root \\
+  GET  & \code{/api/admin/ci/branches}                               & Browse branches in a project            & root \\
+  GET  & \code{/api/admin/ci/files}                                  & Browse files in a project               & root \\
+  POST & \code{/api/admin/ci/import-vars}                            & Import vars from \code{variables.tf}    & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Users (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin/users}                                        & User list                               & shop\_admin \\
-  POST & \code{/admin/users}                                        & Create user                             & shop\_admin \\
-  GET  & \code{/admin/users/\{id\}/edit}                            & Edit user form                          & shop\_admin \\
-  POST & \code{/admin/users/\{id\}/edit}                            & Save user changes                       & shop\_admin \\
-  POST & \code{/admin/users/\{id\}/deactivate}                      & Deactivate user                         & shop\_admin \\
-  POST & \code{/admin/users/\{id\}/delete}                          & Delete user                             & shop\_admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — Cost Centers (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/cost-centers}                              & Cost center list                        & root \\
+  POST & \code{/api/admin/cost-centers}                              & Create cost center                      & root \\
+  PUT  & \code{/api/admin/cost-centers/\{id\}}                       & Update cost center                      & root \\
+  DELETE & \code{/api/admin/cost-centers/\{id\}}                     & Delete cost center                      & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Parameters, Currencies, GitLab (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin/parameters}                                   & Global parameter list                   & shop\_admin \\
-  POST & \code{/admin/parameters}                                   & Create global parameter                 & shop\_admin \\
-  POST & \code{/admin/parameters/\{id\}/delete}                     & Delete global parameter                 & shop\_admin \\
-  GET  & \code{/admin/currencies}                                   & Exchange rate management                & shop\_admin \\
-  POST & \code{/admin/currencies/refresh}                           & Refresh exchange rates                  & shop\_admin \\
-  GET  & \code{/admin/gitlab/projects}                              & Browse GitLab projects (AJAX)           & shop\_admin \\
-  GET  & \code{/admin/gitlab/branches}                              & Browse GitLab branches (AJAX)           & shop\_admin \\
-  GET  & \code{/admin/gitlab/files}                                 & Browse GitLab files (AJAX)              & shop\_admin \\
-  POST & \code{/admin/gitlab/import-vars}                           & Import variables from \code{.tf} file   & shop\_admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — Configuration (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/branding}                                  & Get branding settings                   & root \\
+  PUT  & \code{/api/admin/branding}                                  & Update branding settings                & root \\
+  GET  & \code{/api/admin/branding/logo}                             & Serve branding logo (BYTEA)             & root \\
+  PUT  & \code{/api/admin/branding/logo}                             & Upload branding logo                    & root \\
+  GET  & \code{/api/admin/config}                                    & Get app config (SMTP, exchange)         & root \\
+  PUT  & \code{/api/admin/config/smtp}                               & Update SMTP config                      & root \\
+  PUT  & \code{/api/admin/config/exchange}                           & Update exchange rate API config         & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Configuration (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin/smtp}                                         & SMTP configuration                      & shop\_admin \\
-  POST & \code{/admin/smtp}                                         & Save SMTP settings                      & shop\_admin \\
-  GET  & \code{/admin/ai-config}                                    & AI translation configuration            & shop\_admin \\
-  POST & \code{/admin/ai-config}                                    & Save AI configuration                   & shop\_admin \\
-  GET  & \code{/admin/branding}                                     & Shop branding                           & shop\_admin \\
-  POST & \code{/admin/branding}                                     & Save branding settings                  & shop\_admin \\
+  \multicolumn{4}{@{}l}{\textit{Admin — Audit (role: admin)}} \\[2pt]
+  GET  & \code{/api/admin/audit}                                     & Paginated audit log                     & admin \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{CI Provider Webhooks (inbound, token-authenticated)}} \\[2pt]
+  POST & \code{/api/webhooks/gitlab/pipeline}                        & GitLab pipeline status event            & public \\
+  POST & \code{/api/webhooks/github/pipeline}                        & GitHub Actions workflow event           & public \\
+  POST & \code{/api/webhooks/bitbucket/pipeline}                     & Bitbucket pipeline status event         & public \\
   \bottomrule
-  \caption{Complete HTTP route reference}
+  \caption{Complete REST API route reference}
   \label{tab:routes}
 \end{longtable}
 
@@ -4245,81 +4236,76 @@ it.
   \textbf{ID} & \textbf{Requirement} & \textbf{Implementation} & \textbf{Section} \\
   \midrule
   \endhead
-  FA-01 & User authentication (local + SSO) &
-    \file{internal/service/impl/user.go}, \file{internal/handler/auth.go} &
+  FA-01 & User authentication (local credentials + JWT) &
+    \file{apps/backend/src/app/api/auth/login/route.ts},
+    \file{apps/backend/src/lib/auth/} &
     \S\ref{ch:users} \\
-  FA-02 & Role-based access control (admin, root, project\_leader) &
-    \file{internal/middleware/auth.go}, \file{internal/model/user.go} &
+  FA-02 & Role-based access control (admin, root, project\_manager) &
+    \file{apps/backend/src/lib/auth/middleware.ts} &
     \S\ref{ch:users} \\
   FA-03 & Product catalog with categories &
-    \file{internal/handler/catalog.go} &
+    \file{apps/backend/src/app/api/catalog/} &
     \S\ref{ch:ordering} \\
   FA-04 & Configurable product parameters &
-    \file{internal/model/parameter.go}, admin UI &
+    \file{apps/backend/src/lib/db/schema.ts} (\code{parameters} table) &
     \S\ref{sec:step5} \\
-  FA-05 & Shopping-cart order flow &
-    \file{internal/handler/order.go} &
+  FA-05 & Order placement flow &
+    \file{apps/backend/src/app/api/catalog/[id]/order/route.ts} &
     \S\ref{ch:ordering} \\
   FA-06 & Order approval workflow &
-    \file{internal/handler/approval.go} &
+    \file{apps/backend/src/app/api/orders/[id]/approve/route.ts} &
     \S\ref{ch:ordering} \\
-  FA-07 & GitLab webhook trigger &
-    \file{internal/service/impl/pipeline.go} &
+  FA-07 & CI provider webhook trigger (GitLab / GitHub / Bitbucket) &
+    \file{apps/backend/src/lib/ci/index.ts} &
     \S\ref{sec:webhook} \\
-  FA-08 & Pipeline status polling &
-    \file{internal/polling/}, \file{internal/service/impl/pipeline.go} &
+  FA-08 & Inbound pipeline status via CI webhooks (no polling) &
+    \file{apps/backend/src/app/api/webhooks/[provider]/pipeline/route.ts},
+    \file{apps/backend/src/lib/webhook/handler.ts} &
     \S\ref{sec:webhook} \\
   FA-09 & Infrastructure overview &
-    \file{internal/handler/infrastructure.go} &
+    \file{apps/backend/src/app/api/infrastructure/} &
     \S\ref{sec:infra-overview} \\
   FA-10 & Decommission (destroy) flow &
-    \file{internal/handler/infrastructure.go} &
+    \file{apps/backend/src/app/api/infrastructure/[id]/decommission/route.ts} &
     \S\ref{sec:decommission} \\
   FA-09.5--9.8 & Cascade decommission on project/product/category delete &
-    \file{internal/service/impl/infrastructure.go} &
+    \file{apps/backend/src/app/api/projects/[id]/route.ts} &
     \S\ref{sec:decommission} \\
   FA-11 & Audit log &
-    \file{internal/audit/}, \file{internal/handler/audit.go} &
+    \file{apps/backend/src/app/api/admin/audit/route.ts} &
     \S\ref{ch:audit} \\
-  FA-12 & AI-powered product translation &
-    \file{internal/service/impl/translation.go} &
-    \S\ref{sec:aitranslation} \\
   FA-13 & Multi-currency support &
-    \file{internal/service/impl/currency.go} &
+    \file{apps/backend/src/lib/db/schema.ts} (\code{exchange\_rates}),
+    \file{apps/backend/src/app/api/admin/config/exchange/} &
     \S\ref{sec:currencies} \\
   FA-14 & Branding configuration &
-    \file{internal/handler/admin.go}, \file{internal/model/branding.go} &
+    \file{apps/backend/src/app/api/admin/branding/} &
     \S\ref{sec:branding} \\
   \midrule
-  NFA-01.1 & Docker deployment &
-    \file{Dockerfile}, \file{infra/docker-host/} &
+  NFA-01.1 & Docker deployment (two containers) &
+    \file{apps/backend/Dockerfile}, \file{apps/frontend/Dockerfile},
+    \file{infra/docker-compose.yml} &
     \S\ref{sec:docker-deploy} \\
   NFA-01.2 & Kubernetes deployment &
-    \file{infra/helm/open-hybrid-cloud/} manifests &
+    \file{infra/helm/open-hybrid-cloud/} &
     \S\ref{sec:k8s-deploy} \\
-  NFA-01.3 & Single binary (embed.FS) &
-    \file{cmd/server/main.go}, \code{//go:embed} directives &
+  NFA-01.3 & Schema management via Drizzle ORM &
+    \file{apps/backend/src/lib/db/schema.ts}, \code{make db-push} &
     \S\ref{ch:design} \\
-  NFA-01.4 & Database migrations at startup &
-    \file{cmd/migrate/main.go}, \file{internal/migrations/} &
-    \S\ref{sec:dbmigrations} \\
   NFA-02.1 & HTTPS enforcement &
     Nginx config (reverse proxy, TLS termination) &
     \S\ref{sec:docker-deploy} \\
-  NFA-02.2 & Secure session cookies &
-    \file{internal/session/}, AES-GCM encrypted HttpOnly cookies &
+  NFA-02.2 & JWT authentication (HS256, 24 h) &
+    \file{apps/backend/src/lib/auth/jwt.ts}, \code{jose} library &
     \S\ref{ch:design} \\
   NFA-02.3 & bcrypt password hashing &
-    \file{internal/service/impl/user.go} &
+    \file{apps/backend/src/app/api/auth/login/route.ts}, \code{bcryptjs} &
     \S\ref{ch:design} \\
-  NFA-02.4 & Role-enforced routes &
-    \file{internal/middleware/auth.go} &
+  NFA-02.4 & Role-enforced API routes &
+    \file{apps/backend/src/lib/auth/middleware.ts} &
     \S\ref{ch:users} \\
-  NFA-03 & 25-language i18n &
-    \file{internal/i18n/i18n.go} &
-    \S\ref{app:languages} \\
   NFA-04 & Audit trail for all state changes &
-    \file{internal/audit/service.go} &
+    \file{apps/backend/src/lib/db/schema.ts} (\code{audit\_log}) &
     \S\ref{ch:audit} \\
   \bottomrule
   \caption{Requirements traceability matrix}

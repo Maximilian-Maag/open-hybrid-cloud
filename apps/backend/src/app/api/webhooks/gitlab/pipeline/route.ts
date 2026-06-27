@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { handlePipelineEvent } from '@/lib/webhook/handler'
 import { db } from '@/lib/db/client'
 import { deploymentEnvironments } from '@/lib/db/schema'
@@ -39,17 +39,18 @@ const mapGitLabStatus = (
 export async function POST(req: NextRequest) {
   const token = req.headers.get('x-gitlab-token')
 
-  if (token) {
-    // Verify token matches a known environment webhook token
-    const envRows = await db
-      .select({ id: deploymentEnvironments.id })
-      .from(deploymentEnvironments)
-      .where(eq(deploymentEnvironments.webhookToken, token))
-      .limit(1)
+  if (!token) {
+    return NextResponse.json({ error: 'Missing token' }, { status: 401 })
+  }
 
-    if (!envRows.length) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+  const envRows = await db
+    .select({ id: deploymentEnvironments.id })
+    .from(deploymentEnvironments)
+    .where(eq(deploymentEnvironments.webhookToken, token))
+    .limit(1)
+
+  if (!envRows.length) {
+    return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
   }
 
   const body = await req.json().catch(() => null) as GitLabPipelineBody | null

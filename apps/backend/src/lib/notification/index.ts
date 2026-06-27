@@ -65,6 +65,9 @@ const getTransporter = async (): Promise<nodemailer.Transporter | null> => {
   return transporterCache
 }
 
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+
 const send = async (to: string, subject: string, html: string): Promise<void> => {
   try {
     const transporter = await getTransporter()
@@ -84,8 +87,8 @@ export const sendOrderCreated = async (
 ): Promise<void> =>
   send(
     to,
-    `Order #${orderId} Created — ${productName}`,
-    `<p>Your order <strong>#${orderId}</strong> for <strong>${productName}</strong> has been created and is pending approval.</p>`,
+    `Order #${orderId} Created — ${escapeHtml(productName)}`,
+    `<p>Your order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> has been created and is pending approval.</p>`,
   )
 
 export const sendApprovalRequest = async (
@@ -96,8 +99,8 @@ export const sendApprovalRequest = async (
 ): Promise<void> =>
   send(
     to,
-    `Approval Required: Order #${orderId} — ${productName}`,
-    `<p><strong>${ordererName}</strong> has placed order <strong>#${orderId}</strong> for <strong>${productName}</strong> and it requires your approval.</p><p>Please log in to review and approve or reject the order.</p>`,
+    `Approval Required: Order #${orderId} — ${escapeHtml(productName)}`,
+    `<p><strong>${escapeHtml(ordererName)}</strong> has placed order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> and it requires your approval.</p><p>Please log in to review and approve or reject the order.</p>`,
   )
 
 export const sendOrderApproved = async (
@@ -107,8 +110,8 @@ export const sendOrderApproved = async (
 ): Promise<void> =>
   send(
     to,
-    `Order #${orderId} Approved — ${productName}`,
-    `<p>Your order <strong>#${orderId}</strong> for <strong>${productName}</strong> has been approved and provisioning has started.</p>`,
+    `Order #${orderId} Approved — ${escapeHtml(productName)}`,
+    `<p>Your order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> has been approved and provisioning has started.</p>`,
   )
 
 export const sendOrderRejected = async (
@@ -119,8 +122,8 @@ export const sendOrderRejected = async (
 ): Promise<void> =>
   send(
     to,
-    `Order #${orderId} Rejected — ${productName}`,
-    `<p>Your order <strong>#${orderId}</strong> for <strong>${productName}</strong> has been rejected.</p><p><strong>Reason:</strong> ${note}</p>`,
+    `Order #${orderId} Rejected — ${escapeHtml(productName)}`,
+    `<p>Your order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> has been rejected.</p><p><strong>Reason:</strong> ${escapeHtml(note)}</p>`,
   )
 
 export const sendProvisioningCompleted = async (
@@ -130,8 +133,8 @@ export const sendProvisioningCompleted = async (
 ): Promise<void> =>
   send(
     to,
-    `Provisioning Completed — ${productName}`,
-    `<p>Provisioning of <strong>${productName}</strong> has completed successfully. Infrastructure element ID: <strong>${infraId}</strong>.</p>`,
+    `Provisioning Completed — ${escapeHtml(productName)}`,
+    `<p>Provisioning of <strong>${escapeHtml(productName)}</strong> has completed successfully. Infrastructure element ID: <strong>${infraId}</strong>.</p>`,
   )
 
 export const sendProvisioningFailed = async (
@@ -141,8 +144,8 @@ export const sendProvisioningFailed = async (
 ): Promise<void> =>
   send(
     to,
-    `Provisioning Failed — ${productName}`,
-    `<p>Provisioning for order <strong>#${orderId}</strong> of <strong>${productName}</strong> has failed. Please contact your administrator.</p>`,
+    `Provisioning Failed — ${escapeHtml(productName)}`,
+    `<p>Provisioning for order <strong>#${orderId}</strong> of <strong>${escapeHtml(productName)}</strong> has failed. Please contact your administrator.</p>`,
   )
 
 export const sendDecommissioned = async (
@@ -152,6 +155,6 @@ export const sendDecommissioned = async (
 ): Promise<void> =>
   send(
     to,
-    `Resource Decommissioned — ${productName}`,
-    `<p>The infrastructure element <strong>${infraId}</strong> (<strong>${productName}</strong>) has been decommissioned successfully.</p>`,
+    `Resource Decommissioned — ${escapeHtml(productName)}`,
+    `<p>The infrastructure element <strong>${infraId}</strong> (<strong>${escapeHtml(productName)}</strong>) has been decommissioned successfully.</p>`,
   )

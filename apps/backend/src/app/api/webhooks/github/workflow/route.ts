@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createHmac } from 'crypto'
+import { type NextRequest, NextResponse } from 'next/server'
+import { createHmac, timingSafeEqual } from 'crypto'
 import { handlePipelineEvent } from '@/lib/webhook/handler'
 import { db } from '@/lib/db/client'
 import { deploymentEnvironments } from '@/lib/db/schema'
@@ -40,20 +40,25 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get('x-hub-signature-256')
   const rawBody = await req.text()
 
-  // Verify HMAC signature against known webhook tokens
-  if (signature) {
-    const envRows = await db
-      .select({ webhookToken: deploymentEnvironments.webhookToken })
-      .from(deploymentEnvironments)
+  if (!signature) {
+    return NextResponse.json({ error: 'Missing signature' }, { status: 401 })
+  }
 
-    const isValid = envRows.some((env) => {
-      const expected = `sha256=${createHmac('sha256', env.webhookToken).update(rawBody).digest('hex')}`
-      return expected === signature
-    })
+  const envRows = await db
+    .select({ webhookToken: deploymentEnvironments.webhookToken })
+    .from(deploymentEnvironments)
 
-    if (!isValid) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  const isValid = envRows.some((env) => {
+    const expected = `sha256=${createHmac('sha256', env.webhookToken).update(rawBody).digest('hex')}`
+    try {
+      return timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
+    } catch {
+      return false
     }
+  })
+
+  if (!isValid) {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
   let body: GitHubWorkflowRunBody

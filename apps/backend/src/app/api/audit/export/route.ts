@@ -25,8 +25,14 @@ async function fetchRows(req: NextRequest): Promise<AuditRow[]> {
   const conditions = []
   if (userId) conditions.push(eq(auditLog.userId, Number(userId)))
   if (action) conditions.push(ilike(auditLog.action, `%${action}%`))
-  if (from) conditions.push(gte(auditLog.createdAt, new Date(from)))
-  if (to) conditions.push(lte(auditLog.createdAt, new Date(`${to}T23:59:59Z`)))
+  if (from) {
+    const d = new Date(from)
+    if (!isNaN(d.getTime())) conditions.push(gte(auditLog.createdAt, d))
+  }
+  if (to) {
+    const d = new Date(`${to}T23:59:59Z`)
+    if (!isNaN(d.getTime())) conditions.push(lte(auditLog.createdAt, d))
+  }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined
 

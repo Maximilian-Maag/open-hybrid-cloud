@@ -113,9 +113,8 @@ export async function GET(req: NextRequest) {
 
   if (format === 'pdf') {
     const pdf = await buildPdf(rows)
-    return new NextResponse(pdf, {
+    return new NextResponse(new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), {
       headers: {
-        'Content-Type': 'application/pdf',
         'Content-Disposition': 'attachment; filename="audit.pdf"',
       },
     })

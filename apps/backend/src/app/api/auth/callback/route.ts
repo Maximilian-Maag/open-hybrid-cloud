@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { decodeJwt } from 'jose'
 import { signToken } from '@/lib/auth/jwt'
 import { upsertSsoUser } from '@/lib/services/auth'
+import type { Role } from '@open-hybrid-cloud/types'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -67,7 +68,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${frontendUrl}/?error=account_disabled`)
   }
 
-  const sessionUser = { id: user.id, email: user.email, name: user.name, role: user.role }
+  const sessionUser = { id: user.id, email: user.email, name: user.name, role: user.role as Role }
   const jwt = await signToken(sessionUser)
 
   return NextResponse.redirect(`${frontendUrl}/?token=${jwt}`)

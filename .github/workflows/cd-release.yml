@@ -146,7 +146,7 @@ jobs:
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-frontend:latest
             ```
 
-            See `infra/docker-compose.yml` for the full Docker host deployment configuration.
+            See `infra/docker-host/docker-compose.yml` for the full Docker host deployment configuration.
           files: |
             docs/handbook.pdf
           draft: false

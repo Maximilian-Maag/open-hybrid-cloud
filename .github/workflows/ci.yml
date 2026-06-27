@@ -141,6 +141,12 @@ jobs:
 
       - name: Build backend
         run: pnpm --filter backend build
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/open_hybrid_cloud
 
       - name: Build frontend
         run: pnpm --filter frontend build
+        env:
+          NEXTAUTH_URL: http://localhost:3000
+          NEXTAUTH_SECRET: ci-build-placeholder-not-used-at-runtime
+          API_URL: http://localhost:3001

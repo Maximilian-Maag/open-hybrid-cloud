@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { NextRequest } from 'next/server'
 import { PUT, DELETE } from './route'
-import { createUser, createCategory, createProduct, createCiSource, createEnvironment, makeAuthHeader } from '@/test/helpers'
+import { createUser, makeAuthHeader } from '@/test/helpers'
 import { db } from '@/lib/db/client'
 import { productWebhooks } from '@/lib/db/schema'
 

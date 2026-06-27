@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
+import type * as ExchangeRatesService from '@/lib/services/admin/exchangeRates'
 
 vi.mock('@/lib/services/admin/exchangeRates', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('@/lib/services/admin/exchangeRates')>()
+  const mod = await importOriginal<typeof ExchangeRatesService>()
   return { ...mod, refreshExchangeRates: vi.fn().mockResolvedValue({ ok: true, data: [] }) }
 })
 

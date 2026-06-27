@@ -219,7 +219,7 @@
   pdfauthor={Open Hybrid Cloud Infrastructure Team},
   pdftitle={Open Hybrid Cloud Infrastructure Webshop — Technical Handbook},
   pdfsubject={Technical documentation for administrators, developers, and project managers},
-  pdfkeywords={Open Hybrid Cloud, webshop, infrastructure, OpenTofu, GitLab, Linode, Go, C4},
+  pdfkeywords={Open Hybrid Cloud, webshop, infrastructure, Next.js, TypeScript, OpenTofu, GitLab, C4},
   bookmarksnumbered=true,
   hypertexnames=true,
   unicode=true,
@@ -1312,8 +1312,9 @@ Content-Type: application/json
         the variables as environment variables.
   \item The pipeline reads \code{TF\_VAR\_*} variables, runs
         \code{tofu plan} then \code{tofu apply}.
-  \item On completion (success or failure), the webshop's polling
-        goroutine detects the status change and updates the order record.
+  \item On completion (success or failure), the CI provider sends a
+        webhook to \route{/api/webhooks/\{provider\}/pipeline} which
+        updates the order and infrastructure status immediately.
 \end{enumerate}
 
 \section{Dependency Between Modules}

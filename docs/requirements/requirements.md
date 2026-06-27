@@ -7,7 +7,7 @@
 | ID | Requirement |
 |----|-------------|
 | FA-01.1 | The system recognizes three roles: **Admin**, **Project Manager**, and **Root**. |
-| FA-01.2 | Admins and Project Managers authenticate via SSO using Microsoft Entra ID (OIDC). |
+| FA-01.2 | Admins and Project Managers authenticate with email and password. Microsoft Entra ID (OIDC) SSO is optionally supported and configurable via environment variables. |
 | FA-01.3 | The Root uses a local account. Local accounts can only be created by the Root. |
 | FA-01.4 | Admins can see all orders, projects, and infrastructure elements of all users. |
 | FA-01.5 | Project Managers can only see their own orders, projects, and infrastructure elements. |
@@ -106,7 +106,7 @@
 | FA-09.1 | Infrastructure elements can be decommissioned from within the infrastructure overview. |
 | FA-09.2 | Admins can decommission all infrastructure elements. Project Managers can only decommission their own. |
 | FA-09.3 | Decommissioning triggers the GitLab destroy webhook of the associated OpenTofu module. |
-| FA-09.4 | The decommissioning status is updated via the GitLab polling mechanism. |
+| FA-09.4 | The decommissioning status is updated via CI provider webhook callback (`POST /api/webhooks/{provider}/pipeline`). |
 | FA-09.5 | When a **project** is deleted, all active infrastructure elements belonging to that project are automatically decommissioned (destroy webhook fired) before the project record is removed. |
 | FA-09.6 | When a **product** is deleted, all active infrastructure elements provisioned from that product are automatically decommissioned before the product record is removed. |
 | FA-09.7 | When a **category** is deleted, all active infrastructure elements belonging to any product in that category are automatically decommissioned before the category record is removed. |
@@ -201,7 +201,7 @@
 
 | ID | Requirement |
 |----|-------------|
-| FA-17.1 | After a successful OpenTofu apply, the GitLab pipeline writes key-value outputs in a format the polling service can read. |
+| FA-17.1 | After a successful OpenTofu apply, the CI pipeline writes key-value outputs that the webhook handler parses and stores per infrastructure element. |
 | FA-17.2 | Outputs are stored per infrastructure element in `infrastructure_elements.outputs` (JSONB). |
 | FA-17.3 | Outputs (e.g. IP addresses, hostnames, resource IDs) are displayed on the order detail page and the infrastructure element detail page. |
 
@@ -213,13 +213,13 @@
 
 | ID | Requirement |
 |----|-------------|
-| NFA-01.1 | The application runs as a single stateless Docker container. |
+| NFA-01.1 | The application runs as two stateless Docker containers: `frontend` (Next.js UI) and `backend` (Next.js API). |
 | NFA-01.2 | **Docker Host:** An Nginx container (official image) handles HTTPS termination and forwards requests via reverse proxy. |
-| NFA-01.3 | **Docker Host:** The application image (`maximilianmaag/open-hybrid-cloud`) is publicly available on Docker Hub — no registry authentication required. All other images (nginx, postgres) are official images. |
+| NFA-01.3 | **Docker Host:** The application images (`maximilianmaag/open-hybrid-cloud-backend`, `maximilianmaag/open-hybrid-cloud-frontend`) are publicly available on Docker Hub — no registry authentication required. All other images (nginx, postgres) are official images. |
 | NFA-01.4 | **Kubernetes:** Nginx Ingress Controller + cert-manager handle TLS termination (Let's Encrypt or internal CA). No `imagePullSecret` is required; the image is public. |
 | NFA-01.5 | Configuration is done exclusively via environment variables (12-Factor App). No configuration files inside the container. |
 | NFA-01.6 | The GitLab server is reachable via a configurable URL. |
-| NFA-01.7 | The deployment configuration for the Docker Host is located under `infra/docker-host/` and contains: `docker-compose.yml`, `nginx.conf.example`, and `.env.example`. |
+| NFA-01.7 | The deployment configuration for the Docker Host is located under `infra/docker-host/` and contains: `docker-compose.yml`, `nginx.conf.example`, and `setup.sh`. |
 
 ---
 
@@ -229,7 +229,7 @@
 |----|-------------|
 | NFA-02.1 | The application container is fully stateless. No local state between requests. |
 | NFA-02.2 | Sessions are stored in encrypted HttpOnly cookies — no server-side session store required. |
-| NFA-02.3 | The GitLab polling service coordinates jobs via PostgreSQL locks — safe with multiple container replicas. |
+| NFA-02.3 | No polling service is used. CI providers push status updates via webhook callbacks — stateless and safe with multiple container replicas. |
 | NFA-02.4 | Horizontal scaling (multiple replicas) must work without any configuration changes. |
 
 ---
@@ -239,7 +239,7 @@
 | ID | Requirement |
 |----|-------------|
 | NFA-03.1 | SSO authentication is performed via Microsoft Entra ID using the OpenID Connect Authorization Code Flow. |
-| NFA-03.2 | Local accounts are exclusively intended for the Root. |
+| NFA-03.2 | Local accounts (email/password) are used by all roles. The Root creates and manages accounts via the admin UI. |
 | NFA-03.3 | All external connections (GitLab, Entra ID, SMTP, APIs) use HTTPS/TLS. |
 | NFA-03.4 | API keys and secrets (GitLab tokens, SMTP credentials, session secret) are configured exclusively via environment variables. |
 

@@ -174,8 +174,8 @@ Under **Administration → Users**:
 
 - Create local user accounts (name, email, password, role)
 - Edit or deactivate existing accounts
-- SSO users (Admins and project leaders via Entra ID) are created automatically on first login and appear in this list as well
-- Roles: **Admin**, **Project Leader**, **Root**
+- SSO users (Admins and project managers via Entra ID, if configured) are created automatically on first login and appear in this list as well
+- Roles: **Admin**, **Project Manager**, **Root**
 
 ---
 
@@ -218,8 +218,8 @@ Under **Administration → Shop Design** (or directly at `/admin/branding`):
 
 ### 9.1 Colors
 
-- **Primary color**: Used for the header, footer, and navigation bar. Default: `#0f172a` (dark slate).
-- **Accent color**: Used for buttons and call-to-action elements. Default: `#0ea5e9` (sky blue).
+- **Primary color**: Used for the header, footer, and navigation bar. Default: `#1e40af` (blue).
+- **Secondary color**: Used for buttons and call-to-action elements. Default: `#3b82f6` (sky blue).
 - The live preview on the right updates in real time as you change the color values.
 
 ### 9.2 Logo

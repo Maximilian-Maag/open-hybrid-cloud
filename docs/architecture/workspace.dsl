@@ -1,48 +1,48 @@
-workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and decommissioning IT infrastructure. Next.js frontend + Next.js REST API backend, two containers." {
+workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and decommissioning IT infrastructure. Next.js frontend + REST API backend, PostgreSQL." {
 
     model {
-        admin = person "Admin" "Administrator. Can view all orders, projects and infrastructure, order directly and approve or reject orders from project managers." "Person"
-        root = person "Root" "Manages the product catalog, system configuration and local user accounts. Can view all projects and infrastructure. Uses a local account." "Person"
-        project_manager = person "Project Manager" "Can place orders (approval by Admin required), decommission own infrastructure and manage projects. Can only view own projects, orders and infrastructure." "Person"
+        admin = person "Admin" "Views all orders and infrastructure, orders directly, approves or rejects project manager orders." "Person"
+        root = person "Root" "Manages catalog, system config and users via a local account." "Person"
+        project_manager = person "Project Manager" "Places orders (Admin approval required), manages own projects and infrastructure." "Person"
 
-        gitlab = softwaresystem "GitLab" "Multiple configurable GitLab instances as sources for OpenTofu modules. Receives provisioning and destroy webhooks, executes OpenTofu workflows, provides an API for the repository browser and pushes pipeline status events back to the Backend API via webhooks." "Existing System"
-        oidc_provider = softwaresystem "Microsoft Entra ID" "SSO identity provider (OIDC) for authenticating admins and project leaders." "Existing System"
-        ai_translation = softwaresystem "AI Translation Service" "Configurable AI provider for translating product content into all EU languages and Russian. Cloud: Claude, OpenAI, Azure OpenAI. On-premise: Ollama, LocalAI. Optional — hidden when not configured." "Existing System"
-        smtp = softwaresystem "Mail Server" "SMTP server for transactional emails: order confirmation, approval request, approval/rejection, deployment completion and error notifications." "Existing System"
-        exchange_rate_api = softwaresystem "Exchange Rate API" "External API for current exchange rates. Used to convert from the configured base currency to the display currency per user locale." "Existing System"
+        gitlab = softwaresystem "GitLab" "CI provider executing OpenTofu workflows; pushes pipeline events back via webhook." "Existing System"
+        oidc_provider = softwaresystem "Microsoft Entra ID" "SSO identity provider (OIDC) for admins and project managers." "Existing System"
+        ai_translation = softwaresystem "AI Translation Service" "Optional AI provider for product content translation; supports cloud and on-premise models." "Existing System"
+        smtp = softwaresystem "Mail Server" "SMTP server for transactional order and deployment notification emails." "Existing System"
+        exchange_rate_api = softwaresystem "Exchange Rate API" "Provides current exchange rates for per-locale currency conversion." "Existing System"
 
-        webshop = softwaresystem "Open Hybrid Cloud" "Self-service portal through which admins and project leaders can order, manage and decommission IT infrastructure." {
+        webshop = softwaresystem "Open Hybrid Cloud" "Self-service portal for ordering, managing and decommissioning IT infrastructure." {
 
-            frontend = container "Frontend" "Next.js application serving the React UI. Handles routing, server-side rendering and client-side interactivity. Communicates exclusively with the Backend API via REST. Manages user sessions via NextAuth.js." "Next.js / React / Tailwind CSS / NextAuth.js" {
+            frontend = container "Frontend" "React UI; server-side rendered with NextAuth.js sessions, communicates with Backend API via REST." "Next.js / React / Tailwind CSS / NextAuth.js" {
 
-                ui_auth = component "Auth Pages" "Login page supporting local credentials and SSO. NextAuth.js manages session lifecycle and executes the OIDC Authorization Code Flow with Entra ID. JWT stored in an encrypted HttpOnly cookie and forwarded as a Bearer token to the Backend API."
-                ui_catalog = component "Catalog" "Product grid filtered by category with search. Displays image, multilingual name, description and price converted to the user's locale currency. Environment selection and parameter form when placing an order."
-                ui_orders = component "Orders" "Order creation form with dynamically rendered parameter fields. Project and cost centre assignment. Order list with status indicators and detail view with live status polling."
-                ui_approvals = component "Approvals" "Pending order queue for admins. Inline approve and reject actions. Rejection requires a mandatory comment."
-                ui_infrastructure = component "Infrastructure" "Deployed infrastructure items grouped by project and environment. Shows OpenTofu outputs. Decommission trigger with confirmation."
-                ui_audit = component "Audit Log" "Filterable compliance log. Filter by user, action and date range. Export as CSV or PDF."
-                ui_admin = component "Administration" "Full product catalog management: categories, products, images, multilingual content, parameter sets, prices per environment, cost centre configuration, GitLab sources, deployment environments, users, branding, SMTP, AI provider and exchange rates."
+                ui_auth = component "Auth Pages" "Login with local credentials or SSO (OIDC); JWT in HttpOnly cookie forwarded to Backend."
+                ui_catalog = component "Catalog" "Filtered product grid with locale currency prices; environment and parameter selection for ordering."
+                ui_orders = component "Orders" "Order form with dynamic parameters, project/cost-centre assignment and live status polling."
+                ui_approvals = component "Approvals" "Pending order queue for admins with inline approve/reject actions."
+                ui_infrastructure = component "Infrastructure" "Infrastructure items grouped by project/environment; shows outputs and decommission trigger."
+                ui_audit = component "Audit Log" "Filterable compliance log with CSV/PDF export."
+                ui_admin = component "Administration" "Manages catalog entities, environments, CI sources, users, branding and system config."
                 ui_settings = component "Settings" "User profile update and password change."
             }
 
-            backend = container "Backend API" "Next.js application exposing a RESTful API. Contains all business logic, database access and external system integrations. Purely functional — no classes, pure functions, immutable data, neverthrow for error handling. OpenAPI 3.0 spec auto-generated from Zod schemas via @asteasolutions/zod-to-openapi and served as Swagger UI at /api/docs." "Next.js / TypeScript / Drizzle ORM / Zod / JWT" {
+            backend = container "Backend API" "RESTful API with all business logic; purely functional, Zod-validated, Drizzle ORM, OpenAPI docs at /api/docs." "Next.js / TypeScript / Drizzle ORM / Zod / JWT" {
 
-                api_auth = component "Auth API" "POST /api/auth/login: verifies bcrypt password, issues signed JWT. GET /api/auth/callback: handles Entra ID OIDC callback, upserts SSO user, issues JWT. JWT validation middleware applied to all protected routes. Role hierarchy: root > admin > project_manager."
-                api_catalog = component "Catalog API" "GET /api/catalog: paginated product list with category filter and full-text search. GET /api/catalog/{id}: product detail with environment options, prices and parameters. GET /api/products/{id}/image: product image binary."
-                api_orders = component "Orders API" "POST /api/orders: validates parameters, assigns project and cost centre, creates order. Admin orders auto-approve and trigger CI provider pipeline immediately. GET /api/orders and GET /api/orders/{id}: order list and detail with pipeline status."
-                api_approvals = component "Approvals API" "GET /api/approvals: pending orders for admins. POST /api/approvals/{id}/approve: triggers CI provider pipeline, transitions order to provisioning. POST /api/approvals/{id}/reject: stores rejection comment, notifies orderer."
-                api_infrastructure = component "Infrastructure API" "GET /api/infrastructure: infrastructure elements filtered by role. POST /api/infrastructure/{id}/decommission: triggers CI provider destroy pipeline, transitions element to decommissioning."
-                api_admin = component "Administration API" "Full CRUD under /api/admin/* for: categories, products, product translations, parameters, environments, CI sources (GitLab/GitHub/Bitbucket), cost centres, users, branding, app config (SMTP, AI provider). GET /api/admin/ci/*: repository browser proxy to CI provider API. POST /api/admin/ci/import-vars: parses variables.tf and creates parameters."
-                api_webhook = component "CI Webhook Receiver" "Receives inbound pipeline status events pushed by CI providers. POST /api/webhooks/gitlab/pipeline, /api/webhooks/github/workflow, /api/webhooks/bitbucket/pipeline. Verifies provider-specific signatures (token or HMAC-SHA256). Normalises payload to a common PipelineEvent type. On success: fetches job trace, parses OpenTofu outputs, transitions order or infrastructure element to completed/decommissioned, logs audit entry, triggers notification. On failure: transitions to failed, logs audit entry, triggers notification."
-                api_audit = component "Audit API" "POST /api/audit: writes immutable audit entry (called internally after every significant action). GET /api/audit: filterable log for admins. GET /api/audit/export: streams CSV or PDF."
-                api_notification = component "Notification" "Sends transactional emails via Nodemailer. Events: OrderCreated (orderer + all admins for project leaders), OrderApproved, OrderRejected (orderer), ProvisioningCompleted, ProvisioningFailed (orderer + all admins), Decommissioned (orderer)."
-                api_ai = component "AI Translation" "POST /api/admin/products/{id}/translate: sends product content to the configured AI provider and writes translations for all 25 supported languages. Supports Claude, OpenAI, Azure OpenAI, Ollama and LocalAI via a shared prompt/response format."
-                api_exchange = component "Exchange Rates" "POST /api/admin/currencies/refresh: fetches current rates from external API and stores them. GET /api/exchange/{from}/{to}: converts amounts using cached rates."
-                api_ci = component "CI Provider Client" "Internal module providing a unified interface over multiple CI provider APIs. Supports GitLab API v4, GitHub REST API and Bitbucket API 2.0. Methods: list repositories/branches/files, trigger pipeline, fetch job trace, parse OpenTofu outputs. Implemented as a discriminated union dispatch — no classes."
-                api_docs = component "OpenAPI / Swagger UI" "GET /api/docs: Swagger UI. GET /api/docs/spec: OpenAPI 3.0 JSON spec auto-generated from Zod request and response schemas registered via @asteasolutions/zod-to-openapi."
+                api_auth = component "Auth API" "Local and OIDC login issuing signed JWTs; middleware enforces role hierarchy on all routes."
+                api_catalog = component "Catalog API" "Paginated, filterable product list with details, prices and images."
+                api_orders = component "Orders API" "Creates and reads orders; admin orders auto-approve and trigger CI pipeline immediately."
+                api_approvals = component "Approvals API" "Lists pending orders; approve triggers CI pipeline, reject stores comment and notifies."
+                api_infrastructure = component "Infrastructure API" "Lists infrastructure by role; decommission triggers CI destroy pipeline."
+                api_admin = component "Administration API" "Full CRUD for catalog, environments, CI sources, users and system config; repo browser and variables.tf import."
+                api_webhook = component "CI Webhook Receiver" "Receives CI provider pipeline events, verifies signatures, parses outputs and transitions order/infra status."
+                api_audit = component "Audit API" "Writes immutable audit entries; filterable log with CSV/PDF export for admins."
+                api_notification = component "Notification" "Sends transactional emails for order and deployment lifecycle events via Nodemailer."
+                api_ai = component "AI Translation" "Translates product content into 25 languages via the configured AI provider."
+                api_exchange = component "Exchange Rates" "Fetches and caches exchange rates; converts amounts between currencies."
+                api_ci = component "CI Provider Client" "Unified client for GitLab, GitHub and Bitbucket: trigger pipelines, browse repos, fetch job traces."
+                api_docs = component "OpenAPI / Swagger UI" "Swagger UI and OpenAPI 3.0 spec auto-generated from Zod schemas."
             }
 
-            database = container "Database" "Persistence of all portal data: product categories, products (image as BYTEA), product translations (per BCP-47 language code), parameter sets (global, category, product and environment scope), GitLab sources, deployment environments, product webhooks (multiple per product+environment ordered by exec_order), prices per product and environment, cost centres, exchange rates, projects, orders (parameters as JSONB, pipeline IDs as JSONB array, rejection comment), infrastructure elements (parameters, pipeline IDs and OpenTofu outputs as JSONB), audit log, local users (bcrypt hashed passwords, SSO subject), branding (logo as BYTEA, colors, shop name, imprint) and app config (SMTP, AI provider)." "PostgreSQL 16" "Database"
+            database = container "Database" "Stores all portal data: catalog, orders, infrastructure, users, audit log, config and branding." "PostgreSQL 16" "Database"
         }
 
         # Relationships — system level
@@ -173,7 +173,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
                     deploymentNode "frontend Deployment" "Next.js frontend pods, horizontally scalable." "Kubernetes Deployment" {
                         containerInstance frontend
                     }
-                    deploymentNode "backend Deployment" "Next.js API pods, horizontally scalable. Stateless — all state in PostgreSQL. Receives inbound CI provider webhooks directly." "Kubernetes Deployment" {
+                    deploymentNode "backend Deployment" "Next.js API pods, horizontally scalable. Stateless — all state in PostgreSQL." "Kubernetes Deployment" {
                         containerInstance backend
                     }
                     deploymentNode "postgres StatefulSet" "PostgreSQL with persistent volume" "Kubernetes StatefulSet" {

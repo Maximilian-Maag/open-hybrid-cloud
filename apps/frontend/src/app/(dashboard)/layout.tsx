@@ -34,9 +34,11 @@ export default async function DashboardLayout({
   const lang = await detectLang()
 
   let shopName = 'Open Hybrid Cloud'
+  let hasImprint = false
   try {
     const branding = await get<Branding>('/api/admin/branding', token)
     if (branding?.shopName) shopName = branding.shopName
+    hasImprint = !!branding?.imprintText
   } catch {
     // branding fetch failure is non-fatal
   }
@@ -49,9 +51,11 @@ export default async function DashboardLayout({
         <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
           {children}
         </main>
-        <footer className="border-t border-slate-200 bg-white px-6 py-2 text-xs text-slate-400 flex justify-end">
-          <Link href="/impressum" className="hover:text-slate-600 hover:underline">Imprint</Link>
-        </footer>
+        {hasImprint && (
+          <footer className="border-t border-slate-200 bg-white px-6 py-2 text-xs text-slate-400 flex justify-end">
+            <Link href="/impressum" className="hover:text-slate-600 hover:underline">Imprint</Link>
+          </footer>
+        )}
       </div>
     </div>
   )

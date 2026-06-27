@@ -50,11 +50,65 @@ jobs:
       - name: Lint frontend
         run: pnpm --filter frontend lint
 
+  # ── Test ─────────────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: open_hybrid_cloud_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@a3252b7022c3f3971ac19bd5e2ad3e3e6e4fa71b # v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "store=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test backend
+        run: pnpm --filter backend test
+
+      - name: Test frontend
+        run: pnpm --filter frontend test
+
   # ── Build ────────────────────────────────────────────────────────────────────
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [check]
+    needs: [check, test]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:

@@ -40,8 +40,8 @@ export const getBranding = async (): Promise<Result<BrandingConfig>> => {
 
   if (!rows.length) {
     return ok({
-      primaryColor: '#1e40af',
-      secondaryColor: '#3b82f6',
+      primaryColor: '#131921',
+      secondaryColor: '#febd69',
       shopName: 'Open Hybrid Cloud',
       shopSubtitle: '',
       imprintText: '',

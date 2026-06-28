@@ -45,15 +45,20 @@ export function Header({
 
         {/* Search */}
         <form onSubmit={handleSearch} className="flex-1 max-w-xl">
-          <div className="flex items-center bg-white/10 border border-white/20 rounded-lg overflow-hidden">
+          <div className="flex items-center bg-white rounded-md overflow-hidden">
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={lang === 'de' ? 'Produkte suchen…' : 'Search products…'}
-              className="flex-1 bg-transparent px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none"
+              className="flex-1 bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none"
             />
-            <button type="submit" aria-label="Search" className="px-3 text-white/60 hover:text-white transition-colors">
+            <button
+              type="submit"
+              aria-label="Search"
+              className="px-4 py-2 text-slate-900 hover:brightness-95 transition-all flex items-center self-stretch"
+              style={{ backgroundColor: 'var(--bs)' }}
+            >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>

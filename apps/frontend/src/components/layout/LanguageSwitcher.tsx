@@ -13,6 +13,7 @@ export function LanguageSwitcher({ currentLang }: Props) {
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const lang = e.target.value
     document.cookie = `lang=${lang}; path=/; max-age=31536000; SameSite=Lax`
+    window.dispatchEvent(new CustomEvent('langchange', { detail: lang }))
     router.refresh()
   }
 

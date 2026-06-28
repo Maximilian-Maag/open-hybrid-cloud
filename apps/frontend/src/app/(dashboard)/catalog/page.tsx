@@ -8,11 +8,7 @@ import { get } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { t } from '@/lib/i18n'
-
-function getLang(): string {
-  const match = document.cookie.match(/(?:^|;\s*)lang=([^;]+)/)
-  return match?.[1] ?? navigator.language.split('-')[0] ?? 'en'
-}
+import { useLang } from '@/lib/useLang'
 
 export default function CatalogPage() {
   const { data: session } = useSession()
@@ -22,11 +18,7 @@ export default function CatalogPage() {
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
-  const [lang, setLang] = useState('en')
-
-  useEffect(() => {
-    setLang(getLang())
-  }, [])
+  const lang = useLang()
 
   const load = useCallback(async () => {
     if (!token) return

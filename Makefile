@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-down build lint type-check test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio docs docs-clean clean
+.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio docs docs-clean clean
 
 # pnpm is installed via standalone script — add its bin dir to PATH so make can find it
 PNPM_HOME ?= $(HOME)/.local/share/pnpm
@@ -11,6 +11,9 @@ help:
 	@echo "  install               install all workspace dependencies"
 	@echo "  dev                   start infra containers (postgres, mailpit, wiremock, structurizr)"
 	@echo "  dev-down              stop infra containers"
+	@echo "  run                   start backend and frontend dev servers together (requires: make dev)"
+	@echo "  run-backend           start backend dev server on :3001"
+	@echo "  run-frontend          start frontend dev server on :3000"
 	@echo "  build                 build all workspace packages"
 	@echo "  lint                  lint all apps"
 	@echo "  type-check            TypeScript type-check all apps"
@@ -33,6 +36,15 @@ dev:
 
 dev-down:
 	docker compose -f infra/docker-compose.dev.yml down
+
+run:
+	$(PNPM) --parallel --filter backend --filter frontend dev
+
+run-backend:
+	$(PNPM) --filter backend dev
+
+run-frontend:
+	$(PNPM) --filter frontend dev
 
 build:
 	$(PNPM) build

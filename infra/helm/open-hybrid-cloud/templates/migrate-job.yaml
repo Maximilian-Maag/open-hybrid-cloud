@@ -26,15 +26,36 @@ spec:
         - name: migrate
           image: {{ include "open-hybrid-cloud.backend.image" . }}
           imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
-          # drizzle-kit migrate is run via the backend package script
-          command: ["node", "-e", "require('./apps/backend/node_modules/.bin/drizzle-kit')"]
-          args: ["migrate"]
+          # Start the backend server, wait for /api/health (which runs drizzle
+          # migrations and seeds the admin account), then terminate cleanly.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              node apps/backend/server.js &
+              SERVER_PID=$!
+              until wget -q -O /dev/null http://127.0.0.1:3001/api/health; do sleep 2; done
+              kill "$SERVER_PID"
+              wait "$SERVER_PID" 2>/dev/null || true
           env:
+            - name: PORT
+              value: "3001"
+            - name: ADMIN_EMAIL
+              value: {{ .Values.backend.env.adminEmail | quote }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ include "open-hybrid-cloud.backend.fullname" . }}
                   key: DATABASE_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  key: JWT_SECRET
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  key: ADMIN_PASSWORD
           {{- with .Values.backend.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

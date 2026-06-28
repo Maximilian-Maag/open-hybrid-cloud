@@ -356,6 +356,7 @@ export interface Branding {
   shopName: string
   shopSubtitle: string
   imprintText: string
+  logoMime?: string
 }
 
 export interface UpdateBrandingRequest {

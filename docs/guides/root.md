@@ -195,9 +195,10 @@ Logged action types:
 | `order.created` | A new order is placed |
 | `order.approved` | An Admin approves a pending order |
 | `order.rejected` | An Admin rejects a pending order |
-| `order.deployed` | A GitLab pipeline completes successfully |
-| `order.failed` | A GitLab pipeline fails |
+| `order.completed` | A CI/CD pipeline completes successfully |
+| `order.failed` | A CI/CD pipeline fails |
 | `infra.decommissioned` | An infrastructure element is decommissioned |
+| `infra.decommission_failed` | A decommission pipeline fails; element reverts to active |
 | `config.changed` | A system configuration value is updated |
 
 ---

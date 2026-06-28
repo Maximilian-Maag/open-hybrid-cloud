@@ -3,7 +3,7 @@ frontend:
   replicaCount: 2
 
   image:
-    repository: open-hybrid-cloud/frontend
+    repository: your-dockerhub-username/open-hybrid-cloud-frontend
     pullPolicy: IfNotPresent
     # Overrides Chart.appVersion when set
     tag: ""
@@ -41,7 +41,7 @@ backend:
   replicaCount: 2
 
   image:
-    repository: open-hybrid-cloud/backend
+    repository: your-dockerhub-username/open-hybrid-cloud-backend
     pullPolicy: IfNotPresent
     # Overrides Chart.appVersion when set
     tag: ""

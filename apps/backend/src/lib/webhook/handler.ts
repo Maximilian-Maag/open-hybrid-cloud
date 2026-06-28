@@ -136,6 +136,11 @@ export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> =
     }
 
     for (const infra of matchingInfra) {
+      await db
+        .update(infrastructureElements)
+        .set({ status: 'active' })
+        .where(eq(infrastructureElements.id, infra.id))
+
       await logAudit(
         null,
         'infra.decommission_failed',

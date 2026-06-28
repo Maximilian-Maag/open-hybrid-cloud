@@ -23,15 +23,15 @@ beforeEach(async () => {
 })
 
 describe('getSmtpConfig', () => {
-  it('returns nulls (with smtpTls=true default) when nothing configured', async () => {
+  it('returns empty defaults when nothing configured', async () => {
     const result = await getSmtpConfig()
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.smtpHost).toBeNull()
-      expect(result.data.smtpPort).toBeNull()
-      expect(result.data.smtpFrom).toBeNull()
-      expect(result.data.smtpUser).toBeNull()
-      expect(result.data.smtpTls).toBe(true)
+      expect(result.data.host).toBe('')
+      expect(result.data.port).toBe(587)
+      expect(result.data.from).toBe('')
+      expect(result.data.user).toBe('')
+      expect(result.data.tls).toBe(true)
     }
   })
 
@@ -65,23 +65,23 @@ describe('updateSmtpConfig', () => {
     const result = await getSmtpConfig()
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.smtpHost).toBe('smtp.example.com')
-      expect(result.data.smtpPort).toBe(25)
-      expect(result.data.smtpFrom).toBe('no@example.com')
-      expect(result.data.smtpUser).toBe('u')
-      expect(result.data.smtpTls).toBe(false)
+      expect(result.data.host).toBe('smtp.example.com')
+      expect(result.data.port).toBe(25)
+      expect(result.data.from).toBe('no@example.com')
+      expect(result.data.user).toBe('u')
+      expect(result.data.tls).toBe(false)
     }
   })
 })
 
 describe('getAiConfig', () => {
-  it('returns nulls when nothing configured', async () => {
+  it('returns empty defaults when nothing configured', async () => {
     const result = await getAiConfig()
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.aiProvider).toBeNull()
-      expect(result.data.aiEndpoint).toBeNull()
-      expect(result.data.aiModel).toBeNull()
+      expect(result.data.provider).toBe('')
+      expect(result.data.endpoint).toBe('')
+      expect(result.data.model).toBe('')
     }
   })
 
@@ -104,18 +104,18 @@ describe('getAiConfig', () => {
 describe('updateAiConfig', () => {
   it('persists to DB; getAiConfig reflects the change', async () => {
     await updateAiConfig({
-      provider: 'anthropic',
-      endpoint: 'https://api.anthropic.com',
+      provider: 'openai',
+      endpoint: 'https://api.openai.com',
       apiKey: 'k',
-      model: 'claude',
+      model: 'gpt-4o',
     })
 
     const result = await getAiConfig()
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.aiProvider).toBe('anthropic')
-      expect(result.data.aiEndpoint).toBe('https://api.anthropic.com')
-      expect(result.data.aiModel).toBe('claude')
+      expect(result.data.provider).toBe('openai')
+      expect(result.data.endpoint).toBe('https://api.openai.com')
+      expect(result.data.model).toBe('gpt-4o')
     }
 
     // Sanity check: DB row also has the apiKey persisted

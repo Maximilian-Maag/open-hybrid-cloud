@@ -4,11 +4,11 @@ import { eq } from 'drizzle-orm'
 import { ok, type Result } from '@/lib/services/result'
 
 export interface SmtpConfig {
-  smtpHost: string | null
-  smtpPort: number | null
-  smtpFrom: string | null
-  smtpUser: string | null
-  smtpTls: boolean | null
+  host: string
+  port: number
+  from: string
+  user: string
+  tls: boolean
 }
 
 export interface UpdateSmtpInput {
@@ -21,9 +21,9 @@ export interface UpdateSmtpInput {
 }
 
 export interface AiConfig {
-  aiProvider: string | null
-  aiEndpoint: string | null
-  aiModel: string | null
+  provider: string
+  endpoint: string
+  model: string
 }
 
 export interface UpdateAiInput {
@@ -47,10 +47,17 @@ export const getSmtpConfig = async (): Promise<Result<SmtpConfig>> => {
     .limit(1)
 
   if (!rows.length) {
-    return ok({ smtpHost: null, smtpPort: null, smtpFrom: null, smtpUser: null, smtpTls: true })
+    return ok({ host: '', port: 587, from: '', user: '', tls: true })
   }
 
-  return ok(rows[0])
+  const row = rows[0]
+  return ok({
+    host: row.smtpHost ?? '',
+    port: row.smtpPort ?? 587,
+    from: row.smtpFrom ?? '',
+    user: row.smtpUser ?? '',
+    tls: row.smtpTls ?? true,
+  })
 }
 
 export const updateSmtpConfig = async (input: UpdateSmtpInput): Promise<Result<void>> => {
@@ -83,10 +90,15 @@ export const getAiConfig = async (): Promise<Result<AiConfig>> => {
     .limit(1)
 
   if (!rows.length) {
-    return ok({ aiProvider: null, aiEndpoint: null, aiModel: null })
+    return ok({ provider: '', endpoint: '', model: '' })
   }
 
-  return ok(rows[0])
+  const row = rows[0]
+  return ok({
+    provider: row.aiProvider ?? '',
+    endpoint: row.aiEndpoint ?? '',
+    model: row.aiModel ?? '',
+  })
 }
 
 export const updateAiConfig = async (input: UpdateAiInput): Promise<Result<void>> => {

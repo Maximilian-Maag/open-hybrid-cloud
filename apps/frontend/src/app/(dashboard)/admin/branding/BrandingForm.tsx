@@ -52,7 +52,7 @@ export function BrandingForm({ initial, token }: Props) {
       if (logoFile) {
         const fd = new FormData()
         fd.append('logo', logoFile)
-        await apiRequest('/api/admin/branding/logo', { method: 'POST', body: fd, token, isFormData: true })
+        await apiRequest('/api/admin/branding/logo', { method: 'PUT', body: fd, token, isFormData: true })
       }
 
       setSuccess(true)

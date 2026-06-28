@@ -41,6 +41,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Type-check types package
+        run: pnpm --filter @open-hybrid-cloud/types exec tsc --noEmit
+
       - name: Type-check backend
         run: pnpm --filter backend exec tsc --noEmit
 

@@ -32,9 +32,6 @@ importers:
       jose:
         specifier: ^5.10.0
         version: 5.10.0
-      neverthrow:
-        specifier: ^8.2.0
-        version: 8.2.0
       next:
         specifier: ^15.3.0
         version: 15.5.19(@playwright/test@1.61.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -1064,12 +1061,6 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
-
-  '@rollup/rollup-linux-x64-gnu@4.62.2':
-    resolution: {integrity: sha512-5BqxR/pshjey51iliyzTD5Xi3EN0aLmQ2lZ3lvefVV9c82BvrLo2/6OT55iifpWBufs6kdwWbuOKS841DrmK9A==}
-    cpu: [x64]
-    os: [linux]
-    libc: [glibc]
 
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
@@ -2633,10 +2624,6 @@ packages:
   natural-compare@1.4.0:
     resolution: {integrity: sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==}
 
-  neverthrow@8.2.0:
-    resolution: {integrity: sha512-kOCT/1MCPAxY5iUV3wytNFUMUolzuwd/VF/1KCx7kf6CutrOsTie+84zTGTpgQycjvfLdBBdvBvFLqFD2c0wkQ==}
-    engines: {node: '>=18'}
-
   next-auth@5.0.0-beta.31:
     resolution: {integrity: sha512-1OBgCKPzo+S7UWWMp3xgvGvIJ0OpV7B3vR4ZDRqD9a4Ch+OT6dakLXG9ivhtmIWVa71nTSXattOHyCg8sNi8/Q==}
     peerDependencies:
@@ -3992,9 +3979,6 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
-
-  '@rollup/rollup-linux-x64-gnu@4.62.2':
-    optional: true
 
   '@rtsao/scc@1.1.0': {}
 
@@ -5647,10 +5631,6 @@ snapshots:
   napi-postinstall@0.3.4: {}
 
   natural-compare@1.4.0: {}
-
-  neverthrow@8.2.0:
-    optionalDependencies:
-      '@rollup/rollup-linux-x64-gnu': 4.62.2
 
   next-auth@5.0.0-beta.31(next@15.5.19(@playwright/test@1.61.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7):
     dependencies:

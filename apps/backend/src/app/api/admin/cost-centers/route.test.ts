@@ -19,11 +19,13 @@ describe('GET /api/admin/cost-centers', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns 403 for project_manager', async () => {
+  it('returns cost-centers list for project_manager', async () => {
     const pm = await createUser({ role: 'project_manager' })
     const auth = await makeAuthHeader(pm)
     const res = await GET(makeReq('http://localhost/api/admin/cost-centers', 'GET', undefined, auth))
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(Array.isArray(body)).toBe(true)
   })
 
   it('returns cost-centers list for admin', async () => {

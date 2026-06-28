@@ -92,8 +92,9 @@ export const listGitHubFiles = async (
   branch: string,
   path: string,
 ): Promise<CiFile[]> => {
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/')
   const res = await fetch(
-    `https://api.github.com/repos/${projectId}/contents/${path}?ref=${encodeURIComponent(branch)}`,
+    `https://api.github.com/repos/${projectId}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`,
     { headers: ghHeaders(token) },
   )
 
@@ -119,8 +120,9 @@ export const getGitHubFileContent = async (
   branch: string,
   filePath: string,
 ): Promise<string> => {
+  const encodedFilePath = filePath.split('/').map(encodeURIComponent).join('/')
   const res = await fetch(
-    `https://api.github.com/repos/${projectId}/contents/${filePath}?ref=${encodeURIComponent(branch)}`,
+    `https://api.github.com/repos/${projectId}/contents/${encodedFilePath}?ref=${encodeURIComponent(branch)}`,
     { headers: { ...ghHeaders(token), Accept: 'application/vnd.github.raw+json' } },
   )
 

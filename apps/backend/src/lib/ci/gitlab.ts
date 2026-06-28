@@ -1,5 +1,13 @@
 import type { CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
 
+const validateWebUrl = (url: string): string => {
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`Disallowed URL protocol: ${parsed.protocol}`)
+  }
+  return url
+}
+
 export const triggerGitLabPipeline = async (
   webhookUrl: string,
   token: string,
@@ -11,7 +19,7 @@ export const triggerGitLabPipeline = async (
     body.append(`variables[${key}]`, value)
   }
 
-  const res = await fetch(webhookUrl, {
+  const res = await fetch(validateWebUrl(webhookUrl), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
@@ -31,8 +39,9 @@ export const getGitLabJobTrace = async (
   accessToken: string,
   pipelineId: string,
 ): Promise<string> => {
+  const baseUrl = validateWebUrl(apiUrl)
   const jobsRes = await fetch(
-    `${apiUrl}/api/v4/pipelines/${pipelineId}/jobs`,
+    `${baseUrl}/api/v4/pipelines/${pipelineId}/jobs`,
     { headers: { 'PRIVATE-TOKEN': accessToken } },
   )
 
@@ -44,7 +53,7 @@ export const getGitLabJobTrace = async (
   if (!applyJob) return ''
 
   const traceRes = await fetch(
-    `${apiUrl}/api/v4/jobs/${applyJob.id}/trace`,
+    `${baseUrl}/api/v4/jobs/${applyJob.id}/trace`,
     { headers: { 'PRIVATE-TOKEN': accessToken } },
   )
 
@@ -61,7 +70,7 @@ export const listGitLabProjects = async (
   const params = new URLSearchParams({ membership: 'true', per_page: '100' })
   if (search) params.set('search', search)
 
-  const res = await fetch(`${apiUrl}/api/v4/projects?${params}`, {
+  const res = await fetch(`${validateWebUrl(apiUrl)}/api/v4/projects?${params}`, {
     headers: { 'PRIVATE-TOKEN': accessToken },
   })
 
@@ -81,7 +90,7 @@ export const listGitLabBranches = async (
   projectId: string,
 ): Promise<CiBranch[]> => {
   const res = await fetch(
-    `${apiUrl}/api/v4/projects/${encodeURIComponent(projectId)}/repository/branches?per_page=100`,
+    `${validateWebUrl(apiUrl)}/api/v4/projects/${encodeURIComponent(projectId)}/repository/branches?per_page=100`,
     { headers: { 'PRIVATE-TOKEN': accessToken } },
   )
 
@@ -100,7 +109,7 @@ export const listGitLabFiles = async (
 ): Promise<CiFile[]> => {
   const params = new URLSearchParams({ ref: branch, path, per_page: '100' })
   const res = await fetch(
-    `${apiUrl}/api/v4/projects/${encodeURIComponent(projectId)}/repository/tree?${params}`,
+    `${validateWebUrl(apiUrl)}/api/v4/projects/${encodeURIComponent(projectId)}/repository/tree?${params}`,
     { headers: { 'PRIVATE-TOKEN': accessToken } },
   )
 
@@ -120,7 +129,7 @@ export const getGitLabFileContent = async (
   const params = new URLSearchParams({ ref: branch })
   const encodedPath = encodeURIComponent(filePath)
   const res = await fetch(
-    `${apiUrl}/api/v4/projects/${encodeURIComponent(projectId)}/repository/files/${encodedPath}/raw?${params}`,
+    `${validateWebUrl(apiUrl)}/api/v4/projects/${encodeURIComponent(projectId)}/repository/files/${encodedPath}/raw?${params}`,
     { headers: { 'PRIVATE-TOKEN': accessToken } },
   )
 

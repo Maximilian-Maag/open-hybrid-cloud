@@ -81,7 +81,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       />
       <TopNav role={role} />
       <main className="flex-1">
-        <div className="max-w-screen-2xl mx-auto px-4 py-6">
+        <div className="max-w-screen-2xl mx-auto px-4 py-6 animate-page-in">
           {children}
         </div>
       </main>

@@ -49,8 +49,8 @@ export function Table<T extends { id?: number | string }>({
             data.map((row, i) => (
               <tr
                 key={row.id ?? i}
-                onClick={() => onRowClick?.(row)}
-                className={`${i % 2 === 1 ? 'bg-slate-50/50' : ''} ${onRowClick ? 'cursor-pointer hover:bg-blue-50' : ''}`}
+                {...(onRowClick && { onClick: () => onRowClick(row) })}
+                className={`${i % 2 === 1 ? 'bg-slate-50/50' : ''} ${onRowClick ? 'cursor-pointer hover:bg-slate-100' : ''}`}
               >
                 {columns.map((col) => (
                   <td key={col.header} className={`px-4 py-3 text-slate-700 ${col.className ?? ''}`}>

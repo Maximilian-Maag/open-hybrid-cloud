@@ -3,6 +3,8 @@
 import { useState, type FormEvent } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface Props {
   shopName: string
@@ -14,6 +16,7 @@ interface Props {
 
 export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, secondaryColor }: Props) {
   const router = useRouter()
+  const lang = useLang()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -26,13 +29,13 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
     try {
       const result = await signIn('credentials', { email, password, redirect: false })
       if (result?.error) {
-        setError('Invalid email or password.')
+        setError(t('invalidCredentials', lang))
       } else {
         router.push('/')
         router.refresh()
       }
     } catch {
-      setError('An unexpected error occurred. Please try again.')
+      setError(t('unexpectedError', lang))
     } finally {
       setLoading(false)
     }
@@ -63,7 +66,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
-                Email address
+                {t('emailAddress', lang)}
               </label>
               <input
                 id="email"
@@ -81,7 +84,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">
-                Password
+                {t('password', lang)}
               </label>
               <input
                 id="password"
@@ -102,7 +105,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
               className="w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
               style={{ backgroundColor: 'var(--bp)' }}
             >
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? t('signingIn', lang) : t('signIn', lang)}
             </button>
           </form>
         </div>

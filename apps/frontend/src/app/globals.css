@@ -39,10 +39,22 @@ dialog::backdrop {
   to   { opacity: 1; transform: translateY(0);   }
 }
 
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+@keyframes flash-row {
+  0%   { background-color: #fef3c7; }
+  100% { background-color: transparent; }
+}
+
 /* ── Tailwind animation utilities ────────────────────────────────────────── */
 @theme {
   --animate-modal-in:   modal-in   0.2s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-slide-down: slide-down 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-fade-in:    fade-in    0.2s ease-out;
   --animate-page-in:    page-in    0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-toast-in:   toast-in   0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-flash-row:  flash-row  1.4s ease-out forwards;
 }

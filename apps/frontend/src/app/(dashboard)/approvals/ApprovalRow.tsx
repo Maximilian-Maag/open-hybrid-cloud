@@ -6,6 +6,8 @@ import type { Order } from '@open-hybrid-cloud/types'
 import { post } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface Props {
   order: Order
@@ -14,6 +16,7 @@ interface Props {
 
 export function ApprovalRow({ order, token }: Props) {
   const router = useRouter()
+  const lang = useLang()
   const [rejecting, setRejecting] = useState(false)
   const [rejectionNote, setRejectionNote] = useState('')
   const [loading, setLoading] = useState(false)
@@ -28,7 +31,7 @@ export function ApprovalRow({ order, token }: Props) {
       setDone(true)
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to approve.')
+      setError(err instanceof Error ? err.message : t('failedToApprove', lang))
     } finally {
       setLoading(false)
     }
@@ -43,7 +46,7 @@ export function ApprovalRow({ order, token }: Props) {
       setDone(true)
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reject.')
+      setError(err instanceof Error ? err.message : t('failedToReject', lang))
     } finally {
       setLoading(false)
     }
@@ -63,7 +66,7 @@ export function ApprovalRow({ order, token }: Props) {
             <StatusBadge status={order.status} />
           </div>
           <p className="text-sm text-slate-500">
-            {order.environmentName} · {order.projectName} · Ordered by {order.userName ?? `User #${order.userId}`} on{' '}
+            {order.environmentName} · {order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`} on{' '}
             {new Date(order.createdAt).toLocaleDateString()}
           </p>
         </div>
@@ -76,7 +79,7 @@ export function ApprovalRow({ order, token }: Props) {
               onClick={handleApprove}
               disabled={loading}
             >
-              Approve
+              {t('approve', lang)}
             </Button>
             <Button
               size="sm"
@@ -84,7 +87,7 @@ export function ApprovalRow({ order, token }: Props) {
               onClick={() => setRejecting(true)}
               disabled={loading}
             >
-              Reject
+              {t('reject', lang)}
             </Button>
           </div>
         )}
@@ -99,19 +102,19 @@ export function ApprovalRow({ order, token }: Props) {
       {rejecting && (
         <form onSubmit={handleReject} className="mt-4 space-y-3">
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-slate-700">Rejection Note</label>
+            <label className="text-sm font-medium text-slate-700">{t('rejectionNote', lang)}</label>
             <textarea
               value={rejectionNote}
               onChange={(e) => setRejectionNote(e.target.value)}
               rows={2}
               required
-              placeholder="Explain why this order is being rejected…"
+              placeholder={t('rejectionNotePlaceholder', lang)}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
             />
           </div>
           <div className="flex gap-2">
             <Button type="submit" variant="danger" size="sm" disabled={loading}>
-              {loading ? 'Rejecting…' : 'Confirm Rejection'}
+              {loading ? t('rejecting', lang) : t('confirmRejection', lang)}
             </Button>
             <Button
               type="button"
@@ -120,7 +123,7 @@ export function ApprovalRow({ order, token }: Props) {
               onClick={() => { setRejecting(false); setRejectionNote('') }}
               disabled={loading}
             >
-              Cancel
+              {t('cancel', lang)}
             </Button>
           </div>
         </form>

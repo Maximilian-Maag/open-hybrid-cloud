@@ -5,23 +5,24 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
 import { LanguageSwitcher } from './LanguageSwitcher'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface HeaderProps {
   userName?: string | null
   shopName?: string
   logoDataUrl?: string | null
   lang?: string
-  signOutLabel?: string
 }
 
 export function Header({
   userName,
   shopName = 'Open Hybrid Cloud',
   logoDataUrl,
-  lang = 'en',
-  signOutLabel = 'Sign out',
+  lang: initialLang = 'en',
 }: HeaderProps) {
   const router = useRouter()
+  const lang = useLang(initialLang)
   const [query, setQuery] = useState('')
 
   function handleSearch(e: React.FormEvent) {
@@ -50,7 +51,7 @@ export function Header({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={lang === 'de' ? 'Produkte suchen…' : 'Search products…'}
+              placeholder={t('searchProducts', lang)}
               className="flex-1 bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none"
             />
             <button
@@ -72,24 +73,24 @@ export function Header({
           <details className="relative group">
             <summary className="list-none cursor-pointer select-none flex flex-col items-end leading-tight text-white/80 hover:text-white focus:outline-none rounded">
               {userName && <span className="text-xs opacity-70">{userName}</span>}
-              <span className="text-sm font-semibold">My Account</span>
+              <span className="text-sm font-semibold">{t('myAccount', lang)}</span>
             </summary>
             <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1">
-              <Link href="/orders" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Orders</Link>
-              <Link href="/projects" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Projects</Link>
+              <Link href="/orders" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('orders', lang)}</Link>
+              <Link href="/projects" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('projects', lang)}</Link>
               <hr className="my-1 border-slate-100" />
-              <Link href="/settings" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Profile</Link>
+              <Link href="/settings" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('profile', lang)}</Link>
               <hr className="my-1 border-slate-100" />
               <button
                 onClick={() => signOut({ callbackUrl: '/login' })}
                 className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:text-red-600 transition-colors"
               >
-                {signOutLabel}
+                {t('signOut', lang)}
               </button>
             </div>
           </details>
 
-          <LanguageSwitcher currentLang={lang} />
+          <LanguageSwitcher lang={lang} />
         </div>
       </div>
     </header>

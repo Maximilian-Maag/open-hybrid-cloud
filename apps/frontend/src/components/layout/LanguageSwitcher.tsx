@@ -5,17 +5,17 @@ import { useRouter } from 'next/navigation'
 import { SUPPORTED_LANGUAGES } from '@/lib/i18n'
 
 interface Props {
-  currentLang: string
+  lang: string
 }
 
-export function LanguageSwitcher({ currentLang }: Props) {
+export function LanguageSwitcher({ lang }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const current = currentLang.split('-')[0].toLowerCase()
+  const current = lang.split('-')[0].toLowerCase()
 
-  function selectLang(lang: string) {
-    document.cookie = `lang=${lang}; path=/; max-age=31536000; SameSite=Lax`
-    window.dispatchEvent(new CustomEvent('langchange', { detail: lang }))
+  function selectLang(code: string) {
+    document.cookie = `lang=${code}; path=/; max-age=31536000; SameSite=Lax`
+    window.dispatchEvent(new CustomEvent('langchange', { detail: code }))
     setOpen(false)
     router.refresh()
   }
@@ -40,7 +40,6 @@ export function LanguageSwitcher({ currentLang }: Props) {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-2 z-50 bg-white rounded-xl shadow-xl border border-slate-200 p-3 w-72 animate-slide-down">
-            {/* scrollable grid — 25 languages need room */}
             <div className="grid grid-cols-3 gap-1 max-h-64 overflow-y-auto pr-1">
               {SUPPORTED_LANGUAGES.map((l) => (
                 <button

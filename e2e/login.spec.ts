@@ -16,13 +16,13 @@ test.describe('Login page', () => {
     await page.getByRole('textbox', { name: /password/i }).fill('wrongpassword')
     await page.getByRole('button', { name: /sign in|log in/i }).click()
 
-    await expect(page.getByText(/invalid credentials|incorrect|wrong/i)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(/invalid email or password|invalid credentials|incorrect|wrong/i)).toBeVisible({ timeout: 5000 })
   })
 
   test('redirects to dashboard after successful login', async ({ page }) => {
     // Requires the test admin user to exist in the DB (seeded by bootstrap)
-    const email = process.env.E2E_ADMIN_EMAIL ?? 'root@test.dev'
-    const password = process.env.E2E_ADMIN_PASSWORD ?? 'testpassword123'
+    const email = process.env.E2E_ADMIN_EMAIL ?? 'root@local.dev'
+    const password = process.env.E2E_ADMIN_PASSWORD ?? 'root1234'
 
     await page.getByRole('textbox', { name: /email/i }).fill(email)
     await page.getByRole('textbox', { name: /password/i }).fill(password)

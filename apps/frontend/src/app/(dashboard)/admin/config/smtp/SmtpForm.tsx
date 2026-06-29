@@ -6,6 +6,7 @@ import { put } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { useToast } from '@/components/ui/Toast'
 
 interface Props {
   initial: SmtpConfig | null
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function SmtpForm({ initial, token }: Props) {
+  const { toast } = useToast()
   const [host, setHost] = useState(initial?.host ?? '')
   const [port, setPort] = useState(String(initial?.port ?? '587'))
   const [from, setFrom] = useState(initial?.from ?? '')
@@ -21,11 +23,10 @@ export function SmtpForm({ initial, token }: Props) {
   const [tls, setTls] = useState(initial?.tls ?? true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true); setError(null); setSuccess(false)
+    setSaving(true); setError(null)
     try {
       const body: UpdateSmtpRequest = {
         host: host.trim(), port: Number(port),
@@ -34,7 +35,7 @@ export function SmtpForm({ initial, token }: Props) {
         ...(password ? { password } : {}),
       }
       await put('/api/admin/config/smtp', body, token)
-      setSuccess(true)
+      toast('SMTP configuration saved.')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save SMTP config.')
     } finally {
@@ -46,7 +47,6 @@ export function SmtpForm({ initial, token }: Props) {
     <Card title="SMTP Settings">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
-        {success && <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">SMTP configuration saved.</div>}
 
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-2">

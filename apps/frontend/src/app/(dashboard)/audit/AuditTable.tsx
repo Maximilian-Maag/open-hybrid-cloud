@@ -6,6 +6,8 @@ import { get } from '@/lib/api'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface Props {
   token: string
@@ -14,6 +16,7 @@ interface Props {
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
 export function AuditTable({ token }: Props) {
+  const lang = useLang()
   const [entries, setEntries] = useState<AuditEntry[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -72,26 +75,26 @@ export function AuditTable({ token }: Props) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Input
-          label="User ID"
+          label={t('userId', lang)}
           type="number"
           value={userFilter}
           onChange={(e) => { setUserFilter(e.target.value); setPage(1) }}
-          placeholder="Any"
+          placeholder={t('any', lang)}
         />
         <Input
-          label="Action"
+          label={t('action', lang)}
           value={actionFilter}
           onChange={(e) => { setActionFilter(e.target.value); setPage(1) }}
-          placeholder="Any"
+          placeholder={t('any', lang)}
         />
         <Input
-          label="From"
+          label={t('fromDate', lang)}
           type="date"
           value={fromFilter}
           onChange={(e) => { setFromFilter(e.target.value); setPage(1) }}
         />
         <Input
-          label="To"
+          label={t('toDate', lang)}
           type="date"
           value={toFilter}
           onChange={(e) => { setToFilter(e.target.value); setPage(1) }}
@@ -100,10 +103,10 @@ export function AuditTable({ token }: Props) {
 
       <div className="flex justify-end gap-2">
         <Button variant="secondary" size="sm" onClick={() => handleExport('csv')}>
-          Export CSV
+          {t('exportCsv', lang)}
         </Button>
         <Button variant="secondary" size="sm" onClick={() => handleExport('pdf')}>
-          Export PDF
+          {t('exportPdf', lang)}
         </Button>
       </div>
 
@@ -114,19 +117,19 @@ export function AuditTable({ token }: Props) {
       ) : (
         <Table<AuditEntry>
           columns={[
-            { header: 'ID', accessor: 'id', className: 'w-16' },
+            { header: t('id', lang), accessor: 'id', className: 'w-16' },
             {
-              header: 'User',
-              render: (row) => <span>{row.userName ?? (row.userId ? `#${row.userId}` : 'System')}</span>,
+              header: t('user', lang),
+              render: (row) => <span>{row.userName ?? (row.userId ? `#${row.userId}` : t('system', lang))}</span>,
             },
-            { header: 'Action', accessor: 'action' },
+            { header: t('action', lang), accessor: 'action' },
             {
-              header: 'Entity',
+              header: t('entity', lang),
               render: (row) => <span>{row.entityId ?? '—'}</span>,
             },
-            { header: 'Details', accessor: 'details', className: 'max-w-xs truncate' },
+            { header: t('details', lang), accessor: 'details', className: 'max-w-xs truncate' },
             {
-              header: 'Date',
+              header: t('date', lang),
               render: (row) => (
                 <span className="text-xs text-slate-500 whitespace-nowrap">
                   {new Date(row.createdAt).toLocaleString()}
@@ -135,7 +138,7 @@ export function AuditTable({ token }: Props) {
             },
           ]}
           data={entries}
-          emptyMessage="No audit entries found."
+          emptyMessage={t('noAuditEntries', lang)}
         />
       )}
 
@@ -146,10 +149,10 @@ export function AuditTable({ token }: Props) {
           </p>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-              Previous
+              {t('previous', lang)}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-              Next
+              {t('next', lang)}
             </Button>
           </div>
         </div>

@@ -7,6 +7,7 @@ import { put, apiRequest } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { useToast } from '@/components/ui/Toast'
 
 interface Props {
   initial: Branding
@@ -15,6 +16,7 @@ interface Props {
 
 export function BrandingForm({ initial, token }: Props) {
   const router = useRouter()
+  const { toast } = useToast()
   const [shopName, setShopName] = useState(initial.shopName)
   const [shopSubtitle, setShopSubtitle] = useState(initial.shopSubtitle)
   const [primaryColor, setPrimaryColor] = useState(initial.primaryColor)
@@ -24,7 +26,6 @@ export function BrandingForm({ initial, token }: Props) {
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
 
   function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -38,7 +39,7 @@ export function BrandingForm({ initial, token }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true); setError(null); setSuccess(false)
+    setSaving(true); setError(null)
     try {
       const body: UpdateBrandingRequest = {
         shopName: shopName.trim(),
@@ -55,7 +56,7 @@ export function BrandingForm({ initial, token }: Props) {
         await apiRequest('/api/admin/branding/logo', { method: 'PUT', body: fd, token, isFormData: true })
       }
 
-      setSuccess(true)
+      toast('Branding saved.')
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save branding.')
@@ -68,7 +69,6 @@ export function BrandingForm({ initial, token }: Props) {
     <Card title="Branding Settings">
       <form onSubmit={handleSubmit} className="space-y-5">
         {error && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
-        {success && <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">Branding saved.</div>}
 
         <div className="grid grid-cols-2 gap-4">
           <Input label="Shop Name" value={shopName} onChange={(e) => setShopName(e.target.value)} required />

@@ -8,6 +8,7 @@ import type { Product, Category } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/api'
 import { t } from '@/lib/i18n'
 import { useLang } from '@/lib/useLang'
+import { SkeletonCard } from '@/components/ui/Skeleton'
 
 export default function CatalogPage() {
   const { data: session } = useSession()
@@ -57,7 +58,7 @@ export default function CatalogPage() {
       {/* Category sidebar */}
       <aside className="hidden md:block w-52 shrink-0">
         <div className="bg-white rounded-lg border border-slate-200 p-4 sticky top-28">
-          <h3 className="font-bold text-xs text-slate-500 mb-3 uppercase tracking-wide">Categories</h3>
+          <h3 className="font-bold text-xs text-slate-500 mb-3 uppercase tracking-wide">{t('categories', lang)}</h3>
           <ul className="space-y-1">
             <li>
               <button
@@ -67,7 +68,7 @@ export default function CatalogPage() {
                 onMouseEnter={(e) => { if (selectedCategory !== null) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
                 onMouseLeave={(e) => { if (selectedCategory !== null) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
               >
-                All products
+                {t('allProducts', lang)}
               </button>
             </li>
             {categories.map((cat) => (
@@ -93,7 +94,7 @@ export default function CatalogPage() {
           <div>
             {search ? (
               <h2 className="text-xl font-bold text-slate-800">
-                Results for: <span style={{ color: 'var(--bp)' }}>&ldquo;{search}&rdquo;</span>
+                {t('resultsFor', lang)}: <span style={{ color: 'var(--bp)' }}>&ldquo;{search}&rdquo;</span>
               </h2>
             ) : (
               <>
@@ -103,7 +104,7 @@ export default function CatalogPage() {
             )}
           </div>
           {filtered.length > 0 && (
-            <span className="text-sm text-slate-400">{filtered.length} products</span>
+            <span className="text-sm text-slate-400">{filtered.length} {t('products', lang)}</span>
           )}
         </div>
 
@@ -115,7 +116,7 @@ export default function CatalogPage() {
               className="rounded-full px-3 py-1 text-sm font-medium transition-colors"
               style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: '#fff' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
             >
-              All
+              {t('all', lang)}
             </button>
             {categories.map((cat) => (
               <button
@@ -131,8 +132,8 @@ export default function CatalogPage() {
         )}
 
         {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-slate-700" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-lg border border-slate-200">
@@ -142,7 +143,7 @@ export default function CatalogPage() {
             <p className="font-semibold text-slate-400">{t('noProducts', lang)}</p>
             {search && (
               <button onClick={() => setSearch('')} className="text-sm mt-2 inline-block hover:underline" style={{ color: 'var(--bp)' }}>
-                ← All products
+                ← {t('allProducts', lang)}
               </button>
             )}
           </div>

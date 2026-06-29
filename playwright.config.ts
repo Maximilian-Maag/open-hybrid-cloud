@@ -13,7 +13,20 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Login once and save session — runs before authenticated tests
+    {
+      name: 'setup',
+      testMatch: /auth\.setup\.ts/,
+    },
+    // Authenticated tests reuse the saved root session
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: 'e2e/.auth/root.json',
+      },
+      dependencies: ['setup'],
+    },
   ],
   // Do not start servers automatically — run `make dev` and `pnpm dev` first
   webServer: undefined,

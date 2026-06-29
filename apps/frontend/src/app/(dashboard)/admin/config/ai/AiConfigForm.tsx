@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
+import { useToast } from '@/components/ui/Toast'
 
 const PROVIDERS: { value: AiProviderType; label: string }[] = [
   { value: 'claude', label: 'Anthropic Claude' },
@@ -22,24 +23,24 @@ interface Props {
 }
 
 export function AiConfigForm({ initial, token }: Props) {
+  const { toast } = useToast()
   const [provider, setProvider] = useState<AiProviderType>(initial?.provider ?? 'claude')
   const [endpoint, setEndpoint] = useState(initial?.endpoint ?? '')
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState(initial?.model ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true); setError(null); setSuccess(false)
+    setSaving(true); setError(null)
     try {
       const body: UpdateAiConfigRequest = {
         provider, endpoint: endpoint.trim(), model: model.trim(),
         ...(apiKey ? { apiKey } : {}),
       }
       await put('/api/admin/config/ai', body, token)
-      setSuccess(true)
+      toast('AI configuration saved.')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save AI config.')
     } finally {
@@ -59,7 +60,6 @@ export function AiConfigForm({ initial, token }: Props) {
     <Card title="AI Provider Settings">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
-        {success && <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">AI configuration saved.</div>}
 
         <Select label="Provider" value={provider} onChange={(e) => setProvider(e.target.value as AiProviderType)} options={PROVIDERS} />
 

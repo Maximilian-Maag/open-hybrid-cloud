@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface Props {
   token: string
@@ -15,6 +17,7 @@ interface Props {
 
 export function NewProjectButton({ token }: Props) {
   const router = useRouter()
+  const lang = useLang()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -33,7 +36,7 @@ export function NewProjectButton({ token }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) { setError('Name is required.'); return }
+    if (!name.trim()) { setError(t('nameRequired', lang)); return }
     setLoading(true)
     setError(null)
     try {
@@ -47,7 +50,7 @@ export function NewProjectButton({ token }: Props) {
       setName(''); setDescription(''); setCostCenterId('')
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create project.')
+      setError(err instanceof Error ? err.message : t('failedToCreate', lang))
     } finally {
       setLoading(false)
     }
@@ -55,15 +58,15 @@ export function NewProjectButton({ token }: Props) {
 
   return (
     <>
-      <Button onClick={openModal}>New Project</Button>
-      <Modal open={open} onClose={() => setOpen(false)} title="New Project" size="md">
+      <Button onClick={openModal}>{t('newProject', lang)}</Button>
+      <Modal open={open} onClose={() => setOpen(false)} title={t('newProject', lang)} size="md">
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
           )}
-          <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+          <Input label={t('name', lang)} value={name} onChange={(e) => setName(e.target.value)} required />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-slate-700">Description</label>
+            <label className="text-sm font-medium text-slate-700">{t('description', lang)}</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -73,7 +76,7 @@ export function NewProjectButton({ token }: Props) {
           </div>
           {costCenters.length > 0 && (
             <Select
-              label="Cost Center"
+              label={t('costCenter', lang)}
               value={costCenterId}
               onChange={(e) => setCostCenterId(e.target.value)}
               placeholder="None"
@@ -81,8 +84,8 @@ export function NewProjectButton({ token }: Props) {
             />
           )}
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={loading}>{loading ? 'Creating…' : 'Create Project'}</Button>
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={loading}>{loading ? t('creating', lang) : t('createProject', lang)}</Button>
           </div>
         </form>
       </Modal>

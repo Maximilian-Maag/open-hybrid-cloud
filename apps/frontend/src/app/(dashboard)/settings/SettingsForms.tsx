@@ -6,6 +6,8 @@ import { put } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface Props {
   token: string
@@ -14,6 +16,7 @@ interface Props {
 }
 
 export function SettingsForms({ token, initialName, email }: Props) {
+  const lang = useLang()
   const [name, setName] = useState(initialName)
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
@@ -36,7 +39,7 @@ export function SettingsForms({ token, initialName, email }: Props) {
       await put('/api/users/me', body, token)
       setProfileSuccess(true)
     } catch (err) {
-      setProfileError(err instanceof Error ? err.message : 'Failed to update profile.')
+      setProfileError(err instanceof Error ? err.message : t('failedToUpdateProfile', lang))
     } finally {
       setProfileSaving(false)
     }
@@ -45,7 +48,7 @@ export function SettingsForms({ token, initialName, email }: Props) {
   async function handlePasswordChange(e: React.FormEvent) {
     e.preventDefault()
     if (newPassword !== confirmPassword) {
-      setPwError('Passwords do not match.')
+      setPwError(t('passwordsDoNotMatch', lang))
       return
     }
     setPwSaving(true)
@@ -59,7 +62,7 @@ export function SettingsForms({ token, initialName, email }: Props) {
       setNewPassword('')
       setConfirmPassword('')
     } catch (err) {
-      setPwError(err instanceof Error ? err.message : 'Failed to change password.')
+      setPwError(err instanceof Error ? err.message : t('failedToChangePassword', lang))
     } finally {
       setPwSaving(false)
     }
@@ -67,48 +70,48 @@ export function SettingsForms({ token, initialName, email }: Props) {
 
   return (
     <div className="space-y-6">
-      <Card title="Profile">
+      <Card title={t('profileTitle', lang)}>
         <form onSubmit={handleProfileSave} className="space-y-4">
           {profileError && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{profileError}</div>
           )}
           {profileSuccess && (
-            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">Profile updated.</div>
+            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">{t('profileUpdated', lang)}</div>
           )}
-          <Input label="Email" type="email" value={email} disabled />
-          <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+          <Input label={t('email', lang)} type="email" value={email} disabled />
+          <Input label={t('name', lang)} value={name} onChange={(e) => setName(e.target.value)} required />
           <div className="flex justify-end">
             <Button type="submit" disabled={profileSaving}>
-              {profileSaving ? 'Saving…' : 'Save Profile'}
+              {profileSaving ? t('saving', lang) : t('saveProfile', lang)}
             </Button>
           </div>
         </form>
       </Card>
 
-      <Card title="Change Password">
+      <Card title={t('changePassword', lang)}>
         <form onSubmit={handlePasswordChange} className="space-y-4">
           {pwError && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{pwError}</div>
           )}
           {pwSuccess && (
-            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">Password changed successfully.</div>
+            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">{t('passwordChanged', lang)}</div>
           )}
           <Input
-            label="Current Password"
+            label={t('currentPassword', lang)}
             type="password"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             required
           />
           <Input
-            label="New Password"
+            label={t('newPassword', lang)}
             type="password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
           />
           <Input
-            label="Confirm New Password"
+            label={t('confirmNewPassword', lang)}
             type="password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
@@ -116,7 +119,7 @@ export function SettingsForms({ token, initialName, email }: Props) {
           />
           <div className="flex justify-end">
             <Button type="submit" disabled={pwSaving}>
-              {pwSaving ? 'Changing…' : 'Change Password'}
+              {pwSaving ? t('changing', lang) : t('changePassword', lang)}
             </Button>
           </div>
         </form>

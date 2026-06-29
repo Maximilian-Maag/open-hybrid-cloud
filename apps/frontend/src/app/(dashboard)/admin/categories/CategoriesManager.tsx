@@ -7,10 +7,13 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { useToast } from '@/components/ui/Toast'
+import { SkeletonListItem } from '@/components/ui/Skeleton'
 
 interface Props { token: string }
 
 export function CategoriesManager({ token }: Props) {
+  const { toast } = useToast()
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -21,6 +24,7 @@ export function CategoriesManager({ token }: Props) {
   const [formOrder, setFormOrder] = useState('0')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [flashId, setFlashId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -58,6 +62,7 @@ export function CategoriesManager({ token }: Props) {
       const body: CreateCategoryRequest = { name: formName.trim(), displayOrder: Number(formOrder) }
       await post('/api/admin/categories', body, token)
       setAddOpen(false)
+      toast('Category created.')
       load()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Failed to create.')
@@ -69,12 +74,15 @@ export function CategoriesManager({ token }: Props) {
   async function handleEdit(e: React.FormEvent) {
     e.preventDefault()
     if (!editTarget) return
+    const id = editTarget.id
     setSaving(true)
     setFormError(null)
     try {
       const body: UpdateCategoryRequest = { name: formName.trim(), displayOrder: Number(formOrder) }
-      await put(`/api/admin/categories/${editTarget.id}`, body, token)
+      await put(`/api/admin/categories/${id}`, body, token)
       setEditTarget(null)
+      setFlashId(id)
+      toast('Category updated.')
       load()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Failed to update.')
@@ -89,6 +97,7 @@ export function CategoriesManager({ token }: Props) {
     try {
       await del(`/api/admin/categories/${deleteTarget.id}`, token)
       setDeleteTarget(null)
+      toast('Category deleted.', 'info')
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to delete.')
@@ -121,15 +130,15 @@ export function CategoriesManager({ token }: Props) {
           <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
         {loading ? (
-          <div className="flex justify-center py-8">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
           </div>
         ) : categories.length === 0 ? (
           <p className="text-center py-6 text-slate-400">No categories yet.</p>
         ) : (
           <div className="space-y-2">
             {categories.map((cat) => (
-              <div key={cat.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
+              <div key={cat.id} className={`flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3 ${cat.id === flashId ? 'animate-flash-row' : ''}`}>
                 <div>
                   <span className="font-medium text-slate-900">{cat.name}</span>
                   <span className="ml-2 text-xs text-slate-400">order: {cat.displayOrder}</span>

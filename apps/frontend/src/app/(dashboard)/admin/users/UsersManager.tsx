@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { useToast } from '@/components/ui/Toast'
+import { SkeletonListItem } from '@/components/ui/Skeleton'
 
 interface Props { token: string }
 
@@ -24,6 +26,7 @@ const roleBadge: Record<Role, string> = {
 }
 
 export function UsersManager({ token }: Props) {
+  const { toast } = useToast()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
@@ -35,6 +38,7 @@ export function UsersManager({ token }: Props) {
   const [formPassword, setFormPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [flashId, setFlashId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -66,7 +70,9 @@ export function UsersManager({ token }: Props) {
         password: formPassword,
       }
       await post('/api/admin/users', body, token)
-      setAddOpen(false); load()
+      setAddOpen(false)
+      toast('User created.')
+      load()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Failed.')
     } finally {
@@ -77,11 +83,15 @@ export function UsersManager({ token }: Props) {
   async function handleEdit(e: React.FormEvent) {
     e.preventDefault()
     if (!editTarget) return
+    const id = editTarget.id
     setSaving(true); setFormError(null)
     try {
       const body: UpdateUserRequest = { name: formName.trim(), role: formRole }
-      await put(`/api/admin/users/${editTarget.id}`, body, token)
-      setEditTarget(null); load()
+      await put(`/api/admin/users/${id}`, body, token)
+      setEditTarget(null)
+      setFlashId(id)
+      toast('User updated.')
+      load()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Failed.')
     } finally {
@@ -94,7 +104,9 @@ export function UsersManager({ token }: Props) {
     setSaving(true)
     try {
       await del(`/api/admin/users/${deleteTarget.id}`, token)
-      setDeleteTarget(null); load()
+      setDeleteTarget(null)
+      toast('User deleted.', 'info')
+      load()
     } finally {
       setSaving(false)
     }
@@ -111,13 +123,15 @@ export function UsersManager({ token }: Props) {
     <>
       <Card title="Users" action={<Button size="sm" onClick={openAdd}>Add User</Button>}>
         {loading ? (
-          <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
+          </div>
         ) : users.length === 0 ? (
           <p className="text-center py-6 text-slate-400">No users yet.</p>
         ) : (
           <div className="space-y-2">
             {users.map((user) => (
-              <div key={user.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
+              <div key={user.id} className={`flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3 ${user.id === flashId ? 'animate-flash-row' : ''}`}>
                 <div className="flex items-center gap-3">
                   <span className={`inline-block h-2 w-2 rounded-full ${user.active ? 'bg-green-500' : 'bg-slate-300'}`} />
                   <div>

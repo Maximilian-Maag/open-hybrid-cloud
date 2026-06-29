@@ -1,26 +1,12 @@
 import { redirect } from 'next/navigation'
-import { cookies, headers } from 'next/headers'
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
 import { TopNav } from '@/components/layout/TopNav'
 import type { Branding, Role } from '@open-hybrid-cloud/types'
-import { t, isValidLang } from '@/lib/i18n'
+import { getLang } from '@/lib/getLang'
 
 const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
-
-async function detectLang(): Promise<string> {
-  const cookieStore = await cookies()
-  const langCookie = cookieStore.get('lang')?.value
-  if (langCookie && isValidLang(langCookie)) return langCookie
-
-  const hdrs = await headers()
-  const acceptLang = hdrs.get('accept-language') ?? ''
-  const primary = acceptLang.split(',')[0]?.split(';')[0]?.trim() ?? 'en'
-  const code = primary.split('-')[0].toLowerCase()
-  if (isValidLang(code)) return code
-  return 'en'
-}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -28,7 +14,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const token = (session as unknown as { apiToken: string }).apiToken
   const role = (session.user as unknown as { role: Role }).role
-  const lang = await detectLang()
+  const lang = await getLang()
 
   let branding: Branding = {
     primaryColor: '#131921',
@@ -77,7 +63,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
         shopName={shopName}
         logoDataUrl={logoDataUrl}
         lang={lang}
-        signOutLabel={t('signOut', lang)}
       />
       <TopNav role={role} />
       <main className="flex-1">
@@ -93,10 +78,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
             </span>
             <div className="flex gap-4">
               <Link href="/catalog" className="text-white/60 text-xs hover:text-white transition-colors">
-                {t('catalog', lang)}
+                Catalog
               </Link>
               <Link href="/orders" className="text-white/60 text-xs hover:text-white transition-colors">
-                {t('orders', lang)}
+                Orders
               </Link>
               <Link href="/impressum" className="text-white/60 text-xs hover:text-white transition-colors">
                 Imprint

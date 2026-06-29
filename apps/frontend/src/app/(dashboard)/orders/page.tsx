@@ -6,12 +6,15 @@ import type { Order } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Table } from '@/components/ui/Table'
+import { getLang } from '@/lib/getLang'
+import { t } from '@/lib/i18n'
 
 export default async function OrdersPage() {
   const session = await auth()
   if (!session) redirect('/login')
 
   const token = (session as unknown as { apiToken: string }).apiToken
+  const lang = await getLang()
 
   let orders: Order[] = []
   try {
@@ -22,12 +25,12 @@ export default async function OrdersPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <PageHeader title="Orders" subtitle="View and manage your infrastructure orders." />
+      <PageHeader title={t('orders', lang)} subtitle={t('ordersSubtitle', lang)} />
 
       <Table<Order>
         columns={[
           {
-            header: 'ID',
+            header: t('id', lang),
             render: (row) => (
               <Link href={`/orders/${row.id}`} className="font-mono text-blue-600 hover:underline text-xs">
                 #{row.id}
@@ -35,21 +38,21 @@ export default async function OrdersPage() {
             ),
           },
           {
-            header: 'Product',
+            header: t('product', lang),
             render: (row) => (
               <span className="font-medium text-slate-900">
                 {row.productName ?? `Product #${row.productId}`}
               </span>
             ),
           },
-          { header: 'Environment', accessor: 'environmentName' },
-          { header: 'Project', accessor: 'projectName' },
+          { header: t('environment', lang), accessor: 'environmentName' },
+          { header: t('project', lang), accessor: 'projectName' },
           {
-            header: 'Status',
+            header: t('status', lang),
             render: (row) => <StatusBadge status={row.status} />,
           },
           {
-            header: 'Date',
+            header: t('date', lang),
             render: (row) => (
               <span className="text-xs text-slate-500">
                 {new Date(row.createdAt).toLocaleDateString()}
@@ -58,7 +61,7 @@ export default async function OrdersPage() {
           },
         ]}
         data={orders}
-        emptyMessage="No orders yet."
+        emptyMessage={t('noOrders', lang)}
       />
     </div>
   )

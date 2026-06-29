@@ -7,11 +7,8 @@ function readLangCookie(): string {
   return match?.[1] ?? navigator.language.split('-')[0] ?? 'en'
 }
 
-export function useLang(): string {
-  const [lang, setLang] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'en'
-    return readLangCookie()
-  })
+export function useLang(initial = 'en'): string {
+  const [lang, setLang] = useState(initial)
 
   useEffect(() => {
     setLang(readLangCookie())

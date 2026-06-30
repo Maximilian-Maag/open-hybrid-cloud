@@ -1,62 +1,94 @@
-replicaCount: 2
+# ── Frontend ──────────────────────────────────────────────────────────────────
+frontend:
+  replicaCount: 2
 
-image:
-  repository: open-hybrid-cloud/open-hybrid-cloud
-  pullPolicy: IfNotPresent
-  # Overrides Chart.appVersion when set
-  tag: ""
+  image:
+    repository: your-dockerhub-username/open-hybrid-cloud-frontend
+    pullPolicy: IfNotPresent
+    # Overrides Chart.appVersion when set
+    tag: ""
 
-nameOverride: ""
-fullnameOverride: ""
+  service:
+    type: ClusterIP
+    port: 3000
 
-# ── Application environment ───────────────────────────────────────────────────
-# Required values — set via --set or a separate secrets values file.
-# Never commit real credentials here.
-env:
-  # Required
-  databaseUrl: ""       # DATABASE_URL  postgres://user:pass@host:5432/db?sslmode=require
-  sessionSecret: ""     # SESSION_SECRET  32+ random bytes, hex-encoded
-  adminPassword: ""     # ADMIN_PASSWORD  initial Root account password
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
-  # Optional — application settings
-  port: "8080"
-  appName: "Infra Webshop"
-  appSubtitle: "Infrastructure Self-Service"
-  adminEmail: "admin@example.com"
-  baseCurrency: "EUR"
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
 
-  # Optional — Microsoft Entra ID (OIDC)
-  entra:
-    tenantId: ""
-    clientId: ""
-    clientSecret: ""
-    redirectUrl: ""
+  env:
+    nextauthUrl: "https://shop.example.com"
+    # NEXT_PUBLIC_API_URL is baked in at build time; set via build args.
+    # Runtime server-side API URL (container-internal)
+    apiUrl: "http://open-hybrid-cloud-backend:3001"
 
-  # Optional — SMTP
-  smtp:
-    host: ""
-    port: "587"
-    from: ""
-    username: ""
-    password: ""
-    tls: "false"
+  # Secrets — provide via --set or a separate secrets values file
+  secrets:
+    nextauthSecret: ""    # NEXTAUTH_SECRET  32+ random bytes
 
-  # Optional — AI translation
-  ai:
-    provider: "claude"
-    endpoint: ""
-    apiKey: ""
-    model: "claude-haiku-4-5-20251001"
+# ── Backend ───────────────────────────────────────────────────────────────────
+backend:
+  replicaCount: 2
 
-  # Optional — Exchange rate API
-  exchangeRate:
-    apiUrl: "https://api.exchangerate.host/latest"
-    apiKey: ""
+  image:
+    repository: your-dockerhub-username/open-hybrid-cloud-backend
+    pullPolicy: IfNotPresent
+    # Overrides Chart.appVersion when set
+    tag: ""
 
-# ── Service ───────────────────────────────────────────────────────────────────
-service:
-  type: ClusterIP
-  port: 80
+  service:
+    type: ClusterIP
+    port: 3001
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+  env:
+    adminEmail: "admin@example.com"
+    frontendUrl: "https://shop.example.com"
+    exchangeRateApiUrl: "https://api.exchangerate.host/latest"
+
+    # Optional — Microsoft Entra ID (OIDC)
+    entra:
+      tenantId: ""
+      clientId: ""
+      clientSecret: ""
+
+    # Optional — SMTP
+    smtp:
+      host: ""
+      port: "587"
+      from: ""
+      user: ""
+      pass: ""
+      tls: "true"
+
+  # Secrets — provide via --set or a separate secrets values file
+  secrets:
+    databaseUrl: ""     # DATABASE_URL  postgresql://user:pass@host:5432/db
+    jwtSecret: ""       # JWT_SECRET    32+ random bytes
+    adminPassword: ""   # ADMIN_PASSWORD  initial admin account password
 
 # ── Ingress ───────────────────────────────────────────────────────────────────
 ingress:
@@ -67,36 +99,20 @@ ingress:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
   hosts:
     - host: shop.example.com
-      paths:
-        - path: /
-          pathType: Prefix
   tls:
     - secretName: open-hybrid-cloud-tls
       hosts:
         - shop.example.com
 
-# ── Resources ─────────────────────────────────────────────────────────────────
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
-
-# ── Autoscaling ───────────────────────────────────────────────────────────────
-autoscaling:
-  enabled: false
-  minReplicas: 2
-  maxReplicas: 6
-  targetCPUUtilizationPercentage: 70
-
 # ── Database migration hook ───────────────────────────────────────────────────
 migrate:
-  # Run /migrate as a pre-install / pre-upgrade Helm hook
+  # Run as a pre-install / pre-upgrade Helm hook via the backend image
   enabled: true
 
-# ── Pod configuration ─────────────────────────────────────────────────────────
+# ── Pod configuration (shared defaults) ──────────────────────────────────────
+nameOverride: ""
+fullnameOverride: ""
+
 podAnnotations: {}
 podSecurityContext: {}
 securityContext: {}

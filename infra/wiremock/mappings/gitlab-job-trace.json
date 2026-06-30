@@ -1,0 +1,12 @@
+{
+  "name": "GitLab job trace (OpenTofu outputs)",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/projects/[0-9]+/jobs/[0-9]+/trace"
+  },
+  "response": {
+    "status": 200,
+    "body": "2024-01-01T00:00:00.000Z Running with gitlab-runner...\n2024-01-01T00:00:01.000Z Executing tofu apply...\n2024-01-01T00:00:10.000Z Apply complete! Resources: 2 added.\n\nOutputs:\n\nvm_ip = \"10.0.0.100\"\nvm_name = \"dev-server-01\"\ndisk_size_gb = \"50\"\n",
+    "headers": { "Content-Type": "text/plain" }
+  }
+}

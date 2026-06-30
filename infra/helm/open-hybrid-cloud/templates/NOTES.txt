@@ -1,4 +1,4 @@
-Open Hybrid Cloud Infra Webshop deployed successfully.
+Open Hybrid Cloud deployed successfully.
 
 {{- if .Values.migrate.enabled }}
 Database migrations were run as a pre-install/pre-upgrade hook.
@@ -10,16 +10,21 @@ The application is available at:
   https://{{ .host }}
 {{- end }}
 {{- else }}
-No Ingress is configured. Access the application via port-forward:
+No Ingress is configured. Access the services via port-forward:
 
-  kubectl port-forward svc/{{ include "open-hybrid-cloud.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+  # Frontend
+  kubectl port-forward svc/{{ include "open-hybrid-cloud.frontend.fullname" . }} 3000:{{ .Values.frontend.service.port }} -n {{ .Release.Namespace }}
 
-Then open: http://localhost:8080
+  # Backend API
+  kubectl port-forward svc/{{ include "open-hybrid-cloud.backend.fullname" . }} 3001:{{ .Values.backend.service.port }} -n {{ .Release.Namespace }}
+
+Then open: http://localhost:3000
 {{- end }}
 
 Initial admin credentials:
-  Email:    {{ .Values.env.adminEmail }}
-  Password: (value of env.adminPassword — change immediately after first login)
+  Email:    {{ .Values.backend.env.adminEmail }}
+  Password: (value of backend.secrets.adminPassword — change immediately after first login)
 
 To check rollout status:
-  kubectl rollout status deployment/{{ include "open-hybrid-cloud.fullname" . }} -n {{ .Release.Namespace }}
+  kubectl rollout status deployment/{{ include "open-hybrid-cloud.frontend.fullname" . }} -n {{ .Release.Namespace }}
+  kubectl rollout status deployment/{{ include "open-hybrid-cloud.backend.fullname" . }} -n {{ .Release.Namespace }}

@@ -1,0 +1,16 @@
+{
+  "name": "GitLab file content (variables.tf sample)",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/projects/[0-9]+/repository/files/.+"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "file_name": "variables.tf",
+      "encoding": "base64",
+      "content": "dmFyaWFibGUgInZtX3NpemUiIHsKICB0eXBlICAgICAgICAgPSBzdHJpbmcKICBkZXNjcmlwdGlvbiA9ICJUaGUgc2l6ZSBvZiB0aGUgVk0gKHNtYWxsLCBtZWRpdW0sIGxhcmdlKSIKICBkZWZhdWx0ICAgICA9ICJzbWFsbCIKfQoKdmFyaWFibGUgInZtX2NvdW50IiB7CiAgdHlwZSAgICAgICAgID0gbnVtYmVyCiAgZGVzY3JpcHRpb24gPSAiTnVtYmVyIG9mIFZNcyB0byBjcmVhdGUiCiAgZGVmYXVsdCAgICAgPSAxCn0KCnZhcmlhYmxlICJlbmFibGVfYmFja3VwIiB7CiAgdHlwZSAgICAgICAgID0gYm9vbAogIGRlc2NyaXB0aW9uID0gIkVuYWJsZSBhdXRvbWF0aWMgYmFja3VwcyIKICBkZWZhdWx0ICAgICA9IHRydWUKfQoKdmFyaWFibGUgInByb2plY3RfdGFnIiB7CiAgdHlwZSAgICAgICAgID0gc3RyaW5nCiAgZGVzY3JpcHRpb24gPSAiUHJvamVjdCB0YWcgZm9yIHJlc291cmNlIGxhYmVsbGluZyIKICBzZW5zaXRpdmUgICA9IGZhbHNlCn0K"
+    },
+    "headers": { "Content-Type": "application/json" }
+  }
+}

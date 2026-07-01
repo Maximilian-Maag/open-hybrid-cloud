@@ -1,6 +1,7 @@
 {
   "name": "open-hybrid-cloud",
   "private": true,
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "pnpm --parallel --filter './apps/*' dev",
     "build": "pnpm --filter '@open-hybrid-cloud/types' build && pnpm --parallel --filter './apps/*' build",

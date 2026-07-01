@@ -9,7 +9,7 @@ test.describe('Admin - Environment Management', () => {
   })
 
   test('environments page shows title and Add Environment button', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: /^environments$/i, level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /deployment environments/i, level: 1 })).toBeVisible()
     await expect(page.getByRole('button', { name: /add environment/i })).toBeVisible()
   })
 
@@ -51,7 +51,7 @@ test.describe('Admin - Environment Management', () => {
     await addDialog.getByLabel(/^name/i).fill(envName)
     // Select the CI source we just created
     const ciSelect = addDialog.getByLabel(/ci source/i)
-    await ciSelect.selectOption({ label: new RegExp(ciName, 'i') })
+    await ciSelect.selectOption({ label: ciName })
     await addDialog.getByLabel(/webhook url/i).fill('https://gitlab.example.com/api/v4/projects/1/trigger/pipeline')
     await addDialog.getByRole('button', { name: /^save$/i }).click()
     await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })

@@ -80,7 +80,7 @@ test.describe('Role-based access control', () => {
     await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 8000 })
     await page.goto('/admin/users')
     await expect(page.getByText(pmEmail)).toBeVisible({ timeout: 8000 })
-    const userRow = page.locator('div').filter({ has: page.getByText(pmEmail) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).first()
+    const userRow = page.locator('div').filter({ has: page.getByText(pmEmail) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()
     await userRow.getByRole('button', { name: /^delete$/i }).click()
     await page.getByRole('button', { name: /^delete$/i }).last().click()
   })

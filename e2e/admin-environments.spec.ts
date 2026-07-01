@@ -58,7 +58,7 @@ test.describe('Admin - Environment Management', () => {
     await expect(page.getByText(envName)).toBeVisible({ timeout: 8000 })
 
     // --- Edit environment ---
-    const envRow = page.locator('div').filter({ has: page.getByText(envName) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).first()
+    const envRow = page.locator('div').filter({ has: page.getByText(envName) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).last()
     await envRow.getByRole('button', { name: /^edit$/i }).click()
     const editDialog = page.locator('dialog[open]')
     const updatedEnvName = `${envName} Updated`
@@ -68,7 +68,7 @@ test.describe('Admin - Environment Management', () => {
     await expect(page.getByText(updatedEnvName)).toBeVisible({ timeout: 8000 })
 
     // --- Delete environment ---
-    const updatedEnvRow = page.locator('div').filter({ has: page.getByText(updatedEnvName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).first()
+    const updatedEnvRow = page.locator('div').filter({ has: page.getByText(updatedEnvName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()
     await updatedEnvRow.getByRole('button', { name: /^delete$/i }).click()
     await expect(page.getByRole('heading', { name: /delete environment/i })).toBeVisible()
     await page.getByRole('button', { name: /^delete$/i }).last().click()
@@ -77,7 +77,7 @@ test.describe('Admin - Environment Management', () => {
     // --- Clean up CI source ---
     await page.goto('/admin/ci-sources')
     await expect(page.getByText(ciName)).toBeVisible({ timeout: 8000 })
-    const ciRow = page.locator('div').filter({ has: page.getByText(ciName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).first()
+    const ciRow = page.locator('div').filter({ has: page.getByText(ciName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()
     await ciRow.getByRole('button', { name: /^delete$/i }).click()
     await page.getByRole('button', { name: /^delete$/i }).last().click()
   })

@@ -36,7 +36,7 @@ test.describe('Admin - Global Parameters Management', () => {
     await expect(page.getByText(paramName)).toBeVisible({ timeout: 8000 })
 
     // --- Edit ---
-    const paramRow = page.locator('div').filter({ has: page.getByText(paramName) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).first()
+    const paramRow = page.locator('div').filter({ has: page.getByText(paramName) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).last()
     await paramRow.getByRole('button', { name: /^edit$/i }).click()
     await expect(page.getByRole('heading', { name: /edit parameter/i })).toBeVisible()
     const updatedName = `${paramName}_updated`
@@ -46,7 +46,7 @@ test.describe('Admin - Global Parameters Management', () => {
     await expect(page.getByText(updatedName)).toBeVisible({ timeout: 8000 })
 
     // --- Delete ---
-    const updatedRow = page.locator('div').filter({ has: page.getByText(updatedName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).first()
+    const updatedRow = page.locator('div').filter({ has: page.getByText(updatedName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()
     await updatedRow.getByRole('button', { name: /^delete$/i }).click()
     await expect(page.getByRole('heading', { name: /delete parameter/i })).toBeVisible()
     await page.getByRole('button', { name: /^delete$/i }).last().click()

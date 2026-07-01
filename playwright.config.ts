@@ -28,6 +28,18 @@ export default defineConfig({
       dependencies: ['setup'],
     },
   ],
-  // Do not start servers automatically — run `make dev` and `pnpm dev` first
-  webServer: undefined,
+  webServer: [
+    {
+      command: 'pnpm --filter backend dev',
+      url: 'http://localhost:3001/api/health',
+      reuseExistingServer: true,
+      timeout: 120_000,
+    },
+    {
+      command: 'pnpm --filter frontend dev',
+      url: 'http://localhost:3000',
+      reuseExistingServer: true,
+      timeout: 120_000,
+    },
+  ],
 })

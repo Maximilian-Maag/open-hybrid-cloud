@@ -90,12 +90,12 @@ export const getAiConfig = async (): Promise<Result<AiConfig>> => {
     .limit(1)
 
   if (!rows.length) {
-    return ok({ provider: '', endpoint: '', model: '' })
+    return ok({ provider: 'claude', endpoint: '', model: '' })
   }
 
   const row = rows[0]
   return ok({
-    provider: row.aiProvider ?? '',
+    provider: row.aiProvider || 'claude',
     endpoint: row.aiEndpoint ?? '',
     model: row.aiModel ?? '',
   })

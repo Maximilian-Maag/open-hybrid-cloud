@@ -54,9 +54,10 @@ test.describe('Role-based access control', () => {
     await page.goto('/admin/users')
     await expect(page.getByRole('button', { name: /add user/i })).toBeVisible({ timeout: 8000 })
     await page.getByRole('button', { name: /add user/i }).click()
-    await page.getByLabel(/^email/i).fill(pmEmail)
-    await page.getByLabel(/^name/i).fill('E2E PM User')
-    await page.getByLabel(/^password/i).fill(pmPassword)
+    const addUserDialog = page.locator('dialog[open]')
+    await addUserDialog.getByLabel(/^email/i).fill(pmEmail)
+    await addUserDialog.getByLabel(/^name/i).fill('E2E PM User')
+    await addUserDialog.getByLabel(/^password/i).fill(pmPassword)
     await page.getByRole('button', { name: /^create$/i }).click()
     await expect(page.getByText(pmEmail)).toBeVisible({ timeout: 8000 })
 

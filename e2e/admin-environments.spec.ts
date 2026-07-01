@@ -53,6 +53,7 @@ test.describe('Admin - Environment Management', () => {
     const ciSelect = addDialog.getByLabel(/ci source/i)
     await ciSelect.selectOption({ label: ciName })
     await addDialog.getByLabel(/webhook url/i).fill('https://gitlab.example.com/api/v4/projects/1/trigger/pipeline')
+    await addDialog.getByLabel(/webhook token/i).fill('test-token')
     await addDialog.getByRole('button', { name: /^save$/i }).click()
     await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
     await expect(page.getByText(envName)).toBeVisible({ timeout: 8000 })
@@ -72,6 +73,7 @@ test.describe('Admin - Environment Management', () => {
     await updatedEnvRow.getByRole('button', { name: /^delete$/i }).click()
     await expect(page.getByRole('heading', { name: /delete environment/i })).toBeVisible()
     await page.getByRole('button', { name: /^delete$/i }).last().click()
+    await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
     await expect(page.getByText(updatedEnvName)).not.toBeVisible({ timeout: 8000 })
 
     // --- Clean up CI source ---
@@ -80,5 +82,6 @@ test.describe('Admin - Environment Management', () => {
     const ciRow = page.locator('div').filter({ has: page.getByText(ciName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()
     await ciRow.getByRole('button', { name: /^delete$/i }).click()
     await page.getByRole('button', { name: /^delete$/i }).last().click()
+    await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
   })
 })

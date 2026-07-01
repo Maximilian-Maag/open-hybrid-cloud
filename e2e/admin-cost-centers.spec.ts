@@ -50,6 +50,7 @@ test.describe('Admin - Cost Center Management', () => {
     await updatedRow.getByRole('button', { name: /^delete$/i }).click()
     await expect(page.getByRole('heading', { name: /delete cost center/i })).toBeVisible()
     await page.getByRole('button', { name: /^delete$/i }).last().click()
+    await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
     await expect(page.getByText(updatedName)).not.toBeVisible({ timeout: 8000 })
   })
 })

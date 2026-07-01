@@ -10,7 +10,12 @@ export const runBootstrap = async (): Promise<void> => {
   if (bootstrapped) return
   bootstrapped = true
 
-  await migrate(db, { migrationsFolder: path.join(process.cwd(), 'drizzle') })
+  try {
+    await migrate(db, { migrationsFolder: path.join(process.cwd(), 'drizzle') })
+  } catch (err) {
+    bootstrapped = false
+    throw err
+  }
 
   const email = process.env.ADMIN_EMAIL
   const password = process.env.ADMIN_PASSWORD

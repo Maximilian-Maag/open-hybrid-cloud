@@ -15,7 +15,7 @@ export const runBootstrap = async (): Promise<void> => {
   } catch (err: unknown) {
     // 42P07 = relation already exists — schema was applied outside the migration
     // system (e.g. via db:push). Treat the DB as already migrated and continue.
-    if ((err as any)?.cause?.code !== '42P07') {
+    if ((err as { cause?: { code?: string } })?.cause?.code !== '42P07') {
       bootstrapped = false
       throw err
     }

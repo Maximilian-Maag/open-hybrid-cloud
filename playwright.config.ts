@@ -34,13 +34,13 @@ export default defineConfig({
       command: 'pnpm --filter backend dev',
       url: 'http://localhost:3001/api/health',
       reuseExistingServer: true,
-      timeout: 120_000,
+      timeout: 180_000,
     },
     {
       command: 'pnpm --filter frontend dev',
-      url: 'http://localhost:3000',
+      url: 'http://localhost:3000/api/ping',
       reuseExistingServer: true,
-      timeout: 120_000,
+      timeout: 180_000,
     },
   ],
 })

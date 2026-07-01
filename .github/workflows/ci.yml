@@ -217,24 +217,6 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Build backend
-        run: pnpm --filter backend build
-
-      - name: Build frontend
-        run: pnpm --filter frontend build
-
-      - name: Start backend
-        run: pnpm --filter backend start &
-
-      - name: Start frontend
-        run: pnpm --filter frontend start &
-
-      - name: Wait for backend and frontend
-        run: |
-          timeout 120 bash -c 'until curl -sf http://localhost:3001/api/health; do sleep 2; done' &
-          timeout 120 bash -c 'until curl -sf http://localhost:3000; do sleep 2; done' &
-          wait
-
       - name: Run E2E tests
         run: pnpm exec playwright test
 

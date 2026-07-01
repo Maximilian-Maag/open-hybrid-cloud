@@ -17,6 +17,6 @@ export const config = {
      *   - /api/auth/* (NextAuth internal endpoints)
      *   - Next.js static files and images
      */
-    '/((?!login|impressum|api/auth|_next/static|_next/image|favicon\\.ico).*)',
+    '/((?!login|impressum|api/auth|api/ping|_next/static|_next/image|favicon\\.ico).*)',
   ],
 }

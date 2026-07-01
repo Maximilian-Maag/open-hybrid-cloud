@@ -1,3 +1,0 @@
-ALTER TABLE branding ADD COLUMN shop_name     TEXT NOT NULL DEFAULT '';
-ALTER TABLE branding ADD COLUMN shop_subtitle TEXT NOT NULL DEFAULT '';
-ALTER TABLE branding ADD COLUMN imprint_text  TEXT NOT NULL DEFAULT '';

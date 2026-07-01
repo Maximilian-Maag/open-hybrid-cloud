@@ -1,0 +1,12 @@
+{
+  "name": "GitLab pipeline trigger",
+  "request": {
+    "method": "POST",
+    "urlPathPattern": "/.*"
+  },
+  "response": {
+    "status": 201,
+    "jsonBody": { "id": 42, "status": "pending", "web_url": "http://localhost:8080/demo/infrastructure/-/pipelines/42" },
+    "headers": { "Content-Type": "application/json" }
+  }
+}

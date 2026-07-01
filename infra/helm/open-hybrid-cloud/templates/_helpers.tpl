@@ -6,7 +6,7 @@ Expand the name of the chart.
 {{- end }}
 
 {{/*
-Create a default fully qualified app name.
+Create a default fully qualified base name.
 */}}
 {{- define "open-hybrid-cloud.fullname" -}}
 {{- if .Values.fullnameOverride }}
@@ -19,6 +19,20 @@ Create a default fully qualified app name.
 {{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
 {{- end }}
 {{- end }}
+{{- end }}
+
+{{/*
+Fully qualified name for the frontend component.
+*/}}
+{{- define "open-hybrid-cloud.frontend.fullname" -}}
+{{- printf "%s-frontend" (include "open-hybrid-cloud.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Fully qualified name for the backend component.
+*/}}
+{{- define "open-hybrid-cloud.backend.fullname" -}}
+{{- printf "%s-backend" (include "open-hybrid-cloud.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
@@ -41,7 +55,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
-Selector labels.
+Selector labels (base — without component).
 */}}
 {{- define "open-hybrid-cloud.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "open-hybrid-cloud.name" . }}
@@ -49,9 +63,35 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Image reference (repository:tag, falling back to appVersion).
+Frontend selector labels.
 */}}
-{{- define "open-hybrid-cloud.image" -}}
-{{- $tag := .Values.image.tag | default .Chart.AppVersion }}
-{{- printf "%s:%s" .Values.image.repository $tag }}
+{{- define "open-hybrid-cloud.frontend.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "open-hybrid-cloud.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: frontend
+{{- end }}
+
+{{/*
+Backend selector labels.
+*/}}
+{{- define "open-hybrid-cloud.backend.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "open-hybrid-cloud.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: backend
+{{- end }}
+
+{{/*
+Frontend image reference.
+*/}}
+{{- define "open-hybrid-cloud.frontend.image" -}}
+{{- $tag := .Values.frontend.image.tag | default .Chart.AppVersion }}
+{{- printf "%s:%s" .Values.frontend.image.repository $tag }}
+{{- end }}
+
+{{/*
+Backend image reference.
+*/}}
+{{- define "open-hybrid-cloud.backend.image" -}}
+{{- $tag := .Values.backend.image.tag | default .Chart.AppVersion }}
+{{- printf "%s:%s" .Values.backend.image.repository $tag }}
 {{- end }}

@@ -4,7 +4,7 @@
 
 As an Admin you can:
 - Order infrastructure directly (no approval step required)
-- Approve or reject orders from project leaders
+- Approve or reject orders from project managers
 - View all projects, orders, and infrastructure elements
 - Decommission infrastructure
 - View the audit log
@@ -14,9 +14,10 @@ As an Admin you can:
 ## 1. Login
 
 1. Open your browser and navigate to the webshop URL
-2. Click **Sign in with Microsoft**
-3. Complete the Microsoft Entra ID login with your corporate account credentials
-4. On first login: confirm consent for the application
+2. Enter your **email address** and **password**
+3. Click **Sign in**
+
+> **Note:** Login attempts are rate-limited per IP address to prevent brute-force attacks. If too many failed attempts occur from the same IP, subsequent attempts will be temporarily blocked.
 
 ---
 
@@ -50,7 +51,7 @@ As an Admin the GitLab webhook is triggered **immediately** — no approval step
 
 ## 3. Approving Orders
 
-Incoming orders from project leaders appear under **Approvals**.
+Incoming orders from project managers appear under **Approvals**.
 
 ### 3.1 Approving an Order
 
@@ -87,14 +88,15 @@ Under **Infrastructure**:
 - All deployed infrastructure elements across all projects and environments
 - Grouped by project and deployment environment
 - Per element: product, parameters, status, price, cost center, order date, ordered by
+- Once provisioning completes successfully, **OpenTofu outputs** (e.g. IP addresses, hostnames, resource IDs) are displayed on the infrastructure element detail page. These outputs are written by the GitLab pipeline after a successful apply and stored per element.
 
 ### 5.1 Decommissioning Infrastructure
 
 1. Select an infrastructure element in the overview
 2. Click **Decommission**
 3. Confirm in the dialog
-4. The GitLab destroy webhook is triggered — OpenTofu tears down the infrastructure
-5. Status is set to **Decommissioning** and updated via polling
+4. The CI destroy webhook is triggered — OpenTofu tears down the infrastructure
+5. Status is set to **Decommissioning** and updated via CI provider webhook callback
 6. The original orderer receives a notification upon completion
 
 ---
@@ -136,3 +138,20 @@ As an Admin you automatically receive emails for:
 |-------|-------------|
 | New order (from project leader) | Approval request with link to the order |
 | Deployment failed | Error details and link to the pipeline |
+
+---
+
+## 9. Settings / Profile
+
+Under **Settings → Profile** (`/settings/profile`):
+
+### 9.1 Password Change
+
+1. Enter your **current password**
+2. Enter a **new password** (minimum 8 characters)
+3. Confirm the new password — both fields must match
+4. Click **Save**
+
+### 9.2 Language
+
+Use the language selector in the navigation bar to change the UI language. The selected language is stored in your session and applied to all UI texts. Product content is loaded in the selected language when a translation is available.

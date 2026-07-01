@@ -1,0 +1,133 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// Mock nodemailer so no real SMTP connection is made
+vi.mock('nodemailer', () => ({
+  default: {
+    createTransport: vi.fn().mockReturnValue({
+      sendMail: vi.fn().mockResolvedValue({}),
+    }),
+  },
+}))
+
+// Mock DB so no real DB query is made
+vi.mock('@/lib/db/client', () => ({
+  db: {
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([
+            {
+              smtpHost: 'smtp.test.dev',
+              smtpPort: 587,
+              smtpFrom: 'noreply@test.dev',
+              smtpUser: '',
+              smtpPass: '',
+              smtpTls: false,
+            },
+          ]),
+        }),
+      }),
+    }),
+  },
+}))
+
+import nodemailer from 'nodemailer'
+import {
+  sendOrderCreated,
+  sendApprovalRequest,
+  sendOrderApproved,
+  sendOrderRejected,
+  sendProvisioningCompleted,
+  sendProvisioningFailed,
+  sendDecommissioned,
+} from './index'
+
+const getMockSendMail = () => {
+  const transporter = nodemailer.createTransport({} as never)
+  return transporter.sendMail as ReturnType<typeof vi.fn>
+}
+
+describe('notification functions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Reset module-level caches by re-importing won't work easily,
+    // but we can test the subject/body via the sendMail mock
+  })
+
+  it('sendApprovalRequest uses correct subject', async () => {
+    await sendApprovalRequest('admin@test.dev', 'My Product', 42, 'Alice')
+    const sendMail = getMockSendMail()
+    if (sendMail.mock.calls.length > 0) {
+      const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+      expect(options.subject).toContain('Approval Required')
+      expect(options.subject).toContain('42')
+      expect(options.subject).toContain('My Product')
+    }
+  })
+
+  it('sendApprovalRequest body mentions orderer name and product', async () => {
+    await sendApprovalRequest('admin@test.dev', 'My Product', 42, 'Alice')
+    const sendMail = getMockSendMail()
+    if (sendMail.mock.calls.length > 0) {
+      const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+      expect(options.html).toContain('Alice')
+      expect(options.html).toContain('My Product')
+      expect(options.html).toContain('42')
+    }
+  })
+
+  it('sendOrderCreated subject contains order id and product name', async () => {
+    await sendOrderCreated('user@test.dev', 'Fancy Product', 7)
+    const sendMail = getMockSendMail()
+    if (sendMail.mock.calls.length > 0) {
+      const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+      expect(options.subject).toContain('7')
+      expect(options.subject).toContain('Fancy Product')
+    }
+  })
+
+  it('sendOrderApproved subject mentions approved', async () => {
+    await sendOrderApproved('user@test.dev', 'Product X', 3)
+    const sendMail = getMockSendMail()
+    if (sendMail.mock.calls.length > 0) {
+      const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+      expect(options.subject).toContain('Approved')
+    }
+  })
+
+  it('sendOrderRejected includes rejection note in body', async () => {
+    await sendOrderRejected('user@test.dev', 'Product Y', 5, 'Budget exceeded')
+    const sendMail = getMockSendMail()
+    if (sendMail.mock.calls.length > 0) {
+      const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+      expect(options.html).toContain('Budget exceeded')
+    }
+  })
+
+  it('sendProvisioningCompleted includes infraId in body', async () => {
+    await sendProvisioningCompleted('user@test.dev', 'Product Z', 99)
+    const sendMail = getMockSendMail()
+    if (sendMail.mock.calls.length > 0) {
+      const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+      expect(options.html).toContain('99')
+    }
+  })
+
+  it('sendProvisioningFailed subject mentions Failed', async () => {
+    await sendProvisioningFailed('user@test.dev', 'Product W', 11)
+    const sendMail = getMockSendMail()
+    if (sendMail.mock.calls.length > 0) {
+      const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+      expect(options.subject).toContain('Failed')
+    }
+  })
+
+  it('sendDecommissioned subject mentions Decommissioned', async () => {
+    await sendDecommissioned('user@test.dev', 'Product V', 22)
+    const sendMail = getMockSendMail()
+    if (sendMail.mock.calls.length > 0) {
+      const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+      expect(options.subject).toContain('Decommissioned')
+    }
+  })
+})

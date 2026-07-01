@@ -22,14 +22,21 @@ spec:
     - host: {{ .host | quote }}
       http:
         paths:
-          {{- range .paths }}
-          - path: {{ .path }}
-            pathType: {{ .pathType }}
+          # API routes → backend
+          - path: /api
+            pathType: Prefix
             backend:
               service:
-                name: {{ include "open-hybrid-cloud.fullname" $ }}
+                name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
                 port:
-                  number: {{ $.Values.service.port }}
-          {{- end }}
+                  number: {{ $.Values.backend.service.port }}
+          # All other routes → frontend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "open-hybrid-cloud.frontend.fullname" $ }}
+                port:
+                  number: {{ $.Values.frontend.service.port }}
     {{- end }}
 {{- end }}

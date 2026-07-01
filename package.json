@@ -1,0 +1,19 @@
+{
+  "name": "open-hybrid-cloud",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "build": "pnpm --filter '@open-hybrid-cloud/types' build && pnpm --parallel --filter './apps/*' build",
+    "lint": "pnpm --parallel --filter './apps/*' lint",
+    "db:generate": "pnpm --filter backend db:generate",
+    "db:migrate": "pnpm --filter backend db:migrate",
+    "db:push": "pnpm --filter backend db:push",
+    "test": "pnpm --filter backend test && pnpm --filter frontend test",
+    "test:coverage": "pnpm --filter backend test:coverage && pnpm --filter frontend test:coverage",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "typescript": "^5.7.0"
+  }
+}

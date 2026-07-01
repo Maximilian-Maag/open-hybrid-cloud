@@ -1,0 +1,85 @@
+'use client'
+
+import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+
+type ToastType = 'success' | 'error' | 'info'
+
+interface ToastItem {
+  id: number
+  message: string
+  type: ToastType
+}
+
+interface ToastContextValue {
+  toast: (message: string, type?: ToastType) => void
+}
+
+const ToastContext = createContext<ToastContextValue | null>(null)
+
+export function useToast() {
+  const ctx = useContext(ToastContext)
+  if (!ctx) throw new Error('useToast must be used within ToastProvider')
+  return ctx
+}
+
+let nextId = 1
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<ToastItem[]>([])
+
+  const toast = useCallback((message: string, type: ToastType = 'success') => {
+    const id = nextId++
+    setToasts((prev) => [...prev, { id, message, type }])
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500)
+  }, [])
+
+  return (
+    <ToastContext.Provider value={{ toast }}>
+      {children}
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none" aria-live="polite">
+        {toasts.map((t) => (
+          <ToastBubble
+            key={t.id}
+            item={t}
+            onDismiss={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+          />
+        ))}
+      </div>
+    </ToastContext.Provider>
+  )
+}
+
+const typeClass: Record<ToastType, string> = {
+  success: 'bg-green-600',
+  error:   'bg-red-600',
+  info:    'bg-slate-700',
+}
+
+const typeIconPath: Record<ToastType, string> = {
+  success: 'M5 13l4 4L19 7',
+  error:   'M6 18L18 6M6 6l12 12',
+  info:    'M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z',
+}
+
+function ToastBubble({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) {
+  return (
+    <div
+      role="status"
+      className={`flex items-center gap-3 rounded-lg px-4 py-3 shadow-xl text-sm font-medium text-white pointer-events-auto animate-toast-in min-w-56 max-w-xs ${typeClass[item.type]}`}
+    >
+      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={typeIconPath[item.type]} />
+      </svg>
+      <span className="flex-1">{item.message}</span>
+      <button
+        onClick={onDismiss}
+        className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+        aria-label="Dismiss"
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  )
+}

@@ -1,0 +1,34 @@
+{
+  "name": "Exchange Rate API",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": ".*latest.*"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "success": true,
+      "base": "EUR",
+      "rates": {
+        "EUR": 1.0,
+        "USD": 1.09,
+        "GBP": 0.86,
+        "CHF": 0.96,
+        "JPY": 162.5,
+        "CAD": 1.48,
+        "AUD": 1.65,
+        "SEK": 11.35,
+        "NOK": 11.52,
+        "DKK": 7.46,
+        "PLN": 4.31,
+        "CZK": 25.18,
+        "HUF": 388.5,
+        "RON": 4.97,
+        "BGN": 1.96,
+        "HRK": 7.53,
+        "RUB": 99.8
+      }
+    },
+    "headers": { "Content-Type": "application/json" }
+  }
+}

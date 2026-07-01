@@ -1,0 +1,100 @@
+# Sample GitLab CI/CD pipeline for Open Hybrid Cloud
+#
+# Copy this file to your infrastructure repository as .gitlab-ci.yml.
+# The portal triggers this pipeline via the GitLab Pipeline Trigger API and
+# reads results back via the GitLab webhook → /api/webhooks/gitlab/pipeline.
+#
+# Required CI/CD variables (set in GitLab → Settings → CI/CD → Variables):
+#   TF_VAR_gitlab_token  — GitLab personal/project access token for remote state reads
+#
+# Variables injected by the portal on every trigger:
+#   ORDER_ID    — webshop order ID (provisioning)
+#   INFRA_ID    — infrastructure element ID (decommissioning)
+#   DESTROY     — "true" when decommissioning, absent when provisioning
+#   <PARAM>     — all product parameters, uppercased (e.g. NAME, DOMAIN, SIZE)
+
+stages:
+  - validate
+  - plan
+  - apply
+
+variables:
+  # GitLab managed Terraform/OpenTofu HTTP backend — no external state storage needed
+  TF_STATE_NAME: "${CI_PROJECT_NAME}-${CI_COMMIT_REF_SLUG}"
+  TF_ADDRESS: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
+
+# ── Shared base ────────────────────────────────────────────────────────────────
+
+.tofu_base:
+  image: ghcr.io/opentofu/opentofu:1.8
+  before_script:
+    # Write portal order parameters into an auto-loaded .tfvars file.
+    # Add one line per variable declared in variables.tf.
+    - |
+      cat > order.auto.tfvars <<EOF
+      order_id = "${ORDER_ID:-}"
+      infra_id = "${INFRA_ID:-}"
+      name     = "${NAME:-}"
+      domain   = "${DOMAIN:-}"
+      size     = "${SIZE:-small}"
+      EOF
+    # Initialise OpenTofu with the GitLab HTTP backend for remote state.
+    - |
+      tofu init \
+        -backend-config="address=${TF_ADDRESS}" \
+        -backend-config="lock_address=${TF_ADDRESS}/lock" \
+        -backend-config="unlock_address=${TF_ADDRESS}/lock" \
+        -backend-config="username=gitlab-ci-token" \
+        -backend-config="password=${CI_JOB_TOKEN}" \
+        -backend-config="lock_method=POST" \
+        -backend-config="unlock_method=DELETE"
+  # Only run on portal-triggered pipelines — not on branch pushes
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "trigger"
+
+# ── Jobs ──────────────────────────────────────────────────────────────────────
+
+validate:
+  extends: .tofu_base
+  stage: validate
+  script:
+    - tofu validate
+
+plan:
+  extends: .tofu_base
+  stage: plan
+  script:
+    - |
+      if [ "${DESTROY}" = "true" ]; then
+        tofu plan -destroy -out=plan.tfplan
+      else
+        tofu plan -out=plan.tfplan
+      fi
+  artifacts:
+    paths:
+      - plan.tfplan
+    expire_in: 1 hour
+
+apply:
+  extends: .tofu_base
+  stage: apply
+  script:
+    - tofu apply plan.tfplan
+    # Print outputs so the portal can parse them from the job trace.
+    # The portal reads the section starting with "Outputs:" and extracts
+    # key = "value" pairs into the infrastructure element's outputs field.
+    - tofu output
+  dependencies:
+    - plan
+
+# ── Optional: scheduled drift detection ───────────────────────────────────────
+
+drift_check:
+  extends: .tofu_base
+  stage: plan
+  script:
+    # Exit code 2 = drift detected, 0 = no drift
+    - tofu plan -detailed-exitcode
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"

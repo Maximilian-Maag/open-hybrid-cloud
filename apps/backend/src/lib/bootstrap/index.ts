@@ -12,9 +12,13 @@ export const runBootstrap = async (): Promise<void> => {
 
   try {
     await migrate(db, { migrationsFolder: path.join(process.cwd(), 'drizzle') })
-  } catch (err) {
-    bootstrapped = false
-    throw err
+  } catch (err: unknown) {
+    // 42P07 = relation already exists — schema was applied outside the migration
+    // system (e.g. via db:push). Treat the DB as already migrated and continue.
+    if ((err as any)?.cause?.code !== '42P07') {
+      bootstrapped = false
+      throw err
+    }
   }
 
   const email = process.env.ADMIN_EMAIL

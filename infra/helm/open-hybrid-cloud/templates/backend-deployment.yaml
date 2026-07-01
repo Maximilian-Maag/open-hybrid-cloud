@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+  labels:
+    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  {{- if not .Values.backend.autoscaling.enabled }}
+  replicas: {{ .Values.backend.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "open-hybrid-cloud.backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "open-hybrid-cloud.backend.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: {{ include "open-hybrid-cloud.backend.image" . }}
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.service.port }}
+              protocol: TCP
+          env:
+            - name: ADMIN_EMAIL
+              value: {{ .Values.backend.env.adminEmail | quote }}
+            - name: FRONTEND_URL
+              value: {{ .Values.backend.env.frontendUrl | quote }}
+            - name: EXCHANGE_RATE_API_URL
+              value: {{ .Values.backend.env.exchangeRateApiUrl | quote }}
+            {{- with .Values.backend.env.entra }}
+            {{- if .tenantId }}
+            - name: ENTRA_TENANT_ID
+              value: {{ .tenantId | quote }}
+            - name: ENTRA_CLIENT_ID
+              value: {{ .clientId | quote }}
+            - name: ENTRA_CLIENT_SECRET
+              value: {{ .clientSecret | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.backend.env.smtp }}
+            {{- if .host }}
+            - name: SMTP_HOST
+              value: {{ .host | quote }}
+            - name: SMTP_PORT
+              value: {{ .port | quote }}
+            - name: SMTP_FROM
+              value: {{ .from | quote }}
+            - name: SMTP_USER
+              value: {{ .user | quote }}
+            - name: SMTP_TLS
+              value: {{ .tls | quote }}
+            {{- end }}
+            {{- end }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  key: DATABASE_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  key: JWT_SECRET
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  key: ADMIN_PASSWORD
+            {{- with .Values.backend.env.smtp }}
+            {{- if .pass }}
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
+                  key: SMTP_PASS
+            {{- end }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          {{- with .Values.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,16 @@
+{
+  "name": "GitLab projects list",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/projects"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": [
+      { "id": 1, "name": "infrastructure", "path_with_namespace": "demo/infrastructure" },
+      { "id": 2, "name": "k8s-modules", "path_with_namespace": "demo/k8s-modules" },
+      { "id": 3, "name": "vm-templates", "path_with_namespace": "demo/vm-templates" }
+    ],
+    "headers": { "Content-Type": "application/json" }
+  }
+}

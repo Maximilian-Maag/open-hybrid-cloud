@@ -1,0 +1,12 @@
+{
+  "name": "GitLab pipeline status",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/pipelines/[0-9]+"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": { "id": 42, "status": "success", "ref": "main" },
+    "headers": { "Content-Type": "application/json" }
+  }
+}

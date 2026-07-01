@@ -1,0 +1,17 @@
+{
+  "name": "GitLab repository file tree",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/projects/[0-9]+/repository/tree"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": [
+      { "name": "variables.tf", "path": "variables.tf", "type": "blob" },
+      { "name": "main.tf", "path": "main.tf", "type": "blob" },
+      { "name": "outputs.tf", "path": "outputs.tf", "type": "blob" },
+      { "name": "modules", "path": "modules", "type": "tree" }
+    ],
+    "headers": { "Content-Type": "application/json" }
+  }
+}

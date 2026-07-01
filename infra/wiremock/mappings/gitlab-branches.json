@@ -1,0 +1,16 @@
+{
+  "name": "GitLab repository branches",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/projects/[0-9]+/repository/branches"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": [
+      { "name": "main" },
+      { "name": "develop" },
+      { "name": "feature/new-vm-module" }
+    ],
+    "headers": { "Content-Type": "application/json" }
+  }
+}

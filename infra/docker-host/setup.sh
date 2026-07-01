@@ -69,30 +69,31 @@ check_config_files() {
     missing=1
   fi
 
+  if [[ ! -d "$SCRIPT_DIR/certs" ]]; then
+    warn "certs/ directory not found — create it and place fullchain.pem and privkey.pem inside."
+    missing=1
+  fi
+
   if [[ $missing -eq 1 ]]; then
     echo
-    error "Config files were created from examples. Edit them and re-run."
+    error "Config files or directories are missing. Set them up and re-run."
   fi
 }
-
 
 ask_environment() {
   info "Please select the environment:"
   select env in "dev" "staging" "production"; do
     case $env in
-      dev ) IMAGE_TAG="dev"; break;;
-      staging ) IMAGE_TAG="staging"; break;;
-      production ) IMAGE_TAG="latest"; break;;
+      dev)        IMAGE_TAG="dev";     break;;
+      staging)    IMAGE_TAG="staging"; break;;
+      production) IMAGE_TAG="latest";  break;;
     esac
   done
 
   if grep -q "^IMAGE_TAG=" "$SCRIPT_DIR/.env"; then
-    info "Updating IMAGE_TAG in .env file to $IMAGE_TAG..."
     sed -i "s~^IMAGE_TAG=.*~IMAGE_TAG=$IMAGE_TAG~" "$SCRIPT_DIR/.env"
   else
-    info "Adding IMAGE_TAG to .env file..."
     echo "" >> "$SCRIPT_DIR/.env"
-    echo "# Image tag to use for the webshop service (dev, staging, latest)" >> "$SCRIPT_DIR/.env"
     echo "IMAGE_TAG=$IMAGE_TAG" >> "$SCRIPT_DIR/.env"
   fi
   info "Image tag set to: $IMAGE_TAG"
@@ -117,6 +118,8 @@ cmd_install() {
   compose_up
   echo
   info "Installation complete."
+  info "Database schema and initial admin user are created on the first request to the backend."
+  info "Visit https://\$(grep NEXTAUTH_URL \"$SCRIPT_DIR/.env\" | cut -d= -f2) to open the app."
 }
 
 cmd_upgrade() {
@@ -129,17 +132,29 @@ cmd_upgrade() {
   info "Upgrade complete."
 }
 
+cmd_logs() {
+  docker compose -f "$SCRIPT_DIR/docker-compose.yml" logs --follow "${@}"
+}
+
+cmd_status() {
+  docker compose -f "$SCRIPT_DIR/docker-compose.yml" ps
+}
+
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 usage() {
-  echo "Usage: $0 [--install | --upgrade]"
+  echo "Usage: $0 [--install | --upgrade | --logs [service] | --status]"
   echo
-  echo "  --install   Install Docker and start all containers (first-time setup)"
-  echo "  --upgrade   Upgrade Docker packages and pull latest container images"
+  echo "  --install        Install Docker and start all containers (first-time setup)"
+  echo "  --upgrade        Upgrade Docker packages and pull latest container images"
+  echo "  --logs [svc]     Tail logs (optionally for a specific service: frontend, backend, nginx, postgres)"
+  echo "  --status         Show running container status"
 }
 
 case "${1:-}" in
   --install) cmd_install ;;
   --upgrade) cmd_upgrade ;;
+  --logs)    shift; cmd_logs "$@" ;;
+  --status)  cmd_status ;;
   *) usage; exit 1 ;;
 esac

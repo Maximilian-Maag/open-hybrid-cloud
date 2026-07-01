@@ -56,6 +56,8 @@ Under **Administration → Email**:
 2. Click **Send Test Email** — sends a test email to the admin address
 3. Save
 
+> **Persistence:** SMTP settings saved here are stored in the `app_config` database table and override the environment variable defaults at runtime. The configuration persists across container restarts. If the password field is left blank during an update, the existing stored password is preserved.
+
 ### 2.4 Base Currency and Exchange Rates
 
 Under **Administration → Currencies**:
@@ -74,6 +76,8 @@ Under **Administration → AI Translation**:
 3. Select or enter a **model**
 4. Click **Test Connection**
 5. Save — after saving, the translation feature will appear in product editing
+
+> **Persistence:** AI translation settings saved here are stored in the `app_config` database table and override the environment variable defaults at runtime. The configuration persists across container restarts. If the API key field is left blank during an update, the existing stored key is preserved.
 
 ---
 
@@ -122,6 +126,7 @@ Under **Administration → Products → New**:
 **Step 4 – Deployment Environments**
 - Select environments in which the product should be available
 - Per environment: webhook URL (if different from environment configuration) and environment-specific parameters
+- **Product Webhooks:** For each selected environment, you can configure multiple webhook endpoints via **Administration → Products → [product] → Webhooks**. Each entry has a name, webhook URL, webhook token, and execution order (`exec_order`). Webhooks with the same `exec_order` fire concurrently; a lower `exec_order` fires before a higher one. If no product webhooks are configured for a given environment, the system falls back to the deployment environment's default webhook URL.
 
 **Step 5 – Pricing**
 - Enter a price in the base currency per environment (e.g. AWS: 70 EUR, on-premises: 20 EUR)
@@ -169,8 +174,8 @@ Under **Administration → Users**:
 
 - Create local user accounts (name, email, password, role)
 - Edit or deactivate existing accounts
-- SSO users (Admins and project leaders via Entra ID) are created automatically on first login and appear in this list as well
-- Roles: **Admin**, **Project Leader**, **Root**
+- SSO users (Admins and project managers via Entra ID, if configured) are created automatically on first login and appear in this list as well
+- Roles: **Admin**, **Project Manager**, **Root**
 
 ---
 
@@ -179,8 +184,22 @@ Under **Administration → Users**:
 Under **Administration → Audit Log**:
 
 - Table of all logged actions with timestamp, user, action, and details
-- Filterable by time range, user, action type
+- Paginated — 50 entries per page
+- Filterable by: user, action type, date range (from/to)
 - Export as **CSV** or **PDF** — format selectable before export
+
+Logged action types:
+
+| Action | Trigger |
+|--------|---------|
+| `order.created` | A new order is placed |
+| `order.approved` | An Admin approves a pending order |
+| `order.rejected` | An Admin rejects a pending order |
+| `order.completed` | A CI/CD pipeline completes successfully |
+| `order.failed` | A CI/CD pipeline fails |
+| `infra.decommissioned` | An infrastructure element is decommissioned |
+| `infra.decommission_failed` | A decommission pipeline fails; element reverts to active |
+| `config.changed` | A system configuration value is updated |
 
 ---
 
@@ -200,8 +219,8 @@ Under **Administration → Shop Design** (or directly at `/admin/branding`):
 
 ### 9.1 Colors
 
-- **Primary color**: Used for the header, footer and navigation bar. Default: `#131921` (dark blue).
-- **Accent color**: Used for buttons and call-to-action elements. Default: `#febd69` (amber).
+- **Primary color**: Used for the header, footer, and navigation bar. Default: `#1e40af` (blue).
+- **Secondary color**: Used for buttons and call-to-action elements. Default: `#3b82f6` (sky blue).
 - The live preview on the right updates in real time as you change the color values.
 
 ### 9.2 Logo
@@ -221,3 +240,18 @@ Under **Administration → Shop Design** (or directly at `/admin/branding`):
 - Once saved, an **Imprint** link appears in the footer
 - The imprint is publicly accessible at `/impressum` (no login required)
 - Leave empty to hide the imprint link entirely
+
+---
+
+## 10. Settings / Profile
+
+Under **Settings → Profile** (`/settings/profile`):
+
+### 10.1 Password Change
+
+1. Enter your **current password**
+2. Enter a **new password** (minimum 8 characters)
+3. Confirm the new password — both fields must match
+4. Click **Save**
+
+If the current password is incorrect or the confirmation does not match, the change is rejected and an error message is shown.

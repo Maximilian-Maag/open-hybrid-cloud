@@ -158,6 +158,14 @@
   commentstyle=\color{gray},
   stringstyle=\color{ForestGreen},
 }
+\lstdefinestyle{typescript}{
+  language=Java,
+  morekeywords={export,import,const,let,async,await,type,interface,
+                from,of,extends,implements,as,satisfies,return,true,false},
+  keywordstyle=\color{MidnightBlue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{ForestGreen},
+}
 
 % ── Callout boxes ─────────────────────────────────────────────
 \usepackage[most]{tcolorbox}
@@ -211,7 +219,7 @@
   pdfauthor={Open Hybrid Cloud Infrastructure Team},
   pdftitle={Open Hybrid Cloud Infrastructure Webshop — Technical Handbook},
   pdfsubject={Technical documentation for administrators, developers, and project managers},
-  pdfkeywords={Open Hybrid Cloud, webshop, infrastructure, OpenTofu, GitLab, Linode, Go, C4},
+  pdfkeywords={Open Hybrid Cloud, webshop, infrastructure, Next.js, TypeScript, OpenTofu, GitLab, C4},
   bookmarksnumbered=true,
   hypertexnames=true,
   unicode=true,
@@ -273,7 +281,7 @@
     \textbf{Autor}     & Maximilian Jakob Maag B.Sc. \\
     \textbf{Audience}  & Administrators, Developers, Project Managers \\
     \textbf{System}    & Infrastructure Webshop \\
-    \textbf{Stack}     & Go · PostgreSQL · HTMX · OpenTofu · GitLab · Linode \\
+    \textbf{Stack}     & Next.js · TypeScript · PostgreSQL · OpenTofu · GitLab \\
     \textbf{Scope}     & Architecture · Operations · Development · Product Lifecycle \\
     \bottomrule
   \end{tabular}
@@ -343,12 +351,12 @@ It covers:
 
 \section{System At a Glance}
 
-The webshop is a single Go binary that renders HTML server-side and
-delivers page fragments via HTMX for a responsive, app-like feel.
-Orders are fulfilled by triggering GitLab CI/CD pipelines that run
-OpenTofu (a Terraform-compatible open-source tool) to provision or
-destroy cloud resources on Linode/Akamai. The system is stateless above
-the PostgreSQL layer, enabling horizontal scaling without coordination.
+The webshop is a Next.js monorepo with a dedicated backend API and a
+React-based frontend. Orders are fulfilled by triggering CI/CD pipelines
+(GitLab, GitHub, or Bitbucket) that run OpenTofu (a
+Terraform-compatible open-source tool) to provision or destroy cloud
+resources on Linode/Akamai. Pipeline status is reported back via
+webhooks rather than polling.
 
 \begin{table}[H]
   \centering
@@ -358,17 +366,19 @@ the PostgreSQL layer, enabling horizontal scaling without coordination.
     \toprule
     \textbf{Layer} & \textbf{Technology} & \textbf{Version} \\
     \midrule
-    Backend        & Go                       & 1.22+ \\
-    Templates      & templ                    & 0.3+ \\
-    Frontend       & HTMX                     & 2.0 \\
-    CSS            & Tailwind CSS             & 3.x \\
+    Runtime        & Node.js                  & 22+ \\
+    Backend        & Next.js 15 (API-only)    & 15.x \\
+    Frontend       & Next.js 15 + React       & 15.x / 19.x \\
+    CSS            & Tailwind CSS v4          & 4.x \\
+    Package Mgr    & pnpm (workspace)         & 9.x \\
+    ORM            & Drizzle ORM              & — \\
     Database       & PostgreSQL               & 15+ \\
-    DB Driver      & pgx/v5 (jackc)           & 5.x \\
+    Auth (backend) & JWT HS256 (jose)         & 24 h expiry \\
+    Auth (frontend)& NextAuth v5              & 5.x \\
     IaC            & OpenTofu                 & 1.9+ \\
     Cloud          & Linode/Akamai            & — \\
-    CI/CD          & GitLab CE                & 16+ \\
+    CI/CD          & GitLab / GitHub / Bitbucket & 16+ / — / — \\
     State Backend  & GitLab Managed TF State  & — \\
-    Auth           & OIDC (Entra ID) + local  & — \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -396,7 +406,7 @@ systems it depends on.
   \node[c4system, text width=4cm, minimum height=2.4cm] (ws)
     {\textbf{Open Hybrid Cloud}\\[4pt]
      \scriptsize Self-service portal for ordering, managing and decommissioning IT infrastructure.\\
-     \scriptsize Go · HTMX · PostgreSQL};
+     \scriptsize Next.js · React · PostgreSQL};
 
   % Persons (top)
   \node[c4person, above left=1.8cm and 2.6cm of ws] (dua)
@@ -408,11 +418,9 @@ systems it depends on.
 
   % External systems (bottom row)
   \node[c4external, below left=2.0cm and 4.0cm of ws] (gl)
-    {\textbf{GitLab}\\[4pt]\scriptsize Webhook target, repo browser, pipeline status};
-  \node[c4external, below left=2.0cm and 0.8cm of ws] (oidc)
-    {\textbf{Microsoft Entra ID}\\[4pt]\scriptsize OIDC SSO provider};
-  \node[c4external, below right=2.0cm and 0.8cm of ws] (ai)
-    {\textbf{AI Translation API}\\[4pt]\scriptsize Claude/OpenAI/Ollama (optional)};
+    {\textbf{CI Provider}\\[4pt]\scriptsize GitLab / GitHub / Bitbucket — webhook target, repo browser};
+  \node[c4external, below right=2.0cm and 0.8cm of ws] (er)
+    {\textbf{Exchange Rate API}\\[4pt]\scriptsize Currency conversion rates (optional)};
   \node[c4external, below right=2.0cm and 4.0cm of ws] (smtp)
     {\textbf{Mail Server}\\[4pt]\scriptsize SMTP transactional email};
 
@@ -424,8 +432,7 @@ systems it depends on.
   % Arrows — webshop to external
   \draw[c4arrow] (ws) -- node[c4label, left=1pt, align=right]
     {Webhooks, API\\JSON/HTTPS} (gl);
-  \draw[c4arrow] (ws) -- node[c4label, right=1pt]{OIDC/HTTPS} (oidc);
-  \draw[c4arrow] (ws) -- node[c4label, left=1pt]{JSON/HTTPS} (ai);
+  \draw[c4arrow] (ws) -- node[c4label, right=1pt]{JSON/HTTPS} (er);
   \draw[c4arrow] (ws) -- node[c4label, right=1pt]{SMTP} (smtp);
 
 \end{tikzpicture}}%
@@ -437,44 +444,40 @@ systems it depends on.
 
 \begin{description}
   \item[\role{Admin}]
-    Authenticates via Microsoft Entra ID SSO. Has the system role
+    Authenticates via local account with JWT. Has the system role
     \code{admin}. Can order infrastructure directly (no approval required),
     approve or reject orders from Project Managers, view all projects and
     infrastructure, and decommission any resource.
   \item[\role{Root}]
-    Uses a local account (no SSO). Has the system role \code{root}.
-    Manages the product catalog, system configuration (SMTP, AI, branding,
-    currencies), environments, GitLab sources, cost centers, and local
+    Uses a local account. Has the system role \code{root}.
+    Manages the product catalog, system configuration (SMTP, branding,
+    currencies), environments, CI sources, cost centers, and local
     users. Cannot place orders.
   \item[\role{Project Manager}]
-    Authenticates via Entra ID SSO. Has the system role \code{user}.
-    Places orders (which require Admin approval), manages their own
-    projects, and can decommission their own infrastructure.
+    Authenticates via local account with JWT. Has the system role
+    \code{project\_manager}. Places orders (which require Admin
+    approval), manages their own projects, and can decommission their
+    own infrastructure.
 \end{description}
 
 \subsection{External Systems}
 
 \begin{description}
-  \item[\textbf{GitLab}]
-    One or more self-hosted or cloud GitLab instances. The webshop
-    connects to GitLab for three purposes: (1) browsing repositories and
-    importing \code{variables.tf} parameter definitions, (2) triggering
-    provisioning and decommissioning webhooks, and (3) polling pipeline
-    status to update order state.
-  \item[\textbf{Microsoft Entra ID}]
-    The OIDC identity provider for Admins and Project Managers. The
-    webshop implements the Authorization Code Flow. Local accounts for
-    Root users bypass this provider entirely.
-  \item[\textbf{AI Translation API}]
-    Optional. Used to auto-translate product names and descriptions into
-    all 25 supported languages. Multiple backends are supported:
-    cloud-based (Claude, OpenAI, Azure OpenAI) and on-premise
-    (Ollama, LocalAI). The feature is hidden when no provider is
-    configured.
+  \item[\textbf{CI Provider (GitLab / GitHub / Bitbucket)}]
+    One or more self-hosted or cloud CI provider instances. The webshop
+    connects for two purposes: (1) browsing repositories and importing
+    \code{variables.tf} parameter definitions via the GitLab API, and
+    (2) triggering provisioning and decommissioning webhooks. Pipeline
+    status is reported back to the webshop via inbound webhook events
+    (\route{POST /api/webhooks/\{provider\}/pipeline}).
+  \item[\textbf{Exchange Rate API}]
+    Optional. Any HTTP JSON exchange rate endpoint. Used to refresh
+    currency conversion rates. Configured via
+    \env{EXCHANGE\_RATE\_API\_URL} and \env{EXCHANGE\_RATE\_API\_KEY}.
   \item[\textbf{Mail Server}]
     Any SMTP server. Sends order confirmations, approval request
     notifications, approval/rejection notices, deployment completion
-    alerts, and failure notifications.
+    alerts, and failure notifications. Delivered via nodemailer.
 \end{description}
 
 % ── Level 2 ──────────────────────────────────────────────────
@@ -487,63 +490,83 @@ systems it depends on.
 
   % System boundary
   \begin{scope}[on background layer]
-    \node[c4boundary, fit={(0,-0.5)(10,6.5)}, inner sep=0.6cm,
+    \node[c4boundary, fit={(-0.5,-0.5)(12,6.5)}, inner sep=0.6cm,
           label={[font=\small\itshape]above left:Open Hybrid Cloud System}] (bound) {};
   \end{scope}
 
-  % Go application
-  \node[c4container, text width=4.2cm, minimum height=3.2cm] (app) at (3,3)
-    {\textbf{Webshop Application}\\[4pt]
-     \scriptsize Renders HTML server-side.\\
-     Handles auth, catalog, orders,\\
-     admin, polling, notifications.\\[4pt]
-     \scriptsize\textit{Go 1.22 · net/http · HTMX}};
+  % Frontend container
+  \node[c4container, text width=3.6cm, minimum height=3.0cm] (fe) at (2,3)
+    {\textbf{Frontend}\\[4pt]
+     \scriptsize React UI, App Router pages,\\
+     NextAuth v5 session,\\
+     typed API client.\\[4pt]
+     \scriptsize\textit{Next.js 15 · React 19 · :3000}};
+
+  % Backend container
+  \node[c4container, text width=3.6cm, minimum height=3.0cm] (be) at (7,3)
+    {\textbf{Backend API}\\[4pt]
+     \scriptsize REST route handlers,\\
+     JWT auth middleware,\\
+     Drizzle ORM, webhooks,\\
+     notifications.\\[4pt]
+     \scriptsize\textit{Next.js 15 · Node.js 22 · :3001}};
 
   % Database
-  \node[c4database, right=2.2cm of app] (db)
+  \node[c4database, right=2.2cm of be] (db)
     {\textbf{PostgreSQL}\\[4pt]
      \scriptsize All persistent data};
 
   % Persons (above)
-  \node[c4person, above left=1.6cm and 0.4cm of app] (dua)
+  \node[c4person, above left=1.6cm and 0.4cm of fe] (dua)
     {\textbf{Admin}};
-  \node[c4person, above=1.6cm of app] (sa)
+  \node[c4person, above=1.6cm of fe] (sa)
     {\textbf{Root}};
-  \node[c4person, above right=1.6cm and 0.4cm of app] (pl)
+  \node[c4person, above right=1.6cm and 0.4cm of fe] (pl)
     {\textbf{Project Manager}};
 
   % External below
-  \node[c4external, below left=1.6cm and 1.5cm of app, text width=2.8cm] (gl)
-    {\textbf{GitLab}};
-  \node[c4external, below=1.6cm of app, text width=2.8cm] (oidc)
-    {\textbf{Entra ID}};
-  \node[c4external, below right=1.6cm and 1.5cm of app, text width=2.8cm] (smtp)
+  \node[c4external, below left=1.6cm and 0.5cm of be, text width=2.8cm] (ci)
+    {\textbf{CI Provider}};
+  \node[c4external, below right=1.6cm and 0.5cm of be, text width=2.8cm] (smtp)
     {\textbf{SMTP}};
 
   % Arrows
-  \draw[c4arrow] (dua) -- (app);
-  \draw[c4arrow] (sa)  -- (app);
-  \draw[c4arrow] (pl)  -- (app);
-  \draw[c4arrow] (app) -- node[c4label,above]{SQL/TCP} (db);
-  \draw[c4arrow] (app) -- node[c4label,right=2pt]{JSON/HTTPS} (gl);
-  \draw[c4arrow] (app) -- node[c4label,right=2pt]{OIDC} (oidc);
-  \draw[c4arrow] (app) -- node[c4label,right=2pt]{SMTP} (smtp);
+  \draw[c4arrow] (dua) -- (fe);
+  \draw[c4arrow] (sa)  -- (fe);
+  \draw[c4arrow] (pl)  -- (fe);
+  \draw[c4arrow] (fe) -- node[c4label,above]{REST/HTTPS} (be);
+  \draw[c4arrow] (be) -- node[c4label,above]{Drizzle/TCP} (db);
+  \draw[c4arrow] (be) -- node[c4label,right=2pt]{JSON/HTTPS} (ci);
+  \draw[c4arrow] (be) -- node[c4label,right=2pt]{SMTP} (smtp);
 
 \end{tikzpicture}
 \caption{C4 Level 2 — Container Diagram}
 \label{fig:c4-l2}
 \end{figure}
 
-The system has exactly two containers:
+The system has three containers (plus the shared database):
 
 \begin{description}
-  \item[\textbf{Webshop Application}]
-    A single stateless Go binary. It handles HTTP requests, renders HTML
-    via \code{templ} components, serves HTMX fragments, coordinates all
-    business logic, runs the GitLab polling goroutines, and manages
-    outbound SMTP. Being stateless above the database layer means
-    multiple replicas can run behind a load balancer without any
-    coordination layer.
+  \item[\textbf{Frontend} (port 3000)]
+    A Next.js 15 application serving the React UI via the App Router.
+    All pages are React Server Components or client components. It
+    communicates with the backend exclusively via typed fetch wrappers
+    in \file{src/lib/api.ts}. Authentication state is managed by
+    NextAuth v5, which stores the JWT received from the backend in a
+    secure server-side session.
+  \item[\textbf{Backend API} (port 3001)]
+    A Next.js 15 application running in API-only mode — no UI pages.
+    Route handlers under \file{src/app/api/} are thin shells: each one
+    checks authentication, parses and validates the request body with
+    Zod, delegates to a typed service function in \file{src/lib/services/},
+    and maps the returned \code{Result<T>} to a \code{NextResponse} via
+    \code{toResponse()}. All business logic, state machine transitions,
+    CI orchestration, email notifications, and audit writes live in the
+    service layer, never in route handlers. JWT middleware
+    (\file{src/lib/auth/}) verifies every authenticated request.
+    Drizzle ORM manages all database access. The webhook handler
+    (\file{src/lib/webhook/}) processes inbound pipeline status events
+    from CI providers.
   \item[\textbf{PostgreSQL Database}]
     The single source of truth. Stores the product catalog, orders,
     infrastructure state, audit log, branding, configuration, users, and
@@ -554,7 +577,7 @@ The system has exactly two containers:
 \section{Level 3 — Component Diagram}
 \label{sec:c4-l3}
 
-Figure~\ref{fig:c4-l3} decomposes the Go application container into
+Figure~\ref{fig:c4-l3} decomposes the backend API container into
 its major logical components.
 
 \begin{figure}[H]
@@ -562,100 +585,145 @@ its major logical components.
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[node distance=0.7cm and 0.6cm]
 
-  % Top row
+  % Top row — thin route handler groups
   \node[c4component] (auth)
-    {\textbf{Auth}\\[2pt]\scriptsize OIDC + local session};
+    {\textbf{Auth Routes}\\[2pt]\scriptsize login, me, password};
   \node[c4component, right=of auth] (catalog)
-    {\textbf{Catalog}\\[2pt]\scriptsize Products, categories, pricing};
+    {\textbf{Catalog Routes}\\[2pt]\scriptsize Products, categories, pricing};
   \node[c4component, right=of catalog] (order)
-    {\textbf{Order}\\[2pt]\scriptsize Form, webhook dispatch};
-  \node[c4component, right=of order] (approval)
-    {\textbf{Approval}\\[2pt]\scriptsize Approve/reject flow};
-  \node[c4component, right=of approval] (infra)
-    {\textbf{Infrastructure}\\[2pt]\scriptsize Overview, decommission};
+    {\textbf{Order Routes}\\[2pt]\scriptsize Place, approve, reject};
+  \node[c4component, right=of order] (infra)
+    {\textbf{Infrastructure Routes}\\[2pt]\scriptsize Overview, decommission};
+  \node[c4component, right=of infra] (admin)
+    {\textbf{Admin Routes}\\[2pt]\scriptsize Catalog \& config mgmt};
 
-  % Middle row
-  \node[c4component, below=0.9cm of auth] (audit)
-    {\textbf{Audit}\\[2pt]\scriptsize Immutable log, export};
-  \node[c4component, right=of audit] (notif)
-    {\textbf{Notification}\\[2pt]\scriptsize SMTP email dispatch};
-  \node[c4component, right=of notif] (polling)
-    {\textbf{GitLab Polling}\\[2pt]\scriptsize Pipeline status sync};
-  \node[c4component, right=of polling] (admin)
-    {\textbf{Admin}\\[2pt]\scriptsize Catalog \& config mgmt};
-  \node[c4component, right=of admin] (aitrans)
-    {\textbf{AI Translation}\\[2pt]\scriptsize Pluggable translator};
+  % Middle row — service layer
+  \node[c4component, below=0.9cm of auth] (sauth)
+    {\textbf{Auth Service}\\[2pt]\scriptsize credentials, SSO upsert};
+  \node[c4component, right=of sauth] (sorder)
+    {\textbf{Order Service}\\[2pt]\scriptsize state machine, CI trigger};
+  \node[c4component, right=of sorder] (sinfra)
+    {\textbf{Infrastructure Service}\\[2pt]\scriptsize decommission logic};
+  \node[c4component, right=of sinfra] (sadmin)
+    {\textbf{Admin Services}\\[2pt]\scriptsize CRUD, exchange, config};
 
-  % Bottom row — repositories
-  \node[c4database, below=0.9cm of audit, text width=2.4cm] (repo)
-    {\textbf{Repositories}\\[2pt]\scriptsize pgx/v5 SQL layer};
+  % Lower-middle row — lib modules
+  \node[c4component, below=0.9cm of sauth] (jwtmw)
+    {\textbf{JWT Middleware}\\[2pt]\scriptsize Verify token, role guards};
+  \node[c4component, right=of jwtmw] (ci)
+    {\textbf{CI Dispatch}\\[2pt]\scriptsize GitLab/GitHub/Bitbucket};
+  \node[c4component, right=of ci] (webhook)
+    {\textbf{Webhook Handler}\\[2pt]\scriptsize Inbound pipeline events};
+  \node[c4component, right=of webhook] (email)
+    {\textbf{Notification}\\[2pt]\scriptsize nodemailer SMTP};
+  \node[c4component, right=of email] (queries)
+    {\textbf{Query Helpers}\\[2pt]\scriptsize findProductName, findUserEmail};
 
-  % Arrows: components to repo
-  \foreach \n in {auth, catalog, order, approval, infra, audit, notif, polling, admin, aitrans}
-    \draw[->, thick, draw=gray!40, dashed] (\n) -- (repo);
+  % Bottom row — data layer
+  \node[c4database, below=0.9cm of jwtmw, text width=2.8cm] (drizzle)
+    {\textbf{Drizzle ORM}\\[2pt]\scriptsize Schema + typed queries};
+
+  % Arrows: routes → services
+  \draw[->, thick] (auth) -- (sauth);
+  \draw[->, thick] (catalog) -- (sorder);
+  \draw[->, thick] (order) -- (sorder);
+  \draw[->, thick] (infra) -- (sinfra);
+  \draw[->, thick] (admin) -- (sadmin);
+
+  % Arrows: services to lib
+  \foreach \n in {sauth, sorder, sinfra, sadmin}
+    \draw[->, thick, draw=gray!60] (\n) -- (ci);
+  \foreach \n in {sauth, sorder, sinfra, sadmin}
+    \draw[->, thick, draw=gray!60] (\n) -- (email);
+  \foreach \n in {sauth, sorder, sinfra, sadmin}
+    \draw[->, thick, draw=gray!60] (\n) -- (queries);
+
+  % Arrows: everything to drizzle
+  \foreach \n in {jwtmw, ci, webhook, email, queries, sauth, sorder, sinfra, sadmin}
+    \draw[->, thick, draw=gray!40, dashed] (\n) -- (drizzle);
 
 \end{tikzpicture}
 }
-\caption{C4 Level 3 — Component Diagram (Webshop Application)}
+\caption{C4 Level 3 — Component Diagram (Backend API)}
 \label{fig:c4-l3}
 \end{figure}
 
 \subsection{Component Descriptions}
 
-\begin{longtable}{@{}L{3.0cm}L{10cm}@{}}
+Route handlers are intentionally thin: they perform authentication, validate the request with
+Zod, call a service function, and return a \code{NextResponse} via \code{toResponse()}.
+All domain logic is in the service layer.
+
+\begin{longtable}{@{}L{3.2cm}L{9.8cm}@{}}
   \toprule
   \textbf{Component} & \textbf{Responsibility} \\
   \midrule
   \endhead
-  Auth &
-    Handles OIDC Authorization Code Flow (Entra ID) and local password
-    login. Issues encrypted, HttpOnly session cookies. Enforces role-based
-    access (\code{admin}, \code{root}, \code{project\_leader}). \\[4pt]
-  Catalog &
-    Renders products grouped by category. Converts prices from the
-    configured base currency to the user's locale currency using stored
-    exchange rates. Supports 25 languages via the i18n engine. \\[4pt]
-  Order &
-    Renders the order form with parameters from global, category, and
-    product parameter sets. Stores orders in PostgreSQL. For Admins,
-    triggers the GitLab provisioning webhook immediately; for Project
-    Managers, parks the order for approval. \\[4pt]
-  Approval &
-    Lists pending orders for Admins. Approve triggers the GitLab
-    webhook. Reject requires a mandatory comment. Both paths send
-    email notifications and write to the audit log. \\[4pt]
-  Infrastructure &
-    Shows deployed resources grouped by project and environment.
-    Role-scoped: Project Managers see only their own. Triggers the
-    GitLab destroy webhook for decommissioning. Supports
-    ``use as template'' to pre-fill a new order. \\[4pt]
-  Audit &
-    Append-only log of all system actions. Filterable by date range,
-    user, and action type. Exportable as CSV or PDF. \\[4pt]
+  \multicolumn{2}{@{}l}{\textit{Route Handlers (\file{src/app/api/})}} \\[2pt]
+  Auth Routes &
+    Parse credentials or OIDC callback, call the auth service, return a
+    signed JWT. No business logic inline. \\[4pt]
+  Catalog Routes &
+    Parse language/filter query params, call the catalog service. \\[4pt]
+  Order Routes &
+    Validate \code{CreateOrderSchema} / \code{RejectSchema}, call the orders or
+    approvals service, return the result. \\[4pt]
+  Infrastructure Routes &
+    Role-scoped list and decommission trigger; delegates entirely to the
+    infrastructure service. \\[4pt]
+  Admin Routes &
+    Thin CRUD shells for catalog, environments, CI sources, users, config,
+    and branding — each delegates to the corresponding admin service. \\[6pt]
+  \multicolumn{2}{@{}l}{\textit{Service Layer (\file{src/lib/services/})}} \\[2pt]
+  Auth Service &
+    Verifies bcrypt passwords, upserts SSO users, returns or invalidates JWTs.
+    Returns \code{Result<string>} (token) or a typed error. \\[4pt]
+  Order / Approval Services &
+    Implements the order state machine: \textit{pending} →
+    \textit{provisioning} → \textit{completed} / \textit{failed} / \textit{rejected}.
+    Calls \code{triggerProductWebhooks}, writes the audit log,
+    and dispatches email notifications. \\[4pt]
+  Infrastructure Service &
+    Ownership check for project managers, status guard (\textit{active} only),
+    CI destroy trigger, audit write. \\[4pt]
+  Admin Services &
+    One service file per domain (\file{users}, \file{products}, \file{categories},
+    \file{environments}, \file{ciSources}, \file{parameters}, \file{costCenters},
+    \file{exchangeRates}, \file{config}, \file{branding}).
+    Each returns typed \code{Result<T>} values. \\[6pt]
+  \multicolumn{2}{@{}l}{\textit{Shared Libraries (\file{src/lib/})}} \\[2pt]
+  Result Type &
+    \file{lib/services/result.ts} — \code{Ok<T>} / \code{Err} discriminated union
+    with \code{ok()} and \code{err(status, message)} constructors.
+    \code{lib/http.ts} maps any \code{Result<T>} to a \code{NextResponse}
+    via \code{toResponse()}. \\[4pt]
+  Query Helpers &
+    \file{lib/db/queries.ts} — shared read helpers used across multiple services:
+    \code{findProductName}, \code{findUserEmail}, \code{findAdminEmails},
+    \code{findCiSourceForEnv}. Eliminates repeated join patterns. \\[4pt]
+  JWT Middleware &
+    Verifies Bearer tokens on every authenticated route using the
+    \code{jose} library. Exports typed role guard wrappers
+    (\code{requireRole}, \code{requireAuth}). \\[4pt]
+  CI Dispatch &
+    Provider-agnostic module in \file{src/lib/ci/} that triggers pipelines via
+    GitLab, GitHub, or Bitbucket APIs. \file{lib/ci/webhooks.ts} exposes
+    \code{triggerProductWebhooks()} — fetches webhooks in \code{exec\_order},
+    calls \code{triggerPipeline} for each, returns pipeline IDs. \\[4pt]
+  Webhook Handler &
+    Inbound handler at \route{POST /api/webhooks/\{provider\}/pipeline}.
+    Maps CI pipeline status events to order/infrastructure state updates;
+    fetches job traces to parse OpenTofu outputs on success. \\[4pt]
   Notification &
-    Wraps SMTP email delivery. Silently no-ops when SMTP is not
-    configured. SMTP credentials are live-reloadable from the database
-    without a server restart. \\[4pt]
-  GitLab Polling &
-    Goroutine pool that periodically queries the GitLab Pipelines API for
-    in-flight orders. Updates order and infrastructure state on
-    completion or failure, then triggers email notifications.
-    Uses PostgreSQL advisory locks so multiple replicas do not
-    double-poll. \\[4pt]
-  Admin &
-    All Root pages: categories, products (CRUD, image upload,
-    AI translation, webhook management, parameter import from
-    \code{variables.tf}), environments, GitLab sources, cost centers,
-    currencies, SMTP, AI config, branding, users. \\[4pt]
-  AI Translation &
-    Pluggable interface (\code{aitranslation.Translator}). Concrete
-    implementations for Claude, OpenAI, Azure OpenAI, Ollama, and LocalAI.
-    Selected and instantiated at startup from the database configuration;
-    swappable at runtime via the Admin UI. \\[4pt]
-  Repositories &
-    Thin SQL layer using \code{pgx/v5}. One repository interface per
-    aggregate root (User, Product, Order, etc.). Implementations in
-    \file{internal/repository/postgres/}. \\
+    Wraps nodemailer in \file{src/lib/notification/}. Seven typed send functions;
+    all user-controlled strings are HTML-escaped before embedding.
+    Silently no-ops when SMTP is not configured. \\[4pt]
+  Bootstrap &
+    On startup, seeds the initial Root account from
+    \env{ADMIN\_EMAIL} / \env{ADMIN\_PASSWORD} if no users exist. \\[4pt]
+  Drizzle ORM &
+    Schema definitions and typed query builders in
+    \file{src/lib/db/}. All database access goes through Drizzle. \\
   \bottomrule
   \caption{Component descriptions}
   \label{tab:components}
@@ -668,230 +736,208 @@ its major logical components.
 \subsection{Order Placement Flow (Project Manager)}
 
 \begin{enumerate}
-  \item Browser submits \route{POST /orders/new}.
-  \item \code{handler.orderCreate()} validates input, calls
-        \code{service.OrderService.Create()}.
-  \item The order service writes the order record with status
-        \code{pending\_approval} to PostgreSQL.
-  \item The notification service sends an approval-request email to all
-        Admins.
-  \item The audit service writes an \code{order\_placed} entry.
-  \item Browser redirects to \route{GET /orders/\{id\}} showing the
-        \textit{Awaiting Approval} status.
+  \item Frontend calls \route{POST /api/orders} with JWT in
+        the \code{Authorization} header.
+  \item The route handler verifies the JWT via middleware and validates
+        the request body with Zod's \code{CreateOrderSchema}.
+  \item The handler calls \code{createOrder(session, input)} in
+        \file{lib/services/orders.ts}. The service inserts an order with
+        status \code{pending}, writes an audit entry, sends an order-created
+        email to the orderer, and sends approval-request emails to all
+        active Admins.
+  \item \code{createOrder} returns \code{Ok<CreatedOrder>}; \code{toResponse}
+        serialises it as HTTP 201.
+  \item The frontend navigates to the order detail page showing
+        \textit{Awaiting Approval}.
 \end{enumerate}
 
 \subsection{Order Approval \& Provisioning Flow}
 
 \begin{enumerate}
-  \item Admin opens \route{GET /approvals} and clicks \textbf{Approve}.
-  \item \code{handler.approvalApprove()} calls
-        \code{service.OrderService.Approve()}.
-  \item The order service updates status to \code{provisioning}, stores
-        the webhook URLs from the product-environment configuration.
-  \item For each configured webhook (ordered by \code{exec\_order}): an
-        HTTP POST is sent to the GitLab webhook URL with the Linode/Tofu
-        parameters as JSON.
-  \item GitLab receives the trigger, starts a pipeline, returns a
-        pipeline ID.
-  \item The webshop stores the pipeline ID(s) in the JSONB
-        \code{pipeline\_ids} column.
-  \item The GitLab Polling goroutine detects the in-flight pipeline and
-        starts querying the Pipelines API every 30 seconds.
-  \item When the pipeline completes successfully, the poller sets status
-        to \code{completed} and sends a deployment-complete email.
-  \item On failure, status becomes \code{failed} and failure emails go
-        to the orderer and all Admins.
+  \item Admin calls \route{POST /api/approvals/:id/approve}.
+  \item The route handler validates auth and delegates to
+        \code{approveOrder(session, orderId)} in
+        \file{lib/services/approvals.ts}.
+  \item The service fetches the order (returns \code{Err 400} if not
+        \code{pending}), then calls \code{triggerProductWebhooks()} in
+        \file{lib/ci/webhooks.ts}. For each configured webhook ordered by
+        \code{exec\_order}, an HTTP POST is sent to the CI trigger URL with
+        the OpenTofu parameters.
+  \item Returned pipeline IDs are stored in the \code{pipeline\_id} JSONB
+        column; an infra element is created; an audit row is written; the
+        orderer receives an approval email.
+  \item When the CI pipeline completes, the provider calls
+        \route{POST /api/webhooks/\{provider\}/pipeline}. The webhook
+        handler in \file{lib/webhook/handler.ts} transitions the order to
+        \code{completed}, parses OpenTofu outputs from the job trace, and
+        sends a provisioning-complete email.
+  \item On pipeline failure the order transitions to \code{failed} and a
+        failure email is sent to the orderer.
 \end{enumerate}
 
-\subsection{Request–Response Lifecycle (HTMX)}
+\subsection{Request–Response Lifecycle (Next.js)}
 
-Most user interactions either perform a full page load (navigation) or
-return an HTML fragment (HTMX). The server detects HTMX requests via the
-\code{HX-Request} header. Full renders compose a templ \code{Layout}
-component around the page component. Fragments skip the layout and
-return only the relevant HTML snippet, which HTMX swaps into the DOM.
+Every backend request follows the same four-step shell:
+
+\begin{enumerate}
+  \item \textbf{Auth} — \code{requireAuth(req)} or \code{requireRole('admin')(req)}
+        verifies the Bearer JWT and returns a typed \code{SessionUser}.
+  \item \textbf{Parse} — Zod \code{safeParse} validates the request body or
+        query params; invalid input returns HTTP 400 immediately.
+  \item \textbf{Service} — the route handler calls the appropriate service
+        function, which performs all DB work, CI calls, emails, and audit
+        writes, and returns \code{Result<T>}.
+  \item \textbf{Respond} — \code{toResponse(result, successStatus)} converts
+        \code{Ok<T>} to \code{200}/\code{201} JSON and \code{Err} to the
+        appropriate HTTP error response.
+\end{enumerate}
+
+User interactions on the frontend are handled by React Server Components or
+client components that call the backend via typed wrappers in
+\file{src/lib/api.ts}. NextAuth v5 stores the JWT in an encrypted
+server-side session cookie and forwards it as a Bearer token on every
+backend call.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Design Decisions \& Technology Rationale}
 \label{ch:design}
 
-\section{Go as Application Language}
+\section{Service Layer Architecture}
+\label{sec:service-layer}
 
-\textbf{Decision:} The entire backend is written in Go.
-
-\textbf{Rationale:}
-\begin{itemize}
-  \item Compiles to a single self-contained binary with no runtime
-        dependencies — ideal for Docker-based deployment.
-  \item Low memory footprint and predictable garbage collection enable
-        running multiple polling goroutines without resource pressure.
-  \item The standard library \code{net/http} in Go 1.22+ provides
-        pattern-matching routing (\code{"GET /path/\{id\}"}) sufficient
-        for this use case, removing the need for a router dependency.
-  \item \code{html/template} provides automatic context-aware escaping,
-        eliminating entire classes of XSS vulnerabilities.
-  \item Goroutines provide a natural model for the concurrent GitLab
-        pipeline polling without callback complexity.
-\end{itemize}
-
-\textbf{Alternative considered:} Python/FastAPI with Jinja2. Rejected
-because the deployment story is more complex (virtualenv, interpreter)
-and concurrency requires async, which increases cognitive overhead.
-
-\section{Server-Side Rendering with HTMX}
-
-\textbf{Decision:} Pages are rendered server-side; dynamic updates use
-HTMX HTML fragments rather than a JavaScript SPA framework.
+\textbf{Decision:} All business logic is extracted from Next.js route handlers
+into typed service functions under \file{src/lib/services/}. Route handlers
+are restricted to three responsibilities: authentication check, Zod validation,
+and returning a \code{NextResponse} via \code{toResponse()}.
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item No JSON API surface to design, document, or secure separately —
-        the server owns both data and presentation.
-  \item Progressive enhancement: the UI degrades gracefully if JS is
-        unavailable.
-  \item HTMX's \code{hx-get}/\code{hx-post} attributes on HTML elements
-        cover the interactivity requirements (live status polling,
-        inline form submission, partial page swaps) without React or Vue
-        build pipelines.
-  \item Template-level security: Go's \code{html/template} auto-escapes
-        all inserted values, preventing XSS by construction.
+  \item \textbf{Testability:} Service functions take plain typed inputs and
+        return \code{Result<T>} values. They can be tested directly without
+        constructing \code{NextRequest} objects or mocking the HTTP layer.
+  \item \textbf{Single responsibility:} Route handlers contain no
+        \code{if/else} branches for business rules, no duplicate DB query
+        patterns, and no notification calls. Every policy decision (state
+        machine, ownership check, role guard) is in one place.
+  \item \textbf{Shared infrastructure:} Repeated query patterns that
+        previously appeared six or more times inline (\textit{fetch product
+        name}, \textit{fetch user email}, \textit{get CI source for
+        environment}) are consolidated in \file{lib/db/queries.ts} and
+        called from services and the webhook handler alike.
+  \item \textbf{Explicit error paths:} The \code{Result<T>} discriminated
+        union (\code{Ok<T>} | \code{Err}) makes every failure path visible
+        at the call site. There are no silent \code{null} returns or
+        exception-based control flow for business logic errors.
 \end{itemize}
 
-\section{templ for Type-Safe HTML Components}
+The pattern is: \code{ok(data)} for success, \code{err(httpStatus, message)}
+for domain errors (not found, forbidden, bad state). Database exceptions from
+Drizzle bubble up as unhandled rejections and are caught by Next.js's error
+boundary, returning a generic 500. This keeps error-handling code proportional
+to the actual surface that needs it.
 
-\textbf{Decision:} All HTML pages and UI components are authored as
-\code{.templ} files and compiled to Go by the \code{templ} CLI. The
-\code{html/template} package is no longer used for page rendering.
+\section{Next.js Monorepo}
+
+\textbf{Decision:} The application is structured as a pnpm workspace
+monorepo with two Next.js applications (\code{apps/backend} and
+\code{apps/frontend}) and a shared types package
+(\code{packages/types}).
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item \textbf{Compile-time type safety:} Each page receives a concrete
-        typed view struct (e.g.\ \code{view.OrderListView}). Passing the
-        wrong data to a component is a compile error, not a runtime
-        \code{nil} panic or a missing-key silently rendering empty.
-  \item \textbf{No map[string]any:} The old \code{html/template} approach
-        required every handler to pass \code{map[string]any\{\}} to
-        \code{h.render()}, providing no compile-time guarantee that the
-        template would find the keys it expected.
-  \item \textbf{Composable components:} templ supports Go functions as
-        components with typed parameters, children slots, and helper
-        functions — the same mental model as React components but compiled
-        to plain Go without a JS build step.
-  \item \textbf{XSS safety preserved:} templ auto-escapes all string
-        interpolations by default, maintaining the same security guarantee
-        as \code{html/template}.
-  \item \textbf{IDE support:} The templ VS Code extension provides syntax
-        highlighting, autocompletion, and go-to-definition inside
-        \code{.templ} files.
+  \item TypeScript is shared end-to-end: the same interface definitions
+        in \file{packages/types/} are consumed by both the backend route
+        handlers and the frontend API client, making type drift a
+        compile error rather than a runtime surprise.
+  \item Separating the backend and frontend into distinct Next.js
+        applications allows each to have an independent Dockerfile,
+        independent environment variables, and an independent deploy
+        cycle. The frontend can be updated without touching the API
+        container.
+  \item Next.js App Router (both apps) provides file-system-based
+        routing, React Server Components, and built-in streaming without
+        additional framework glue.
+  \item pnpm workspaces deduplicate \code{node\_modules} across
+        packages, reducing install size and ensuring consistent package
+        versions across the monorepo.
 \end{itemize}
 
-\textbf{Design system:} A shared component library under
-\file{ui/comp/} (\code{comp.Btn}, \code{comp.Card}, \code{comp.Badge},
-\code{comp.Field}, etc.) provides a consistent visual language. Page
-components under \file{ui/pages/} compose these primitives and receive
-typed view models from the handler layer.
+\section{React 19 with App Router}
 
-\section{Tailwind CSS without DaisyUI}
-
-\textbf{Decision:} Pure Tailwind CSS utility classes; DaisyUI was
-removed after the migration to templ was complete.
+\textbf{Decision:} The frontend is a Next.js 15 application using
+React 19 Server and Client Components via the App Router.
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item \textbf{Theme collision:} DaisyUI ships its own CSS custom
-        properties (\code{--b1}, \code{--p}, \code{--s}, …) which
-        conflicted with the application's own branding variables
-        (\code{--bp}, \code{--bs}). Keeping both required workarounds
-        and caused unpredictable cascade ordering.
-  \item \textbf{Specificity fights:} DaisyUI's component classes
-        (\code{btn}, \code{badge}, \code{card}) carry higher specificity
-        than plain utilities, making it hard to override individual
-        properties without \code{!important} or extra wrapper classes.
-  \item \textbf{Bundle size and opacity:} DaisyUI adds several hundred
-        kilobytes of pre-defined component CSS. Tailwind's content-scan
-        only purges \emph{unused} utilities; DaisyUI component styles are
-        included unconditionally, inflating the bundle with styles that
-        the templ components never use.
-  \item \textbf{Design independence:} The hand-authored component library
-        in \file{ui/comp/} uses only Tailwind utilities, making every
-        style decision explicit and auditable. There are no hidden
-        DaisyUI defaults to debug.
+  \item \textbf{Type-safe API layer:} All backend calls are made through
+        typed wrappers in \file{src/lib/api.ts}. The shared
+        \code{packages/types} interfaces guarantee that the shape of
+        every response is verified at compile time.
+  \item \textbf{Server Components by default:} Data-fetching pages are
+        React Server Components that call the backend on the server,
+        avoiding client-side waterfall requests and keeping JWTs
+        server-side.
+  \item \textbf{Incremental interactivity:} Only the components that
+        require event handlers or browser APIs are marked
+        \code{"use client"}, minimising the client-side JavaScript
+        bundle.
 \end{itemize}
 
-\textbf{What replaced it:} The \file{ui/comp/} package provides the
-same functional coverage (buttons, badges, cards, form inputs,
-checkboxes, layout shell) using only Tailwind utilities and the two
-brand CSS variables \code{var(--bp)} and \code{var(--bs)}.
+\section{Tailwind CSS v4}
 
-\section{No Alpine.js}
-
-\textbf{Decision:} Alpine.js was removed from the project. The only
-remaining JavaScript beyond HTMX is the CDN-loaded Alpine.js on the
-branding admin page, where it powers the live colour preview.
+\textbf{Decision:} Tailwind CSS v4 is used for all styling via the
+single \code{@import "tailwindcss"} directive. No DaisyUI. No
+separate build step.
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item \textbf{All use cases replaced by HTML:} Every place Alpine.js
-        was used — collapsible sections, toggle visibility, show/hide
-        forms — can be handled by the native \code{<details>/\allowbreak<summary>}
-        element. This is a zero-JavaScript, zero-dependency solution that
-        is accessible by default and degrades gracefully in all browsers.
-  \item \textbf{Reduced attack surface:} Alpine.js evaluates expressions
-        from HTML attributes (\code{x-data}, \code{x-show},
-        \code{x-on:click}). Any XSS that manages to inject an attribute
-        becomes executable code. Removing Alpine.js eliminates this
-        vector.
-  \item \textbf{Dependency hygiene:} Alpine.js loaded from a CDN
-        introduces a third-party supply-chain dependency on every page
-        load. Removing it means the only external script is HTMX, which
-        is already trusted as a core dependency.
-  \item \textbf{Consistency:} Mixing two reactive JavaScript libraries
-        (HTMX and Alpine) creates a mental model split: developers must
-        decide which tool owns each interactive behaviour. Pure
-        HTMX + HTML is a single coherent model.
+  \item \textbf{Zero-config build:} Tailwind v4 uses a native CSS
+        engine that requires only the single import; there is no
+        \code{tailwind.config.js} or separate \code{build:css} command.
+        Next.js handles the PostCSS pass automatically.
+  \item \textbf{Design independence:} Pure utility classes keep every
+        style decision explicit and auditable. Brand tokens
+        (\code{var(--bp)}, \code{var(--bs)}) drive themed surfaces
+        without conflicting with a component library's own custom
+        properties.
 \end{itemize}
 
-\textbf{Exception:} The admin branding page (\route{/admin/branding})
-retains Alpine.js loaded via CDN script tag. It drives a live
-colour-preview widget where two colour inputs immediately update a
-mock header element without a server round-trip. This is the one
-genuine use case for in-page reactive state that cannot be reasonably
-replaced by \code{<details>} or HTMX alone.
+\section{PostgreSQL with Drizzle ORM}
 
-\section{PostgreSQL with pgx (No ORM)}
-
-\textbf{Decision:} PostgreSQL 15+, accessed via \code{pgx/v5} with
-hand-written SQL. No ORM.
+\textbf{Decision:} PostgreSQL 15+, accessed via the Drizzle ORM with
+the \code{postgres} Node.js driver.
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item JSONB arrays for \code{pipeline\_ids} allow storing multiple
-        concurrent pipeline references per order without a join table,
-        while retaining full query ability.
-  \item BYTEA columns store product images and the branding logo directly
-        in the database, eliminating a separate object store for this scale.
-  \item Direct SQL gives precise control over query shape and enables
-        \code{ON CONFLICT DO UPDATE} (upserts) for the branding and
-        app-config singleton rows.
-  \item PostgreSQL advisory locks coordinate the polling goroutines across
-        multiple replicas without an additional message broker.
-  \item pgx is the highest-performance PostgreSQL driver for Go; it
-        avoids the \code{database/sql} reflection overhead.
+  \item \textbf{Type-safe queries:} Drizzle generates TypeScript types
+        from the schema definition in \file{src/lib/db/schema.ts}.
+        Every query result is typed; shape mismatches are caught by the
+        TypeScript compiler.
+  \item \textbf{Schema as code:} \code{drizzle-kit push} applies the
+        schema diff directly, removing the need for manually written SQL
+        migration files while keeping the schema version-controlled.
+  \item \textbf{Thin abstraction:} Drizzle stays close to SQL semantics
+        (no opaque magic), making it straightforward to write efficient
+        queries for JSONB columns, upserts, and aggregations.
+  \item BYTEA columns store product images and the branding logo
+        directly in the database, eliminating a separate object store at
+        this scale.
 \end{itemize}
 
-\section{Single-Container Architecture}
+\section{Two-Container Architecture}
 
-\textbf{Decision:} The entire application (HTTP server, background
-polling, notification dispatch) runs in a single container.
+\textbf{Decision:} The backend API and the frontend UI run in separate
+containers (\code{apps/backend/Dockerfile} and
+\code{apps/frontend/Dockerfile}).
 
 \textbf{Rationale:}
-At the anticipated load (tens of users, hundreds of orders per month),
-microservice decomposition would add operational complexity (service
-discovery, inter-service auth, distributed tracing) without meaningful
-benefit. The single-binary model keeps deployment simple: one
-\code{docker run} or one Kubernetes \code{Deployment} object.
-Horizontal scaling is achieved by running multiple replicas; PostgreSQL
-advisory locks ensure the polling goroutines do not duplicate work.
+Separating concerns at the container boundary gives each part its own
+deployment, scaling, and environment-variable scope. The frontend never
+holds database credentials; the backend never renders HTML. Nginx
+(or any reverse proxy) routes \code{/api/*} to port 3001 and all other
+paths to port 3000. At the anticipated load (tens of users, hundreds
+of orders per month), this split adds minimal operational overhead
+while making the security boundary explicit.
 
 \section{OpenTofu over Terraform}
 
@@ -946,86 +992,58 @@ variables (OpenTofu parameters) as JSON. The pipeline configuration
 (\file{.gitlab-ci.yml}) lives in the same repository as the IaC code,
 making the trigger configuration auditable and version-controlled.
 
-\section{Internationalization: 25 Languages}
+\section{JWT Authentication}
 
-\textbf{Decision:} All UI strings are externalized in a key-value i18n
-map covering 25 languages (all EU official languages plus Russian and
-Ukrainian).
-
-\textbf{Rationale:}
-Open Hybrid Cloud operates across Europe. The map is defined in
-\file{internal/i18n/i18n.go} as a Go map literal for compile-time
-completeness checking. Translation of product content (not UI strings)
-is delegated to the optional AI translation service.
-
-\section{Session Security: Encrypted Cookies}
-
-\textbf{Decision:} User sessions are stored in encrypted, signed HTTP
-cookies — not in the database or server-side session store.
+\textbf{Decision:} The backend issues signed JWTs (HS256, 24-hour
+expiry) via the \code{jose} library. The frontend stores the JWT in
+a NextAuth v5 server-side session cookie and forwards it as a
+\code{Bearer} token on every backend API call.
 
 \textbf{Rationale:}
 \begin{itemize}
-  \item No database round-trip on every request to look up a session.
-  \item Horizontal scaling is trivial: no shared session store required.
-  \item The \code{SESSION\_KEY} (32-byte, hex-encoded) is used to both
-        sign and encrypt the cookie content via AES-GCM, so the server
-        can verify integrity without a separate HMAC key.
-  \item Cookies are set with \code{HttpOnly}, \code{Secure}, and
-        \code{SameSite=Lax} to mitigate XSS session theft and CSRF.
-  \item Logout invalidates the session by overwriting the cookie with an
-        empty, expired value — no server-side revocation list needed for
-        the MVP threat model.
+  \item \textbf{Stateless backend:} No session table, no Redis — every
+        authenticated request is self-contained. The backend verifies
+        the JWT signature and extracts the user identity and role from
+        the token payload without a database lookup.
+  \item \textbf{Clean separation:} The backend exposes a pure REST
+        interface; the frontend manages session lifecycle via NextAuth v5.
+        The JWT is the only shared contract between the two containers.
+  \item \textbf{Horizontal scaling:} Any backend replica can verify any
+        token — no sticky sessions or shared session store required.
+  \item \textbf{Logout:} Because JWTs are stateless, logout is
+        implemented by deleting the NextAuth session cookie on the
+        frontend. The short 24-hour expiry limits the window for a
+        captured token. A token revocation list can be added later if
+        needed.
 \end{itemize}
 
-\textbf{Alternative considered:} Server-side sessions in PostgreSQL.
-Rejected to avoid the extra table and join on every authenticated
-request. If revocation of individual sessions at scale is required this
-can be introduced as a future enhancement.
+\textbf{Secret management:} \env{JWT\_SECRET} (backend, min.\ 32 chars)
+signs and verifies tokens. \env{NEXTAUTH\_SECRET} (frontend) encrypts the
+NextAuth session cookie. Both must be kept secret and rotated on breach.
 
 \section{Password Hashing: bcrypt}
 
 \textbf{Decision:} Local user passwords are hashed with bcrypt (cost
-factor~12) via \code{golang.org/x/crypto/bcrypt}.
+factor~12) via the \code{bcryptjs} npm package.
 
 \textbf{Rationale:}
 \begin{itemize}
   \item bcrypt is an adaptive, memory-hard function specifically designed
         for password storage; it is resistant to GPU-accelerated
         dictionary attacks.
-  \item Cost factor~12 takes ~250\,ms on modern hardware — slow enough
-        to deter brute-force while still acceptable for interactive login.
-  \item The Go standard-library-adjacent \code{x/crypto} package is
-        actively maintained by the Go team.
+  \item Cost factor~12 takes approximately 250\,ms on modern hardware —
+        slow enough to deter brute-force attacks while still acceptable
+        for interactive login.
+  \item \code{bcryptjs} is a pure-JavaScript implementation with no
+        native bindings, making it portable across Node.js versions and
+        compatible with Next.js standalone output.
   \item Passwords are never stored in plaintext or with reversible
         encryption.
 \end{itemize}
 
 \textbf{Alternative considered:} Argon2id. More modern, but bcrypt is
-widely understood, well-tested in Go, and sufficient for the low
+widely understood, well-tested in Node.js, and sufficient for the low
 login-volume use case.
-
-\section{Static Asset Embedding: \texttt{embed.FS}}
-
-\textbf{Decision:} HTML templates and static assets (CSS, JS, images)
-are embedded into the Go binary at compile time using the
-\code{//go:embed} directive and \code{embed.FS}.
-
-\textbf{Rationale:}
-\begin{itemize}
-  \item The resulting binary is fully self-contained — no external
-        file system paths need to match the deployment environment.
-  \item Deployment is a single \code{COPY} in the Dockerfile (multi-stage
-        build); no volume mounts are required for templates.
-  \item Template changes are compiled into the binary, so a deployment
-        is always atomic: the binary and its templates are in sync.
-  \item The Go compiler resolves embed paths at build time, making
-        missing-file bugs a compile error rather than a runtime panic.
-\end{itemize}
-
-\textbf{Trade-off:} Hot-reloading templates during development is not
-possible without restarting the server. The \code{make dev} target runs
-the server with \code{go run}, so a simple restart is fast enough for
-the development workflow.
 
 % ─────────────────────────────────────────────────────────────
 %  PART II — INFRASTRUCTURE AS CODE
@@ -1294,8 +1312,9 @@ Content-Type: application/json
         the variables as environment variables.
   \item The pipeline reads \code{TF\_VAR\_*} variables, runs
         \code{tofu plan} then \code{tofu apply}.
-  \item On completion (success or failure), the webshop's polling
-        goroutine detects the status change and updates the order record.
+  \item On completion (success or failure), the CI provider sends a
+        webhook to \route{/api/webhooks/\{provider\}/pipeline} which
+        updates the order and infrastructure status immediately.
 \end{enumerate}
 
 \section{Dependency Between Modules}
@@ -1453,37 +1472,63 @@ Single state (\code{observability-prod}). Manual apply.
 
 \section{Environment Variables}
 
-The webshop is configured entirely via environment variables. Copy
-\file{.env.example} to \file{.env} and populate the following:
+The system is configured via two \file{.env} files — one per application
+container. Copy the provided example files and populate the values before
+starting:
+
+\begin{lstlisting}[style=bash]
+cp apps/backend/.env.example  apps/backend/.env
+cp apps/frontend/.env.example apps/frontend/.env
+\end{lstlisting}
+
+\textbf{Backend} (\file{apps/backend/.env}):
 
 \begin{table}[H]
   \centering
-  \caption{Required environment variables}
+  \caption{Backend environment variables}
   \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
     \toprule
     \textbf{Variable} & \textbf{Description} & \textbf{Required} \\
     \midrule
-    \env{DATABASE\_URL}     & PostgreSQL DSN                         & Yes \\
-    \env{SESSION\_KEY}      & 32-byte hex session encryption key      & Yes \\
-    \env{ADMIN\_EMAIL}      & Initial Root email             & Yes \\
-    \env{ADMIN\_PASSWORD}   & Initial Root password          & Yes \\
-    \env{BASE\_URL}         & Public URL of the webshop               & Yes \\
-    \env{OIDC\_CLIENT\_ID}     & Entra ID application client ID      & No  \\
-    \env{OIDC\_CLIENT\_SECRET} & Entra ID client secret              & No  \\
-    \env{OIDC\_ISSUER}         & Entra ID issuer URL                 & No  \\
-    \env{SMTP\_HOST}        & SMTP host (overridable in Admin UI)     & No  \\
-    \env{SMTP\_PORT}        & SMTP port (default 587)                 & No  \\
-    \env{SMTP\_FROM}        & Sender address                          & No  \\
-    \env{SMTP\_USERNAME}    & SMTP username                           & No  \\
-    \env{SMTP\_PASSWORD}    & SMTP password                           & No  \\
-    \env{AI\_PROVIDER}      & AI translation provider (startup only)  & No  \\
+    \env{DATABASE\_URL}       & PostgreSQL DSN                                     & Yes \\
+    \env{JWT\_SECRET}         & HS256 signing secret (min.\ 32 chars)              & Yes \\
+    \env{ADMIN\_EMAIL}        & Initial Root account email                         & Yes \\
+    \env{ADMIN\_PASSWORD}     & Initial Root account password                      & Yes \\
+    \env{FRONTEND\_URL}       & Frontend origin for CORS (default: \code{http://localhost:3000}) & No \\
+    \env{SMTP\_HOST}          & SMTP server hostname                               & No  \\
+    \env{SMTP\_PORT}          & SMTP port (default: \code{1025})                   & No  \\
+    \env{SMTP\_FROM}          & Sender email address                               & No  \\
+    \env{SMTP\_USER}          & SMTP authentication username                       & No  \\
+    \env{SMTP\_PASS}          & SMTP authentication password                       & No  \\
+    \env{SMTP\_TLS}           & \code{true} to enable TLS                         & No  \\
+    \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint                    & No  \\
+    \env{ENTRA\_TENANT\_ID}   & Microsoft Entra ID tenant ID (SSO)                & No  \\
+    \env{ENTRA\_CLIENT\_ID}   & Entra ID application client ID                     & No  \\
+    \env{ENTRA\_CLIENT\_SECRET} & Entra ID client secret                           & No  \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
-\notebox{SMTP and AI translation can also be configured (and overridden)
-through the Admin UI at \route{/admin/smtp} and \route{/admin/ai-config}.
-Database settings take precedence over environment variables at runtime.}
+\textbf{Frontend} (\file{apps/frontend/.env}):
+
+\begin{table}[H]
+  \centering
+  \caption{Frontend environment variables}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
+    \toprule
+    \textbf{Variable} & \textbf{Description} & \textbf{Required} \\
+    \midrule
+    \env{NEXT\_PUBLIC\_API\_URL} & Backend URL reachable from the browser        & Yes \\
+    \env{API\_URL}               & Backend URL reachable from the SSR server     & Yes \\
+    \env{NEXTAUTH\_URL}          & Canonical public URL of the frontend          & Yes \\
+    \env{NEXTAUTH\_SECRET}       & NextAuth session encryption secret (min.\ 32 chars) & Yes \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\notebox{SMTP can be configured (and overridden) through the Admin UI.
+Values saved in the database take precedence over environment variables
+at runtime.}
 
 \section{Deployment on a Docker Host}
 \label{sec:docker-deploy}
@@ -1510,17 +1555,24 @@ host using Docker and an Nginx reverse proxy with TLS termination.
   \node[box, right=1.6cm of client] (nginx) {Nginx\\\scriptsize TLS termination\\reverse proxy};
   \node[box, right=1.6cm of nginx] (app) {open-hybrid-cloud\\\scriptsize Docker\\:8080};
   \node[db, right=1.6cm of app] (pg) {PostgreSQL\\\scriptsize :5432};
+  \node[box, right=1.6cm of nginx] (fe) {Frontend\\\scriptsize Next.js\\:3000};
+  \node[box, right=1.6cm of fe] (be) {Backend API\\\scriptsize Next.js\\:3001};
+  \node[db, right=1.6cm of be] (pg2) {PostgreSQL\\\scriptsize :5432};
   \node[ext, below=1.2cm of nginx] (letsenc) {Let's Encrypt\\\scriptsize or Corporate CA};
 
   \draw[arr] (client) -- node[above,font=\tiny]{HTTPS:443} (nginx);
-  \draw[arr] (nginx)  -- node[above,font=\tiny]{HTTP:8080} (app);
-  \draw[arr] (app)    -- node[above,font=\tiny]{TCP:5432} (pg);
+  \draw[arr] (nginx)  -- node[above,font=\tiny]{:3000} (fe);
+  \draw[arr] (nginx)  -- node[above,font=\tiny]{/api→:3001} (be);
+  \draw[arr] (be)     -- node[above,font=\tiny]{TCP:5432} (pg2);
   \draw[arr, dashed] (letsenc) -- node[right,font=\tiny]{cert} (nginx);
 
 \end{tikzpicture}}%
 \caption{Docker Host deployment architecture}
 \label{fig:docker-arch}
 \end{figure}
+
+Nginx routes \code{/api/*} and \code{/api/webhooks/*} to the backend
+container (port 3001) and all other paths to the frontend (port 3000).
 
 \subsection*{Step-by-Step Deployment Procedure}
 
@@ -1533,32 +1585,29 @@ apt-get install -y docker.io docker-compose-v2
 systemctl enable --now docker
 \end{lstlisting}
 
-\item \textbf{Clone the repository and build the image.}
+\item \textbf{Clone the repository.}
 \begin{lstlisting}[style=bash]
 git clone https://github.com/Maximilian-Maag/open-hybrid-cloud.git
 cd open-hybrid-cloud
-make docker-build
-# or pull from Docker Hub:
-docker pull maximilianmaag/open-hybrid-cloud:latest
 \end{lstlisting}
 
-\item \textbf{Create the environment file.}
+\item \textbf{Configure environment files.}
 \begin{lstlisting}[style=bash]
-cp infra/docker-host/.env.example infra/docker-host/.env
-# Edit .env with a text editor; set at minimum:
-#   DATABASE_URL, SESSION_KEY, ADMIN_EMAIL, ADMIN_PASSWORD, BASE_URL
+# Edit both files with production values
+cp apps/backend/.env.example  apps/backend/.env
+cp apps/frontend/.env.example apps/frontend/.env
+# Required backend vars: DATABASE_URL, JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
+# Required frontend vars: NEXT_PUBLIC_API_URL, API_URL, NEXTAUTH_URL, NEXTAUTH_SECRET
 \end{lstlisting}
 
-\item \textbf{Start PostgreSQL and the application.}
+\item \textbf{Start all containers.}
 \begin{lstlisting}[style=bash]
-cd infra/docker-host
-docker compose up -d
+docker compose -f infra/docker-compose.yml up -d
 \end{lstlisting}
 
-\item \textbf{Run database migrations.}
-\begin{lstlisting}[style=bash]
-docker exec open-hybrid-cloud /migrate
-\end{lstlisting}
+The schema is applied automatically on first startup (Drizzle push runs
+as part of the backend bootstrap). The root user is created from
+\env{ADMIN\_EMAIL} / \env{ADMIN\_PASSWORD} on the first \route{GET /api/health} call.
 
 \item \textbf{Obtain a TLS certificate.}
 
@@ -1577,7 +1626,7 @@ certificate and key at the paths referenced in
 Listing~\ref{lst:nginxconf} shows a minimal but production-ready
 Nginx configuration:
 
-\begin{lstlisting}[style=yaml,caption={infra/docker-host/nginx.conf},label={lst:nginxconf}]
+\begin{lstlisting}[style=yaml,caption={infra/nginx/default.conf},label={lst:nginxconf}]
 server {
     listen 80;
     server_name shop.example.com;
@@ -1595,8 +1644,19 @@ server {
 
     client_max_body_size 10m;
 
+    # Backend API (REST + webhooks)
+    location /api/ {
+        proxy_pass         http://ohc-backend:3001;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    # Frontend (Next.js UI)
     location / {
-        proxy_pass         http://127.0.0.1:8080;
+        proxy_pass         http://ohc-frontend:3000;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
@@ -1629,12 +1689,12 @@ systemctl status certbot.timer
 
 \begin{lstlisting}[style=bash]
 # Backup PostgreSQL
-docker exec webshop-postgres pg_dump -U webshop webshop \
+docker exec ohc-postgres pg_dump -U postgres open_hybrid_cloud \
   | gzip > backup-$(date +%Y%m%d).sql.gz
 
 # Restore
 zcat backup-20260101.sql.gz \
-  | docker exec -i webshop-postgres psql -U webshop webshop
+  | docker exec -i ohc-postgres psql -U postgres open_hybrid_cloud
 \end{lstlisting}
 
 \section{Deployment on Kubernetes}
@@ -1659,16 +1719,16 @@ cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
 
   \node[ext] (client) {Browser};
   \node[svc, right=1.8cm of client] (ing) {Ingress\\(Nginx)};
-  \node[pod, right=1.8cm of ing] (app) {open-hybrid-cloud\\Pod(s)};
-  \node[ext, right=1.8cm of app] (pg) {PostgreSQL\\\scriptsize external};
+  \node[pod, right=1.8cm of ing] (fe) {frontend\\Pod(s)\\\scriptsize :3000};
+  \node[pod, right=1.8cm of fe] (be) {backend\\Pod(s)\\\scriptsize :3001};
+  \node[ext, right=1.8cm of be] (pg) {PostgreSQL\\\scriptsize external};
   \node[svc, below=1.0cm of ing] (cm) {cert-manager\\ClusterIssuer};
-  \node[svc, below=1.0cm of app] (hpa) {HPA};
 
   \draw[arr] (client) -- node[above,font=\tiny]{HTTPS} (ing);
-  \draw[arr] (ing) -- node[above,font=\tiny]{:8080} (app);
-  \draw[arr] (app) -- node[above,font=\tiny]{:5432} (pg);
+  \draw[arr] (ing) -- node[above,font=\tiny]{:3000} (fe);
+  \draw[arr] (ing) -- node[above,font=\tiny]{/api→:3001} (be);
+  \draw[arr] (be) -- node[above,font=\tiny]{:5432} (pg);
   \draw[arr, dashed] (cm) -- (ing);
-  \draw[arr, dashed] (hpa) -- (app);
 
 \end{tikzpicture}}%
 \caption{Kubernetes deployment architecture}
@@ -1682,7 +1742,8 @@ cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
   \item Nginx Ingress Controller installed (\code{ingress-nginx})
   \item cert-manager installed with a \code{ClusterIssuer} for Let's
         Encrypt or a corporate CA
-  \item The image \code{maximilianmaag/open-hybrid-cloud:\textit{tag}} is publicly
+  \item The images \code{maximilianmaag/open-hybrid-cloud-backend} and
+        \code{maximilianmaag/open-hybrid-cloud-frontend} are publicly
         available on Docker Hub — no \code{imagePullSecret} required
 \end{itemize}
 
@@ -1697,9 +1758,11 @@ helm upgrade --install open-hybrid-cloud \
   infra/helm/open-hybrid-cloud \
   --namespace open-hybrid-cloud \
   --create-namespace \
-  --set env.databaseUrl="postgres://user:pass@pg.example.com:5432/webshop?sslmode=require" \
-  --set env.sessionSecret="<32-byte-hex>" \
-  --set env.adminPassword="<initial-password>" \
+  --set backend.env.databaseUrl="postgres://user:pass@pg.example.com:5432/open_hybrid_cloud?sslmode=require" \
+  --set backend.env.jwtSecret="<min-32-char-secret>" \
+  --set backend.env.adminPassword="<initial-password>" \
+  --set frontend.env.nextauthSecret="<min-32-char-secret>" \
+  --set frontend.env.apiUrl="http://open-hybrid-cloud-backend:3001" \
   --set ingress.hosts[0].host=shop.example.com \
   --set ingress.tls[0].hosts[0]=shop.example.com \
   --set ingress.tls[0].secretName=open-hybrid-cloud-tls
@@ -1711,15 +1774,15 @@ rather than as \code{--set} arguments, so they do not appear in shell
 history.}
 
 \begin{lstlisting}[style=bash,caption={Example secrets.values.yaml (do not commit)},label={lst:helm-secrets}]
-env:
-  databaseUrl: "postgres://user:pass@pg.example.com:5432/webshop?sslmode=require"
-  sessionSecret: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
-  adminPassword: "change-me-immediately"
-  entra:
-    tenantId: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-    clientId: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-    clientSecret: "your-client-secret"
-    redirectUrl: "https://shop.example.com/auth/callback"
+backend:
+  env:
+    databaseUrl: "postgres://user:pass@pg.example.com:5432/open_hybrid_cloud?sslmode=require"
+    jwtSecret: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+    adminPassword: "change-me-immediately"
+frontend:
+  env:
+    nextauthSecret: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+    nextauthUrl: "https://shop.example.com"
 \end{lstlisting}
 
 \begin{lstlisting}[style=bash]
@@ -1739,17 +1802,19 @@ Table~\ref{tab:helm-values} lists the most important configurable values.
     \toprule
     \textbf{Key} & \textbf{Description} & \textbf{Default} \\
     \midrule
-    \code{image.repository}          & Docker Hub image name          & \code{maximilianmaag/open-hybrid-cloud} \\
-    \code{image.tag}                  & Image tag (empty = appVersion) & \code{""} \\
-    \code{replicaCount}               & Deployment replicas            & \code{2} \\
-    \code{env.databaseUrl}            & PostgreSQL DSN (required)      & — \\
-    \code{env.sessionSecret}          & Session encryption key (req.)  & — \\
-    \code{env.adminPassword}          & Initial admin password (req.)  & — \\
-    \code{ingress.hosts}              & Ingress host list              & \code{shop.example.com} \\
-    \code{ingress.tls}                & TLS configuration              & (see values.yaml) \\
-    \code{autoscaling.enabled}        & Enable HPA                     & \code{false} \\
-    \code{autoscaling.maxReplicas}    & HPA max replica count          & \code{6} \\
-    \code{migrate.enabled}            & Run DB migrations as hook      & \code{true} \\
+    \code{backend.image.repository}       & Backend Docker Hub image          & \code{maximilianmaag/open-hybrid-cloud-backend} \\
+    \code{backend.image.tag}              & Image tag (empty = appVersion)    & \code{""} \\
+    \code{backend.replicaCount}           & Backend pod replicas              & \code{2} \\
+    \code{backend.env.databaseUrl}        & PostgreSQL DSN (required)         & — \\
+    \code{backend.env.jwtSecret}          & JWT signing secret (required)     & — \\
+    \code{backend.env.adminPassword}      & Initial root password (required)  & — \\
+    \code{frontend.image.repository}      & Frontend Docker Hub image         & \code{maximilianmaag/open-hybrid-cloud-frontend} \\
+    \code{frontend.image.tag}             & Image tag (empty = appVersion)    & \code{""} \\
+    \code{frontend.replicaCount}          & Frontend pod replicas             & \code{2} \\
+    \code{frontend.env.nextauthSecret}    & NextAuth session secret (req.)    & — \\
+    \code{frontend.env.nextauthUrl}       & Public canonical URL              & — \\
+    \code{ingress.hosts}                  & Ingress host list                 & \code{shop.example.com} \\
+    \code{ingress.tls}                    & TLS configuration                 & (see values.yaml) \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -1778,45 +1843,41 @@ kubectl create secret docker-registry my-registry-secret \
 \end{lstlisting}
 
 \item \textbf{Create the application Secret.}
-\begin{lstlisting}[style=yaml,caption={Kubernetes Secret for the webshop},label={lst:k8s-secret}]
+\begin{lstlisting}[style=yaml,caption={Kubernetes Secrets for backend and frontend},label={lst:k8s-secret}]
 apiVersion: v1
 kind: Secret
 metadata:
-  name: open-hybrid-cloud-env
+  name: ohc-backend-env
   namespace: open-hybrid-cloud
 type: Opaque
 stringData:
-  DATABASE_URL: "postgres://webshop:password@pg.example.com:5432/webshop?sslmode=require"
-  SESSION_KEY: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-  ADMIN_EMAIL: "admin@example.com"
+  DATABASE_URL: "postgres://user:password@pg.example.com:5432/open_hybrid_cloud?sslmode=require"
+  JWT_SECRET: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+  ADMIN_EMAIL: "root@example.com"
   ADMIN_PASSWORD: "changeme"
-  BASE_URL: "https://shop.example.com"
-\end{lstlisting}
-
-\item \textbf{Run database migrations as a Kubernetes Job.}
-\begin{lstlisting}[style=yaml,caption={Migration Job},label={lst:k8s-migrate}]
-apiVersion: batch/v1
-kind: Job
+---
+apiVersion: v1
+kind: Secret
 metadata:
-  name: open-hybrid-cloud-migrate
+  name: ohc-frontend-env
   namespace: open-hybrid-cloud
-spec:
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: migrate
-          image: maximilianmaag/open-hybrid-cloud:latest
-          command: ["/migrate"]
-          envFrom:
-            - secretRef:
-                name: open-hybrid-cloud-env
+type: Opaque
+stringData:
+  NEXTAUTH_SECRET: "f0e1d2c3b4a596870001020304050607f0e1d2c3b4a596870001020304050607"
+  NEXTAUTH_URL: "https://shop.example.com"
+  NEXT_PUBLIC_API_URL: "https://shop.example.com/api"
+  API_URL: "http://ohc-backend:3001"
 \end{lstlisting}
 
+\item \textbf{Apply the database schema.}
+
+The schema is pushed automatically by Drizzle on backend startup. No
+separate migration job is required. Verify via the health endpoint once
+the backend pod is running:
 \begin{lstlisting}[style=bash]
-kubectl apply -f migrate-job.yaml
-kubectl wait --for=condition=complete job/open-hybrid-cloud-migrate \
-  -n open-hybrid-cloud --timeout=120s
+kubectl exec -n open-hybrid-cloud deploy/ohc-backend -- \
+  wget -qO- http://localhost:3001/api/health
+# Expected: {"status":"ok"}
 \end{lstlisting}
 
 \item \textbf{Deploy the application.}
@@ -1942,25 +2003,21 @@ kubectl get ingress -n open-hybrid-cloud
 
 \end{enumerate}
 
-\notebox{The polling goroutines that track GitLab pipeline status run
-inside each pod. With multiple replicas, advisory locks in PostgreSQL
-(\code{pg\_try\_advisory\_lock}) ensure that only one pod polls each
-pipeline at a time, preventing duplicate status updates.}
+\notebox{The backend is stateless — all state lives in PostgreSQL. Multiple
+replicas can run concurrently without coordination; CI webhook events are
+idempotent so duplicate deliveries are handled safely.}
 
-\section{Database Migrations}
+\section{Database Schema Migrations}
 
-Migrations are versioned SQL files in \file{internal/migrations/}.
-Run migrations before starting the server:
+The schema is managed by Drizzle ORM. Apply it before first start or
+after any schema change:
 
 \begin{lstlisting}[style=bash]
-# Run all pending migrations
-make migrate
-
-# Or directly
-go run ./cmd/migrate
+make db-push
 \end{lstlisting}
 
-Migrations are idempotent (\code{IF NOT EXISTS} guards). Re-running is safe.
+This runs \code{drizzle-kit push} which compares the TypeScript schema
+definition against the live database and applies the diff.
 
 \section{First Login}
 
@@ -2038,9 +2095,9 @@ Under \textbf{Administration → Shop Design} (\route{/admin/branding}):
 \begin{itemize}
   \item \textbf{Shop Name} and \textbf{Subtitle} — shown in the header.
   \item \textbf{Primary Color} — header, footer, navigation
-        (default: \code{\#131921}).
+        (default: \code{\#0f172a}).
   \item \textbf{Accent Color} — buttons and call-to-action elements
-        (default: \code{\#febd69}).
+        (default: \code{\#0ea5e9}).
   \item \textbf{Logo} — PNG or SVG, displayed in the header; replaces
         the shop name text if present.
   \item \textbf{Imprint} — HTML-formatted legal imprint text, shown at
@@ -2083,7 +2140,7 @@ browser locale and applying the stored rate.
     \midrule
     Admin         & Full access; direct ordering; approval & SSO  & \code{admin} \\
     Root    & Catalog \& config; no ordering          & Local & \code{root} \\
-    Project Manager  & Orders own infra; approval required     & SSO  & \code{user} \\
+    Project Manager  & Orders own infra; approval required     & SSO  & \code{project\_leader} \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -2169,28 +2226,11 @@ currently filtered audit log for compliance reporting.
 \section{Prerequisites}
 
 \begin{itemize}
-  \item Go 1.23+
-  \item Node.js 20+ (for Tailwind CSS compilation)
-  \item Docker \& Docker Compose (for local PostgreSQL)
-  \item \code{golangci-lint} (static analysis — installed via \code{make install-requirements})
+  \item Node.js 22+
+  \item pnpm 9+ (\code{npm install -g pnpm})
+  \item Docker \& Docker Compose
   \item \code{pdflatex} or \code{lualatex} (for handbook compilation, optional)
 \end{itemize}
-
-On Ubuntu or Manjaro all prerequisites except \code{pdflatex} can be installed
-with a single command:
-
-\begin{lstlisting}[style=bash]
-make install-requirements
-\end{lstlisting}
-
-This detects the native package manager (\code{pacman} or \code{apt-get}),
-installs Go, Node.js, npm, Docker, and Docker Compose, and then installs the
-Go tools \code{goimports} and \code{golangci-lint} via \code{go install}.
-A re-login is required afterwards for the Docker group membership to take effect.
-
-\notebox{\textbf{Ubuntu note:} The \code{golang-go} package in the Ubuntu repositories
-  may lag behind the latest Go release. If Go~1.23+ is not available, install it
-  manually from \url{https://go.dev/dl/}.}
 
 \section{Quick Start}
 
@@ -2199,22 +2239,26 @@ A re-login is required afterwards for the Docker group membership to take effect
 git clone https://github.com/Maximilian-Maag/open-hybrid-cloud.git
 cd open-hybrid-cloud
 
-# Install all required tools (Ubuntu / Manjaro)
-make install-requirements
+# Install all workspace dependencies
+make install
 
-# Copy and populate environment
-cp .env.example .env
-# Edit .env with your local DB credentials
+# Copy environment files (pre-filled for local dev)
+cp apps/backend/.env.example apps/backend/.env
+cp apps/frontend/.env.example apps/frontend/.env
 
-# Start PostgreSQL and the server in one command
+# Start infrastructure (postgres, mailpit, wiremock, structurizr)
 make dev
 
-# In another terminal: CSS hot-reload
-make css-watch
+# Apply database schema
+make db-push
+
+# Start frontend + backend dev servers
+pnpm dev
 \end{lstlisting}
 
-\code{make dev} starts Docker Compose (PostgreSQL), runs CSS build, then
-starts the Go server with live environment variables from \file{.env}.
+The frontend is available at \url{http://localhost:3000}, the backend API at
+\url{http://localhost:3001}, and the API documentation at
+\url{http://localhost:3001/api/docs}.
 
 \section{Makefile Targets}
 
@@ -2225,33 +2269,20 @@ starts the Go server with live environment variables from \file{.env}.
     \toprule
     \textbf{Target} & \textbf{Action} \\
     \midrule
-    \code{make build}      & Build CSS + Go binary \\
-    \code{make run}        & Start server (requires running DB) \\
-    \code{make migrate}    & Run database migrations \\
-    \code{make css}        & Build Tailwind CSS once \\
-    \code{make css-watch}  & Watch and rebuild CSS on change \\
-    \code{make test}       & Run all Go tests \\
-    \code{make vet}        & Run \code{go vet} \\
-    \code{make lint}       & Run \code{golangci-lint} \\
-    \code{make install-requirements} & Install system packages + Go tools (Ubuntu/Manjaro) \\
-    \code{make docker-build} & Build Docker image \\
-    \code{make dev}        & Start DB + server (development) \\
-    \code{make dev-down}   & Stop DB + server \\
-    \code{make clean}      & Remove build artefacts \\
-    \code{make docs}       & Compile the LaTeX handbook to PDF \\
-    \code{make e2e}        & Run Playwright end-to-end tests (requires Docker) \\
+    \code{make install}      & Install all workspace dependencies \\
+    \code{make dev}          & Start infra containers (postgres, mailpit, wiremock, structurizr) \\
+    \code{make dev-down}     & Stop infra containers \\
+    \code{make build}        & Build all apps \\
+    \code{make lint}         & Lint all apps \\
+    \code{make type-check}   & TypeScript type-check all apps \\
+    \code{make docker-build} & Build both Docker images locally \\
+    \code{make db-push}      & Push Drizzle schema to the database \\
+    \code{make db-studio}    & Open Drizzle Studio \\
+    \code{make docs}         & Compile the LaTeX handbook to PDF \\
+    \code{make clean}        & Remove build artefacts \\
     \bottomrule
   \end{tabular}
 \end{table}
-
-The repository also includes a local smoke test runner in \file{cmd/smoke/}. Run:
-
-\begin{lstlisting}[style=bash]
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/infrawebshop?sslmode=disable \
-  go run ./cmd/smoke
-\end{lstlisting}
-
-This command creates temporary rows and verifies cascading cleanup for product deletion.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Codebase Structure}
@@ -2261,668 +2292,241 @@ This command creates temporary rows and verifies cascading cleanup for product d
 
 \begin{lstlisting}
 open-hybrid-cloud/
-+-- cmd/
-|   +-- server/         # main.go -- server entry point
-|   +-- migrate/        # main.go -- migration runner
-|   +-- smoke/          # main.go -- smoke test runner
-+-- e2e/                # Playwright end-to-end tests (src/e2e/)
-+-- docs/               # Documentation (this handbook)
++-- apps/
+|   +-- backend/                  # Next.js API-only app (port 3001)
+|   |   +-- src/
+|   |   |   +-- app/api/          # Thin route handlers
+|   |   |   +-- lib/
+|   |   |       +-- auth/         # JWT sign/verify, role middleware
+|   |   |       +-- bootstrap/    # Root user seed on first start
+|   |   |       +-- ci/           # CI provider clients + webhook triggering
+|   |   |       +-- db/           # Drizzle client, schema, query helpers
+|   |   |       +-- http.ts       # toResponse() -- maps Result<T> to NextResponse
+|   |   |       +-- notification/ # Nodemailer email notifications
+|   |   |       +-- services/     # Domain services: all business logic
+|   |   |       |   +-- admin/    # Admin-domain services (catalog, config, ...)
+|   |   |       +-- webhook/      # CI pipeline event handler
+|   |   +-- Dockerfile
+|   |   +-- drizzle.config.ts
+|   +-- frontend/                 # Next.js UI app (port 3000)
+|       +-- src/
+|       |   +-- app/              # App Router pages
+|       |   +-- lib/
+|       |       +-- api.ts        # Typed fetch wrappers
+|       |       +-- auth.ts       # NextAuth.js config
+|       +-- Dockerfile
++-- packages/
+|   +-- types/                    # Shared TypeScript interfaces
++-- infra/
+|   +-- docker-compose.dev.yml    # Local dev: postgres, mailpit, wiremock, structurizr
+|   +-- docker-compose.yml        # Docker host deployment
+|   +-- nginx/                    # Reverse proxy config
+|   +-- wiremock/                 # External API stubs for local dev
+|   +-- helm/                     # Kubernetes Helm chart
++-- e2e/                          # Playwright end-to-end tests
++-- docs/
+|   +-- architecture/
+|   |   +-- workspace.dsl         # Structurizr C4 architecture
 |   +-- handbook.tex
-|   +-- handbook.pdf    # compiled output
-+-- internal/
-|   +-- aitranslation/  # AI translator interface + backends
-|   +-- audit/          # AuditService implementation
-|   +-- auth/           # OIDC, session store, password hashing
-|   +-- config/         # Config struct loaded from env
-|   +-- exchange/       # Currency exchange rate service
-|   +-- handler/        # HTTP handlers and route registration
-|   +-- i18n/           # 25-language key-value translation map
-|   +-- migrations/     # SQL migration files (001_*.sql, ...)
-|   +-- model/          # Shared domain model structs
-|   +-- notification/   # SMTP notification service
-|   +-- repository/     # Repository interfaces
-|   |   +-- postgres/   # pgx/v5 implementations
-|   +-- service/        # Service interfaces
-|       +-- impl/       # Service implementations
-+-- ui/
-    +-- comp/                   # Shared templ component library
-    |   +-- layout.templ        # Full-page layout shell + nav
-    |   +-- badge.templ         # Status badges
-    |   +-- button.templ        # Button variants (Btn, BtnLink, IconBtn)
-    |   +-- card.templ          # Card, CardBody, CardHeader, PageHeader
-    |   +-- form.templ          # Field, Input, Textarea, Select, Checkbox
-    +-- pages/                  # One package per route group
-    |   +-- admin/              # *.templ for all /admin/* pages
-    |   +-- approvals/
-    |   +-- audit/
-    |   +-- auth/
-    |   +-- catalog/
-    |   +-- home/
-    |   +-- infra/
-    |   +-- misc/
-    |   +-- orders/
-    |   +-- projects/
-    |   +-- settings/
-    +-- static/
-    |   +-- css/style.css       # Compiled Tailwind output
-    +-- ui.go                   # embed.FS declarations
+|   +-- handbook.pdf              # compiled output
++-- Makefile
++-- package.json
++-- pnpm-workspace.yaml
 \end{lstlisting}
 
 \section{Layered Architecture}
 
-The code follows a strict layered architecture with downward-only
+The backend follows a strict layered architecture with downward-only
 dependencies:
 
 \[
-\text{Handler} \rightarrow \text{Service} \rightarrow \text{Repository} \rightarrow \text{PostgreSQL}
+\text{Route Handler} \rightarrow \text{Service} \rightarrow \text{Drizzle ORM} \rightarrow \text{PostgreSQL}
 \]
 
 \begin{description}
-  \item[\textbf{Handler layer}] (\file{internal/handler/})
-    HTTP handlers only. Read request, call service, render template.
+  \item[\textbf{Route handlers}] (\file{src/app/api/})
+    Thin HTTP shells: authenticate request, parse and validate body with
+    Zod, call the appropriate service function, return \code{toResponse(result)}.
     No business logic. No SQL.
-  \item[\textbf{Service layer}] (\file{internal/service/})
-    Business rules and orchestration. Calls repositories. Triggers
-    notifications, audit writes, webhook dispatches.
-    Defined as interfaces in \file{service.go}, implemented in
-    \file{impl/}.
-  \item[\textbf{Repository layer}] (\file{internal/repository/})
-    Data access. Defined as interfaces (one per aggregate root).
-    Implemented in \file{postgres/} using pgx. No business logic.
-  \item[\textbf{Model layer}] (\file{internal/model/})
-    Plain Go structs shared across layers. No methods beyond simple
-    helpers.
+  \item[\textbf{Service layer}] (\file{src/lib/services/})
+    All business rules and orchestration. Returns \code{Result<T>} —
+    a discriminated union of \code{Ok<T>} or \code{Err}. Triggers
+    notifications, audit writes, and CI webhook dispatches.
+  \item[\textbf{Shared query helpers}] (\file{src/lib/db/queries.ts})
+    Reusable read-only DB helpers (\code{findProductName},
+    \code{findUserEmail}, \code{findAdminEmails},
+    \code{findCiSourceForEnv}) shared across services and the
+    webhook handler.
+  \item[\textbf{Drizzle ORM}] (\file{src/lib/db/})
+    Type-safe query builder backed by \code{drizzle-kit push} for
+    schema management. The schema definition is the single source of
+    truth; no separate migration files are maintained.
 \end{description}
 
-\section{Template System (templ)}
+\subsection*{\texttt{Result<T>} and \texttt{toResponse}}
 
-All pages are authored as \code{.templ} files and compiled to Go by
-\code{templ generate ./...}. Each \code{.templ} file produces a
-corresponding \code{\_templ.go} file which is committed alongside the
-source.
+All service functions return a \code{Result<T>} discriminated union
+defined in \file{src/lib/services/result.ts}:
 
-Page components receive a typed view struct:
-\begin{lstlisting}[style=go]
-// ui/pages/orders/orders.templ
-templ OrderList(vd view.OrderListView) {
-    @comp.Layout(vd.PageData) {
-        // page content -- type-checked at compile time
-    }
+\begin{lstlisting}[style=ts]
+export type Ok<T>  = { ok: true;  data: T }
+export type Err    = { ok: false; status: number; message: string }
+export type Result<T> = Ok<T> | Err
+
+export const ok  = <T>(data: T): Ok<T> => ({ ok: true, data })
+export const err = (status: number, message: string): Err =>
+  ({ ok: false, status, message })
+\end{lstlisting}
+
+The helper \code{toResponse(result, successStatus?)} in
+\file{src/lib/http.ts} maps a \code{Result} to a \code{NextResponse},
+keeping route handlers free of branching logic:
+
+\begin{lstlisting}[style=ts]
+export async function GET(req: NextRequest) {
+  const session = await requireAuth(req)
+  if (!isAuth(session)) return session
+  return toResponse(await listOrders(session))
 }
 \end{lstlisting}
 
-Handlers assemble the view struct and call \code{renderTempl}:
-\begin{lstlisting}[style=go]
-func (h *Handler) orderList(w http.ResponseWriter, r *http.Request) {
-    orders, _ := h.orders.ListByUser(r.Context(), sess.UserID)
-    renderTempl(w, r, orderpages.OrderList(view.OrderListView{
-        PageData: h.buildPageData(w, r),
-        Orders:   orders,
-    }))
-}
-\end{lstlisting}
-
-\code{buildPageData} assembles the common \code{view.PageData} struct
-providing:
-\begin{description}
-  \item[\code{.Lang}] User's active language code (e.g.\ \code{"de"}).
-  \item[\code{.Brand}] Branding values (colours, shop name, logo flag).
-  \item[\code{.Session}] Current user session (name, role, email).
-  \item[\code{.Flash}] One-time flash message (success/error).
-  \item[\code{.SearchQuery}] Current catalog search term from the URL.
-\end{description}
-
-Translations are called directly in templ files:
-\begin{lstlisting}[style=go]
-{ i18n.T("orders.title", vd.Lang) }  // translated string
-{ string(o.Status) }                  // named type requires cast
-\end{lstlisting}
-
-\section{Design System}
-\label{sec:design-system}
-
-All UI is built from a small, self-contained component library under
-\file{src/ui/comp/}. Components are plain templ functions — no
-framework, no runtime dependencies.
-
-\subsection*{Design Tokens}
-
-Two CSS custom properties drive every coloured surface:
-
-\begin{description}
-  \item[\code{var(--bp)}] Brand primary colour (default \code{\#131921},
-        the dark header). Used for header, navigation, footer, active
-        highlights, and price text.
-  \item[\code{var(--bs)}] Brand secondary / accent colour (default
-        \code{\#febd69}, amber). Used for CTA buttons, active language
-        badges, and focus rings.
-\end{description}
-
-The values are injected by \code{comp.Layout} as inline CSS custom
-properties on \code{<html>}. Every component should reference these
-variables rather than hardcoding colours:
-
-\begin{lstlisting}[style=go]
-<!-- correct -->
-<div style="background-color:var(--bp)">...</div>
-<a style="color:var(--bs)">...</a>
-
-<!-- wrong: breaks custom branding -->
-<div class="bg-[#131921]">...</div>
-\end{lstlisting}
-
-\subsection*{Layout Shell (\texttt{comp.Layout})}
-
-Every page is wrapped in \code{comp.Layout}:
-
-\begin{lstlisting}[style=go]
-templ MyPage(vd view.MyView) {
-    @comp.Layout(vd.PageData) {
-        // page content here
-    }
-}
-\end{lstlisting}
-
-\code{comp.Layout} renders: \texttt{<head>} with meta tags and stylesheets,
-sticky header with brand logo / search bar / user menu / language
-picker, the top navigation bar with role-based links, a flash banner
-slot, the \texttt{<main>} content area (2XL max-width, horizontal
-padding), and the footer. Nothing else should set \code{<html>},
-\code{<head>}, or \code{<body>}.
-
-\subsection*{Page Structure}
-
-\begin{description}
-  \item[\code{comp.PageHeader(title, backHref)}]
-        Full-width page title row with an optional back arrow link.
-        Use at the top of every dedicated page.
-  \item[\code{comp.PageHeaderAction(title, backHref, action)}]
-        Same as above but with an action slot on the right (e.g.\ a
-        primary button).
-  \item[\code{comp.Section(title)}]
-        A titled content group with a subtle separator. Use to divide
-        a page into logical parts.
-  \item[\code{comp.EmptyState(message)}]
-        Centred placeholder message for empty lists or zero results.
-\end{description}
-
-\begin{lstlisting}[style=go]
-@comp.PageHeaderAction("Bestellungen", "/", action) {
-    @comp.BtnLink("Neue Bestellung", "/catalog",
-                  comp.VPrimary, comp.SzMD)
-}
-@comp.Section("Offene Bestellungen") {
-    if len(orders) == 0 {
-        @comp.EmptyState("Keine Bestellungen vorhanden.")
-    }
-    // list rows...
-}
-\end{lstlisting}
-
-\subsection*{Cards}
-
-\begin{description}
-  \item[\code{comp.Card()}]
-        White surface with border and subtle shadow. Use as a generic
-        content container.
-  \item[\code{comp.CardBody()}]
-        Adds consistent padding inside a \code{Card}.
-  \item[\code{comp.CardHeader(title)}]
-        A titled header strip for a card.
-\end{description}
-
-\begin{lstlisting}[style=go]
-@comp.Card() {
-    @comp.CardHeader("Details") {}
-    @comp.CardBody() {
-        // form fields, table, prose, etc.
-    }
-}
-\end{lstlisting}
-
-\subsection*{Buttons}
-
-\begin{description}
-  \item[\code{comp.Btn(label, variant, size, templ.Attributes)}]
-        A \code{<button>} element. Pass extra HTML attributes (e.g.\
-        \code{hx-post}, \code{disabled}) via the fourth argument.
-  \item[\code{comp.BtnLink(label, href, variant, size)}]
-        An \code{<a>} element styled as a button. Use for navigation
-        CTAs.
-  \item[\code{comp.IconBtn(variant, size, templ.Attributes)}]
-        Square icon button; children supply the icon SVG.
-  \item[\code{comp.BtnClass(variant, size)}]
-        Returns just the Tailwind class string. Use when you need to
-        apply button styling to an element not covered by the
-        components above (e.g.\ an HTMX-powered \code{<button>} inside
-        a templ \code{children...} slot).
-\end{description}
-
-\textbf{Variants:}
-
-\begin{tabular}{ll}
-\code{comp.VPrimary}   & Filled, uses \code{var(--bp)} background — main CTAs. \\
-\code{comp.VSecondary} & Outlined border button — secondary actions. \\
-\code{comp.VGhost}     & Transparent, text-only — low-emphasis actions. \\
-\code{comp.VDanger}    & Red filled — destructive actions (delete, reject). \\
-\end{tabular}
-
-\textbf{Sizes:}
-
-\begin{tabular}{ll}
-\code{comp.SzXS} & Extra small — inline or table-row actions. \\
-\code{comp.SzSM} & Small — secondary actions, compact layouts. \\
-\code{comp.SzMD} & Medium (default) — primary page-level CTAs. \\
-\end{tabular}
-
-\begin{lstlisting}[style=go]
-// Primary CTA
-@comp.BtnLink("Jetzt bestellen", "/catalog/"+id,
-              comp.VPrimary, comp.SzMD)
-
-// Danger action with HTMX
-@comp.Btn("Ablehnen", comp.VDanger, comp.SzSM,
-          templ.Attributes{"hx-delete": "/orders/"+id,
-                           "hx-confirm": "Wirklich ablehnen?"})
-
-// Icon button (custom SVG inside)
-@comp.IconBtn(comp.VGhost, comp.SzXS,
-              templ.Attributes{"aria-label": "Bearbeiten"}) {
-    <svg .../>
-}
-\end{lstlisting}
-
-\subsection*{Badges}
-
-\begin{description}
-  \item[\code{comp.Badge(label, color)}]
-        A small inline pill. Use \code{comp.BadgeGreen}, \code{comp.BadgeRed},
-        \code{comp.BadgeYellow}, \code{comp.BadgeBlue}, or
-        \code{comp.BadgeGray} for the \code{color} argument.
-  \item[\code{comp.StatusBadge(status)}]
-        Convenience wrapper that maps an order/resource status string
-        to the appropriate colour via \code{comp.StatusBadgeColor}.
-        No need to branch on status in the template.
-\end{description}
-
-\begin{lstlisting}[style=go]
-// Generic badge
-@comp.Badge("Aktiv", comp.BadgeGreen)
-@comp.Badge("Fehler", comp.BadgeRed)
-
-// Status-aware badge (recommended for orders)
-@comp.StatusBadge(string(order.Status))
-\end{lstlisting}
-
-Status colour mapping (via \code{comp.StatusBadgeColor}):
-
-\begin{tabular}{ll}
-\code{active}, \code{approved}, \code{completed} & Green \\
-\code{pending}                                    & Yellow \\
-\code{failed}, \code{rejected}                    & Red \\
-\code{provisioning}, \code{decommissioning}       & Blue \\
-Everything else                                   & Gray \\
-\end{tabular}
-
-\subsection*{Forms}
-
-All form fields use the components in \file{ui/comp/form.templ} for
-consistent label alignment, spacing, and required-marker rendering.
-
-\begin{description}
-  \item[\code{comp.Field(label, name, required)}]
-        A \code{<label>} + slot wrapper. Place an \code{Input},
-        \code{Select}, or \code{Textarea} inside it.
-  \item[\code{comp.Input(name, type, placeholder, value, attrs)}]
-        Styled \code{<input>}. Pass extra attributes (e.g.\
-        \code{hx-get}, \code{min}, \code{step}) via the last argument.
-  \item[\code{comp.Textarea(name, placeholder, value, rows, attrs)}]
-        Styled \code{<textarea>}.
-  \item[\code{comp.Select(name, attrs)}]
-        Styled \code{<select>} wrapper; children are \code{<option>}
-        elements written inline.
-  \item[\code{comp.Checkbox(name, label, checked)}]
-        A labelled checkbox with correct \code{for}/\code{id} wiring.
-\end{description}
-
-\begin{lstlisting}[style=go]
-<form method="POST" action="/admin/products">
-    @comp.Field("Produktname", "name", true) {
-        @comp.Input("name", "text", "z.B. VM-Platform",
-                    product.Name, nil)
-    }
-    @comp.Field("Beschreibung", "description", false) {
-        @comp.Textarea("description", "", product.Description,
-                       4, nil)
-    }
-    @comp.Field("Kategorie", "category_id", true) {
-        @comp.Select("category_id", nil) {
-            for _, c := range categories {
-                <option value={ fmt.Sprint(c.ID) }
-                        selected?={ c.ID == product.CategoryID }>
-                    { c.Name }
-                </option>
-            }
-        }
-    }
-    @comp.Field("Aktiv", "active", false) {
-        @comp.Checkbox("active", "Produkt ist sichtbar",
-                       product.Active)
-    }
-    @comp.Btn("Speichern", comp.VPrimary, comp.SzMD, nil)
-</form>
-\end{lstlisting}
-
-\subsection*{Flash Messages}
-
-Flash messages are set server-side via \code{redirectWithFlash} and
-rendered automatically by \code{comp.Layout} from \code{pd.Flash}.
-HTMX responses that want to show a flash message use the
-\code{HX-Trigger} response header instead:
-
-\begin{lstlisting}[style=go]
-// In a handler that returns an HTMX partial:
-w.Header().Set("HX-Trigger", `{"showFlash":{"kind":"success",
-    "message":"Gespeichert"}}`)
-\end{lstlisting}
-
-\subsection*{Component Conventions}
-
-\begin{itemize}
-  \item \textbf{Never hardcode colours.} Always use \code{var(--bp)},
-        \code{var(--bs)}, or Tailwind's neutral palette
-        (\code{slate-*}). Hardcoded hex values break custom branding.
-  \item \textbf{Use \code{comp.VPrimary} for the single most important
-        action} on a page. Use \code{comp.VSecondary} or
-        \code{comp.VGhost} for everything else.
-  \item \textbf{No JavaScript.} Interactive disclosure (menus, modals,
-        accordions) uses native \code{<details>/<summary>}.
-        Server-side partial updates use HTMX attributes. Never add
-        \code{<script>} tags to component files.
-  \item \textbf{No inline \code{style} except for brand tokens.}
-        Arbitrary colours, sizes, and spacing belong in Tailwind
-        utility classes, not \code{style=""} attributes.
-  \item \textbf{Prefer \code{comp.StatusBadge} over manual branching.}
-        The mapping is maintained centrally; adding a new status only
-        requires updating \code{comp.StatusBadgeColor}.
-\end{itemize}
-
-\section{Adding Translations}
-
-All UI strings live in \file{internal/i18n/i18n.go} as a
-\code{map[string]map[string]string}. To add a new key:
-
-\begin{lstlisting}[style=go]
-// In translations map:
-"my.new.key": {
-    "en": "English text",
-    "de": "Deutscher Text",
-    "fr": "Texte francais",
-    // ... all 25 language codes
-},
-\end{lstlisting}
-
-Use in templates with \code{\{\{t "my.new.key" .Lang\}\}}.
-
-\section{Database Migrations}
+\section{Database Schema Management}
 \label{sec:dbmigrations}
 
-Migration files follow the naming pattern
-\file{NNN\_description.sql} and are executed in alphabetical order.
-Write migrations defensively:
+The schema is defined in \file{apps/backend/src/lib/db/schema.ts} using
+Drizzle ORM's TypeScript schema builder. Drizzle Kit's \emph{push} mode
+applies the schema directly to the database — no separate SQL migration
+files are maintained.
 
-\begin{lstlisting}[style=sql]
-ALTER TABLE products
-  ADD COLUMN IF NOT EXISTS image_mime TEXT NOT NULL DEFAULT 'image/jpeg';
-
-CREATE TABLE IF NOT EXISTS app_config (
-  id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-  smtp_host TEXT NOT NULL DEFAULT ''
-  -- ...
-);
+\begin{lstlisting}[style=bash]
+make db-push       # applies schema changes to the connected database
+make db-studio     # opens Drizzle Studio (visual schema browser)
 \end{lstlisting}
 
-\warnbox{Never modify a migration that has already been applied to
-production. Always create a new migration file for schema changes.}
+\warnbox{In production, prefer \code{drizzle-kit migrate} with generated
+migration files to retain a full change history. \code{push} is
+suitable for development and initial deployments.}
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Testing}
 \label{ch:testing}
 
-The project uses three complementary test layers.  All three are invoked
-automatically in CI; locally the most common commands are
-\code{make test} (fast, no Docker needed) and \code{make e2e} (full
-browser stack, requires Docker).
+The project uses two complementary test layers, both run automatically
+in CI via \code{pnpm test} and \code{pnpm exec playwright test}.
 
 % ─────────────────────────────────────────────────────────────
-\section{Unit Tests}
+\section{Service and Integration Tests (Vitest)}
 \label{sec:unit-tests}
 
-Unit tests live next to the code they test (\file{*\_test.go}) and use
-Go's standard \code{testing} package.  They cover:
+Tests live alongside the code they cover as \file{*.test.ts} files and
+run under \href{https://vitest.dev}{Vitest}. They target service
+functions directly — no HTTP layer, no mocks for the database.
 
-\begin{itemize}
-  \item \textbf{Service layer} (\file{internal/service/impl/}) ---
-        all service methods are tested with in-memory stubs that
-        implement the repository interfaces.  No database, no network.
-  \item \textbf{Handler helpers} (\file{internal/handler/}) ---
-        language detection (\code{parseAcceptLanguage},
-        \code{detectLang}) and the login rate-limiter are tested with
-        direct function calls.
-  \item \textbf{Polling worker} (\file{internal/polling/}) ---
-        \code{extractProjectID} is tested with table-driven cases.
-\end{itemize}
+\subsection*{Test setup}
 
-Run unit tests:
+A global setup file (\file{src/test/setup.ts}) starts a real
+PostgreSQL container once per test run (via
+\href{https://node.testcontainers.org}{testcontainers}) and exposes
+the connection URL in \code{process.env.DATABASE\_URL}.  A global
+\code{beforeEach} truncates all tables and resets sequences before
+every test so each case starts with a clean slate.
+
+\begin{lstlisting}[style=ts]
+// vitest.config.ts
+export default defineConfig({
+  test: {
+    setupFiles: ['./src/test/setup.ts'],
+    globalSetup: './src/test/globalSetup.ts',
+  },
+})
+\end{lstlisting}
+
+\subsection*{Session helpers}
+
+Tests construct a \code{SessionUser} directly with a small helper
+instead of going through the auth layer:
+
+\begin{lstlisting}[style=ts]
+const makeSession = (overrides?: Partial<SessionUser>): SessionUser => ({
+  id: 1, email: 'test@example.com', name: 'Test',
+  role: 'admin', ...overrides,
+})
+\end{lstlisting}
+
+\subsection*{Mocking side effects}
+
+Services that trigger CI pipelines or send emails are tested with
+\code{vi.mock()} to isolate the unit under test:
+
+\begin{lstlisting}[style=ts]
+vi.mock('@/lib/ci/webhooks', () => ({
+  triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-1']),
+}))
+vi.mock('@/lib/notification', () => ({
+  sendOrderCreated: vi.fn(),
+  sendApprovalRequest: vi.fn(),
+}))
+\end{lstlisting}
+
+Run the test suite:
 \begin{lstlisting}[style=bash]
-make test          # runs go test ./...
-make vet           # go vet (zero warnings required)
-make lint          # golangci-lint
+pnpm --filter backend test          # watch mode
+pnpm --filter backend test --run    # single run (CI)
 \end{lstlisting}
-
-% ─────────────────────────────────────────────────────────────
-\section{Integration Tests (testcontainers-go)}
-\label{sec:integration-tests}
-
-Repository-layer tests in \file{internal/repository/postgres/} spin up
-a real \textbf{PostgreSQL 16 Alpine} container via
-\href{https://golang.testcontainers.org}{testcontainers-go} and run all
-migrations before the first test.
-
-\subsection*{TestMain}
-
-\begin{lstlisting}[style=go]
-// testmain_test.go
-func TestMain(m *testing.M) {
-    ctr, err := tcpostgres.Run(ctx, "postgres:16-alpine",
-        tcpostgres.WithDatabase("testdb"),
-        testcontainers.WithWaitStrategy(
-            wait.ForLog("database system is ready to accept connections").
-                WithOccurrence(2).WithStartupTimeout(60*time.Second),
-        ),
-    )
-    // runs migrations, opens pgxpool
-    os.Exit(m.Run())
-}
-\end{lstlisting}
-
-\subsection*{Test isolation}
-
-Every test that writes data calls \code{resetDB(t)} first, which
-truncates all data tables and restarts identity sequences:
-
-\begin{lstlisting}[style=go]
-func resetDB(t *testing.T) {
-    _, err := testPool.Exec(ctx,
-        "TRUNCATE audit_log, orders, products, ... RESTART IDENTITY CASCADE")
-}
-\end{lstlisting}
-
-\subsection*{Fixture helper}
-
-Tests that need FK-dependent data call \code{newFixture(t)}, which
-creates the full dependency chain in one call:
-
-\begin{lstlisting}
-gitlab_source -> deployment_environment -> user
-             -> category -> product -> project
-\end{lstlisting}
-
-Integration tests require Docker; if the container cannot start the
-test binary exits with code~0 (skip, not fail) so CI stays green on
-environments without Docker.
 
 % ─────────────────────────────────────────────────────────────
 \section{End-to-End Tests with Playwright}
 \label{sec:e2e-tests}
 
-End-to-end tests live in \file{src/e2e/} and drive a real
+End-to-end tests live in \file{e2e/} and drive a real
 \textbf{Chromium} browser via
-\href{https://github.com/playwright-community/playwright-go}{playwright-go}.
-The full application stack --- PostgreSQL, all migrations, all service
-wiring --- is started in-process for each test run.
-
-\subsection*{Architecture}
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  box/.style={rectangle, rounded corners=4pt, draw=ohc-blue!50,
-              fill=ohc-blue!8, minimum width=3.0cm, minimum height=0.9cm,
-              align=center, font=\small},
-  arr/.style={->, >=Stealth, thick, ohc-blue!60},
-  node distance=0.6cm and 1.4cm
-]
-  \node[box] (pg)  {Testcontainers\\PostgreSQL};
-  \node[box, right=of pg] (srv) {\texttt{httptest}\\Server};
-  \node[box, right=of srv] (pw)  {Playwright\\Chromium};
-  \node[box, below=of srv] (wh)  {Mock GitLab\\Webhook Server};
-  \draw[arr] (pg)  -- node[above,font=\tiny] {pool} (srv);
-  \draw[arr] (srv) -- node[above,font=\tiny] {HTTP} (pw);
-  \draw[arr] (srv) -- node[left,font=\tiny]  {POST} (wh);
-\end{tikzpicture}
-\caption{E2E test infrastructure}
-\end{figure}
-
-\begin{description}
-  \item[\textbf{Testcontainers PostgreSQL}]
-        A real \code{postgres:16-alpine} container is started by
-        \code{TestMain}.  All 12 migrations run against it and the
-        admin user is bootstrapped (email \code{admin@e2etest.local},
-        password \code{e2eAdmin123!}).
-  \item[\textbf{\texttt{app.New()}}]
-        The server wiring function from \file{internal/app/wire.go}
-        assembles the full dependency graph (repos, services, handlers)
-        and returns an \code{http.Handler}.
-  \item[\textbf{\texttt{httptest.NewServer}}]
-        Wraps the handler in a local HTTP server on a random port.
-        Playwright's \code{BaseURL} is set to this address.
-  \item[\textbf{Mock GitLab webhook server}]
-        Approving an order triggers a GitLab pipeline via HTTP POST.
-        A second \code{httptest.Server} intercepts these calls and
-        returns \code{\{"id":42\}} so the approval flow completes
-        without a real GitLab instance.
-  \item[\textbf{Chromium (headless)}]
-        One browser is launched for the entire test run.  Each test
-        gets its own \emph{browser context} (isolated cookie jar) via
-        \code{newPage(t)}.
-\end{description}
-
-\subsection*{Test file overview}
+\href{https://playwright.dev}{Playwright for TypeScript}.
 
 \begin{table}[H]
   \centering
   \caption{E2E test files}
-  \begin{tabular}{@{}lll@{}}
+  \begin{tabular}{@{}ll@{}}
     \toprule
-    \textbf{File} & \textbf{Tests} & \textbf{What is verified} \\
+    \textbf{File} & \textbf{What is verified} \\
     \midrule
-    \file{auth\_test.go}     & 3 & Login success, invalid credentials, logout dropdown \\
-    \file{approval\_test.go} & 3 & Empty list, Approve button, Reject button \\
-    \file{catalog\_test.go}  & 3 & Page loads, empty state, product navigation \\
+    \file{login.spec.ts}   & Login success, invalid credentials, logout \\
+    \file{catalog.spec.ts} & Page loads, empty state, product navigation \\
+    \file{admin.spec.ts}   & Admin-only catalog and configuration pages \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\subsection*{Shared helpers}
-
-\begin{description}
-  \item[\code{newPage(t)}]
-        Creates a fresh browser context and page; the context is closed
-        in \code{t.Cleanup}.  Each test gets an empty cookie jar, so
-        sessions never leak between tests.
-  \item[\code{loginAs(t, page, email, password)}]
-        Navigates to \route{/login}, fills both fields, clicks
-        \emph{Submit}, and waits for the redirect to \route{/}.
-  \item[\code{resetData(t)}]
-        Truncates all data tables (except \code{users}) with
-        \code{RESTART IDENTITY CASCADE}, so the bootstrapped admin
-        user survives across tests.
-  \item[\code{seedPendingOrder(t)}]
-        Inserts the full FK chain (gitlab\_source, environment,
-        category, product, project, order) with \code{status =
-        'pending\_approval'}.  Uses \code{webhookBaseURL} so the mock
-        server intercepts the approval webhook call.
-\end{description}
-
-\subsection*{Key selector conventions}
-
-Because approvals use plain HTML \code{<form>} elements (no HTMX),
-tests use stable \textbf{action-attribute selectors}:
-
-\begin{lstlisting}[style=go]
-// approve button for a specific order
-approveForm := page.Locator(
-    fmt.Sprintf(`form[action="/approvals/%d/approve"]`, fix.orderID))
-approveForm.Locator(`button[type="submit"]`).Click()
-
-// reject form is inside a <details> -- open summary first
-page.Locator(`details.mt-4 > summary`).First().Click()
-noteInput := page.Locator(`input[name="note"]`)
-noteInput.WaitFor()            // waits until visible
-noteInput.Fill("reason")
-\end{lstlisting}
-
-After a form submit the 303~redirect reloads the same URL.
-\code{WaitForLoadState(NetworkIdle)} is used instead of
-\code{WaitForURL} (which would return immediately because the URL
-does not change).
-
 \subsection*{Running the tests}
 
 \begin{lstlisting}[style=bash]
-# Headless (CI / default)
-make e2e
+# Requires running frontend + backend + postgres
+pnpm dev            # in one terminal
+npx playwright test # in another terminal
 
-# Headed -- watch the browser while tests run
-E2E_HEADED=true make e2e
-
-# First run downloads Chromium (~170 MB) into ~/.cache/ms-playwright/
+# Headed mode -- watch the browser
+npx playwright test --headed
 \end{lstlisting}
-
-If Docker is unavailable the test binary exits with code~0 (skip, not
-fail), consistent with the integration test policy.
 
 \subsection*{Adding a new E2E test}
 
 \begin{enumerate}
-  \item Call \code{resetData(t)} at the start if the test writes data.
-  \item Use \code{newPage(t)} to get an isolated page.
-  \item Use \code{loginAs} to authenticate if needed.
-  \item Prefer \code{form[action="..."]} and \code{input[name="..."]}
-        selectors over CSS classes (classes change; actions rarely do).
-  \item After a form submit call
-        \code{page.WaitForLoadState(NetworkIdle)} before asserting.
+  \item Create a new \file{*.spec.ts} file in \file{e2e/}.
+  \item Use \code{page.goto()} to navigate; authenticate via the login
+        form if needed.
+  \item Prefer stable selectors: \code{data-testid}, ARIA roles, or
+        exact button text. Avoid CSS classes (they change).
+  \item After a form submit, await \code{page.waitForURL()} or
+        \code{expect(page).toHaveURL()} before asserting page state.
 \end{enumerate}
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Database Schema}
 \label{ch:db-schema}
 
-The schema is built by 12 sequential migrations (see
-Section~\ref{sec:dbmigrations}).  The table below shows the
-\textbf{current effective schema} — i.e.\ the cumulative result of all
-migrations.
+The schema is managed by Drizzle ORM. The authoritative definition is
+in \file{apps/backend/src/lib/db/schema.ts}; \code{make db-push}
+(\code{drizzle-kit push}) applies any schema changes to the database.
+The table below shows the current effective schema.
 
 % ─────────────────────────────────────────────────────────────
 \section{Table Overview}
@@ -2940,8 +2544,8 @@ migrations.
     \code{products}                 & Infrastructure products offered in the catalogue \\
     \code{product\_translations}    & Multi-language name + description per product \\
     \code{parameters}               & Configurable inputs for global/category/product scope \\
-    \code{gitlab\_sources}          & GitLab instance credentials (URL + access token) \\
-    \code{deployment\_environments} & Named environments linked to a GitLab source \\
+    \code{ci\_sources}              & CI provider credentials (GitLab / GitHub / Bitbucket) \\
+    \code{deployment\_environments} & Named environments linked to a CI source \\
     \code{product\_environments}    & Junction: which products are available in which environment (with price) \\
     \code{product\_webhooks}        & Optional per-product pipeline trigger overrides \\
     \code{cost\_centers}            & Billing cost centres referenced by projects and orders \\
@@ -2974,8 +2578,8 @@ key, foreign keys, and notable constraints.
     \code{id}            & BIGSERIAL & --- & PK \\
     \code{email}         & TEXT      & --- & NOT NULL, UNIQUE \\
     \code{name}          & TEXT      & --- & NOT NULL \\
-    \code{role}          & TEXT      & --- & CHECK: \code{admin}, \code{project\_leader}, \code{root} \\
-    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; set for Entra ID accounts \\
+    \code{role}          & TEXT      & --- & CHECK: \code{admin}, \code{project\_manager}, \code{root} \\
+    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; set for SSO accounts \\
     \code{password\_hash}& TEXT      & NULL & set for local accounts \\
     \code{active}        & BOOLEAN   & TRUE & soft-disable without deletion \\
     \code{created\_at}   & TIMESTAMPTZ & NOW() & \\
@@ -3056,7 +2660,10 @@ key, foreign keys, and notable constraints.
   \end{tabular}
 \end{table}
 
-\subsection*{\texttt{gitlab\_sources}}
+\subsection*{\texttt{ci\_sources}}
+
+Formerly \code{gitlab\_sources}. Supports multiple CI providers via the
+\code{provider} discriminator column.
 
 \begin{table}[H]
   \centering\small
@@ -3064,10 +2671,11 @@ key, foreign keys, and notable constraints.
     \toprule
     \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
     \midrule
-    \code{id}           & BIGSERIAL & --- & PK \\
-    \code{name}         & TEXT      & --- & NOT NULL; human-readable label \\
-    \code{url}          & TEXT      & --- & NOT NULL; GitLab base URL \\
-    \code{access\_token}& TEXT      & --- & NOT NULL; stored in plain text \\
+    \code{id}           & BIGSERIAL & ---              & PK \\
+    \code{name}         & TEXT      & ---              & NOT NULL; human-readable label \\
+    \code{provider}     & TEXT      & \code{'gitlab'}  & CHECK: \code{gitlab}, \code{github}, \code{bitbucket} \\
+    \code{url}          & TEXT      & ---              & NOT NULL; CI provider base URL \\
+    \code{access\_token}& TEXT      & ---              & NOT NULL \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -3080,12 +2688,12 @@ key, foreign keys, and notable constraints.
     \toprule
     \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
     \midrule
-    \code{id}                & BIGSERIAL & ---       & PK \\
-    \code{name}              & TEXT      & ---       & NOT NULL \\
-    \code{description}       & TEXT      & \code{''} & \\
-    \code{gitlab\_source\_id}& BIGINT    & ---       & NOT NULL, FK \textrightarrow{} \code{gitlab\_sources(id)} \\
-    \code{webhook\_url}      & TEXT      & ---       & NOT NULL; GitLab trigger URL \\
-    \code{webhook\_token}    & TEXT      & ---       & NOT NULL; pipeline trigger token \\
+    \code{id}              & BIGSERIAL & ---       & PK \\
+    \code{name}            & TEXT      & ---       & NOT NULL \\
+    \code{description}     & TEXT      & \code{''} & \\
+    \code{ci\_source\_id}  & BIGINT    & ---       & NOT NULL, FK \textrightarrow{} \code{ci\_sources(id)} \\
+    \code{webhook\_url}    & TEXT      & ---       & NOT NULL; pipeline trigger URL \\
+    \code{webhook\_token}  & TEXT      & ---       & NOT NULL; pipeline trigger token \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -3269,8 +2877,8 @@ Singleton row (\code{id = 1}).  Written via \route{POST /admin/branding}.
     \code{id}             & INT   & 1                    & PK, CHECK (id = 1) \\
     \code{logo\_data}     & BYTEA & NULL                 & uploaded logo image \\
     \code{logo\_mime}     & TEXT  & \code{'image/png'}   & MIME type of the logo \\
-    \code{primary\_color} & TEXT  & \code{'\#131921'}    & \code{var(--bp)} CSS token \\
-    \code{secondary\_color}& TEXT & \code{'\#febd69'}    & \code{var(--bs)} CSS token \\
+    \code{primary\_color} & TEXT  & \code{'\#0f172a'}    & \code{var(--bp)} CSS token \\
+    \code{secondary\_color}& TEXT & \code{'\#0ea5e9'}    & \code{var(--bs)} CSS token \\
     \code{shop\_name}     & TEXT  & \code{''}            & overrides \code{APP\_NAME} env var \\
     \code{shop\_subtitle} & TEXT  & \code{''}            & overrides \code{APP\_SUBTITLE} env var \\
     \code{imprint\_text}  & TEXT  & \code{''}            & rendered on \route{/impressum} \\
@@ -3392,164 +3000,131 @@ requiring explicit cleanup in application code.}
 \chapter{Adding a New Feature}
 \label{ch:new-feature}
 
-This chapter describes the canonical pattern for adding a feature end-to-end.
+This chapter describes the canonical pattern for adding a feature end-to-end
+in the Next.js monorepo.
 
 \section{Example: Adding a New Admin Page}
 
-\textbf{Goal:} Add an admin page at \route{/admin/widgets} that lists
-and creates widgets stored in a new \code{widgets} database table.
+\textbf{Goal:} Add an admin endpoint that lists and creates widgets stored
+in a new \code{widgets} database table, and a corresponding admin UI page.
 
-\subsection{Step 1: Create the Migration}
+\subsection{Step 1: Add the Table to the Drizzle Schema}
 
-Create \file{internal/migrations/010\_widgets.sql}:
+In \file{apps/backend/src/lib/db/schema.ts}, add the table definition:
 
-\begin{lstlisting}[style=sql]
-CREATE TABLE IF NOT EXISTS widgets (
-  id   BIGSERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
-  active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-\end{lstlisting}
-
-\subsection{Step 2: Add the Model}
-
-In \file{internal/model/model.go}:
-
-\begin{lstlisting}[style=go]
-type Widget struct {
-    ID        int64
-    Name      string
-    Active    bool
-    CreatedAt time.Time
-}
-\end{lstlisting}
-
-\subsection{Step 3: Define the Repository Interface}
-
-In \file{internal/repository/repository.go}:
-
-\begin{lstlisting}[style=go]
-type WidgetRepository interface {
-    FindAll(ctx context.Context) ([]model.Widget, error)
-    Create(ctx context.Context, name string) error
-    Delete(ctx context.Context, id int64) error
-}
-\end{lstlisting}
-
-\subsection{Step 4: Implement the Repository}
-
-Create \file{internal/repository/postgres/widget.go}:
-
-\begin{lstlisting}[style=go]
-type widgetRepo struct{ pool *pgxpool.Pool }
-
-func NewWidgetRepository(pool *pgxpool.Pool) repository.WidgetRepository {
-    return &widgetRepo{pool: pool}
-}
-
-func (r *widgetRepo) FindAll(ctx context.Context) ([]model.Widget, error) {
-    rows, err := r.pool.Query(ctx,
-        `SELECT id, name, active, created_at FROM widgets ORDER BY name`)
-    // ... scan rows into []model.Widget
-}
-\end{lstlisting}
-
-\subsection{Step 5: Add the Handler}
-
-Add to the \code{Handler} struct in \file{routes.go}:
-\begin{lstlisting}[style=go]
-widgets repository.WidgetRepository
-\end{lstlisting}
-
-Add to \code{Deps} struct and wire in \code{New()}.
-Add a view struct in \file{internal/view/pages.go}:
-
-\begin{lstlisting}[style=go]
-type AdminWidgetsView struct {
-    view.PageData
-    Widgets []model.Widget
-}
-\end{lstlisting}
-
-Add handler methods to a new file \file{handler/widgets.go}:
-
-\begin{lstlisting}[style=go]
-func (h *Handler) adminWidgets(w http.ResponseWriter, r *http.Request) {
-    items, _ := h.widgets.FindAll(r.Context())
-    renderTempl(w, r, adminpages.AdminWidgets(view.AdminWidgetsView{
-        PageData: h.buildPageData(w, r),
-        Widgets:  items,
-    }))
-}
-\end{lstlisting}
-
-Register routes in \code{RegisterRoutes}:
-\begin{lstlisting}[style=go]
-mux.Handle("GET /admin/widgets",  admin(h.adminWidgets))
-mux.Handle("POST /admin/widgets", admin(h.adminWidgetCreate))
-\end{lstlisting}
-
-\subsection{Step 6: Create the templ Component}
-
-Create \file{ui/pages/admin/widgets.templ}:
-
-\begin{lstlisting}[style=go]
-package admin
-
-import (
-    "github.com/Maximilian-Maag/open-hybrid-cloud/src/internal/i18n"
-    "github.com/Maximilian-Maag/open-hybrid-cloud/src/internal/view"
-    "github.com/Maximilian-Maag/open-hybrid-cloud/src/ui/comp"
-)
-
-templ AdminWidgets(vd view.AdminWidgetsView) {
-    @comp.Layout(vd.PageData) {
-        @comp.PageHeader(i18n.T("admin.widgets", vd.Lang), "/admin")
-        @comp.Card() {
-            <table class="w-full text-sm">
-                <tbody>
-                    for _, w := range vd.Widgets {
-                        <tr class="hover:bg-slate-50">
-                            <td class="px-4 py-3">{ w.Name }</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
-    }
-}
-\end{lstlisting}
-
-Run \code{templ generate ./...} to compile to Go, then \code{go build ./...}
-to verify type correctness before running.
-
-\subsection{Step 7: Add i18n Keys}
-
-In \file{internal/i18n/i18n.go}, add the key with all 25 language
-translations.
-
-\subsection{Step 8: Wire Up in main.go}
-
-\begin{lstlisting}[style=go]
-widgetRepo := pgRepo.NewWidgetRepository(pool)
-// ...
-h := handler.New(handler.Deps{
-    // ...
-    Widgets: widgetRepo,
+\begin{lstlisting}[style=typescript]
+export const widgets = pgTable('widgets', {
+  id:        bigserial('id', { mode: 'number' }).primaryKey(),
+  name:      text('name').notNull(),
+  active:    boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true })
+               .notNull().defaultNow(),
 })
 \end{lstlisting}
 
-\subsection{Step 9: Test}
+Apply the schema change:
+\begin{lstlisting}[style=bash]
+make db-push
+\end{lstlisting}
 
-Add test stubs in \file{internal/repository/} (or use the real DB in
-integration tests). Run:
+\subsection{Step 2: Add Shared Types}
+
+In \file{packages/types/src/index.ts}, add the interface:
+
+\begin{lstlisting}[style=typescript]
+export interface Widget {
+  id:        number
+  name:      string
+  active:    boolean
+  createdAt: string
+}
+\end{lstlisting}
+
+\subsection{Step 3: Add the Backend Route Handler}
+
+Create \file{apps/backend/src/app/api/admin/widgets/route.ts}:
+
+\begin{lstlisting}[style=typescript]
+import { NextRequest, NextResponse } from 'next/server'
+import { requireRole, isAuth } from '@/lib/auth/middleware'
+import { db } from '@/lib/db/client'
+import { widgets } from '@/lib/db/schema'
+
+export async function GET(req: NextRequest) {
+  const session = await requireRole('root')(req)
+  if (!isAuth(session)) return session
+
+  const rows = await db.select().from(widgets).orderBy(widgets.name)
+  return NextResponse.json(rows)
+}
+
+export async function POST(req: NextRequest) {
+  const session = await requireRole('root')(req)
+  if (!isAuth(session)) return session
+
+  const { name } = await req.json()
+  if (!name) return NextResponse.json(
+    { error: 'name required' }, { status: 400 })
+
+  const [row] = await db.insert(widgets).values({ name }).returning()
+  return NextResponse.json(row, { status: 201 })
+}
+\end{lstlisting}
+
+\subsection{Step 4: Add the Frontend API Wrapper}
+
+In \file{apps/frontend/src/lib/api.ts}, the generic \code{get} and
+\code{post} wrappers already exist. Call them from any Server Component
+or client action:
+
+\begin{lstlisting}[style=typescript]
+import { get, post } from '@/lib/api'
+import type { Widget } from '@open-hybrid-cloud/types'
+
+export const fetchWidgets = (token: string) =>
+  get<Widget[]>('/api/admin/widgets', token)
+
+export const createWidget = (name: string, token: string) =>
+  post<Widget>('/api/admin/widgets', { name }, token)
+\end{lstlisting}
+
+\subsection{Step 5: Add the Frontend Page}
+
+Create \file{apps/frontend/src/app/admin/widgets/page.tsx}:
+
+\begin{lstlisting}[style=typescript]
+import { auth } from '@/lib/auth'
+import { fetchWidgets } from '@/lib/api/widgets'
+import { redirect } from 'next/navigation'
+
+export default async function AdminWidgetsPage() {
+  const session = await auth()
+  if (!session) redirect('/login')
+
+  const widgets = await fetchWidgets(session.apiToken ?? '')
+
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-4">Widgets</h1>
+      <ul>
+        {widgets.map(w => (
+          <li key={w.id} className="py-2 border-b">{w.name}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+\end{lstlisting}
+
+\subsection{Step 6: Verify}
 
 \begin{lstlisting}[style=bash]
-make test
-make vet
-make lint
+make type-check   # TypeScript must pass clean
+make lint         # ESLint must pass clean
 \end{lstlisting}
+
+Navigate to \url{http://localhost:3000/admin/widgets} and confirm the
+page renders correctly.
 
 % ─────────────────────────────────────────────────────────────
 %  PART V — PROJECT MANAGER GUIDE
@@ -3611,7 +3186,8 @@ As a \role{Admin} the GitLab webhook fires immediately.
 \section{Tracking Status}
 
 After placing an order, navigate to \textbf{My Orders → \{order\}}.
-The status updates live via HTMX polling every 30 seconds.
+Refresh the page to see the latest status. The backend updates the order
+automatically when the CI provider sends a pipeline webhook event.
 
 \section{Using an Existing Deployment as a Template}
 
@@ -4022,34 +3598,47 @@ translation:
 \chapter{Environment Variable Reference}
 \label{app:envvars}
 
+\section*{Backend (\texttt{apps/backend/.env})}
+
 \begin{longtable}{@{}L{4.5cm}L{7.5cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Description} & \textbf{Required} \\
   \midrule
   \endhead
-  \env{DATABASE\_URL}         & PostgreSQL connection string (DSN)          & Yes \\
-  \env{SESSION\_KEY}          & 32-byte hex key for session encryption       & Yes \\
-  \env{ADMIN\_EMAIL}          & Email of the initial Root account   & Yes \\
-  \env{ADMIN\_PASSWORD}       & Password of the initial admin account        & Yes \\
-  \env{BASE\_URL}             & Public base URL (e.g. \code{https://shop.example.com}) & Yes \\
-  \env{PORT}                  & HTTP listen port (default: \code{8080})      & No  \\
-  \env{OIDC\_CLIENT\_ID}      & Entra ID application (client) ID             & No  \\
-  \env{OIDC\_CLIENT\_SECRET}  & Entra ID client secret                       & No  \\
-  \env{OIDC\_ISSUER}          & OIDC issuer URL (\code{https://login.microsoft...}) & No  \\
-  \env{SMTP\_HOST}            & SMTP server hostname                         & No  \\
-  \env{SMTP\_PORT}            & SMTP port (default: \code{587})              & No  \\
-  \env{SMTP\_FROM}            & Sender email address                         & No  \\
-  \env{SMTP\_USERNAME}        & SMTP authentication username                 & No  \\
-  \env{SMTP\_PASSWORD}        & SMTP authentication password                 & No  \\
-  \env{SMTP\_TLS}             & \code{true} to use TLS/SSL                   & No  \\
-  \env{AI\_PROVIDER}          & AI translation provider at startup           & No  \\
-  \env{AI\_ENDPOINT}          & AI API endpoint URL                          & No  \\
-  \env{AI\_API\_KEY}          & AI API key                                   & No  \\
-  \env{AI\_MODEL}             & AI model name                                & No  \\
-  \env{EXCHANGE\_RATE\_KEY}   & Exchange rate API key                        & No  \\
+  \env{DATABASE\_URL}           & PostgreSQL DSN (\code{postgresql://user:pass@host/db}) & Yes \\
+  \env{JWT\_SECRET}             & HS256 signing secret — min.\ 32 characters     & Yes \\
+  \env{ADMIN\_EMAIL}            & Email of the initial Root account               & Yes \\
+  \env{ADMIN\_PASSWORD}         & Password of the initial Root account            & Yes \\
+  \env{FRONTEND\_URL}           & Allowed CORS origin (default: \code{http://localhost:3000}) & No \\
+  \env{SMTP\_HOST}              & SMTP server hostname                            & No  \\
+  \env{SMTP\_PORT}              & SMTP port (default: \code{1025})                & No  \\
+  \env{SMTP\_FROM}              & Sender email address                            & No  \\
+  \env{SMTP\_USER}              & SMTP authentication username                    & No  \\
+  \env{SMTP\_PASS}              & SMTP authentication password                    & No  \\
+  \env{SMTP\_TLS}               & \code{true} to enable SMTP TLS                  & No  \\
+  \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint URL                 & No  \\
+  \env{ENTRA\_TENANT\_ID}       & Microsoft Entra ID tenant ID (future SSO)       & No  \\
+  \env{ENTRA\_CLIENT\_ID}       & Entra ID application (client) ID                & No  \\
+  \env{ENTRA\_CLIENT\_SECRET}   & Entra ID client secret                          & No  \\
   \bottomrule
-  \caption{Environment variable reference}
-  \label{tab:envvars}
+  \caption{Backend environment variable reference}
+  \label{tab:envvars-backend}
+\end{longtable}
+
+\section*{Frontend (\texttt{apps/frontend/.env})}
+
+\begin{longtable}{@{}L{4.5cm}L{7.5cm}l@{}}
+  \toprule
+  \textbf{Variable} & \textbf{Description} & \textbf{Required} \\
+  \midrule
+  \endhead
+  \env{NEXT\_PUBLIC\_API\_URL} & Backend URL reachable from the browser (used for client-side API calls) & Yes \\
+  \env{API\_URL}               & Backend URL reachable from the Next.js SSR server & Yes \\
+  \env{NEXTAUTH\_URL}          & Canonical public URL of the frontend            & Yes \\
+  \env{NEXTAUTH\_SECRET}       & NextAuth session cookie encryption secret (min.\ 32 chars) & Yes \\
+  \bottomrule
+  \caption{Frontend environment variable reference}
+  \label{tab:envvars-frontend}
 \end{longtable}
 
 \chapter{OpenTofu Module Variable Reference}
@@ -4176,13 +3765,16 @@ translation:
 \chapter{HTTP Route Reference}
 \label{app:routes}
 
-All routes are registered in \code{src/internal/handler/routes.go}.
+All backend REST endpoints are Next.js route handlers under
+\file{apps/backend/src/app/api/}. The frontend is a standard Next.js
+App Router application; its pages are not listed here.
+
 The \textbf{Role} column uses the following abbreviations:
 
 \begin{itemize}
   \item \textbf{public} — no authentication required
-  \item \textbf{auth} — any authenticated user
-  \item \textbf{admin} — role \code{admin} or higher
+  \item \textbf{auth} — any authenticated user (any role)
+  \item \textbf{admin} — role \code{admin} or \code{root}
   \item \textbf{root} — role \code{root} only
 \end{itemize}
 
@@ -4193,113 +3785,94 @@ The \textbf{Role} column uses the following abbreviations:
   \midrule
   \endhead
 
-  \multicolumn{4}{@{}l}{\textit{Authentication}} \\[2pt]
-  GET  & \code{/login}                                              & Login page                              & public \\
-  POST & \code{/login}                                              & Submit credentials                      & public \\
-  GET  & \code{/auth/callback}                                      & OIDC / Entra ID callback                & public \\
-  POST & \code{/logout}                                             & Destroy session                         & auth \\
-  POST & \code{/lang}                                               & Switch UI language                      & auth \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Authentication \& Health}} \\[2pt]
+  POST & \code{/api/auth/login}                                      & Issue JWT from credentials              & public \\
+  GET  & \code{/api/auth/me}                                         & Return caller profile                   & auth \\
+  POST & \code{/api/auth/logout}                                     & Stateless no-op (client discards JWT)   & auth \\
+  GET  & \code{/api/health}                                          & Health check + bootstrap trigger        & public \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{General (any authenticated user)}} \\[2pt]
-  GET  & \code{/}                                                   & Home / dashboard                        & auth \\
-  GET  & \code{/catalog}                                            & Product catalog                         & auth \\
-  GET  & \code{/catalog/\{id\}}                                     & Product detail page                     & auth \\
-  GET  & \code{/products/\{id\}/image}                              & Serve product image                     & auth \\
-  GET  & \code{/branding/logo}                                      & Serve shop logo                         & auth \\
-  GET  & \code{/impressum}                                          & Imprint page                            & auth \\
-  GET  & \code{/settings/profile}                                   & Profile \& password change              & auth \\
-  POST & \code{/settings/profile}                                   & Save profile / new password             & auth \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Catalog}} \\[2pt]
+  GET  & \code{/api/catalog}                                         & List products by category               & auth \\
+  GET  & \code{/api/catalog/\{id\}}                                  & Product detail with environments        & auth \\
+  GET  & \code{/api/catalog/\{id\}/image}                            & Serve product image (BYTEA)             & auth \\
+  POST & \code{/api/catalog/\{id\}/order}                            & Place an order                          & auth \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Orders}} \\[2pt]
-  GET  & \code{/orders}                                             & My orders list                          & auth \\
-  GET  & \code{/orders/new}                                         & New order form                          & auth \\
-  POST & \code{/orders/new}                                         & Submit order                            & auth \\
-  GET  & \code{/orders/\{id\}}                                      & Order detail / status                   & auth \\[6pt]
+  GET  & \code{/api/orders}                                          & List orders (role-scoped)               & auth \\
+  GET  & \code{/api/orders/\{id\}}                                   & Order detail                            & auth \\
+  POST & \code{/api/orders/\{id\}/approve}                           & Approve order and trigger pipeline      & admin \\
+  POST & \code{/api/orders/\{id\}/reject}                            & Reject order with mandatory note        & admin \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Projects}} \\[2pt]
-  GET  & \code{/projects}                                           & Projects list                           & auth \\
-  GET  & \code{/projects/new}                                       & New project form                        & auth \\
-  POST & \code{/projects/new}                                       & Create project                          & auth \\
-  GET  & \code{/projects/\{id\}}                                    & Project detail                          & auth \\
-  POST & \code{/projects/\{id\}}                                    & Update project                          & auth \\
-  POST & \code{/projects/\{id\}/delete}                             & Delete project                          & auth \\[6pt]
+  GET  & \code{/api/projects}                                        & List projects (role-scoped)             & auth \\
+  POST & \code{/api/projects}                                        & Create project                          & auth \\
+  GET  & \code{/api/projects/\{id\}}                                 & Project detail                          & auth \\
+  PUT  & \code{/api/projects/\{id\}}                                 & Update project                          & auth \\
+  DELETE & \code{/api/projects/\{id\}}                               & Delete project + cascade decommission   & auth \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Infrastructure}} \\[2pt]
-  GET  & \code{/infrastructure}                                     & Infrastructure overview                 & auth \\
-  POST & \code{/infrastructure/\{id\}/decommission}                 & Trigger decommissioning                 & auth \\[6pt]
+  GET  & \code{/api/infrastructure}                                  & Infrastructure overview (role-scoped)   & auth \\
+  GET  & \code{/api/infrastructure/\{id\}}                           & Infrastructure element detail           & auth \\
+  POST & \code{/api/infrastructure/\{id\}/decommission}              & Trigger destroy pipeline                & auth \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Approvals \& Audit (role: admin)}} \\[2pt]
-  GET  & \code{/approvals}                                          & Approval queue                          & admin \\
-  POST & \code{/approvals/\{id\}/approve}                           & Approve order                           & admin \\
-  POST & \code{/approvals/\{id\}/reject}                            & Reject order with note                  & admin \\
-  GET  & \code{/audit}                                              & Audit log viewer                        & admin \\
-  GET  & \code{/audit/export}                                       & Export audit log (PDF)                  & admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — Users (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/users}                                     & User list                               & root \\
+  POST & \code{/api/admin/users}                                     & Create user                             & root \\
+  PUT  & \code{/api/admin/users/\{id\}}                              & Update user                             & root \\
+  DELETE & \code{/api/admin/users/\{id\}}                            & Delete user                             & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Categories (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin}                                              & Admin dashboard                         & shop\_admin \\
-  GET  & \code{/admin/categories}                                   & Category list                           & shop\_admin \\
-  POST & \code{/admin/categories}                                   & Create category                         & shop\_admin \\
-  POST & \code{/admin/categories/\{id\}/delete}                     & Delete category                         & shop\_admin \\
-  GET  & \code{/admin/categories/\{id\}/parameters}                 & Category-level parameters               & shop\_admin \\
-  POST & \code{/admin/categories/\{id\}/parameters}                 & Add category parameter                  & shop\_admin \\
-  POST & \code{/admin/categories/\{id\}/parameters/\{pid\}/delete}  & Delete category parameter               & shop\_admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — Catalog (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/categories}                                & Category list                           & root \\
+  POST & \code{/api/admin/categories}                                & Create category                         & root \\
+  PUT  & \code{/api/admin/categories/\{id\}}                         & Update category                         & root \\
+  DELETE & \code{/api/admin/categories/\{id\}}                       & Delete category + cascade               & root \\
+  GET  & \code{/api/admin/products}                                  & Product list                            & root \\
+  POST & \code{/api/admin/products}                                  & Create product                          & root \\
+  GET  & \code{/api/admin/products/\{id\}}                           & Product detail (admin view)             & root \\
+  PUT  & \code{/api/admin/products/\{id\}}                           & Update product                          & root \\
+  DELETE & \code{/api/admin/products/\{id\}}                         & Delete product + cascade                & root \\
+  PUT  & \code{/api/admin/products/\{id\}/image}                     & Upload product image                    & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Products (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin/products}                                     & Product list                            & shop\_admin \\
-  GET  & \code{/admin/products/new}                                 & New product form                        & shop\_admin \\
-  POST & \code{/admin/products/new}                                 & Create product                          & shop\_admin \\
-  GET  & \code{/admin/products/\{id\}}                              & Edit product                            & shop\_admin \\
-  POST & \code{/admin/products/\{id\}}                              & Update product                          & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/delete}                       & Delete product                          & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/translate}                    & Trigger AI translation                  & shop\_admin \\
-  GET  & \code{/admin/products/\{id\}/image}                        & Image upload page                       & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/image}                        & Upload product image                    & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/environments}                 & Link product to environment             & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/parameters}                   & Add product parameter                   & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/parameters/delete-all}        & Delete all product parameters           & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/parameters/\{pid\}/delete}    & Delete single product parameter         & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/webhooks}                     & Add product webhook                     & shop\_admin \\
-  POST & \code{/admin/products/\{id\}/webhooks/\{wid\}/delete}      & Delete product webhook                  & shop\_admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — Environments \& CI Sources (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/environments}                              & Deployment environment list             & root \\
+  POST & \code{/api/admin/environments}                              & Create environment                      & root \\
+  PUT  & \code{/api/admin/environments/\{id\}}                       & Update environment                      & root \\
+  DELETE & \code{/api/admin/environments/\{id\}}                     & Delete environment                      & root \\
+  GET  & \code{/api/admin/ci-sources}                                & CI source list                          & root \\
+  POST & \code{/api/admin/ci-sources}                                & Create CI source                        & root \\
+  PUT  & \code{/api/admin/ci-sources/\{id\}}                         & Update CI source                        & root \\
+  DELETE & \code{/api/admin/ci-sources/\{id\}}                       & Delete CI source                        & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Environments, Sources, Cost Centers (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin/environments}                                 & Deployment environment list             & shop\_admin \\
-  POST & \code{/admin/environments}                                 & Create environment                      & shop\_admin \\
-  POST & \code{/admin/environments/\{id\}/delete}                   & Delete environment                      & shop\_admin \\
-  GET  & \code{/admin/sources}                                      & GitLab sources list                     & shop\_admin \\
-  POST & \code{/admin/sources}                                      & Create GitLab source                    & shop\_admin \\
-  POST & \code{/admin/sources/\{id\}/delete}                        & Delete GitLab source                    & shop\_admin \\
-  GET  & \code{/admin/costcenters}                                  & Cost center list                        & shop\_admin \\
-  POST & \code{/admin/costcenters}                                  & Create cost center                      & shop\_admin \\
-  POST & \code{/admin/costcenters/\{id\}/delete}                    & Delete cost center                      & shop\_admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — CI Repository Browser (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/ci/projects}                               & Browse CI provider projects             & root \\
+  GET  & \code{/api/admin/ci/branches}                               & Browse branches in a project            & root \\
+  GET  & \code{/api/admin/ci/files}                                  & Browse files in a project               & root \\
+  POST & \code{/api/admin/ci/import-vars}                            & Import vars from \code{variables.tf}    & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Users (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin/users}                                        & User list                               & shop\_admin \\
-  POST & \code{/admin/users}                                        & Create user                             & shop\_admin \\
-  GET  & \code{/admin/users/\{id\}/edit}                            & Edit user form                          & shop\_admin \\
-  POST & \code{/admin/users/\{id\}/edit}                            & Save user changes                       & shop\_admin \\
-  POST & \code{/admin/users/\{id\}/deactivate}                      & Deactivate user                         & shop\_admin \\
-  POST & \code{/admin/users/\{id\}/delete}                          & Delete user                             & shop\_admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — Cost Centers (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/cost-centers}                              & Cost center list                        & root \\
+  POST & \code{/api/admin/cost-centers}                              & Create cost center                      & root \\
+  PUT  & \code{/api/admin/cost-centers/\{id\}}                       & Update cost center                      & root \\
+  DELETE & \code{/api/admin/cost-centers/\{id\}}                     & Delete cost center                      & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Parameters, Currencies, GitLab (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin/parameters}                                   & Global parameter list                   & shop\_admin \\
-  POST & \code{/admin/parameters}                                   & Create global parameter                 & shop\_admin \\
-  POST & \code{/admin/parameters/\{id\}/delete}                     & Delete global parameter                 & shop\_admin \\
-  GET  & \code{/admin/currencies}                                   & Exchange rate management                & shop\_admin \\
-  POST & \code{/admin/currencies/refresh}                           & Refresh exchange rates                  & shop\_admin \\
-  GET  & \code{/admin/gitlab/projects}                              & Browse GitLab projects (AJAX)           & shop\_admin \\
-  GET  & \code{/admin/gitlab/branches}                              & Browse GitLab branches (AJAX)           & shop\_admin \\
-  GET  & \code{/admin/gitlab/files}                                 & Browse GitLab files (AJAX)              & shop\_admin \\
-  POST & \code{/admin/gitlab/import-vars}                           & Import variables from \code{.tf} file   & shop\_admin \\[6pt]
+  \multicolumn{4}{@{}l}{\textit{Admin — Configuration (role: root)}} \\[2pt]
+  GET  & \code{/api/admin/branding}                                  & Get branding settings                   & root \\
+  PUT  & \code{/api/admin/branding}                                  & Update branding settings                & root \\
+  GET  & \code{/api/admin/branding/logo}                             & Serve branding logo (BYTEA)             & root \\
+  PUT  & \code{/api/admin/branding/logo}                             & Upload branding logo                    & root \\
+  GET  & \code{/api/admin/config}                                    & Get app config (SMTP, exchange)         & root \\
+  PUT  & \code{/api/admin/config/smtp}                               & Update SMTP config                      & root \\
+  PUT  & \code{/api/admin/config/exchange}                           & Update exchange rate API config         & root \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Admin — Configuration (role: shop\_admin)}} \\[2pt]
-  GET  & \code{/admin/smtp}                                         & SMTP configuration                      & shop\_admin \\
-  POST & \code{/admin/smtp}                                         & Save SMTP settings                      & shop\_admin \\
-  GET  & \code{/admin/ai-config}                                    & AI translation configuration            & shop\_admin \\
-  POST & \code{/admin/ai-config}                                    & Save AI configuration                   & shop\_admin \\
-  GET  & \code{/admin/branding}                                     & Shop branding                           & shop\_admin \\
-  POST & \code{/admin/branding}                                     & Save branding settings                  & shop\_admin \\
+  \multicolumn{4}{@{}l}{\textit{Admin — Audit (role: admin)}} \\[2pt]
+  GET  & \code{/api/admin/audit}                                     & Paginated audit log                     & admin \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{CI Provider Webhooks (inbound, token-authenticated)}} \\[2pt]
+  POST & \code{/api/webhooks/gitlab/pipeline}                        & GitLab pipeline status event            & public \\
+  POST & \code{/api/webhooks/github/pipeline}                        & GitHub Actions workflow event           & public \\
+  POST & \code{/api/webhooks/bitbucket/pipeline}                     & Bitbucket pipeline status event         & public \\
   \bottomrule
-  \caption{Complete HTTP route reference}
+  \caption{Complete REST API route reference}
   \label{tab:routes}
 \end{longtable}
 
@@ -4316,81 +3889,76 @@ it.
   \textbf{ID} & \textbf{Requirement} & \textbf{Implementation} & \textbf{Section} \\
   \midrule
   \endhead
-  FA-01 & User authentication (local + SSO) &
-    \file{internal/service/impl/user.go}, \file{internal/handler/auth.go} &
+  FA-01 & User authentication (local credentials + JWT) &
+    \file{apps/backend/src/app/api/auth/login/route.ts},
+    \file{apps/backend/src/lib/auth/} &
     \S\ref{ch:users} \\
-  FA-02 & Role-based access control (admin, user, pm) &
-    \file{internal/middleware/auth.go}, \file{internal/model/user.go} &
+  FA-02 & Role-based access control (admin, root, project\_manager) &
+    \file{apps/backend/src/lib/auth/middleware.ts} &
     \S\ref{ch:users} \\
   FA-03 & Product catalog with categories &
-    \file{internal/handler/catalog.go} &
+    \file{apps/backend/src/app/api/catalog/} &
     \S\ref{ch:ordering} \\
   FA-04 & Configurable product parameters &
-    \file{internal/model/parameter.go}, admin UI &
+    \file{apps/backend/src/lib/db/schema.ts} (\code{parameters} table) &
     \S\ref{sec:step5} \\
-  FA-05 & Shopping-cart order flow &
-    \file{internal/handler/order.go} &
+  FA-05 & Order placement flow &
+    \file{apps/backend/src/app/api/catalog/[id]/order/route.ts} &
     \S\ref{ch:ordering} \\
   FA-06 & Order approval workflow &
-    \file{internal/handler/approval.go} &
+    \file{apps/backend/src/app/api/orders/[id]/approve/route.ts} &
     \S\ref{ch:ordering} \\
-  FA-07 & GitLab webhook trigger &
-    \file{internal/service/impl/pipeline.go} &
+  FA-07 & CI provider webhook trigger (GitLab / GitHub / Bitbucket) &
+    \file{apps/backend/src/lib/ci/index.ts} &
     \S\ref{sec:webhook} \\
-  FA-08 & Pipeline status polling &
-    \file{internal/polling/}, \file{internal/service/impl/pipeline.go} &
+  FA-08 & Inbound pipeline status via CI webhooks (no polling) &
+    \file{apps/backend/src/app/api/webhooks/[provider]/pipeline/route.ts},
+    \file{apps/backend/src/lib/webhook/handler.ts} &
     \S\ref{sec:webhook} \\
   FA-09 & Infrastructure overview &
-    \file{internal/handler/infrastructure.go} &
+    \file{apps/backend/src/app/api/infrastructure/} &
     \S\ref{sec:infra-overview} \\
   FA-10 & Decommission (destroy) flow &
-    \file{internal/handler/infrastructure.go} &
+    \file{apps/backend/src/app/api/infrastructure/[id]/decommission/route.ts} &
     \S\ref{sec:decommission} \\
   FA-09.5--9.8 & Cascade decommission on project/product/category delete &
-    \file{internal/service/impl/infrastructure.go} &
+    \file{apps/backend/src/app/api/projects/[id]/route.ts} &
     \S\ref{sec:decommission} \\
   FA-11 & Audit log &
-    \file{internal/audit/}, \file{internal/handler/audit.go} &
+    \file{apps/backend/src/app/api/admin/audit/route.ts} &
     \S\ref{ch:audit} \\
-  FA-12 & AI-powered product translation &
-    \file{internal/service/impl/translation.go} &
-    \S\ref{sec:aitranslation} \\
   FA-13 & Multi-currency support &
-    \file{internal/service/impl/currency.go} &
+    \file{apps/backend/src/lib/db/schema.ts} (\code{exchange\_rates}),
+    \file{apps/backend/src/app/api/admin/config/exchange/} &
     \S\ref{sec:currencies} \\
   FA-14 & Branding configuration &
-    \file{internal/handler/admin.go}, \file{internal/model/branding.go} &
+    \file{apps/backend/src/app/api/admin/branding/} &
     \S\ref{sec:branding} \\
   \midrule
-  NFA-01.1 & Docker deployment &
-    \file{Dockerfile}, \file{infra/docker-host/} &
+  NFA-01.1 & Docker deployment (two containers) &
+    \file{apps/backend/Dockerfile}, \file{apps/frontend/Dockerfile},
+    \file{infra/docker-compose.yml} &
     \S\ref{sec:docker-deploy} \\
   NFA-01.2 & Kubernetes deployment &
-    \file{infra/helm/open-hybrid-cloud/} manifests &
+    \file{infra/helm/open-hybrid-cloud/} &
     \S\ref{sec:k8s-deploy} \\
-  NFA-01.3 & Single binary (embed.FS) &
-    \file{cmd/server/main.go}, \code{//go:embed} directives &
+  NFA-01.3 & Schema management via Drizzle ORM &
+    \file{apps/backend/src/lib/db/schema.ts}, \code{make db-push} &
     \S\ref{ch:design} \\
-  NFA-01.4 & Database migrations at startup &
-    \file{cmd/migrate/main.go}, \file{internal/migrations/} &
-    \S\ref{sec:dbmigrations} \\
   NFA-02.1 & HTTPS enforcement &
     Nginx config (reverse proxy, TLS termination) &
     \S\ref{sec:docker-deploy} \\
-  NFA-02.2 & Secure session cookies &
-    \file{internal/session/}, AES-GCM encrypted HttpOnly cookies &
+  NFA-02.2 & JWT authentication (HS256, 24 h) &
+    \file{apps/backend/src/lib/auth/jwt.ts}, \code{jose} library &
     \S\ref{ch:design} \\
   NFA-02.3 & bcrypt password hashing &
-    \file{internal/service/impl/user.go} &
+    \file{apps/backend/src/app/api/auth/login/route.ts}, \code{bcryptjs} &
     \S\ref{ch:design} \\
-  NFA-02.4 & Role-enforced routes &
-    \file{internal/middleware/auth.go} &
+  NFA-02.4 & Role-enforced API routes &
+    \file{apps/backend/src/lib/auth/middleware.ts} &
     \S\ref{ch:users} \\
-  NFA-03 & 25-language i18n &
-    \file{internal/i18n/i18n.go} &
-    \S\ref{app:languages} \\
   NFA-04 & Audit trail for all state changes &
-    \file{internal/audit/service.go} &
+    \file{apps/backend/src/lib/db/schema.ts} (\code{audit\_log}) &
     \S\ref{ch:audit} \\
   \bottomrule
   \caption{Requirements traceability matrix}

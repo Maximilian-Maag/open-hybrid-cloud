@@ -31,8 +31,8 @@ services:
     image: axllent/mailpit
     container_name: ohc-mailpit
     ports:
-      - "1025:1025"   # SMTP
-      - "8025:8025"   # Web UI → http://localhost:8025
+      - "1026:1025"   # SMTP
+      - "8026:8025"   # Web UI → http://localhost:8025
     networks:
       - dev
 
@@ -58,7 +58,10 @@ services:
   # ── Architecture documentation ────────────────────────────────────────────────
 
   structurizr-lite:
-    image: structurizr/lite
+    # Pinned: the `latest` tag was replaced upstream with a deprecation-notice
+    # stub that exits immediately (Structurizr Lite is being sunset). Pin to
+    # the last working release until this is migrated to the successor tooling.
+    image: structurizr/lite:2025.11.08
     container_name: ohc-structurizr
     ports:
       - "8088:8080"   # Web UI → http://localhost:8088

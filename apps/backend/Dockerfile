@@ -36,7 +36,7 @@ ENV NODE_ENV=production
 COPY --from=builder /app/apps/backend/.next/standalone .
 COPY --from=builder /app/apps/backend/.next/static ./.next/static
 # Migration files are needed at runtime for the programmatic migrator
-COPY --from=builder /app/apps/backend/drizzle ./drizzle
+COPY --from=builder /app/drizzle ./drizzle
 
 EXPOSE 3001
 

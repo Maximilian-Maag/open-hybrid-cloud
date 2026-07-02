@@ -38,7 +38,7 @@ test.describe('Admin - CI Sources Management', () => {
     await expect(page.getByText(name)).toBeVisible({ timeout: 8000 })
 
     // --- Edit ---
-    const srcRow = page.locator('div').filter({ has: page.getByText(name) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).first()
+    const srcRow = page.locator('div').filter({ has: page.getByText(name) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).last()
     await srcRow.getByRole('button', { name: /^edit$/i }).click()
     const editDialog = page.locator('dialog[open]')
     const updatedName = `${name} Updated`
@@ -48,10 +48,11 @@ test.describe('Admin - CI Sources Management', () => {
     await expect(page.getByText(updatedName)).toBeVisible({ timeout: 8000 })
 
     // --- Delete ---
-    const updatedRow = page.locator('div').filter({ has: page.getByText(updatedName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).first()
+    const updatedRow = page.locator('div').filter({ has: page.getByText(updatedName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()
     await updatedRow.getByRole('button', { name: /^delete$/i }).click()
     await expect(page.getByRole('heading', { name: /delete ci source/i })).toBeVisible()
     await page.getByRole('button', { name: /^delete$/i }).last().click()
+    await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
     await expect(page.getByText(updatedName)).not.toBeVisible({ timeout: 8000 })
   })
 })

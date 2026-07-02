@@ -43,7 +43,7 @@ test.describe('Admin - User Management', () => {
     await expect(page.getByText(email)).toBeVisible({ timeout: 8000 })
 
     // --- Edit ---
-    const userRow = page.locator('div').filter({ has: page.getByText(email) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).first()
+    const userRow = page.locator('div').filter({ has: page.getByText(email) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).last()
     await userRow.getByRole('button', { name: /^edit$/i }).click()
     await expect(page.getByRole('heading', { name: /edit user/i })).toBeVisible()
     const updatedName = `E2E Updated ${ts}`
@@ -53,15 +53,16 @@ test.describe('Admin - User Management', () => {
     await expect(page.getByText(updatedName)).toBeVisible({ timeout: 8000 })
 
     // --- Deactivate ---
-    const updatedRow = page.locator('div').filter({ has: page.getByText(email) }).filter({ has: page.getByRole('button', { name: /deactivate/i }) }).first()
+    const updatedRow = page.locator('div').filter({ has: page.getByText(email) }).filter({ has: page.getByRole('button', { name: /deactivate/i }) }).last()
     await updatedRow.getByRole('button', { name: /deactivate/i }).click()
     await expect(updatedRow.getByRole('button', { name: /activate/i })).toBeVisible({ timeout: 5000 })
 
     // --- Delete ---
-    const rowForDelete = page.locator('div').filter({ has: page.getByText(email) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).first()
+    const rowForDelete = page.locator('div').filter({ has: page.getByText(email) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()
     await rowForDelete.getByRole('button', { name: /^delete$/i }).click()
     await expect(page.getByRole('heading', { name: /delete user/i })).toBeVisible()
     await page.getByRole('button', { name: /^delete$/i }).last().click()
+    await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
     await expect(page.getByText(email)).not.toBeVisible({ timeout: 8000 })
   })
 

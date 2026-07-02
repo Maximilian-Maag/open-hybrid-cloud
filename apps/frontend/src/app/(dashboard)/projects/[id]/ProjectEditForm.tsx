@@ -80,8 +80,9 @@ export function ProjectEditForm({ project, costCenters, token }: Props) {
           )}
           <Input label={t('name', lang)} value={name} onChange={(e) => setName(e.target.value)} required />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-slate-700">{t('description', lang)}</label>
+            <label htmlFor="project-description" className="text-sm font-medium text-slate-700">{t('description', lang)}</label>
             <textarea
+              id="project-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}

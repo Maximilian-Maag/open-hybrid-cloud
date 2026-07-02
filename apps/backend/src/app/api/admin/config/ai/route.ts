@@ -6,7 +6,7 @@ import { getAiConfig, updateAiConfig } from '@/lib/services/admin/config'
 
 const UpdateAiSchema = z.object({
   provider: z.enum(['claude', 'openai', 'azure_openai', 'ollama', 'localai']),
-  endpoint: z.string().min(1),
+  endpoint: z.string(),
   apiKey: z.string().optional(),
   model: z.string().min(1),
 })

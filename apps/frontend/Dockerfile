@@ -33,12 +33,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # standalone output bundles everything needed — just copy it
-COPY --from=builder /app/apps/frontend/.next/standalone .
-COPY --from=builder /app/apps/frontend/.next/static ./.next/static
+COPY --from=builder /app/apps/frontend/.next/standalone ./
+COPY --from=builder /app/apps/frontend/.next/static ./apps/frontend/.next/static
 
 EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-CMD ["node", "server.js"]
+CMD ["node", "apps/frontend/server.js"]

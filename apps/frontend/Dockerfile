@@ -36,9 +36,11 @@ ENV NODE_ENV=production
 COPY --from=builder /app/apps/frontend/.next/standalone/. .
 COPY --from=builder /app/apps/frontend/.next/static ./.next/static
 
+RUN ls -laR /app
+
 EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-CMD ["ls", "-laR", "/app"]
+CMD ["node", "server.js"]

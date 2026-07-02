@@ -38,9 +38,11 @@ COPY --from=builder /app/apps/backend/.next/static ./.next/static
 # Migration files are needed at runtime for the programmatic migrator
 COPY --from=builder /app/apps/backend/drizzle ./drizzle
 
+RUN ls -laR /app
+
 EXPOSE 3001
 
 ENV PORT=3001
 ENV HOSTNAME=0.0.0.0
 
-CMD ["ls", "-laR", "/app"]
+CMD ["node", "server.js"]

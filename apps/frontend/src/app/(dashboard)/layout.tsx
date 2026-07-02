@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
 import { TopNav } from '@/components/layout/TopNav'
-import type { Branding, Role } from '@open-hybrid-cloud/types'
+import type { Branding } from '@open-hybrid-cloud/types'
 import { getLang } from '@/lib/getLang'
 
 const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
@@ -14,12 +14,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // THIS IS THE CRITICAL FIX:
   // Validate the session and all its required properties safely.
   // If anything is missing, the session is invalid; redirect to login.
-  if (!session || !session.user || !session.apiToken || !(session.user as any).role) {
+  if (!session || !session.user || !session.apiToken || !session.user.role) {
     redirect('/login')
   }
 
   const token = session.apiToken
-  const role = (session.user as any).role as Role
+  const role = session.user.role
   const lang = await getLang()
 
   let branding: Branding = {

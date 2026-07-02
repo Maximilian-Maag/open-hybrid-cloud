@@ -42,8 +42,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     jwt({ token, user }) {
       if (user) {
         // Persist the user role and apiToken from the 'authorize' function into the JWT token.
-        token.role = (user as any).role
-        token.apiToken = (user as any).apiToken
+        const u = user as { role: Role; apiToken: string }
+        token.role = u.role
+        token.apiToken = u.apiToken
       }
       return token
     },
@@ -51,13 +52,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     // The 'session' callback is called next.
     // It uses the data from the JWT token to build the final session object passed to the client.
     session({ session, token }) {
-      // THIS IS THE CRITICAL FIX:
       // Ensure the user object exists on the session before modifying it.
       if (session.user) {
-        // Add the 'role' to the user object.
-        ;(session.user as any).role = token.role as Role | undefined
+        session.user.role = token.role as Role | undefined
       }
-      // Add the 'apiToken' to the top level of the session object.
       session.apiToken = token.apiToken as string | undefined
       return session
     },

@@ -33,30 +33,6 @@ export const runBootstrap = async (): Promise<void> => {
     console.warn(`[bootstrap] Default branding created.`)
   }
 
-  // Seed branding data if it does not exist
-  const brandingExists = await db.select({ id: branding.id }).from(branding).limit(1)
-  if (brandingExists.length === 0) {
-    await db.insert(branding).values({
-      shopName: 'Open Hybrid Cloud',
-      shopSubtitle: 'Self-Service Portal',
-      primaryColor: '#ca8a04',
-      secondaryColor: '#f5f5f4',
-    })
-    console.warn(`[bootstrap] Default branding created.`)
-  }
-
-  // Seed branding data if it does not exist
-  const brandingExists = await db.select({ id: branding.id }).from(branding).limit(1)
-  if (brandingExists.length === 0) {
-    await db.insert(branding).values({
-      shopName: 'Open Hybrid Cloud',
-      shopSubtitle: 'Self-Service Portal',
-      primaryColor: '#ca8a04',
-      secondaryColor: '#f5f5f4',
-    })
-    console.warn(`[bootstrap] Default branding created.`)
-  }
-
   const email = process.env.ADMIN_EMAIL
   const password = process.env.ADMIN_PASSWORD
 

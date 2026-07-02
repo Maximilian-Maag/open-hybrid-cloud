@@ -32,17 +32,18 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# standalone output bundles everything needed — just copy it
+# standalone output preserves the monorepo layout (apps/backend/server.js), and
+# server.js does `process.chdir(__dirname)` on startup — so static assets and the
+# drizzle migrations folder (resolved via process.cwd() at runtime) must be copied
+# to the same nested path, not to the image root.
 COPY --from=builder /app/apps/backend/.next/standalone/. .
-COPY --from=builder /app/apps/backend/.next/static ./.next/static
+COPY --from=builder /app/apps/backend/.next/static ./apps/backend/.next/static
 # Migration files are needed at runtime for the programmatic migrator
-COPY --from=builder /app/apps/backend/drizzle ./drizzle
-
-RUN ls -laR /app
+COPY --from=builder /app/apps/backend/drizzle ./apps/backend/drizzle
 
 EXPOSE 3001
 
 ENV PORT=3001
 ENV HOSTNAME=0.0.0.0
 
-CMD ["node", "server.js"]
+CMD ["node", "apps/backend/server.js"]

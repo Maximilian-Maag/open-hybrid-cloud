@@ -31,8 +31,8 @@ services:
     image: axllent/mailpit
     container_name: ohc-mailpit
     ports:
-      - "1025:1025"   # SMTP
-      - "8025:8025"   # Web UI → http://localhost:8025
+      - "1026:1025"   # SMTP
+      - "8026:8025"   # Web UI → http://localhost:8025
     networks:
       - dev
 

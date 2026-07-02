@@ -32,7 +32,7 @@ install:
 	$(PNPM) install
 
 dev:
-	docker compose -f infra/docker-compose.dev.yml up -d --wait
+	docker compose -f infra/docker-compose.dev.yml up -d
 
 dev-down:
 	docker compose -f infra/docker-compose.dev.yml down

@@ -79,7 +79,7 @@ describe('getAiConfig', () => {
     const result = await getAiConfig()
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.provider).toBe('')
+      expect(result.data.provider).toBe('claude')
       expect(result.data.endpoint).toBe('')
       expect(result.data.model).toBe('')
     }

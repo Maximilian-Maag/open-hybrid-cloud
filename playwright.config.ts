@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -28,6 +29,18 @@ export default defineConfig({
       dependencies: ['setup'],
     },
   ],
-  // Do not start servers automatically — run `make dev` and `pnpm dev` first
-  webServer: undefined,
+  webServer: [
+    {
+      command: 'pnpm --filter backend dev',
+      url: 'http://localhost:3001/api/health',
+      reuseExistingServer: true,
+      timeout: 180_000,
+    },
+    {
+      command: 'pnpm --filter frontend dev',
+      url: 'http://localhost:3000/api/ping',
+      reuseExistingServer: true,
+      timeout: 180_000,
+    },
+  ],
 })

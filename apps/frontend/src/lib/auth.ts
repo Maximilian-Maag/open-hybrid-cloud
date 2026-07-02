@@ -44,7 +44,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
     session({ session, token }) {
       session.apiToken = token['apiToken'] as string | undefined
-      session.user.role = token['role'] as Role | undefined
+      if (session.user) {
+        session.user.role = token['role'] as Role | undefined
+      }
       return session
     },
   },

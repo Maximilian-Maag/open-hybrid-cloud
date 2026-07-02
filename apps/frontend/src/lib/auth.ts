@@ -5,6 +5,7 @@ import type { LoginRequest, LoginResponse, Role } from '@open-hybrid-cloud/types
 const API_URL = process.env.API_URL ?? 'http://localhost:3001'
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
   providers: [
     Credentials({
       credentials: {

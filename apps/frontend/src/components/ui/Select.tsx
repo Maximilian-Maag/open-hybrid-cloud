@@ -1,4 +1,4 @@
-import type { SelectHTMLAttributes } from 'react'
+import { useId, type SelectHTMLAttributes } from 'react'
 
 interface SelectOption {
   value: string | number
@@ -21,7 +21,8 @@ export function Select({
   className = '',
   ...props
 }: SelectProps) {
-  const selectId = id ?? label.toLowerCase().replace(/\s+/g, '-')
+  const generatedId = useId()
+  const selectId = id ?? generatedId
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={selectId} className="text-sm font-medium text-slate-700">

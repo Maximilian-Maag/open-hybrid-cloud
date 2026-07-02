@@ -33,7 +33,7 @@ test.describe('Admin - Category Management', () => {
     await expect(page.getByText(catName)).toBeVisible({ timeout: 8000 })
 
     // --- Edit ---
-    const catRow = page.locator('div').filter({ has: page.getByText(catName) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).first()
+    const catRow = page.locator('div').filter({ has: page.getByText(catName) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).last()
     await catRow.getByRole('button', { name: /^edit$/i }).click()
     await expect(page.getByRole('heading', { name: /edit category/i })).toBeVisible()
     const updatedName = `${catName} Updated`
@@ -43,10 +43,11 @@ test.describe('Admin - Category Management', () => {
     await expect(page.getByText(updatedName)).toBeVisible({ timeout: 8000 })
 
     // --- Delete ---
-    const updatedRow = page.locator('div').filter({ has: page.getByText(updatedName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).first()
+    const updatedRow = page.locator('div').filter({ has: page.getByText(updatedName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()
     await updatedRow.getByRole('button', { name: /^delete$/i }).click()
     await expect(page.getByRole('heading', { name: /delete category/i })).toBeVisible()
     await page.getByRole('button', { name: /^delete$/i }).last().click()
+    await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
     await expect(page.getByText(updatedName)).not.toBeVisible({ timeout: 8000 })
   })
 

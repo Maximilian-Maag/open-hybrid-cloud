@@ -24,7 +24,6 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: 9
           run_install: false
 
       - name: Get pnpm store path
@@ -87,7 +86,6 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: 9
           run_install: false
 
       - name: Get pnpm store path
@@ -128,7 +126,6 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: 9
           run_install: false
 
       - name: Get pnpm store path
@@ -201,7 +198,6 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: 9
           run_install: false
 
       - name: Get pnpm store path
@@ -220,28 +216,6 @@ jobs:
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
-
-      - name: Build backend
-        run: pnpm --filter backend build
-
-      - name: Build frontend
-        run: pnpm --filter frontend build
-
-      - name: Start backend
-        run: pnpm --filter backend start &
-
-      - name: Start frontend
-        run: pnpm --filter frontend start &
-
-      - name: Wait for backend health
-        run: |
-          timeout 60 bash -c \
-            'until curl -sf http://localhost:3001/api/health; do sleep 2; done'
-
-      - name: Wait for frontend
-        run: |
-          timeout 60 bash -c \
-            'until curl -sf http://localhost:3000; do sleep 2; done'
 
       - name: Run E2E tests
         run: pnpm exec playwright test

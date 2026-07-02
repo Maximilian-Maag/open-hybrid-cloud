@@ -142,7 +142,7 @@ test.describe('Admin - Internationalization', () => {
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^DE$/ }) }).click()
 
     // After switching, the catalog nav link changes from "Catalog" to "Katalog"
-    await expect(page.getByRole('link', { name: /katalog/i })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('link', { name: 'Katalog', exact: true })).toBeVisible({ timeout: 5000 })
 
     // Switch back to English
     await page.getByRole('button', { name: /language/i }).click()
@@ -157,11 +157,11 @@ test.describe('Admin - Internationalization', () => {
     // Switch to German
     await page.getByRole('button', { name: /language/i }).click()
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^DE$/ }) }).click()
-    await expect(page.getByRole('link', { name: /katalog/i })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('link', { name: 'Katalog', exact: true })).toBeVisible({ timeout: 5000 })
 
     // Reload the page — lang cookie should persist the language
     await page.reload()
-    await expect(page.getByRole('link', { name: /katalog/i })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('link', { name: 'Katalog', exact: true })).toBeVisible({ timeout: 5000 })
 
     // Switch back to English
     await page.getByRole('button', { name: /language/i }).click()

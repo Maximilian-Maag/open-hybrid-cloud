@@ -69,7 +69,7 @@ test.describe('Admin - AI Configuration', () => {
   test('AI provider dropdown has expected options', async ({ page }) => {
     const providerSelect = page.getByLabel(/provider/i)
     await expect(providerSelect.locator('option', { hasText: /claude|anthropic/i })).toBeAttached()
-    await expect(providerSelect.locator('option', { hasText: 'OpenAI' })).toBeAttached()
+    await expect(providerSelect.locator('option', { hasText: /^OpenAI$/ })).toBeAttached()
     await expect(providerSelect.locator('option', { hasText: /ollama/i })).toBeAttached()
   })
 

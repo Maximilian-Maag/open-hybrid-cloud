@@ -33,7 +33,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # standalone output bundles everything needed — just copy it
-COPY --from=builder /app/apps/frontend/.next/standalone .
+COPY --from=builder /app/apps/frontend/.next/standalone/. .
 COPY --from=builder /app/apps/frontend/.next/static ./.next/static
 
 EXPOSE 3000

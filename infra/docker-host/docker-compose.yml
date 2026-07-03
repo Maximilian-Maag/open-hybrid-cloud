@@ -18,8 +18,10 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro
     depends_on:
-      - frontend
-      - backend
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── Frontend (Next.js UI) ──────────────────────────────────────────────────────
@@ -34,10 +36,23 @@ services:
       # Server-side URL for frontend → backend communication (internal network)
       API_URL: "http://backend:3001"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     labels:
       com.centurylinklabs.watchtower.enable: "true"
     restart: unless-stopped
+    # node:22-alpine has no curl — busybox wget is what's actually available.
+    healthcheck:
+      # 127.0.0.1, not localhost: this image's `localhost` resolves to ::1, but
+      # the server only binds the IPv4 0.0.0.0 (HOSTNAME=0.0.0.0 above).
+      # /api/ping, not /: unauthenticated requests to / redirect to NEXTAUTH_URL
+      # (https://<public-domain>/login) and wget follows redirects, so it would
+      # hit the same ::1 problem again trying to reach the *public* origin.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # ── Backend (Next.js API) ──────────────────────────────────────────────────────
   backend:
@@ -70,6 +85,14 @@ services:
     labels:
       com.centurylinklabs.watchtower.enable: "true"
     restart: unless-stopped
+    healthcheck:
+      # 127.0.0.1, not localhost: this image's `localhost` resolves to ::1, but
+      # the server only binds the IPv4 0.0.0.0 (HOSTNAME=0.0.0.0 above).
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # ── Database ───────────────────────────────────────────────────────────────────
   postgres:

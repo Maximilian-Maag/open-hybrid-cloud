@@ -8,5 +8,5 @@ node_modules
 docs
 e2e
 infra
-.env*
+**/.env*
 *.log

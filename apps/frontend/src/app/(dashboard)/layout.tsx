@@ -3,17 +3,23 @@ import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
 import { TopNav } from '@/components/layout/TopNav'
-import type { Branding, Role } from '@open-hybrid-cloud/types'
+import type { Branding } from '@open-hybrid-cloud/types'
 import { getLang } from '@/lib/getLang'
 
 const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
-  if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
-  const role = (session.user as unknown as { role: Role }).role
+  // THIS IS THE CRITICAL FIX:
+  // Validate the session and all its required properties safely.
+  // If anything is missing, the session is invalid; redirect to login.
+  if (!session || !session.user || !session.apiToken || !session.user.role) {
+    redirect('/login')
+  }
+
+  const token = session.apiToken
+  const role = session.user.role
   const lang = await getLang()
 
   let branding: Branding = {
@@ -77,15 +83,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
               © {shopName}{shopSubtitle ? ` — ${shopSubtitle}` : ''}
             </span>
             <div className="flex gap-4">
-              <Link href="/catalog" className="text-white/60 text-xs hover:text-white transition-colors">
-                Catalog
-              </Link>
-              <Link href="/orders" className="text-white/60 text-xs hover:text-white transition-colors">
-                Orders
-              </Link>
-              <Link href="/impressum" className="text-white/60 text-xs hover:text-white transition-colors">
-                Imprint
-              </Link>
+              <Link href="/catalog" className="text-white/60 text-xs hover:text-white transition-colors">Catalog</Link>
+              <Link href="/orders" className="text-white/60 text-xs hover:text-white transition-colors">Orders</Link>
+              <Link href="/impressum" className="text-white/60 text-xs hover:text-white transition-colors">Imprint</Link>
             </div>
           </div>
         </footer>

@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { db } from '@/lib/db/client'
-import { users } from '@/lib/db/schema'
+import { users, branding } from '@/lib/db/schema'
 import bcrypt from 'bcryptjs'
 
 let bootstrapped = false
@@ -19,6 +19,18 @@ export const runBootstrap = async (): Promise<void> => {
       bootstrapped = false
       throw err
     }
+  }
+
+  // Seed branding data if it does not exist
+  const brandingExists = await db.select({ id: branding.id }).from(branding).limit(1)
+  if (brandingExists.length === 0) {
+    await db.insert(branding).values({
+      shopName: 'Open Hybrid Cloud',
+      shopSubtitle: 'Self-Service Portal',
+      primaryColor: '#ca8a04',
+      secondaryColor: '#f5f5f4',
+    })
+    console.warn(`[bootstrap] Default branding created.`)
   }
 
   const email = process.env.ADMIN_EMAIL

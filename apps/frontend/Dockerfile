@@ -32,8 +32,10 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# standalone output bundles everything needed — just copy it
-COPY --from=builder /app/apps/frontend/.next/standalone ./
+# standalone output preserves the monorepo layout (apps/frontend/server.js), and
+# server.js does `process.chdir(__dirname)` on startup — so static assets must be
+# copied to the same nested path, not to the image root.
+COPY --from=builder /app/apps/frontend/.next/standalone/. .
 COPY --from=builder /app/apps/frontend/.next/static ./apps/frontend/.next/static
 
 EXPOSE 3000

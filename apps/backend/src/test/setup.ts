@@ -13,6 +13,7 @@ const TABLES = [
   schema.auditLog,
   schema.infrastructureElements,
   schema.orders,
+  schema.pipelineStacks,
   schema.productWebhooks,
   schema.productEnvironments,
   schema.parameters,
@@ -103,6 +104,16 @@ beforeAll(async () => {
       webhook_url TEXT NOT NULL,
       webhook_token TEXT NOT NULL,
       exec_order INT NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS pipeline_stacks (
+      id BIGSERIAL PRIMARY KEY,
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      webhook_url TEXT NOT NULL,
+      webhook_token TEXT NOT NULL,
+      state_key_param TEXT NOT NULL DEFAULT 'hostname',
+      steps JSONB NOT NULL DEFAULT '[]'
     );
     CREATE TABLE IF NOT EXISTS cost_centers (
       id BIGSERIAL PRIMARY KEY,

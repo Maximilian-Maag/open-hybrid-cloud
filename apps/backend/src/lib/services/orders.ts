@@ -9,7 +9,7 @@ import {
 import { eq, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
 
@@ -154,10 +154,10 @@ export const createOrder = async (
       })
       .returning()
 
-    const pipelineIds = await triggerProductWebhooks(productId, environmentId, {
-      ...parameters,
-      ORDER_ID: String(order.id),
-    })
+    const triggerVars = { ...parameters, ORDER_ID: String(order.id) }
+    const webhookIds = await triggerProductWebhooks(productId, environmentId, triggerVars)
+    const stackIds = await triggerPipelineStacks(productId, environmentId, triggerVars)
+    const pipelineIds = [...webhookIds, ...stackIds]
 
     if (pipelineIds.length > 0) {
       await db.update(orders).set({ pipelineId: pipelineIds }).where(eq(orders.id, order.id))

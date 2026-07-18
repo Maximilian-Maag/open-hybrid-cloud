@@ -97,6 +97,17 @@ export const productWebhooks = pgTable('product_webhooks', {
   execOrder: integer('exec_order').notNull().default(0),
 })
 
+export const pipelineStacks = pgTable('pipeline_stacks', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
+  environmentId: bigint('environment_id', { mode: 'number' }).notNull().references(() => deploymentEnvironments.id, { onDelete: 'cascade' }),
+  name: text().notNull(),
+  webhookUrl: text('webhook_url').notNull(),
+  webhookToken: text('webhook_token').notNull(),
+  stateKeyParam: text('state_key_param').notNull().default('hostname'),
+  steps: jsonb().$type<import('@open-hybrid-cloud/types').StackStep[]>().notNull().default([]),
+})
+
 export const costCenters = pgTable('cost_centers', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   code: text().notNull().unique(),
@@ -191,6 +202,7 @@ export type CiSource = typeof ciSources.$inferSelect
 export type DeploymentEnvironment = typeof deploymentEnvironments.$inferSelect
 export type ProductEnvironment = typeof productEnvironments.$inferSelect
 export type ProductWebhook = typeof productWebhooks.$inferSelect
+export type PipelineStack = typeof pipelineStacks.$inferSelect
 export type CostCenter = typeof costCenters.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type Order = typeof orders.$inferSelect

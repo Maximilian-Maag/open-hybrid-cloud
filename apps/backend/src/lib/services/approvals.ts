@@ -10,7 +10,7 @@ import {
 import { eq, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { sendOrderApproved, sendOrderRejected } from '@/lib/notification'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { findProductName, findUserEmail } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
 
@@ -83,14 +83,10 @@ export const approveOrder = async (
   const order = orderRows[0]
   if (order.status !== 'pending') return err(400, 'Order is not pending')
 
-  const pipelineIds = await triggerProductWebhooks(
-    order.productId,
-    order.environmentId,
-    {
-      ...(order.parameters as Record<string, string>),
-      ORDER_ID: String(order.id),
-    },
-  )
+  const triggerVars = { ...(order.parameters as Record<string, string>), ORDER_ID: String(order.id) }
+  const webhookIds = await triggerProductWebhooks(order.productId, order.environmentId, triggerVars)
+  const stackIds = await triggerPipelineStacks(order.productId, order.environmentId, triggerVars)
+  const pipelineIds = [...webhookIds, ...stackIds]
 
   await db
     .update(orders)

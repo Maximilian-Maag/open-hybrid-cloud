@@ -9,12 +9,14 @@ This guide explains how to set up the GitLab CI/CD side of the infrastructure wo
 ```
 Portal                          GitLab CI                         Cloud Provider
 ──────                          ─────────                         ──────────────
-Order approved          ──►     POST /trigger/pipeline
+Order approved          ──►     POST /infra-templates/trigger/pipeline
+                                  TEMPLATE=linode/virtual-machine
+                                  TF_STATE_NAME=web-01  TF_ACTION=apply
                         ◄──     {"id": 5678, "status": "pending"}
-                                  │
+                                  │  entry pipeline dispatches to template
                                   ├─ validate
-                                  ├─ plan  (tofu plan -out=plan.tfplan)
-                                  └─ apply (tofu apply plan.tfplan)   ──►  VM + DNS created
+                                  ├─ plan  (tofu plan -out=tfplan)
+                                  └─ apply (tofu apply tfplan)   ──►  VM created
                                   │
                         ◄──     POST /api/webhooks/gitlab/pipeline
                                   {"status": "success", "pipeline_id": 5678}
@@ -22,9 +24,11 @@ Order → completed
 OpenTofu outputs stored
 E-mail sent to user
 
-Decommission request    ──►     POST /trigger/pipeline (DESTROY=true)
+Decommission request    ──►     POST /infra-templates/trigger/pipeline
+                                  TEMPLATE=linode/virtual-machine
+                                  TF_STATE_NAME=web-01  TF_ACTION=destroy
                         ◄──     {"id": 5699}
-                                  └─ apply (tofu destroy)             ──►  VM deleted
+                                  └─ apply (tofu plan -destroy → tofu apply) ──►  VM deleted
                         ◄──     POST /api/webhooks/gitlab/pipeline
                                   {"status": "success", "pipeline_id": 5699}
 Order → decommissioned
@@ -35,103 +39,73 @@ E-mail sent to user
 
 ## Repository Structure
 
-Organise infrastructure repositories by lifecycle / platform, not by individual resource type. Each repository manages one business object end-to-end (VM, DNS record, firewall rule).
+All IaC code lives in a single repository, `infra-templates`. It contains reusable OpenTofu modules and deployable product templates. The portal triggers the entry pipeline with a `TEMPLATE` variable; the entry pipeline dispatches to the child pipeline for the named template inside the same repo.
 
-| Repository | Manages | Examples |
-|---|---|---|
-| `infra/vm-platform` | Virtual machines and related resources | Linodes, DNS entries, firewall rules |
-| `infra/k8s-platform` | Kubernetes clusters and apps | LKE cluster, Ingress DNS, K8s firewall |
-| `infra/network-core` | Shared network foundations | VPC, VLANs, global DNS zones |
-| `infra/observability` | Monitoring & logging *(optional)* | Grafana, Loki, alerts |
-| `infra/shared-services` | Shared internal services *(optional)* | GitLab, Vault, object storage |
+```
+infra-templates/
+├── .gitlab-ci.yml                        # entry pipeline (dispatch on TEMPLATE)
+├── .ci/
+│   ├── base.gitlab-ci.yml               # shared validate → plan → apply
+│   └── generate_stack.py                # pipeline stack orchestrator
+├── modules/                             # reusable OpenTofu building blocks
+│   ├── linode-instance/
+│   ├── linode-firewall/
+│   ├── linode-dns-record/
+│   └── vsphere-vm/
+└── templates/                           # deployable products
+    ├── linode/
+    │   ├── virtual-machine/             # instance + per-VM firewall
+    │   ├── firewall/
+    │   └── dns-record/
+    ├── vsphere/
+    │   └── virtual-machine/
+    └── orchestrator/                    # pipeline stack entry point
+```
 
-**Principle:** one webhook trigger → one repository → one OpenTofu state. If a VM needs DNS and a firewall rule, all three belong in `vm-platform` — no cross-repository triggers needed.
+**Principle:** one trigger → `TEMPLATE` variable → one child pipeline → one OpenTofu state per resource instance. Cross-resource ordering (VM then DNS) is handled by pipeline stacks (Pattern 3) via the orchestrator template.
 
 ---
 
 ## Step 1: Create a Pipeline Trigger Token
 
-In each GitLab infrastructure project:
+In the `infra-templates` GitLab project:
 
 ```
 Settings → CI/CD → Pipeline triggers → "Add trigger"
 Description: "Infra Webshop"
 ```
 
-Copy the generated token. You will need it when creating a Deployment Environment in the webshop.
+Copy the generated token. You will need it when creating a Deployment Environment in the webshop. One trigger token is sufficient — the `TEMPLATE` variable selects which product template runs.
 
 ---
 
-## Multi-Repository Products
+## Triggering Patterns
 
-A single webshop product (e.g. "VM") often maps to resources managed in **multiple GitLab repositories**: one for the VM platform, one for DNS, one for firewall rules. The webshop currently supports one webhook URL per deployment environment. There are two patterns to handle this:
+A single webshop order can require multiple infrastructure resources (e.g. VM + DNS + firewall). There are three patterns:
 
-### Pattern 1 — GitLab Orchestrator Pipeline (recommended)
+### Pattern 1 — Single Template Trigger (simplest)
 
-Create a thin **orchestrator project** per product (e.g. `infra/vm-orchestrator`). Its pipeline uses GitLab's built-in `trigger:` keyword to launch child pipelines in the individual platform repos **in sequence**. The webshop webhook URL points to the orchestrator — it stays unaware of the internal repo split.
+The webshop sends one trigger to `infra-templates` with `TEMPLATE=<name>`. The entry pipeline dispatches to the named template, which provisions a single resource.
 
 ```
 Webshop
-  └── POST /vm-orchestrator/trigger/pipeline   (one webhook)
-        │
-        ├── trigger: vm-platform    ──► tofu apply (VM created, outputs IP)
-        │     strategy: depend
-        └── trigger: dns-platform   ──► tofu apply (DNS record → VM IP)
-              strategy: depend
-              needs: [trigger:vm-platform]
+  └── POST /infra-templates/trigger/pipeline
+        TEMPLATE=linode/virtual-machine
+        TF_STATE_NAME=web-01
+        TF_ACTION=apply
+              │
+              └── trigger: templates/linode/virtual-machine/.gitlab-ci.yml
+                    strategy: depend
+                    ──► validate → plan → apply
 ```
 
-**Orchestrator `.gitlab-ci.yml`:**
-
-```yaml
-# infra/vm-orchestrator/.gitlab-ci.yml
-
-stages:
-  - infrastructure
-  - networking
-
-vm:
-  stage: infrastructure
-  trigger:
-    project: infra/vm-platform
-    branch: main
-    strategy: depend        # wait for child pipeline before proceeding
-  variables:
-    ORDER_ID:  $ORDER_ID
-    INFRA_ID:  $INFRA_ID
-    DESTROY:   $DESTROY
-    NAME:      $NAME
-    SIZE:      $SIZE
-
-dns:
-  stage: networking
-  trigger:
-    project: infra/dns-platform
-    branch: main
-    strategy: depend
-  variables:
-    ORDER_ID:  $ORDER_ID
-    INFRA_ID:  $INFRA_ID
-    DESTROY:   $DESTROY
-    NAME:      $NAME
-    DOMAIN:    $DOMAIN
-  needs: [vm]               # DNS runs after VM stage completes
-```
-
-**Advantages:**
-- Zero webshop code changes — one webhook URL, one pipeline ID for polling
-- GitLab handles sequencing, retries, and failure propagation
-- Adding another repo (e.g. monitoring) means editing one YAML file
-- `DESTROY=true` is propagated automatically to all child pipelines
-- Child pipeline outputs (e.g. VM IP) can be passed to later stages via [GitLab pipeline artifacts](https://docs.gitlab.com/ee/ci/pipelines/downstream_pipelines.html#pass-artifacts-to-a-downstream-pipeline)
-
-**Webshop configuration:** the `WebhookURL` for the environment points to the **orchestrator project**, not to `vm-platform` directly.
+**When to use:** one product = one resource type.
 
 ---
 
 ### Pattern 2 — Multiple Webhooks per Product (advanced)
 
-If teams require the webshop to trigger each repository independently (e.g. different trigger tokens per team), the webshop can be extended with a `product_webhooks` table. See [Multiple Webhooks Extension](#multiple-webhooks-extension-pattern-2) below.
+If teams require the webshop to trigger each resource independently (e.g. different trigger tokens per team), the webshop supports a `product_webhooks` table. See [Multiple Webhooks Extension](#multiple-webhooks-extension-pattern-2) below.
 
 ---
 
@@ -150,29 +124,45 @@ The `{PROJECT_ID}` is the numeric GitLab project ID, visible under **Settings �
 
 ---
 
-## Step 3: `.gitlab-ci.yml`
+## Step 3: Adding a New Template
 
-A complete ready-to-use pipeline file is provided at [`docs/guides/cd-pipeline.yml`](./cd-pipeline.yml). Copy it to your infrastructure repository as `.gitlab-ci.yml`.
+All CI pipeline logic is provided by `infra-templates`. To add a new product template:
 
-Key points:
+1. Create `templates/<provider>/<name>/` with `main.tf`, `variables.tf`, `outputs.tf`, `backend.tf`.
 
-- All order parameters arrive as CI variables (uppercased), written into `order.auto.tfvars` so OpenTofu picks them up automatically.
-- `DESTROY=true` is set by the portal on decommission triggers — the plan job uses it to run `tofu plan -destroy`.
-- The apply job ends with `tofu output` so the portal can parse outputs from the job trace and store them against the infrastructure element.
-- `rules: - if: $CI_PIPELINE_SOURCE == "trigger"` ensures only portal-triggered runs execute the provisioning jobs; scheduled runs execute the drift check instead.
+2. `backend.tf` must declare an empty HTTP backend — configuration is injected at runtime:
+   ```hcl
+   terraform {
+     backend "http" {}
+   }
+   ```
 
-```yaml
-apply:
-  stage: apply
-  script:
-    - tofu apply plan.tfplan
-    # tofu output prints the "Outputs:" section — the portal reads this from
-    # the job trace and stores key/value pairs on the infrastructure element.
-    - tofu output
-  dependencies: [plan]
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "trigger"
-```
+3. Create `templates/<provider>/<name>/.gitlab-ci.yml`:
+   ```yaml
+   include:
+     - local: .ci/base.gitlab-ci.yml
+   variables:
+     TEMPLATE_DIR: templates/<provider>/<name>
+   ```
+
+4. Register the template in the root `.gitlab-ci.yml`:
+   ```yaml
+   trigger-<provider>-<name>:
+     stage: dispatch
+     trigger:
+       include:
+         - local: templates/<provider>/<name>/.gitlab-ci.yml
+       strategy: depend
+     rules:
+       - if: $TEMPLATE == "<provider>/<name>"
+   ```
+
+Key pipeline behaviours provided by `base.gitlab-ci.yml`:
+
+- Product parameters (uppercase CI variables) are automatically promoted to `TF_VAR_<lowercase>` so OpenTofu picks them up without extra `tfvars` files.
+- `TF_ACTION=destroy` switches the plan stage to `tofu plan -destroy`; the apply stage runs `tofu apply tfplan` in all cases.
+- The apply job's stdout is read by the portal to parse `Outputs:` and store them on the infrastructure element — no extra `tofu output` call needed.
+- State is stored in the `infra-templates` project itself via `CI_PROJECT_ID`; no external state backend is required.
 
 ---
 
@@ -212,31 +202,39 @@ The portal's webhook receiver (`POST /api/webhooks/gitlab/pipeline`) verifies th
 Define one variable per parameter that the webshop can pass. This file is also used by the webshop's **Browse Repository** feature (Admin → Products → Import variables.tf) to automatically create the matching product parameters.
 
 ```hcl
-# infra/vm-platform/variables.tf
+# templates/linode/virtual-machine/variables.tf
 
-variable "order_id" {
+variable "hostname" {
   type        = string
-  description = "Reference to the webshop order"
+  description = "Instance label and state key — must be unique per resource"
 }
 
-variable "name" {
+variable "region" {
   type        = string
-  description = "Unique resource name (used for Linode label and DNS)"
+  description = "Linode region (e.g. eu-central, us-east)"
+  default     = "eu-central"
 }
 
-variable "domain" {
+variable "instance_type" {
   type        = string
-  description = "Fully qualified domain name for the DNS entry"
+  description = "Linode instance plan"
+  default     = "g6-nanode-1"
 }
 
-variable "size" {
+variable "image" {
   type        = string
-  description = "VM size: small | medium | large"
-  default     = "small"
+  description = "OS image slug"
+  default     = "linode/ubuntu22.04"
+}
+
+variable "inbound_ports_csv" {
+  type        = string
+  description = "Comma-separated TCP ports to allow inbound"
+  default     = "22"
 }
 ```
 
-**Naming convention:** variable names in `variables.tf` map directly to CI variable names after uppercasing. `name` → `NAME`, `domain` → `DOMAIN`, etc. The portal sends them this way automatically.
+**Naming convention:** variable names in `variables.tf` map directly to CI variable names after uppercasing. `hostname` → `HOSTNAME`, `region` → `REGION`, etc. The base CI promotes them to `TF_VAR_*` automatically.
 
 ---
 
@@ -245,16 +243,16 @@ variable "size" {
 Define outputs so the portal can surface them on the infrastructure detail page. After `tofu apply` the pipeline prints an `Outputs:` section to stdout; the portal parses it from the job trace and stores the key/value pairs.
 
 ```hcl
-# infra/vm-platform/outputs.tf
+# templates/linode/virtual-machine/outputs.tf
 
 output "ip_address" {
-  description = "Public IP of the provisioned VM"
-  value       = linode_instance.vm.ip_address
+  description = "Public IPv4 address"
+  value       = module.vm.ip_address
 }
 
 output "hostname" {
-  description = "Fully qualified hostname"
-  value       = "${var.name}.${var.domain}"
+  description = "Instance label"
+  value       = module.vm.label
 }
 ```
 
@@ -265,12 +263,12 @@ Only string-valued outputs are captured. Complex types (maps, lists) are ignored
 ## Step 5: `backend.tf`
 
 ```hcl
-# infra/vm-platform/backend.tf
+# templates/<provider>/<name>/backend.tf
 
 terraform {
   backend "http" {
-    # All backend config is injected at runtime via tofu init -backend-config=...
-    # See the .tofu_base before_script in .gitlab-ci.yml
+    # All backend config is injected at runtime by base.gitlab-ci.yml
+    # using CI_PROJECT_ID and TF_STATE_NAME.
   }
 }
 ```
@@ -279,40 +277,37 @@ GitLab provides a built-in HTTP backend for Terraform/OpenTofu state at:
 ```
 /api/v4/projects/:id/terraform/state/:state_name
 ```
-No separate state storage server (S3, GCS, etc.) is required.
+State is stored in the `infra-templates` project itself — no separate state-hosting project or external storage (S3, GCS) is required.
 
 ---
 
-## Step 6: Remote State per Repository
+## Step 6: Remote State per Resource Instance
 
-Each infrastructure repository has its own state file. This ensures independent locking, clear ownership, and drift detection per module.
+Each resource instance has its own state file. State names are provided by the portal as `TF_STATE_NAME`. For single-template orders this is typically the resource label (e.g. `web-01`). For pipeline stacks, the orchestrator appends per-step suffixes (`web-01-vm`, `web-01-dns`).
 
-| Repository | State Name |
-|---|---|
-| `vm-platform` | `vm-prod` / `vm-staging` |
-| `k8s-platform` | `k8s-prod` / `k8s-staging` |
-| `network-core` | `network-prod` |
-
-To reference outputs from another module (e.g. `network-core` subnet IDs in `vm-platform`):
+To reference outputs from an upstream pipeline stack step:
 
 ```hcl
-# infra/vm-platform/data.tf
+# templates/linode/dns-record/main.tf
 
-data "terraform_remote_state" "network" {
+data "terraform_remote_state" "vm" {
   backend = "http"
   config = {
-    address  = "${var.gitlab_api_url}/projects/${var.network_project_id}/terraform/state/network-prod"
+    address  = "${var.ci_api_url}/projects/${var.ci_project_id}/terraform/state/${var.vm_state_name}"
     username = "gitlab-ci-token"
-    password = var.gitlab_token
+    password = var.ci_job_token
   }
 }
 
-# Use it:
-resource "linode_instance" "vm" {
-  # ...
-  subnet_id = data.terraform_remote_state.network.outputs.default_subnet_id
+resource "linode_domain_record" "a" {
+  domain_id   = var.domain_id
+  name        = var.hostname
+  record_type = "A"
+  target      = data.terraform_remote_state.vm.outputs.ip_address
 }
 ```
+
+`ci_api_url`, `ci_project_id`, `ci_job_token`, and `vm_state_name` are all exported automatically by the base CI — no manual variable wiring required.
 
 ---
 
@@ -354,19 +349,29 @@ The webshop sends the following CI variables with every pipeline trigger:
 
 | CI Variable | Source | Example |
 |---|---|---|
+| `TEMPLATE` | Template path (for product webhooks) | `linode/virtual-machine` |
+| `TF_STATE_NAME` | Unique state key for this resource | `web-01` |
+| `TF_ACTION` | Always `apply` on provisioning | `apply` |
 | `ORDER_ID` | Order ID from webshop | `99` |
-| `NAME` | Order parameter `name` | `proj-customer-123` |
-| `DOMAIN` | Order parameter `domain` | `app.example.com` |
-| `SIZE` | Order parameter `size` | `medium` |
+| `HOSTNAME` | Order parameter `hostname` | `web-01` |
 | *(any additional parameter)* | Order parameters (uppercased) | |
+
+For pipeline stacks, additionally:
+
+| CI Variable | Source | Example |
+|---|---|---|
+| `TEMPLATE` | Always `orchestrator` | `orchestrator` |
+| `PIPELINE_STACK` | JSON step array from portal | `[{"template":"linode/virtual-machine",...}]` |
 
 ### Decommissioning trigger (decommission requested)
 
 | CI Variable | Source | Example |
 |---|---|---|
+| `TEMPLATE` | Same as at provision time | `linode/virtual-machine` |
+| `TF_STATE_NAME` | Same state key as at provision time | `web-01` |
+| `TF_ACTION` | Always `destroy` on decommission | `destroy` |
 | `INFRA_ID` | Infrastructure element ID | `42` |
-| `DESTROY` | Always `true` | `true` |
-| `NAME` | Stored parameter `name` | `proj-customer-123` |
+| `HOSTNAME` | Stored parameter `hostname` | `web-01` |
 | *(all stored parameters)* | Parameters uppercased | |
 
 The CI variable names are derived from the parameter names defined in `variables.tf` — uppercased. Keep parameter names lowercase with underscores (`snake_case`) so they map cleanly to CI variables.
@@ -376,26 +381,31 @@ The CI variable names are derived from the parameter names defined in `variables
 ## Complete Setup Checklist
 
 ```
-GitLab project setup
+infra-templates GitLab project setup
   [ ] Create pipeline trigger token (Settings → CI/CD → Pipeline triggers)
-  [ ] Copy docs/guides/cd-pipeline.yml to the repo as .gitlab-ci.yml
-  [ ] Add backend.tf with http backend (no config — injected at runtime)
-  [ ] Add variables.tf with all expected parameters
-  [ ] Add outputs.tf to expose resource attributes (IP, hostname, etc.)
-  [ ] Add main OpenTofu resources (provider, resources)
+  [ ] Set cloud provider credentials as project/group CI/CD variables
+        with TF_VAR_ prefix (e.g. TF_VAR_linode_token)
+  [ ] For each product: create templates/<provider>/<name>/ with
+        main.tf, variables.tf, outputs.tf, backend.tf (empty http block)
+  [ ] For each product: create templates/<provider>/<name>/.gitlab-ci.yml
+        (include: .ci/base.gitlab-ci.yml, set TEMPLATE_DIR)
+  [ ] Register each template in the root .gitlab-ci.yml dispatch block
   [ ] (Optional) Add scheduled pipeline for drift detection
 
 Portal setup
   [ ] Create CI Source (Admin → CI Sources): GitLab URL + access token for repo browsing
   [ ] Create Deployment Environment:
-        Webhook URL:   https://gitlab.example.com/api/v4/projects/{ID}/trigger/pipeline
-        Webhook Token: a secret string you choose — you will set the same value in GitLab
+        Webhook URL:   https://gitlab.example.com/api/v4/projects/{infra-templates-ID}/trigger/pipeline
+        Webhook Token: the trigger token from the step above
   [ ] Create product, link to environment, set price
   [ ] Import parameters from variables.tf via Browse Repository
         (Admin → Products → Edit → Browse Repository → select variables.tf → Import)
+  [ ] On the product edit page, configure either:
+        • A Product Webhook with TEMPLATE=<provider>/<name> as a fixed variable, OR
+        • A Pipeline Stack for multi-step provisioning
 
 GitLab webhook setup (callback to portal)
-  [ ] In the GitLab project: Settings → Webhooks → Add new webhook
+  [ ] In the infra-templates GitLab project: Settings → Webhooks → Add new webhook
         URL:          https://your-portal.example.com/api/webhooks/gitlab/pipeline
         Secret token: the Webhook Token set in the portal environment above
         Trigger:      Pipeline events (enable only this one)
@@ -403,10 +413,11 @@ GitLab webhook setup (callback to portal)
 
 Verification
   [ ] Place a test order → pipeline triggered → pipeline_id stored on order
-  [ ] GitLab pipeline runs → sends webhook on completion → order status → "completed"
+  [ ] Entry pipeline dispatches to the correct template → validate/plan/apply runs
+  [ ] GitLab sends webhook on completion → order status → "completed"
   [ ] OpenTofu outputs appear on the infrastructure detail page
   [ ] Check cloud console: resource exists
-  [ ] Test decommission → pipeline with DESTROY=true → status "decommissioned"
+  [ ] Test decommission → pipeline with TF_ACTION=destroy → status "decommissioned"
 ```
 
 ---
@@ -445,9 +456,9 @@ Example for the "VM" product in Production:
 
 | name | exec_order | webhook_url |
 |---|---|---|
-| `vm-platform` | `10` | `.../vm-platform/trigger/pipeline` |
-| `dns-platform` | `20` | `.../dns-platform/trigger/pipeline` |
-| `firewall` | `20` | `.../firewall/trigger/pipeline` |
+| `vm` | `10` | `.../repo-a/trigger/pipeline` |
+| `dns` | `20` | `.../repo-b/trigger/pipeline` |
+| `firewall` | `20` | `.../repo-c/trigger/pipeline` |
 
 VM provisions first (order 10), then DNS and firewall in parallel (both order 20).
 
@@ -481,3 +492,94 @@ The product edit page (`Admin → Products → Edit`) gains a **Webhooks** secti
 | Repos have hard dependencies (VM IP → DNS) | **Orchestrator** — `needs:` and artifacts handle data passing |
 | Each webhook needs different parameters | **Multiple Webhooks** — webshop can send per-webhook variable sets |
 | Simplest possible setup | **Orchestrator** — fewest moving parts |
+| Step sequence needs to change per product without touching CI YAML | **Pipeline Stacks** — portal defines the DAG as data |
+
+---
+
+## Pattern 3 — Portal-Configured Pipeline Stacks
+
+Pipeline Stacks are the built-in successor to the manual orchestrator YAML pattern. Instead of hard-coding the step sequence in `.gitlab-ci.yml`, the portal stores an ordered list of template steps per product+environment in the `pipeline_stacks` database table and passes the entire plan to a generic orchestrator pipeline at trigger time.
+
+### How it works
+
+When an order is approved (or placed directly by an Admin), the portal fires `triggerPipelineStacks()` alongside `triggerProductWebhooks()`. For each pipeline stack configured for the product+environment, it sends one HTTP POST to the stack's webhook URL with the following CI variables:
+
+| CI Variable | Value |
+|---|---|
+| `TEMPLATE` | `orchestrator` |
+| `TF_STATE_NAME` | Value of the order parameter named by `stateKeyParam` (e.g. `hostname` → `my-vm-01`) |
+| `PIPELINE_STACK` | JSON array of step objects (see below) |
+| `ORDER_ID` | Webshop order ID |
+| *(all other order parameters)* | Uppercased, same as product webhooks |
+
+### PIPELINE_STACK format
+
+```json
+[
+  {
+    "template": "linode/virtual-machine",
+    "stateSuffix": "-vm"
+  },
+  {
+    "template": "linode/dns-record",
+    "stateSuffix": "-dns",
+    "upstreamSuffix": "-vm"
+  },
+  {
+    "template": "linode/firewall",
+    "stateSuffix": "-fw",
+    "fixedParams": { "FW_POLICY": "drop" }
+  }
+]
+```
+
+Each step object:
+
+| Field | Required | Description |
+|---|---|---|
+| `template` | Yes | Path to the template in the infra-templates repository (e.g. `linode/virtual-machine`) |
+| `stateSuffix` | Yes | Appended to `TF_STATE_NAME` to form the unique OpenTofu state key for this step (`my-vm-01-vm`) |
+| `upstreamSuffix` | No | State suffix of a preceding step whose outputs this step depends on; the orchestrator resolves cross-step data passing |
+| `fixedParams` | No | Additional CI variables sent only to this step, merged with the shared order parameters |
+
+### stateKeyParam
+
+`stateKeyParam` (default: `hostname`) names the order parameter used as the base Terraform state key. It must be:
+- **Stable** — the same value must be submitted at provision time and is stored on the infrastructure element for use at destroy time
+- **Unique per infrastructure element** — so state files never collide across concurrent orders
+
+Example: if `stateKeyParam = "hostname"` and the order sets `hostname = "my-vm-01"`, then the state keys across steps are `my-vm-01-vm`, `my-vm-01-dns`, `my-vm-01-fw`.
+
+### Orchestrator pipeline
+
+The orchestrator pipeline in GitLab reads `PIPELINE_STACK` and dynamically generates child pipeline triggers. A minimal implementation:
+
+```yaml
+# infra/orchestrator/.gitlab-ci.yml
+
+orchestrate:
+  image: python:3.12-alpine
+  script:
+    - python scripts/run_stack.py
+  variables:
+    PIPELINE_STACK: $PIPELINE_STACK
+    TF_STATE_NAME:  $TF_STATE_NAME
+    ORDER_ID:       $ORDER_ID
+```
+
+`run_stack.py` parses `PIPELINE_STACK`, iterates the steps in order, calls `POST /projects/:id/trigger/pipeline` for each template pipeline, waits for completion (using `depends:`), and propagates `DESTROY` when set.
+
+### Configuring in the portal
+
+See the Root Guide, section 4.5 "Pipeline Stacks" for step-by-step instructions on creating and managing stacks in the portal UI.
+
+### When to use Pipeline Stacks vs. other patterns
+
+| Factor | Orchestrator YAML | Multiple Webhooks | Pipeline Stacks |
+|---|---|---|---|
+| Step order | Defined in `.gitlab-ci.yml` | Defined in portal | Defined in portal |
+| Adding a step | Edit YAML, redeploy | Add row in portal | Add step in portal |
+| Cross-step data passing | GitLab artifacts | Not supported | Via `upstreamSuffix` |
+| Multiple trigger tokens | Not needed (one project) | One per team | One per stack |
+| Destroy | `DESTROY` propagated via YAML | Each webhook receives `DESTROY` | `DESTROY` propagated via stack JSON |
+| Best for | Stable infra topology, one team | Many independent teams | Frequently changing products, no CI YAML ownership |

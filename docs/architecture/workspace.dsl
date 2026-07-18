@@ -37,18 +37,18 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
                 svc_orders = component "Orders Service" "State machine: pending → provisioning → completed/failed/rejected. Calls CI trigger, writes audit, sends emails."
                 svc_approvals = component "Approvals Service" "Approve (triggers CI, creates infra element) and reject (stores note, notifies orderer)."
                 svc_infrastructure = component "Infrastructure Service" "Ownership check, status guard, CI destroy trigger, audit write."
-                svc_admin = component "Admin Services" "One service per domain: users, products, categories, environments, ciSources, parameters, costCenters, exchangeRates, config, branding."
+                svc_admin = component "Admin Services" "One service per domain: users, products, categories, environments, ciSources, parameters, costCenters, exchangeRates, config, branding, pipelineStacks."
                 svc_auth = component "Auth Service" "Bcrypt credential verify, SSO user upsert, JWT issue. Returns Result<T>."
                 lib_queries = component "Query Helpers" "Shared DB reads used across services: findProductName, findUserEmail, findAdminEmails, findCiSourceForEnv."
                 lib_result = component "Result<T> / toResponse" "Ok<T>|Err discriminated union; toResponse() maps Result to NextResponse."
                 api_notification = component "Notification" "Seven typed send functions; HTML-escapes all user strings before embedding in email bodies."
                 api_ai = component "AI Translation" "Translates product content into 25 languages via the configured AI provider."
                 api_exchange = component "Exchange Rates" "Fetches and caches exchange rates; converts amounts between currencies."
-                api_ci = component "CI Provider Client" "Unified client for GitLab, GitHub and Bitbucket: trigger pipelines, browse repos, fetch job traces. triggerProductWebhooks() orchestrates webhook execOrder."
+                api_ci = component "CI Provider Client" "Unified client for GitLab, GitHub and Bitbucket: trigger pipelines, browse repos, fetch job traces. triggerProductWebhooks() orchestrates webhook execOrder; triggerPipelineStacks() sends ordered stack steps as PIPELINE_STACK JSON to the CI orchestrator."
                 api_docs = component "OpenAPI / Swagger UI" "Swagger UI and OpenAPI 3.0 spec auto-generated from Zod schemas."
             }
 
-            database = container "Database" "Stores all portal data: catalog, orders, infrastructure, users, audit log, config and branding." "PostgreSQL 16" "Database"
+            database = container "Database" "Stores all portal data: catalog, orders, infrastructure, users, audit log, config, branding and pipeline stacks." "PostgreSQL 16" "Database"
         }
 
         # Relationships — system level
@@ -119,10 +119,10 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         api_audit -> lib_queries "Uses shared query helpers" "internal"
 
         # Services → shared libraries
-        svc_orders -> api_ci "triggerProductWebhooks" "internal"
+        svc_orders -> api_ci "triggerProductWebhooks, triggerPipelineStacks" "internal"
         svc_orders -> api_notification "sendOrderCreated, sendApprovalRequest" "internal"
         svc_orders -> lib_queries "findProductName, findUserEmail, findAdminEmails" "internal"
-        svc_approvals -> api_ci "triggerProductWebhooks" "internal"
+        svc_approvals -> api_ci "triggerProductWebhooks, triggerPipelineStacks" "internal"
         svc_approvals -> api_notification "sendOrderApproved, sendOrderRejected" "internal"
         svc_approvals -> lib_queries "findProductName, findUserEmail" "internal"
         svc_infrastructure -> api_ci "triggerProductWebhooks with TF_ACTION=destroy" "internal"

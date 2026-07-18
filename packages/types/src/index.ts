@@ -229,6 +229,41 @@ export interface CreateProductWebhookRequest {
   execOrder?: number
 }
 
+// Pipeline Stacks
+export interface StackStep {
+  template: string
+  stateSuffix: string
+  upstreamSuffix?: string
+  fixedParams?: Record<string, string>
+}
+
+export interface PipelineStack {
+  id: number
+  productId: number
+  environmentId: number
+  name: string
+  webhookUrl: string
+  stateKeyParam: string
+  steps: StackStep[]
+}
+
+export interface CreatePipelineStackRequest {
+  environmentId: number
+  name: string
+  webhookUrl: string
+  webhookToken: string
+  stateKeyParam?: string
+  steps: StackStep[]
+}
+
+export interface UpdatePipelineStackRequest {
+  name?: string
+  webhookUrl?: string
+  webhookToken?: string
+  stateKeyParam?: string
+  steps?: StackStep[]
+}
+
 // Cost Centers
 export interface CostCenter {
   id: number

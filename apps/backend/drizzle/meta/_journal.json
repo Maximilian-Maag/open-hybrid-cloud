@@ -8,6 +8,13 @@
       "when": 1782599666432,
       "tag": "0000_steep_blizzard",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784411300829,
+      "tag": "0001_public_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

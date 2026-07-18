@@ -708,9 +708,12 @@ All domain logic is in the service layer.
     (\code{requireRole}, \code{requireAuth}). \\[4pt]
   CI Dispatch &
     Provider-agnostic module in \file{src/lib/ci/} that triggers pipelines via
-    GitLab, GitHub, or Bitbucket APIs. \file{lib/ci/webhooks.ts} exposes
-    \code{triggerProductWebhooks()} — fetches webhooks in \code{exec\_order},
-    calls \code{triggerPipeline} for each, returns pipeline IDs. \\[4pt]
+    GitLab, GitHub, or Bitbucket APIs. \file{lib/ci/webhooks.ts} exposes two
+    trigger functions: \code{triggerProductWebhooks()} — fetches per-product webhooks
+    in \code{exec\_order} and calls each; and \code{triggerPipelineStacks()} —
+    fetches pipeline stacks for the product+environment, serialises the ordered step
+    list as \code{PIPELINE\_STACK} JSON, and triggers the configured orchestrator
+    pipeline. Both return pipeline IDs that are stored on the order. \\[4pt]
   Webhook Handler &
     Inbound handler at \route{POST /api/webhooks/\{provider\}/pipeline}.
     Maps CI pipeline status events to order/infrastructure state updates;
@@ -760,13 +763,14 @@ All domain logic is in the service layer.
         \code{approveOrder(session, orderId)} in
         \file{lib/services/approvals.ts}.
   \item The service fetches the order (returns \code{Err 400} if not
-        \code{pending}), then calls \code{triggerProductWebhooks()} in
-        \file{lib/ci/webhooks.ts}. For each configured webhook ordered by
-        \code{exec\_order}, an HTTP POST is sent to the CI trigger URL with
-        the OpenTofu parameters.
-  \item Returned pipeline IDs are stored in the \code{pipeline\_id} JSONB
-        column; an infra element is created; an audit row is written; the
-        orderer receives an approval email.
+        \code{pending}), then calls \code{triggerProductWebhooks()} and
+        \code{triggerPipelineStacks()} in \file{lib/ci/webhooks.ts} in
+        parallel. Product webhooks fire in \code{exec\_order}; pipeline
+        stacks serialise the configured step sequence as \code{PIPELINE\_STACK}
+        JSON and POST it to each stack's orchestrator webhook URL.
+  \item All returned pipeline IDs are merged and stored in the
+        \code{pipeline\_id} JSONB column; an infra element is created;
+        an audit row is written; the orderer receives an approval email.
   \item When the CI pipeline completes, the provider calls
         \route{POST /api/webhooks/\{provider\}/pipeline}. The webhook
         handler in \file{lib/webhook/handler.ts} transitions the order to
@@ -993,6 +997,49 @@ variables (OpenTofu parameters) as JSON. The pipeline configuration
 (\file{.gitlab-ci.yml}) lives in the same repository as the IaC code,
 making the trigger configuration auditable and version-controlled.
 
+\section{Pipeline Stacks — Portal-Defined CI DAGs}
+
+\textbf{Decision:} Introduce a \code{pipeline\_stacks} table that stores
+an ordered list of CI/CD template steps per product+environment.
+On order approval the portal serialises the step list as
+\code{PIPELINE\_STACK} JSON and passes it to a generic orchestrator
+pipeline, eliminating the need to hard-code step sequences in
+\texttt{.gitlab-ci.yml}.
+
+\textbf{Rationale:}
+\begin{itemize}
+  \item \textbf{No CI YAML churn:} Adding or reordering infra steps for a
+        product requires only a portal UI change — the GitLab orchestrator
+        reads \code{PIPELINE\_STACK} at runtime. A new step is live as
+        soon as it is saved.
+  \item \textbf{State key stability:} Each step appends a unique
+        \code{stateSuffix} to the order parameter named by
+        \code{stateKeyParam} (default: \code{hostname}). The resulting
+        state name is stable across provision and destroy because the same
+        order parameter value is stored on the infrastructure element and
+        reused at decommission time.
+  \item \textbf{Upstream dependencies:} The optional \code{upstreamSuffix}
+        field lets a step declare which preceding step it depends on.
+        The orchestrator can use this to gate execution — e.g. DNS step
+        waits for VM step outputs (IP address).
+  \item \textbf{Complements, not replaces, product webhooks:}
+        \code{triggerProductWebhooks} and \code{triggerPipelineStacks}
+        fire in parallel; their pipeline IDs are merged in
+        \code{pipeline\_id}. Existing single-webhook setups are
+        unaffected. Pipeline stacks are opt-in per product+environment.
+  \item \textbf{Security:} The \code{webhook\_token} column is excluded
+        from all API responses via a shared \code{publicColumns} projection
+        in the service layer. The secret is written to the database on
+        creation/update but never returned to the frontend.
+\end{itemize}
+
+\textbf{Alternative considered:} Storing the full \texttt{.gitlab-ci.yml}
+snippet in the database and injecting it into the orchestrator pipeline at
+trigger time. Rejected because CI YAML injection requires the orchestrator
+to dynamically generate pipeline definitions (a GitLab EE feature or a
+complex custom script), whereas passing \code{PIPELINE\_STACK} JSON is a
+simple REST variable and works with any GitLab tier.
+
 \section{JWT Authentication}
 
 \textbf{Decision:} The backend issues signed JWTs (HS256, 24-hour
@@ -1058,234 +1105,173 @@ login-volume use case.
 
 \section{Overview}
 
-The IaC layer consists of six GitLab repositories in the \code{open-hybrid-cloud}
-group. Each repository is a self-contained OpenTofu module with its own
-CI/CD pipeline and state. Together they provision all cloud
-infrastructure on Linode/Akamai.
+The IaC layer is a single GitLab repository, \code{infra-templates}.
+It contains reusable OpenTofu modules and deployable templates for each
+supported provider. The portal triggers the repository's entry pipeline
+with a \code{TEMPLATE} variable; the entry pipeline dispatches to the
+matching child pipeline inside the same repository.
 
 \begin{table}[H]
   \centering
-  \caption{GitLab repository overview}
+  \caption{infra-templates repository layout}
   \label{tab:repos}
-  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}Xl@{}}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
     \toprule
-    \textbf{Repository} & \textbf{Purpose} & \textbf{Trigger} \\
+    \textbf{Path} & \textbf{Purpose} \\
     \midrule
-    \code{network-core}   & VPC, subnets, base firewall, DNS zone & Manual \\
-    \code{vm-platform}    & Linode VM instances (per-VM) & Webhook \\
-    \code{k8s-platform}   & LKE Kubernetes clusters (per-cluster) & Webhook \\
-    \code{shared-services}& GitLab CE + Vault + Registry & Manual \\
-    \code{observability}  & Grafana + Prometheus + Loki & Manual \\
-    \code{infra-state}    & State backend host (no IaC code) & N/A \\
+    \code{.gitlab-ci.yml}            & Entry pipeline — reads \code{TEMPLATE} and dispatches to the matching child pipeline \\
+    \code{.ci/base.gitlab-ci.yml}    & Shared validate → plan → apply stages included by every template \\
+    \code{.ci/generate\_stack.py}    & Orchestrator script — reads \code{PIPELINE\_STACK} JSON and generates a sequential child pipeline \\
+    \code{modules/}                  & Reusable OpenTofu modules (one per resource type) \\
+    \code{templates/<provider>/<name>/} & Deployable templates; each includes the base CI and sets \code{TEMPLATE\_DIR} \\
+    \code{templates/orchestrator/}   & Orchestrator template for pipeline stack execution \\
     \bottomrule
   \end{tabularx}
 \end{table}
 
 \section{Repository File Structure}
 
-Every module repository (except \code{infra-state}) follows the same
-file layout:
-
 \begin{lstlisting}[style=bash]
-<module>/
-+-- .gitlab-ci.yml   # CI/CD pipeline definition
-+-- backend.tf       # HTTP state backend (GitLab Managed)
-+-- provider.tf      # Linode provider + required versions
-+-- variables.tf     # Input variable declarations
-+-- main.tf          # Resource definitions
-+-- outputs.tf       # Output values
+infra-templates/
++-- .gitlab-ci.yml                        # entry pipeline (dispatch on TEMPLATE)
++-- .ci/
+|   +-- base.gitlab-ci.yml               # shared validate/plan/apply
+|   +-- generate_stack.py                # pipeline stack generator
++-- modules/                             # reusable building blocks
+|   +-- linode-instance/
+|   +-- linode-firewall/
+|   +-- linode-dns-record/
+|   +-- vsphere-vm/
++-- templates/                           # deployable products
+    +-- linode/
+    |   +-- virtual-machine/             # instance + per-VM firewall
+    |   +-- firewall/                    # standalone firewall
+    |   +-- dns-record/                  # Linode DNS record
+    +-- vsphere/
+    |   +-- virtual-machine/             # vSphere VM clone
+    +-- orchestrator/                    # pipeline stack orchestrator
 \end{lstlisting}
 
-\section{State Management}
+Each template directory contains the OpenTofu files
+(\file{main.tf}, \file{variables.tf}, \file{outputs.tf},
+\file{backend.tf}) and a minimal \file{.gitlab-ci.yml} that includes
+the shared base:
 
-All state files live in the \code{infra-state} project. The project
-hosts no IaC code; it is solely a container for GitLab Managed Terraform
-State files.
+\begin{lstlisting}[style=yaml,caption={Minimal template .gitlab-ci.yml}]
+include:
+  - local: .ci/base.gitlab-ci.yml
 
-\textbf{State naming convention:}
-
-\begin{table}[H]
-  \centering
-  \caption{State name convention per module}
-  \begin{tabular}{@{}ll@{}}
-    \toprule
-    \textbf{Module} & \textbf{State name} \\
-    \midrule
-    \code{network-core}    & \code{network-core} \\
-    \code{vm-platform}     & \code{vm-\{vm\_label\}} \\
-    \code{k8s-platform}    & \code{k8s-\{cluster\_label\}} \\
-    \code{shared-services} & \code{shared-prod} \\
-    \code{observability}   & \code{observability-prod} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-The backend URL pattern is:
-\begin{lstlisting}[style=bash]
-https://<gitlab-host>/api/v4/projects/<INFRA_STATE_PROJECT_ID>/terraform/state/<STATE_NAME>
+variables:
+  TEMPLATE_DIR: templates/linode/virtual-machine
 \end{lstlisting}
 
-Backend configuration is passed at \code{tofu init} time via
-\code{-backend-config} flags, not hard-coded in \file{backend.tf}.
-This keeps credentials out of version control.
+\section{Entry Pipeline and Dispatch}
 
-\section{CI/CD Pipeline Stages}
+The root \file{.gitlab-ci.yml} has a single \code{dispatch} stage.
+It reads the \code{TEMPLATE} variable and triggers the child pipeline
+for the matching template via \code{trigger: include: local:}. New
+templates are registered by adding one trigger job with a matching
+\code{rules} condition:
 
-All module pipelines share the same three-stage structure:
+\begin{lstlisting}[style=yaml,caption={Entry pipeline — root .gitlab-ci.yml (excerpt)}]
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "trigger"
+
+stages:
+  - dispatch
+
+trigger-linode-virtual-machine:
+  stage: dispatch
+  trigger:
+    include:
+      - local: templates/linode/virtual-machine/.gitlab-ci.yml
+    strategy: depend
+  rules:
+    - if: $TEMPLATE == "linode/virtual-machine"
+
+trigger-orchestrator:
+  stage: dispatch
+  trigger:
+    include:
+      - local: templates/orchestrator/.gitlab-ci.yml
+    strategy: depend
+  rules:
+    - if: $TEMPLATE == "orchestrator"
+\end{lstlisting}
+
+\section{Base CI Pipeline}
+
+Every template child pipeline inherits three stages from
+\file{.ci/base.gitlab-ci.yml}:
 
 \begin{enumerate}
   \item \textbf{validate} — \code{tofu validate}: checks HCL syntax and
-        provider schema compliance.
-  \item \textbf{plan} — \code{tofu plan -out=tfplan}: computes the
-        diff and saves the plan artifact.
-  \item \textbf{apply} — \code{tofu apply tfplan}: applies the plan.
-        For webhook-triggered modules, apply runs automatically on
-        pipeline success. For singleton modules (\code{shared-services},
-        \code{observability}, \code{network-core}), the apply job is
-        \code{when: manual} to require deliberate human confirmation.
+        provider schema compliance. Runs without backend initialisation.
+  \item \textbf{plan} — promotes product parameters to
+        \code{TF\_VAR\_*} via a shell loop, initialises the GitLab HTTP
+        backend using \code{CI\_PROJECT\_ID} and \code{TF\_STATE\_NAME},
+        then runs \code{tofu plan -out=tfplan} (or
+        \code{tofu plan -destroy} when \code{TF\_ACTION=destroy}).
+  \item \textbf{apply} — same init, then \code{tofu apply tfplan}.
+        The platform reads this job's log to parse \code{Outputs:} and
+        store them on the infrastructure element.
 \end{enumerate}
 
-\textbf{Destroy flow:} Webhook-triggered modules (\code{vm-platform},
-\code{k8s-platform}) accept a \code{TF\_ACTION=destroy} variable. When
-set, the apply stage runs \code{tofu destroy -auto-approve} instead of
-\code{tofu apply}.
+\textbf{Variable promotion:} Non-system CI variables are automatically
+promoted to \code{TF\_VAR\_<lowercase>} so OpenTofu picks them up
+without extra configuration in \file{variables.tf}. Cloud credentials
+(\code{TF\_VAR\_linode\_token}, etc.) must be set as GitLab project or
+group CI/CD variables — never as product parameters.
 
-Listing~\ref{lst:gitlab-ci-vm} shows the canonical \file{.gitlab-ci.yml}
-for the \code{vm-platform} module. Singleton modules differ only in the
-\code{apply} job: \code{when: manual} replaces \code{when: on\_success},
-and there is no destroy branch.
+\section{State Management}
 
-\begin{lstlisting}[style=yaml,caption={.gitlab-ci.yml for vm-platform (webhook-triggered module)},label={lst:gitlab-ci-vm}]
-image: ghcr.io/opentofu/opentofu:1.9
+State is stored inside the \code{infra-templates} project itself using
+GitLab Managed Terraform State. The backend uses \code{CI\_PROJECT\_ID}
+(injected automatically by GitLab CI) as the project reference — no
+separate state-hosting project is needed.
 
-variables:
-  TF_ACTION: "apply"
-  TF_STATE_NAME: "vm-${vm_label}"
-  TF_VAR_linode_token: "${LINODE_TOKEN}"
+\textbf{State naming convention:} Each infrastructure element gets a
+unique state name composed of the \code{TF\_STATE\_NAME} value supplied
+by the portal. For single-template orders this is typically the
+resource label (e.g.\ \code{web-01}). For pipeline stacks,
+\code{generate\_stack.py} appends a per-step suffix
+(\code{web-01-vm}, \code{web-01-fw}, \code{web-01-dns}) so each step
+has isolated state and independent locking.
 
-.tofu_init: &tofu_init
-  before_script:
-    - tofu init
-        -reconfigure
-        -backend-config="address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
-        -backend-config="lock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
-        -backend-config="unlock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
-        -backend-config="username=gitlab-ci-token"
-        -backend-config="password=${CI_JOB_TOKEN}"
-        -backend-config="lock_method=POST"
-        -backend-config="unlock_method=DELETE"
-        -backend-config="retry_wait_min=5"
-
-stages:
-  - validate
-  - plan
-  - apply
-
-validate:
-  stage: validate
-  <<: *tofu_init
-  script:
-    - tofu validate
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "trigger"
-
-plan:
-  stage: plan
-  <<: *tofu_init
-  script:
-    - tofu plan -out=tfplan
-  artifacts:
-    paths:
-      - tfplan
-    expire_in: 1 hour
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "trigger"
-
-apply:
-  stage: apply
-  <<: *tofu_init
-  script:
-    - |
-      if [ "${TF_ACTION}" = "destroy" ]; then
-        tofu destroy -auto-approve
-      else
-        tofu apply -auto-approve tfplan
-      fi
-  dependencies:
-    - plan
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "trigger" && $TF_ACTION == "destroy"
-      when: always
-    - if: $CI_PIPELINE_SOURCE == "trigger"
-      when: on_success
+The state backend URL follows this pattern:
+\begin{lstlisting}[style=bash]
+https://<gitlab-host>/api/v4/projects/<CI_PROJECT_ID>/terraform/state/<TF_STATE_NAME>
 \end{lstlisting}
 
-Listing~\ref{lst:gitlab-ci-singleton} shows a complete pipeline for
-singleton modules (\code{network-core}, \code{shared-services},
-\code{observability}) where a human must confirm the apply step:
+Backend configuration is injected at \code{tofu init} time via
+\code{-backend-config} flags in \file{base.gitlab-ci.yml} — no
+credentials are hard-coded in \file{backend.tf}.
 
-\begin{lstlisting}[style=yaml,caption={.gitlab-ci.yml for singleton modules (manual apply)},label={lst:gitlab-ci-singleton}]
-image: ghcr.io/opentofu/opentofu:1.9
+\section{Orchestrator Template (Pipeline Stacks)}
 
-variables:
-  TF_STATE_NAME: "shared-prod"
-  TF_VAR_linode_token: "${LINODE_TOKEN}"
+\code{templates/orchestrator/} is the entry point for pipeline stacks
+(see Section~\ref{sec:pipeline-stacks-decision}). Its
+\file{.gitlab-ci.yml} has two stages:
 
-.tofu_init: &tofu_init
-  before_script:
-    - tofu init
-        -backend-config="address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
-        -backend-config="lock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
-        -backend-config="unlock_address=${CI_API_V4_URL}/projects/${INFRA_STATE_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock"
-        -backend-config="username=gitlab-ci-token"
-        -backend-config="password=${CI_JOB_TOKEN}"
-        -backend-config="lock_method=POST"
-        -backend-config="unlock_method=DELETE"
-        -backend-config="retry_wait_min=5"
+\begin{enumerate}
+  \item \textbf{generate} — \file{.ci/generate\_stack.py} reads
+        \code{PIPELINE\_STACK} (JSON from the portal) and
+        \code{TF\_STATE\_NAME}, and writes \file{generated-pipeline.yml}
+        — a sequential child pipeline with one trigger job per step,
+        each wired with the correct \code{TEMPLATE\_DIR},
+        \code{TF\_STATE\_NAME}, and \code{TF\_ACTION}.
+        On \code{TF\_ACTION=destroy} the step order is reversed so
+        resources are torn down in the correct dependency order.
+  \item \textbf{execute} — triggers \file{generated-pipeline.yml} as a
+        child pipeline with \code{strategy: depend} and waits for all
+        steps to complete.
+\end{enumerate}
 
-stages:
-  - validate
-  - plan
-  - apply
-
-validate:
-  stage: validate
-  <<: *tofu_init
-  script:
-    - tofu validate
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-
-plan:
-  stage: plan
-  <<: *tofu_init
-  script:
-    - tofu plan -out=tfplan
-  artifacts:
-    paths:
-      - tfplan
-    expire_in: 1 hour
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-
-apply:
-  stage: apply
-  <<: *tofu_init
-  script:
-    - tofu apply -auto-approve tfplan
-  dependencies:
-    - plan
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      when: manual
-\end{lstlisting}
-
-\notebox{The single required CI/CD variable to set in the \textit{infra-state}
-GitLab project group is \code{INFRA\_STATE\_PROJECT\_ID} — the numeric project
-ID of the \code{infra-state} repository (visible in GitLab under
-\textbf{Settings → General}). \code{CI\_JOB\_TOKEN} and \code{CI\_API\_V4\_URL}
-are provided automatically by GitLab CI. \code{LINODE\_TOKEN} must be
-set with Read/Write API access.}
+\notebox{The only required GitLab CI/CD variables to set are cloud
+provider credentials with the \code{TF\_VAR\_} prefix
+(e.g.\ \code{TF\_VAR\_linode\_token}). \code{CI\_JOB\_TOKEN} and
+\code{CI\_API\_V4\_URL} are injected automatically by GitLab CI.}
 
 \section{Webhook Integration with the Webshop}
 \label{sec:webhook}
@@ -1293,161 +1279,191 @@ set with Read/Write API access.}
 \begin{enumerate}
   \item An Admin approves an order in the webshop (or places one
         directly).
-  \item For each webhook configured on the product-environment
-        combination, the webshop sends:
+  \item For each product webhook or pipeline stack configured, the
+        webshop sends:
 \begin{lstlisting}[style=bash]
-POST <gitlab-webhook-url>
+POST <gitlab-trigger-url>
 X-Gitlab-Token: <secret>
 Content-Type: application/json
 
 {
   "ref": "main",
   "variables": [
-    {"key": "TF_VAR_vm_label",  "value": "myvm-01"},
-    {"key": "TF_VAR_vpc_id",    "value": "12345"},
+    {"key": "TEMPLATE",       "value": "linode/virtual-machine"},
+    {"key": "TF_STATE_NAME",  "value": "web-01"},
+    {"key": "TF_ACTION",      "value": "apply"},
+    {"key": "ORDER_ID",       "value": "99"},
+    {"key": "HOSTNAME",       "value": "web-01"},
     ...
   ]
 }
 \end{lstlisting}
-  \item GitLab starts a pipeline for the \code{main} branch, injecting
-        the variables as environment variables.
-  \item The pipeline reads \code{TF\_VAR\_*} variables, runs
-        \code{tofu plan} then \code{tofu apply}.
-  \item On completion (success or failure), the CI provider sends a
-        webhook to \route{/api/webhooks/\{provider\}/pipeline} which
-        updates the order and infrastructure status immediately.
+  \item GitLab starts a pipeline for the \code{main} branch.
+        The entry pipeline reads \code{TEMPLATE} and dispatches to the
+        matching child pipeline.
+  \item The child pipeline's base CI promotes product parameters to
+        \code{TF\_VAR\_*} automatically, then runs
+        \code{tofu validate}, \code{tofu plan}, \code{tofu apply}.
+  \item On completion (success or failure), GitLab calls the portal's
+        pipeline webhook at
+        \route{/api/webhooks/\{provider\}/pipeline}, which updates the
+        order and infrastructure status immediately.
 \end{enumerate}
 
-\section{Dependency Between Modules}
+\section{Template Dependencies}
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[node distance=1.0cm and 2.0cm,
-  dep/.style={rectangle, draw=ohc-blue!60, fill=ohc-blue!10,
-              text width=3cm, align=center, minimum height=1.2cm,
-              font=\small\bfseries},
-  dep-ext/.style={rectangle, draw=gray!60, fill=gray!10,
-                  text width=3cm, align=center, minimum height=1.2cm,
-                  font=\small},
-  arr/.style={->, >=Stealth, thick, gray!70}]
+Within a pipeline stack, templates can depend on each other via the
+\code{upstreamSuffix} field in \code{PIPELINE\_STACK}. The orchestrator
+passes the upstream step's state name as \code{VM\_STATE\_NAME} to the
+downstream template, which can then read shared outputs via a
+\code{terraform\_remote\_state} data source:
 
-  \node[dep] (nc)  {network-core};
-  \node[dep, right=2.5cm of nc] (vm)  {vm-platform};
-  \node[dep, right=of vm]        (k8s) {k8s-platform};
-  \node[dep, below=1.2cm of nc]  (ss)  {shared-services};
-  \node[dep, right=of ss]        (obs) {observability};
-  \node[dep-ext, below right=1.2cm and 0.5cm of nc, text width=2.2cm]
-        (is) {infra-state\\\scriptsize(state host)};
+\begin{lstlisting}[style=hcl]
+# In a dns-record template that depends on an upstream vm step
+data "terraform_remote_state" "vm" {
+  backend = "http"
+  config = {
+    address  = "${var.ci_api_url}/projects/${var.ci_project_id}/terraform/state/${var.vm_state_name}"
+    username = "gitlab-ci-token"
+    password = var.ci_job_token
+  }
+}
 
-  \draw[arr] (nc) -- node[c4label,above]{\scriptsize vpc\_id, subnet\_id, firewall\_id} (vm);
-  \draw[arr] (nc) -- node[c4label,above]{\scriptsize vpc\_id, subnet\_id} (k8s);
-  \draw[arr] (nc) -- (ss);
-  \draw[arr] (nc) -- (obs);
+resource "linode_domain_record" "a" {
+  domain_id  = var.domain_id
+  name       = var.hostname
+  record_type = "A"
+  target     = data.terraform_remote_state.vm.outputs.ip_address
+}
+\end{lstlisting}
 
-\end{tikzpicture}
-\caption{Module dependency graph}
-\label{fig:module-deps}
-\end{figure}
-
-\code{network-core} must be applied first. Its outputs (\code{vpc\_id},
-\code{subnet\_ids}, \code{firewall\_id}) are passed as input variables
-to all other modules.
+\code{ci\_api\_url}, \code{ci\_project\_id}, and \code{ci\_job\_token} are
+exported as \code{TF\_VAR\_*} by the base CI automatically.
 
 % ─────────────────────────────────────────────────────────────
-\chapter{OpenTofu Modules}
+\chapter{OpenTofu Modules and Templates}
 \label{ch:modules}
 
-\section{network-core}
+The \code{infra-templates} repository separates reusable resource
+modules (\file{modules/}) from deployable product templates
+(\file{templates/}). Templates compose one or more modules and are the
+unit the portal dispatches to.
 
-\textbf{Purpose:} Foundational network infrastructure. Apply once per
-environment; no webhook trigger.
+\section{Reusable Modules}
 
-\begin{description}
-  \item[Resources created:]
-    \code{linode\_vpc} (VPC), \code{linode\_vpc\_subnet} (subnets via
-    \code{for\_each}), \code{linode\_firewall} (base inbound/outbound
-    policy), \code{linode\_domain} (optional DNS zone).
-  \item[Key design choice:]
-    Subnets are defined as a \code{map(object(\{cidr, description\}))}
-    variable. This allows adding subnets by editing a single variable
-    without changing the resource code.
-  \item[Key outputs:]
-    \code{vpc\_id}, \code{subnet\_ids} (map: label → ID),
-    \code{firewall\_id}, \code{dns\_zone\_id}.
-\end{description}
+\subsection{linode-instance}
 
-\section{vm-platform}
-
-\textbf{Purpose:} Provision individual Linode VMs on demand. One state
-per VM (\code{vm-\{label\}}). Webhook-triggered by the webshop.
+\textbf{Purpose:} Create a single Linode VM instance.
 
 \begin{description}
-  \item[Resources created:]
-    \code{linode\_firewall} (VM-specific), \code{linode\_instance},
-    \code{linode\_firewall\_device} (attaches firewall to VM),
-    \code{linode\_volume} (optional block storage),
-    \code{linode\_domain\_record} (optional A record).
-  \item[Key design choice:]
-    The VM gets its own firewall (in addition to the base firewall from
-    \code{network-core}) to allow per-VM port rules without affecting
-    the shared base policy.
-  \item[Destroy flow:]
-    Triggered by the webshop decommission action.
-    \code{TF\_ACTION=destroy} → \code{tofu destroy -auto-approve}.
+  \item[Key inputs:]
+    \code{label}, \code{region} (default \code{eu-central}),
+    \code{type} (default \code{g6-nanode-1}), \code{image}
+    (default \code{linode/ubuntu22.04}),
+    \code{root\_pass} (sensitive, from GitLab CI/CD variable),
+    \code{authorized\_key} (optional SSH public key), \code{tags}.
+  \item[Outputs:]
+    \code{id} (numeric), \code{ip\_address}, \code{ipv6}, \code{label}.
 \end{description}
 
-\section{k8s-platform}
+\subsection{linode-firewall}
 
-\textbf{Purpose:} Provision Linode Kubernetes Engine (LKE) clusters.
-One state per cluster (\code{k8s-\{label\}}). Webhook-triggered.
+\textbf{Purpose:} Create a Linode firewall and attach it to a VM.
 
 \begin{description}
-  \item[Resources created:]
-    \code{linode\_firewall} (cluster-specific), \code{linode\_lke\_cluster}
-    with dynamic \code{pool} blocks (supports multiple node pools with
-    optional autoscaler), \code{linode\_domain\_record} (optional).
-  \item[Key output:]
-    \code{kubeconfig} (base64-encoded, marked \code{sensitive}) —
-    retrieve with \code{tofu output -raw kubeconfig | base64 -d}.
-  \item[Node pool design:]
-    Node pools are a \code{list(object)} variable with an optional
-    \code{autoscaler} sub-object, allowing any combination of fixed-size
-    and auto-scaling pools in a single cluster.
+  \item[Key inputs:]
+    \code{label}, \code{linode\_id} (numeric ID from
+    \code{linode-instance}), \code{inbound\_ports\_csv}
+    (default \code{"22"}).
+  \item[Design:]
+    A single variable accepts a CSV list of TCP ports so orderers can
+    open multiple ports without defining separate firewall rule
+    resources.
 \end{description}
 
-\section{shared-services}
+\subsection{linode-dns-record}
 
-\textbf{Purpose:} Long-lived shared services: GitLab CE, HashiCorp
-Vault, container registry. Single state (\code{shared-prod}).
-Manual apply.
+\textbf{Purpose:} Create an A record in a Linode DNS domain.
 
 \begin{description}
-  \item[Resources created:]
-    Two \code{linode\_instance} resources (GitLab, Vault), two
-    \code{linode\_volume} resources (data volumes), one
-    \code{linode\_firewall} with tailored inbound rules (HTTP/HTTPS/Git
-    SSH for GitLab; Vault API 8200 restricted to RFC1918), two
-    \code{linode\_firewall\_device} attachments, optional DNS A records.
-  \item[Operational note:]
-    GitLab CE and Vault are installed via post-provisioning scripts
-    (cloud-init or Ansible), not managed by OpenTofu. OpenTofu only
-    provisions the infrastructure layer.
+  \item[Key inputs:]
+    \code{domain\_id}, \code{hostname}, \code{ip\_address},
+    \code{ttl\_sec} (default 300).
+  \item[Typical use:]
+    Downstream step in a pipeline stack — reads the upstream VM's IP
+    from \code{terraform\_remote\_state} and registers a DNS record.
 \end{description}
 
-\section{observability}
+\subsection{vsphere-vm}
 
-\textbf{Purpose:} Grafana, Prometheus, and Loki on a single VM.
-Single state (\code{observability-prod}). Manual apply.
+\textbf{Purpose:} Clone a vSphere VM from a template.
 
 \begin{description}
-  \item[Resources created:]
-    \code{linode\_instance}, \code{linode\_volume} (200 GB default for
-    metrics and logs), \code{linode\_firewall} (Grafana port
-    configurable, Prometheus/Loki restricted to RFC1918), optional DNS
-    A record.
-  \item[Key output:]
-    \code{grafana\_url} — \code{http://\{ip\}:\{port\}}.
+  \item[Key inputs:]
+    \code{name}, \code{datacenter}, \code{cluster}, \code{datastore},
+    \code{template\_name}, \code{network} (default \code{"VM Network"}),
+    \code{num\_cpus} (default 2), \code{memory\_mb} (default 2048),
+    \code{disk\_size\_gb} (default 40), \code{ipv4\_address} (optional
+    static IP), \code{ipv4\_gateway}.
+  \item[Credentials:]
+    \code{vsphere\_server}, \code{vsphere\_user},
+    \code{vsphere\_password} must be set as GitLab group/project
+    CI/CD variables with the \code{TF\_VAR\_} prefix.
 \end{description}
+
+\section{Deployable Templates}
+
+\subsection{linode/virtual-machine}
+
+\textbf{Portal template name:} \code{linode/virtual-machine}
+
+Composes \code{linode-instance} and \code{linode-firewall} to provision
+a Linode VM with its own firewall in a single pipeline run. One
+OpenTofu state per instance (\code{TF\_STATE\_NAME} = the
+\code{hostname} order parameter).
+
+\textbf{Product parameters to define in the portal:}
+
+\begin{table}[H]
+  \centering
+  \begin{tabularx}{\linewidth}{@{}llX@{}}
+    \toprule
+    \textbf{Parameter} & \textbf{Default} & \textbf{Description} \\
+    \midrule
+    \code{hostname}         & —                    & Instance label / state key \\
+    \code{region}           & \code{eu-central}    & Linode region \\
+    \code{instance\_type}   & \code{g6-nanode-1}   & Instance plan \\
+    \code{image}            & \code{linode/ubuntu22.04} & OS image \\
+    \code{inbound\_ports\_csv} & \code{22}         & Open TCP ports \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\subsection{vsphere/virtual-machine}
+
+\textbf{Portal template name:} \code{vsphere/virtual-machine}
+
+Clones a VM from a vSphere template. Product parameters map to the
+\code{vsphere-vm} module variables.
+
+\subsection{linode/firewall and linode/dns-record}
+
+Standalone templates for environments where firewall rules or DNS
+records are ordered independently (rather than as part of a pipeline
+stack). Both include \file{base.gitlab-ci.yml} and set the
+corresponding \code{TEMPLATE\_DIR}.
+
+\subsection{orchestrator}
+
+\textbf{Portal template name:} \code{orchestrator}
+
+Entry point for pipeline stacks. Triggered with
+\code{TEMPLATE=orchestrator} by the portal's
+\code{triggerPipelineStacks()} function. Runs
+\file{.ci/generate\_stack.py} to convert \code{PIPELINE\_STACK} JSON
+into a sequential GitLab child pipeline, then executes it. See
+Section~\ref{sec:webhook} for how the generated pipeline resolves
+inter-step state dependencies.
 
 % ─────────────────────────────────────────────────────────────
 %  PART III — ADMINISTRATOR GUIDE
@@ -1702,7 +1718,7 @@ zcat backup-20260101.sql.gz \
 \label{sec:k8s-deploy}
 
 This section covers deploying the webshop to an existing Kubernetes
-cluster (e.g.\ the LKE cluster provisioned by \code{k8s-platform}).
+cluster.
 
 \subsection*{Architecture}
 
@@ -3264,26 +3280,31 @@ Before touching any UI, answer these questions:
 \begin{itemize}
   \item \textbf{What does the product deploy?}
     (e.g. \textit{Managed PostgreSQL VM on Linode})
-  \item \textbf{Which OpenTofu module delivers it?}
-    (\code{vm-platform}, \code{k8s-platform}, or a new module)
+  \item \textbf{Which \code{infra-templates} template delivers it?}
+    (e.g. \code{linode/virtual-machine}, \code{vsphere/virtual-machine}, or a new template)
   \item \textbf{In which environments is it available?}
-    (e.g. Linode Frankfurt, Linode Amsterdam)
+    (e.g. Linode Frankfurt, vSphere on-premises)
   \item \textbf{What parameters does the user need to provide?}
-    (e.g. \code{vm\_label}, \code{instance\_type}, \code{db\_name})
+    (e.g. \code{hostname}, \code{instance\_type}, \code{region})
   \item \textbf{What is the base price in EUR per environment?}
   \item \textbf{Who assigns the cost center?} (project / select / overhead)
 \end{itemize}
 
 \section{Step 2: Prepare the OpenTofu Module}
 
-If the product uses an existing module (\code{vm-platform} or
-\code{k8s-platform}), skip to Step 3. For a new product type:
+If the product maps to an existing template (e.g.\
+\code{linode/virtual-machine}), skip to Step 3. For a new product type,
+add a new template to \code{infra-templates}:
 
 \begin{enumerate}
-  \item Create a new GitLab repository in the \code{open-hybrid-cloud} group.
-  \item Add the standard files:
-        \file{provider.tf}, \file{backend.tf}, \file{variables.tf},
-        \file{main.tf}, \file{outputs.tf}, \file{.gitlab-ci.yml}.
+  \item Create \file{templates/<provider>/<name>/} in the
+        \code{infra-templates} repository.
+  \item Add the standard OpenTofu files:
+        \file{provider.tf}, \file{backend.tf} (empty \code{http} block),
+        \file{variables.tf}, \file{main.tf}, \file{outputs.tf}.
+  \item Add \file{templates/<provider>/<name>/.gitlab-ci.yml}
+        (include \file{.ci/base.gitlab-ci.yml}, set \code{TEMPLATE\_DIR}).
+  \item Register the template in the root \file{.gitlab-ci.yml} dispatch block.
   \item Declare all user-provided parameters as \code{variable} blocks
         in \file{variables.tf} with \code{description}, \code{type},
         and \code{default} where applicable:
@@ -3646,121 +3667,121 @@ translation:
 \label{app:tofu-vars}
 \footnotesize
 
-\section{network-core Variables}
+Variables marked \textit{sensitive} must be set as GitLab CI/CD project
+or group variables with the \code{TF\_VAR\_} prefix — never as product
+parameters in the portal. All other variables correspond to portal
+product parameters (lowercased).
+
+\section{Module: linode-instance}
 
 \begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
   \midrule
   \endhead
-  \code{linode\_token}      & string  & Linode API token (sensitive)    & — \\
-  \code{region}             & string  & Linode region                   & \code{eu-central} \\
-  \code{vpc\_label}         & string  & VPC label                       & \code{ohc-vpc-prod} \\
-  \code{vpc\_description}   & string  & VPC description                 & (see defaults) \\
-  \code{subnets}            & map(obj)& Subnet map (label→cidr)         & app + mgmt \\
-  \code{firewall\_inbound\_rules} & list(obj) & Inbound firewall rules  & SSH + ICMP \\
-  \code{dns\_domain}        & string  & DNS zone domain (empty=none)    & \code{""} \\
-  \code{tags}               & list    & Resource tags                   & \code{["infra","network-core"]} \\
+  \code{label}           & string & Unique instance label              & — \\
+  \code{region}          & string & Linode region                      & \code{eu-central} \\
+  \code{type}            & string & Linode instance plan               & \code{g6-nanode-1} \\
+  \code{image}           & string & OS image slug                      & \code{linode/ubuntu22.04} \\
+  \code{root\_pass}      & string & Root password \textit{(sensitive)} & — \\
+  \code{authorized\_key} & string & SSH public key (leave empty to skip) & \code{""} \\
+  \code{tags}            & list   & Resource tags                      & \code{[]} \\
   \bottomrule
-  \caption{network-core variables}
+  \caption{linode-instance module variables}
 \end{longtable}
 
-\section{vm-platform Variables}
+\textbf{Outputs:} \code{id} (number), \code{ip\_address}, \code{ipv6}, \code{label}.
+
+\section{Module: linode-firewall}
 
 \begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
   \midrule
   \endhead
-  \code{linode\_token}     & string & Linode API token (sensitive)   & — \\
-  \code{vm\_label}         & string & Unique VM label (state name)   & — \\
-  \code{region}            & string & Linode region                  & \code{eu-central} \\
-  \code{vpc\_id}           & number & VPC ID from network-core        & — \\
-  \code{subnet\_id}        & number & Subnet ID from network-core     & — \\
-  \code{firewall\_id}      & number & Base firewall ID                & — \\
-  \code{instance\_type}    & string & Linode plan                    & \code{g6-standard-2} \\
-  \code{image}             & string & Boot image                     & \code{linode/debian12} \\
-  \code{root\_pass}        & string & Root password (sensitive)      & — \\
-  \code{ssh\_keys}         & list   & Authorized SSH keys            & \code{[]} \\
-  \code{volume\_size\_gb}  & number & Block storage size (0=none)    & \code{0} \\
-  \code{additional\_inbound\_rules} & list(obj) & Extra firewall rules & \code{[]} \\
-  \code{dns\_zone\_id}     & number & DNS zone ID (null=none)        & \code{null} \\
-  \code{dns\_hostname}     & string & A record hostname              & \code{""} \\
-  \code{tags}              & list   & Resource tags                  & \code{["infra","vm"]} \\
+  \code{label}               & string & Firewall label                              & — \\
+  \code{linode\_id}          & number & Linode instance ID to attach the firewall   & — \\
+  \code{inbound\_ports\_csv} & string & Comma-separated TCP ports to allow inbound  & \code{"22"} \\
   \bottomrule
-  \caption{vm-platform variables}
+  \caption{linode-firewall module variables}
 \end{longtable}
 
-\section{k8s-platform Variables}
+\section{Module: linode-dns-record}
 
 \begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
   \midrule
   \endhead
-  \code{linode\_token}       & string    & Linode API token (sensitive) & — \\
-  \code{cluster\_label}      & string    & Unique cluster label         & — \\
-  \code{region}              & string    & Linode region                & \code{eu-central} \\
-  \code{kubernetes\_version} & string    & K8s version                  & \code{1.31} \\
-  \code{vpc\_id}             & number    & VPC ID                       & — \\
-  \code{subnet\_id}          & number    & Subnet ID                    & — \\
-  \code{node\_pools}         & list(obj) & Node pool configurations     & 1× g6-standard-2 \\
-  \code{additional\_inbound\_rules} & list(obj) & Extra firewall rules & \code{[]} \\
-  \code{dns\_zone\_id}       & number    & DNS zone ID (null=none)      & \code{null} \\
-  \code{dns\_hostname}       & string    & A record hostname            & \code{""} \\
-  \code{tags}                & list      & Resource tags                & \code{["infra","k8s"]} \\
+  \code{domain\_id}    & number & Linode DNS domain ID                & — \\
+  \code{hostname}      & string & A record name                       & — \\
+  \code{ip\_address}   & string & IPv4 address for the A record       & — \\
+  \code{ttl\_sec}      & number & TTL in seconds                      & \code{300} \\
   \bottomrule
-  \caption{k8s-platform variables}
+  \caption{linode-dns-record module variables}
 \end{longtable}
 
-\section{shared-services Variables}
+\section{Module: vsphere-vm}
 
 \begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
   \toprule
   \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
   \midrule
   \endhead
-  \code{linode\_token}          & string & Linode API token (sensitive)        & — \\
-  \code{region}                 & string & Linode region                       & \code{eu-central} \\
-  \code{gitlab\_label}          & string & GitLab CE Linode label              & \code{ohc-gitlab} \\
-  \code{gitlab\_instance\_type} & string & Linode plan for GitLab CE           & \code{g6-standard-4} \\
-  \code{vault\_label}           & string & Vault Linode label                  & \code{ohc-vault} \\
-  \code{vault\_instance\_type}  & string & Linode plan for Vault               & \code{g6-standard-2} \\
-  \code{image}                  & string & Boot image                         & \code{linode/debian12} \\
-  \code{root\_pass}             & string & Root password (sensitive)           & — \\
-  \code{ssh\_keys}              & list   & Authorized SSH keys                 & \code{[]} \\
-  \code{vpc\_id}                & number & VPC ID from network-core            & — \\
-  \code{subnet\_id}             & number & Subnet ID from network-core         & — \\
-  \code{allowed\_admin\_ipv4}   & list   & IPv4 CIDRs for SSH \& Vault admin   & \code{["0.0.0.0/0"]} \\
-  \code{tags}                   & list   & Resource tags                       & \code{["infra","shared"]} \\
+  \code{name}              & string & VM name in vSphere                           & — \\
+  \code{datacenter}        & string & vSphere datacenter name                      & — \\
+  \code{cluster}           & string & vSphere compute cluster                      & — \\
+  \code{datastore}         & string & Datastore name for VM files                  & — \\
+  \code{template\_name}    & string & VM template to clone                         & — \\
+  \code{network}           & string & Port group name                              & \code{"VM Network"} \\
+  \code{num\_cpus}         & number & vCPUs                                        & \code{2} \\
+  \code{memory\_mb}        & number & Memory in MB                                 & \code{2048} \\
+  \code{disk\_size\_gb}    & number & Disk in GB                                   & \code{40} \\
+  \code{ipv4\_address}     & string & Static IP (empty = DHCP)                     & \code{""} \\
+  \code{ipv4\_gateway}     & string & Default gateway (required if static IP set)  & \code{""} \\
+  \code{vsphere\_server}   & string & vCenter hostname \textit{(sensitive)}        & — \\
+  \code{vsphere\_user}     & string & vCenter username \textit{(sensitive)}        & — \\
+  \code{vsphere\_password} & string & vCenter password \textit{(sensitive)}        & — \\
   \bottomrule
-  \caption{shared-services variables}
-  \label{tab:vars-shared}
+  \caption{vsphere-vm module variables}
 \end{longtable}
 
-\section{observability Variables}
+\section{Template: linode/virtual-machine (Portal Product Parameters)}
 
 \begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
   \toprule
-  \textbf{Variable} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
+  \textbf{Parameter} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
   \midrule
   \endhead
-  \code{linode\_token}           & string & Linode API token (sensitive)      & — \\
-  \code{region}                  & string & Linode region                     & \code{eu-central} \\
-  \code{obs\_label}              & string & Linode instance label             & \code{ohc-obs} \\
-  \code{instance\_type}          & string & Linode plan                       & \code{g6-standard-2} \\
-  \code{image}                   & string & Boot image                        & \code{linode/debian12} \\
-  \code{root\_pass}              & string & Root password (sensitive)         & — \\
-  \code{ssh\_keys}               & list   & Authorized SSH keys               & \code{[]} \\
-  \code{vpc\_id}                 & number & VPC ID from network-core          & — \\
-  \code{subnet\_id}              & number & Subnet ID from network-core       & — \\
-  \code{volume\_size\_gb}        & number & Block storage size in GiB         & \code{200} \\
-  \code{grafana\_port}           & number & Grafana HTTP port                 & \code{3000} \\
-  \code{allowed\_grafana\_ipv4}  & list   & IPv4 CIDRs for Grafana access     & \code{["0.0.0.0/0"]} \\
-  \code{tags}                    & list   & Resource tags                     & \code{["infra","obs"]} \\
+  \code{hostname}            & string & Instance label / state key         & — \\
+  \code{region}              & string & Linode region                      & \code{eu-central} \\
+  \code{instance\_type}      & string & Linode instance plan               & \code{g6-nanode-1} \\
+  \code{image}               & string & OS image slug                      & \code{linode/ubuntu22.04} \\
+  \code{inbound\_ports\_csv} & string & Open TCP ports (CSV)               & \code{"22"} \\
   \bottomrule
-  \caption{observability variables}
-  \label{tab:vars-obs}
+  \caption{linode/virtual-machine template product parameters}
+\end{longtable}
+
+\section{Template: vsphere/virtual-machine (Portal Product Parameters)}
+
+\begin{longtable}{@{}L{4.2cm}lL{5.3cm}l@{}}
+  \toprule
+  \textbf{Parameter} & \textbf{Type} & \textbf{Description} & \textbf{Default} \\
+  \midrule
+  \endhead
+  \code{hostname}        & string & VM name / state key                          & — \\
+  \code{datacenter}      & string & Datacenter name                              & — \\
+  \code{cluster}         & string & Compute cluster                              & — \\
+  \code{datastore}       & string & Datastore                                    & — \\
+  \code{template\_name}  & string & VM template to clone                         & — \\
+  \code{network}         & string & Port group                                   & \code{"VM Network"} \\
+  \code{num\_cpus}       & number & vCPUs                                        & \code{2} \\
+  \code{memory\_mb}      & number & Memory in MB                                 & \code{2048} \\
+  \code{disk\_size\_gb}  & number & Disk in GB                                   & \code{40} \\
+  \code{ipv4\_address}   & string & Static IP (empty = DHCP)                     & \code{""} \\
+  \code{ipv4\_gateway}   & string & Gateway (required if static IP set)          & \code{""} \\
+  \bottomrule
+  \caption{vsphere/virtual-machine template product parameters}
 \end{longtable}
 
 \chapter{HTTP Route Reference}

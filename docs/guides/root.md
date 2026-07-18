@@ -156,6 +156,46 @@ Under **Administration → Global Parameters**:
 
 Parameters that apply to *all* products and *all* environments (e.g. project tag, cost center label). These are automatically added to the order form.
 
+### 4.5 Pipeline Stacks
+
+Under **Administration → Products → [product] → Pipeline Stacks**:
+
+Pipeline Stacks let you define an ordered sequence of CI/CD template steps per product+environment directly in the portal — no changes to `.gitlab-ci.yml` required. When an order is approved (or placed directly by an Admin), the portal sends the full step list as `PIPELINE_STACK` JSON to the CI orchestrator pipeline alongside the normal order parameters.
+
+**Creating a pipeline stack:**
+
+1. Open the product under **Administration → Products** and click **Edit**
+2. Scroll to the **Pipeline Stacks** card and click **+ Add Stack**
+3. Fill in the required fields:
+   - **Name**: Label for this stack (e.g. "VM + DNS")
+   - **Environment**: Which deployment environment this stack applies to
+   - **Webhook URL**: GitLab trigger URL of the *orchestrator* pipeline that reads `PIPELINE_STACK`
+   - **Webhook Token**: Pipeline trigger token for the orchestrator project
+   - **State Key Parameter**: Name of the order parameter whose value is used as the OpenTofu state key (default: `hostname`). Must be stable across provision and destroy so state can be reused.
+4. Click **+ Add Step** one or more times to build the step sequence:
+   - **Template**: Path to the step template in the infra-templates repo (e.g. `linode/virtual-machine`)
+   - **State Suffix**: Appended to the state key to form the unique state name for this step (e.g. `-vm`)
+   - **Upstream Suffix** *(optional)*: State suffix of a preceding step whose outputs this step depends on
+   - **Fixed Params** *(optional)*: JSON object of additional CI variables specific to this step
+5. Click **Add** — the stack appears in the list
+
+**How it works at runtime:**
+
+When an order is triggered, the portal calls the configured webhook URL with:
+- `TEMPLATE=orchestrator`
+- `TF_STATE_NAME=<value of the stateKeyParam from the order>`
+- `PIPELINE_STACK=<JSON array of steps>`
+- All standard order parameters (`ORDER_ID`, `NAME`, etc.)
+
+The orchestrator pipeline reads `PIPELINE_STACK` and dynamically triggers the individual template pipelines in the defined order.
+
+**Managing existing stacks:**
+
+- Each stack is listed with its name, environment, and step count
+- Click **Delete** on a stack entry to remove it — active infrastructure is not affected, but future orders for that product+environment will no longer trigger that stack
+
+> **Product Webhooks vs. Pipeline Stacks:** Product Webhooks (section 4.1 "Step 4") call multiple CI endpoints directly and require you to manage trigger tokens and ordering in the portal. Pipeline Stacks call a single orchestrator CI pipeline and let the portal define the execution DAG as data — suitable when all steps share one orchestrator entry point.
+
 ---
 
 ## 5. Managing Cost Centers

@@ -8,6 +8,7 @@ vi.mock('@/lib/notification', () => ({
 
 vi.mock('@/lib/ci/webhooks', () => ({
   triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-1']),
+  triggerPipelineStacks: vi.fn().mockResolvedValue([]),
 }))
 
 import { listOrders, getOrderById, createOrder } from './orders'

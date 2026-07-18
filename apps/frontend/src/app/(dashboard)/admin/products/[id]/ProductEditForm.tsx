@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type {
   ProductDetail,
@@ -12,8 +12,11 @@ import type {
   CostCenterMode,
   ProductWebhook,
   CreateProductWebhookRequest,
+  PipelineStack,
+  CreatePipelineStackRequest,
+  StackStep,
 } from '@open-hybrid-cloud/types'
-import { put, post, del } from '@/lib/api'
+import { put, post, del, get } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
@@ -66,6 +69,18 @@ export function ProductEditForm({ product, categories, environments, translation
   // Webhooks
   const [webhooks, setWebhooks] = useState<ProductWebhook[]>([])
   const [webhookModal, setWebhookModal] = useState(false)
+
+  // Pipeline Stacks
+  const [stacks, setStacks] = useState<PipelineStack[]>([])
+  const [stackModal, setStackModal] = useState(false)
+  const [psName, setPsName] = useState('')
+  const [psEnvId, setPsEnvId] = useState('')
+  const [psUrl, setPsUrl] = useState('')
+  const [psToken, setPsToken] = useState('')
+  const [psStateKey, setPsStateKey] = useState('hostname')
+  const [psSteps, setPsSteps] = useState<{ template: string; stateSuffix: string; upstreamSuffix: string; fixedParams: string }[]>([])
+  const [psSaving, setPsSaving] = useState(false)
+  const [psError, setPsError] = useState<string | null>(null)
   const [whEnvId, setWhEnvId] = useState('')
   const [whName, setWhName] = useState('')
   const [whUrl, setWhUrl] = useState('')
@@ -177,6 +192,79 @@ export function ProductEditForm({ product, categories, environments, translation
     } catch { /* ignore */ }
   }
 
+  useEffect(() => {
+    get<PipelineStack[]>(`/api/admin/products/${product.id}/pipeline-stacks`, token)
+      .then(setStacks)
+      .catch(() => {})
+  }, [product.id, token])
+
+  function openStackModal() {
+    setPsError(null)
+    setPsName(''); setPsEnvId(''); setPsUrl(''); setPsToken(''); setPsStateKey('hostname'); setPsSteps([])
+    setStackModal(true)
+  }
+
+  function addStep() {
+    setPsSteps((prev) => [...prev, { template: '', stateSuffix: '', upstreamSuffix: '', fixedParams: '' }])
+  }
+
+  function removeStep(i: number) {
+    setPsSteps((prev) => prev.filter((_, idx) => idx !== i))
+  }
+
+  function updateStep(i: number, field: string, value: string) {
+    setPsSteps((prev) => prev.map((s, idx) => idx === i ? { ...s, [field]: value } : s))
+  }
+
+  function parseFixedParams(raw: string): Record<string, string> | undefined {
+    if (!raw.trim()) return undefined
+    const result: Record<string, string> = {}
+    for (const line of raw.split('\n')) {
+      const eq = line.indexOf('=')
+      if (eq > 0) result[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
+    }
+    return Object.keys(result).length ? result : undefined
+  }
+
+  async function handleAddStack(e: React.FormEvent) {
+    e.preventDefault()
+    setPsSaving(true)
+    setPsError(null)
+    try {
+      const steps: StackStep[] = psSteps.map((s) => {
+        const fixedParams = parseFixedParams(s.fixedParams)
+        return {
+          template: s.template.trim(),
+          stateSuffix: s.stateSuffix.trim(),
+          ...(s.upstreamSuffix.trim() ? { upstreamSuffix: s.upstreamSuffix.trim() } : {}),
+          ...(fixedParams ? { fixedParams } : {}),
+        }
+      })
+      const body: CreatePipelineStackRequest = {
+        environmentId: Number(psEnvId),
+        name: psName.trim(),
+        webhookUrl: psUrl.trim(),
+        webhookToken: psToken.trim(),
+        stateKeyParam: psStateKey.trim() || 'hostname',
+        steps,
+      }
+      const created = await post<PipelineStack>(`/api/admin/products/${product.id}/pipeline-stacks`, body, token)
+      setStacks((prev) => [...prev, created])
+      setStackModal(false)
+    } catch (e) {
+      setPsError(e instanceof Error ? e.message : 'Failed to create pipeline stack.')
+    } finally {
+      setPsSaving(false)
+    }
+  }
+
+  async function handleDeleteStack(stackId: number) {
+    try {
+      await del(`/api/admin/products/${product.id}/pipeline-stacks/${stackId}`, token)
+      setStacks((prev) => prev.filter((s) => s.id !== stackId))
+    } catch { /* ignore */ }
+  }
+
   return (
     <div className="space-y-6">
       {/* Basic Info */}
@@ -272,6 +360,30 @@ export function ProductEditForm({ product, categories, environments, translation
         )}
       </Card>
 
+      {/* Pipeline Stacks */}
+      <Card title="Pipeline Stacks" action={
+        <Button size="sm" onClick={openStackModal}>Add Stack</Button>
+      }>
+        {stacks.length === 0 ? (
+          <p className="text-sm text-slate-400">No pipeline stacks configured. Click &quot;Add Stack&quot; to configure one.</p>
+        ) : (
+          <div className="space-y-2">
+            {stacks.map((s) => {
+              const env = environments.find((e) => e.id === s.environmentId)
+              return (
+                <div key={s.id} data-testid="stack-item" className="flex items-center justify-between rounded-lg border border-slate-100 p-3">
+                  <div>
+                    <p className="font-medium text-slate-900">{s.name}</p>
+                    <p className="text-xs text-slate-500">{env?.name ?? `env #${s.environmentId}`} &middot; {s.steps.length} step{s.steps.length !== 1 ? 's' : ''} &middot; key: <span className="font-mono">{s.stateKeyParam}</span></p>
+                  </div>
+                  <Button size="sm" variant="danger" onClick={() => handleDeleteStack(s.id)}>Delete</Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Card>
+
       {/* Translation Modal */}
       <Modal open={transModal} onClose={() => setTransModal(false)} title="Add Translation" size="md">
         <form onSubmit={handleAddTranslation} className="space-y-4">
@@ -286,6 +398,57 @@ export function ProductEditForm({ product, categories, environments, translation
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setTransModal(false)}>Cancel</Button>
             <Button type="submit" disabled={transSaving}>{transSaving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Pipeline Stack Modal */}
+      <Modal open={stackModal} onClose={() => setStackModal(false)} title="Add Pipeline Stack" size="lg">
+        <form onSubmit={handleAddStack} className="space-y-4">
+          {psError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{psError}</div>}
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Name" value={psName} onChange={(e) => setPsName(e.target.value)} required />
+            <Select label="Environment" required value={psEnvId} onChange={(e) => setPsEnvId(e.target.value)}
+              placeholder="Select environment…" options={environments.map((e) => ({ value: e.id, label: e.name }))} />
+          </div>
+          <Input label="Webhook URL" type="url" value={psUrl} onChange={(e) => setPsUrl(e.target.value)} required />
+          <Input label="Webhook Token" value={psToken} onChange={(e) => setPsToken(e.target.value)} required />
+          <Input label="State Key Parameter" value={psStateKey} onChange={(e) => setPsStateKey(e.target.value)}
+            placeholder="hostname" />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-slate-700">Steps</label>
+              <Button type="button" size="sm" variant="secondary" onClick={addStep}>+ Add Step</Button>
+            </div>
+            {psSteps.length === 0 && (
+              <p className="text-sm text-slate-400">No steps yet. Add at least one step.</p>
+            )}
+            {psSteps.map((step, i) => (
+              <div key={i} className="rounded-lg border border-slate-200 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-500">Step {i + 1}</span>
+                  <Button type="button" size="sm" variant="danger" onClick={() => removeStep(i)}>Remove</Button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input label="Template" placeholder="linode/virtual-machine" value={step.template}
+                    onChange={(e) => updateStep(i, 'template', e.target.value)} required />
+                  <Input label="State Suffix" placeholder="-vm" value={step.stateSuffix}
+                    onChange={(e) => updateStep(i, 'stateSuffix', e.target.value)} required />
+                </div>
+                <Input label="Upstream State Suffix (optional)" placeholder="-vm"
+                  value={step.upstreamSuffix} onChange={(e) => updateStep(i, 'upstreamSuffix', e.target.value)} />
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-slate-700">Fixed Params (optional, one KEY=value per line)</label>
+                  <textarea value={step.fixedParams} onChange={(e) => updateStep(i, 'fixedParams', e.target.value)}
+                    rows={2} placeholder="LINODE_REGION=eu-central"
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="secondary" onClick={() => setStackModal(false)}>Cancel</Button>
+            <Button type="submit" disabled={psSaving || psSteps.length === 0}>{psSaving ? 'Saving…' : 'Add'}</Button>
           </div>
         </form>
       </Modal>

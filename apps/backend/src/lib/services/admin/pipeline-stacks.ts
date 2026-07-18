@@ -4,9 +4,19 @@ import { eq, and } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import type { PipelineStack, CreatePipelineStackRequest, UpdatePipelineStackRequest } from '@open-hybrid-cloud/types'
 
+const publicColumns = {
+  id: pipelineStacks.id,
+  productId: pipelineStacks.productId,
+  environmentId: pipelineStacks.environmentId,
+  name: pipelineStacks.name,
+  webhookUrl: pipelineStacks.webhookUrl,
+  stateKeyParam: pipelineStacks.stateKeyParam,
+  steps: pipelineStacks.steps,
+}
+
 export const listPipelineStacks = async (productId: number): Promise<Result<PipelineStack[]>> => {
   const rows = await db
-    .select()
+    .select(publicColumns)
     .from(pipelineStacks)
     .where(eq(pipelineStacks.productId, productId))
 
@@ -28,7 +38,7 @@ export const createPipelineStack = async (
       stateKeyParam: input.stateKeyParam ?? 'hostname',
       steps: input.steps,
     })
-    .returning()
+    .returning(publicColumns)
 
   return ok(row as PipelineStack)
 }
@@ -48,7 +58,7 @@ export const updatePipelineStack = async (
       ...(input.steps !== undefined && { steps: input.steps }),
     })
     .where(and(eq(pipelineStacks.id, stackId), eq(pipelineStacks.productId, productId)))
-    .returning()
+    .returning(publicColumns)
 
   if (!updated) return err(404, 'Not found')
   return ok(updated as PipelineStack)

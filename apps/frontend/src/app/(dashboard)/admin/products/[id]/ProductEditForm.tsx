@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import type {
   ProductDetail,
@@ -72,7 +72,6 @@ export function ProductEditForm({ product, categories, environments, translation
 
   // Pipeline Stacks
   const [stacks, setStacks] = useState<PipelineStack[]>([])
-  const [stacksLoaded, setStacksLoaded] = useState(false)
   const [stackModal, setStackModal] = useState(false)
   const [psName, setPsName] = useState('')
   const [psEnvId, setPsEnvId] = useState('')
@@ -193,16 +192,15 @@ export function ProductEditForm({ product, categories, environments, translation
     } catch { /* ignore */ }
   }
 
-  async function openStackModal() {
+  useEffect(() => {
+    get<PipelineStack[]>(`/api/admin/products/${product.id}/pipeline-stacks`, token)
+      .then(setStacks)
+      .catch(() => {})
+  }, [product.id, token])
+
+  function openStackModal() {
     setPsError(null)
     setPsName(''); setPsEnvId(''); setPsUrl(''); setPsToken(''); setPsStateKey('hostname'); setPsSteps([])
-    if (!stacksLoaded) {
-      try {
-        const loaded = await get<PipelineStack[]>(`/api/admin/products/${product.id}/pipeline-stacks`, token)
-        setStacks(loaded)
-        setStacksLoaded(true)
-      } catch { /* ignore */ }
-    }
     setStackModal(true)
   }
 
@@ -233,12 +231,15 @@ export function ProductEditForm({ product, categories, environments, translation
     setPsSaving(true)
     setPsError(null)
     try {
-      const steps: StackStep[] = psSteps.map((s) => ({
-        template: s.template.trim(),
-        stateSuffix: s.stateSuffix.trim(),
-        ...(s.upstreamSuffix.trim() ? { upstreamSuffix: s.upstreamSuffix.trim() } : {}),
-        ...(parseFixedParams(s.fixedParams) ? { fixedParams: parseFixedParams(s.fixedParams) } : {}),
-      }))
+      const steps: StackStep[] = psSteps.map((s) => {
+        const fixedParams = parseFixedParams(s.fixedParams)
+        return {
+          template: s.template.trim(),
+          stateSuffix: s.stateSuffix.trim(),
+          ...(s.upstreamSuffix.trim() ? { upstreamSuffix: s.upstreamSuffix.trim() } : {}),
+          ...(fixedParams ? { fixedParams } : {}),
+        }
+      })
       const body: CreatePipelineStackRequest = {
         environmentId: Number(psEnvId),
         name: psName.trim(),
@@ -370,7 +371,7 @@ export function ProductEditForm({ product, categories, environments, translation
             {stacks.map((s) => {
               const env = environments.find((e) => e.id === s.environmentId)
               return (
-                <div key={s.id} className="flex items-center justify-between rounded-lg border border-slate-100 p-3">
+                <div key={s.id} data-testid="stack-item" className="flex items-center justify-between rounded-lg border border-slate-100 p-3">
                   <div>
                     <p className="font-medium text-slate-900">{s.name}</p>
                     <p className="text-xs text-slate-500">{env?.name ?? `env #${s.environmentId}`} &middot; {s.steps.length} step{s.steps.length !== 1 ? 's' : ''} &middot; key: <span className="font-mono">{s.stateKeyParam}</span></p>

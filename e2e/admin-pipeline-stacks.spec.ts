@@ -32,10 +32,10 @@ test.describe('Admin - Pipeline Stacks', () => {
     await editLinks.first().click()
     await expect(page).toHaveURL(/\/admin\/products\/\d+/)
 
+    await expect(page.getByRole('button', { name: /add stack/i })).toBeVisible()
     const emptyState = page.getByText(/no pipeline stacks configured/i)
     const stackItem = page.locator('[data-testid="stack-item"]').first()
-    const addBtn = page.getByRole('button', { name: /add stack/i })
-    await expect(emptyState.or(stackItem).or(addBtn)).toBeVisible({ timeout: 5000 })
+    await expect(emptyState.or(stackItem)).toBeVisible({ timeout: 5000 })
   })
 
   test('"Add Stack" button opens the modal', async ({ page }) => {

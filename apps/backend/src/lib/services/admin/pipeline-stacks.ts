@@ -1,8 +1,7 @@
 import { db } from '@/lib/db/client'
 import { pipelineStacks } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { ok, err } from '@/lib/services/result'
-import type { Result } from '@/lib/services/result'
+import { ok, err, type Result } from '@/lib/services/result'
 import type { PipelineStack, CreatePipelineStackRequest, UpdatePipelineStackRequest } from '@open-hybrid-cloud/types'
 
 export const listPipelineStacks = async (productId: number): Promise<Result<PipelineStack[]>> => {

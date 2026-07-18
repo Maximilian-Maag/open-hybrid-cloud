@@ -11,6 +11,7 @@ import {
   primaryKey,
   customType,
 } from 'drizzle-orm/pg-core'
+import type { StackStep } from '@open-hybrid-cloud/types'
 
 const bytea = customType<{ data: Buffer }>({
   dataType() { return 'bytea' },
@@ -105,7 +106,7 @@ export const pipelineStacks = pgTable('pipeline_stacks', {
   webhookUrl: text('webhook_url').notNull(),
   webhookToken: text('webhook_token').notNull(),
   stateKeyParam: text('state_key_param').notNull().default('hostname'),
-  steps: jsonb().$type<import('@open-hybrid-cloud/types').StackStep[]>().notNull().default([]),
+  steps: jsonb().$type<StackStep[]>().notNull().default([]),
 })
 
 export const costCenters = pgTable('cost_centers', {

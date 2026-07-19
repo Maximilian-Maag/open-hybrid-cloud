@@ -157,6 +157,27 @@ test.describe('Admin - Pipeline Stacks', () => {
     await page.getByRole('button', { name: /cancel/i }).click()
     await expect(page.getByRole('dialog')).not.toBeVisible()
   })
+
+  test('"Edit Stack" button opens modal pre-filled with stack data', async ({ page }) => {
+    await page.goto('/admin/products')
+    const editLinks = page.getByRole('link', { name: /edit/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    await expect(page).toHaveURL(/\/admin\/products\/\d+/)
+
+    const stackItem = page.locator('[data-testid="stack-item"]').first()
+    const noStacks = page.getByText(/no pipeline stacks configured/i)
+    await expect(stackItem.or(noStacks)).toBeVisible({ timeout: 5000 })
+
+    if (await noStacks.isVisible()) { test.skip(); return }
+
+    await stackItem.getByRole('button', { name: /^edit$/i }).click()
+    await expect(page.getByRole('heading', { name: /edit pipeline stack/i })).toBeVisible()
+    await expect(page.getByLabel(/^name$/i)).not.toBeEmpty()
+  })
 })
 
 test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {

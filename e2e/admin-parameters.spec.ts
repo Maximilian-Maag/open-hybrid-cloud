@@ -17,6 +17,7 @@ test.describe('Admin - Global Parameters Management', () => {
     await page.getByRole('button', { name: /add parameter/i }).click()
     const dialog = page.locator('dialog[open]')
     await expect(dialog.getByLabel(/^name/i)).toBeVisible()
+    await expect(dialog.getByLabel(/display label/i)).toBeVisible()
     await expect(dialog.getByLabel(/^type/i)).toBeVisible()
     await expect(dialog.getByLabel(/description/i)).toBeVisible()
     await expect(dialog.getByRole('button', { name: /^save$/i })).toBeVisible()
@@ -30,10 +31,12 @@ test.describe('Admin - Global Parameters Management', () => {
     await page.getByRole('button', { name: /add parameter/i }).click()
     const addDialog = page.locator('dialog[open]')
     await addDialog.getByLabel(/^name/i).fill(paramName)
+    await addDialog.getByLabel(/display label/i).fill('E2E Test Label')
     await addDialog.getByLabel(/description/i).fill('E2E test parameter')
     await addDialog.getByRole('button', { name: /^save$/i }).click()
     await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
     await expect(page.getByText(paramName)).toBeVisible({ timeout: 8000 })
+    await expect(page.getByText('E2E Test Label')).toBeVisible({ timeout: 8000 })
 
     // --- Edit ---
     const paramRow = page.locator('div').filter({ has: page.getByText(paramName) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).last()

@@ -60,6 +60,15 @@ describe('POST /api/admin/parameters', () => {
     expect(body.name).toBe('cpu_limit')
   })
 
+  it('stores label field when provided', async () => {
+    const admin = await createUser({ role: 'admin' })
+    const auth = await makeAuthHeader(admin)
+    const res = await POST(makeReq('POST', { scope: 'global' as const, name: 'hostname', label: 'Hostname', type: 'string' as const }, auth))
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body.label).toBe('Hostname')
+  })
+
   it('returns 400 for invalid scope', async () => {
     const admin = await createUser({ role: 'admin' })
     const auth = await makeAuthHeader(admin)

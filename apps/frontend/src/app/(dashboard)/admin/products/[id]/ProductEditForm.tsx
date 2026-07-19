@@ -15,6 +15,9 @@ import type {
   PipelineStack,
   CreatePipelineStackRequest,
   StackStep,
+  Parameter,
+  ParameterType,
+  CreateParameterRequest,
 } from '@open-hybrid-cloud/types'
 import { put, post, del, get } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
@@ -88,6 +91,17 @@ export function ProductEditForm({ product, categories, environments, translation
   const [whOrder, setWhOrder] = useState('0')
   const [whSaving, setWhSaving] = useState(false)
   const [whError, setWhError] = useState<string | null>(null)
+
+  // Parameters
+  const [productParams, setProductParams] = useState<Parameter[]>(product.parameters ?? [])
+  const [paramModal, setParamModal] = useState(false)
+  const [paramSyncing, setParamSyncing] = useState(false)
+  const [paramSyncMsg, setParamSyncMsg] = useState<string | null>(null)
+  const [paramError, setParamError] = useState<string | null>(null)
+  const [paramSaving, setParamSaving] = useState(false)
+  const [paramForm, setParamForm] = useState({
+    name: '', type: 'string' as ParameterType, description: '', defaultValue: '', required: false, sensitive: false,
+  })
 
   async function handleSaveBasic(e: React.FormEvent) {
     e.preventDefault()
@@ -265,6 +279,62 @@ export function ProductEditForm({ product, categories, environments, translation
     } catch { /* ignore */ }
   }
 
+  async function handleSyncParams() {
+    setParamSyncing(true)
+    setParamSyncMsg(null)
+    setParamError(null)
+    try {
+      const result = await post<{ created: number; skipped: number }>(
+        `/api/admin/products/${product.id}/sync-parameters`, {}, token,
+      )
+      const refreshed = await get<Parameter[]>(
+        `/api/admin/parameters?scope=product&scopeId=${product.id}`, token,
+      )
+      if (refreshed) setProductParams(refreshed)
+      setParamSyncMsg(
+        `Imported ${result.created} parameter${result.created !== 1 ? 's' : ''}` +
+        (result.skipped ? `, ${result.skipped} already existed.` : '.'),
+      )
+    } catch (e) {
+      setParamError(e instanceof Error ? e.message : 'Sync failed.')
+    } finally {
+      setParamSyncing(false)
+    }
+  }
+
+  async function handleAddParam(e: React.FormEvent) {
+    e.preventDefault()
+    setParamSaving(true)
+    setParamError(null)
+    try {
+      const body: CreateParameterRequest = {
+        scope: 'product',
+        scopeId: product.id,
+        name: paramForm.name.trim(),
+        type: paramForm.type,
+        description: paramForm.description.trim() || undefined,
+        defaultValue: paramForm.defaultValue.trim() || undefined,
+        required: paramForm.required,
+        sensitive: paramForm.sensitive,
+      }
+      const created = await post<Parameter>('/api/admin/parameters', body, token)
+      setProductParams((prev) => [...prev, created])
+      setParamModal(false)
+      setParamForm({ name: '', type: 'string', description: '', defaultValue: '', required: false, sensitive: false })
+    } catch (e) {
+      setParamError(e instanceof Error ? e.message : 'Failed to create parameter.')
+    } finally {
+      setParamSaving(false)
+    }
+  }
+
+  async function handleDeleteParam(paramId: number) {
+    try {
+      await del(`/api/admin/parameters/${paramId}`, token)
+      setProductParams((prev) => prev.filter((p) => p.id !== paramId))
+    } catch { /* ignore */ }
+  }
+
   return (
     <div className="space-y-6">
       {/* Basic Info */}
@@ -333,6 +403,42 @@ export function ProductEditForm({ product, categories, environments, translation
                 />
               )
             })}
+          </div>
+        )}
+      </Card>
+
+      {/* Parameters */}
+      <Card title="Parameters" action={
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" onClick={handleSyncParams}
+            disabled={paramSyncing || stacks.length === 0}
+            title={stacks.length === 0 ? 'Add a pipeline stack first' : 'Import from template variables.tf'}>
+            {paramSyncing ? 'Syncing…' : 'Sync from template'}
+          </Button>
+          <Button size="sm" onClick={() => { setParamError(null); setParamSyncMsg(null); setParamModal(true) }}>Add Parameter</Button>
+        </div>
+      }>
+        {paramSyncMsg && <div className="mb-3 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">{paramSyncMsg}</div>}
+        {paramError && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{paramError}</div>}
+        {productParams.length === 0 ? (
+          <p className="text-sm text-slate-400">No parameters yet. Use &quot;Sync from template&quot; to import from the template&apos;s variables.tf, or add manually.</p>
+        ) : (
+          <div className="space-y-2">
+            {productParams.map((p) => (
+              <div key={p.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <p className="font-medium text-slate-900 font-mono text-sm">{p.name}</p>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{p.type}</span>
+                    {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-600">required</span>}
+                    {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">sensitive</span>}
+                  </div>
+                  {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
+                  {p.defaultValue && <p className="text-xs text-slate-400 font-mono">default: {p.defaultValue}</p>}
+                </div>
+                <Button size="sm" variant="danger" onClick={() => handleDeleteParam(p.id)}>Delete</Button>
+              </div>
+            ))}
           </div>
         )}
       </Card>
@@ -431,16 +537,20 @@ export function ProductEditForm({ product, categories, environments, translation
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Input label="Template" placeholder="linode/virtual-machine" value={step.template}
-                    onChange={(e) => updateStep(i, 'template', e.target.value)} required />
+                    onChange={(e) => updateStep(i, 'template', e.target.value)} required
+                    hint="Path under templates/ in your infra-templates repo" />
                   <Input label="State Suffix" placeholder="-vm" value={step.stateSuffix}
-                    onChange={(e) => updateStep(i, 'stateSuffix', e.target.value)} required />
+                    onChange={(e) => updateStep(i, 'stateSuffix', e.target.value)} required
+                    hint="Appended to the state key param to form the Terraform state name (e.g. hostname + -vm)" />
                 </div>
                 <Input label="Upstream State Suffix (optional)" placeholder="-vm"
-                  value={step.upstreamSuffix} onChange={(e) => updateStep(i, 'upstreamSuffix', e.target.value)} />
+                  value={step.upstreamSuffix} onChange={(e) => updateStep(i, 'upstreamSuffix', e.target.value)}
+                  hint="Read Terraform outputs (e.g. ip_address, id) from the step with this suffix as inputs to this step" />
                 <div className="flex flex-col gap-1">
-                  <label className="text-sm font-medium text-slate-700">Fixed Params (optional, one KEY=value per line)</label>
+                  <label className="text-sm font-medium text-slate-700">Fixed Parameters (optional)</label>
+                  <p className="text-xs text-slate-500">Override or hardcode order parameters for this step only — one KEY=value per line</p>
                   <textarea value={step.fixedParams} onChange={(e) => updateStep(i, 'fixedParams', e.target.value)}
-                    rows={2} placeholder="LINODE_REGION=eu-central"
+                    rows={2} placeholder="REGION=eu-central"
                     className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
@@ -466,6 +576,46 @@ export function ProductEditForm({ product, categories, environments, translation
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setWebhookModal(false)}>Cancel</Button>
             <Button type="submit" disabled={whSaving}>{whSaving ? 'Saving…' : 'Add'}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Parameter Modal */}
+      <Modal open={paramModal} onClose={() => setParamModal(false)} title="Add Parameter" size="md">
+        <form onSubmit={handleAddParam} className="space-y-4">
+          {paramError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{paramError}</div>}
+          <Input label="Name" value={paramForm.name} onChange={(e) => setParamForm((f) => ({ ...f, name: e.target.value }))} required
+            hint="Must match the variable name in variables.tf" />
+          <Select label="Type" value={paramForm.type}
+            onChange={(e) => setParamForm((f) => ({ ...f, type: e.target.value as ParameterType }))}
+            options={[
+              { value: 'string', label: 'String' },
+              { value: 'number', label: 'Number' },
+              { value: 'bool', label: 'Boolean' },
+              { value: 'dropdown', label: 'Dropdown' },
+            ]} />
+          <Input label="Description" value={paramForm.description}
+            onChange={(e) => setParamForm((f) => ({ ...f, description: e.target.value }))} />
+          <Input label="Default Value" value={paramForm.defaultValue}
+            onChange={(e) => setParamForm((f) => ({ ...f, defaultValue: e.target.value }))}
+            hint={paramForm.type === 'dropdown' ? 'Comma-separated options' : undefined} />
+          <div className="flex gap-6">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="param-required" checked={paramForm.required}
+                onChange={(e) => setParamForm((f) => ({ ...f, required: e.target.checked }))}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="param-required" className="text-sm font-medium text-slate-700">Required</label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="param-sensitive" checked={paramForm.sensitive}
+                onChange={(e) => setParamForm((f) => ({ ...f, sensitive: e.target.checked }))}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="param-sensitive" className="text-sm font-medium text-slate-700">Sensitive</label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="secondary" onClick={() => setParamModal(false)}>Cancel</Button>
+            <Button type="submit" disabled={paramSaving}>{paramSaving ? 'Saving…' : 'Add'}</Button>
           </div>
         </form>
       </Modal>

@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
 import { toResponse } from '@/lib/http'
-import { updateProductEnvironment, deleteProductEnvironment } from '@/lib/services/admin/products'
+import { createProductEnvironment, deleteProductEnvironment } from '@/lib/services/admin/products'
 
 const UpdateProductEnvironmentSchema = z.object({
   price: z.string().optional(),
@@ -25,7 +25,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateProductEnvironment(parseInt(id, 10), parseInt(envId, 10), parsed.data))
+  return toResponse(await createProductEnvironment(parseInt(id, 10), { environmentId: parseInt(envId, 10), ...parsed.data }))
 }
 
 export async function DELETE(

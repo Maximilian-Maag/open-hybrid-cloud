@@ -16,7 +16,7 @@ test.describe('Admin - Global Parameters Management', () => {
   test('Add Parameter modal has Name, Type and Description fields', async ({ page }) => {
     await page.getByRole('button', { name: /add parameter/i }).click()
     const dialog = page.locator('dialog[open]')
-    await expect(dialog.getByLabel(/^name/i)).toBeVisible()
+    await expect(dialog.getByLabel(/variable name/i)).toBeVisible()
     await expect(dialog.getByLabel(/display label/i)).toBeVisible()
     await expect(dialog.getByLabel(/^type/i)).toBeVisible()
     await expect(dialog.getByLabel(/description/i)).toBeVisible()
@@ -30,7 +30,7 @@ test.describe('Admin - Global Parameters Management', () => {
     // --- Create ---
     await page.getByRole('button', { name: /add parameter/i }).click()
     const addDialog = page.locator('dialog[open]')
-    await addDialog.getByLabel(/^name/i).fill(paramName)
+    await addDialog.getByLabel(/variable name/i).fill(paramName)
     await addDialog.getByLabel(/display label/i).fill('E2E Test Label')
     await addDialog.getByLabel(/description/i).fill('E2E test parameter')
     await addDialog.getByRole('button', { name: /^save$/i }).click()
@@ -43,7 +43,7 @@ test.describe('Admin - Global Parameters Management', () => {
     await paramRow.getByRole('button', { name: /^edit$/i }).click()
     await expect(page.getByRole('heading', { name: /edit parameter/i })).toBeVisible()
     const updatedName = `${paramName}_updated`
-    await page.locator('dialog[open]').getByLabel(/^name/i).fill(updatedName)
+    await page.locator('dialog[open]').getByLabel(/variable name/i).fill(updatedName)
     await page.locator('dialog[open]').getByRole('button', { name: /^save$/i }).click()
     await expect(page.getByRole('heading', { name: /edit parameter/i })).not.toBeVisible({ timeout: 8000 })
     await expect(page.getByText(updatedName)).toBeVisible({ timeout: 8000 })

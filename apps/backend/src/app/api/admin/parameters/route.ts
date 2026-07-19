@@ -9,6 +9,7 @@ const CreateParameterSchema = z.object({
   scopeId: z.number().int().default(0),
   environmentId: z.number().int().positive().nullable().optional(),
   name: z.string().min(1),
+  label: z.string().default(''),
   type: z.enum(['string', 'number', 'bool', 'dropdown']),
   description: z.string().default(''),
   defaultValue: z.string().default(''),

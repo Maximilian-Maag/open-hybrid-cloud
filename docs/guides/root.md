@@ -112,21 +112,25 @@ Under **Administration → Products → New**:
 
 **Step 3 – Parameters**
 
-*Option A: Import from `variables.tf`*
-1. Click **Browse Repo** → select a GitLab source
-2. Select repo and branch
-3. Select one or more `variables.tf` files
-4. Click **Import Parameters** — fields are automatically populated from the HCL parser
-5. Imported parameters can be adjusted or supplemented
+Parameters are configured on the product edit page under the **Parameters** card. There are two ways to populate them:
 
-*Option B: Manual Entry*
+*Option A: Sync from template (recommended)*
+1. First add a **Pipeline Stack** for this product (see section 4.5)
+2. Click **Sync from template** — the platform fetches the template's `variables.tf` from your CI source and creates parameters automatically
+3. Each parameter is created with:
+   - **Variable Name**: exact Terraform variable name (e.g. `hostname`) — sent to GitLab CI as `TF_VAR_hostname`
+   - **Display Label**: auto-generated human-readable name (e.g. `Hostname`) — shown to users in the order form. Edit this to be more descriptive if needed.
+4. Sensitive variables and internal CI variables are automatically excluded
+
+*Option B: Manual entry*
 - Click **Add Parameter**
-- Set name, type (text, number, bool, dropdown), description, default value, required flag, and visibility per environment
+- Set **Variable Name** (must match the Terraform variable name), **Display Label** (user-facing), type (string, number, bool, dropdown), description, default value, and the required/sensitive flags
+- Click **Edit** on any existing parameter to modify it
 
 **Step 4 – Deployment Environments**
 - Select environments in which the product should be available
 - Per environment: webhook URL (if different from environment configuration) and environment-specific parameters
-- **Product Webhooks:** For each selected environment, you can configure multiple webhook endpoints via **Administration → Products → [product] → Webhooks**. Each entry has a name, webhook URL, webhook token, and execution order (`exec_order`). Webhooks with the same `exec_order` fire concurrently; a lower `exec_order` fires before a higher one. If no product webhooks are configured for a given environment, the system falls back to the deployment environment's default webhook URL.
+- **Order Callbacks:** For each selected environment, you can configure optional HTTP callbacks via the **Order Callbacks** card on the product edit page. These notify external systems (e.g. ticketing, monitoring) after an order is processed — they do not trigger provisioning (that is handled by Pipeline Stacks).
 
 **Step 5 – Pricing**
 - Enter a price in the base currency per environment (e.g. AWS: 70 EUR, on-premises: 20 EUR)
@@ -192,9 +196,10 @@ The orchestrator pipeline reads `PIPELINE_STACK` and dynamically triggers the in
 **Managing existing stacks:**
 
 - Each stack is listed with its name, environment, and step count
+- Click **Edit** on a stack to update its name, webhook URL, token, state key parameter, or steps. The environment cannot be changed after creation. Leave the token field blank to keep the existing token.
 - Click **Delete** on a stack entry to remove it — active infrastructure is not affected, but future orders for that product+environment will no longer trigger that stack
 
-> **Product Webhooks vs. Pipeline Stacks:** Product Webhooks (section 4.1 "Step 4") call multiple CI endpoints directly and require you to manage trigger tokens and ordering in the portal. Pipeline Stacks call a single orchestrator CI pipeline and let the portal define the execution DAG as data — suitable when all steps share one orchestrator entry point.
+> **Order Callbacks vs. Pipeline Stacks:** Order Callbacks (section 4.1 "Step 4") notify external HTTP endpoints after order processing and are optional. Pipeline Stacks call a single orchestrator CI pipeline and let the portal define the execution DAG as data — suitable when all steps share one orchestrator entry point.
 
 ---
 

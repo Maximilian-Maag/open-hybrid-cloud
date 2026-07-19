@@ -55,6 +55,7 @@ export const parameters = pgTable('parameters', {
   scopeId: bigint('scope_id', { mode: 'number' }).notNull().default(0),
   environmentId: bigint('environment_id', { mode: 'number' }),
   name: text().notNull(),
+  label: text().notNull().default(''),
   type: text({ enum: ['string', 'number', 'bool', 'dropdown'] }).notNull(),
   description: text().notNull().default(''),
   defaultValue: text('default_value').notNull().default(''),

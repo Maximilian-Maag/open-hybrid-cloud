@@ -66,6 +66,7 @@ beforeAll(async () => {
       scope_id BIGINT NOT NULL DEFAULT 0,
       environment_id BIGINT,
       name TEXT NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
       type TEXT NOT NULL CHECK (type IN ('string','number','bool','dropdown')),
       description TEXT NOT NULL DEFAULT '',
       default_value TEXT NOT NULL DEFAULT '',

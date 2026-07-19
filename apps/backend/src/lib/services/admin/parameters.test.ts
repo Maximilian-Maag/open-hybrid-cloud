@@ -56,6 +56,18 @@ describe('createParameter', () => {
       expect(result.data.sensitive).toBe(false)
     }
   })
+
+  it('stores label when provided', async () => {
+    const result = await createParameter({ scope: 'global', name: 'region', label: 'Region', type: 'string' })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.label).toBe('Region')
+  })
+
+  it('stores empty label by default', async () => {
+    const result = await createParameter({ scope: 'global', name: 'region', type: 'string' })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.label).toBe('')
+  })
 })
 
 describe('updateParameter', () => {
@@ -74,6 +86,14 @@ describe('updateParameter', () => {
       expect(result.data.name).toBe('new')
       expect(result.data.required).toBe(true)
     }
+  })
+
+  it('updates label field', async () => {
+    const created = await createParameter({ scope: 'global', name: 'x', type: 'string', label: 'Old Label' })
+    if (!created.ok) throw new Error('seed failed')
+    const result = await updateParameter(created.data.id, { label: 'New Label' })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.label).toBe('New Label')
   })
 })
 

@@ -125,10 +125,12 @@ export async function POST(
   let created = 0
   for (const v of vars) {
     if (existingNames.has(v.name)) continue
+    const label = v.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
     await db.insert(parameters).values({
       scope: 'product',
       scopeId: productId,
       name: v.name,
+      label,
       type: v.type,
       description: v.description,
       defaultValue: v.defaultValue,

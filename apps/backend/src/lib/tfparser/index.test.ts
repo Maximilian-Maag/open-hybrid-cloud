@@ -13,6 +13,7 @@ variable "cluster_name" {
     expect(parseTerraformVariables(hcl)).toEqual([
       {
         name: 'cluster_name',
+        label: 'Cluster Name',
         type: 'string',
         description: 'Name of the cluster',
         defaultValue: 'my-cluster',
@@ -113,5 +114,15 @@ variable "optional" {
     const vars = parseTerraformVariables(hcl)
     expect(vars[0].defaultValue).toBe('')
     expect(vars[0].required).toBe(false)
+  })
+
+  it('auto-generates label from variable name', () => {
+    const hcl = `
+variable "instance_type" {
+  type = string
+}
+`
+    const vars = parseTerraformVariables(hcl)
+    expect(vars[0].label).toBe('Instance Type')
   })
 })

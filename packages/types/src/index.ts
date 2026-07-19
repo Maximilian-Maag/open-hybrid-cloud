@@ -119,6 +119,7 @@ export interface Parameter {
   scopeId: number
   environmentId: number | null
   name: string
+  label: string
   type: ParameterType
   description: string
   defaultValue: string
@@ -131,6 +132,7 @@ export interface CreateParameterRequest {
   scopeId: number
   environmentId?: number
   name: string
+  label?: string
   type: ParameterType
   description?: string
   defaultValue?: string
@@ -140,6 +142,7 @@ export interface CreateParameterRequest {
 
 export interface UpdateParameterRequest {
   name?: string
+  label?: string
   type?: ParameterType
   description?: string
   defaultValue?: string

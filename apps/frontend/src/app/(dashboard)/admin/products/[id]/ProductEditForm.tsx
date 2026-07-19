@@ -14,10 +14,12 @@ import type {
   CreateProductWebhookRequest,
   PipelineStack,
   CreatePipelineStackRequest,
+  UpdatePipelineStackRequest,
   StackStep,
   Parameter,
   ParameterType,
   CreateParameterRequest,
+  UpdateParameterRequest,
 } from '@open-hybrid-cloud/types'
 import { put, post, del, get } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
@@ -76,6 +78,7 @@ export function ProductEditForm({ product, categories, environments, translation
   // Pipeline Stacks
   const [stacks, setStacks] = useState<PipelineStack[]>([])
   const [stackModal, setStackModal] = useState(false)
+  const [editStack, setEditStack] = useState<PipelineStack | null>(null)
   const [psName, setPsName] = useState('')
   const [psEnvId, setPsEnvId] = useState('')
   const [psUrl, setPsUrl] = useState('')
@@ -99,8 +102,9 @@ export function ProductEditForm({ product, categories, environments, translation
   const [paramSyncMsg, setParamSyncMsg] = useState<string | null>(null)
   const [paramError, setParamError] = useState<string | null>(null)
   const [paramSaving, setParamSaving] = useState(false)
+  const [editParam, setEditParam] = useState<Parameter | null>(null)
   const [paramForm, setParamForm] = useState({
-    name: '', type: 'string' as ParameterType, description: '', defaultValue: '', required: false, sensitive: false,
+    name: '', label: '', type: 'string' as ParameterType, description: '', defaultValue: '', required: false, sensitive: false,
   })
 
   async function handleSaveBasic(e: React.FormEvent) {
@@ -214,7 +218,25 @@ export function ProductEditForm({ product, categories, environments, translation
 
   function openStackModal() {
     setPsError(null)
+    setEditStack(null)
     setPsName(''); setPsEnvId(''); setPsUrl(''); setPsToken(''); setPsStateKey('hostname'); setPsSteps([])
+    setStackModal(true)
+  }
+
+  function openEditStackModal(stack: PipelineStack) {
+    setPsError(null)
+    setEditStack(stack)
+    setPsName(stack.name)
+    setPsEnvId(String(stack.environmentId))
+    setPsUrl(stack.webhookUrl)
+    setPsToken('')
+    setPsStateKey(stack.stateKeyParam)
+    setPsSteps(stack.steps.map((s) => ({
+      template: s.template,
+      stateSuffix: s.stateSuffix,
+      upstreamSuffix: s.upstreamSuffix ?? '',
+      fixedParams: s.fixedParams ? Object.entries(s.fixedParams).map(([k, v]) => `${k}=${v}`).join('\n') : '',
+    })))
     setStackModal(true)
   }
 
@@ -240,7 +262,7 @@ export function ProductEditForm({ product, categories, environments, translation
     return Object.keys(result).length ? result : undefined
   }
 
-  async function handleAddStack(e: React.FormEvent) {
+  async function handleSaveStack(e: React.FormEvent) {
     e.preventDefault()
     setPsSaving(true)
     setPsError(null)
@@ -254,19 +276,31 @@ export function ProductEditForm({ product, categories, environments, translation
           ...(fixedParams ? { fixedParams } : {}),
         }
       })
-      const body: CreatePipelineStackRequest = {
-        environmentId: Number(psEnvId),
-        name: psName.trim(),
-        webhookUrl: psUrl.trim(),
-        webhookToken: psToken.trim(),
-        stateKeyParam: psStateKey.trim() || 'hostname',
-        steps,
+      if (editStack) {
+        const body: UpdatePipelineStackRequest = {
+          name: psName.trim(),
+          webhookUrl: psUrl.trim(),
+          stateKeyParam: psStateKey.trim() || 'hostname',
+          steps,
+          ...(psToken.trim() ? { webhookToken: psToken.trim() } : {}),
+        }
+        const updated = await put<PipelineStack>(`/api/admin/products/${product.id}/pipeline-stacks/${editStack.id}`, body, token)
+        setStacks((prev) => prev.map((s) => s.id === editStack.id ? updated : s))
+      } else {
+        const body: CreatePipelineStackRequest = {
+          environmentId: Number(psEnvId),
+          name: psName.trim(),
+          webhookUrl: psUrl.trim(),
+          webhookToken: psToken.trim(),
+          stateKeyParam: psStateKey.trim() || 'hostname',
+          steps,
+        }
+        const created = await post<PipelineStack>(`/api/admin/products/${product.id}/pipeline-stacks`, body, token)
+        setStacks((prev) => [...prev, created])
       }
-      const created = await post<PipelineStack>(`/api/admin/products/${product.id}/pipeline-stacks`, body, token)
-      setStacks((prev) => [...prev, created])
       setStackModal(false)
     } catch (e) {
-      setPsError(e instanceof Error ? e.message : 'Failed to create pipeline stack.')
+      setPsError(e instanceof Error ? e.message : 'Failed to save pipeline stack.')
     } finally {
       setPsSaving(false)
     }
@@ -302,27 +336,57 @@ export function ProductEditForm({ product, categories, environments, translation
     }
   }
 
-  async function handleAddParam(e: React.FormEvent) {
+  function openAddParamModal() {
+    setEditParam(null)
+    setParamError(null)
+    setParamSyncMsg(null)
+    setParamForm({ name: '', label: '', type: 'string', description: '', defaultValue: '', required: false, sensitive: false })
+    setParamModal(true)
+  }
+
+  function openEditParamModal(p: Parameter) {
+    setEditParam(p)
+    setParamError(null)
+    setParamSyncMsg(null)
+    setParamForm({ name: p.name, label: p.label, type: p.type, description: p.description, defaultValue: p.defaultValue, required: p.required, sensitive: p.sensitive })
+    setParamModal(true)
+  }
+
+  async function handleSaveParam(e: React.FormEvent) {
     e.preventDefault()
     setParamSaving(true)
     setParamError(null)
     try {
-      const body: CreateParameterRequest = {
-        scope: 'product',
-        scopeId: product.id,
-        name: paramForm.name.trim(),
-        type: paramForm.type,
-        description: paramForm.description.trim() || undefined,
-        defaultValue: paramForm.defaultValue.trim() || undefined,
-        required: paramForm.required,
-        sensitive: paramForm.sensitive,
+      if (editParam) {
+        const body: UpdateParameterRequest = {
+          name: paramForm.name.trim(),
+          label: paramForm.label.trim(),
+          type: paramForm.type,
+          description: paramForm.description.trim() || undefined,
+          defaultValue: paramForm.defaultValue.trim() || undefined,
+          required: paramForm.required,
+          sensitive: paramForm.sensitive,
+        }
+        const updated = await put<Parameter>(`/api/admin/parameters/${editParam.id}`, body, token)
+        setProductParams((prev) => prev.map((p) => p.id === editParam.id ? updated : p))
+      } else {
+        const body: CreateParameterRequest = {
+          scope: 'product',
+          scopeId: product.id,
+          name: paramForm.name.trim(),
+          label: paramForm.label.trim(),
+          type: paramForm.type,
+          description: paramForm.description.trim() || undefined,
+          defaultValue: paramForm.defaultValue.trim() || undefined,
+          required: paramForm.required,
+          sensitive: paramForm.sensitive,
+        }
+        const created = await post<Parameter>('/api/admin/parameters', body, token)
+        setProductParams((prev) => [...prev, created])
       }
-      const created = await post<Parameter>('/api/admin/parameters', body, token)
-      setProductParams((prev) => [...prev, created])
       setParamModal(false)
-      setParamForm({ name: '', type: 'string', description: '', defaultValue: '', required: false, sensitive: false })
     } catch (e) {
-      setParamError(e instanceof Error ? e.message : 'Failed to create parameter.')
+      setParamError(e instanceof Error ? e.message : 'Failed to save parameter.')
     } finally {
       setParamSaving(false)
     }
@@ -415,7 +479,7 @@ export function ProductEditForm({ product, categories, environments, translation
             title={stacks.length === 0 ? 'Add a pipeline stack first' : 'Import from template variables.tf'}>
             {paramSyncing ? 'Syncing…' : 'Sync from template'}
           </Button>
-          <Button size="sm" onClick={() => { setParamError(null); setParamSyncMsg(null); setParamModal(true) }}>Add Parameter</Button>
+          <Button size="sm" onClick={openAddParamModal}>Add Parameter</Button>
         </div>
       }>
         {paramSyncMsg && <div className="mb-3 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">{paramSyncMsg}</div>}
@@ -428,7 +492,8 @@ export function ProductEditForm({ product, categories, environments, translation
               <div key={p.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
                 <div>
                   <div className="flex items-center gap-2 mb-0.5">
-                    <p className="font-medium text-slate-900 font-mono text-sm">{p.name}</p>
+                    <p className="font-medium text-slate-900">{p.label || p.name}</p>
+                    <span className="font-mono text-xs text-slate-400">{p.name}</span>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{p.type}</span>
                     {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-600">required</span>}
                     {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">sensitive</span>}
@@ -436,21 +501,23 @@ export function ProductEditForm({ product, categories, environments, translation
                   {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
                   {p.defaultValue && <p className="text-xs text-slate-400 font-mono">default: {p.defaultValue}</p>}
                 </div>
-                <Button size="sm" variant="danger" onClick={() => handleDeleteParam(p.id)}>Delete</Button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => openEditParamModal(p)}>Edit</Button>
+                  <Button size="sm" variant="danger" onClick={() => handleDeleteParam(p.id)}>Delete</Button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </Card>
 
-      {/* Webhooks */}
-      <Card title="Webhooks" action={
+      {/* Order Callbacks */}
+      <Card title="Order Callbacks" action={
         <Button size="sm" onClick={() => { setWhError(null); setWebhookModal(true) }}>Add Webhook</Button>
       }>
-        {webhooks.length === 0 && product.environments.length === 0 ? (
-          <p className="text-sm text-slate-400">No webhooks configured.</p>
-        ) : webhooks.length === 0 ? (
-          <p className="text-sm text-slate-400">No webhooks yet.</p>
+        <p className="text-xs text-slate-500 mb-3">Optional HTTP callbacks the platform calls after an order is processed — use these to notify external systems such as ticketing or monitoring tools. Pipeline Stacks handle the actual provisioning.</p>
+        {webhooks.length === 0 ? (
+          <p className="text-sm text-slate-400">No callbacks configured.</p>
         ) : (
           <div className="space-y-2">
             {webhooks.map((wh) => (
@@ -482,7 +549,10 @@ export function ProductEditForm({ product, categories, environments, translation
                     <p className="font-medium text-slate-900">{s.name}</p>
                     <p className="text-xs text-slate-500">{env?.name ?? `env #${s.environmentId}`} &middot; {s.steps.length} step{s.steps.length !== 1 ? 's' : ''} &middot; key: <span className="font-mono">{s.stateKeyParam}</span></p>
                   </div>
-                  <Button size="sm" variant="danger" onClick={() => handleDeleteStack(s.id)}>Delete</Button>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => openEditStackModal(s)}>Edit</Button>
+                    <Button size="sm" variant="danger" onClick={() => handleDeleteStack(s.id)}>Delete</Button>
+                  </div>
                 </div>
               )
             })}
@@ -509,16 +579,18 @@ export function ProductEditForm({ product, categories, environments, translation
       </Modal>
 
       {/* Pipeline Stack Modal */}
-      <Modal open={stackModal} onClose={() => setStackModal(false)} title="Add Pipeline Stack" size="lg">
-        <form onSubmit={handleAddStack} className="space-y-4">
+      <Modal open={stackModal} onClose={() => setStackModal(false)} title={editStack ? 'Edit Pipeline Stack' : 'Add Pipeline Stack'} size="lg">
+        <form onSubmit={handleSaveStack} className="space-y-4">
           {psError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{psError}</div>}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Name" value={psName} onChange={(e) => setPsName(e.target.value)} required />
-            <Select label="Environment" required value={psEnvId} onChange={(e) => setPsEnvId(e.target.value)}
-              placeholder="Select environment…" options={environments.map((e) => ({ value: e.id, label: e.name }))} />
+            <Select label="Environment" required={!editStack} value={psEnvId} onChange={(e) => setPsEnvId(e.target.value)}
+              placeholder="Select environment…" options={environments.map((e) => ({ value: e.id, label: e.name }))}
+              disabled={!!editStack} />
           </div>
           <Input label="Webhook URL" type="url" value={psUrl} onChange={(e) => setPsUrl(e.target.value)} required />
-          <Input label="Webhook Token" value={psToken} onChange={(e) => setPsToken(e.target.value)} required />
+          <Input label="Webhook Token" value={psToken} onChange={(e) => setPsToken(e.target.value)}
+            required={!editStack} hint={editStack ? 'Leave blank to keep existing token' : undefined} />
           <Input label="State Key Parameter" value={psStateKey} onChange={(e) => setPsStateKey(e.target.value)}
             placeholder="hostname" />
           <div className="space-y-2">
@@ -558,7 +630,7 @@ export function ProductEditForm({ product, categories, environments, translation
           </div>
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setStackModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={psSaving || psSteps.length === 0}>{psSaving ? 'Saving…' : 'Add'}</Button>
+            <Button type="submit" disabled={psSaving || psSteps.length === 0}>{psSaving ? 'Saving…' : editStack ? 'Save' : 'Add'}</Button>
           </div>
         </form>
       </Modal>
@@ -581,11 +653,15 @@ export function ProductEditForm({ product, categories, environments, translation
       </Modal>
 
       {/* Parameter Modal */}
-      <Modal open={paramModal} onClose={() => setParamModal(false)} title="Add Parameter" size="md">
-        <form onSubmit={handleAddParam} className="space-y-4">
+      <Modal open={paramModal} onClose={() => setParamModal(false)} title={editParam ? 'Edit Parameter' : 'Add Parameter'} size="md">
+        <form onSubmit={handleSaveParam} className="space-y-4">
           {paramError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{paramError}</div>}
-          <Input label="Name" value={paramForm.name} onChange={(e) => setParamForm((f) => ({ ...f, name: e.target.value }))} required
-            hint="Must match the variable name in variables.tf" />
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Variable Name" value={paramForm.name} onChange={(e) => setParamForm((f) => ({ ...f, name: e.target.value }))} required
+              hint="Terraform variable name — sent as TF_VAR_name" />
+            <Input label="Display Label" value={paramForm.label} onChange={(e) => setParamForm((f) => ({ ...f, label: e.target.value }))}
+              hint="User-facing name shown in the order form" />
+          </div>
           <Select label="Type" value={paramForm.type}
             onChange={(e) => setParamForm((f) => ({ ...f, type: e.target.value as ParameterType }))}
             options={[
@@ -615,7 +691,7 @@ export function ProductEditForm({ product, categories, environments, translation
           </div>
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setParamModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={paramSaving}>{paramSaving ? 'Saving…' : 'Add'}</Button>
+            <Button type="submit" disabled={paramSaving}>{paramSaving ? 'Saving…' : editParam ? 'Save' : 'Add'}</Button>
           </div>
         </form>
       </Modal>

@@ -125,24 +125,6 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
 
   const ciOptions = ciSources.map((c) => ({ value: c.id, label: c.name }))
 
-  const EnvForm = ({ onSubmit, isEdit }: { onSubmit: (e: React.FormEvent) => void; isEdit?: boolean }) => (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
-      <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
-      <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
-      <Select label="CI Source" required value={form.ciSourceId} onChange={(e) => setField('ciSourceId', e.target.value)}
-        placeholder="Select CI source…" options={ciOptions} />
-      <Input label="Webhook URL" type="url" value={form.webhookUrl} onChange={(e) => setField('webhookUrl', e.target.value)}
-        required={!isEdit} />
-      <Input label="Webhook Token" value={form.webhookToken} onChange={(e) => setField('webhookToken', e.target.value)}
-        required={!isEdit} />
-      <div className="flex justify-end gap-3 pt-2">
-        <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-      </div>
-    </form>
-  )
-
   return (
     <>
       <Card title="Environments" action={<Button size="sm" onClick={openAdd}>Add Environment</Button>}>
@@ -169,10 +151,34 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
       </Card>
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Environment" size="md">
-        <EnvForm onSubmit={handleAdd} />
+        <form onSubmit={handleAdd} className="space-y-4">
+          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
+          <Select label="CI Source" required value={form.ciSourceId} onChange={(e) => setField('ciSourceId', e.target.value)}
+            placeholder="Select CI source…" options={ciOptions} />
+          <Input label="Webhook URL" type="url" value={form.webhookUrl} onChange={(e) => setField('webhookUrl', e.target.value)} required />
+          <Input label="Webhook Token" value={form.webhookToken} onChange={(e) => setField('webhookToken', e.target.value)} required />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Environment" size="md">
-        <EnvForm onSubmit={handleEdit} isEdit />
+        <form onSubmit={handleEdit} className="space-y-4">
+          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
+          <Select label="CI Source" required value={form.ciSourceId} onChange={(e) => setField('ciSourceId', e.target.value)}
+            placeholder="Select CI source…" options={ciOptions} />
+          <Input label="Webhook URL (leave blank to keep)" type="url" value={form.webhookUrl} onChange={(e) => setField('webhookUrl', e.target.value)} />
+          <Input label="Webhook Token (leave blank to keep)" value={form.webhookToken} onChange={(e) => setField('webhookToken', e.target.value)} />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Environment" size="sm">
         <p className="text-sm text-slate-600 mb-6">Delete <strong>{deleteTarget?.name}</strong>?</p>

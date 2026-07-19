@@ -112,33 +112,6 @@ export function ParametersManager({ token }: Props) {
     }
   }
 
-  const ParamForm = ({ onSubmit }: { onSubmit: (e: React.FormEvent) => void }) => (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
-      <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
-      <Select label="Type" value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
-      <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
-      <Input label="Default Value" value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
-        hint={form.type === 'dropdown' ? 'Comma-separated options' : undefined} />
-      <div className="flex gap-6">
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="required" checked={form.required} onChange={(e) => setField('required', e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-          <label htmlFor="required" className="text-sm font-medium text-slate-700">Required</label>
-        </div>
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="sensitive" checked={form.sensitive} onChange={(e) => setField('sensitive', e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-          <label htmlFor="sensitive" className="text-sm font-medium text-slate-700">Sensitive</label>
-        </div>
-      </div>
-      <div className="flex justify-end gap-3 pt-2">
-        <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-      </div>
-    </form>
-  )
-
   return (
     <>
       <Card title="Global Parameters" action={<Button size="sm" onClick={openAdd}>Add Parameter</Button>}>
@@ -170,10 +143,56 @@ export function ParametersManager({ token }: Props) {
       </Card>
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Parameter" size="md">
-        <ParamForm onSubmit={handleAdd} />
+        <form onSubmit={handleAdd} className="space-y-4">
+          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <Select label="Type" value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
+          <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
+          <Input label="Default Value" value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
+            hint={form.type === 'dropdown' ? 'Comma-separated options' : undefined} />
+          <div className="flex gap-6">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="add-required" checked={form.required} onChange={(e) => setField('required', e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="add-required" className="text-sm font-medium text-slate-700">Required</label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="add-sensitive" checked={form.sensitive} onChange={(e) => setField('sensitive', e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="add-sensitive" className="text-sm font-medium text-slate-700">Sensitive</label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Parameter" size="md">
-        <ParamForm onSubmit={handleEdit} />
+        <form onSubmit={handleEdit} className="space-y-4">
+          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <Select label="Type" value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
+          <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
+          <Input label="Default Value" value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
+            hint={form.type === 'dropdown' ? 'Comma-separated options' : undefined} />
+          <div className="flex gap-6">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="edit-required" checked={form.required} onChange={(e) => setField('required', e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="edit-required" className="text-sm font-medium text-slate-700">Required</label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="edit-sensitive" checked={form.sensitive} onChange={(e) => setField('sensitive', e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="edit-sensitive" className="text-sm font-medium text-slate-700">Sensitive</label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Parameter" size="sm">
         <p className="text-sm text-slate-600 mb-6">Delete parameter <strong>{deleteTarget?.name}</strong>?</p>

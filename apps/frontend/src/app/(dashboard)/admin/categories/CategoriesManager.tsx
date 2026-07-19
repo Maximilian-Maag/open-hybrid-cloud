@@ -106,20 +106,6 @@ export function CategoriesManager({ token }: Props) {
     }
   }
 
-  const CategoryForm = ({ onSubmit }: { onSubmit: (e: React.FormEvent) => void }) => (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {formError && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>
-      )}
-      <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
-      <Input label="Display Order" type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
-      <div className="flex justify-end gap-3 pt-2">
-        <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-      </div>
-    </form>
-  )
-
   return (
     <>
       <Card
@@ -154,11 +140,31 @@ export function CategoriesManager({ token }: Props) {
       </Card>
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Category" size="sm">
-        <CategoryForm onSubmit={handleAdd} />
+        <form onSubmit={handleAdd} className="space-y-4">
+          {formError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>
+          )}
+          <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
+          <Input label="Display Order" type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Category" size="sm">
-        <CategoryForm onSubmit={handleEdit} />
+        <form onSubmit={handleEdit} className="space-y-4">
+          {formError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>
+          )}
+          <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
+          <Input label="Display Order" type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Category" size="sm">

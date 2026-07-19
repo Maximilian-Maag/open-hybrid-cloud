@@ -7,10 +7,12 @@ import {
   deploymentEnvironments,
   categories,
   infrastructureElements,
+  parameters,
   type Product,
   type ProductTranslation,
   type ProductEnvironment,
   type ProductWebhook,
+  type Parameter,
 } from '@/lib/db/schema'
 import { eq, sql, and } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
@@ -127,7 +129,7 @@ export const createProduct = async (input: CreateProductInput): Promise<Result<P
   return ok({ ...product, name, description, categoryName: null } as ProductAdminRow)
 }
 
-export const getProductAdmin = async (id: number): Promise<Result<ProductAdminRow>> => {
+export const getProductAdmin = async (id: number): Promise<Result<ProductAdminRow & { environments: ProductEnvironment[]; parameters: Parameter[] }>> => {
   const rows = await db
     .select(adminProductSelect)
     .from(products)
@@ -136,7 +138,25 @@ export const getProductAdmin = async (id: number): Promise<Result<ProductAdminRo
     .limit(1)
 
   if (!rows.length) return err(404, 'Not found')
-  return ok(rows[0] as ProductAdminRow)
+
+  const envRows = await db
+    .select({
+      productId: productEnvironments.productId,
+      environmentId: productEnvironments.environmentId,
+      price: productEnvironments.price,
+      currency: productEnvironments.currency,
+      costCenterMode: productEnvironments.costCenterMode,
+      forcedCostCenter: productEnvironments.forcedCostCenter,
+    })
+    .from(productEnvironments)
+    .where(eq(productEnvironments.productId, id))
+
+  const paramRows = await db
+    .select()
+    .from(parameters)
+    .where(and(eq(parameters.scope, 'product'), eq(parameters.scopeId, id)))
+
+  return ok({ ...rows[0], environments: envRows, parameters: paramRows } as ProductAdminRow & { environments: ProductEnvironment[]; parameters: Parameter[] })
 }
 
 export const updateProduct = async (

@@ -19,7 +19,7 @@ const TYPES: { value: ParameterType; label: string }[] = [
 ]
 
 const emptyForm = () => ({
-  name: '', type: 'string' as ParameterType, description: '',
+  name: '', label: '', type: 'string' as ParameterType, description: '',
   defaultValue: '', required: false, sensitive: false,
 })
 
@@ -55,7 +55,7 @@ export function ParametersManager({ token }: Props) {
 
   function openEdit(param: Parameter) {
     setForm({
-      name: param.name, type: param.type, description: param.description,
+      name: param.name, label: param.label ?? '', type: param.type, description: param.description,
       defaultValue: param.defaultValue, required: param.required, sensitive: param.sensitive,
     })
     setFormError(null); setEditTarget(param)
@@ -67,7 +67,7 @@ export function ParametersManager({ token }: Props) {
     try {
       const body: CreateParameterRequest = {
         scope: 'global', scopeId: 0,
-        name: form.name.trim(), type: form.type,
+        name: form.name.trim(), label: form.label.trim() || undefined, type: form.type,
         description: form.description.trim() || undefined,
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
@@ -87,7 +87,7 @@ export function ParametersManager({ token }: Props) {
     setSaving(true); setFormError(null)
     try {
       const body: UpdateParameterRequest = {
-        name: form.name.trim(), type: form.type,
+        name: form.name.trim(), label: form.label.trim() || undefined, type: form.type,
         description: form.description.trim() || undefined,
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
@@ -125,11 +125,12 @@ export function ParametersManager({ token }: Props) {
               <div key={p.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
                 <div>
                   <div className="flex items-center gap-2 mb-0.5">
-                    <p className="font-medium text-slate-900">{p.name}</p>
+                    <p className="font-medium text-slate-900">{p.label || p.name}</p>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{p.type}</span>
                     {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-600">required</span>}
                     {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">sensitive</span>}
                   </div>
+                  <p className="text-xs font-mono text-slate-400">{p.name}</p>
                   {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
                 </div>
                 <div className="flex gap-2">
@@ -145,7 +146,10 @@ export function ParametersManager({ token }: Props) {
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Parameter" size="md">
         <form onSubmit={handleAdd} className="space-y-4">
           {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
-          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Variable Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required hint="Sent as TF_VAR_name" />
+            <Input label="Display Label" value={form.label} onChange={(e) => setField('label', e.target.value)} hint="Shown in order form" />
+          </div>
           <Select label="Type" value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
           <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Input label="Default Value" value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
@@ -171,7 +175,10 @@ export function ParametersManager({ token }: Props) {
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Parameter" size="md">
         <form onSubmit={handleEdit} className="space-y-4">
           {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
-          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Variable Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required hint="Sent as TF_VAR_name" />
+            <Input label="Display Label" value={form.label} onChange={(e) => setField('label', e.target.value)} hint="Shown in order form" />
+          </div>
           <Select label="Type" value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
           <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Input label="Default Value" value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}

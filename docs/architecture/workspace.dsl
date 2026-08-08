@@ -44,7 +44,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
                 api_notification = component "Notification" "Seven typed send functions; HTML-escapes all user strings before embedding in email bodies."
                 api_ai = component "AI Translation" "Translates product content into 25 languages via the configured AI provider."
                 api_exchange = component "Exchange Rates" "Fetches and caches exchange rates; converts amounts between currencies."
-                api_ci = component "CI Provider Client" "Unified client for GitLab, GitHub and Bitbucket: trigger pipelines, browse repos, fetch job traces. triggerProductWebhooks() orchestrates webhook execOrder; triggerPipelineStacks() sends ordered stack steps as PIPELINE_STACK JSON to the CI orchestrator."
+                api_ci = component "CI Provider Client" "Unified client for GitLab, GitHub and Bitbucket: trigger pipelines, browse repos, fetch job traces. triggerProductWebhooks() orchestrates webhook execOrder; triggerPipelineStacks() sends stack steps (each with execOrder for parallel groups and optional upstreamRefs for cross-step state passing) as PIPELINE_STACK JSON to the CI orchestrator."
                 api_docs = component "OpenAPI / Swagger UI" "Swagger UI and OpenAPI 3.0 spec auto-generated from Zod schemas."
             }
 

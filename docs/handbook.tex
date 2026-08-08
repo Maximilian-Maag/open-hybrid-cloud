@@ -998,6 +998,7 @@ variables (OpenTofu parameters) as JSON. The pipeline configuration
 making the trigger configuration auditable and version-controlled.
 
 \section{Pipeline Stacks — Portal-Defined CI DAGs}
+\label{sec:pipeline-stacks-decision}
 
 \textbf{Decision:} Introduce a \code{pipeline\_stacks} table that stores
 an ordered list of CI/CD template steps per product+environment.
@@ -1475,9 +1476,13 @@ Entry point for pipeline stacks. Triggered with
 \code{TEMPLATE=orchestrator} by the portal's
 \code{triggerPipelineStacks()} function. Runs
 \file{.ci/generate\_stack.py} to convert \code{PIPELINE\_STACK} JSON
-into a sequential GitLab child pipeline, then executes it. See
-Section~\ref{sec:webhook} for how the generated pipeline resolves
-inter-step state dependencies.
+into a GitLab child pipeline: steps are grouped by \code{execOrder}
+(one stage per unique value, steps within a group run in parallel);
+\code{upstreamRefs} entries are emitted as CI variables so
+downstream steps can read earlier states via
+\code{terraform\_remote\_state}. On \code{TF\_ACTION=destroy} the
+group order is reversed so downstream resources tear down first. See
+Section~\ref{sec:webhook} for the JSON schema.
 
 % ─────────────────────────────────────────────────────────────
 %  PART III — ADMINISTRATOR GUIDE

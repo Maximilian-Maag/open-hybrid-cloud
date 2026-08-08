@@ -22,6 +22,7 @@ import type {
   UpdateParameterRequest,
 } from '@open-hybrid-cloud/types'
 import { put, post, del, get } from '@/lib/api'
+import { generatePipelineYaml } from '@/lib/pipelineStackPreview'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
@@ -84,9 +85,17 @@ export function ProductEditForm({ product, categories, environments, translation
   const [psUrl, setPsUrl] = useState('')
   const [psToken, setPsToken] = useState('')
   const [psStateKey, setPsStateKey] = useState('hostname')
-  const [psSteps, setPsSteps] = useState<{ template: string; stateSuffix: string; upstreamSuffix: string; fixedParams: string }[]>([])
+  type StepForm = {
+    template: string
+    stateSuffix: string
+    execOrder: string
+    upstreamRefs: { varName: string; suffix: string }[]
+    fixedParams: string
+  }
+  const [psSteps, setPsSteps] = useState<StepForm[]>([])
   const [psSaving, setPsSaving] = useState(false)
   const [psError, setPsError] = useState<string | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [whEnvId, setWhEnvId] = useState('')
   const [whName, setWhName] = useState('')
   const [whUrl, setWhUrl] = useState('')
@@ -234,22 +243,44 @@ export function ProductEditForm({ product, categories, environments, translation
     setPsSteps(stack.steps.map((s) => ({
       template: s.template,
       stateSuffix: s.stateSuffix,
-      upstreamSuffix: s.upstreamSuffix ?? '',
+      execOrder: String(s.execOrder ?? 0),
+      upstreamRefs: (s.upstreamRefs ?? []).map((r) => ({ varName: r.varName, suffix: r.suffix })),
       fixedParams: s.fixedParams ? Object.entries(s.fixedParams).map(([k, v]) => `${k}=${v}`).join('\n') : '',
     })))
     setStackModal(true)
   }
 
   function addStep() {
-    setPsSteps((prev) => [...prev, { template: '', stateSuffix: '', upstreamSuffix: '', fixedParams: '' }])
+    setPsSteps((prev) => [
+      ...prev,
+      { template: '', stateSuffix: '', execOrder: String(prev.length), upstreamRefs: [], fixedParams: '' },
+    ])
   }
 
   function removeStep(i: number) {
     setPsSteps((prev) => prev.filter((_, idx) => idx !== i))
   }
 
-  function updateStep(i: number, field: string, value: string) {
+  function updateStep(i: number, field: keyof StepForm, value: string) {
     setPsSteps((prev) => prev.map((s, idx) => idx === i ? { ...s, [field]: value } : s))
+  }
+
+  function addUpstreamRef(stepIdx: number) {
+    setPsSteps((prev) => prev.map((s, idx) => idx === stepIdx
+      ? { ...s, upstreamRefs: [...s.upstreamRefs, { varName: '', suffix: '' }] }
+      : s))
+  }
+
+  function removeUpstreamRef(stepIdx: number, refIdx: number) {
+    setPsSteps((prev) => prev.map((s, idx) => idx === stepIdx
+      ? { ...s, upstreamRefs: s.upstreamRefs.filter((_, ri) => ri !== refIdx) }
+      : s))
+  }
+
+  function updateUpstreamRef(stepIdx: number, refIdx: number, field: 'varName' | 'suffix', value: string) {
+    setPsSteps((prev) => prev.map((s, idx) => idx === stepIdx
+      ? { ...s, upstreamRefs: s.upstreamRefs.map((r, ri) => ri === refIdx ? { ...r, [field]: value } : r) }
+      : s))
   }
 
   function parseFixedParams(raw: string): Record<string, string> | undefined {
@@ -269,10 +300,14 @@ export function ProductEditForm({ product, categories, environments, translation
     try {
       const steps: StackStep[] = psSteps.map((s) => {
         const fixedParams = parseFixedParams(s.fixedParams)
+        const upstreamRefs = s.upstreamRefs
+          .map((r) => ({ varName: r.varName.trim(), suffix: r.suffix.trim() }))
+          .filter((r) => r.varName && r.suffix)
         return {
           template: s.template.trim(),
           stateSuffix: s.stateSuffix.trim(),
-          ...(s.upstreamSuffix.trim() ? { upstreamSuffix: s.upstreamSuffix.trim() } : {}),
+          execOrder: Number(s.execOrder) || 0,
+          ...(upstreamRefs.length ? { upstreamRefs } : {}),
           ...(fixedParams ? { fixedParams } : {}),
         }
       })
@@ -607,17 +642,36 @@ export function ProductEditForm({ product, categories, environments, translation
                   <span className="text-xs font-medium text-slate-500">Step {i + 1}</span>
                   <Button type="button" size="sm" variant="danger" onClick={() => removeStep(i)}>Remove</Button>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <Input label="Template" placeholder="linode/virtual-machine" value={step.template}
                     onChange={(e) => updateStep(i, 'template', e.target.value)} required
                     hint="Path under templates/ in your infra-templates repo" />
                   <Input label="State Suffix" placeholder="-vm" value={step.stateSuffix}
                     onChange={(e) => updateStep(i, 'stateSuffix', e.target.value)} required
-                    hint="Appended to the state key param to form the Terraform state name (e.g. hostname + -vm)" />
+                    hint="Appended to the state key to form TF_STATE_NAME" />
+                  <Input label="Exec Order" type="number" min={0} placeholder="0" value={step.execOrder}
+                    onChange={(e) => updateStep(i, 'execOrder', e.target.value)}
+                    hint="Steps with the same value run in parallel; lower values run first" />
                 </div>
-                <Input label="Upstream State Suffix (optional)" placeholder="-vm"
-                  value={step.upstreamSuffix} onChange={(e) => updateStep(i, 'upstreamSuffix', e.target.value)}
-                  hint="Read Terraform outputs (e.g. ip_address, id) from the step with this suffix as inputs to this step" />
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-slate-700">Upstream State Refs</label>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => addUpstreamRef(i)}>+ Add Ref</Button>
+                  </div>
+                  <p className="text-xs text-slate-500">Expose an earlier step&apos;s Terraform state to this step as a CI variable (promoted to TF_VAR_*). varName must be UPPER_SNAKE_CASE.</p>
+                  {step.upstreamRefs.length === 0 && (
+                    <p className="text-xs text-slate-400 italic">No upstream refs.</p>
+                  )}
+                  {step.upstreamRefs.map((ref, ri) => (
+                    <div key={ri} className="flex gap-2 items-end">
+                      <Input label="Var Name" placeholder="VM_STATE_NAME" value={ref.varName}
+                        onChange={(e) => updateUpstreamRef(i, ri, 'varName', e.target.value)} />
+                      <Input label="From Suffix" placeholder="-vm" value={ref.suffix}
+                        onChange={(e) => updateUpstreamRef(i, ri, 'suffix', e.target.value)} />
+                      <Button type="button" size="sm" variant="danger" onClick={() => removeUpstreamRef(i, ri)}>×</Button>
+                    </div>
+                  ))}
+                </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-medium text-slate-700">Fixed Parameters (optional)</label>
                   <p className="text-xs text-slate-500">Override or hardcode order parameters for this step only — one KEY=value per line</p>
@@ -630,9 +684,21 @@ export function ProductEditForm({ product, categories, environments, translation
           </div>
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setStackModal(false)}>Cancel</Button>
+            <Button type="button" variant="secondary" disabled={psSteps.length === 0}
+              onClick={() => setPreviewOpen(true)}>Preview YAML</Button>
             <Button type="submit" disabled={psSaving || psSteps.length === 0}>{psSaving ? 'Saving…' : editStack ? 'Save' : 'Add'}</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Pipeline YAML Preview Modal */}
+      <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title="Generated Pipeline YAML (apply)" size="lg">
+        <pre className="rounded-lg bg-slate-900 text-slate-100 text-xs font-mono p-4 overflow-x-auto max-h-[60vh] overflow-y-auto whitespace-pre">
+{generatePipelineYaml(psSteps, psStateKey || 'hostname', 'apply')}
+        </pre>
+        <div className="flex justify-end mt-4">
+          <Button type="button" variant="secondary" onClick={() => setPreviewOpen(false)}>Close</Button>
+        </div>
       </Modal>
 
       {/* Webhook Modal */}

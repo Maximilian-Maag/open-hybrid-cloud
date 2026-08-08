@@ -241,4 +241,43 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
     // Stack should be removed
     await expect(page.getByText('E2E Test Stack')).not.toBeVisible({ timeout: 3000 })
   })
+
+  test('step form exposes Exec Order and Upstream State Refs (v2 features)', async ({ page }) => {
+    await page.goto('/admin/products')
+    const editLinks = page.getByRole('link', { name: /edit/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    await page.getByRole('button', { name: /add stack/i }).click()
+    await page.getByRole('button', { name: /\+ add step/i }).click()
+
+    await expect(page.getByLabel(/exec order/i)).toBeVisible()
+    await expect(page.getByText(/upstream state refs/i)).toBeVisible()
+    // Adding an upstream ref reveals varName + suffix inputs
+    await page.getByRole('button', { name: /\+ add ref/i }).click()
+    await expect(page.getByLabel(/var name/i)).toBeVisible()
+    await expect(page.getByLabel(/from suffix/i)).toBeVisible()
+  })
+
+  test('"Preview YAML" button opens the pipeline preview modal', async ({ page }) => {
+    await page.goto('/admin/products')
+    const editLinks = page.getByRole('link', { name: /edit/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    await page.getByRole('button', { name: /add stack/i }).click()
+    await page.getByRole('button', { name: /\+ add step/i }).click()
+    await page.getByLabel(/template/i).fill('linode/virtual-machine')
+    await page.getByLabel(/state suffix/i).fill('-vm')
+
+    await page.getByRole('button', { name: /preview yaml/i }).click()
+    await expect(page.getByRole('heading', { name: /generated pipeline yaml/i })).toBeVisible()
+    // Preview text contains the substituted state name placeholder and the template path
+    await expect(page.getByText(/TF_STATE_NAME:/)).toBeVisible()
+    await expect(page.getByText(/templates\/linode\/virtual-machine/)).toBeVisible()
+  })
 })

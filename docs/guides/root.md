@@ -179,9 +179,11 @@ Pipeline Stacks let you define an ordered sequence of CI/CD template steps per p
 4. Click **+ Add Step** one or more times to build the step sequence:
    - **Template**: Path to the step template in the infra-templates repo (e.g. `linode/virtual-machine`)
    - **State Suffix**: Appended to the state key to form the unique state name for this step (e.g. `-vm`)
-   - **Upstream Suffix** *(optional)*: State suffix of a preceding step whose outputs this step depends on
-   - **Fixed Params** *(optional)*: JSON object of additional CI variables specific to this step
-5. Click **Add** — the stack appears in the list
+   - **Exec Order** *(default `0`)*: Non-negative integer. Steps with the same value run in parallel (single GitLab stage); groups with a higher value wait for all lower groups to finish. On destroy the group order is reversed automatically.
+   - **Upstream State Refs** *(optional, one or more)*: Each entry maps a CI variable name (UPPER_SNAKE_CASE, e.g. `VM_STATE_NAME`) to the `stateSuffix` of an earlier step. At runtime the orchestrator sets that variable to the state name of the referenced step, and the base pipeline promotes it to `TF_VAR_<lowercase>` — so a Terraform template can read cross-step outputs via `terraform_remote_state`.
+   - **Fixed Params** *(optional)*: Additional CI variables specific to this step, one `KEY=value` per line
+5. *(Optional)* Click **Preview YAML** to inspect the generated GitLab pipeline before saving.
+6. Click **Add** — the stack appears in the list
 
 **How it works at runtime:**
 

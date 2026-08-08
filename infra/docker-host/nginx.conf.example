@@ -3,13 +3,11 @@ events {
 }
 
 http {
-    upstream frontend {
-        server frontend:3000;
-    }
-
-    upstream backend {
-        server backend:3001;
-    }
+    # Docker's embedded DNS. Needed so nginx re-resolves upstream hostnames
+    # instead of caching the first IP forever — otherwise every Watchtower
+    # auto-update leaves nginx pointing at the pre-restart IP and every request
+    # returns 502 until nginx itself is restarted.
+    resolver 127.0.0.11 valid=10s ipv6=off;
 
     # HTTP → HTTPS redirect
     server {
@@ -32,11 +30,18 @@ http {
         # Maximum upload size (for product images)
         client_max_body_size 10M;
 
+        # Upstream hostnames are held in variables so nginx re-resolves them via
+        # the Docker DNS on each request (see resolver directive above). Using
+        # an `upstream {}` block or a bare hostname in proxy_pass would cache
+        # the IP at start-up and break on container restart.
+        set $frontend_upstream "frontend:3000";
+        set $backend_upstream  "backend:3001";
+
         # Backend's own Entra ID (Microsoft SSO) OAuth callback — the browser lands
         # here directly after Microsoft redirects back. Exact match so it takes
         # priority over the /api/auth/ NextAuth block below.
         location = /api/auth/callback {
-            proxy_pass         http://backend;
+            proxy_pass         http://$backend_upstream;
             proxy_http_version 1.1;
             proxy_set_header   Host              $host;
             proxy_set_header   X-Real-IP         $remote_addr;
@@ -48,7 +53,7 @@ http {
         # signout, providers, ...) are served by the frontend, not the backend —
         # this must come before the general /api/ block below or login breaks.
         location /api/auth/ {
-            proxy_pass         http://frontend;
+            proxy_pass         http://$frontend_upstream;
             proxy_http_version 1.1;
             proxy_set_header   Host              $host;
             proxy_set_header   X-Real-IP         $remote_addr;
@@ -59,7 +64,7 @@ http {
         # Backend API — proxied directly so browser-initiated requests work
         # (Next.js client components use relative /api/* URLs which land here)
         location /api/ {
-            proxy_pass         http://backend;
+            proxy_pass         http://$backend_upstream;
             proxy_http_version 1.1;
             proxy_set_header   Host              $host;
             proxy_set_header   X-Real-IP         $remote_addr;
@@ -69,7 +74,7 @@ http {
 
         # Frontend — all other traffic
         location / {
-            proxy_pass         http://frontend;
+            proxy_pass         http://$frontend_upstream;
             proxy_http_version 1.1;
             proxy_set_header   Host              $host;
             proxy_set_header   X-Real-IP         $remote_addr;

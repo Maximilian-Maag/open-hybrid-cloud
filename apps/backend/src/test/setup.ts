@@ -111,11 +111,12 @@ beforeAll(async () => {
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       environment_id BIGINT NOT NULL REFERENCES deployment_environments(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
-      webhook_url TEXT NOT NULL,
-      webhook_token TEXT NOT NULL,
       state_key_param TEXT NOT NULL DEFAULT 'hostname',
       steps JSONB NOT NULL DEFAULT '[]'
     );
+    -- Existing test DBs may have webhook_url/webhook_token columns; align with migration 0003.
+    ALTER TABLE pipeline_stacks DROP COLUMN IF EXISTS webhook_url;
+    ALTER TABLE pipeline_stacks DROP COLUMN IF EXISTS webhook_token;
     CREATE TABLE IF NOT EXISTS cost_centers (
       id BIGSERIAL PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,

@@ -19,8 +19,6 @@ const StackStepSchema = z.object({
 
 const UpdateStackSchema = z.object({
   name: z.string().min(1).optional(),
-  webhookUrl: z.string().url().optional(),
-  webhookToken: z.string().min(1).optional(),
   stateKeyParam: z.string().min(1).optional(),
   steps: z.array(StackStepSchema).min(1).optional(),
 })

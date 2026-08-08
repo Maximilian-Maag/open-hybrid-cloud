@@ -502,7 +502,7 @@ Pipeline Stacks are the built-in successor to the manual orchestrator YAML patte
 
 ### How it works
 
-When an order is approved (or placed directly by an Admin), the portal fires `triggerPipelineStacks()` alongside `triggerProductWebhooks()`. For each pipeline stack configured for the product+environment, it sends one HTTP POST to the stack's webhook URL with the following CI variables:
+When an order is approved (or placed directly by an Admin), the portal fires `triggerPipelineStacks()` alongside `triggerProductWebhooks()`. For each pipeline stack configured for the product+environment, it sends one HTTP POST to the **deployment environment's** webhook URL (using the environment's webhook token) — stacks share their environment's trigger endpoint so the same token doesn't need to be maintained in multiple places. The following CI variables are sent:
 
 | CI Variable | Value |
 |---|---|

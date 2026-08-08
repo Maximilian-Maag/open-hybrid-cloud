@@ -1,4 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('@/lib/ci/webhooks', () => ({
+  triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-destroy']),
+}))
+
 import {
   listCategories,
   createCategory,
@@ -6,9 +11,26 @@ import {
   updateCategory,
   deleteCategory,
 } from './categories'
+import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { categories } from '@/lib/db/schema'
+import { categories, infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import {
+  createUser,
+  createCategory as seedCategory,
+  createProduct as seedProduct,
+  createCiSource,
+  createEnvironment,
+  createProject,
+  createOrder as seedOrder,
+  createInfraElement,
+} from '@/test/helpers'
+
+const mockedWebhooks = vi.mocked(triggerProductWebhooks)
+
+beforeEach(() => {
+  mockedWebhooks.mockReset().mockResolvedValue(['pipe-destroy'])
+})
 
 describe('listCategories', () => {
   it('returns empty when none exist', async () => {
@@ -88,5 +110,49 @@ describe('deleteCategory', () => {
 
     const rows = await db.select().from(categories).where(eq(categories.id, created.data.id))
     expect(rows.length).toBe(0)
+  })
+
+  // FA-09.7: cascade decommissioning on category delete
+  it('cascade-decommissions all active infra of every product in the category (FA-09.7)', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await seedCategory('CatCascade')
+    const product1 = await seedProduct(cat.id, 'P1')
+    const product2 = await seedProduct(cat.id, 'P2')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const orderA = await seedOrder(project.id, product1.id, env.id, pm.id)
+    const orderB = await seedOrder(project.id, product2.id, env.id, pm.id)
+    await createInfraElement(orderA.id, project.id, env.id, product1.id)
+    await createInfraElement(orderB.id, project.id, env.id, product2.id)
+
+    const result = await deleteCategory(cat.id)
+    expect(result.ok).toBe(true)
+
+    expect(mockedWebhooks).toHaveBeenCalledTimes(2)
+    const calls = mockedWebhooks.mock.calls.map((c) => c[0]).sort()
+    expect(calls).toEqual([product1.id, product2.id].sort())
+    // All infra rows for products in that category are gone
+    const rows = await db.select().from(infrastructureElements)
+    expect(rows.length).toBe(0)
+  })
+
+  // FA-09.8: skip already-in-flight elements
+  it('does not trigger destroy for infra already decommissioning/decommissioned (FA-09.8)', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await seedCategory('CatSkip')
+    const product = await seedProduct(cat.id, 'P')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id, { status: 'decommissioning' })
+    await createInfraElement(order.id, project.id, env.id, product.id, { status: 'decommissioned' })
+    await createInfraElement(order.id, project.id, env.id, product.id, { status: 'active' })
+
+    const result = await deleteCategory(cat.id)
+    expect(result.ok).toBe(true)
+
+    expect(mockedWebhooks).toHaveBeenCalledTimes(1)
   })
 })

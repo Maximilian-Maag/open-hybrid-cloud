@@ -4,6 +4,10 @@ vi.mock('@/lib/ai', () => ({
   translateProduct: vi.fn().mockResolvedValue({}),
 }))
 
+vi.mock('@/lib/ci/webhooks', () => ({
+  triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-destroy']),
+}))
+
 import {
   listProducts,
   createProduct,
@@ -24,20 +28,27 @@ import {
   deleteProductWebhook,
 } from './products'
 import { translateProduct } from '@/lib/ai'
+import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { products, productTranslations } from '@/lib/db/schema'
+import { products, productTranslations, infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
+  createUser,
   createCategory,
   createCiSource,
   createEnvironment,
   createProduct as seedProduct,
+  createProject,
+  createOrder as seedOrder,
+  createInfraElement,
 } from '@/test/helpers'
 
 const mockedTranslate = vi.mocked(translateProduct)
+const mockedWebhooks = vi.mocked(triggerProductWebhooks)
 
 beforeEach(() => {
   mockedTranslate.mockReset().mockResolvedValue({})
+  mockedWebhooks.mockReset().mockResolvedValue(['pipe-destroy'])
 })
 
 describe('listProducts', () => {
@@ -132,6 +143,51 @@ describe('deleteProduct', () => {
 
     const rows = await db.select().from(products).where(eq(products.id, p.id))
     expect(rows.length).toBe(0)
+  })
+
+  // FA-09.6: cascade decommissioning on product delete
+  it('cascade-decommissions all active infra elements provisioned from the product (FA-09.6)', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'ToDelete')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id)
+    await createInfraElement(order.id, project.id, env.id, product.id)
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+
+    expect(mockedWebhooks).toHaveBeenCalledTimes(2)
+    expect(mockedWebhooks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ TF_ACTION: 'destroy' }),
+    )
+    // Infra rows are gone via ON DELETE CASCADE on product_id
+    const rows = await db.select().from(infrastructureElements).where(eq(infrastructureElements.productId, product.id))
+    expect(rows.length).toBe(0)
+  })
+
+  // FA-09.8: skip already-in-flight elements
+  it('does not re-trigger destroy for elements already decommissioning/decommissioned (FA-09.8)', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'MixState')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id, { status: 'decommissioning' })
+    await createInfraElement(order.id, project.id, env.id, product.id, { status: 'decommissioned' })
+    await createInfraElement(order.id, project.id, env.id, product.id, { status: 'active' })
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+
+    expect(mockedWebhooks).toHaveBeenCalledTimes(1)
   })
 })
 

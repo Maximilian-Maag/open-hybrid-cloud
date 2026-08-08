@@ -76,4 +76,57 @@ describe('POST /api/auth/login', () => {
     const body = await res.json()
     expect(JSON.stringify(body)).not.toContain('$2')
   })
+
+  // NFA-05.1: login rate-limit per IP
+  it('rate-limits repeated failed logins from the same IP (NFA-05.1)', async () => {
+    await createUser({ email: 'ratelimit@test.dev', password: 'correct-pass' })
+    const ip = `10.0.0.${Math.floor(Math.random() * 250) + 1}`
+
+    const makeReq = (email: string, password: string) =>
+      new NextRequest('http://localhost/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+      })
+
+    // Fire 10 failed attempts — all should return 401 (bad password), not 429
+    for (let i = 0; i < 10; i++) {
+      const res = await POST(makeReq('ratelimit@test.dev', 'wrong-pass'))
+      expect(res.status).toBe(401)
+    }
+
+    // The 11th attempt from the same IP is rate-limited even if credentials are valid
+    const blocked = await POST(makeReq('ratelimit@test.dev', 'correct-pass'))
+    expect(blocked.status).toBe(429)
+    const body = await blocked.json()
+    expect(body.error).toMatch(/too many/i)
+  })
+
+  it('does not rate-limit different IPs against each other (NFA-05.1)', async () => {
+    await createUser({ email: 'per-ip@test.dev', password: 'correct-pass' })
+
+    const attempt = async (ip: string, password: string) =>
+      POST(
+        new NextRequest('http://localhost/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: 'per-ip@test.dev', password }),
+          headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+        }),
+      )
+
+    const ipA = `10.1.1.${Math.floor(Math.random() * 250) + 1}`
+    const ipB = `10.2.2.${Math.floor(Math.random() * 250) + 1}`
+
+    // Burn out ipA
+    for (let i = 0; i < 10; i++) {
+      const res = await attempt(ipA, 'wrong')
+      expect(res.status).toBe(401)
+    }
+    const blockedA = await attempt(ipA, 'correct-pass')
+    expect(blockedA.status).toBe(429)
+
+    // ipB should still be able to log in successfully
+    const okFromB = await attempt(ipB, 'correct-pass')
+    expect(okFromB.status).toBe(200)
+  })
 })

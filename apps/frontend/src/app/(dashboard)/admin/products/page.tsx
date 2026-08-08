@@ -6,6 +6,7 @@ import { get } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Table } from '@/components/ui/Table'
 import { Button } from '@/components/ui/Button'
+import { ProductRowActions } from './ProductRowActions'
 
 export default async function AdminProductsPage() {
   const session = await auth()
@@ -59,11 +60,8 @@ export default async function AdminProductsPage() {
           },
           {
             header: '',
-            render: (row) => (
-              <Link href={`/admin/products/${row.id}`}>
-                <Button size="sm" variant="secondary">Edit</Button>
-              </Link>
-            ),
+            className: 'text-right',
+            render: (row) => <ProductRowActions product={row} token={token} />,
           },
         ]}
         data={products}

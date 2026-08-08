@@ -75,11 +75,19 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
     setLoading(true)
     setError(null)
     try {
+      // Merge defaultValue in for any parameter the user did not touch — the
+      // Input placeholder already displays the default, so users expect it to
+      // be submitted. ParameterFields is now fully controlled, so paramValues
+      // only contains keys the user has actually edited.
+      const parametersWithDefaults: Record<string, string> = {}
+      for (const p of envParameters) {
+        parametersWithDefaults[p.name] = paramValues[p.name] ?? p.defaultValue ?? ''
+      }
       const body: CreateOrderRequest = {
         productId: product.id,
         environmentId: Number(envId),
         projectId: Number(projectId),
-        parameters: paramValues,
+        parameters: parametersWithDefaults,
         ...(needsCostCenter && costCenterId ? { costCenterId: Number(costCenterId) } : {}),
       }
       await post<Order>('/api/orders', body, token)

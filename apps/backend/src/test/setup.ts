@@ -133,7 +133,7 @@ beforeAll(async () => {
     CREATE TABLE IF NOT EXISTS orders (
       id BIGSERIAL PRIMARY KEY,
       project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      product_id BIGINT NOT NULL REFERENCES products(id),
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
       user_id BIGINT NOT NULL REFERENCES users(id),
       status TEXT NOT NULL DEFAULT 'pending',
@@ -195,6 +195,15 @@ beforeAll(async () => {
     INSERT INTO exchange_rates (currency_code, rate) VALUES ('EUR', 1.000000) ON CONFLICT DO NOTHING;
     INSERT INTO branding (id) VALUES (1) ON CONFLICT DO NOTHING;
     INSERT INTO app_config (id) VALUES (1) ON CONFLICT DO NOTHING;
+  `)
+
+  // Realign orders.product_id FK with schema.ts (ON DELETE CASCADE). Older
+  // test databases created before this constraint change still have the
+  // non-cascading FK, so drop-and-recreate keeps local dev in sync with CI.
+  await testDb.execute(sql`
+    ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_product_id_fkey;
+    ALTER TABLE orders ADD CONSTRAINT orders_product_id_fkey
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE;
   `)
 })
 

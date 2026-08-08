@@ -119,10 +119,7 @@ export default async function DashboardHome() {
               <Link
                 key={product.id}
                 href={`/catalog/${product.id}`}
-                className="bg-white border border-slate-200 rounded-lg overflow-hidden flex flex-col group hover:shadow-md transition-all"
-                style={{ '--hover-border': 'var(--bp)' } as React.CSSProperties}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--bp)')}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
+                className="bg-white border border-slate-200 rounded-lg overflow-hidden flex flex-col group hover:shadow-md hover:border-[color:var(--bp)] transition-all"
               >
                 <div
                   className="h-36 flex items-center justify-center border-b border-slate-100"

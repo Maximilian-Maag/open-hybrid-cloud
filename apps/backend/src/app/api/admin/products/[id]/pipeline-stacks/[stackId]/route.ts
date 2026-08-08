@@ -4,10 +4,16 @@ import { requireRole, isAuth } from '@/lib/auth/middleware'
 import { toResponse } from '@/lib/http'
 import { updatePipelineStack, deletePipelineStack } from '@/lib/services/admin/pipeline-stacks'
 
+const UpstreamRefSchema = z.object({
+  varName: z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'must be UPPER_SNAKE_CASE CI variable name'),
+  suffix: z.string().min(1),
+})
+
 const StackStepSchema = z.object({
   template: z.string().min(1),
   stateSuffix: z.string().min(1),
-  upstreamSuffix: z.string().optional(),
+  execOrder: z.number().int().min(0).default(0),
+  upstreamRefs: z.array(UpstreamRefSchema).optional(),
   fixedParams: z.record(z.string()).optional(),
 })
 

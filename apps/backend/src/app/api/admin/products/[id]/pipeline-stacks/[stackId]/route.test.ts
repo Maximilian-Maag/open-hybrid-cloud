@@ -7,8 +7,13 @@ import { pipelineStacks } from '@/lib/db/schema'
 import { GET, POST } from '../route'
 
 const STEPS = [
-  { template: 'linode/virtual-machine', stateSuffix: '-vm' },
-  { template: 'linode/firewall', stateSuffix: '-fw', upstreamSuffix: '-vm' },
+  { template: 'linode/virtual-machine', stateSuffix: '-vm', execOrder: 0 },
+  {
+    template: 'linode/firewall',
+    stateSuffix: '-fw',
+    execOrder: 1,
+    upstreamRefs: [{ varName: 'VM_STATE_NAME', suffix: '-vm' }],
+  },
 ]
 
 const makeReq = (productId: string, stackId: string, method: string, body?: unknown, auth?: string) =>
@@ -88,8 +93,13 @@ describe('PUT /api/admin/products/[id]/pipeline-stacks/[stackId]', () => {
     const { p, stack } = await seedStack()
     const auth = await makeAuthHeader(root)
     const newSteps = [
-      { template: 'vsphere/virtual-machine', stateSuffix: '-vsvm' },
-      { template: 'linode/dns-record', stateSuffix: '-dns', upstreamSuffix: '-vsvm' },
+      { template: 'vsphere/virtual-machine', stateSuffix: '-vsvm', execOrder: 0 },
+      {
+        template: 'linode/dns-record',
+        stateSuffix: '-dns',
+        execOrder: 1,
+        upstreamRefs: [{ varName: 'VM_STATE_NAME', suffix: '-vsvm' }],
+      },
     ]
     const res = await PUT(
       makeReq(String(p.id), String(stack.id), 'PUT', { steps: newSteps }, auth),
@@ -99,7 +109,7 @@ describe('PUT /api/admin/products/[id]/pipeline-stacks/[stackId]', () => {
     const body = await res.json()
     expect(body.steps).toHaveLength(2)
     expect(body.steps[0].template).toBe('vsphere/virtual-machine')
-    expect(body.steps[1].upstreamSuffix).toBe('-vsvm')
+    expect(body.steps[1].upstreamRefs[0].suffix).toBe('-vsvm')
   })
 
   it('returns 400 for invalid webhook URL', async () => {
@@ -214,8 +224,13 @@ describe('POST → PUT → DELETE progression', () => {
     const putSteps = await PUT(
       makeReq(pid, stackId, 'PUT', {
         steps: [
-          { template: 'linode/virtual-machine', stateSuffix: '-vm' },
-          { template: 'linode/firewall', stateSuffix: '-fw', upstreamSuffix: '-vm' },
+          { template: 'linode/virtual-machine', stateSuffix: '-vm', execOrder: 0 },
+          {
+            template: 'linode/firewall',
+            stateSuffix: '-fw',
+            execOrder: 1,
+            upstreamRefs: [{ varName: 'VM_STATE_NAME', suffix: '-vm' }],
+          },
         ],
       }, auth),
       { params: Promise.resolve({ id: pid, stackId }) },

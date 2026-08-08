@@ -518,16 +518,24 @@ When an order is approved (or placed directly by an Admin), the portal fires `tr
 [
   {
     "template": "linode/virtual-machine",
-    "stateSuffix": "-vm"
+    "stateSuffix": "-vm",
+    "execOrder": 0
   },
   {
     "template": "linode/dns-record",
     "stateSuffix": "-dns",
-    "upstreamSuffix": "-vm"
+    "execOrder": 1,
+    "upstreamRefs": [
+      { "varName": "VM_STATE_NAME", "suffix": "-vm" }
+    ]
   },
   {
     "template": "linode/firewall",
     "stateSuffix": "-fw",
+    "execOrder": 1,
+    "upstreamRefs": [
+      { "varName": "VM_STATE_NAME", "suffix": "-vm" }
+    ],
     "fixedParams": { "FW_POLICY": "drop" }
   }
 ]
@@ -539,7 +547,8 @@ Each step object:
 |---|---|---|
 | `template` | Yes | Path to the template in the infra-templates repository (e.g. `linode/virtual-machine`) |
 | `stateSuffix` | Yes | Appended to `TF_STATE_NAME` to form the unique OpenTofu state key for this step (`my-vm-01-vm`) |
-| `upstreamSuffix` | No | State suffix of a preceding step whose outputs this step depends on; the orchestrator resolves cross-step data passing |
+| `execOrder` | No (default `0`) | Non-negative integer. Steps with the same value run in parallel; groups with a higher value wait for lower groups to finish. On destroy the order is reversed automatically. |
+| `upstreamRefs` | No | Array of `{ varName, suffix }`. For each entry the orchestrator sets a CI variable named `varName` (UPPER_SNAKE_CASE) whose value is the state name of the referenced step — the base pipeline promotes it to `TF_VAR_<lowercase>` so a Terraform template can read cross-step outputs via `terraform_remote_state`. |
 | `fixedParams` | No | Additional CI variables sent only to this step, merged with the shared order parameters |
 
 ### stateKeyParam
@@ -579,7 +588,8 @@ See the Root Guide, section 4.5 "Pipeline Stacks" for step-by-step instructions 
 |---|---|---|---|
 | Step order | Defined in `.gitlab-ci.yml` | Defined in portal | Defined in portal |
 | Adding a step | Edit YAML, redeploy | Add row in portal | Add step in portal |
-| Cross-step data passing | GitLab artifacts | Not supported | Via `upstreamSuffix` |
+| Cross-step data passing | GitLab artifacts | Not supported | Via `upstreamRefs` (multiple per step) |
+| Parallel steps | GitLab `needs:` graph | Independent webhooks (same `execOrder`) | Via `execOrder` grouping |
 | Multiple trigger tokens | Not needed (one project) | One per team | One per stack |
 | Destroy | `DESTROY` propagated via YAML | Each webhook receives `DESTROY` | `DESTROY` propagated via stack JSON |
 | Best for | Stable infra topology, one team | Many independent teams | Frequently changing products, no CI YAML ownership |

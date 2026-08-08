@@ -48,7 +48,7 @@ admin:            Orders → Provisioning → Completed
 
 On approval/creation the backend fires two sets of CI triggers in parallel:
 - **Product Webhooks** (`product_webhooks` table) — ordered, multi-target webhook list per product+environment
-- **Pipeline Stacks** (`pipeline_stacks` table) — ordered step sequences sent as `PIPELINE_STACK` JSON to an orchestrator pipeline, enabling portal-defined DAGs without touching CI YAML
+- **Pipeline Stacks** (`pipeline_stacks` table) — step sequences sent as `PIPELINE_STACK` JSON to an orchestrator pipeline. Each step carries an `execOrder` (steps sharing a value run in parallel, higher values wait) and zero or more `upstreamRefs` mapping named CI variables to earlier steps' Terraform state — so portal-defined DAGs with cross-step data passing work without touching CI YAML
 
 ## Environment Variables
 

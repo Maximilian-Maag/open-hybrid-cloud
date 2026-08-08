@@ -998,6 +998,7 @@ variables (OpenTofu parameters) as JSON. The pipeline configuration
 making the trigger configuration auditable and version-controlled.
 
 \section{Pipeline Stacks — Portal-Defined CI DAGs}
+\label{sec:pipeline-stacks-decision}
 
 \textbf{Decision:} Introduce a \code{pipeline\_stacks} table that stores
 an ordered list of CI/CD template steps per product+environment.
@@ -1018,10 +1019,20 @@ pipeline, eliminating the need to hard-code step sequences in
         state name is stable across provision and destroy because the same
         order parameter value is stored on the infrastructure element and
         reused at decommission time.
-  \item \textbf{Upstream dependencies:} The optional \code{upstreamSuffix}
-        field lets a step declare which preceding step it depends on.
-        The orchestrator can use this to gate execution — e.g. DNS step
-        waits for VM step outputs (IP address).
+  \item \textbf{Upstream dependencies:} The optional
+        \code{upstreamRefs} array lets a step declare one or more
+        preceding steps whose state it needs. Each entry maps a CI
+        variable name (UPPER\_SNAKE\_CASE, e.g. \code{VM\_STATE\_NAME})
+        to the \code{stateSuffix} of the earlier step. The base pipeline
+        promotes it to \code{TF\_VAR\_<lowercase>} so the child
+        template can read cross-step outputs via
+        \code{terraform\_remote\_state}.
+  \item \textbf{Concurrent execution:} Steps carry an integer
+        \code{execOrder} field (default \code{0}). Steps with the same
+        \code{execOrder} value run in parallel (one GitLab stage);
+        groups with higher values wait for lower groups to finish. On
+        destroy the group order is reversed automatically so downstream
+        resources tear down first.
   \item \textbf{Complements, not replaces, product webhooks:}
         \code{triggerProductWebhooks} and \code{triggerPipelineStacks}
         fire in parallel; their pipeline IDs are merged in
@@ -1313,10 +1324,14 @@ Content-Type: application/json
 \section{Template Dependencies}
 
 Within a pipeline stack, templates can depend on each other via the
-\code{upstreamSuffix} field in \code{PIPELINE\_STACK}. The orchestrator
-passes the upstream step's state name as \code{VM\_STATE\_NAME} to the
-downstream template, which can then read shared outputs via a
-\code{terraform\_remote\_state} data source:
+\code{upstreamRefs} array in \code{PIPELINE\_STACK}. Each entry names a
+CI variable (UPPER\_SNAKE\_CASE — e.g. \code{VM\_STATE\_NAME}) plus
+the \code{stateSuffix} of the upstream step; the orchestrator sets that
+variable to the upstream state name at runtime, and the base pipeline
+promotes it to \code{TF\_VAR\_<lowercase>}. A downstream template can
+then read outputs via \code{terraform\_remote\_state}. Multiple
+\code{upstreamRefs} per step are supported, so a firewall step can
+consume both a VM and a DNS state, for example:
 
 \begin{lstlisting}[style=hcl]
 # In a dns-record template that depends on an upstream vm step
@@ -1461,9 +1476,13 @@ Entry point for pipeline stacks. Triggered with
 \code{TEMPLATE=orchestrator} by the portal's
 \code{triggerPipelineStacks()} function. Runs
 \file{.ci/generate\_stack.py} to convert \code{PIPELINE\_STACK} JSON
-into a sequential GitLab child pipeline, then executes it. See
-Section~\ref{sec:webhook} for how the generated pipeline resolves
-inter-step state dependencies.
+into a GitLab child pipeline: steps are grouped by \code{execOrder}
+(one stage per unique value, steps within a group run in parallel);
+\code{upstreamRefs} entries are emitted as CI variables so
+downstream steps can read earlier states via
+\code{terraform\_remote\_state}. On \code{TF\_ACTION=destroy} the
+group order is reversed so downstream resources tear down first. See
+Section~\ref{sec:webhook} for the JSON schema.
 
 % ─────────────────────────────────────────────────────────────
 %  PART III — ADMINISTRATOR GUIDE

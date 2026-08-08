@@ -4,8 +4,13 @@ import { GET, POST } from './route'
 import { createUser, createCategory, createProduct, createCiSource, createEnvironment, makeAuthHeader } from '@/test/helpers'
 
 const STEPS = [
-  { template: 'linode/virtual-machine', stateSuffix: '-vm' },
-  { template: 'linode/firewall', stateSuffix: '-fw', upstreamSuffix: '-vm' },
+  { template: 'linode/virtual-machine', stateSuffix: '-vm', execOrder: 0 },
+  {
+    template: 'linode/firewall',
+    stateSuffix: '-fw',
+    execOrder: 1,
+    upstreamRefs: [{ varName: 'VM_STATE_NAME', suffix: '-vm' }],
+  },
 ]
 
 const makeReq = (productId: string, method = 'GET', body?: unknown, auth?: string) =>
@@ -114,7 +119,34 @@ describe('POST /api/admin/products/[id]/pipeline-stacks', () => {
     expect(created.name).toBe('VM Pipeline')
     expect(created.stateKeyParam).toBe('hostname')
     expect(created.steps).toHaveLength(2)
-    expect(created.steps[1].upstreamSuffix).toBe('-vm')
+    expect(created.steps[1].upstreamRefs[0].varName).toBe('VM_STATE_NAME')
+    expect(created.steps[1].upstreamRefs[0].suffix).toBe('-vm')
+  })
+
+  it('returns 400 when upstreamRefs varName is not UPPER_SNAKE_CASE', async () => {
+    const root = await createUser({ role: 'root' })
+    const cat = await createCategory()
+    const p = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const auth = await makeAuthHeader(root)
+    const body = {
+      environmentId: env.id,
+      name: 'Bad varName',
+      webhookUrl: 'https://gitlab.example.com/trigger',
+      webhookToken: 'tok',
+      steps: [
+        { template: 'linode/virtual-machine', stateSuffix: '-vm', execOrder: 0 },
+        {
+          template: 'linode/firewall',
+          stateSuffix: '-fw',
+          execOrder: 1,
+          upstreamRefs: [{ varName: 'lower_case', suffix: '-vm' }],
+        },
+      ],
+    }
+    const res = await POST(makeReq(String(p.id), 'POST', body, auth), { params: Promise.resolve({ id: String(p.id) }) })
+    expect(res.status).toBe(400)
   })
 
   it('uses default stateKeyParam "hostname" when not provided', async () => {

@@ -10,8 +10,13 @@ import {
 } from './pipeline-stacks'
 
 const STEPS = [
-  { template: 'linode/virtual-machine', stateSuffix: '-vm' },
-  { template: 'linode/firewall', stateSuffix: '-fw', upstreamSuffix: '-vm' },
+  { template: 'linode/virtual-machine', stateSuffix: '-vm', execOrder: 0 },
+  {
+    template: 'linode/firewall',
+    stateSuffix: '-fw',
+    execOrder: 1,
+    upstreamRefs: [{ varName: 'VM_STATE_NAME', suffix: '-vm' }],
+  },
 ]
 
 const seedStack = async () => {
@@ -83,7 +88,64 @@ describe('createPipelineStack', () => {
       expect(result.data.stateKeyParam).toBe('hostname')
       expect(result.data.steps).toHaveLength(2)
       expect(result.data.steps[0].template).toBe('linode/virtual-machine')
-      expect(result.data.steps[1].upstreamSuffix).toBe('-vm')
+      expect(result.data.steps[1].upstreamRefs?.[0]?.varName).toBe('VM_STATE_NAME')
+      expect(result.data.steps[1].upstreamRefs?.[0]?.suffix).toBe('-vm')
+      expect(result.data.steps[1].execOrder).toBe(1)
+    }
+  })
+
+  it('accepts multiple upstreamRefs per step', async () => {
+    const cat = await createCategory()
+    const p = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const steps = [
+      { template: 'linode/virtual-machine', stateSuffix: '-vm', execOrder: 0 },
+      { template: 'linode/dns-record', stateSuffix: '-dns', execOrder: 0 },
+      {
+        template: 'linode/firewall',
+        stateSuffix: '-fw',
+        execOrder: 1,
+        upstreamRefs: [
+          { varName: 'VM_STATE_NAME', suffix: '-vm' },
+          { varName: 'DNS_STATE_NAME', suffix: '-dns' },
+        ],
+      },
+    ]
+    const result = await createPipelineStack(p.id, {
+      environmentId: env.id,
+      name: 'Multi-upstream',
+      webhookUrl: 'https://gitlab.example.com/trigger',
+      webhookToken: 'tok',
+      steps,
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.steps[2].upstreamRefs).toHaveLength(2)
+      expect(result.data.steps[2].upstreamRefs?.map((r) => r.varName).sort())
+        .toEqual(['DNS_STATE_NAME', 'VM_STATE_NAME'])
+    }
+  })
+
+  it('persists execOrder for parallel and sequential steps', async () => {
+    const cat = await createCategory()
+    const p = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const result = await createPipelineStack(p.id, {
+      environmentId: env.id,
+      name: 'Parallel',
+      webhookUrl: 'https://gitlab.example.com/trigger',
+      webhookToken: 'tok',
+      steps: [
+        { template: 'linode/virtual-machine', stateSuffix: '-a', execOrder: 0 },
+        { template: 'linode/virtual-machine', stateSuffix: '-b', execOrder: 0 },
+        { template: 'linode/firewall', stateSuffix: '-fw', execOrder: 5 },
+      ],
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.steps.map((s) => s.execOrder)).toEqual([0, 0, 5])
     }
   })
 
@@ -231,9 +293,19 @@ describe('pipeline stack lifecycle progression', () => {
     // 3. Update steps — three-step chain
     const withThreeSteps = await updatePipelineStack(p.id, id, {
       steps: [
-        { template: 'linode/virtual-machine', stateSuffix: '-vm' },
-        { template: 'linode/firewall', stateSuffix: '-fw', upstreamSuffix: '-vm' },
-        { template: 'linode/dns-record', stateSuffix: '-dns', upstreamSuffix: '-vm' },
+        { template: 'linode/virtual-machine', stateSuffix: '-vm', execOrder: 0 },
+        {
+          template: 'linode/firewall',
+          stateSuffix: '-fw',
+          execOrder: 1,
+          upstreamRefs: [{ varName: 'VM_STATE_NAME', suffix: '-vm' }],
+        },
+        {
+          template: 'linode/dns-record',
+          stateSuffix: '-dns',
+          execOrder: 1,
+          upstreamRefs: [{ varName: 'VM_STATE_NAME', suffix: '-vm' }],
+        },
       ],
     })
     expect(withThreeSteps.ok).toBe(true)

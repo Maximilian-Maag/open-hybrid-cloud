@@ -233,10 +233,22 @@ export interface CreateProductWebhookRequest {
 }
 
 // Pipeline Stacks
+export interface UpstreamRef {
+  // CI variable name exposed to the child template (uppercase convention).
+  // The base pipeline promotes this to TF_VAR_<lowercase> for Terraform.
+  varName: string
+  // stateSuffix of an earlier step whose state this ref points to.
+  suffix: string
+}
+
 export interface StackStep {
   template: string
   stateSuffix: string
-  upstreamSuffix?: string
+  // execOrder groups: steps with the same value run in parallel; groups run
+  // sequentially from lowest to highest. Defaults to 0.
+  execOrder?: number
+  // Zero or more upstream state references (replaces the single upstreamSuffix).
+  upstreamRefs?: UpstreamRef[]
   fixedParams?: Record<string, string>
 }
 

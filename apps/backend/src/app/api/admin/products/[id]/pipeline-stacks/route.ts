@@ -20,8 +20,6 @@ const StackStepSchema = z.object({
 const CreateStackSchema = z.object({
   environmentId: z.number().int().positive(),
   name: z.string().min(1),
-  webhookUrl: z.string().url(),
-  webhookToken: z.string().min(1),
   stateKeyParam: z.string().min(1).default('hostname'),
   steps: z.array(StackStepSchema).min(1),
 })

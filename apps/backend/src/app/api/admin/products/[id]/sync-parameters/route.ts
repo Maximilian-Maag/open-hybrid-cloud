@@ -67,10 +67,22 @@ export async function POST(
   const steps = stack.steps as Array<{ template: string }>
   const template = steps[0].template
 
-  const projectIdMatch = stack.webhookUrl.match(/\/projects\/(\d+)\//)
+  // The stack no longer carries its own webhook URL — it inherits from the
+  // deployment environment. Fetch the env row for both the URL (to derive
+  // the GitLab project ID) and the ci source id below.
+  const [env] = await db
+    .select({ ciSourceId: deploymentEnvironments.ciSourceId, webhookUrl: deploymentEnvironments.webhookUrl })
+    .from(deploymentEnvironments)
+    .where(eq(deploymentEnvironments.id, stack.environmentId))
+    .limit(1)
+  if (!env) {
+    return NextResponse.json({ error: 'Deployment environment for pipeline stack not found' }, { status: 422 })
+  }
+
+  const projectIdMatch = env.webhookUrl.match(/\/projects\/(\d+)\//)
   if (!projectIdMatch) {
     return NextResponse.json(
-      { error: 'Could not extract project ID from pipeline stack webhook URL' },
+      { error: 'Could not extract project ID from deployment environment webhook URL' },
       { status: 422 },
     )
   }

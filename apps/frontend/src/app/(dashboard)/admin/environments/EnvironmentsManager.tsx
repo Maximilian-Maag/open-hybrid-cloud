@@ -111,13 +111,18 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
     }
   }
 
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
   async function handleDelete() {
     if (!deleteTarget) return
     setSaving(true)
+    setDeleteError(null)
     try {
       await del(`/api/admin/environments/${deleteTarget.id}`, token)
       setDeleteTarget(null)
       load()
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete environment.')
     } finally {
       setSaving(false)
     }
@@ -180,10 +185,13 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
           </div>
         </form>
       </Modal>
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Environment" size="sm">
-        <p className="text-sm text-slate-600 mb-6">Delete <strong>{deleteTarget?.name}</strong>?</p>
+      <Modal open={!!deleteTarget} onClose={() => { setDeleteTarget(null); setDeleteError(null) }} title="Delete Environment" size="sm">
+        <p className="text-sm text-slate-600 mb-4">Delete <strong>{deleteTarget?.name}</strong>?</p>
+        {deleteError && (
+          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">{deleteError}</div>
+        )}
         <div className="flex justify-end gap-3">
-          <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => { setDeleteTarget(null); setDeleteError(null) }}>Cancel</Button>
           <Button variant="danger" onClick={handleDelete} disabled={saving}>{saving ? 'Deleting…' : 'Delete'}</Button>
         </div>
       </Modal>

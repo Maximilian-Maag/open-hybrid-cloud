@@ -22,6 +22,13 @@
       "when": 1784500000000,
       "tag": "0002_add_parameter_label",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786320000000,
+      "tag": "0003_stack_inherits_env_webhook",
+      "breakpoints": true
     }
   ]
 }

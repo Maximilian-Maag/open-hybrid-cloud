@@ -767,7 +767,9 @@ All domain logic is in the service layer.
         \code{triggerPipelineStacks()} in \file{lib/ci/webhooks.ts} in
         parallel. Product webhooks fire in \code{exec\_order}; pipeline
         stacks serialise the configured step sequence as \code{PIPELINE\_STACK}
-        JSON and POST it to each stack's orchestrator webhook URL.
+        JSON and POST it to the deployment environment's webhook URL (the
+        stack inherits the environment's URL + token — see migration
+        \code{0003\_stack\_inherits\_env\_webhook.sql}).
   \item All returned pipeline IDs are merged and stored in the
         \code{pipeline\_id} JSONB column; an infra element is created;
         an audit row is written; the orderer receives an approval email.

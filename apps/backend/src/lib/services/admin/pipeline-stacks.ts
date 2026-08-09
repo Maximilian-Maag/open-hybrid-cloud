@@ -9,7 +9,6 @@ const publicColumns = {
   productId: pipelineStacks.productId,
   environmentId: pipelineStacks.environmentId,
   name: pipelineStacks.name,
-  webhookUrl: pipelineStacks.webhookUrl,
   stateKeyParam: pipelineStacks.stateKeyParam,
   steps: pipelineStacks.steps,
 }
@@ -33,8 +32,6 @@ export const createPipelineStack = async (
       productId,
       environmentId: input.environmentId,
       name: input.name,
-      webhookUrl: input.webhookUrl,
-      webhookToken: input.webhookToken,
       stateKeyParam: input.stateKeyParam ?? 'hostname',
       steps: input.steps,
     })
@@ -52,8 +49,6 @@ export const updatePipelineStack = async (
     .update(pipelineStacks)
     .set({
       ...(input.name !== undefined && { name: input.name }),
-      ...(input.webhookUrl !== undefined && { webhookUrl: input.webhookUrl }),
-      ...(input.webhookToken !== undefined && { webhookToken: input.webhookToken }),
       ...(input.stateKeyParam !== undefined && { stateKeyParam: input.stateKeyParam }),
       ...(input.steps !== undefined && { steps: input.steps }),
     })

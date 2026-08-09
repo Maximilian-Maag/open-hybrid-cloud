@@ -1,5 +1,10 @@
 import { db } from '@/lib/db/client'
-import { deploymentEnvironments, ciSources, type DeploymentEnvironment } from '@/lib/db/schema'
+import {
+  deploymentEnvironments,
+  ciSources,
+  infrastructureElements,
+  type DeploymentEnvironment,
+} from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 
@@ -84,6 +89,28 @@ export const updateEnvironment = async (
 }
 
 export const deleteEnvironment = async (id: number): Promise<Result<void>> => {
+  const existing = await db
+    .select({ id: deploymentEnvironments.id })
+    .from(deploymentEnvironments)
+    .where(eq(deploymentEnvironments.id, id))
+    .limit(1)
+  if (!existing.length) return err(404, 'Not found')
+
+  // Refuse when any infrastructure element still references this env — the
+  // previous silent 500 (FK violation from Postgres) was the frontend's
+  // "Delete does nothing" symptom. Return 409 with a message the UI can
+  // surface directly so the operator knows to decommission first.
+  const referencing = await db
+    .select({ id: infrastructureElements.id })
+    .from(infrastructureElements)
+    .where(eq(infrastructureElements.environmentId, id))
+  if (referencing.length > 0) {
+    return err(
+      409,
+      `Cannot delete environment: ${referencing.length} infrastructure element(s) still reference it. Decommission them first.`,
+    )
+  }
+
   const deleted = await db
     .delete(deploymentEnvironments)
     .where(eq(deploymentEnvironments.id, id))

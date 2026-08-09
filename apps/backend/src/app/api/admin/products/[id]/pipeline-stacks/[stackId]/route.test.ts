@@ -40,8 +40,6 @@ const seedStack = async () => {
     productId: p.id,
     environmentId: env.id,
     name: 'Seed Stack',
-    webhookUrl: 'https://gitlab.example.com/trigger',
-    webhookToken: 'secret',
     stateKeyParam: 'hostname',
     steps: STEPS,
   }).returning()
@@ -112,16 +110,6 @@ describe('PUT /api/admin/products/[id]/pipeline-stacks/[stackId]', () => {
     expect(body.steps[1].upstreamRefs[0].suffix).toBe('-vsvm')
   })
 
-  it('returns 400 for invalid webhook URL', async () => {
-    const root = await createUser({ role: 'root' })
-    const { p, stack } = await seedStack()
-    const auth = await makeAuthHeader(root)
-    const res = await PUT(
-      makeReq(String(p.id), String(stack.id), 'PUT', { webhookUrl: 'not-a-url' }, auth),
-      { params: Promise.resolve({ id: String(p.id), stackId: String(stack.id) }) },
-    )
-    expect(res.status).toBe(400)
-  })
 
   it('returns 400 for empty steps array', async () => {
     const root = await createUser({ role: 'root' })
@@ -199,8 +187,6 @@ describe('POST → PUT → DELETE progression', () => {
         body: JSON.stringify({
           environmentId: env.id,
           name: 'Initial Stack',
-          webhookUrl: 'https://gitlab.example.com/trigger',
-          webhookToken: 'tok',
           stateKeyParam: 'hostname',
           steps: [{ template: 'linode/virtual-machine', stateSuffix: '-vm' }],
         }),

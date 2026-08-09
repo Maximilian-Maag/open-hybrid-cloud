@@ -121,4 +121,34 @@ describe('deleteEnvironment', () => {
       .where(eq(deploymentEnvironments.id, created.data.id))
     expect(rows.length).toBe(0)
   })
+
+  // Regression: env delete used to explode with a bare "500: FK violation"
+  // when infra elements still referenced it. Now returns 409 with a message
+  // the admin UI can display verbatim.
+  it('returns 409 when infrastructure elements still reference the environment', async () => {
+    const { createUser, createCategory, createProduct, createProject, createOrder, createInfraElement } =
+      await import('@/test/helpers')
+    const ci = await createCiSource()
+    const created = await createEnvironment({
+      name: 'in-use',
+      ciSourceId: ci.id,
+      webhookUrl: 'http://e',
+      webhookToken: 'tok',
+    })
+    if (!created.ok) throw new Error('seed failed')
+
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const prod = await createProduct(cat.id)
+    const proj = await createProject(pm.id)
+    const order = await createOrder(proj.id, prod.id, created.data.id, pm.id)
+    await createInfraElement(order.id, proj.id, created.data.id, prod.id)
+
+    const result = await deleteEnvironment(created.data.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(409)
+      expect(result.message).toMatch(/infrastructure element/i)
+    }
+  })
 })

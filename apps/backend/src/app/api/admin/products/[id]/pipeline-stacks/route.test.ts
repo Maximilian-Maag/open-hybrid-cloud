@@ -78,22 +78,12 @@ describe('POST /api/admin/products/[id]/pipeline-stacks', () => {
     expect(body.error).toBeDefined()
   })
 
-  it('returns 400 for invalid webhook URL', async () => {
-    const root = await createUser({ role: 'root' })
-    const ci = await createCiSource()
-    const env = await createEnvironment(ci.id)
-    const auth = await makeAuthHeader(root)
-    const body = { environmentId: env.id, name: 'Stack', webhookUrl: 'not-a-url', webhookToken: 'tok', steps: STEPS }
-    const res = await POST(makeReq('1', 'POST', body, auth), { params: Promise.resolve({ id: '1' }) })
-    expect(res.status).toBe(400)
-  })
-
   it('returns 400 for empty steps array', async () => {
     const root = await createUser({ role: 'root' })
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
     const auth = await makeAuthHeader(root)
-    const body = { environmentId: env.id, name: 'Stack', webhookUrl: 'https://hook.example.com', webhookToken: 'tok', steps: [] }
+    const body = { environmentId: env.id, name: 'Stack', steps: [] }
     const res = await POST(makeReq('1', 'POST', body, auth), { params: Promise.resolve({ id: '1' }) })
     expect(res.status).toBe(400)
   })
@@ -108,8 +98,6 @@ describe('POST /api/admin/products/[id]/pipeline-stacks', () => {
     const body = {
       environmentId: env.id,
       name: 'VM Pipeline',
-      webhookUrl: 'https://gitlab.example.com/trigger',
-      webhookToken: 'secret',
       stateKeyParam: 'hostname',
       steps: STEPS,
     }
@@ -133,8 +121,6 @@ describe('POST /api/admin/products/[id]/pipeline-stacks', () => {
     const body = {
       environmentId: env.id,
       name: 'Bad varName',
-      webhookUrl: 'https://gitlab.example.com/trigger',
-      webhookToken: 'tok',
       steps: [
         { template: 'linode/virtual-machine', stateSuffix: '-vm', execOrder: 0 },
         {
@@ -159,8 +145,6 @@ describe('POST /api/admin/products/[id]/pipeline-stacks', () => {
     const body = {
       environmentId: env.id,
       name: 'Stack without stateKeyParam',
-      webhookUrl: 'https://gitlab.example.com/trigger',
-      webhookToken: 'tok',
       steps: [{ template: 'linode/virtual-machine', stateSuffix: '-vm' }],
     }
     const res = await POST(makeReq(String(p.id), 'POST', body, auth), { params: Promise.resolve({ id: String(p.id) }) })
@@ -183,8 +167,6 @@ describe('GET → POST progression: created stack appears in list', () => {
       makeReq(String(p.id), 'POST', {
         environmentId: env.id,
         name: 'Progression Stack',
-        webhookUrl: 'https://gitlab.example.com/trigger',
-        webhookToken: 'tok',
         steps: STEPS,
       }, auth),
       { params: Promise.resolve({ id: String(p.id) }) },

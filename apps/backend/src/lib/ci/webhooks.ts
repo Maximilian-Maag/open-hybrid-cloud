@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/client'
-import { productWebhooks, pipelineStacks } from '@/lib/db/schema'
+import { productWebhooks, pipelineStacks, deploymentEnvironments } from '@/lib/db/schema'
 import { sql, eq, and } from 'drizzle-orm'
 import { findCiSourceForEnv } from '@/lib/db/queries'
 import { triggerPipeline } from './index'
@@ -12,6 +12,16 @@ export const triggerPipelineStacks = async (
   const ciSource = await findCiSourceForEnv(environmentId)
   if (!ciSource) return []
 
+  // Stack rows carry their JSON step definition; the trigger URL + token are
+  // owned by the deployment environment (single source of truth — see
+  // migration 0003_stack_inherits_env_webhook.sql for the history).
+  const [env] = await db
+    .select({ webhookUrl: deploymentEnvironments.webhookUrl, webhookToken: deploymentEnvironments.webhookToken })
+    .from(deploymentEnvironments)
+    .where(eq(deploymentEnvironments.id, environmentId))
+    .limit(1)
+  if (!env) return []
+
   const stacks = await db
     .select()
     .from(pipelineStacks)
@@ -22,7 +32,7 @@ export const triggerPipelineStacks = async (
     if (!stack.steps || (stack.steps as unknown[]).length === 0) continue
     const tfStateName = variables[stack.stateKeyParam] ?? variables['ORDER_ID'] ?? ''
     try {
-      const pid = await triggerPipeline(ciSource, stack.webhookUrl, stack.webhookToken, {
+      const pid = await triggerPipeline(ciSource, env.webhookUrl, env.webhookToken, {
         ...variables,
         TEMPLATE: 'orchestrator',
         TF_STATE_NAME: tfStateName,

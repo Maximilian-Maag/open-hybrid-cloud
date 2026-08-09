@@ -44,8 +44,6 @@ const seedStack = async (overrides?: { steps?: StackStep[] }) => {
     productId: p.id,
     environmentId: env.id,
     name: 'Test Stack',
-    webhookUrl: 'https://gitlab.example.com/api/v4/projects/8/ref/main/trigger/pipeline',
-    webhookToken: 'trigger-token',
     stateKeyParam: 'hostname',
     steps: overrides?.steps ?? [{ template: 'linode/virtual-machine', stateSuffix: '-vm' }],
   }).returning()

@@ -104,8 +104,6 @@ export const pipelineStacks = pgTable('pipeline_stacks', {
   productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
   environmentId: bigint('environment_id', { mode: 'number' }).notNull().references(() => deploymentEnvironments.id, { onDelete: 'cascade' }),
   name: text().notNull(),
-  webhookUrl: text('webhook_url').notNull(),
-  webhookToken: text('webhook_token').notNull(),
   stateKeyParam: text('state_key_param').notNull().default('hostname'),
   steps: jsonb().$type<StackStep[]>().notNull().default([]),
 })

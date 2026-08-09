@@ -28,8 +28,6 @@ const seedStack = async () => {
     productId: p.id,
     environmentId: env.id,
     name: 'Seed Stack',
-    webhookUrl: 'https://gitlab.example.com/trigger',
-    webhookToken: 'secret',
     stateKeyParam: 'hostname',
     steps: STEPS,
   }).returning()
@@ -75,8 +73,6 @@ describe('createPipelineStack', () => {
     const result = await createPipelineStack(p.id, {
       environmentId: env.id,
       name: 'VM Stack',
-      webhookUrl: 'https://gitlab.example.com/trigger',
-      webhookToken: 'tok',
       stateKeyParam: 'hostname',
       steps: STEPS,
     })
@@ -115,8 +111,6 @@ describe('createPipelineStack', () => {
     const result = await createPipelineStack(p.id, {
       environmentId: env.id,
       name: 'Multi-upstream',
-      webhookUrl: 'https://gitlab.example.com/trigger',
-      webhookToken: 'tok',
       steps,
     })
     expect(result.ok).toBe(true)
@@ -135,8 +129,6 @@ describe('createPipelineStack', () => {
     const result = await createPipelineStack(p.id, {
       environmentId: env.id,
       name: 'Parallel',
-      webhookUrl: 'https://gitlab.example.com/trigger',
-      webhookToken: 'tok',
       steps: [
         { template: 'linode/virtual-machine', stateSuffix: '-a', execOrder: 0 },
         { template: 'linode/virtual-machine', stateSuffix: '-b', execOrder: 0 },
@@ -157,8 +149,6 @@ describe('createPipelineStack', () => {
     const result = await createPipelineStack(p.id, {
       environmentId: env.id,
       name: 'Stack',
-      webhookUrl: 'https://gitlab.example.com/trigger',
-      webhookToken: 'tok',
       steps: STEPS,
     })
     expect(result.ok).toBe(true)
@@ -176,8 +166,6 @@ describe('createPipelineStack', () => {
     const result = await createPipelineStack(p.id, {
       environmentId: env.id,
       name: 'Stack with fixed params',
-      webhookUrl: 'https://gitlab.example.com/trigger',
-      webhookToken: 'tok',
       steps: stepsWithFixed,
     })
     expect(result.ok).toBe(true)
@@ -276,8 +264,6 @@ describe('pipeline stack lifecycle progression', () => {
     const created = await createPipelineStack(p.id, {
       environmentId: env.id,
       name: 'Lifecycle Stack',
-      webhookUrl: 'https://gitlab.example.com/trigger',
-      webhookToken: 'tok',
       stateKeyParam: 'hostname',
       steps: [{ template: 'linode/virtual-machine', stateSuffix: '-vm' }],
     })

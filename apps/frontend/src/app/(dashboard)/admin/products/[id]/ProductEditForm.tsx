@@ -82,8 +82,6 @@ export function ProductEditForm({ product, categories, environments, translation
   const [editStack, setEditStack] = useState<PipelineStack | null>(null)
   const [psName, setPsName] = useState('')
   const [psEnvId, setPsEnvId] = useState('')
-  const [psUrl, setPsUrl] = useState('')
-  const [psToken, setPsToken] = useState('')
   const [psStateKey, setPsStateKey] = useState('hostname')
   type StepForm = {
     template: string
@@ -228,7 +226,7 @@ export function ProductEditForm({ product, categories, environments, translation
   function openStackModal() {
     setPsError(null)
     setEditStack(null)
-    setPsName(''); setPsEnvId(''); setPsUrl(''); setPsToken(''); setPsStateKey('hostname'); setPsSteps([])
+    setPsName(''); setPsEnvId(''); setPsStateKey('hostname'); setPsSteps([])
     setStackModal(true)
   }
 
@@ -237,8 +235,6 @@ export function ProductEditForm({ product, categories, environments, translation
     setEditStack(stack)
     setPsName(stack.name)
     setPsEnvId(String(stack.environmentId))
-    setPsUrl(stack.webhookUrl)
-    setPsToken('')
     setPsStateKey(stack.stateKeyParam)
     setPsSteps(stack.steps.map((s) => ({
       template: s.template,
@@ -314,10 +310,8 @@ export function ProductEditForm({ product, categories, environments, translation
       if (editStack) {
         const body: UpdatePipelineStackRequest = {
           name: psName.trim(),
-          webhookUrl: psUrl.trim(),
           stateKeyParam: psStateKey.trim() || 'hostname',
           steps,
-          ...(psToken.trim() ? { webhookToken: psToken.trim() } : {}),
         }
         const updated = await put<PipelineStack>(`/api/admin/products/${product.id}/pipeline-stacks/${editStack.id}`, body, token)
         setStacks((prev) => prev.map((s) => s.id === editStack.id ? updated : s))
@@ -325,8 +319,6 @@ export function ProductEditForm({ product, categories, environments, translation
         const body: CreatePipelineStackRequest = {
           environmentId: Number(psEnvId),
           name: psName.trim(),
-          webhookUrl: psUrl.trim(),
-          webhookToken: psToken.trim(),
           stateKeyParam: psStateKey.trim() || 'hostname',
           steps,
         }
@@ -623,9 +615,10 @@ export function ProductEditForm({ product, categories, environments, translation
               placeholder="Select environment…" options={environments.map((e) => ({ value: e.id, label: e.name }))}
               disabled={!!editStack} />
           </div>
-          <Input label="Webhook URL" type="url" value={psUrl} onChange={(e) => setPsUrl(e.target.value)} required />
-          <Input label="Webhook Token" value={psToken} onChange={(e) => setPsToken(e.target.value)}
-            required={!editStack} hint={editStack ? 'Leave blank to keep existing token' : undefined} />
+          <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
+            Trigger URL and token are inherited from the selected deployment environment.
+            Manage them in <strong>Admin → Environments</strong>.
+          </div>
           <Input label="State Key Parameter" value={psStateKey} onChange={(e) => setPsStateKey(e.target.value)}
             placeholder="hostname" />
           <div className="space-y-2">

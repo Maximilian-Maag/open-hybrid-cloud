@@ -172,9 +172,7 @@ Pipeline Stacks let you define an ordered sequence of CI/CD template steps per p
 2. Scroll to the **Pipeline Stacks** card and click **+ Add Stack**
 3. Fill in the required fields:
    - **Name**: Label for this stack (e.g. "VM + DNS")
-   - **Environment**: Which deployment environment this stack applies to
-   - **Webhook URL**: GitLab trigger URL of the *orchestrator* pipeline that reads `PIPELINE_STACK`
-   - **Webhook Token**: Pipeline trigger token for the orchestrator project
+   - **Environment**: Which deployment environment this stack applies to. The stack inherits the environment's **Webhook URL** and **Webhook Token** for outbound pipeline triggers — manage them once under **Admin → Environments**, not per stack.
    - **State Key Parameter**: Name of the order parameter whose value is used as the OpenTofu state key (default: `hostname`). Must be stable across provision and destroy so state can be reused.
 4. Click **+ Add Step** one or more times to build the step sequence:
    - **Template**: Path to the step template in the infra-templates repo (e.g. `linode/virtual-machine`)
@@ -198,7 +196,7 @@ The orchestrator pipeline reads `PIPELINE_STACK` and dynamically triggers the in
 **Managing existing stacks:**
 
 - Each stack is listed with its name, environment, and step count
-- Click **Edit** on a stack to update its name, webhook URL, token, state key parameter, or steps. The environment cannot be changed after creation. Leave the token field blank to keep the existing token.
+- Click **Edit** on a stack to update its name, state key parameter, or steps. The environment cannot be changed after creation. Trigger URL and token are managed on the environment itself — rotate them in one place and every stack picks up the new value automatically.
 - Click **Delete** on a stack entry to remove it — active infrastructure is not affected, but future orders for that product+environment will no longer trigger that stack
 
 > **Order Callbacks vs. Pipeline Stacks:** Order Callbacks (section 4.1 "Step 4") notify external HTTP endpoints after order processing and are optional. Pipeline Stacks call a single orchestrator CI pipeline and let the portal define the execution DAG as data — suitable when all steps share one orchestrator entry point.

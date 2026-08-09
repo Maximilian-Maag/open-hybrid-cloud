@@ -257,24 +257,22 @@ export interface PipelineStack {
   productId: number
   environmentId: number
   name: string
-  webhookUrl: string
   stateKeyParam: string
   steps: StackStep[]
 }
 
+// Stacks inherit the deployment environment's webhook_url + webhook_token —
+// having them on the stack itself let the two tokens diverge and broke the
+// outbound trigger while the inbound callback still validated the env token.
 export interface CreatePipelineStackRequest {
   environmentId: number
   name: string
-  webhookUrl: string
-  webhookToken: string
   stateKeyParam?: string
   steps: StackStep[]
 }
 
 export interface UpdatePipelineStackRequest {
   name?: string
-  webhookUrl?: string
-  webhookToken?: string
   stateKeyParam?: string
   steps?: StackStep[]
 }

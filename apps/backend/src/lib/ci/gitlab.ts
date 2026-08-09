@@ -15,7 +15,12 @@ export const triggerGitLabPipeline = async (
 ): Promise<string> => {
   const body = new URLSearchParams()
   body.append('token', token)
+  // GitLab's trigger endpoint requires `ref` (git ref to run the pipeline
+  // against) — omitting it returns 400 "ref is missing". Default to `main`;
+  // callers can override by setting variables['REF'].
+  body.append('ref', variables['REF'] ?? 'main')
   for (const [key, value] of Object.entries(variables)) {
+    if (key === 'REF') continue
     body.append(`variables[${key}]`, value)
   }
 

@@ -32,7 +32,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
                 api_orders = component "Order Routes" "Thin HTTP shell: validate body, call orders or approvals service."
                 api_infrastructure = component "Infrastructure Routes" "Thin HTTP shell: call infrastructure service for list and decommission."
                 api_admin = component "Admin Routes" "Thin HTTP shells for catalog, environments, CI sources, users and config — each delegates to its service."
-                api_webhook = component "CI Webhook Receiver" "Verifies provider signature/token; calls handlePipelineEvent to transition order/infra state and parse OpenTofu outputs."
+                api_webhook = component "CI Webhook Receiver" "Verifies inbound X-Gitlab-Token against each deployment_environments.callback_secret (portal-generated, separate from the outbound trigger token stored in webhook_token); calls handlePipelineEvent to transition order/infra state and parse OpenTofu outputs."
                 api_audit = component "Audit Routes" "Thin HTTP shell: call audit service for filterable log and CSV/PDF export."
                 svc_orders = component "Orders Service" "State machine: pending → provisioning → completed/failed/rejected. Calls CI trigger, writes audit, sends emails."
                 svc_approvals = component "Approvals Service" "Approve (triggers CI, creates infra element) and reject (stores note, notifies orderer)."

@@ -7,6 +7,13 @@ import {
 } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
+import { randomBytes } from 'node:crypto'
+
+// Portal-generated shared secret sent as the X-Gitlab-Token header of the
+// pipeline event webhook. 32 bytes → 64 hex chars, matches Linode-style
+// tokens and is comfortably URL-safe. Prefix `ohc-cb-` so it's obvious what
+// this is if it shows up in a log or a copy-paste error.
+export const generateCallbackSecret = (): string => `ohc-cb-${randomBytes(32).toString('hex')}`
 
 export interface CreateEnvironmentInput {
   name: string
@@ -57,10 +64,36 @@ export const createEnvironment = async (
       ciSourceId: input.ciSourceId,
       webhookUrl: input.webhookUrl,
       webhookToken: input.webhookToken,
+      // Portal generates the callback secret; the operator can never set it
+      // directly (only reveal or regenerate afterwards).
+      callbackSecret: generateCallbackSecret(),
     })
     .returning()
 
   return ok(env)
+}
+
+export const getCallbackSecret = async (id: number): Promise<Result<{ callbackSecret: string }>> => {
+  const rows = await db
+    .select({ callbackSecret: deploymentEnvironments.callbackSecret })
+    .from(deploymentEnvironments)
+    .where(eq(deploymentEnvironments.id, id))
+    .limit(1)
+  if (!rows.length) return err(404, 'Not found')
+  return ok({ callbackSecret: rows[0].callbackSecret })
+}
+
+export const regenerateCallbackSecret = async (
+  id: number,
+): Promise<Result<{ callbackSecret: string }>> => {
+  const next = generateCallbackSecret()
+  const [updated] = await db
+    .update(deploymentEnvironments)
+    .set({ callbackSecret: next })
+    .where(eq(deploymentEnvironments.id, id))
+    .returning({ id: deploymentEnvironments.id, callbackSecret: deploymentEnvironments.callbackSecret })
+  if (!updated) return err(404, 'Not found')
+  return ok({ callbackSecret: updated.callbackSecret })
 }
 
 export const getEnvironmentById = async (id: number): Promise<Result<DeploymentEnvironment>> => {

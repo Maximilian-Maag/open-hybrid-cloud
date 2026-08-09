@@ -6,6 +6,7 @@ import type {
   CiSource,
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
+  CallbackSecretResponse,
 } from '@open-hybrid-cloud/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
@@ -112,6 +113,37 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
   }
 
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [callbackSecret, setCallbackSecret] = useState<string | null>(null)
+  const [secretBusy, setSecretBusy] = useState(false)
+
+  async function revealCallbackSecret() {
+    if (!editTarget) return
+    setSecretBusy(true)
+    try {
+      const res = await get<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`, token)
+      setCallbackSecret(res?.callbackSecret ?? null)
+    } catch {
+      setCallbackSecret(null)
+    } finally {
+      setSecretBusy(false)
+    }
+  }
+
+  async function regenerateCallbackSecret() {
+    if (!editTarget) return
+    if (!confirm('Regenerate the callback secret? You will need to paste the new value into GitLab → Settings → Webhooks for pipeline events to keep updating this portal.')) return
+    setSecretBusy(true)
+    try {
+      const res = await post<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`, {}, token)
+      setCallbackSecret(res?.callbackSecret ?? null)
+    } finally {
+      setSecretBusy(false)
+    }
+  }
+
+  async function copyCallbackSecret() {
+    if (callbackSecret) await navigator.clipboard.writeText(callbackSecret)
+  }
 
   async function handleDelete() {
     if (!deleteTarget) return
@@ -170,7 +202,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
           </div>
         </form>
       </Modal>
-      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Environment" size="md">
+      <Modal open={!!editTarget} onClose={() => { setEditTarget(null); setCallbackSecret(null) }} title="Edit Environment" size="md">
         <form onSubmit={handleEdit} className="space-y-4">
           {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
           <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
@@ -178,9 +210,32 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
           <Select label="CI Source" required value={form.ciSourceId} onChange={(e) => setField('ciSourceId', e.target.value)}
             placeholder="Select CI source…" options={ciOptions} />
           <Input label="Webhook URL (leave blank to keep)" type="url" value={form.webhookUrl} onChange={(e) => setField('webhookUrl', e.target.value)} />
-          <Input label="Webhook Token (leave blank to keep)" value={form.webhookToken} onChange={(e) => setField('webhookToken', e.target.value)} />
+          <Input label="Webhook Token — outbound trigger (leave blank to keep)" value={form.webhookToken} onChange={(e) => setField('webhookToken', e.target.value)} hint="This is the token GitLab expects on the pipeline-trigger POST (Settings → CI/CD → Pipeline trigger tokens)." />
+          <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Callback Secret — inbound pipeline events</p>
+                <p className="text-xs text-slate-500">Portal-generated. Paste this into GitLab → Settings → Webhooks → Secret token so pipeline-event callbacks are accepted.</p>
+              </div>
+            </div>
+            {callbackSecret ? (
+              <div className="flex items-center gap-2">
+                <input readOnly value={callbackSecret} className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs font-mono text-slate-700 bg-slate-50" />
+                <Button type="button" size="sm" variant="secondary" onClick={copyCallbackSecret}>Copy</Button>
+              </div>
+            ) : (
+              <Button type="button" size="sm" variant="secondary" onClick={revealCallbackSecret} disabled={secretBusy}>
+                {secretBusy ? 'Loading…' : 'Reveal current'}
+              </Button>
+            )}
+            <div>
+              <Button type="button" size="sm" variant="danger" onClick={regenerateCallbackSecret} disabled={secretBusy}>
+                {secretBusy ? 'Regenerating…' : 'Regenerate'}
+              </Button>
+            </div>
+          </div>
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null); setCallbackSecret(null) }}>Cancel</Button>
             <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
           </div>
         </form>

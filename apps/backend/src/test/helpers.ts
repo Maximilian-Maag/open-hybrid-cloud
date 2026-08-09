@@ -68,6 +68,11 @@ export const createEnvironment = async (ciSourceId: number, webhookToken = 'wh-s
       ciSourceId,
       webhookUrl: 'https://gitlab.example.com/api/v4/projects/1/trigger/pipeline',
       webhookToken,
+      // Mirror the migration 0004 backfill: legacy envs get callback_secret =
+      // webhook_token. Tests that seed with a specific webhookToken and then
+      // POST to /api/webhooks/gitlab/pipeline with that same value continue
+      // to pass without special handling.
+      callbackSecret: webhookToken,
     })
     .returning()
   return env

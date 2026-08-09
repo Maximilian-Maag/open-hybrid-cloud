@@ -29,6 +29,13 @@
       "when": 1786320000000,
       "tag": "0003_stack_inherits_env_webhook",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786406400000,
+      "tag": "0004_add_callback_secret",
+      "breakpoints": true
     }
   ]
 }

@@ -86,8 +86,12 @@ beforeAll(async () => {
       description TEXT NOT NULL DEFAULT '',
       ci_source_id BIGINT NOT NULL REFERENCES ci_sources(id),
       webhook_url TEXT NOT NULL,
-      webhook_token TEXT NOT NULL
+      webhook_token TEXT NOT NULL,
+      callback_secret TEXT NOT NULL DEFAULT ''
     );
+    -- Older test DBs may not have callback_secret; add and backfill.
+    ALTER TABLE deployment_environments ADD COLUMN IF NOT EXISTS callback_secret TEXT NOT NULL DEFAULT '';
+    UPDATE deployment_environments SET callback_secret = webhook_token WHERE callback_secret = '';
     CREATE TABLE IF NOT EXISTS product_environments (
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),

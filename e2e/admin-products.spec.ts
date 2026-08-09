@@ -51,4 +51,52 @@ test.describe('Admin - Product Delete Button', () => {
     // Row count unchanged
     await expect(page.getByRole('button', { name: /^delete$/i })).toHaveCount(productCountBefore)
   })
+
+  // Happy path: create a throw-away product, delete via UI, verify it's gone.
+  // Requires at least one category to exist (bootstrap seeds none, so create
+  // one via the admin UI first).
+  test('creates a product, deletes it via the confirmation dialog, and verifies it is removed', async ({ page }) => {
+    const ts = Date.now()
+    const productName = `E2E Delete ${ts}`
+    const categoryName = `E2E Cat ${ts}`
+
+    // Seed a category so the New Product form has something to select
+    await page.goto('/admin/categories')
+    await expect(page.getByRole('button', { name: /add category/i })).toBeVisible({ timeout: 8000 })
+    await page.getByRole('button', { name: /add category/i }).click()
+    let dialog = page.locator('dialog[open]')
+    await dialog.getByLabel(/^name/i).fill(categoryName)
+    await dialog.getByRole('button', { name: /^save$/i }).click()
+    await expect(page.getByText(categoryName)).toBeVisible({ timeout: 8000 })
+
+    // Create the product
+    await page.goto('/admin/products/new')
+    await page.getByLabel(/^name/i).fill(productName)
+    await page.getByLabel(/^description/i).fill('created solely to be deleted')
+    await page.getByLabel(/category/i).selectOption({ label: categoryName })
+    await page.getByRole('button', { name: /save|create/i }).click()
+
+    // After create the form redirects to the edit page — go back to the list
+    await page.goto('/admin/products')
+    await expect(page.getByRole('link', { name: productName })).toBeVisible({ timeout: 8000 })
+
+    // Confirm-delete the product
+    const productRow = page.locator('tr').filter({ has: page.getByRole('link', { name: productName }) })
+    await productRow.getByRole('button', { name: /^delete$/i }).click()
+
+    dialog = page.locator('dialog[open]')
+    await expect(dialog.getByRole('heading', { name: /delete product/i })).toBeVisible()
+    // Cascade-decommission warning is present (tested elsewhere) — proceed with confirm
+    await dialog.getByRole('button', { name: /^delete$/i }).click()
+
+    // Wait for the row to disappear from the list
+    await expect(page.getByRole('link', { name: productName })).not.toBeVisible({ timeout: 8000 })
+
+    // Cleanup: remove the category we seeded
+    await page.goto('/admin/categories')
+    const catRow = page.locator('div').filter({ has: page.getByText(categoryName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()
+    await catRow.getByRole('button', { name: /^delete$/i }).click()
+    await page.getByRole('button', { name: /^delete$/i }).last().click()
+    await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
+  })
 })

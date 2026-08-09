@@ -5,6 +5,9 @@ import {
   getEnvironmentById,
   updateEnvironment,
   deleteEnvironment,
+  getCallbackSecret,
+  regenerateCallbackSecret,
+  generateCallbackSecret,
 } from './environments'
 import { db } from '@/lib/db/client'
 import { deploymentEnvironments } from '@/lib/db/schema'
@@ -46,6 +49,84 @@ describe('createEnvironment', () => {
       expect(result.data.name).toBe('dev')
       expect(result.data.description).toBe('devvy')
     }
+  })
+
+  it('auto-generates a callback_secret; the operator never provides it', async () => {
+    const ci = await createCiSource()
+    const result = await createEnvironment({
+      name: 'autosecret',
+      ciSourceId: ci.id,
+      webhookUrl: 'http://e',
+      webhookToken: 'tok',
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.callbackSecret).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+      // and NOT equal to the outbound trigger token — separate concerns
+      expect(result.data.callbackSecret).not.toBe('tok')
+    }
+  })
+})
+
+describe('generateCallbackSecret', () => {
+  it('produces the ohc-cb-<hex> shape and yields unique values', () => {
+    const a = generateCallbackSecret()
+    const b = generateCallbackSecret()
+    expect(a).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+    expect(b).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+    expect(a).not.toBe(b)
+  })
+})
+
+describe('getCallbackSecret', () => {
+  it('returns 404 for unknown id', async () => {
+    const result = await getCallbackSecret(999_999)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+  })
+
+  it('returns the stored secret verbatim', async () => {
+    const ci = await createCiSource()
+    const created = await createEnvironment({
+      name: 'reveal',
+      ciSourceId: ci.id,
+      webhookUrl: 'http://e',
+      webhookToken: 'tok',
+    })
+    if (!created.ok) throw new Error('seed failed')
+
+    const result = await getCallbackSecret(created.data.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.callbackSecret).toBe(created.data.callbackSecret)
+  })
+})
+
+describe('regenerateCallbackSecret', () => {
+  it('returns 404 for unknown id', async () => {
+    const result = await regenerateCallbackSecret(999_999)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+  })
+
+  it('rotates the secret to a new value and persists it', async () => {
+    const ci = await createCiSource()
+    const created = await createEnvironment({
+      name: 'rotate',
+      ciSourceId: ci.id,
+      webhookUrl: 'http://e',
+      webhookToken: 'tok',
+    })
+    if (!created.ok) throw new Error('seed failed')
+
+    const before = created.data.callbackSecret
+    const rotated = await regenerateCallbackSecret(created.data.id)
+    expect(rotated.ok).toBe(true)
+    if (!rotated.ok) return
+    expect(rotated.data.callbackSecret).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+    expect(rotated.data.callbackSecret).not.toBe(before)
+
+    const reread = await getCallbackSecret(created.data.id)
+    if (reread.ok) expect(reread.data.callbackSecret).toBe(rotated.data.callbackSecret)
   })
 })
 

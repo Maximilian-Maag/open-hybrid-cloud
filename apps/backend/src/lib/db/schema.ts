@@ -78,6 +78,10 @@ export const deploymentEnvironments = pgTable('deployment_environments', {
   ciSourceId: bigint('ci_source_id', { mode: 'number' }).notNull().references(() => ciSources.id),
   webhookUrl: text('webhook_url').notNull(),
   webhookToken: text('webhook_token').notNull(),
+  // Portal-generated secret sent by GitLab as X-Gitlab-Token on the pipeline
+  // event callback. Kept separate from webhook_token (the outbound trigger
+  // token) so operators can rotate the two independently.
+  callbackSecret: text('callback_secret').notNull(),
 })
 
 export const productEnvironments = pgTable('product_environments', {

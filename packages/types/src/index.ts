@@ -180,6 +180,13 @@ export interface DeploymentEnvironment {
   ciSourceId: number
 }
 
+// Response shape for GET/POST /api/admin/environments/:id/callback-secret.
+// The portal-owned inbound webhook secret is returned in the clear here so
+// the operator can copy it into GitLab (Settings → Webhooks → Secret token).
+export interface CallbackSecretResponse {
+  callbackSecret: string
+}
+
 export interface CreateEnvironmentRequest {
   name: string
   description?: string

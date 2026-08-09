@@ -44,9 +44,20 @@ Under **Administration → Deployment Environments**:
    - **Name**: Label (e.g. "AWS Frankfurt", "On-Premises Vienna")
    - **Description**: Optional
    - **GitLab Source**: Select from configured sources
-   - **Webhook URL**: URL of the GitLab webhook for this environment
-   - **Webhook Token**: Security token for the webhook
+   - **Webhook URL**: URL of the GitLab pipeline trigger endpoint for this environment (`https://<gitlab>/api/v4/projects/<id>/trigger/pipeline`)
+   - **Webhook Token**: The **pipeline trigger token** from GitLab (`Settings → CI/CD → Pipeline trigger tokens`). Used by the portal to POST the trigger to GitLab.
 3. Save
+4. Open the newly-created environment via **Edit** → the **Callback Secret** panel is now populated with a portal-generated random value:
+   - Click **Reveal current** → **Copy**
+   - In GitLab, go to `<infra-templates project> → Settings → Webhooks → Add new webhook`:
+     - URL: `https://<your-portal>/api/webhooks/gitlab/pipeline`
+     - Secret token: **paste the callback secret**
+     - Trigger: only **Pipeline events**
+     - Save
+   - Any future pipeline event on that project now reaches the portal and updates the associated order/infrastructure status.
+5. If you ever need to rotate this secret, use **Regenerate** in the same panel — the new value is displayed once; paste it into the GitLab webhook to keep the callback flowing.
+
+> **Two separate tokens on the environment:** *Webhook Token* is what GitLab expects on the outbound pipeline-trigger POST; *Callback Secret* is what the portal expects on the inbound pipeline-event webhook. Since portal release ≥ v0004-migration they are stored in distinct columns and can be rotated independently.
 
 ### 2.3 Configuring SMTP
 

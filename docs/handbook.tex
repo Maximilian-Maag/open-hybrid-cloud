@@ -2092,8 +2092,16 @@ Under \textbf{Administration → Deployment Environments}:
   \item Click \textbf{Add New Environment}.
   \item Enter a \textbf{Name} (e.g. \textit{Linode Frankfurt Production}),
         select the \textbf{GitLab Source}, and enter the \textbf{Webhook URL}
-        and \textbf{Webhook Token}.
-  \item Save. The environment becomes available when assigning products.
+        (the GitLab pipeline-trigger endpoint) and \textbf{Webhook Token}
+        (the pipeline-trigger token from GitLab).
+  \item Save. On the newly-created environment open \textbf{Edit} and use
+        the \textbf{Callback Secret} panel to reveal the portal-generated
+        secret; paste it into GitLab under \textbf{Settings → Webhooks →
+        Secret token} so pipeline events sent back to the portal are
+        authenticated. Since migration 0004 the callback secret is stored
+        in a separate column from the outbound trigger token, so the two
+        can be rotated independently.
+  \item The environment becomes available when assigning products.
 \end{enumerate}
 
 \notebox{The Webhook URL points to a specific GitLab project pipeline

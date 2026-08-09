@@ -92,4 +92,26 @@ describe('POST /api/webhooks/gitlab/pipeline', () => {
     )
     expect(res.status).toBe(200)
   })
+
+  // Regression for migration 0004: after separating callback_secret from
+  // webhook_token, a rotated trigger token must NOT unlock the webhook while
+  // callback_secret still holds a different value.
+  it('validates X-Gitlab-Token against callback_secret, not the outbound trigger token', async () => {
+    const { db } = await import('@/lib/db/client')
+    const { deploymentEnvironments } = await import('@/lib/db/schema')
+    const { eq } = await import('drizzle-orm')
+
+    // Rotate webhook_token in the DB so it no longer matches the callback_secret
+    // seeded by createEnvironment (which set both to VALID_TOKEN).
+    await db.update(deploymentEnvironments).set({ webhookToken: 'rotated-trigger-only' })
+      .where(eq(deploymentEnvironments.webhookToken, VALID_TOKEN))
+
+    // Old token still matches callback_secret (the backfill's value) → accepted.
+    const okRes = await POST(makeRequest(validPayload, VALID_TOKEN))
+    expect(okRes.status).toBe(200)
+
+    // New trigger token is NOT the callback secret → rejected.
+    const denyRes = await POST(makeRequest(validPayload, 'rotated-trigger-only'))
+    expect(denyRes.status).toBe(401)
+  })
 })

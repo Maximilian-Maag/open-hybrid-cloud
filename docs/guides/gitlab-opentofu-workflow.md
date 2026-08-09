@@ -179,11 +179,11 @@ Settings → Webhooks → Add new webhook
 | Field | Value |
 |---|---|
 | **URL** | `https://your-portal.example.com/api/webhooks/gitlab/pipeline` |
-| **Secret token** | The **Webhook Token** from the portal environment (Admin → Environments → edit) |
+| **Secret token** | The **Callback Secret** shown in the portal environment (`Admin → Environments → Edit → Callback Secret → Reveal → Copy`). Since migration 0004 this is a separate, portal-generated value — no longer the same field as the outbound trigger token. |
 | **Trigger** | Enable **Pipeline events** only |
 | **SSL verification** | Enable (requires a valid TLS certificate on the portal) |
 
-The portal's webhook receiver (`POST /api/webhooks/gitlab/pipeline`) verifies the `X-Gitlab-Token` header against all stored environment webhook tokens. If no matching token is found the request is rejected with `401`.
+The portal's webhook receiver (`POST /api/webhooks/gitlab/pipeline`) verifies the `X-Gitlab-Token` header against every environment's `callback_secret`. If no environment has a matching secret the request is rejected with `401`. Rotate the callback secret in the portal via the **Regenerate** button; the outbound trigger token can be rotated separately at any time.
 
 **How the callback is processed:**
 

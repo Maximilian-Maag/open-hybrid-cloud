@@ -43,10 +43,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing token' }, { status: 401 })
   }
 
+  // Validate against the portal-generated callback_secret — separate from
+  // webhook_token (the outbound trigger token) since migration 0004. During
+  // the rollout the two are identical for legacy environments (see the
+  // backfill in 0004_add_callback_secret.sql), so this stays backward
+  // compatible for setups that haven't rotated yet.
   const envRows = await db
     .select({ id: deploymentEnvironments.id })
     .from(deploymentEnvironments)
-    .where(eq(deploymentEnvironments.webhookToken, token))
+    .where(eq(deploymentEnvironments.callbackSecret, token))
     .limit(1)
 
   if (!envRows.length) {

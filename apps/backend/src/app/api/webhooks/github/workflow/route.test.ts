@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { POST } from './route'
 import { createCiSource, createEnvironment } from '@/test/helpers'
+import { db } from '@/lib/db/client'
+import { deploymentEnvironments } from '@/lib/db/schema'
 import { createHmac } from 'crypto'
 
 vi.mock('@/lib/webhook/handler', () => ({
@@ -128,5 +130,37 @@ describe('POST /api/webhooks/github/workflow', () => {
       }),
     )
     expect(res.status).toBe(200)
+  })
+
+  // Regression: inbound callbacks must be verified against callback_secret, not
+  // the outbound webhook_token. When an operator rotates the two apart, a
+  // callback signed with the callback_secret is accepted and one signed with
+  // the webhook_token is rejected.
+  it('validates the signature against callback_secret, not webhook_token', async () => {
+    const ci = await createCiSource()
+    await db.insert(deploymentEnvironments).values({
+      name: 'Rotated Env',
+      ciSourceId: ci.id,
+      webhookUrl: 'https://example.com/trigger',
+      webhookToken: 'outbound-trigger-token',
+      callbackSecret: 'inbound-callback-secret',
+    })
+
+    const rawBody = JSON.stringify(validWorkflowRunBody)
+    const makeReq = (secret: string) =>
+      new NextRequest('http://localhost/api/webhooks/github/workflow', {
+        method: 'POST',
+        body: rawBody,
+        headers: {
+          'content-type': 'application/json',
+          'x-hub-signature-256': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+        },
+      })
+
+    const accepted = await POST(makeReq('inbound-callback-secret'))
+    expect(accepted.status).toBe(200)
+
+    const rejected = await POST(makeReq('outbound-trigger-token'))
+    expect(rejected.status).toBe(401)
   })
 })

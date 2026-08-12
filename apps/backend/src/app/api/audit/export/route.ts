@@ -6,7 +6,11 @@ import PDFDocument from 'pdfkit'
 function buildCsv(rows: AuditRow[]): string {
   const escape = (value: unknown): string => {
     if (value === null || value === undefined) return ''
-    const str = String(value)
+    let str = String(value)
+    // Neutralize spreadsheet formula injection: a cell starting with = + - @
+    // (or a tab/CR) is evaluated as a formula by Excel/Sheets. Audit fields
+    // capture user-supplied names/inputs, so prefix such cells with a quote.
+    if (/^[=+\-@\t\r]/.test(str)) str = `'${str}`
     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
       return `"${str.replace(/"/g, '""')}"`
     }

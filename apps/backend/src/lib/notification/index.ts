@@ -15,6 +15,19 @@ interface SmtpSettings {
 let transporterCache: nodemailer.Transporter | null = null
 let smtpSettingsCache: SmtpSettings | null = null
 
+// Clear the cached SMTP settings/transporter so the next send picks up config
+// changes. Must be called whenever the SMTP config row is updated, otherwise a
+// long-running server keeps using the stale settings until restart.
+export const resetSmtpCache = (): void => {
+  smtpSettingsCache = null
+  transporterCache = null
+}
+
+// Values interpolated into an email header (Subject) must not contain CR/LF,
+// which would allow header injection. Subjects are plain text, so they are not
+// HTML-escaped — only newline-stripped.
+const headerSafe = (s: string): string => s.replace(/[\r\n]+/g, ' ').trim()
+
 const getSmtpSettings = async (): Promise<SmtpSettings | null> => {
   if (
     process.env.SMTP_HOST &&
@@ -87,7 +100,7 @@ export const sendOrderCreated = async (
 ): Promise<void> =>
   send(
     to,
-    `Order #${orderId} Created — ${escapeHtml(productName)}`,
+    `Order #${orderId} Created — ${headerSafe(productName)}`,
     `<p>Your order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> has been created and is pending approval.</p>`,
   )
 
@@ -99,7 +112,7 @@ export const sendApprovalRequest = async (
 ): Promise<void> =>
   send(
     to,
-    `Approval Required: Order #${orderId} — ${escapeHtml(productName)}`,
+    `Approval Required: Order #${orderId} — ${headerSafe(productName)}`,
     `<p><strong>${escapeHtml(ordererName)}</strong> has placed order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> and it requires your approval.</p><p>Please log in to review and approve or reject the order.</p>`,
   )
 
@@ -110,7 +123,7 @@ export const sendOrderApproved = async (
 ): Promise<void> =>
   send(
     to,
-    `Order #${orderId} Approved — ${escapeHtml(productName)}`,
+    `Order #${orderId} Approved — ${headerSafe(productName)}`,
     `<p>Your order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> has been approved and provisioning has started.</p>`,
   )
 
@@ -122,7 +135,7 @@ export const sendOrderRejected = async (
 ): Promise<void> =>
   send(
     to,
-    `Order #${orderId} Rejected — ${escapeHtml(productName)}`,
+    `Order #${orderId} Rejected — ${headerSafe(productName)}`,
     `<p>Your order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> has been rejected.</p><p><strong>Reason:</strong> ${escapeHtml(note)}</p>`,
   )
 
@@ -133,7 +146,7 @@ export const sendProvisioningCompleted = async (
 ): Promise<void> =>
   send(
     to,
-    `Provisioning Completed — ${escapeHtml(productName)}`,
+    `Provisioning Completed — ${headerSafe(productName)}`,
     `<p>Provisioning of <strong>${escapeHtml(productName)}</strong> has completed successfully. Infrastructure element ID: <strong>${infraId}</strong>.</p>`,
   )
 
@@ -144,7 +157,7 @@ export const sendProvisioningFailed = async (
 ): Promise<void> =>
   send(
     to,
-    `Provisioning Failed — ${escapeHtml(productName)}`,
+    `Provisioning Failed — ${headerSafe(productName)}`,
     `<p>Provisioning for order <strong>#${orderId}</strong> of <strong>${escapeHtml(productName)}</strong> has failed. Please contact your administrator.</p>`,
   )
 
@@ -155,6 +168,6 @@ export const sendDecommissioned = async (
 ): Promise<void> =>
   send(
     to,
-    `Resource Decommissioned — ${escapeHtml(productName)}`,
+    `Resource Decommissioned — ${headerSafe(productName)}`,
     `<p>The infrastructure element <strong>${infraId}</strong> (<strong>${escapeHtml(productName)}</strong>) has been decommissioned successfully.</p>`,
   )

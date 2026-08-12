@@ -45,7 +45,7 @@ export function InfraActions({ item, token, lang = 'en' }: Props) {
         <p className="text-sm text-slate-600 mb-4">
           {t('decommissionWarning', lang)}{' '}
           <strong>{item.productName ?? `element #${item.id}`}</strong>?
-          {lang === 'en' && ' This action cannot be undone.'}
+          {' '}{t('cannotBeUndone', lang)}
         </p>
         {error && (
           <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">

@@ -71,6 +71,7 @@ export function ProductEditForm({ product, categories, environments, translation
   const [transSaving, setTransSaving] = useState(false)
   const [transError, setTransError] = useState<string | null>(null)
   const [translating, setTranslating] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   // Webhooks
   const [webhooks, setWebhooks] = useState<ProductWebhook[]>([])
@@ -179,10 +180,13 @@ export function ProductEditForm({ product, categories, environments, translation
 
   async function handleAiTranslate() {
     setTranslating(true)
+    setAiError(null)
     try {
       await post(`/api/admin/products/${product.id}/translate`, {}, token)
       router.refresh()
-    } catch { /* ignore */ } finally {
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'AI translation failed.')
+    } finally {
       setTranslating(false)
     }
   }
@@ -462,6 +466,11 @@ export function ProductEditForm({ product, categories, environments, translation
           </Button>
         </div>
       }>
+        {aiError && (
+          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            {aiError}
+          </div>
+        )}
         {translations.length === 0 ? (
           <p className="text-sm text-slate-400">No translations yet.</p>
         ) : (

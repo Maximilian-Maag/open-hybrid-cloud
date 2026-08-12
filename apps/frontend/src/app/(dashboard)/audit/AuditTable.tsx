@@ -59,14 +59,35 @@ export function AuditTable({ token }: Props) {
 
   useEffect(() => { load() }, [load])
 
-  function handleExport(format: 'csv' | 'pdf') {
+  async function handleExport(format: 'csv' | 'pdf') {
     const params = new URLSearchParams()
     if (userFilter) params.set('userId', userFilter)
     if (actionFilter) params.set('action', actionFilter)
     if (fromFilter) params.set('from', fromFilter)
     if (toFilter) params.set('to', toFilter)
     params.set('format', format)
-    window.open(`${API_URL}/api/audit/export?${params.toString()}&token=${token}`, '_blank')
+
+    // The export endpoint authenticates via the Authorization header, which a
+    // plain window.open GET cannot set — fetch it and trigger a download from
+    // the response blob. This also keeps the token out of the URL/history/logs.
+    try {
+      const res = await fetch(`${API_URL}/api/audit/export?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      })
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `audit.${format}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      /* empty */
+    }
   }
 
   const totalPages = Math.ceil(total / pageSize)

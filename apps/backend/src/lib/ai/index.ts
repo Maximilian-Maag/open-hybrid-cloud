@@ -15,13 +15,30 @@ interface AiConfig {
   model: string
 }
 
+// Default API host per provider, used when the admin leaves the endpoint blank.
+// Azure has no default — it requires the full deployment URL.
+const defaultEndpoint = (provider: AiProviderType): string => {
+  switch (provider) {
+    case 'claude':
+      return 'https://api.anthropic.com'
+    case 'openai':
+    default:
+      return 'https://api.openai.com'
+  }
+}
+
 const loadConfig = async (): Promise<AiConfig> => {
   const rows = await db.select().from(appConfig).where(eq(appConfig.id, 1)).limit(1)
   const cfg = rows[0]
 
+  const provider = (cfg?.aiProvider as AiProviderType) ?? 'openai'
+  // The endpoint column is a NOT-NULL default '' string, so `?? default` never
+  // fires on a blank value — treat empty/whitespace as "use provider default".
+  const configuredEndpoint = cfg?.aiEndpoint?.trim() ?? ''
+
   return {
-    provider: (cfg?.aiProvider as AiProviderType) ?? 'openai',
-    endpoint: cfg?.aiEndpoint ?? 'https://api.openai.com',
+    provider,
+    endpoint: configuredEndpoint || defaultEndpoint(provider),
     apiKey: cfg?.aiApiKey ?? '',
     model: cfg?.aiModel ?? 'gpt-4o-mini',
   }
@@ -138,5 +155,9 @@ export const translateProduct = async (
     .replace(/\n?```$/m, '')
     .trim()
 
-  return JSON.parse(jsonStr) as Record<string, { name: string; description: string }>
+  try {
+    return JSON.parse(jsonStr) as Record<string, { name: string; description: string }>
+  } catch {
+    throw new Error('AI translation returned invalid JSON')
+  }
 }

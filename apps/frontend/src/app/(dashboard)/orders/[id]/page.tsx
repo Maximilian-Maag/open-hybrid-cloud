@@ -7,6 +7,8 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Button } from '@/components/ui/Button'
+import { getLang } from '@/lib/getLang'
+import { t } from '@/lib/i18n'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -18,6 +20,7 @@ export default async function OrderDetailPage({ params }: Props) {
   if (!session) redirect('/login')
 
   const token = (session as unknown as { apiToken: string }).apiToken
+  const lang = await getLang()
 
   let order: Order
   try {
@@ -31,47 +34,47 @@ export default async function OrderDetailPage({ params }: Props) {
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <PageHeader
-        title={`Order #${order.id}`}
+        title={`${t('order', lang)} #${order.id}`}
         actions={
           <Link href="/orders">
-            <Button variant="secondary" size="sm">Back to Orders</Button>
+            <Button variant="secondary" size="sm">{t('backToOrders', lang)}</Button>
           </Link>
         }
       />
 
-      <Card title="Order Details">
+      <Card title={t('orderDetails', lang)}>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
           <div>
-            <dt className="font-medium text-slate-500">Product</dt>
+            <dt className="font-medium text-slate-500">{t('product', lang)}</dt>
             <dd className="text-slate-900">{order.productName ?? `#${order.productId}`}</dd>
           </div>
           <div>
-            <dt className="font-medium text-slate-500">Status</dt>
-            <dd><StatusBadge status={order.status} /></dd>
+            <dt className="font-medium text-slate-500">{t('status', lang)}</dt>
+            <dd><StatusBadge status={order.status} lang={lang} /></dd>
           </div>
           <div>
-            <dt className="font-medium text-slate-500">Environment</dt>
+            <dt className="font-medium text-slate-500">{t('environment', lang)}</dt>
             <dd className="text-slate-900">{order.environmentName ?? `#${order.environmentId}`}</dd>
           </div>
           <div>
-            <dt className="font-medium text-slate-500">Project</dt>
+            <dt className="font-medium text-slate-500">{t('project', lang)}</dt>
             <dd className="text-slate-900">{order.projectName ?? `#${order.projectId}`}</dd>
           </div>
           <div>
-            <dt className="font-medium text-slate-500">Ordered by</dt>
+            <dt className="font-medium text-slate-500">{t('orderedBy', lang)}</dt>
             <dd className="text-slate-900">{order.userName ?? `User #${order.userId}`}</dd>
           </div>
           <div>
-            <dt className="font-medium text-slate-500">Created</dt>
-            <dd className="text-slate-900">{new Date(order.createdAt).toLocaleString()}</dd>
+            <dt className="font-medium text-slate-500">{t('created', lang)}</dt>
+            <dd className="text-slate-900">{new Date(order.createdAt).toLocaleString(lang)}</dd>
           </div>
           <div>
-            <dt className="font-medium text-slate-500">Updated</dt>
-            <dd className="text-slate-900">{new Date(order.updatedAt).toLocaleString()}</dd>
+            <dt className="font-medium text-slate-500">{t('updated', lang)}</dt>
+            <dd className="text-slate-900">{new Date(order.updatedAt).toLocaleString(lang)}</dd>
           </div>
           {order.costCenterId && (
             <div>
-              <dt className="font-medium text-slate-500">Cost Center</dt>
+              <dt className="font-medium text-slate-500">{t('costCenter', lang)}</dt>
               <dd className="text-slate-900">#{order.costCenterId}</dd>
             </div>
           )}
@@ -79,20 +82,20 @@ export default async function OrderDetailPage({ params }: Props) {
 
         {order.status === 'rejected' && order.rejectionNote && (
           <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
-            <p className="text-sm font-medium text-red-800 mb-1">Rejection Note</p>
+            <p className="text-sm font-medium text-red-800 mb-1">{t('rejectionNote', lang)}</p>
             <p className="text-sm text-red-700">{order.rejectionNote}</p>
           </div>
         )}
       </Card>
 
       {paramEntries.length > 0 && (
-        <Card title="Parameters">
+        <Card title={t('parameters', lang)}>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm divide-y divide-slate-100">
               <thead>
                 <tr>
-                  <th className="text-left py-2 pr-4 font-medium text-slate-500">Parameter</th>
-                  <th className="text-left py-2 font-medium text-slate-500">Value</th>
+                  <th className="text-left py-2 pr-4 font-medium text-slate-500">{t('parameter', lang)}</th>
+                  <th className="text-left py-2 font-medium text-slate-500">{t('value', lang)}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -109,7 +112,7 @@ export default async function OrderDetailPage({ params }: Props) {
       )}
 
       {order.pipelineId && order.pipelineId.length > 0 && (
-        <Card title="Pipeline IDs">
+        <Card title={t('pipelineIds', lang)}>
           <ul className="space-y-1">
             {order.pipelineId.map((pid, i) => (
               <li key={i} className="font-mono text-xs text-slate-700 bg-slate-50 rounded px-3 py-1.5">

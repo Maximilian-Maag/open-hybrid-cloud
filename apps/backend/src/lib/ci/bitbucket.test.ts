@@ -62,6 +62,40 @@ describe('bitbucket ci client', () => {
       const url = new URL(String(fetchMock.mock.calls[0][0]))
       expect(url.searchParams.get('q')).toBe('full_name ~ "infra"')
     })
+
+    it('follows the JSON `next` cursor and concatenates pages', async () => {
+      const nextUrl = 'https://api.bitbucket.org/2.0/repositories?page=2'
+      const fetchMock = vi
+        .spyOn(global, 'fetch')
+        .mockResolvedValueOnce(
+          jsonRes({ values: [{ uuid: '{u1}', name: 'infra', full_name: 'acme/infra' }], next: nextUrl }),
+        )
+        .mockResolvedValueOnce(
+          jsonRes({ values: [{ uuid: '{u2}', name: 'ops', full_name: 'acme/ops' }] }),
+        )
+
+      const repos = await listBitbucketRepos('https://api.bitbucket.org', 'tok')
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(String(fetchMock.mock.calls[1][0])).toBe(nextUrl)
+      expect(repos).toEqual([
+        { id: '{u1}', name: 'infra', fullPath: 'acme/infra' },
+        { id: '{u2}', name: 'ops', fullPath: 'acme/ops' },
+      ])
+    })
+
+    it('caps at 10 pages if `next` never clears', async () => {
+      const nextUrl = 'https://api.bitbucket.org/2.0/repositories?page=loop'
+      const fetchMock = vi
+        .spyOn(global, 'fetch')
+        .mockImplementation(async () =>
+          jsonRes({ values: [{ uuid: '{u}', name: 'r', full_name: 'acme/r' }], next: nextUrl }),
+        )
+
+      const repos = await listBitbucketRepos('https://api.bitbucket.org', 'tok')
+      expect(fetchMock).toHaveBeenCalledTimes(10)
+      expect(repos.length).toBe(10)
+    })
   })
 
   describe('listBitbucketBranches', () => {

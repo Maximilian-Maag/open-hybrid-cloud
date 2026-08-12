@@ -226,4 +226,40 @@ describe('deleteProject', () => {
       expect.objectContaining({ TF_ACTION: 'destroy' }),
     )
   })
+
+  // Cascade-delete race: the destroy trigger must complete BEFORE the project
+  // (and its cascaded infra rows) are deleted.
+  it('awaits the destroy trigger before deleting the project', async () => {
+    const admin = await createUser({ role: 'admin' })
+    const pm = await createUser({ role: 'project_manager', email: 'pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await seedProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id)
+
+    // At the moment the trigger fires, the project and its infra must still
+    // exist (i.e. the delete has NOT run yet).
+    let projectExistedAtTrigger = false
+    let infraExistedAtTrigger = false
+    mockedWebhooks.mockImplementationOnce(async () => {
+      projectExistedAtTrigger =
+        (await db.select().from(projects).where(eq(projects.id, project.id))).length > 0
+      infraExistedAtTrigger =
+        (await db.select().from(infrastructureElements).where(eq(infrastructureElements.projectId, project.id))).length > 0
+      return ['pipe-destroy']
+    })
+
+    const result = await deleteProject(makeSession(admin), project.id)
+    expect(result.ok).toBe(true)
+
+    expect(projectExistedAtTrigger).toBe(true)
+    expect(infraExistedAtTrigger).toBe(true)
+
+    // And afterwards the project is gone
+    const rows = await db.select().from(projects).where(eq(projects.id, project.id))
+    expect(rows.length).toBe(0)
+  })
 })

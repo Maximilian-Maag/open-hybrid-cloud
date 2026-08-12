@@ -163,10 +163,10 @@ export default async function DashboardHome() {
                     {order.productName ?? `Product #${order.productId}`}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {order.environmentName} · {order.projectName} · {new Date(order.createdAt).toLocaleDateString()}
+                    {order.environmentName} · {order.projectName} · {new Date(order.createdAt).toLocaleDateString(lang)}
                   </p>
                 </div>
-                <StatusBadge status={order.status} />
+                <StatusBadge status={order.status} lang={lang} />
               </Link>
             ))}
           </div>

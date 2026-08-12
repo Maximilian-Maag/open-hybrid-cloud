@@ -15,7 +15,7 @@ import { listOrders, getOrderById, createOrder } from './orders'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements } from '@/lib/db/schema'
+import { orders, infrastructureElements, parameters } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -24,6 +24,7 @@ import {
   createCiSource,
   createEnvironment,
   createProject,
+  linkProductEnvironment,
   createOrder as seedOrder,
 } from '@/test/helpers'
 
@@ -47,6 +48,7 @@ const buildBase = async () => {
   const product = await createProduct(cat.id, 'Product A')
   const ci = await createCiSource()
   const env = await createEnvironment(ci.id)
+  await linkProductEnvironment(product.id, env.id)
   const project = await createProject(pm.id)
   return { admin, pm, cat, product, ci, env, project }
 }
@@ -226,5 +228,195 @@ describe('createOrder (PM path)', () => {
       .from(infrastructureElements)
       .where(eq(infrastructureElements.orderId, result.data.id))
     expect(infra.length).toBe(0)
+  })
+})
+
+describe('createOrder — validation & ownership', () => {
+  it('rejects a missing required parameter with 400', async () => {
+    const { admin, cat, product, env, project } = await buildBase()
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'HOSTNAME',
+      type: 'string',
+      required: true,
+    })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/HOSTNAME/)
+    }
+    void cat
+  })
+
+  it('rejects an empty string for a required parameter with 400', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'HOSTNAME',
+      type: 'string',
+      required: true,
+    })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: { HOSTNAME: '   ' },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  it('rejects a non-numeric value for a number parameter with 400', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'SIZE',
+      type: 'number',
+      required: false,
+    })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: { SIZE: 'not-a-number' },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  it('rejects a non-bool value for a bool parameter with 400', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'ENABLED',
+      type: 'bool',
+      required: false,
+    })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: { ENABLED: 'yes' },
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  it('applies the default value for an omitted optional parameter', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'REGION',
+      type: 'string',
+      required: false,
+      defaultValue: 'eu-west',
+    })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: { FOO: 'bar' },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [dbOrder] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(dbOrder.parameters).toMatchObject({ FOO: 'bar', REGION: 'eu-west' })
+  })
+
+  it('trims surrounding whitespace before validating and storing values', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values([
+      { scope: 'product', scopeId: product.id, name: 'SIZE', type: 'number', required: true },
+      { scope: 'product', scopeId: product.id, name: 'ENABLED', type: 'bool', required: true },
+    ])
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      // Padded values must be accepted (not rejected) and persisted trimmed so
+      // the whitespace never reaches the CI trigger variables.
+      parameters: { SIZE: ' 4 ', ENABLED: ' true ' },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [dbOrder] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(dbOrder.parameters).toMatchObject({ SIZE: '4', ENABLED: 'true' })
+  })
+
+  it('accepts valid required + typed parameters (happy path)', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values([
+      { scope: 'product', scopeId: product.id, name: 'HOSTNAME', type: 'string', required: true },
+      { scope: 'product', scopeId: product.id, name: 'SIZE', type: 'number', required: true },
+      { scope: 'product', scopeId: product.id, name: 'ENABLED', type: 'bool', required: false },
+    ])
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: { HOSTNAME: 'web-01', SIZE: '4', ENABLED: 'true' },
+    })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.status).toBe('provisioning')
+  })
+
+  it('returns 403 when a PM orders into another PM\'s project', async () => {
+    const { product, env } = await buildBase()
+    const otherPm = await createUser({ role: 'project_manager', email: 'other-pm@test.dev' })
+    const foreignProject = await createProject(otherPm.id)
+    const attacker = await createUser({ role: 'project_manager', email: 'attacker@test.dev' })
+
+    const result = await createOrder(makeSession(attacker), {
+      projectId: foreignProject.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(403)
+  })
+
+  it('returns 400 when the product is not offered in the chosen environment', async () => {
+    const { admin, cat, project } = await buildBase()
+    const unofferedProduct = await createProduct(cat.id, 'Unoffered')
+    // Create a second environment the product is NOT linked to
+    const ci = await createCiSource({ name: 'CI2' })
+    const otherEnv = await createEnvironment(ci.id)
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: unofferedProduct.id,
+      environmentId: otherEnv.id,
+      parameters: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
   })
 })

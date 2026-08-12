@@ -1,11 +1,42 @@
 import type { CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
 
+// Cap on pages followed for any list endpoint. Guards against unbounded loops
+// (e.g. a broken/looping X-Next-Page header) while still covering large orgs:
+// 10 pages × per_page=100 = 1000 items.
+const MAX_LIST_PAGES = 10
+
 const validateWebUrl = (url: string): string => {
   const parsed = new URL(url)
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     throw new Error(`Disallowed URL protocol: ${parsed.protocol}`)
   }
   return url
+}
+
+/**
+ * Fetch every page of a GitLab list endpoint, following the `X-Next-Page`
+ * response header (GitLab sets it to the next page number, or empty on the last
+ * page). Without this, results were silently truncated to the first 100 rows.
+ */
+const gitlabListAll = async <T>(
+  baseUrl: string,
+  accessToken: string,
+  errorLabel: string,
+): Promise<T[]> => {
+  const results: T[] = []
+  let nextPage: string | null = '1'
+
+  for (let i = 0; i < MAX_LIST_PAGES && nextPage; i++) {
+    const url = new URL(baseUrl)
+    url.searchParams.set('page', nextPage)
+    const res = await fetch(url, { headers: { 'PRIVATE-TOKEN': accessToken } })
+    if (!res.ok) throw new Error(`${errorLabel}: ${res.status}`)
+    const data = (await res.json()) as T[]
+    results.push(...data)
+    nextPage = res.headers.get('x-next-page') || null
+  }
+
+  return results
 }
 
 export const triggerGitLabPipeline = async (
@@ -75,13 +106,11 @@ export const listGitLabProjects = async (
   const params = new URLSearchParams({ membership: 'true', per_page: '100' })
   if (search) params.set('search', search)
 
-  const res = await fetch(`${validateWebUrl(apiUrl)}/api/v4/projects?${params}`, {
-    headers: { 'PRIVATE-TOKEN': accessToken },
-  })
-
-  if (!res.ok) throw new Error(`GitLab list projects failed: ${res.status}`)
-
-  const data = await res.json() as Array<{ id: number; name: string; path_with_namespace: string }>
+  const data = await gitlabListAll<{ id: number; name: string; path_with_namespace: string }>(
+    `${validateWebUrl(apiUrl)}/api/v4/projects?${params}`,
+    accessToken,
+    'GitLab list projects failed',
+  )
   return data.map((p) => ({
     id: String(p.id),
     name: p.name,
@@ -94,14 +123,11 @@ export const listGitLabBranches = async (
   accessToken: string,
   projectId: string,
 ): Promise<CiBranch[]> => {
-  const res = await fetch(
+  const data = await gitlabListAll<{ name: string }>(
     `${validateWebUrl(apiUrl)}/api/v4/projects/${encodeURIComponent(projectId)}/repository/branches?per_page=100`,
-    { headers: { 'PRIVATE-TOKEN': accessToken } },
+    accessToken,
+    'GitLab list branches failed',
   )
-
-  if (!res.ok) throw new Error(`GitLab list branches failed: ${res.status}`)
-
-  const data = await res.json() as Array<{ name: string }>
   return data.map((b) => ({ name: b.name }))
 }
 
@@ -113,14 +139,11 @@ export const listGitLabFiles = async (
   path: string,
 ): Promise<CiFile[]> => {
   const params = new URLSearchParams({ ref: branch, path, per_page: '100' })
-  const res = await fetch(
+  const data = await gitlabListAll<{ name: string; path: string; type: 'blob' | 'tree' }>(
     `${validateWebUrl(apiUrl)}/api/v4/projects/${encodeURIComponent(projectId)}/repository/tree?${params}`,
-    { headers: { 'PRIVATE-TOKEN': accessToken } },
+    accessToken,
+    'GitLab list files failed',
   )
-
-  if (!res.ok) throw new Error(`GitLab list files failed: ${res.status}`)
-
-  const data = await res.json() as Array<{ name: string; path: string; type: 'blob' | 'tree' }>
   return data.map((f) => ({ name: f.name, path: f.path, type: f.type }))
 }
 

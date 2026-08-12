@@ -78,6 +78,24 @@ export const createEnvironment = async (ciSourceId: number, webhookToken = 'wh-s
   return env
 }
 
+export const linkProductEnvironment = async (
+  productId: number,
+  environmentId: number,
+  overrides?: { price?: string; currency?: string },
+) => {
+  const [row] = await db
+    .insert(schema.productEnvironments)
+    .values({
+      productId,
+      environmentId,
+      price: overrides?.price ?? '0',
+      currency: overrides?.currency ?? 'EUR',
+    })
+    .onConflictDoNothing()
+    .returning()
+  return row
+}
+
 export const createProject = async (ownerId: number) => {
   const [project] = await db
     .insert(schema.projects)

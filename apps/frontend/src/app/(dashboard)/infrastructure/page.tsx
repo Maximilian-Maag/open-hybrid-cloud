@@ -77,11 +77,11 @@ function InfraRow({ item, token, lang }: { item: InfrastructureElement; token: s
             <span className="font-medium text-slate-900">
               {item.productName ?? `Product #${item.productId}`}
             </span>
-            <StatusBadge status={item.status} />
+            <StatusBadge status={item.status} lang={lang} />
           </div>
           <p className="text-xs text-slate-500">
             {item.environmentName} ·{' '}
-            {item.deployedAt ? new Date(item.deployedAt).toLocaleString() : t('notDeployed', lang)}
+            {item.deployedAt ? new Date(item.deployedAt).toLocaleString(lang) : t('notDeployed', lang)}
           </p>
           {outputs.length > 0 && (
             <details className="mt-2">

@@ -32,12 +32,16 @@ export function ParametersManager({ token }: Props) {
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const all = (await get<Parameter[]>('/api/admin/parameters', token)) ?? []
       setParams(all.filter((p) => p.scope === 'global'))
+      setDeleteError(null)
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to load parameters.')
     } finally {
       setLoading(false)
     }
@@ -103,10 +107,12 @@ export function ParametersManager({ token }: Props) {
 
   async function handleDelete() {
     if (!deleteTarget) return
-    setSaving(true)
+    setSaving(true); setDeleteError(null)
     try {
       await del(`/api/admin/parameters/${deleteTarget.id}`, token)
       setDeleteTarget(null); load()
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete.')
     } finally {
       setSaving(false)
     }
@@ -115,6 +121,9 @@ export function ParametersManager({ token }: Props) {
   return (
     <>
       <Card title="Global Parameters" action={<Button size="sm" onClick={openAdd}>Add Parameter</Button>}>
+        {deleteError && !deleteTarget && (
+          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>
+        )}
         {loading ? (
           <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
         ) : params.length === 0 ? (
@@ -135,7 +144,7 @@ export function ParametersManager({ token }: Props) {
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(p)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => setDeleteTarget(p)}>Delete</Button>
+                  <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(p) }}>Delete</Button>
                 </div>
               </div>
             ))}
@@ -202,6 +211,7 @@ export function ParametersManager({ token }: Props) {
         </form>
       </Modal>
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Parameter" size="sm">
+        {deleteError && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>}
         <p className="text-sm text-slate-600 mb-6">Delete parameter <strong>{deleteTarget?.name}</strong>?</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>

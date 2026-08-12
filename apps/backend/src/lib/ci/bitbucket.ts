@@ -1,9 +1,36 @@
 import type { CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
 
+// See gitlab.ts — bound the number of pages followed.
+const MAX_LIST_PAGES = 10
+
 const bbHeaders = (token: string) => ({
   Authorization: `Bearer ${token}`,
   'Content-Type': 'application/json',
 })
+
+/**
+ * Follow Bitbucket's cursor pagination. Each page body carries a fully-qualified
+ * `next` URL for the following page (absent on the last page). Without following
+ * it, results were silently truncated to the first `pagelen` rows.
+ */
+const bitbucketListAll = async <T>(
+  firstUrl: string,
+  token: string,
+  errorLabel: string,
+): Promise<T[]> => {
+  const results: T[] = []
+  let url: string | null = firstUrl
+
+  for (let i = 0; i < MAX_LIST_PAGES && url; i++) {
+    const res: Response = await fetch(url, { headers: bbHeaders(token) })
+    if (!res.ok) throw new Error(`${errorLabel}: ${res.status}`)
+    const data = (await res.json()) as { values?: T[]; next?: string }
+    results.push(...(data.values ?? []))
+    url = data.next ?? null
+  }
+
+  return results
+}
 
 // Parse workspace/repo-slug from a Bitbucket repo URL
 const parseRepoUrl = (repoUrl: string): { workspace: string; repoSlug: string } => {
@@ -53,18 +80,13 @@ export const listBitbucketRepos = async (
   const params = new URLSearchParams({ pagelen: '100', role: 'member' })
   if (search) params.set('q', `full_name ~ "${search}"`)
 
-  const res = await fetch(
+  const values = await bitbucketListAll<{ uuid: string; name: string; full_name: string }>(
     `https://api.bitbucket.org/2.0/repositories?${params}`,
-    { headers: bbHeaders(token) },
+    token,
+    'Bitbucket list repos failed',
   )
 
-  if (!res.ok) throw new Error(`Bitbucket list repos failed: ${res.status}`)
-
-  const data = await res.json() as {
-    values: Array<{ uuid: string; name: string; full_name: string }>
-  }
-
-  return data.values.map((r) => ({
+  return values.map((r) => ({
     id: r.uuid,
     name: r.name,
     fullPath: r.full_name,
@@ -77,15 +99,12 @@ export const listBitbucketBranches = async (
   projectId: string,
 ): Promise<CiBranch[]> => {
   // projectId is workspace/repoSlug
-  const res = await fetch(
+  const values = await bitbucketListAll<{ name: string }>(
     `https://api.bitbucket.org/2.0/repositories/${projectId}/refs/branches?pagelen=100`,
-    { headers: bbHeaders(token) },
+    token,
+    'Bitbucket list branches failed',
   )
-
-  if (!res.ok) throw new Error(`Bitbucket list branches failed: ${res.status}`)
-
-  const data = await res.json() as { values: Array<{ name: string }> }
-  return data.values.map((b) => ({ name: b.name }))
+  return values.map((b) => ({ name: b.name }))
 }
 
 export const listBitbucketFiles = async (
@@ -96,18 +115,13 @@ export const listBitbucketFiles = async (
   path: string,
 ): Promise<CiFile[]> => {
   const normalizedPath = path ? `/${path}` : ''
-  const res = await fetch(
+  const values = await bitbucketListAll<{ path: string; type: 'commit_file' | 'commit_directory' }>(
     `https://api.bitbucket.org/2.0/repositories/${projectId}/src/${encodeURIComponent(branch)}${normalizedPath}?pagelen=100`,
-    { headers: bbHeaders(token) },
+    token,
+    'Bitbucket list files failed',
   )
 
-  if (!res.ok) throw new Error(`Bitbucket list files failed: ${res.status}`)
-
-  const data = await res.json() as {
-    values: Array<{ path: string; type: 'commit_file' | 'commit_directory' }>
-  }
-
-  return data.values.map((f) => ({
+  return values.map((f) => ({
     name: f.path.split('/').pop() ?? f.path,
     path: f.path,
     type: f.type === 'commit_directory' ? 'tree' : 'blob',

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { SUPPORTED_LANGUAGES } from '@/lib/i18n'
 
@@ -11,12 +11,28 @@ interface Props {
 export function LanguageSwitcher({ lang }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const toggleRef = useRef<HTMLButtonElement>(null)
   const current = lang.split('-')[0].toLowerCase()
+
+  // Allow keyboard users to dismiss the open dropdown with Escape. Restore focus
+  // to the toggle so keyboard focus isn't dropped to <body> when options unmount.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        toggleRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
 
   function selectLang(code: string) {
     document.cookie = `lang=${code}; path=/; max-age=31536000; SameSite=Lax`
     window.dispatchEvent(new CustomEvent('langchange', { detail: code }))
     setOpen(false)
+    toggleRef.current?.focus()
     router.refresh()
   }
 
@@ -25,6 +41,7 @@ export function LanguageSwitcher({ lang }: Props) {
   return (
     <div className="relative">
       <button
+        ref={toggleRef}
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-1 text-white/80 hover:text-white text-xs font-medium border border-white/20 rounded-md px-2 py-1 transition-colors focus:outline-none active:scale-95"
         aria-label={`Language: ${currentName}`}

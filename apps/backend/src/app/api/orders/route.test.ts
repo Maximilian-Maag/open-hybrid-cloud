@@ -20,6 +20,7 @@ import {
   createCiSource,
   createEnvironment,
   createProject,
+  linkProductEnvironment,
   makeAuthHeader,
 } from '@/test/helpers'
 import { sendApprovalRequest, sendOrderCreated } from '@/lib/notification'
@@ -49,6 +50,7 @@ describe('GET /api/orders', () => {
     const product = await createProduct(cat.id)
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id)
     const proj = await createProject(pm.id)
 
     // Create order as PM
@@ -75,6 +77,7 @@ describe('GET /api/orders', () => {
     const product = await createProduct(cat.id)
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id)
     const proj1 = await createProject(pm1.id)
     const proj2 = await createProject(pm2.id)
 
@@ -130,6 +133,7 @@ describe('POST /api/orders', () => {
     const product = await createProduct(cat.id)
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id)
     const proj = await createProject(pm.id)
 
     const auth = await makeAuthHeader(pm)
@@ -163,6 +167,7 @@ describe('POST /api/orders', () => {
     const product = await createProduct(cat.id)
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id)
     const proj = await createProject(pm.id)
 
     const auth = await makeAuthHeader(admin)

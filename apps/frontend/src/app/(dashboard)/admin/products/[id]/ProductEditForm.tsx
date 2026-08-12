@@ -71,14 +71,17 @@ export function ProductEditForm({ product, categories, environments, translation
   const [transSaving, setTransSaving] = useState(false)
   const [transError, setTransError] = useState<string | null>(null)
   const [translating, setTranslating] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   // Webhooks
   const [webhooks, setWebhooks] = useState<ProductWebhook[]>([])
   const [webhookModal, setWebhookModal] = useState(false)
+  const [whDeleteError, setWhDeleteError] = useState<string | null>(null)
 
   // Pipeline Stacks
   const [stacks, setStacks] = useState<PipelineStack[]>([])
   const [stackModal, setStackModal] = useState(false)
+  const [stackDeleteError, setStackDeleteError] = useState<string | null>(null)
   const [editStack, setEditStack] = useState<PipelineStack | null>(null)
   const [psName, setPsName] = useState('')
   const [psEnvId, setPsEnvId] = useState('')
@@ -137,11 +140,9 @@ export function ProductEditForm({ product, categories, environments, translation
   }
 
   async function handleSaveEnv(envId: number, data: UpsertProductEnvironmentRequest) {
-    try {
-      await put(`/api/admin/products/${product.id}/environments/${envId}`, data, token)
-    } catch {
-      /* ignored inline */
-    }
+    // Let failures propagate so the row can show an error instead of a false
+    // "Saved!" confirmation.
+    await put(`/api/admin/products/${product.id}/environments/${envId}`, data, token)
   }
 
   async function handleAddTranslation(e: React.FormEvent) {
@@ -179,10 +180,13 @@ export function ProductEditForm({ product, categories, environments, translation
 
   async function handleAiTranslate() {
     setTranslating(true)
+    setAiError(null)
     try {
       await post(`/api/admin/products/${product.id}/translate`, {}, token)
       router.refresh()
-    } catch { /* ignore */ } finally {
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'AI translation failed.')
+    } finally {
       setTranslating(false)
     }
   }
@@ -211,10 +215,13 @@ export function ProductEditForm({ product, categories, environments, translation
   }
 
   async function handleDeleteWebhook(whId: number) {
+    setWhDeleteError(null)
     try {
       await del(`/api/admin/products/${product.id}/webhooks/${whId}`, token)
       setWebhooks((prev) => prev.filter((w) => w.id !== whId))
-    } catch { /* ignore */ }
+    } catch (e) {
+      setWhDeleteError(e instanceof Error ? e.message : 'Failed to delete webhook.')
+    }
   }
 
   useEffect(() => {
@@ -334,10 +341,13 @@ export function ProductEditForm({ product, categories, environments, translation
   }
 
   async function handleDeleteStack(stackId: number) {
+    setStackDeleteError(null)
     try {
       await del(`/api/admin/products/${product.id}/pipeline-stacks/${stackId}`, token)
       setStacks((prev) => prev.filter((s) => s.id !== stackId))
-    } catch { /* ignore */ }
+    } catch (e) {
+      setStackDeleteError(e instanceof Error ? e.message : 'Failed to delete pipeline stack.')
+    }
   }
 
   async function handleSyncParams() {
@@ -420,10 +430,14 @@ export function ProductEditForm({ product, categories, environments, translation
   }
 
   async function handleDeleteParam(paramId: number) {
+    setParamError(null)
+    setParamSyncMsg(null)
     try {
       await del(`/api/admin/parameters/${paramId}`, token)
       setProductParams((prev) => prev.filter((p) => p.id !== paramId))
-    } catch { /* ignore */ }
+    } catch (e) {
+      setParamError(e instanceof Error ? e.message : 'Failed to delete parameter.')
+    }
   }
 
   return (
@@ -462,6 +476,11 @@ export function ProductEditForm({ product, categories, environments, translation
           </Button>
         </div>
       }>
+        {aiError && (
+          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            {aiError}
+          </div>
+        )}
         {translations.length === 0 ? (
           <p className="text-sm text-slate-400">No translations yet.</p>
         ) : (
@@ -543,6 +562,7 @@ export function ProductEditForm({ product, categories, environments, translation
         <Button size="sm" onClick={() => { setWhError(null); setWebhookModal(true) }}>Add Webhook</Button>
       }>
         <p className="text-xs text-slate-500 mb-3">Optional HTTP callbacks the platform calls after an order is processed — use these to notify external systems such as ticketing or monitoring tools. Pipeline Stacks handle the actual provisioning.</p>
+        {whDeleteError && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{whDeleteError}</div>}
         {webhooks.length === 0 ? (
           <p className="text-sm text-slate-400">No callbacks configured.</p>
         ) : (
@@ -564,6 +584,7 @@ export function ProductEditForm({ product, categories, environments, translation
       <Card title="Pipeline Stacks" action={
         <Button size="sm" onClick={openStackModal}>Add Stack</Button>
       }>
+        {stackDeleteError && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{stackDeleteError}</div>}
         {stacks.length === 0 ? (
           <p className="text-sm text-slate-400">No pipeline stacks configured. Click &quot;Add Stack&quot; to configure one.</p>
         ) : (
@@ -773,14 +794,22 @@ function EnvironmentRow({
   const [forcedCostCenter, setForcedCostCenter] = useState(existing?.forcedCostCenter ?? false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
-    await onSave({ price, currency, costCenterMode, forcedCostCenter })
-    setSaved(true)
-    setSaving(false)
-    setTimeout(() => setSaved(false), 2000)
+    setSaved(false)
+    setSaveError(null)
+    try {
+      await onSave({ price, currency, costCenterMode, forcedCostCenter })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -802,6 +831,7 @@ function EnvironmentRow({
       <div className="flex items-center gap-3">
         <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
         {saved && <span className="text-xs text-green-600">Saved!</span>}
+        {saveError && <span className="text-xs text-red-600">{saveError}</span>}
       </div>
     </form>
   )

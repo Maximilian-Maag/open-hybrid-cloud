@@ -20,6 +20,8 @@ export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> =
       userId: orders.userId,
       productId: orders.productId,
       environmentId: orders.environmentId,
+      pipelineId: orders.pipelineId,
+      pipelineStatus: orders.pipelineStatus,
     })
     .from(orders)
     .where(
@@ -40,10 +42,37 @@ export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> =
 
   if (event.status === 'success') {
     for (const order of matchingOrders) {
-      await db
+      // Merge this pipeline's success into the JSONB map atomically: `||` is a
+      // single UPDATE, so two concurrent success events can't lose each other's
+      // keys (read-modify-write would). Guard on the order still being
+      // 'provisioning' so a stale event can't resurrect a terminal order.
+      const successPatch = JSON.stringify({ [event.pipelineId]: 'success' })
+      const merged = await db
+        .update(orders)
+        .set({
+          pipelineStatus: sql`${orders.pipelineStatus} || ${successPatch}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(sql`${orders.id} = ${order.id} AND ${orders.status} = 'provisioning'`)
+        .returning({ pipelineId: orders.pipelineId, pipelineStatus: orders.pipelineStatus })
+
+      if (!merged.length) continue // already terminal — ignore stale/duplicate event
+
+      // Only complete the order once EVERY pipeline that belongs to it has
+      // succeeded (multi-pipeline products: webhooks + stacks).
+      const statusMap = merged[0].pipelineStatus
+      const allSucceeded = merged[0].pipelineId.every((pid) => statusMap[pid] === 'success')
+      if (!allSucceeded) continue
+
+      // Compare-and-swap: only the caller that flips provisioning → completed
+      // runs the terminal effects (audit, email, outputs), so concurrent final
+      // events don't double-notify.
+      const completed = await db
         .update(orders)
         .set({ status: 'completed', updatedAt: new Date() })
-        .where(eq(orders.id, order.id))
+        .where(sql`${orders.id} = ${order.id} AND ${orders.status} = 'provisioning'`)
+        .returning({ id: orders.id })
+      if (!completed.length) continue
 
       await logAudit(null, 'order.completed', order.id, `Pipeline ${event.pipelineId} succeeded`)
 
@@ -109,10 +138,23 @@ export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> =
     }
   } else if (event.status === 'failed' || event.status === 'canceled') {
     for (const order of matchingOrders) {
-      await db
+      // A single failed/canceled pipeline fails the whole order immediately,
+      // regardless of how many siblings already succeeded. Guard on
+      // 'provisioning' (compare-and-swap) so a stale failure can't overwrite a
+      // completed order and re-send notifications, and merge the status
+      // atomically to avoid losing concurrent updates.
+      const failPatch = JSON.stringify({ [event.pipelineId]: event.status })
+      const failed = await db
         .update(orders)
-        .set({ status: 'failed', updatedAt: new Date() })
-        .where(eq(orders.id, order.id))
+        .set({
+          status: 'failed',
+          pipelineStatus: sql`${orders.pipelineStatus} || ${failPatch}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(sql`${orders.id} = ${order.id} AND ${orders.status} = 'provisioning'`)
+        .returning({ id: orders.id })
+
+      if (!failed.length) continue // already terminal — ignore stale/duplicate event
 
       await logAudit(
         null,

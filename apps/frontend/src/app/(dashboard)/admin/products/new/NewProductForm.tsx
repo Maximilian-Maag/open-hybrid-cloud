@@ -74,8 +74,9 @@ export function NewProductForm({ categories, token }: Props) {
         />
         <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-slate-700">Description</label>
+          <label htmlFor="new-product-description" className="text-sm font-medium text-slate-700">Description</label>
           <textarea
+            id="new-product-description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}

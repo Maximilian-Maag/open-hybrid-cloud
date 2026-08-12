@@ -41,12 +41,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing signature' }, { status: 401 })
   }
 
+  // Validate against the inbound callback_secret, not the outbound
+  // webhook_token used to trigger pipelines (migration 0004 split the two).
+  // Legacy environments have callback_secret backfilled to webhook_token.
   const envRows = await db
-    .select({ webhookToken: deploymentEnvironments.webhookToken })
+    .select({ callbackSecret: deploymentEnvironments.callbackSecret })
     .from(deploymentEnvironments)
 
   const isValid = envRows.some((env) => {
-    const expected = `sha256=${createHmac('sha256', env.webhookToken).update(rawBody).digest('hex')}`
+    const expected = `sha256=${createHmac('sha256', env.callbackSecret).update(rawBody).digest('hex')}`
     try {
       return timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
     } catch {

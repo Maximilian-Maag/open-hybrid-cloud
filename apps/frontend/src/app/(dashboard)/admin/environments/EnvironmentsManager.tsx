@@ -103,7 +103,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
         ...(form.webhookToken ? { webhookToken: form.webhookToken.trim() } : {}),
       }
       await put(`/api/admin/environments/${editTarget.id}`, body, token)
-      setEditTarget(null)
+      closeEdit()
       load()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Failed to update.')
@@ -115,34 +115,56 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [callbackSecret, setCallbackSecret] = useState<string | null>(null)
   const [secretBusy, setSecretBusy] = useState(false)
+  const [secretError, setSecretError] = useState<string | null>(null)
+  const [regenConfirmOpen, setRegenConfirmOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  function closeEdit() {
+    setEditTarget(null)
+    setCallbackSecret(null)
+    setSecretError(null)
+    setCopied(false)
+  }
 
   async function revealCallbackSecret() {
     if (!editTarget) return
     setSecretBusy(true)
+    setSecretError(null)
     try {
       const res = await get<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`, token)
       setCallbackSecret(res?.callbackSecret ?? null)
-    } catch {
+    } catch (e) {
       setCallbackSecret(null)
+      setSecretError(e instanceof Error ? e.message : 'Failed to load callback secret.')
     } finally {
       setSecretBusy(false)
     }
   }
 
-  async function regenerateCallbackSecret() {
+  async function doRegenerateCallbackSecret() {
     if (!editTarget) return
-    if (!confirm('Regenerate the callback secret? You will need to paste the new value into GitLab → Settings → Webhooks for pipeline events to keep updating this portal.')) return
+    setRegenConfirmOpen(false)
     setSecretBusy(true)
+    setSecretError(null)
     try {
       const res = await post<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`, {}, token)
       setCallbackSecret(res?.callbackSecret ?? null)
+    } catch (e) {
+      setSecretError(e instanceof Error ? e.message : 'Failed to regenerate callback secret.')
     } finally {
       setSecretBusy(false)
     }
   }
 
   async function copyCallbackSecret() {
-    if (callbackSecret) await navigator.clipboard.writeText(callbackSecret)
+    if (!callbackSecret) return
+    try {
+      await navigator.clipboard.writeText(callbackSecret)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (e) {
+      setSecretError(e instanceof Error ? e.message : 'Failed to copy to clipboard.')
+    }
   }
 
   async function handleDelete() {
@@ -202,7 +224,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
           </div>
         </form>
       </Modal>
-      <Modal open={!!editTarget} onClose={() => { setEditTarget(null); setCallbackSecret(null) }} title="Edit Environment" size="md">
+      <Modal open={!!editTarget} onClose={closeEdit} title="Edit Environment" size="md">
         <form onSubmit={handleEdit} className="space-y-4">
           {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
           <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
@@ -218,10 +240,13 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
                 <p className="text-xs text-slate-500">Portal-generated. Paste this into GitLab → Settings → Webhooks → Secret token so pipeline-event callbacks are accepted.</p>
               </div>
             </div>
+            {secretError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{secretError}</div>
+            )}
             {callbackSecret ? (
               <div className="flex items-center gap-2">
                 <input readOnly value={callbackSecret} className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs font-mono text-slate-700 bg-slate-50" />
-                <Button type="button" size="sm" variant="secondary" onClick={copyCallbackSecret}>Copy</Button>
+                <Button type="button" size="sm" variant="secondary" onClick={copyCallbackSecret}>{copied ? 'Copied' : 'Copy'}</Button>
               </div>
             ) : (
               <Button type="button" size="sm" variant="secondary" onClick={revealCallbackSecret} disabled={secretBusy}>
@@ -229,13 +254,13 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
               </Button>
             )}
             <div>
-              <Button type="button" size="sm" variant="danger" onClick={regenerateCallbackSecret} disabled={secretBusy}>
+              <Button type="button" size="sm" variant="danger" onClick={() => setRegenConfirmOpen(true)} disabled={secretBusy}>
                 {secretBusy ? 'Regenerating…' : 'Regenerate'}
               </Button>
             </div>
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null); setCallbackSecret(null) }}>Cancel</Button>
+            <Button type="button" variant="secondary" onClick={closeEdit}>Cancel</Button>
             <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
           </div>
         </form>
@@ -248,6 +273,18 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => { setDeleteTarget(null); setDeleteError(null) }}>Cancel</Button>
           <Button variant="danger" onClick={handleDelete} disabled={saving}>{saving ? 'Deleting…' : 'Delete'}</Button>
+        </div>
+      </Modal>
+      <Modal open={regenConfirmOpen} onClose={() => setRegenConfirmOpen(false)} title="Regenerate Callback Secret" size="sm">
+        <p className="text-sm text-slate-600 mb-4">
+          Regenerate the callback secret? You will need to paste the new value into GitLab → Settings → Webhooks for
+          pipeline events to keep updating this portal.
+        </p>
+        <div className="flex justify-end gap-3">
+          <Button type="button" variant="secondary" onClick={() => setRegenConfirmOpen(false)}>Cancel</Button>
+          <Button type="button" variant="danger" onClick={doRegenerateCallbackSecret} disabled={secretBusy}>
+            {secretBusy ? 'Regenerating…' : 'Regenerate'}
+          </Button>
         </div>
       </Modal>
     </>

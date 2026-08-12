@@ -1,7 +1,68 @@
 import { db } from '@/lib/db/client'
-import { products, productEnvironments, deploymentEnvironments, parameters } from '@/lib/db/schema'
+import { products, productEnvironments, deploymentEnvironments, parameters, type Parameter } from '@/lib/db/schema'
 import { eq, or, and, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
+
+/**
+ * Load the parameter definitions that apply to a product in a given
+ * environment. Merges the global-, category- and product-scoped rows from the
+ * `parameters` table and filters by environment (env-specific rows plus rows
+ * that apply to every environment, i.e. environment_id IS NULL).
+ *
+ * Shared by the catalog (to render the order form) and the order service (to
+ * validate submitted parameters server-side) so both agree on which
+ * definitions are in scope.
+ */
+export const loadApplicableParameters = async (
+  productId: number,
+  categoryId: number,
+  environmentId?: number,
+): Promise<Parameter[]> => {
+  const scopeWhere = or(
+    eq(parameters.scope, 'global'),
+    and(eq(parameters.scope, 'category'), eq(parameters.scopeId, categoryId)),
+    and(eq(parameters.scope, 'product'), eq(parameters.scopeId, productId)),
+  )
+
+  const paramWhere =
+    environmentId !== undefined
+      ? and(
+          scopeWhere,
+          or(sql`${parameters.environmentId} IS NULL`, eq(parameters.environmentId, environmentId)),
+        )
+      : scopeWhere
+
+  return db.select().from(parameters).where(paramWhere)
+}
+
+/**
+ * Collapse the applicable rows to one definition per parameter name, applying
+ * scope precedence (product > category > global) and preferring an
+ * environment-specific row over an all-environments (NULL) row. This is the
+ * effective definition a submitted value is validated against.
+ */
+export const resolveParameterDefs = (rows: Parameter[]): Parameter[] => {
+  const scopeRank: Record<string, number> = { global: 0, category: 1, product: 2 }
+  const byName = new Map<string, Parameter>()
+
+  for (const row of rows) {
+    const current = byName.get(row.name)
+    if (!current) {
+      byName.set(row.name, row)
+      continue
+    }
+    const moreSpecificScope = scopeRank[row.scope] > scopeRank[current.scope]
+    const sameScopeButEnvSpecific =
+      scopeRank[row.scope] === scopeRank[current.scope] &&
+      row.environmentId !== null &&
+      current.environmentId === null
+    if (moreSpecificScope || sameScopeButEnvSpecific) {
+      byName.set(row.name, row)
+    }
+  }
+
+  return [...byName.values()]
+}
 
 export interface CatalogItem {
   id: number
@@ -104,25 +165,7 @@ export const getProduct = async (
     )
     .where(eq(productEnvironments.productId, productId))
 
-  const paramWhere = environmentId
-    ? and(
-        or(
-          eq(parameters.scope, 'global'),
-          and(eq(parameters.scope, 'category'), eq(parameters.scopeId, product.categoryId)),
-          and(eq(parameters.scope, 'product'), eq(parameters.scopeId, productId)),
-        ),
-        or(
-          sql`${parameters.environmentId} IS NULL`,
-          eq(parameters.environmentId, environmentId),
-        ),
-      )
-    : or(
-        eq(parameters.scope, 'global'),
-        and(eq(parameters.scope, 'category'), eq(parameters.scopeId, product.categoryId)),
-        and(eq(parameters.scope, 'product'), eq(parameters.scopeId, productId)),
-      )
-
-  const paramRows = await db.select().from(parameters).where(paramWhere)
+  const paramRows = await loadApplicableParameters(productId, product.categoryId, environmentId)
 
   return ok({ ...product, environments: envRows, parameters: paramRows } as ProductDetail)
 }

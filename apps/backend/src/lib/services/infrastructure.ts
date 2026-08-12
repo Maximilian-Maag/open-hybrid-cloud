@@ -96,7 +96,15 @@ export const decommissionInfra = async (
     }
   }
 
-  if (infra.status !== 'active') return err(400, 'Infrastructure element is not active')
+  // Atomically claim the element (active → decommissioning) so two concurrent
+  // decommission calls can't both fire a destroy pipeline.
+  const claimed = await db
+    .update(infrastructureElements)
+    .set({ status: 'decommissioning' })
+    .where(sql`${infrastructureElements.id} = ${infraId} AND ${infrastructureElements.status} = 'active'`)
+    .returning({ id: infrastructureElements.id })
+
+  if (!claimed.length) return err(400, 'Infrastructure element is not active')
 
   const variables = {
     ...(infra.parameters as Record<string, string>),
@@ -104,11 +112,21 @@ export const decommissionInfra = async (
     INFRA_ID: String(infra.id),
   }
 
-  const pipelineIds = await triggerProductWebhooks(infra.productId, infra.environmentId, variables)
+  let pipelineIds: string[]
+  try {
+    pipelineIds = await triggerProductWebhooks(infra.productId, infra.environmentId, variables)
+  } catch (e) {
+    // Destroy pipeline could not be started — restore the element to active.
+    await db
+      .update(infrastructureElements)
+      .set({ status: 'active' })
+      .where(eq(infrastructureElements.id, infraId))
+    throw e
+  }
 
   await db
     .update(infrastructureElements)
-    .set({ status: 'decommissioning', pipelineId: pipelineIds })
+    .set({ pipelineId: pipelineIds })
     .where(eq(infrastructureElements.id, infraId))
 
   await logAudit(

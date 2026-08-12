@@ -16,12 +16,10 @@ export default async function ProjectsPage() {
   const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
 
-  let projects: Project[] = []
-  try {
-    projects = (await get<Project[]>('/api/projects', token)) ?? []
-  } catch {
-    /* empty */
-  }
+  // Let a genuine fetch failure throw to the (dashboard) error boundary so an
+  // outage is not mistaken for an empty list. A successful empty response
+  // still renders the empty state below.
+  const projects = (await get<Project[]>('/api/projects', token)) ?? []
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -51,7 +49,7 @@ export default async function ProjectsPage() {
             header: t('created', lang),
             render: (row) => (
               <span className="text-xs text-slate-500">
-                {new Date(row.createdAt).toLocaleDateString()}
+                {new Date(row.createdAt).toLocaleDateString(lang)}
               </span>
             ),
           },

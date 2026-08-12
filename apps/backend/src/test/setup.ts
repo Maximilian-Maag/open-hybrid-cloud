@@ -146,9 +146,12 @@ beforeAll(async () => {
       cost_center_id BIGINT REFERENCES cost_centers(id),
       rejection_note TEXT,
       pipeline_id JSONB NOT NULL DEFAULT '[]',
+      pipeline_status JSONB NOT NULL DEFAULT '{}',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- Older test DBs may not have pipeline_status; add it (migration 0005).
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
     CREATE TABLE IF NOT EXISTS infrastructure_elements (
       id BIGSERIAL PRIMARY KEY,
       order_id BIGINT NOT NULL REFERENCES orders(id),

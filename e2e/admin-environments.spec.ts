@@ -127,9 +127,11 @@ test.describe('Admin - Environment Management', () => {
     const firstValue = await revealed.inputValue()
     expect(firstValue).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
 
-    // Regenerate — dismiss the confirm dialog with accept
-    page.once('dialog', (d) => d.accept())
+    // Regenerate — the edit modal's Regenerate opens a confirmation modal
+    // (the app uses a Modal, not a native confirm()); confirm it there.
     await dialog.getByRole('button', { name: /^regenerate$/i }).click()
+    const regenConfirm = page.getByRole('dialog', { name: /regenerate callback secret/i })
+    await regenConfirm.getByRole('button', { name: /^regenerate$/i }).click()
     // New value replaces old one
     await expect.poll(async () => await revealed.inputValue()).not.toBe(firstValue)
     const newValue = await revealed.inputValue()

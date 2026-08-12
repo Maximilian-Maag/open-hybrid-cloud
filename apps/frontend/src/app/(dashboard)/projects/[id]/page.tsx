@@ -9,6 +9,8 @@ import { Table } from '@/components/ui/Table'
 import { ProjectEditForm } from './ProjectEditForm'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
+import { getLang } from '@/lib/getLang'
+import { t } from '@/lib/i18n'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -20,6 +22,7 @@ export default async function ProjectDetailPage({ params }: Props) {
   if (!session) redirect('/login')
 
   const token = (session as unknown as { apiToken: string }).apiToken
+  const lang = await getLang()
 
   let project: Project
   try {
@@ -42,7 +45,7 @@ export default async function ProjectDetailPage({ params }: Props) {
         title={project.name}
         actions={
           <Link href="/projects">
-            <Button variant="secondary" size="sm">Back to Projects</Button>
+            <Button variant="secondary" size="sm">{t('backToProjects', lang)}</Button>
           </Link>
         }
       />
@@ -50,11 +53,11 @@ export default async function ProjectDetailPage({ params }: Props) {
       <ProjectEditForm project={project} costCenters={costCenters} token={token} />
 
       {orders.length > 0 && (
-        <Card title="Orders in this Project">
+        <Card title={t('ordersInProject', lang)}>
           <Table<Order>
             columns={[
               {
-                header: 'ID',
+                header: t('id', lang),
                 render: (row) => (
                   <Link href={`/orders/${row.id}`} className="font-mono text-blue-600 hover:underline text-xs">
                     #{row.id}
@@ -62,19 +65,19 @@ export default async function ProjectDetailPage({ params }: Props) {
                 ),
               },
               {
-                header: 'Product',
+                header: t('product', lang),
                 render: (row) => row.productName ?? `#${row.productId}`,
               },
-              { header: 'Environment', accessor: 'environmentName' },
+              { header: t('environment', lang), accessor: 'environmentName' },
               {
-                header: 'Status',
-                render: (row) => <StatusBadge status={row.status} />,
+                header: t('status', lang),
+                render: (row) => <StatusBadge status={row.status} lang={lang} />,
               },
               {
-                header: 'Date',
+                header: t('date', lang),
                 render: (row) => (
                   <span className="text-xs text-slate-500">
-                    {new Date(row.createdAt).toLocaleDateString()}
+                    {new Date(row.createdAt).toLocaleDateString(lang)}
                   </span>
                 ),
               },

@@ -20,6 +20,8 @@ export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> =
       userId: orders.userId,
       productId: orders.productId,
       environmentId: orders.environmentId,
+      pipelineId: orders.pipelineId,
+      pipelineStatus: orders.pipelineStatus,
     })
     .from(orders)
     .where(
@@ -40,9 +42,24 @@ export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> =
 
   if (event.status === 'success') {
     for (const order of matchingOrders) {
+      // Record this pipeline's success and only complete the order once EVERY
+      // pipeline that belongs to it has succeeded. Multi-pipeline products
+      // (product webhooks + pipeline stacks) otherwise completed on the first
+      // success event, dropping later failures of sibling pipelines.
+      const nextStatus = { ...order.pipelineStatus, [event.pipelineId]: 'success' }
+      const allSucceeded = order.pipelineId.every((pid) => nextStatus[pid] === 'success')
+
+      if (!allSucceeded) {
+        await db
+          .update(orders)
+          .set({ pipelineStatus: nextStatus, updatedAt: new Date() })
+          .where(eq(orders.id, order.id))
+        continue
+      }
+
       await db
         .update(orders)
-        .set({ status: 'completed', updatedAt: new Date() })
+        .set({ status: 'completed', pipelineStatus: nextStatus, updatedAt: new Date() })
         .where(eq(orders.id, order.id))
 
       await logAudit(null, 'order.completed', order.id, `Pipeline ${event.pipelineId} succeeded`)
@@ -109,9 +126,12 @@ export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> =
     }
   } else if (event.status === 'failed' || event.status === 'canceled') {
     for (const order of matchingOrders) {
+      // A single failed/canceled pipeline fails the whole order immediately,
+      // regardless of how many sibling pipelines already succeeded.
+      const nextStatus = { ...order.pipelineStatus, [event.pipelineId]: event.status }
       await db
         .update(orders)
-        .set({ status: 'failed', updatedAt: new Date() })
+        .set({ status: 'failed', pipelineStatus: nextStatus, updatedAt: new Date() })
         .where(eq(orders.id, order.id))
 
       await logAudit(

@@ -5,6 +5,7 @@ import { Header } from '@/components/layout/Header'
 import { TopNav } from '@/components/layout/TopNav'
 import type { Branding } from '@open-hybrid-cloud/types'
 import { getLang } from '@/lib/getLang'
+import { t } from '@/lib/i18n'
 
 const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
 
@@ -76,7 +77,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         logoDataUrl={logoDataUrl}
         lang={lang}
       />
-      <TopNav role={role} />
+      <TopNav role={role} lang={lang} />
       <main id="main" className="flex-1">
         <div className="max-w-screen-2xl mx-auto px-4 py-6 animate-page-in">
           {children}
@@ -89,9 +90,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
               © {shopName}{shopSubtitle ? ` — ${shopSubtitle}` : ''}
             </span>
             <div className="flex gap-4">
-              <Link href="/catalog" className="text-white/60 text-xs hover:text-white transition-colors">Catalog</Link>
-              <Link href="/orders" className="text-white/60 text-xs hover:text-white transition-colors">Orders</Link>
-              <Link href="/impressum" className="text-white/60 text-xs hover:text-white transition-colors">Imprint</Link>
+              <Link href="/catalog" className="text-white/60 text-xs hover:text-white transition-colors">{t('catalog', lang)}</Link>
+              <Link href="/orders" className="text-white/60 text-xs hover:text-white transition-colors">{t('orders', lang)}</Link>
+              <Link href="/impressum" className="text-white/60 text-xs hover:text-white transition-colors">{t('imprint', lang)}</Link>
             </div>
           </div>
         </footer>

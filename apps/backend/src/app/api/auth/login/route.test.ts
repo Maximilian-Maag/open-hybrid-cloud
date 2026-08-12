@@ -77,56 +77,110 @@ describe('POST /api/auth/login', () => {
     expect(JSON.stringify(body)).not.toContain('$2')
   })
 
-  // NFA-05.1: login rate-limit per IP
-  it('rate-limits repeated failed logins from the same IP (NFA-05.1)', async () => {
-    await createUser({ email: 'ratelimit@test.dev', password: 'correct-pass' })
-    const ip = `10.0.0.${Math.floor(Math.random() * 250) + 1}`
+  // NFA-05.1: login rate-limit per IP — only meaningful when the proxy is
+  // trusted, so these tests opt into TRUST_PROXY and use unique IPs to get
+  // their own buckets (isolated from the module-level shared 'global' bucket).
+  it('rate-limits repeated failed logins from the same IP when TRUST_PROXY set (NFA-05.1)', async () => {
+    const prev = process.env.TRUST_PROXY
+    process.env.TRUST_PROXY = '1'
+    try {
+      await createUser({ email: 'ratelimit@test.dev', password: 'correct-pass' })
+      const ip = `10.0.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
 
-    const makeReq = (email: string, password: string) =>
-      new NextRequest('http://localhost/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-        headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
-      })
-
-    // Fire 10 failed attempts — all should return 401 (bad password), not 429
-    for (let i = 0; i < 10; i++) {
-      const res = await POST(makeReq('ratelimit@test.dev', 'wrong-pass'))
-      expect(res.status).toBe(401)
-    }
-
-    // The 11th attempt from the same IP is rate-limited even if credentials are valid
-    const blocked = await POST(makeReq('ratelimit@test.dev', 'correct-pass'))
-    expect(blocked.status).toBe(429)
-    const body = await blocked.json()
-    expect(body.error).toMatch(/too many/i)
-  })
-
-  it('does not rate-limit different IPs against each other (NFA-05.1)', async () => {
-    await createUser({ email: 'per-ip@test.dev', password: 'correct-pass' })
-
-    const attempt = async (ip: string, password: string) =>
-      POST(
+      const makeReq = (email: string, password: string) =>
         new NextRequest('http://localhost/api/auth/login', {
           method: 'POST',
-          body: JSON.stringify({ email: 'per-ip@test.dev', password }),
+          body: JSON.stringify({ email, password }),
           headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
-        }),
-      )
+        })
 
-    const ipA = `10.1.1.${Math.floor(Math.random() * 250) + 1}`
-    const ipB = `10.2.2.${Math.floor(Math.random() * 250) + 1}`
+      // Fire 10 failed attempts — all should return 401 (bad password), not 429
+      for (let i = 0; i < 10; i++) {
+        const res = await POST(makeReq('ratelimit@test.dev', 'wrong-pass'))
+        expect(res.status).toBe(401)
+      }
 
-    // Burn out ipA
-    for (let i = 0; i < 10; i++) {
-      const res = await attempt(ipA, 'wrong')
-      expect(res.status).toBe(401)
+      // The 11th attempt from the same IP is rate-limited even with valid creds
+      const blocked = await POST(makeReq('ratelimit@test.dev', 'correct-pass'))
+      expect(blocked.status).toBe(429)
+      const body = await blocked.json()
+      expect(body.error).toMatch(/too many/i)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
     }
-    const blockedA = await attempt(ipA, 'correct-pass')
-    expect(blockedA.status).toBe(429)
+  })
 
-    // ipB should still be able to log in successfully
-    const okFromB = await attempt(ipB, 'correct-pass')
-    expect(okFromB.status).toBe(200)
+  it('does not rate-limit different IPs against each other when TRUST_PROXY set (NFA-05.1)', async () => {
+    const prev = process.env.TRUST_PROXY
+    process.env.TRUST_PROXY = '1'
+    try {
+      await createUser({ email: 'per-ip@test.dev', password: 'correct-pass' })
+
+      const attempt = async (ip: string, password: string) =>
+        POST(
+          new NextRequest('http://localhost/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email: 'per-ip@test.dev', password }),
+            headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+          }),
+        )
+
+      const ipA = `10.1.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
+      const ipB = `10.2.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
+
+      // Burn out ipA
+      for (let i = 0; i < 10; i++) {
+        const res = await attempt(ipA, 'wrong')
+        expect(res.status).toBe(401)
+      }
+      const blockedA = await attempt(ipA, 'correct-pass')
+      expect(blockedA.status).toBe(429)
+
+      // ipB should still be able to log in successfully
+      const okFromB = await attempt(ipB, 'correct-pass')
+      expect(okFromB.status).toBe(200)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
+  // NFA-05.1: spoofing defence — when TRUST_PROXY is NOT set, a client that
+  // rotates X-Forwarded-For on every request must NOT be able to reset its
+  // bucket. All requests share a single fixed key, so the limiter still fires.
+  it('rotating X-Forwarded-For does not bypass the limiter when TRUST_PROXY is unset (NFA-05.1)', async () => {
+    const prev = process.env.TRUST_PROXY
+    delete process.env.TRUST_PROXY
+    try {
+      await createUser({ email: 'spoof@test.dev', password: 'correct-pass' })
+
+      const spoofedAttempt = async (password: string) =>
+        POST(
+          new NextRequest('http://localhost/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email: 'spoof@test.dev', password }),
+            headers: {
+              'content-type': 'application/json',
+              // A fresh spoofed source IP on every call
+              'x-forwarded-for': `203.0.113.${Math.floor(Math.random() * 254) + 1}`,
+            },
+          }),
+        )
+
+      // Enough failed attempts to fill the shared bucket (spoofing a new IP each
+      // time). If XFF were trusted, each would be its own bucket and never trip.
+      for (let i = 0; i < 10; i++) {
+        await spoofedAttempt('wrong-pass')
+      }
+
+      // A further request — even with valid creds and yet another fresh spoofed
+      // IP — is still blocked, proving the rotation did not reset the bucket.
+      const blocked = await spoofedAttempt('correct-pass')
+      expect(blocked.status).toBe(429)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
   })
 })

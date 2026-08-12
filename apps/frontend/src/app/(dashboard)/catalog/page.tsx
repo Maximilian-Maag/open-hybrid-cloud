@@ -21,6 +21,7 @@ export default function CatalogPage() {
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   // sync URL search param into local state
   useEffect(() => {
@@ -30,6 +31,7 @@ export default function CatalogPage() {
   const load = useCallback(async () => {
     if (!token) return
     setLoading(true)
+    setError(false)
     try {
       const [prods, cats] = await Promise.all([
         get<Product[]>(`/api/catalog?lang=${lang}`, token),
@@ -38,7 +40,9 @@ export default function CatalogPage() {
       setProducts(prods ?? [])
       setCategories(cats ?? [])
     } catch {
-      /* ignore */
+      // Surface a genuine fetch failure instead of showing an empty catalog,
+      // which would look like "no products" during an outage.
+      setError(true)
     } finally {
       setLoading(false)
     }
@@ -134,6 +138,17 @@ export default function CatalogPage() {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
+          </div>
+        ) : error ? (
+          <div className="text-center py-20 bg-white rounded-lg border border-slate-200">
+            <p className="font-semibold text-slate-700">{t('somethingWentWrong', lang)}</p>
+            <button
+              onClick={() => load()}
+              className="text-sm mt-3 inline-block hover:underline"
+              style={{ color: 'var(--bp)' }}
+            >
+              {t('tryAgain', lang)}
+            </button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-lg border border-slate-200">

@@ -10,6 +10,15 @@ import {
 const jsonRes = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
+const linkedRes = (body: unknown, nextUrl?: string) =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      'content-type': 'application/json',
+      ...(nextUrl ? { link: `<${nextUrl}>; rel="next", <${nextUrl}>; rel="last"` } : {}),
+    },
+  })
+
 describe('github ci client', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -71,6 +80,42 @@ describe('github ci client', () => {
     it('throws on non-2xx', async () => {
       vi.spyOn(global, 'fetch').mockResolvedValue(new Response('', { status: 500 }))
       await expect(listGitHubRepos('https://api.github.com', 'tok')).rejects.toThrow(/500/)
+    })
+
+    it('follows the Link rel="next" header and concatenates pages', async () => {
+      const fetchMock = vi
+        .spyOn(global, 'fetch')
+        .mockResolvedValueOnce(
+          linkedRes(
+            [{ id: 1, name: 'infra', full_name: 'acme/infra' }],
+            'https://api.github.com/user/repos?page=2',
+          ),
+        )
+        .mockResolvedValueOnce(jsonRes([{ id: 2, name: 'ops', full_name: 'acme/ops' }]))
+
+      const repos = await listGitHubRepos('https://api.github.com', 'tok')
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(String(fetchMock.mock.calls[1][0])).toBe('https://api.github.com/user/repos?page=2')
+      expect(repos).toEqual([
+        { id: '1', name: 'infra', fullPath: 'acme/infra' },
+        { id: '2', name: 'ops', fullPath: 'acme/ops' },
+      ])
+    })
+
+    it('caps at 10 pages if the Link header always points to a next page', async () => {
+      const fetchMock = vi
+        .spyOn(global, 'fetch')
+        .mockImplementation(async () =>
+          linkedRes(
+            [{ id: 1, name: 'r', full_name: 'acme/r' }],
+            'https://api.github.com/user/repos?page=next',
+          ),
+        )
+
+      const repos = await listGitHubRepos('https://api.github.com', 'tok')
+      expect(fetchMock).toHaveBeenCalledTimes(10)
+      expect(repos.length).toBe(10)
     })
   })
 

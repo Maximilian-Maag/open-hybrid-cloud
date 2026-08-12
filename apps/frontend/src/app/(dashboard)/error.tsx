@@ -12,6 +12,10 @@ export default function DashboardError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  // TODO(i18n): error boundaries have no server-resolved lang to thread in as an
+  // initial value, and reading the cookie synchronously during render would risk a
+  // hydration mismatch when this boundary renders during SSR. Falls back to 'en'
+  // until the client effect in useLang resolves the cookie.
   const lang = useLang()
 
   useEffect(() => {

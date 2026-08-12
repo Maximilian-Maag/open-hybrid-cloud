@@ -25,8 +25,20 @@ export function AuditTable({ token }: Props) {
   const [actionFilter, setActionFilter] = useState('')
   const [fromFilter, setFromFilter] = useState('')
   const [toFilter, setToFilter] = useState('')
+  // Debounced copies of the free-text filters so typing doesn't fire a request
+  // per keystroke. Date filters stay immediate.
+  const [debouncedUser, setDebouncedUser] = useState('')
+  const [debouncedAction, setDebouncedAction] = useState('')
 
   const pageSize = 20
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedUser(userFilter)
+      setDebouncedAction(actionFilter)
+    }, 300)
+    return () => clearTimeout(id)
+  }, [userFilter, actionFilter])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -34,8 +46,8 @@ export function AuditTable({ token }: Props) {
       const params = new URLSearchParams()
       params.set('page', String(page))
       params.set('pageSize', String(pageSize))
-      if (userFilter) params.set('userId', userFilter)
-      if (actionFilter) params.set('action', actionFilter)
+      if (debouncedUser) params.set('userId', debouncedUser)
+      if (debouncedAction) params.set('action', debouncedAction)
       if (fromFilter) params.set('from', fromFilter)
       if (toFilter) params.set('to', toFilter)
 
@@ -55,7 +67,7 @@ export function AuditTable({ token }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [token, page, userFilter, actionFilter, fromFilter, toFilter])
+  }, [token, page, debouncedUser, debouncedAction, fromFilter, toFilter])
 
   useEffect(() => { load() }, [load])
 

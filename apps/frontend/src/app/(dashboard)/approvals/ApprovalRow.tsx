@@ -63,7 +63,7 @@ export function ApprovalRow({ order, token }: Props) {
             <span className="font-semibold text-slate-900">
               {order.productName ?? `Product #${order.productId}`}
             </span>
-            <StatusBadge status={order.status} />
+            <StatusBadge status={order.status} lang={lang} />
           </div>
           <p className="text-sm text-slate-500">
             {order.environmentName} · {order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`} on{' '}

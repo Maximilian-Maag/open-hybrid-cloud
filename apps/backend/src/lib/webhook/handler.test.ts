@@ -137,6 +137,52 @@ describe('handlePipelineEvent — failure', () => {
   })
 })
 
+describe('handlePipelineEvent — multi-pipeline orders', () => {
+  it('stays provisioning after only the first of two pipelines succeeds', async () => {
+    const { user, product, env, project } = await buildScenario()
+    const order = await createOrder(project.id, product.id, env.id, user.id, {
+      status: 'provisioning',
+      pipelineId: ['pipe-A', 'pipe-B'],
+    })
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' })
+
+    const [afterA] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(afterA.status).toBe('provisioning')
+    expect(afterA.pipelineStatus).toEqual({ 'pipe-A': 'success' })
+  })
+
+  it('becomes completed only after ALL pipelines have succeeded', async () => {
+    const { user, product, env, project } = await buildScenario()
+    const order = await createOrder(project.id, product.id, env.id, user.id, {
+      status: 'provisioning',
+      pipelineId: ['pipe-A', 'pipe-B'],
+    })
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-B', status: 'success' })
+
+    const [done] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(done.status).toBe('completed')
+    expect(done.pipelineStatus).toEqual({ 'pipe-A': 'success', 'pipe-B': 'success' })
+  })
+
+  it('becomes failed if any sibling pipeline fails after another succeeded', async () => {
+    const { user, product, env, project } = await buildScenario()
+    const order = await createOrder(project.id, product.id, env.id, user.id, {
+      status: 'provisioning',
+      pipelineId: ['pipe-A', 'pipe-B'],
+    })
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-B', status: 'failed' })
+
+    const [failed] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(failed.status).toBe('failed')
+    expect(failed.pipelineStatus).toMatchObject({ 'pipe-A': 'success', 'pipe-B': 'failed' })
+  })
+})
+
 describe('handlePipelineEvent — no-ops', () => {
   it('does nothing when no matching order exists', async () => {
     await expect(

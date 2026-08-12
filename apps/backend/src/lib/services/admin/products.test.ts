@@ -189,6 +189,38 @@ describe('deleteProduct', () => {
 
     expect(mockedWebhooks).toHaveBeenCalledTimes(1)
   })
+
+  // Cascade-delete race: the destroy trigger must complete BEFORE the product
+  // (and its cascaded infra rows) are deleted.
+  it('awaits the destroy trigger before deleting the product', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'AwaitDestroy')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id)
+
+    let productExistedAtTrigger = false
+    let infraExistedAtTrigger = false
+    mockedWebhooks.mockImplementationOnce(async () => {
+      productExistedAtTrigger =
+        (await db.select().from(products).where(eq(products.id, product.id))).length > 0
+      infraExistedAtTrigger =
+        (await db.select().from(infrastructureElements).where(eq(infrastructureElements.productId, product.id))).length > 0
+      return ['pipe-destroy']
+    })
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+
+    expect(productExistedAtTrigger).toBe(true)
+    expect(infraExistedAtTrigger).toBe(true)
+
+    const rows = await db.select().from(products).where(eq(products.id, product.id))
+    expect(rows.length).toBe(0)
+  })
 })
 
 describe('listTranslations / upsertTranslation', () => {

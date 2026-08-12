@@ -166,7 +166,7 @@ export default async function DashboardHome() {
                     {order.environmentName} · {order.projectName} · {new Date(order.createdAt).toLocaleDateString(lang)}
                   </p>
                 </div>
-                <StatusBadge status={order.status} />
+                <StatusBadge status={order.status} lang={lang} />
               </Link>
             ))}
           </div>

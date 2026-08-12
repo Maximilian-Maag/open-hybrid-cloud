@@ -141,9 +141,17 @@ export const deleteProject = async (
     .from(infrastructureElements)
     .where(and(eq(infrastructureElements.projectId, projectId), eq(infrastructureElements.status, 'active')))
 
+  // Await the destroy trigger BEFORE deleting the project. The delete cascades
+  // to infrastructure_elements (ON DELETE CASCADE), so firing the webhook
+  // fire-and-forget raced the cascade and could remove the infra rows out from
+  // under an in-flight destroy pipeline.
   for (const infra of activeInfra) {
     await db.update(infrastructureElements).set({ status: 'decommissioning' }).where(eq(infrastructureElements.id, infra.id))
-    triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy' }).catch(console.error)
+    try {
+      await triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy' })
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   const deleted = await db.delete(projects).where(eq(projects.id, projectId)).returning({ id: projects.id })

@@ -1,4 +1,5 @@
 import type { OrderStatus, InfraStatus } from '@open-hybrid-cloud/types'
+import { t, type Translations } from '@/lib/i18n'
 
 type Status = OrderStatus | InfraStatus
 
@@ -13,15 +14,15 @@ const colorMap: Record<Status, string> = {
   decommissioned: 'bg-slate-100 text-slate-600 border-slate-200',
 }
 
-const labelMap: Record<Status, string> = {
-  pending:        'Pending',
-  provisioning:   'Provisioning',
-  completed:      'Completed',
-  failed:         'Failed',
-  rejected:       'Rejected',
-  active:         'Active',
-  decommissioning:'Decommissioning',
-  decommissioned: 'Decommissioned',
+const labelKeyMap: Record<Status, keyof Translations> = {
+  pending:        'statusPending',
+  provisioning:   'statusProvisioning',
+  completed:      'statusCompleted',
+  failed:         'statusFailed',
+  rejected:       'statusRejected',
+  active:         'statusActive',
+  decommissioning:'decommissioning',
+  decommissioned: 'statusDecommissioned',
 }
 
 const dotColorMap: Partial<Record<Status, string>> = {
@@ -31,9 +32,10 @@ const dotColorMap: Partial<Record<Status, string>> = {
   decommissioning:'bg-orange-500',
 }
 
-export function StatusBadge({ status }: { status: Status }) {
+export function StatusBadge({ status, lang = 'en' }: { status: Status; lang?: string }) {
   const color = colorMap[status] ?? 'bg-slate-100 text-slate-600 border-slate-200'
-  const label = labelMap[status] ?? status
+  const labelKey = labelKeyMap[status]
+  const label = labelKey ? t(labelKey, lang) : status
   const dotColor = dotColorMap[status]
   const pulse = status === 'provisioning' || status === 'decommissioning'
 

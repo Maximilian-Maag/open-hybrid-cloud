@@ -228,3 +228,72 @@ After changes: typecheck ✅, lint ✅, 20 frontend tests ✅.
   pattern) and copy has no "Copied" feedback.
 - **`Sidebar.tsx` is dead code** (not imported anywhere) and is fully hardcoded —
   delete it or translate it if it will be used.
+
+---
+
+# Deferred-Items Follow-up — 2026-08-12
+
+Applied the remaining deferred fixes that were safe and verifiable, and added
+regression tests. After this round: **743 backend tests** (+21) and **51 frontend
+tests** (+31, from 20), typecheck + lint clean across both apps. Test
+recommendations at all levels are in `docs/TEST_PLAN.md`.
+
+## Now fixed
+
+### Backend
+- **createOrder server-side validation + ownership (IDOR).** Loads the applicable
+  parameter definitions (shared `loadApplicableParameters` in `catalog.ts`) and
+  rejects missing-required / bad-typed params (400); a PM ordering into a project
+  they don't own → 403; a product not offered in the chosen environment → 400.
+- **Multi-pipeline order completion.** New `pipeline_status` JSONB column
+  (migration `0005`) tracks per-pipeline status; an order completes only when all
+  its pipelines succeed and fails if any fails.
+- **Login rate-limit bypass.** `X-Forwarded-For` is trusted only when
+  `TRUST_PROXY` is set; the attempts map is now bounded.
+- **CI listing pagination.** GitLab/GitHub/Bitbucket list calls follow next-page
+  cursors (capped at 10 pages).
+- **Cascade-delete race.** `deleteProject`/`deleteProduct` await the destroy
+  trigger before deleting so cascaded infra rows aren't removed mid-destroy.
+
+### Frontend
+- **StatusBadge i18n** (7 new status keys × 25 languages) — status labels now
+  localize everywhere they appear.
+- **SSR language flash** fixed for `TopNav` (server lang threaded in).
+- **Audit filters debounced** (300ms) — no request per keystroke.
+- **Server list pages** (orders/projects/catalog) surface fetch failures (error
+  boundary / explicit error state) instead of a misleading empty state.
+- **EnvironmentsManager** replaces native `confirm()` with the app's Modal, adds
+  error handling and a "Copied" confirmation.
+- **Order-detail, project-detail, footer, and imprint** pages internationalized
+  (existing + new keys) with locale-aware dates.
+
+### Tests added
+- Backend: +21 regression tests (order validation/ownership, multi-pipeline,
+  rate-limit spoofing, CI pagination, cascade ordering).
+- Frontend: +31 tests — new component tests for `Input`, `Select`, `Table`,
+  `Modal`, `Toast`, `StatusBadge`, plus `AuditTable` debounce, and lib tests for
+  `i18n` (key/lang completeness + fallback) and `locale` (conversion + locale
+  formatting).
+
+## Still deferred (with reasons)
+
+- **Full `admin/**` CRUD form/manager i18n.** StatusBadge, detail pages, footer
+  and imprint are done, but the admin create/edit/delete forms and manager
+  headers remain hardcoded English — ~100 strings needing accurate translation
+  into all 25 languages. This should be driven through the app's own AI-translate
+  pipeline rather than hand-fabricated; not attempted blind.
+- **Drizzle meta snapshots (0002–0005) — intentionally NOT regenerated.** The six
+  SQL migrations are already applied to real databases (tracked by hash), so
+  rewriting migration history would break deployed environments, and hand-writing
+  accurate drizzle v7 snapshots for the manual migrations is error-prone. The
+  runtime migrator (`readMigrationFiles`) is unaffected; only `drizzle-kit
+  generate` is impacted. Fix in a dedicated effort: regenerate the snapshot chain
+  with drizzle-kit and verify against a fresh DB before relying on `db:generate`.
+- **GitHub workflow-run ID correlation** — needs a design decision (correlate via
+  a unique dispatch input / run-name) and live-GitHub testing.
+- **OAuth hardening** (id_token signature/`aud`/`iss` verification, `state`/`nonce`,
+  moving the session JWT out of the callback URL) — a larger auth-flow rework.
+- **`error.tsx` SSR language** — left as a `// TODO(i18n)` (an error boundary has
+  no server-resolved lang; a synchronous cookie read risks a hydration mismatch).
+- **Dropdown option-list validation** — the `parameters` table stores no allowed-
+  options column, so dropdown values can't be constrained server-side yet.

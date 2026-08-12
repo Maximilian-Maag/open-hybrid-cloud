@@ -139,6 +139,11 @@ export const orders = pgTable('orders', {
   costCenterId: bigint('cost_center_id', { mode: 'number' }).references(() => costCenters.id),
   rejectionNote: text('rejection_note'),
   pipelineId: jsonb('pipeline_id').$type<string[]>().notNull().default([]),
+  // Per-pipeline terminal status keyed by pipeline id, e.g.
+  // { "pipe-a": "success", "pipe-b": "failed" }. Lets a multi-pipeline order
+  // wait for ALL its pipelines to succeed before completing (and fail fast if
+  // any one fails/cancels) instead of completing on the first success event.
+  pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })

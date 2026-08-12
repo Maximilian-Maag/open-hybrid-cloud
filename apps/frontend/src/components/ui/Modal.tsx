@@ -6,6 +6,7 @@ interface ModalProps {
   open: boolean
   onClose: () => void
   title?: string
+  ariaLabel?: string
   children: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl'
 }
@@ -17,7 +18,7 @@ const sizeClass: Record<string, string> = {
   xl: 'max-w-2xl',
 }
 
-export function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
+export function Modal({ open, onClose, title, ariaLabel, children, size = 'md' }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
@@ -43,6 +44,7 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
     <dialog
       ref={dialogRef}
       aria-labelledby={title ? titleId : undefined}
+      aria-label={!title ? ariaLabel : undefined}
       className={`w-full ${sizeClass[size]} mx-auto my-auto rounded-2xl shadow-2xl bg-white p-0 open:flex open:flex-col max-h-[90vh] animate-modal-in`}
       onClick={(e) => {
         if (e.target === dialogRef.current) onClose()

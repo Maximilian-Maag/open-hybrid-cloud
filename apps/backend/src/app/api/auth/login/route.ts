@@ -18,22 +18,31 @@ const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
 const RATE_LIMIT_MAX_KEYS = 10_000
 
 /**
- * Resolve the rate-limiting key for a request.
+ * Client address component of the rate-limit key.
  *
  * `X-Forwarded-For` is attacker-controlled unless a trusted reverse proxy sets
- * it, so rotating it would let a client reset its bucket and bypass the limiter.
- * We therefore only trust XFF when the operator explicitly opts in via
- * `TRUST_PROXY` (i.e. the app really does sit behind a proxy that rewrites the
- * header). Otherwise every request shares a single fixed bucket, which is safe
- * against spoofing.
+ * it, so we only trust it when the operator opts in via `TRUST_PROXY`. Without a
+ * trusted proxy there is no reliable per-client address, so this contributes a
+ * constant — the account component below still keeps buckets per-account.
  */
-function getClientKey(req: NextRequest): string {
+function clientAddr(req: NextRequest): string {
   const trustProxy = process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true'
   if (trustProxy) {
     const xff = req.headers.get('x-forwarded-for')?.split(',')[0].trim()
     if (xff) return xff
   }
-  return 'global'
+  return '-'
+}
+
+/**
+ * Rate-limit key: keyed primarily by the normalized account identifier so a
+ * burst of failed guesses against one account can never lock out logins for
+ * every other account (which a single shared/global bucket would), and a
+ * successful login resets only that account's bucket — not a client-wide one.
+ * The client address is folded in when a trusted proxy provides it.
+ */
+function rateLimitKey(req: NextRequest, email: string): string {
+  return `${clientAddr(req)}|${email.trim().toLowerCase()}`
 }
 
 /**
@@ -72,14 +81,6 @@ function resetRateLimit(key: string): void {
 }
 
 export async function POST(req: NextRequest) {
-  const clientKey = getClientKey(req)
-  if (isRateLimited(clientKey)) {
-    return NextResponse.json(
-      { error: 'Too many login attempts. Try again in 15 minutes.' },
-      { status: 429 },
-    )
-  }
-
   const body = await req.json().catch(() => null)
   const parsed = LoginSchema.safeParse(body)
   if (!parsed.success) {
@@ -87,13 +88,24 @@ export async function POST(req: NextRequest) {
   }
 
   const { email, password } = parsed.data
+
+  // Rate-limit per account (see rateLimitKey) so failures against one account
+  // never block others, and reset only that account's bucket on success.
+  const rlKey = rateLimitKey(req, email)
+  if (isRateLimited(rlKey)) {
+    return NextResponse.json(
+      { error: 'Too many login attempts. Try again in 15 minutes.' },
+      { status: 429 },
+    )
+  }
+
   const result = await loginWithCredentials(email, password)
 
   if (!result.ok) {
     return NextResponse.json({ error: result.message }, { status: result.status })
   }
 
-  resetRateLimit(clientKey)
+  resetRateLimit(rlKey)
 
   const rows = await db
     .select({ id: users.id, email: users.email, name: users.name, role: users.role })

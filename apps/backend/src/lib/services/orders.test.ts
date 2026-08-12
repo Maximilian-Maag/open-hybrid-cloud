@@ -344,6 +344,28 @@ describe('createOrder — validation & ownership', () => {
     expect(dbOrder.parameters).toMatchObject({ FOO: 'bar', REGION: 'eu-west' })
   })
 
+  it('trims surrounding whitespace before validating and storing values', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values([
+      { scope: 'product', scopeId: product.id, name: 'SIZE', type: 'number', required: true },
+      { scope: 'product', scopeId: product.id, name: 'ENABLED', type: 'bool', required: true },
+    ])
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      // Padded values must be accepted (not rejected) and persisted trimmed so
+      // the whitespace never reaches the CI trigger variables.
+      parameters: { SIZE: ' 4 ', ENABLED: ' true ' },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [dbOrder] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(dbOrder.parameters).toMatchObject({ SIZE: '4', ENABLED: 'true' })
+  })
+
   it('accepts valid required + typed parameters (happy path)', async () => {
     const { admin, product, env, project } = await buildBase()
     await db.insert(parameters).values([

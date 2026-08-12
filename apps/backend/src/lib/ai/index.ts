@@ -16,14 +16,18 @@ interface AiConfig {
 }
 
 // Default API host per provider, used when the admin leaves the endpoint blank.
-// Azure has no default — it requires the full deployment URL.
+// azure_openai / ollama / localai have no safe universal default (Azure needs
+// the deployment URL; the local providers are host-specific), so they return
+// '' and a blank endpoint is rejected before any request is made — never routed
+// to OpenAI, which would leak the prompt + API key to the wrong service.
 const defaultEndpoint = (provider: AiProviderType): string => {
   switch (provider) {
     case 'claude':
       return 'https://api.anthropic.com'
     case 'openai':
-    default:
       return 'https://api.openai.com'
+    default:
+      return ''
   }
 }
 
@@ -130,6 +134,12 @@ export const translateProduct = async (
   description: string,
 ): Promise<Record<string, { name: string; description: string }>> => {
   const config = await loadConfig()
+  // Providers without a safe default (azure_openai/ollama/localai) must have an
+  // operator-configured endpoint; reject a blank one rather than misrouting the
+  // request (and the API key) to the wrong host.
+  if (!config.endpoint) {
+    throw new Error(`AI endpoint is not configured for provider "${config.provider}"`)
+  }
   const prompt = buildPrompt(name, description)
 
   let rawResponse: string

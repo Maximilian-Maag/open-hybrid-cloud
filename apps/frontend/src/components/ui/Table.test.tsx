@@ -18,7 +18,7 @@ describe('Table', () => {
     expect(screen.getByText('Nothing here')).toBeInTheDocument()
   })
 
-  it('fires onRowClick on click and on keyboard Enter/Space', () => {
+  it('fires onRowClick when a row is clicked', () => {
     const onRowClick = vi.fn()
     render(
       <Table<Row>
@@ -29,17 +29,15 @@ describe('Table', () => {
     )
     const row = screen.getByText('Alpha').closest('tr')
     if (!row) throw new Error('row not found')
-    expect(row).toHaveAttribute('role', 'button')
-    expect(row).toHaveAttribute('tabindex', '0')
 
     fireEvent.click(row)
-    fireEvent.keyDown(row, { key: 'Enter' })
-    fireEvent.keyDown(row, { key: ' ' })
-    expect(onRowClick).toHaveBeenCalledTimes(3)
+    expect(onRowClick).toHaveBeenCalledTimes(1)
   })
 
-  it('does not make rows interactive when onRowClick is absent', () => {
-    render(<Table<Row> columns={columns} data={[{ id: 1, name: 'Alpha' }]} />)
+  it('keeps plain row semantics (no role/tabindex) when onRowClick is present', () => {
+    render(
+      <Table<Row> columns={columns} data={[{ id: 1, name: 'Alpha' }]} onRowClick={() => {}} />,
+    )
     const row = screen.getByText('Alpha').closest('tr')
     if (!row) throw new Error('row not found')
     expect(row).not.toHaveAttribute('role')

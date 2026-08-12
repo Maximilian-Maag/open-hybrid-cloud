@@ -103,7 +103,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
         ...(form.webhookToken ? { webhookToken: form.webhookToken.trim() } : {}),
       }
       await put(`/api/admin/environments/${editTarget.id}`, body, token)
-      setEditTarget(null)
+      closeEdit()
       load()
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'Failed to update.')
@@ -118,6 +118,13 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
   const [secretError, setSecretError] = useState<string | null>(null)
   const [regenConfirmOpen, setRegenConfirmOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  function closeEdit() {
+    setEditTarget(null)
+    setCallbackSecret(null)
+    setSecretError(null)
+    setCopied(false)
+  }
 
   async function revealCallbackSecret() {
     if (!editTarget) return
@@ -217,7 +224,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
           </div>
         </form>
       </Modal>
-      <Modal open={!!editTarget} onClose={() => { setEditTarget(null); setCallbackSecret(null); setSecretError(null); setCopied(false) }} title="Edit Environment" size="md">
+      <Modal open={!!editTarget} onClose={closeEdit} title="Edit Environment" size="md">
         <form onSubmit={handleEdit} className="space-y-4">
           {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
           <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
@@ -253,7 +260,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
             </div>
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null); setCallbackSecret(null); setSecretError(null); setCopied(false) }}>Cancel</Button>
+            <Button type="button" variant="secondary" onClick={closeEdit}>Cancel</Button>
             <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
           </div>
         </form>

@@ -28,6 +28,17 @@ describe('Modal', () => {
     expect(heading.id).toBe(labelledBy)
   })
 
+  it('gives a title-less dialog an accessible name via ariaLabel', () => {
+    render(
+      <Modal open onClose={() => {}} ariaLabel="Image preview">
+        <p>Body</p>
+      </Modal>,
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveAttribute('aria-label', 'Image preview')
+    expect(dialog).not.toHaveAttribute('aria-labelledby')
+  })
+
   it('renders a labeled close button', () => {
     render(
       <Modal open onClose={() => {}} title="X">

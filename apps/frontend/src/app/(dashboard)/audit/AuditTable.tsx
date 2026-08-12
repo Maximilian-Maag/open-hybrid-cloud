@@ -29,6 +29,7 @@ export function AuditTable({ token }: Props) {
   // per keystroke. Date filters stay immediate.
   const [debouncedUser, setDebouncedUser] = useState('')
   const [debouncedAction, setDebouncedAction] = useState('')
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const pageSize = 20
 
@@ -79,6 +80,7 @@ export function AuditTable({ token }: Props) {
     if (toFilter) params.set('to', toFilter)
     params.set('format', format)
 
+    setExportError(null)
     // The export endpoint authenticates via the Authorization header, which a
     // plain window.open GET cannot set — fetch it and trigger a download from
     // the response blob. This also keeps the token out of the URL/history/logs.
@@ -87,7 +89,10 @@ export function AuditTable({ token }: Props) {
         headers: { Authorization: `Bearer ${token}` },
         cache: 'no-store',
       })
-      if (!res.ok) return
+      if (!res.ok) {
+        setExportError(t('exportFailed', lang))
+        return
+      }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -97,8 +102,9 @@ export function AuditTable({ token }: Props) {
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
+      setExportError(null)
     } catch {
-      /* empty */
+      setExportError(t('exportFailed', lang))
     }
   }
 
@@ -134,13 +140,18 @@ export function AuditTable({ token }: Props) {
         />
       </div>
 
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" size="sm" onClick={() => handleExport('csv')}>
-          {t('exportCsv', lang)}
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => handleExport('pdf')}>
-          {t('exportPdf', lang)}
-        </Button>
+      <div className="flex flex-col items-end gap-2">
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => handleExport('csv')}>
+            {t('exportCsv', lang)}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => handleExport('pdf')}>
+            {t('exportPdf', lang)}
+          </Button>
+        </div>
+        {exportError && (
+          <p className="text-xs text-red-600" role="alert">{exportError}</p>
+        )}
       </div>
 
       {loading ? (

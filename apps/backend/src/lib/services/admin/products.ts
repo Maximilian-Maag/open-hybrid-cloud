@@ -226,14 +226,22 @@ export const deleteProduct = async (id: number): Promise<Result<void>> => {
     .from(infrastructureElements)
     .where(and(eq(infrastructureElements.productId, id), eq(infrastructureElements.status, 'active')))
 
-  // Await the destroy trigger BEFORE deleting the product. The delete cascades
-  // to infrastructure_elements (ON DELETE CASCADE), so a fire-and-forget
-  // webhook raced the cascade and could delete the infra rows out from under an
-  // in-flight destroy pipeline.
+  // Await the destroy trigger request BEFORE deleting the product. The delete
+  // cascades to infrastructure_elements (ON DELETE CASCADE); firing the webhook
+  // fire-and-forget raced the cascade. NOTE: awaiting only guarantees the CI
+  // system accepted the trigger — the destroy pipeline still runs asynchronously
+  // afterwards, so a late failure cannot be reconciled once the rows are gone.
   for (const infra of activeInfra) {
-    await db.update(infrastructureElements).set({ status: 'decommissioning' }).where(eq(infrastructureElements.id, infra.id))
+    // Atomically claim the row (active → decommissioning) so two concurrent
+    // deletes can't both fire a destroy pipeline for the same element.
+    const claimed = await db
+      .update(infrastructureElements)
+      .set({ status: 'decommissioning' })
+      .where(and(eq(infrastructureElements.id, infra.id), eq(infrastructureElements.status, 'active')))
+      .returning({ id: infrastructureElements.id })
+    if (!claimed.length) continue
     try {
-      await triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy' })
+      await triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy', INFRA_ID: String(infra.id) })
     } catch (e) {
       console.error(e)
     }

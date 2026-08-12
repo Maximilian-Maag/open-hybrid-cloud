@@ -39,7 +39,15 @@ export function convertPrice(
   rates: Record<string, number>,
   locale = 'en',
 ): { amount: string; currency: string } {
-  if (fromCurrency === toCurrency) return { amount: price, currency: toCurrency }
+  if (fromCurrency === toCurrency) {
+    const sameNum = parseFloat(price)
+    if (isNaN(sameNum)) return { amount: price, currency: toCurrency }
+    return {
+      // Format grouping/decimals in the user's locale (e.g. 1.234,50 for de).
+      amount: sameNum.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      currency: toCurrency,
+    }
+  }
 
   const numPrice = parseFloat(price)
   if (isNaN(numPrice)) return { amount: price, currency: fromCurrency }

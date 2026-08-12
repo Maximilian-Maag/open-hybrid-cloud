@@ -154,7 +154,11 @@ const validateAndApplyParameters = (
 
   for (const def of resolved) {
     const raw = submitted[def.name]
-    const provided = raw !== undefined && raw.trim() !== ''
+    // Normalize once, then validate and store the normalized value so a value
+    // like `" true "` or `" 4 "` is accepted and persisted without whitespace
+    // (which would otherwise leak into the CI trigger variables).
+    const value = raw?.trim() ?? ''
+    const provided = value !== ''
 
     if (!provided) {
       if (def.required) return err(400, `Missing required parameter: ${def.name}`)
@@ -163,18 +167,18 @@ const validateAndApplyParameters = (
     }
 
     if (def.type === 'number') {
-      if (!/^-?\d+(\.\d+)?$/.test(raw.trim()) || Number.isNaN(Number(raw))) {
+      if (!/^-?\d+(\.\d+)?$/.test(value) || Number.isNaN(Number(value))) {
         return err(400, `Parameter ${def.name} must be a number`)
       }
     } else if (def.type === 'bool') {
-      if (raw !== 'true' && raw !== 'false') {
+      if (value !== 'true' && value !== 'false') {
         return err(400, `Parameter ${def.name} must be 'true' or 'false'`)
       }
     }
     // `dropdown` definitions carry no stored option list in the schema, so
     // there is no allowed-value constraint to enforce here.
 
-    result[def.name] = raw
+    result[def.name] = value
   }
 
   return ok(result)

@@ -1,17 +1,17 @@
 # Test Plan & Recommendations — 2026-08-12
 
-Recommended tests across the three levels, grounded in the current suite:
+Recommended tests across the three levels. Snapshots below are the **pre-audit
+baseline** that motivated this plan; the **current** column reflects what this PR
+has since implemented.
 
-- **Backend unit/integration** (`apps/backend`, vitest + real Postgres): **strong**
-  — 94 files / ~722 tests covering routes and services against a live DB.
-- **Frontend unit/component** (`apps/frontend`, vitest + jsdom + Testing Library):
-  **major gap** — only 2 files (`lib/api.test.ts`, `lib/pipelineStackPreview.test.ts`),
-  ~20 tests. No component, form, or hook tests despite the tooling being set up.
-- **E2E** (`e2e`, Playwright, single worker, seeded root session): **broad** — 24
-  specs across auth, dashboard, admin managers, orders, order-flow, approvals,
-  projects, catalog, audit, infrastructure, settings, imprint.
+| Level | Pre-audit baseline | Current (this PR) |
+|-------|--------------------|-------------------|
+| Backend unit/integration (`apps/backend`, vitest + real Postgres) | 94 files / ~719 tests — **strong** | **747 tests** |
+| Frontend unit/component (`apps/frontend`, vitest + jsdom + Testing Library) | 2 files / ~20 tests — **major gap** (no component/form/hook tests) | **53 tests / 11 files** (UI primitives, StatusBadge, AuditTable, i18n, locale added) |
+| E2E (`e2e`, Playwright, single worker) | 24 specs — **broad** | 24 specs (unchanged) |
 
-Legend: **[NEW]** file/area with no coverage today · **[EXT]** extend an existing test.
+Legend: **[NEW]** no coverage at audit time · **[EXT]** extend an existing test ·
+**✅ DONE** implemented in this PR.
 
 ---
 
@@ -73,16 +73,15 @@ untested edge cases.
 Almost nothing is tested. Establish component testing with a small render helper
 (wrap in `ToastProvider`, provide a `lang`) and mock `@/lib/api`.
 
-### UI primitives (`components/ui/*.test.tsx` [NEW])
-- **Input / Select**: label↔control linkage; `aria-invalid` + `aria-describedby`
+### UI primitives (`components/ui/*.test.tsx`) — ✅ DONE in this PR
+- **Input / Select** ✅: label↔control linkage; `aria-invalid` + `aria-describedby`
   set when `error`; required asterisk.
-- **Modal**: opens/closes via the `open` prop; Escape and backdrop click call
-  `onClose`; `aria-labelledby` matches the title; focus moves in on open.
-- **Table**: renders rows/headers with `scope="col"`; empty-state message;
-  `onRowClick` fires on click AND Enter/Space (keyboard).
-- **Toast**: error toast uses `role="alert"`, success uses `role="status"`;
-  auto-dismiss after timeout; manual dismiss.
-- **StatusBadge**: renders the localized label for each status in a non-English
+- **Modal** ✅: `aria-labelledby` matches the title; `ariaLabel` names a title-less
+  dialog; labeled close button. (Escape/backdrop `onClose` still worth adding.)
+- **Table** ✅: renders headers with `scope="col"`; empty-state message;
+  `onRowClick` fires on click.
+- **Toast** ✅: error toast uses `role="alert"`, success uses `role="status"`.
+- **StatusBadge** ✅: renders the localized label for each status in a non-English
   `lang`; unknown status falls back to the raw value.
 
 ### Forms (`components/forms/*.test.tsx` [NEW]) — highest business value
@@ -101,18 +100,19 @@ Almost nothing is tested. Establish component testing with a small render helper
 - **ProductEditForm**: false-"Saved!" regression — a failed per-env save shows an
   error, not a success badge; AI-translate error surfaces; webhook/stack/param
   delete failures surface.
-- **AuditTable**: export triggers a header-authenticated fetch + blob download
-  (not `window.open` with a token in the URL); text filters are debounced (one
-  request after rapid typing).
+- **AuditTable** ✅ (debounce): text filters are debounced (one request after
+  rapid typing). Still worth adding: assert the export uses a header-authenticated
+  fetch + blob download (not `window.open` with a token in the URL).
 
-### Lib/hooks (`lib/*.test.ts` [NEW/EXT])
-- **i18n** (`lib/i18n.test.ts` [NEW]): every key present in all 25 languages
-  (guards future additions); `t()` falls back to `en` for an unknown lang; never
-  returns `undefined` for a typed key.
-- **locale** (`lib/locale.test.ts` [NEW]): `convertPrice` rate math + locale
-  formatting (`1.234,56` for `de`, `1,234.56` for `en`); `localeToCurrency` map.
-- **useLang / getLang** (`lib/*.test.ts` [NEW]): cookie → `accept-language` →
-  `en` precedence; `langchange` event updates the hook.
+### Lib/hooks (`lib/*.test.ts`)
+- **i18n** (`lib/i18n.test.ts`) ✅: sample key present in all 25 languages; status
+  keys present in all languages; `t()` falls back to `en` for an unknown lang;
+  region-subtag normalization.
+- **locale** (`lib/locale.test.ts`) ✅: `convertPrice` rate math + locale
+  formatting (`1.234,50` for `de`, `1,234.50` for `en`, incl. same-currency);
+  `localeToCurrency` map.
+- **useLang / getLang** (`lib/*.test.ts` [NEW], still recommended): cookie →
+  `accept-language` → `en` precedence; `langchange` event updates the hook.
 
 ---
 

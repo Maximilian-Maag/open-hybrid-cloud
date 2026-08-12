@@ -4,8 +4,15 @@ import { convertPrice, localeToCurrency } from './locale'
 const rates = { USD: 1.1, GBP: 0.85 } // relative to EUR
 
 describe('convertPrice', () => {
-  it('returns the price unchanged when currencies match', () => {
-    expect(convertPrice('100', 'EUR', 'EUR', rates)).toEqual({ amount: '100', currency: 'EUR' })
+  it('formats the amount in the locale when currencies match', () => {
+    // Same currency: no conversion, but still format grouping/decimals.
+    expect(convertPrice('100', 'EUR', 'EUR', rates)).toEqual({ amount: '100.00', currency: 'EUR' })
+    expect(convertPrice('1234.5', 'EUR', 'EUR', rates, 'en')).toEqual({ amount: '1,234.50', currency: 'EUR' })
+    expect(convertPrice('1234.5', 'EUR', 'EUR', rates, 'de')).toEqual({ amount: '1.234,50', currency: 'EUR' })
+  })
+
+  it('returns the raw price for a non-numeric input when currencies match', () => {
+    expect(convertPrice('n/a', 'EUR', 'EUR', rates, 'de')).toEqual({ amount: 'n/a', currency: 'EUR' })
   })
 
   it('converts EUR → USD via the rate', () => {

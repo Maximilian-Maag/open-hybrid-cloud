@@ -799,6 +799,7 @@ function EnvironmentRow({
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
+    setSaved(false)
     setSaveError(null)
     try {
       await onSave({ price, currency, costCenterMode, forcedCostCenter })

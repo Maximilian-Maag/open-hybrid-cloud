@@ -31,6 +31,7 @@ export function CategoriesManager({ token }: Props) {
     try {
       const data = await get<Category[]>('/api/admin/categories', token)
       setCategories(data ?? [])
+      setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load categories.')
     } finally {

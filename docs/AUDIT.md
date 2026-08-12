@@ -1,8 +1,12 @@
 # Codebase Audit — 2026-08-12
 
 Full audit of the monorepo (backend Next.js API, frontend, shared types, infra).
-Baseline before changes: typecheck ✅, lint ✅, 719 backend + 20 frontend tests ✅.
-After changes: typecheck ✅, lint ✅, **722 backend + 20 frontend tests ✅**.
+This document is organized in phases (see the dated sections below).
+
+- **Pre-audit baseline:** 719 backend + 20 frontend tests.
+- **Round 1 (this section):** security/correctness fixes → 722 backend tests.
+- **Final (all rounds incl. deferred-item follow-up + PR-review fixes):**
+  typecheck ✅, lint ✅, **747 backend + 53 frontend tests ✅**.
 
 The fixes below are applied on this branch. The "Deferred" section lists confirmed
 findings that need a product/architecture decision or cannot be safely verified
@@ -234,9 +238,11 @@ After changes: typecheck ✅, lint ✅, 20 frontend tests ✅.
 # Deferred-Items Follow-up — 2026-08-12
 
 Applied the remaining deferred fixes that were safe and verifiable, and added
-regression tests. After this round: **743 backend tests** (+21) and **51 frontend
-tests** (+31, from 20), typecheck + lint clean across both apps. Test
-recommendations at all levels are in `docs/TEST_PLAN.md`.
+regression tests. After this round: **743 backend** (+21) and **51 frontend**
+(+31, from 20) tests. A subsequent **PR-review round** (CodeRabbit + Copilot)
+addressed their inline findings and brought the suite to **747 backend + 53
+frontend tests**, typecheck + lint clean across both apps. Test recommendations
+at all levels are in `docs/TEST_PLAN.md`.
 
 ## Now fixed
 
@@ -277,6 +283,18 @@ recommendations at all levels are in `docs/TEST_PLAN.md`.
 
 ## Still deferred (with reasons)
 
+- **CI trigger-helper launch-failure contract.** `triggerProductWebhooks` /
+  `triggerPipelineStacks` catch per-trigger launch errors and return only the
+  IDs that launched. Consequences flagged in review: an approved order can
+  complete when only a subset of its pipelines actually launched, and
+  `deleteProject`/`deleteProduct` proceed with the cascade even if no destroy
+  pipeline started (the awaited call can't signal that). Fixing this cleanly
+  means changing the helpers to surface launch failures and having every caller
+  (approve, decommission, project/product delete) react — a cross-cutting change
+  beyond this PR's safe scope. This round hardened what it safely could: the
+  status transitions are now atomic, the destroy rows are claimed before
+  triggering, and the misleading "destroy complete before delete" comment was
+  corrected. Full launch-failure propagation is tracked as a follow-up.
 - **Full `admin/**` CRUD form/manager i18n.** StatusBadge, detail pages, footer
   and imprint are done, but the admin create/edit/delete forms and manager
   headers remain hardcoded English — ~100 strings needing accurate translation

@@ -146,9 +146,34 @@ describe('POST /api/auth/login', () => {
     }
   })
 
+  // Anti-DoS: without a trusted proxy the limiter is keyed per account, so a
+  // burst of failures against one account must not block logins for others (a
+  // single shared/global bucket would).
+  it('failures against one account do not block a different account (no global bucket)', async () => {
+    const prev = process.env.TRUST_PROXY
+    delete process.env.TRUST_PROXY
+    try {
+      await createUser({ email: 'victim@test.dev', password: 'correct-pass' })
+      await createUser({ email: 'bystander@test.dev', password: 'correct-pass' })
+      const attempt = (email: string, password: string) => POST(makeRequest({ email, password }))
+
+      for (let i = 0; i < 10; i++) {
+        expect((await attempt('victim@test.dev', 'wrong-pass')).status).toBe(401)
+      }
+      expect((await attempt('victim@test.dev', 'correct-pass')).status).toBe(429)
+
+      // A different account is unaffected — no shared bucket
+      expect((await attempt('bystander@test.dev', 'correct-pass')).status).toBe(200)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
   // NFA-05.1: spoofing defence — when TRUST_PROXY is NOT set, a client that
   // rotates X-Forwarded-For on every request must NOT be able to reset its
-  // bucket. All requests share a single fixed key, so the limiter still fires.
+  // bucket. XFF is ignored, so all requests for this account share one key and
+  // the limiter still fires.
   it('rotating X-Forwarded-For does not bypass the limiter when TRUST_PROXY is unset (NFA-05.1)', async () => {
     const prev = process.env.TRUST_PROXY
     delete process.env.TRUST_PROXY

@@ -181,6 +181,23 @@ describe('handlePipelineEvent — multi-pipeline orders', () => {
     expect(failed.status).toBe('failed')
     expect(failed.pipelineStatus).toMatchObject({ 'pipe-A': 'success', 'pipe-B': 'failed' })
   })
+
+  it('a stale success after a terminal failure does not resurrect the order', async () => {
+    const { user, product, env, project } = await buildScenario()
+    const order = await createOrder(project.id, product.id, env.id, user.id, {
+      status: 'provisioning',
+      pipelineId: ['pipe-A', 'pipe-B'],
+    })
+
+    // B fails first → order is terminally failed.
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-B', status: 'failed' })
+    // A late/duplicate success for the sibling must NOT flip it back to completed
+    // (the transition is guarded on the order still being 'provisioning').
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' })
+
+    const [after] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(after.status).toBe('failed')
+  })
 })
 
 describe('handlePipelineEvent — no-ops', () => {

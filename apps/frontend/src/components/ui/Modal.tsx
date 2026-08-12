@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 
 interface ModalProps {
   open: boolean
@@ -19,6 +19,7 @@ const sizeClass: Record<string, string> = {
 
 export function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -41,6 +42,7 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
   return (
     <dialog
       ref={dialogRef}
+      aria-labelledby={title ? titleId : undefined}
       className={`w-full ${sizeClass[size]} mx-auto my-auto rounded-2xl shadow-2xl bg-white p-0 open:flex open:flex-col max-h-[90vh] animate-modal-in`}
       onClick={(e) => {
         if (e.target === dialogRef.current) onClose()
@@ -48,7 +50,7 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
     >
       {title && (
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 shrink-0">
-          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+          <h2 id={titleId} className="text-lg font-semibold text-slate-900">{title}</h2>
           <button
             onClick={onClose}
             className="rounded-md p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 focus:outline-none transition-colors"

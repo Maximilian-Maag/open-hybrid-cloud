@@ -102,7 +102,7 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
   }
 
   function formatEnvPrice(env: ProductDetail['environments'][number]): string {
-    const converted = convertPrice(env.price, env.currency, localeCurrency, exchangeRates)
+    const converted = convertPrice(env.price, env.currency, localeCurrency, exchangeRates, lang)
     if (converted.currency !== env.currency) {
       return `${converted.amount} ${converted.currency}`
     }

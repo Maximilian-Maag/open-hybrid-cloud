@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { SUPPORTED_LANGUAGES } from '@/lib/i18n'
 
@@ -12,6 +12,14 @@ export function LanguageSwitcher({ lang }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const current = lang.split('-')[0].toLowerCase()
+
+  // Allow keyboard users to dismiss the open dropdown with Escape.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
 
   function selectLang(code: string) {
     document.cookie = `lang=${code}; path=/; max-age=31536000; SameSite=Lax`

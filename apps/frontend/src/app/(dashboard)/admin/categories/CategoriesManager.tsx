@@ -112,7 +112,7 @@ export function CategoriesManager({ token }: Props) {
         title="Categories"
         action={<Button size="sm" onClick={openAdd}>Add Category</Button>}
       >
-        {error && (
+        {error && !deleteTarget && (
           <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
         {loading ? (
@@ -131,7 +131,7 @@ export function CategoriesManager({ token }: Props) {
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(cat)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => setDeleteTarget(cat)}>Delete</Button>
+                  <Button size="sm" variant="danger" onClick={() => { setError(null); setDeleteTarget(cat) }}>Delete</Button>
                 </div>
               </div>
             ))}
@@ -168,6 +168,7 @@ export function CategoriesManager({ token }: Props) {
       </Modal>
 
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Category" size="sm">
+        {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
         <p className="text-sm text-slate-600 mb-6">
           Delete category <strong>{deleteTarget?.name}</strong>? This cannot be undone.
         </p>

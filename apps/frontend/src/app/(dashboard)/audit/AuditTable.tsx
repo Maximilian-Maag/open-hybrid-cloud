@@ -153,7 +153,7 @@ export function AuditTable({ token }: Props) {
               header: t('date', lang),
               render: (row) => (
                 <span className="text-xs text-slate-500 whitespace-nowrap">
-                  {new Date(row.createdAt).toLocaleString()}
+                  {new Date(row.createdAt).toLocaleString(lang)}
                 </span>
               ),
             },

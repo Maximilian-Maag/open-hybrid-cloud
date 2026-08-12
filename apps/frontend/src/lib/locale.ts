@@ -37,6 +37,7 @@ export function convertPrice(
   fromCurrency: string,
   toCurrency: string,
   rates: Record<string, number>,
+  locale = 'en',
 ): { amount: string; currency: string } {
   if (fromCurrency === toCurrency) return { amount: price, currency: toCurrency }
 
@@ -52,7 +53,8 @@ export function convertPrice(
   const eur = numPrice / fromRate
   const converted = eur * toRate
   return {
-    amount: converted.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    // Format grouping/decimals in the user's locale (e.g. 1.234,56 for de).
+    amount: converted.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     currency: toCurrency,
   }
 }

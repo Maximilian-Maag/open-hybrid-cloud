@@ -62,7 +62,7 @@ export default async function ProductDetailPage({ params }: Props) {
             <h3 className="text-sm font-semibold text-slate-700 mb-2">{t('availableEnvironments', lang)}</h3>
             <div className="flex flex-wrap gap-2">
               {product.environments.map((env) => {
-                const converted = convertPrice(env.price, env.currency, localeCurrency, ratesMap)
+                const converted = convertPrice(env.price, env.currency, localeCurrency, ratesMap, lang)
                 const showConverted = converted.currency !== env.currency
                 return (
                   <div

@@ -9,6 +9,9 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 export function Input({ label, error, hint, id, className = '', ...props }: InputProps) {
   const generatedId = useId()
   const inputId = id ?? generatedId
+  const errorId = `${inputId}-error`
+  const hintId = `${inputId}-hint`
+  const describedBy = error ? errorId : hint ? hintId : undefined
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={inputId} className="text-sm font-medium text-slate-700">
@@ -17,13 +20,15 @@ export function Input({ label, error, hint, id, className = '', ...props }: Inpu
       </label>
       <input
         id={inputId}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
         className={`rounded-lg border px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-slate-50 disabled:text-slate-500 ${
           error ? 'border-red-400 bg-red-50' : 'border-slate-300'
         } ${className}`}
         {...props}
       />
-      {hint && !error && <p className="text-xs text-slate-500">{hint}</p>}
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {hint && !error && <p id={hintId} className="text-xs text-slate-500">{hint}</p>}
+      {error && <p id={errorId} className="text-xs text-red-600">{error}</p>}
     </div>
   )
 }

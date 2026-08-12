@@ -55,7 +55,7 @@ export default async function OrdersPage() {
             header: t('date', lang),
             render: (row) => (
               <span className="text-xs text-slate-500">
-                {new Date(row.createdAt).toLocaleDateString()}
+                {new Date(row.createdAt).toLocaleDateString(lang)}
               </span>
             ),
           },

@@ -144,3 +144,87 @@ changed blind.
   supply the values), but it weakens the suite's ability to catch future prod
   drift. The branding default mismatch also needs a decision on the canonical
   color. *File:* `src/test/setup.ts`.
+
+---
+
+# Frontend Audit — Usability / Accessibility / Localization — 2026-08-12
+
+Three focused audits of `apps/frontend/src` (React components, pages, i18n).
+After changes: typecheck ✅, lint ✅, 20 frontend tests ✅.
+
+## Fixed on this branch
+
+### Accessibility
+
+- **`<html lang>` hardcoded to `en`** despite 25 supported languages — screen
+  readers announced every localized page in English. Root layout now derives it
+  from `getLang()`. *File:* `app/layout.tsx`.
+- **Form controls not linked to their error/hint text** — `Input`/`Select` now
+  set `aria-invalid` and `aria-describedby` pointing at id'd error/hint nodes.
+- **Table headers had no `scope`**, and clickable rows weren't keyboard-operable
+  — added `scope="col"`, plus `role="button"`/`tabIndex`/Enter-Space handling and
+  a focus ring when `onRowClick` is used. *File:* `components/ui/Table.tsx`.
+- **Modal had no accessible name** — linked the `<h2>` via `aria-labelledby`.
+- **Error toasts weren't announced assertively** — error toasts now use
+  `role="alert"` (success/info stay `role="status"`); decorative icon hidden.
+- **Global search input had no accessible name** — added `aria-label`.
+  *File:* `components/layout/Header.tsx`.
+- **Full-page loading spinner announced nothing** — added `role="status"`.
+- **No skip-to-content link** — added one targeting `<main id="main">`.
+- **LanguageSwitcher dropdown couldn't be closed with the keyboard** — added
+  Escape-to-close.
+- **Low-contrast meaningful text** (`text-slate-400` on white, ~2.5:1) — bumped
+  to `text-slate-500` for the table empty state and catalog counts/empty text.
+
+### Usability
+
+- **False "Saved!" on a failed price save (HIGH)** — a per-environment pricing
+  save swallowed the error and always showed "Saved!". It now propagates the
+  failure and the row shows the error. *File:* `admin/products/[id]/ProductEditForm.tsx`.
+- **Silent delete/toggle/load failures in admin managers** — cost-centers,
+  parameters, ci-sources, users and categories managers swallowed errors, so a
+  failed delete left the modal stuck with no feedback and a failed list-load was
+  indistinguishable from an empty list. Each now surfaces the error in the delete
+  modal and/or a card banner. Same fix for the webhook/pipeline-stack/parameter
+  delete handlers in `ProductEditForm`.
+
+### Localization
+
+- **Prices formatted with a hardcoded `en` locale** — `convertPrice` now takes a
+  `locale` and formats grouping/decimals accordingly (e.g. `1.234,56` for de);
+  callers pass the active language. *Files:* `lib/locale.ts`, `catalog/[id]/page.tsx`,
+  `components/forms/OrderForm.tsx`.
+- **Dates rendered in the server/browser default locale** — passed the active
+  `lang` to `toLocale*` on the six list/detail sites where `lang` was already in
+  scope (orders, projects, audit, dashboard, approvals, infrastructure).
+
+## Deferred — needs translation resources or a larger rework
+
+- **The entire `admin/**` subtree is not internationalized (systemic, HIGH).** No
+  admin file uses `t()` — every PageHeader, Card/Modal title, table header, form
+  label/placeholder/hint, button, option array and error string is hardcoded
+  English. Fixing it means adding ~100+ new keys **and translating them into all
+  25 languages**; that needs real translation (the app already ships an
+  AI-translate feature for product content that could be leveraged), not
+  hand-fabricated strings. Not attempted blind.
+- **`StatusBadge` labels are hardcoded English** (7 of 8 status keys don't exist)
+  — shown on orders, infrastructure, approvals, dashboard. Needs 7 keys × 25
+  languages. *File:* `components/ui/StatusBadge.tsx`.
+- **Order-detail and project-detail pages are fully hardcoded** (many keys already
+  exist and could be wired up; a few are new). `lang` also needs plumbing there,
+  which is why their date formatting wasn't localized above.
+- **Dashboard footer + imprint page hardcoded**; **OrderForm** concatenates a
+  hardcoded English sentence onto a translated string.
+- **Hardcoded a11y labels** (`Modal` "Close", `Toast` "Dismiss", `Header` search
+  button "Search", skip link) — English literals pending translation keys.
+- **SSR/first-paint language flash** — `TopNav` and `(dashboard)/error.tsx` call
+  `useLang()` with no server-provided initial value, so nav/error text renders in
+  English until hydration. Thread the server `lang` in as the initial value.
+- **Remaining usability polish**: audit filters aren't debounced (a request per
+  keystroke); several managers lack success toasts for consistency; server list
+  pages (orders/projects/catalog) swallow fetch errors and render as empty rather
+  than routing to the error boundary; `EnvironmentsManager` uses a native
+  `confirm()` for callback-secret regeneration (inconsistent with the app's modal
+  pattern) and copy has no "Copied" feedback.
+- **`Sidebar.tsx` is dead code** (not imported anywhere) and is fully hardcoded —
+  delete it or translate it if it will be used.

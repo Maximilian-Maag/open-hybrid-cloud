@@ -64,6 +64,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
       className="min-h-screen flex flex-col bg-slate-50 text-slate-900 antialiased"
       style={{ '--bp': primaryColor, '--bs': secondaryColor } as React.CSSProperties}
     >
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:shadow-lg focus:ring-2 focus:ring-blue-500"
+      >
+        Skip to content
+      </a>
       <Header
         userName={session.user?.name}
         shopName={shopName}
@@ -71,7 +77,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         lang={lang}
       />
       <TopNav role={role} />
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         <div className="max-w-screen-2xl mx-auto px-4 py-6 animate-page-in">
           {children}
         </div>

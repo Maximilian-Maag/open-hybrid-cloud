@@ -81,7 +81,7 @@ function InfraRow({ item, token, lang }: { item: InfrastructureElement; token: s
           </div>
           <p className="text-xs text-slate-500">
             {item.environmentName} ·{' '}
-            {item.deployedAt ? new Date(item.deployedAt).toLocaleString() : t('notDeployed', lang)}
+            {item.deployedAt ? new Date(item.deployedAt).toLocaleString(lang) : t('notDeployed', lang)}
           </p>
           {outputs.length > 0 && (
             <details className="mt-2">

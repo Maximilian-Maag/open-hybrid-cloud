@@ -67,7 +67,7 @@ export function ApprovalRow({ order, token }: Props) {
           </div>
           <p className="text-sm text-slate-500">
             {order.environmentName} · {order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`} on{' '}
-            {new Date(order.createdAt).toLocaleDateString()}
+            {new Date(order.createdAt).toLocaleDateString(lang)}
           </p>
         </div>
 

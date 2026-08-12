@@ -104,7 +104,7 @@ export default function CatalogPage() {
             )}
           </div>
           {filtered.length > 0 && (
-            <span className="text-sm text-slate-400">{filtered.length} {t('products', lang)}</span>
+            <span className="text-sm text-slate-500">{filtered.length} {t('products', lang)}</span>
           )}
         </div>
 
@@ -140,7 +140,7 @@ export default function CatalogPage() {
             <svg className="h-14 w-14 mx-auto mb-4 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
-            <p className="font-semibold text-slate-400">{t('noProducts', lang)}</p>
+            <p className="font-semibold text-slate-500">{t('noProducts', lang)}</p>
             {search && (
               <button onClick={() => setSearch('')} className="text-sm mt-2 inline-block hover:underline" style={{ color: 'var(--bp)' }}>
                 ← {t('allProducts', lang)}

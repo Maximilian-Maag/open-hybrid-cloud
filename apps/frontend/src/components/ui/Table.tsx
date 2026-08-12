@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, KeyboardEvent } from 'react'
 
 interface Column<T> {
   header: string
@@ -28,6 +28,7 @@ export function Table<T extends { id?: number | string }>({
             {columns.map((col) => (
               <th
                 key={col.header}
+                scope="col"
                 className={`px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider ${col.className ?? ''}`}
               >
                 {col.header}
@@ -40,7 +41,7 @@ export function Table<T extends { id?: number | string }>({
             <tr>
               <td
                 colSpan={columns.length}
-                className="px-4 py-8 text-center text-slate-400"
+                className="px-4 py-8 text-center text-slate-500"
               >
                 {emptyMessage}
               </td>
@@ -49,8 +50,18 @@ export function Table<T extends { id?: number | string }>({
             data.map((row, i) => (
               <tr
                 key={row.id ?? i}
-                {...(onRowClick && { onClick: () => onRowClick(row) })}
-                className={`${i % 2 === 1 ? 'bg-slate-50/50' : ''} ${onRowClick ? 'cursor-pointer hover:bg-slate-100' : ''}`}
+                {...(onRowClick && {
+                  onClick: () => onRowClick(row),
+                  onKeyDown: (e: KeyboardEvent) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onRowClick(row)
+                    }
+                  },
+                  role: 'button',
+                  tabIndex: 0,
+                })}
+                className={`${i % 2 === 1 ? 'bg-slate-50/50' : ''} ${onRowClick ? 'cursor-pointer hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500' : ''}`}
               >
                 {columns.map((col) => (
                   <td key={col.header} className={`px-4 py-3 text-slate-700 ${col.className ?? ''}`}>

@@ -3,10 +3,11 @@ import type { SessionUser } from '@open-hybrid-cloud/types'
 
 vi.mock('@/lib/ci/webhooks', () => ({
   triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-destroy']),
+  triggerPipelineStacks: vi.fn().mockResolvedValue([]),
 }))
 
 import { listInfrastructure, decommissionInfra } from './infrastructure'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
 import { infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -25,9 +26,11 @@ const makeSession = (u: { id: number; email: string; name: string; role: string 
   ({ id: u.id, email: u.email, name: u.name, role: u.role as SessionUser['role'] })
 
 const mockedWebhooks = vi.mocked(triggerProductWebhooks)
+const mockedStacks = vi.mocked(triggerPipelineStacks)
 
 beforeEach(() => {
   mockedWebhooks.mockReset().mockResolvedValue(['pipe-destroy'])
+  mockedStacks.mockReset().mockResolvedValue([])
 })
 
 const setup = async () => {
@@ -153,6 +156,31 @@ describe('decommissionInfra', () => {
 
     expect(mockedWebhooks).toHaveBeenCalledTimes(1)
     const [pid, eid, vars] = mockedWebhooks.mock.calls[0]
+    expect(pid).toBe(product.id)
+    expect(eid).toBe(env.id)
+    expect(vars).toMatchObject({ TF_ACTION: 'destroy', INFRA_ID: String(infra.id) })
+  })
+
+  it('also triggers pipeline-stack destroy and aggregates the returned pipeline ids', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    const infra = await createInfraElement(order.id, project.id, env.id, product.id)
+    mockedWebhooks.mockResolvedValueOnce(['pipe-wh'])
+    mockedStacks.mockResolvedValueOnce(['pipe-stack'])
+
+    const result = await decommissionInfra(makeSession(admin), infra.id)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.pipelineIds).toEqual(['pipe-wh', 'pipe-stack'])
+
+    const [dbInfra] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, infra.id))
+    expect(dbInfra.pipelineId).toEqual(['pipe-wh', 'pipe-stack'])
+
+    expect(mockedStacks).toHaveBeenCalledTimes(1)
+    const [pid, eid, vars] = mockedStacks.mock.calls[0]
     expect(pid).toBe(product.id)
     expect(eid).toBe(env.id)
     expect(vars).toMatchObject({ TF_ACTION: 'destroy', INFRA_ID: String(infra.id) })

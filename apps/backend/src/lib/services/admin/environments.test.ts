@@ -61,10 +61,38 @@ describe('createEnvironment', () => {
     })
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.callbackSecret).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
-      // and NOT equal to the outbound trigger token — separate concerns
-      expect(result.data.callbackSecret).not.toBe('tok')
+      // The create response must NOT leak the callback secret — it is only
+      // revealed via the dedicated root-only endpoint.
+      expect(result.data).not.toHaveProperty('callbackSecret')
+      // But it was generated and persisted: read it back via the reveal path.
+      const revealed = await getCallbackSecret(result.data.id)
+      expect(revealed.ok).toBe(true)
+      if (revealed.ok) {
+        expect(revealed.data.callbackSecret).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+        // and NOT equal to the outbound trigger token — separate concerns
+        expect(revealed.data.callbackSecret).not.toBe('tok')
+      }
     }
+  })
+
+  it('does not leak callbackSecret from create/get/update responses', async () => {
+    const ci = await createCiSource()
+    const created = await createEnvironment({
+      name: 'noleak',
+      ciSourceId: ci.id,
+      webhookUrl: 'http://e',
+      webhookToken: 'tok',
+    })
+    if (!created.ok) throw new Error('seed failed')
+    expect(created.data).not.toHaveProperty('callbackSecret')
+
+    const fetched = await getEnvironmentById(created.data.id)
+    expect(fetched.ok).toBe(true)
+    if (fetched.ok) expect(fetched.data).not.toHaveProperty('callbackSecret')
+
+    const updated = await updateEnvironment(created.data.id, { name: 'noleak2' })
+    expect(updated.ok).toBe(true)
+    if (updated.ok) expect(updated.data).not.toHaveProperty('callbackSecret')
   })
 })
 
@@ -95,9 +123,16 @@ describe('getCallbackSecret', () => {
     })
     if (!created.ok) throw new Error('seed failed')
 
+    // Compare against the value actually persisted in the DB (create no longer
+    // returns the secret in its response).
+    const [row] = await db
+      .select({ callbackSecret: deploymentEnvironments.callbackSecret })
+      .from(deploymentEnvironments)
+      .where(eq(deploymentEnvironments.id, created.data.id))
+
     const result = await getCallbackSecret(created.data.id)
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.data.callbackSecret).toBe(created.data.callbackSecret)
+    if (result.ok) expect(result.data.callbackSecret).toBe(row.callbackSecret)
   })
 })
 
@@ -118,7 +153,9 @@ describe('regenerateCallbackSecret', () => {
     })
     if (!created.ok) throw new Error('seed failed')
 
-    const before = created.data.callbackSecret
+    const beforeReveal = await getCallbackSecret(created.data.id)
+    if (!beforeReveal.ok) throw new Error('reveal failed')
+    const before = beforeReveal.data.callbackSecret
     const rotated = await regenerateCallbackSecret(created.data.id)
     expect(rotated.ok).toBe(true)
     if (!rotated.ok) return
@@ -230,6 +267,76 @@ describe('deleteEnvironment', () => {
     if (!result.ok) {
       expect(result.status).toBe(409)
       expect(result.message).toMatch(/infrastructure element/i)
+    }
+  })
+
+  it('returns 409 when a product_environment offering still references the environment', async () => {
+    const { createCategory, createProduct, linkProductEnvironment } = await import('@/test/helpers')
+    const ci = await createCiSource()
+    const created = await createEnvironment({
+      name: 'offered', ciSourceId: ci.id, webhookUrl: 'http://e', webhookToken: 'tok',
+    })
+    if (!created.ok) throw new Error('seed failed')
+
+    const cat = await createCategory()
+    const prod = await createProduct(cat.id)
+    await linkProductEnvironment(prod.id, created.data.id)
+
+    const result = await deleteEnvironment(created.data.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(409)
+      expect(result.message).toMatch(/product-environment/i)
+    }
+  })
+
+  it('returns 409 when a product_webhook still references the environment', async () => {
+    const { createCategory, createProduct } = await import('@/test/helpers')
+    const { productWebhooks } = await import('@/lib/db/schema')
+    const ci = await createCiSource()
+    const created = await createEnvironment({
+      name: 'webhooked', ciSourceId: ci.id, webhookUrl: 'http://e', webhookToken: 'tok',
+    })
+    if (!created.ok) throw new Error('seed failed')
+
+    const cat = await createCategory()
+    const prod = await createProduct(cat.id)
+    await db.insert(productWebhooks).values({
+      productId: prod.id,
+      environmentId: created.data.id,
+      name: 'deploy',
+      webhookUrl: 'http://trigger',
+      webhookToken: 'wt',
+    })
+
+    const result = await deleteEnvironment(created.data.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(409)
+      expect(result.message).toMatch(/webhook/i)
+    }
+  })
+
+  it('returns 409 when an order still references the environment', async () => {
+    const { createUser, createCategory, createProduct, createProject, createOrder } =
+      await import('@/test/helpers')
+    const ci = await createCiSource()
+    const created = await createEnvironment({
+      name: 'ordered', ciSourceId: ci.id, webhookUrl: 'http://e', webhookToken: 'tok',
+    })
+    if (!created.ok) throw new Error('seed failed')
+
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const prod = await createProduct(cat.id)
+    const proj = await createProject(pm.id)
+    await createOrder(proj.id, prod.id, created.data.id, pm.id)
+
+    const result = await deleteEnvironment(created.data.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(409)
+      expect(result.message).toMatch(/order/i)
     }
   })
 })

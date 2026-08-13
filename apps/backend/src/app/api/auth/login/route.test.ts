@@ -111,6 +111,40 @@ describe('POST /api/auth/login', () => {
     }
   })
 
+  // NFA-05.1: password-spraying cap — with TRUST_PROXY set, one IP hammering
+  // MANY different accounts must eventually trip the per-IP bucket, even though
+  // each individual account bucket is nowhere near its limit.
+  it('caps password spraying across different accounts from one IP when TRUST_PROXY set (NFA-05.1)', async () => {
+    const prev = process.env.TRUST_PROXY
+    process.env.TRUST_PROXY = '1'
+    try {
+      const ip = `10.5.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
+      const attempt = async (email: string, password: string) =>
+        POST(
+          new NextRequest('http://localhost/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password }),
+            headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+          }),
+        )
+
+      // 10 failed guesses, each against a DIFFERENT (non-existent) account, so
+      // no single account bucket is near its cap — only the shared IP bucket is.
+      for (let i = 0; i < 10; i++) {
+        const res = await attempt(`spray-${i}@test.dev`, 'wrong-pass')
+        expect(res.status).toBe(401)
+      }
+
+      // The 11th attempt from this IP — even targeting yet another fresh account
+      // with valid-looking creds — is blocked by the per-IP bucket.
+      const blocked = await attempt('spray-victim@test.dev', 'whatever')
+      expect(blocked.status).toBe(429)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
   it('does not rate-limit different IPs against each other when TRUST_PROXY set (NFA-05.1)', async () => {
     const prev = process.env.TRUST_PROXY
     process.env.TRUST_PROXY = '1'

@@ -167,7 +167,11 @@ export const getProduct = async (
 
   const paramRows = await loadApplicableParameters(productId, product.categoryId, environmentId)
 
-  return ok({ ...product, environments: envRows, parameters: paramRows } as ProductDetail)
+  // Collapse to one effective definition per name (scope + env precedence) so
+  // the order form renders exactly the controls the order service will
+  // validate against — raw rows can carry same-name duplicates from different
+  // scopes, which would render overridden/duplicate controls.
+  return ok({ ...product, environments: envRows, parameters: resolveParameterDefs(paramRows) } as ProductDetail)
 }
 
 export const getProductImage = async (

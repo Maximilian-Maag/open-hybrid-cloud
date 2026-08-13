@@ -3,6 +3,9 @@ import {
   deploymentEnvironments,
   ciSources,
   infrastructureElements,
+  productEnvironments,
+  productWebhooks,
+  orders,
   type DeploymentEnvironment,
 } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -31,7 +34,22 @@ export interface UpdateEnvironmentInput {
   webhookToken?: string
 }
 
-export interface EnvironmentRow extends DeploymentEnvironment {
+// Public column projection for a deployment environment — everything EXCEPT
+// the inbound callback secret. The secret is revealed only through the
+// root-only getCallbackSecret/regenerateCallbackSecret endpoints, never leaked
+// from the general create/get/update/list paths.
+const publicEnvironmentColumns = {
+  id: deploymentEnvironments.id,
+  name: deploymentEnvironments.name,
+  description: deploymentEnvironments.description,
+  ciSourceId: deploymentEnvironments.ciSourceId,
+  webhookUrl: deploymentEnvironments.webhookUrl,
+  webhookToken: deploymentEnvironments.webhookToken,
+}
+
+export type PublicEnvironment = Omit<DeploymentEnvironment, 'callbackSecret'>
+
+export interface EnvironmentRow extends PublicEnvironment {
   ciSourceName: string | null
 }
 
@@ -55,7 +73,7 @@ export const listEnvironments = async (): Promise<Result<EnvironmentRow[]>> => {
 
 export const createEnvironment = async (
   input: CreateEnvironmentInput,
-): Promise<Result<DeploymentEnvironment>> => {
+): Promise<Result<PublicEnvironment>> => {
   const [env] = await db
     .insert(deploymentEnvironments)
     .values({
@@ -68,7 +86,9 @@ export const createEnvironment = async (
       // directly (only reveal or regenerate afterwards).
       callbackSecret: generateCallbackSecret(),
     })
-    .returning()
+    // Never return callback_secret here — it is only revealed via the
+    // dedicated root-only endpoints.
+    .returning(publicEnvironmentColumns)
 
   return ok(env)
 }
@@ -96,9 +116,9 @@ export const regenerateCallbackSecret = async (
   return ok({ callbackSecret: updated.callbackSecret })
 }
 
-export const getEnvironmentById = async (id: number): Promise<Result<DeploymentEnvironment>> => {
+export const getEnvironmentById = async (id: number): Promise<Result<PublicEnvironment>> => {
   const rows = await db
-    .select()
+    .select(publicEnvironmentColumns)
     .from(deploymentEnvironments)
     .where(eq(deploymentEnvironments.id, id))
     .limit(1)
@@ -110,12 +130,12 @@ export const getEnvironmentById = async (id: number): Promise<Result<DeploymentE
 export const updateEnvironment = async (
   id: number,
   input: UpdateEnvironmentInput,
-): Promise<Result<DeploymentEnvironment>> => {
+): Promise<Result<PublicEnvironment>> => {
   const [updated] = await db
     .update(deploymentEnvironments)
     .set(input)
     .where(eq(deploymentEnvironments.id, id))
-    .returning()
+    .returning(publicEnvironmentColumns)
 
   if (!updated) return err(404, 'Not found')
   return ok(updated)
@@ -129,18 +149,29 @@ export const deleteEnvironment = async (id: number): Promise<Result<void>> => {
     .limit(1)
   if (!existing.length) return err(404, 'Not found')
 
-  // Refuse when any infrastructure element still references this env — the
-  // previous silent 500 (FK violation from Postgres) was the frontend's
-  // "Delete does nothing" symptom. Return 409 with a message the UI can
-  // surface directly so the operator knows to decommission first.
-  const referencing = await db
-    .select({ id: infrastructureElements.id })
-    .from(infrastructureElements)
-    .where(eq(infrastructureElements.environmentId, id))
-  if (referencing.length > 0) {
+  // Refuse when ANY non-cascading FK still references this env — the previous
+  // silent 500 (FK violation from Postgres) was the frontend's "Delete does
+  // nothing" symptom. infrastructure_elements, product_environments,
+  // product_webhooks and orders all reference deployment_environments without
+  // ON DELETE CASCADE, so each must be pre-checked. Return 409 with a message
+  // the UI can surface directly so the operator knows what to clean up first.
+  const [infraRefs, prodEnvRefs, webhookRefs, orderRefs] = await Promise.all([
+    db.select({ id: infrastructureElements.id }).from(infrastructureElements).where(eq(infrastructureElements.environmentId, id)),
+    db.select({ productId: productEnvironments.productId }).from(productEnvironments).where(eq(productEnvironments.environmentId, id)),
+    db.select({ id: productWebhooks.id }).from(productWebhooks).where(eq(productWebhooks.environmentId, id)),
+    db.select({ id: orders.id }).from(orders).where(eq(orders.environmentId, id)),
+  ])
+
+  const blockers: string[] = []
+  if (infraRefs.length > 0) blockers.push(`${infraRefs.length} infrastructure element(s)`)
+  if (prodEnvRefs.length > 0) blockers.push(`${prodEnvRefs.length} product-environment offering(s)`)
+  if (webhookRefs.length > 0) blockers.push(`${webhookRefs.length} product webhook(s)`)
+  if (orderRefs.length > 0) blockers.push(`${orderRefs.length} order(s)`)
+
+  if (blockers.length > 0) {
     return err(
       409,
-      `Cannot delete environment: ${referencing.length} infrastructure element(s) still reference it. Decommission them first.`,
+      `Cannot delete environment: ${blockers.join(', ')} still reference it. Remove them first.`,
     )
   }
 

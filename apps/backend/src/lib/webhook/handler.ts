@@ -11,9 +11,16 @@ import {
 import { fetchJobTrace, parseTofuOutputs } from '@/lib/ci'
 import { findProductName, findUserEmail, findCiSourceForEnv, findAdminEmails } from '@/lib/db/queries'
 
-export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> => {
+export const handlePipelineEvent = async (
+  event: PipelineEvent,
+  environmentId: number,
+): Promise<void> => {
   const pipelineIdJson = JSON.stringify([event.pipelineId])
 
+  // Scope the match to the environment whose callback secret authenticated this
+  // request. A pipeline id is only unique within a CI source/environment, and
+  // (more importantly) env A's secret must never be able to transition an
+  // order/infra element that belongs to env B.
   const matchingOrders = await db
     .select({
       id: orders.id,
@@ -25,7 +32,7 @@ export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> =
     })
     .from(orders)
     .where(
-      sql`${orders.status} = 'provisioning' AND ${orders.pipelineId} @> ${pipelineIdJson}::jsonb`,
+      sql`${orders.status} = 'provisioning' AND ${orders.environmentId} = ${environmentId} AND ${orders.pipelineId} @> ${pipelineIdJson}::jsonb`,
     )
 
   const matchingInfra = await db
@@ -37,7 +44,7 @@ export const handlePipelineEvent = async (event: PipelineEvent): Promise<void> =
     })
     .from(infrastructureElements)
     .where(
-      sql`${infrastructureElements.status} = 'decommissioning' AND ${infrastructureElements.pipelineId} @> ${pipelineIdJson}::jsonb`,
+      sql`${infrastructureElements.status} = 'decommissioning' AND ${infrastructureElements.environmentId} = ${environmentId} AND ${infrastructureElements.pipelineId} @> ${pipelineIdJson}::jsonb`,
     )
 
   if (event.status === 'success') {

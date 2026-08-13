@@ -122,6 +122,65 @@ describe('POST /api/admin/products/[id]/sync-parameters', () => {
     expect(await secondRes.json()).toEqual({ created: 0, skipped: 2 })
   })
 
+  it('classifies numeric/bool defaults as optional and handles nested validation braces', async () => {
+    // A weaker regex parser would (a) miss `default = 3` / `default = true`
+    // because it only matches string defaults, importing them as required, and
+    // (b) mis-scope the variable body at the first inner `}` of a validation
+    // block. The canonical parser must get both right.
+    const HCL = `
+variable "instance_count" {
+  type    = number
+  default = 3
+}
+
+variable "enabled" {
+  type    = bool
+  default = true
+}
+
+variable "size" {
+  type = string
+  validation {
+    condition     = contains(["s", "m", "l"], var.size)
+    error_message = "size must be s, m or l."
+  }
+}
+
+variable "hostname" {
+  type = string
+}
+`
+    vi.mocked(getFileContent).mockResolvedValueOnce(HCL)
+    const root = await createUser({ role: 'root' })
+    const auth = await makeAuthHeader(root)
+    const { p } = await seedStack()
+
+    const res = await POST(makeReq(String(p.id), auth), { params: Promise.resolve({ id: String(p.id) }) })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ created: 4, skipped: 0 })
+
+    const rows = await db
+      .select({ name: parameters.name, type: parameters.type, required: parameters.required, defaultValue: parameters.defaultValue })
+      .from(parameters)
+      .where(and(eq(parameters.scope, 'product'), eq(parameters.scopeId, p.id)))
+    const byName = Object.fromEntries(rows.map((r) => [r.name, r]))
+
+    // Numeric default → optional, default preserved.
+    expect(byName['instance_count'].required).toBe(false)
+    expect(byName['instance_count'].type).toBe('number')
+    expect(byName['instance_count'].defaultValue).toBe('3')
+
+    // Bool default → optional.
+    expect(byName['enabled'].required).toBe(false)
+    expect(byName['enabled'].type).toBe('bool')
+    expect(byName['enabled'].defaultValue).toBe('true')
+
+    // Validation block (no default) → still required; body not truncated at the
+    // inner brace (the trailing hostname var is still parsed).
+    expect(byName['size'].required).toBe(true)
+    expect(byName['hostname'].required).toBe(true)
+  })
+
   it('auto-generates label from variable name', async () => {
     vi.mocked(getFileContent).mockResolvedValueOnce(HCL_CONTENT)
     const root = await createUser({ role: 'root' })

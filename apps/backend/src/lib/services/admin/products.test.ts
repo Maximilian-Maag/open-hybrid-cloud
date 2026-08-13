@@ -6,6 +6,7 @@ vi.mock('@/lib/ai', () => ({
 
 vi.mock('@/lib/ci/webhooks', () => ({
   triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-destroy']),
+  triggerPipelineStacks: vi.fn().mockResolvedValue([]),
 }))
 
 import {
@@ -28,7 +29,7 @@ import {
   deleteProductWebhook,
 } from './products'
 import { translateProduct } from '@/lib/ai'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
 import { products, productTranslations, infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -45,10 +46,12 @@ import {
 
 const mockedTranslate = vi.mocked(translateProduct)
 const mockedWebhooks = vi.mocked(triggerProductWebhooks)
+const mockedStacks = vi.mocked(triggerPipelineStacks)
 
 beforeEach(() => {
   mockedTranslate.mockReset().mockResolvedValue({})
   mockedWebhooks.mockReset().mockResolvedValue(['pipe-destroy'])
+  mockedStacks.mockReset().mockResolvedValue([])
 })
 
 describe('listProducts', () => {
@@ -166,6 +169,13 @@ describe('deleteProduct', () => {
       env.id,
       expect.objectContaining({ TF_ACTION: 'destroy' }),
     )
+    // Pipeline-stack destroy fired for every active element too.
+    expect(mockedStacks).toHaveBeenCalledTimes(2)
+    expect(mockedStacks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ TF_ACTION: 'destroy' }),
+    )
     // Infra rows are gone via ON DELETE CASCADE on product_id
     const rows = await db.select().from(infrastructureElements).where(eq(infrastructureElements.productId, product.id))
     expect(rows.length).toBe(0)
@@ -188,6 +198,7 @@ describe('deleteProduct', () => {
     expect(result.ok).toBe(true)
 
     expect(mockedWebhooks).toHaveBeenCalledTimes(1)
+    expect(mockedStacks).toHaveBeenCalledTimes(1)
   })
 
   // Cascade-delete race: the destroy trigger must complete BEFORE the product

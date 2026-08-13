@@ -3,7 +3,7 @@ import { db } from '@/lib/db/client'
 import { infrastructureElements, deploymentEnvironments, projects } from '@/lib/db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { ok, err, type Result } from '@/lib/services/result'
 
 export interface InfraRow {
@@ -114,7 +114,13 @@ export const decommissionInfra = async (
 
   let pipelineIds: string[]
   try {
-    pipelineIds = await triggerProductWebhooks(infra.productId, infra.environmentId, variables)
+    // Product webhooks AND pipeline stacks both need a destroy run — infra
+    // provisioned by a stack would otherwise never be torn down. Aggregate
+    // every returned pipeline id so the decommission can be tracked to
+    // completion via the callback handler.
+    const webhookIds = await triggerProductWebhooks(infra.productId, infra.environmentId, variables)
+    const stackIds = await triggerPipelineStacks(infra.productId, infra.environmentId, variables)
+    pipelineIds = [...webhookIds, ...stackIds]
   } catch (e) {
     // Destroy pipeline could not be started — restore the element to active.
     await db

@@ -21,6 +21,9 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
   if (parameters.length === 0) return null
 
   const getValue = (p: Parameter): string => values?.[p.name] ?? p.defaultValue ?? ''
+  // Prefer the human-friendly label (manually set or generated from Terraform),
+  // falling back to the raw variable name when no label is configured.
+  const displayLabel = (p: Parameter): string => p.label?.trim() || p.name
 
   const update = (name: string, value: string) => {
     onChange({ ...(values ?? {}), [name]: value })
@@ -43,7 +46,7 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
               />
               <div>
                 <label htmlFor={`param-${param.id}`} className="text-sm font-medium text-slate-700">
-                  {param.name}
+                  {displayLabel(param)}
                   {param.required && <span className="ml-1 text-red-500">*</span>}
                 </label>
                 {param.description && (
@@ -59,7 +62,7 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
           return (
             <div key={param.id} className="flex flex-col gap-1">
               <label htmlFor={`param-${param.id}`} className="text-sm font-medium text-slate-700">
-                {param.name}
+                {displayLabel(param)}
                 {param.required && <span className="ml-1 text-red-500">*</span>}
               </label>
               {param.description && <p className="text-xs text-slate-500">{param.description}</p>}
@@ -82,7 +85,7 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
         return (
           <Input
             key={param.id}
-            label={param.name}
+            label={displayLabel(param)}
             type={param.type === 'number' ? 'number' : param.sensitive ? 'password' : 'text'}
             value={value}
             onChange={(e) => update(param.name, e.target.value)}

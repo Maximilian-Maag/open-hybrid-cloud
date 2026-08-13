@@ -12,6 +12,7 @@ import {
   createProject,
   createOrder,
   createInfraElement,
+  linkProductEnvironment,
 } from '@/test/helpers'
 
 // Prevent real HTTP calls and email sending during tests
@@ -49,7 +50,7 @@ describe('handlePipelineEvent — success', () => {
       pipelineId: ['pipe-1'],
     })
 
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-1', status: 'success' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-1', status: 'success' }, env.id)
 
     const [updated] = await db.select().from(orders).where(eq(orders.id, order.id))
     expect(updated.status).toBe('completed')
@@ -62,7 +63,7 @@ describe('handlePipelineEvent — success', () => {
       pipelineId: ['pipe-99'],
     })
 
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-other', status: 'success' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-other', status: 'success' }, env.id)
 
     const [unchanged] = await db.select().from(orders).where(eq(orders.id, order.id))
     expect(unchanged.status).toBe('provisioning')
@@ -78,7 +79,7 @@ describe('handlePipelineEvent — success', () => {
       pipelineId: ['pipe-dc-1'],
     })
 
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-dc-1', status: 'success' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-dc-1', status: 'success' }, env.id)
 
     const [updated] = await db
       .select()
@@ -96,7 +97,7 @@ describe('handlePipelineEvent — failure', () => {
       pipelineId: ['pipe-fail'],
     })
 
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-fail', status: 'failed' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-fail', status: 'failed' }, env.id)
 
     const [updated] = await db.select().from(orders).where(eq(orders.id, order.id))
     expect(updated.status).toBe('failed')
@@ -109,7 +110,7 @@ describe('handlePipelineEvent — failure', () => {
       pipelineId: ['pipe-cancel'],
     })
 
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-cancel', status: 'canceled' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-cancel', status: 'canceled' }, env.id)
 
     const [updated] = await db.select().from(orders).where(eq(orders.id, order.id))
     expect(updated.status).toBe('failed')
@@ -127,7 +128,7 @@ describe('handlePipelineEvent — failure', () => {
       provider: 'gitlab',
       pipelineId: 'pipe-dc-fail',
       status: 'failed',
-    })
+    }, env.id)
 
     const [unchanged] = await db
       .select()
@@ -145,7 +146,7 @@ describe('handlePipelineEvent — multi-pipeline orders', () => {
       pipelineId: ['pipe-A', 'pipe-B'],
     })
 
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' }, env.id)
 
     const [afterA] = await db.select().from(orders).where(eq(orders.id, order.id))
     expect(afterA.status).toBe('provisioning')
@@ -159,8 +160,8 @@ describe('handlePipelineEvent — multi-pipeline orders', () => {
       pipelineId: ['pipe-A', 'pipe-B'],
     })
 
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' })
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-B', status: 'success' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' }, env.id)
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-B', status: 'success' }, env.id)
 
     const [done] = await db.select().from(orders).where(eq(orders.id, order.id))
     expect(done.status).toBe('completed')
@@ -174,8 +175,8 @@ describe('handlePipelineEvent — multi-pipeline orders', () => {
       pipelineId: ['pipe-A', 'pipe-B'],
     })
 
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' })
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-B', status: 'failed' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' }, env.id)
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-B', status: 'failed' }, env.id)
 
     const [failed] = await db.select().from(orders).where(eq(orders.id, order.id))
     expect(failed.status).toBe('failed')
@@ -190,20 +191,66 @@ describe('handlePipelineEvent — multi-pipeline orders', () => {
     })
 
     // B fails first → order is terminally failed.
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-B', status: 'failed' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-B', status: 'failed' }, env.id)
     // A late/duplicate success for the sibling must NOT flip it back to completed
     // (the transition is guarded on the order still being 'provisioning').
-    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' })
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' }, env.id)
 
     const [after] = await db.select().from(orders).where(eq(orders.id, order.id))
     expect(after.status).toBe('failed')
   })
 })
 
+describe('handlePipelineEvent — environment scoping', () => {
+  it('does not transition an order that belongs to a different environment', async () => {
+    const { user, product, env, project } = await buildScenario()
+    // A second environment whose callback secret is what authenticated the event.
+    const ci2 = await createCiSource({ name: 'CI-2' })
+    const envB = await createEnvironment(ci2.id, 'wh-secret-b')
+    await linkProductEnvironment(product.id, envB.id)
+
+    // Order lives in env A, but the event is scoped to env B's id.
+    const order = await createOrder(project.id, product.id, env.id, user.id, {
+      status: 'provisioning',
+      pipelineId: ['pipe-shared'],
+    })
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-shared', status: 'success' }, envB.id)
+
+    const [unchanged] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(unchanged.status).toBe('provisioning')
+
+    // Same event scoped to the order's own environment DOES transition it.
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-shared', status: 'success' }, env.id)
+    const [completed] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(completed.status).toBe('completed')
+  })
+
+  it('does not transition a decommissioning infra element from another environment', async () => {
+    const { user, product, env, project } = await buildScenario()
+    const ci2 = await createCiSource({ name: 'CI-2' })
+    const envB = await createEnvironment(ci2.id, 'wh-secret-b')
+
+    const order = await createOrder(project.id, product.id, env.id, user.id, { status: 'completed' })
+    const el = await createInfraElement(order.id, project.id, env.id, product.id, {
+      status: 'decommissioning',
+      pipelineId: ['pipe-dc-shared'],
+    })
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-dc-shared', status: 'success' }, envB.id)
+
+    const [unchanged] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, el.id))
+    expect(unchanged.status).toBe('decommissioning')
+  })
+})
+
 describe('handlePipelineEvent — no-ops', () => {
   it('does nothing when no matching order exists', async () => {
     await expect(
-      handlePipelineEvent({ provider: 'gitlab', pipelineId: 'nonexistent', status: 'success' }),
+      handlePipelineEvent({ provider: 'gitlab', pipelineId: 'nonexistent', status: 'success' }, 999_999),
     ).resolves.toBeUndefined()
   })
 })

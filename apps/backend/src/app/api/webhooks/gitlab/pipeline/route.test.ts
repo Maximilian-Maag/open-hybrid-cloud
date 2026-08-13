@@ -2,10 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { POST } from './route'
 import { createCiSource, createEnvironment } from '@/test/helpers'
+import { handlePipelineEvent } from '@/lib/webhook/handler'
+import { db } from '@/lib/db/client'
+import { deploymentEnvironments } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 
 vi.mock('@/lib/webhook/handler', () => ({
   handlePipelineEvent: vi.fn().mockResolvedValue(undefined),
 }))
+
+const mockedHandle = vi.mocked(handlePipelineEvent)
+beforeEach(() => mockedHandle.mockClear())
 
 const VALID_TOKEN = 'gitlab-valid-token'
 
@@ -43,6 +50,18 @@ describe('POST /api/webhooks/gitlab/pipeline', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.received).toBe(true)
+  })
+
+  it('passes the matched environment id to the handler (event scoping)', async () => {
+    const [env] = await db
+      .select({ id: deploymentEnvironments.id })
+      .from(deploymentEnvironments)
+      .where(eq(deploymentEnvironments.callbackSecret, VALID_TOKEN))
+
+    const res = await POST(makeRequest(validPayload, VALID_TOKEN))
+    expect(res.status).toBe(200)
+    expect(mockedHandle).toHaveBeenCalledTimes(1)
+    expect(mockedHandle.mock.calls[0][1]).toBe(env.id)
   })
 
   it('returns 401 for an unknown token', async () => {

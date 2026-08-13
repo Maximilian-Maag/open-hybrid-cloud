@@ -35,14 +35,27 @@ function clientAddr(req: NextRequest): string {
 }
 
 /**
- * Rate-limit key: keyed primarily by the normalized account identifier so a
- * burst of failed guesses against one account can never lock out logins for
- * every other account (which a single shared/global bucket would), and a
- * successful login resets only that account's bucket — not a client-wide one.
- * The client address is folded in when a trusted proxy provides it.
+ * Per-account rate-limit key: keyed primarily by the normalized account
+ * identifier so a burst of failed guesses against one account can never lock
+ * out logins for every other account (which a single shared/global bucket
+ * would), and a successful login resets only that account's bucket — not a
+ * client-wide one. The client address is folded in when a trusted proxy
+ * provides it.
  */
 function rateLimitKey(req: NextRequest, email: string): string {
   return `${clientAddr(req)}|${email.trim().toLowerCase()}`
+}
+
+/**
+ * Per-IP rate-limit key. Caps password spraying — one IP getting a fresh
+ * 10-attempt budget for every distinct account it targets. Only meaningful
+ * when a trusted proxy provides a reliable source IP (TRUST_PROXY); without it
+ * there is no trustworthy address, so returns null and no IP bucket applies.
+ */
+function ipRateLimitKey(req: NextRequest): string | null {
+  const addr = clientAddr(req)
+  if (addr === '-') return null
+  return `ip|${addr}`
 }
 
 /**
@@ -89,10 +102,23 @@ export async function POST(req: NextRequest) {
 
   const { email, password } = parsed.data
 
-  // Rate-limit per account (see rateLimitKey) so failures against one account
-  // never block others, and reset only that account's bucket on success.
-  const rlKey = rateLimitKey(req, email)
-  if (isRateLimited(rlKey)) {
+  // Two independent buckets protect different attacks:
+  //   - per-account (see rateLimitKey): a burst against one account never
+  //     blocks logins for others.
+  //   - per-IP (see ipRateLimitKey, TRUST_PROXY only): caps password spraying,
+  //     where one IP would otherwise get a fresh budget per targeted account.
+  // A request is limited if EITHER bucket is exceeded; count the attempt
+  // against every applicable bucket, then a successful login resets both.
+  const rlKeys = [rateLimitKey(req, email), ipRateLimitKey(req)].filter(
+    (k): k is string => k !== null,
+  )
+  let limited = false
+  for (const key of rlKeys) {
+    // Call isRateLimited for every key so the attempt is counted against all
+    // buckets, not just the first that trips.
+    if (isRateLimited(key)) limited = true
+  }
+  if (limited) {
     return NextResponse.json(
       { error: 'Too many login attempts. Try again in 15 minutes.' },
       { status: 429 },
@@ -105,7 +131,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.message }, { status: result.status })
   }
 
-  resetRateLimit(rlKey)
+  for (const key of rlKeys) resetRateLimit(key)
 
   const rows = await db
     .select({ id: users.id, email: users.email, name: users.name, role: users.role })

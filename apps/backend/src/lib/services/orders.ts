@@ -142,15 +142,17 @@ export const getOrderById = async (
  * Validate the submitted parameter values against the applicable parameter
  * definitions and fill in defaults for omitted optional parameters. Returns the
  * effective parameter map to persist/trigger with, or a 400 Result on the first
- * validation failure. Submitted keys that have no matching definition are passed
- * through unchanged (callers may include synthetic trigger vars).
+ * validation failure. Only keys that have a matching definition are kept —
+ * submitted keys with no applicable definition are dropped so a client cannot
+ * inject arbitrary CI trigger variables (e.g. REF, TF_ACTION). Server-only
+ * trigger vars (ORDER_ID, TF_ACTION, …) are appended later in the trigger layer.
  */
 const validateAndApplyParameters = (
   defs: Parameter[],
   submitted: Record<string, string>,
 ): Result<Record<string, string>> => {
   const resolved = resolveParameterDefs(defs)
-  const result: Record<string, string> = { ...submitted }
+  const result: Record<string, string> = {}
 
   for (const def of resolved) {
     const raw = submitted[def.name]

@@ -115,6 +115,29 @@ describe('getProduct', () => {
     const paramNames = (result.data.parameters as { name: string }[]).map((p) => p.name).sort()
     expect(paramNames).toEqual(['CAT_P', 'GLOBAL_P', 'PROD_P'])
   })
+
+  it('collapses same-name rows to the product-scoped definition (resolved precedence)', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Overlap Product')
+
+    // A global and a product row share the name SHARED. The resolved set the
+    // order form renders must keep only the product-scoped definition (product
+    // > category > global), not both duplicate controls.
+    await db.insert(parameters).values([
+      { scope: 'global', scopeId: 0, name: 'SHARED', type: 'string', defaultValue: 'from-global' },
+      { scope: 'product', scopeId: product.id, name: 'SHARED', type: 'string', defaultValue: 'from-product' },
+    ])
+
+    const result = await getProduct(product.id, 'en')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const shared = (result.data.parameters as { name: string; scope: string; defaultValue: string }[])
+      .filter((p) => p.name === 'SHARED')
+    expect(shared).toHaveLength(1)
+    expect(shared[0].scope).toBe('product')
+    expect(shared[0].defaultValue).toBe('from-product')
+  })
 })
 
 describe('getProductImage', () => {

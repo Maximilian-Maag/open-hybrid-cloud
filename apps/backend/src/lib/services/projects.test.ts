@@ -3,10 +3,11 @@ import type { SessionUser } from '@open-hybrid-cloud/types'
 
 vi.mock('@/lib/ci/webhooks', () => ({
   triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-destroy']),
+  triggerPipelineStacks: vi.fn().mockResolvedValue([]),
 }))
 
 import { listProjects, getProjectById, createProject, updateProject, deleteProject } from './projects'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
 import { projects, infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -22,9 +23,11 @@ import {
 } from '@/test/helpers'
 
 const mockedWebhooks = vi.mocked(triggerProductWebhooks)
+const mockedStacks = vi.mocked(triggerPipelineStacks)
 
 beforeEach(() => {
   mockedWebhooks.mockReset().mockResolvedValue(['pipe-destroy'])
+  mockedStacks.mockReset().mockResolvedValue([])
 })
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
@@ -196,6 +199,14 @@ describe('deleteProject', () => {
       env.id,
       expect.objectContaining({ TF_ACTION: 'destroy' }),
     )
+    // Pipeline-stack destroy fired for every active element too, so stack-
+    // provisioned infra is not leaked on project deletion.
+    expect(mockedStacks).toHaveBeenCalledTimes(2)
+    expect(mockedStacks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ TF_ACTION: 'destroy' }),
+    )
     // The project is gone (its infra elements cascade-delete via FK)
     const rows = await db.select().from(infrastructureElements).where(eq(infrastructureElements.projectId, project.id))
     expect(rows.length).toBe(0)
@@ -225,6 +236,7 @@ describe('deleteProject', () => {
       env.id,
       expect.objectContaining({ TF_ACTION: 'destroy' }),
     )
+    expect(mockedStacks).toHaveBeenCalledTimes(1)
   })
 
   // Cascade-delete race: the destroy trigger must complete BEFORE the project

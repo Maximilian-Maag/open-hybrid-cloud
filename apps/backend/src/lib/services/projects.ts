@@ -3,7 +3,7 @@ import { db } from '@/lib/db/client'
 import { projects, users, costCenters, infrastructureElements, type Project } from '@/lib/db/schema'
 import { eq, sql, and } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 
 export interface ProjectRow {
   id: number
@@ -155,8 +155,12 @@ export const deleteProject = async (
       .where(and(eq(infrastructureElements.id, infra.id), eq(infrastructureElements.status, 'active')))
       .returning({ id: infrastructureElements.id })
     if (!claimed.length) continue
+    const destroyVars = { ...infra.parameters, TF_ACTION: 'destroy', INFRA_ID: String(infra.id) }
     try {
-      await triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy', INFRA_ID: String(infra.id) })
+      // Fire destroy for BOTH product webhooks and pipeline stacks — stack-
+      // provisioned infra would otherwise leak on project deletion.
+      await triggerProductWebhooks(infra.productId, infra.environmentId, destroyVars)
+      await triggerPipelineStacks(infra.productId, infra.environmentId, destroyVars)
     } catch (e) {
       console.error(e)
     }

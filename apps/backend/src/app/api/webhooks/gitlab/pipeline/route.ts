@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     status: mapGitLabStatus(body.object_attributes.status),
   }
 
-  await handlePipelineEvent(event)
+  await handlePipelineEvent(event, envRows[0].id)
 
   return NextResponse.json({ received: true })
 }

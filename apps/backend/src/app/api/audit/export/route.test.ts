@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { NextRequest } from 'next/server'
 import { GET } from './route'
 import { createUser, makeAuthHeader } from '@/test/helpers'
+import { logAudit } from '@/lib/audit'
 
 const makeReq = (url: string, auth?: string) =>
   new NextRequest(url, auth ? { headers: { authorization: auth } } : undefined)
@@ -52,6 +53,37 @@ describe('GET /api/audit/export', () => {
       makeReq('http://localhost/api/audit/export?action=order', auth),
     )
     expect(res.status).toBe(200)
+  })
+
+  it('neutralizes CSV formula injection in the details column', async () => {
+    const user = await createUser({ role: 'admin' })
+    const auth = await makeAuthHeader(user)
+    // A details value starting with '=' would be executed as a formula by
+    // spreadsheet apps; the export must prefix it with a quote.
+    await logAudit(user.id, 'test.action', 1, '=cmd|\'/C calc\'!A1')
+
+    const res = await GET(makeReq('http://localhost/api/audit/export', auth))
+    const text = await res.text()
+    // The cell must be neutralized with a leading apostrophe and must never
+    // appear as a raw formula immediately after a delimiter.
+    expect(text).toContain("'=cmd")
+    expect(text).not.toMatch(/,=cmd/)
+  })
+
+  it('quotes a CR-prefixed formula payload into a single cell', async () => {
+    const user = await createUser({ role: 'admin' })
+    const auth = await makeAuthHeader(user)
+    // A leading CR could otherwise split the value into a new CSV record whose
+    // first cell is a formula. It must stay one quoted, apostrophe-prefixed cell.
+    await logAudit(user.id, 'test.action', 1, '\r=cmd|\'/C calc\'!A1')
+
+    const res = await GET(makeReq('http://localhost/api/audit/export', auth))
+    const text = await res.text()
+    // Neutralized (leading apostrophe) and wrapped in quotes so the CR stays
+    // inside the cell rather than starting a new record.
+    expect(text).toContain('"\'\r=cmd')
+    // No record boundary leaves a bare "=cmd" as the start of a line/cell.
+    expect(text).not.toMatch(/(^|[\n,])=cmd/)
   })
 
   it('root user can also export', async () => {

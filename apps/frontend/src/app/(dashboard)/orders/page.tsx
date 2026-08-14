@@ -16,12 +16,10 @@ export default async function OrdersPage() {
   const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
 
-  let orders: Order[] = []
-  try {
-    orders = (await get<Order[]>('/api/orders', token)) ?? []
-  } catch {
-    /* empty */
-  }
+  // Let a genuine fetch failure throw to the (dashboard) error boundary so an
+  // outage is not mistaken for an empty list. A successful empty response
+  // still renders the empty state below.
+  const orders = (await get<Order[]>('/api/orders', token)) ?? []
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -49,13 +47,13 @@ export default async function OrdersPage() {
           { header: t('project', lang), accessor: 'projectName' },
           {
             header: t('status', lang),
-            render: (row) => <StatusBadge status={row.status} />,
+            render: (row) => <StatusBadge status={row.status} lang={lang} />,
           },
           {
             header: t('date', lang),
             render: (row) => (
               <span className="text-xs text-slate-500">
-                {new Date(row.createdAt).toLocaleDateString()}
+                {new Date(row.createdAt).toLocaleDateString(lang)}
               </span>
             ),
           },

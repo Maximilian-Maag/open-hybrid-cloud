@@ -52,6 +52,7 @@ export function Header({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('searchProducts', lang)}
+              aria-label={t('searchProducts', lang)}
               className="flex-1 bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none"
             />
             <button

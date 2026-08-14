@@ -28,6 +28,7 @@ export function Table<T extends { id?: number | string }>({
             {columns.map((col) => (
               <th
                 key={col.header}
+                scope="col"
                 className={`px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider ${col.className ?? ''}`}
               >
                 {col.header}
@@ -40,7 +41,7 @@ export function Table<T extends { id?: number | string }>({
             <tr>
               <td
                 colSpan={columns.length}
-                className="px-4 py-8 text-center text-slate-400"
+                className="px-4 py-8 text-center text-slate-500"
               >
                 {emptyMessage}
               </td>

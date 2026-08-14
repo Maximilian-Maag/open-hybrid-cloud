@@ -3,7 +3,7 @@ import { db } from '@/lib/db/client'
 import { projects, users, costCenters, infrastructureElements, type Project } from '@/lib/db/schema'
 import { eq, sql, and } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { fireDestroyTriggers } from '@/lib/services/teardown'
 
 export interface ProjectRow {
   id: number
@@ -137,13 +137,46 @@ export const deleteProject = async (
 
   // fire destroy webhooks for all active infra elements
   const activeInfra = await db
-    .select({ id: infrastructureElements.id, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
+    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
     .from(infrastructureElements)
     .where(and(eq(infrastructureElements.projectId, projectId), eq(infrastructureElements.status, 'active')))
 
+  // Await the destroy trigger request BEFORE deleting the project. The delete
+  // cascades to infrastructure_elements (ON DELETE CASCADE); firing the webhook
+  // fire-and-forget raced the cascade. NOTE: awaiting only guarantees the CI
+  // system accepted the trigger — the destroy pipeline still runs asynchronously
+  // afterwards, so a late failure cannot be reconciled once the rows are gone.
+  const triggerFailures: string[] = []
   for (const infra of activeInfra) {
-    await db.update(infrastructureElements).set({ status: 'decommissioning' }).where(eq(infrastructureElements.id, infra.id))
-    triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy' }).catch(console.error)
+    // Atomically claim the row (active → decommissioning) so two concurrent
+    // deletes can't both fire a destroy pipeline for the same element.
+    const claimed = await db
+      .update(infrastructureElements)
+      .set({ status: 'decommissioning' })
+      .where(and(eq(infrastructureElements.id, infra.id), eq(infrastructureElements.status, 'active')))
+      .returning({ id: infrastructureElements.id })
+    if (!claimed.length) continue
+    const destroyVars = { ...infra.parameters, TF_ACTION: 'destroy', INFRA_ID: String(infra.id), ORDER_ID: String(infra.orderId) }
+    try {
+      // Fires destroy for BOTH product webhooks and pipeline stacks — stack-
+      // provisioned infra would otherwise leak on project deletion.
+      const outcome = await fireDestroyTriggers(infra, destroyVars)
+      triggerFailures.push(...outcome.failures.map((f) => `infra #${infra.id}: ${f}`))
+    } catch (e) {
+      console.error(e)
+      triggerFailures.push(`infra #${infra.id}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  // Block the delete when any destroy could not be started — the cascade would
+  // remove the infrastructure_elements rows and leave the provisioned
+  // infrastructure running with nothing left to reconcile it against. The
+  // claimed rows keep their state, so the operator can fix the CI side and retry.
+  if (triggerFailures.length > 0) {
+    return err(
+      502,
+      `Cannot delete project: ${triggerFailures.length} destroy trigger(s) could not be started, so deleting now would leak infrastructure. Fix and retry — ${triggerFailures.join('; ')}`,
+    )
   }
 
   const deleted = await db.delete(projects).where(eq(projects.id, projectId)).returning({ id: projects.id })

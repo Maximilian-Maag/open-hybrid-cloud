@@ -31,6 +31,7 @@ export function CategoriesManager({ token }: Props) {
     try {
       const data = await get<Category[]>('/api/admin/categories', token)
       setCategories(data ?? [])
+      setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load categories.')
     } finally {
@@ -106,27 +107,13 @@ export function CategoriesManager({ token }: Props) {
     }
   }
 
-  const CategoryForm = ({ onSubmit }: { onSubmit: (e: React.FormEvent) => void }) => (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {formError && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>
-      )}
-      <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
-      <Input label="Display Order" type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
-      <div className="flex justify-end gap-3 pt-2">
-        <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-      </div>
-    </form>
-  )
-
   return (
     <>
       <Card
         title="Categories"
         action={<Button size="sm" onClick={openAdd}>Add Category</Button>}
       >
-        {error && (
+        {error && !deleteTarget && (
           <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
         {loading ? (
@@ -145,7 +132,7 @@ export function CategoriesManager({ token }: Props) {
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(cat)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => setDeleteTarget(cat)}>Delete</Button>
+                  <Button size="sm" variant="danger" onClick={() => { setError(null); setDeleteTarget(cat) }}>Delete</Button>
                 </div>
               </div>
             ))}
@@ -154,14 +141,35 @@ export function CategoriesManager({ token }: Props) {
       </Card>
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Category" size="sm">
-        <CategoryForm onSubmit={handleAdd} />
+        <form onSubmit={handleAdd} className="space-y-4">
+          {formError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>
+          )}
+          <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
+          <Input label="Display Order" type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Category" size="sm">
-        <CategoryForm onSubmit={handleEdit} />
+        <form onSubmit={handleEdit} className="space-y-4">
+          {formError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>
+          )}
+          <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
+          <Input label="Display Order" type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Category" size="sm">
+        {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
         <p className="text-sm text-slate-600 mb-6">
           Delete category <strong>{deleteTarget?.name}</strong>? This cannot be undone.
         </p>

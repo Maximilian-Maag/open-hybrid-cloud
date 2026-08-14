@@ -21,11 +21,15 @@ export function CostCentersManager({ token }: Props) {
   const [formActive, setFormActive] = useState(true)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       setCcs((await get<CostCenter[]>('/api/admin/cost-centers', token)) ?? [])
+      setDeleteError(null)
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to load cost centers.')
     } finally {
       setLoading(false)
     }
@@ -72,10 +76,12 @@ export function CostCentersManager({ token }: Props) {
 
   async function handleDelete() {
     if (!deleteTarget) return
-    setSaving(true)
+    setSaving(true); setDeleteError(null)
     try {
       await del(`/api/admin/cost-centers/${deleteTarget.id}`, token)
       setDeleteTarget(null); load()
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete.')
     } finally {
       setSaving(false)
     }
@@ -85,29 +91,17 @@ export function CostCentersManager({ token }: Props) {
     try {
       await put(`/api/admin/cost-centers/${cc.id}`, { active: !cc.active }, token)
       load()
-    } catch { /* ignore */ }
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to update.')
+    }
   }
-
-  const CcForm = ({ onSubmit }: { onSubmit: (e: React.FormEvent) => void }) => (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
-      <Input label="Code" value={formCode} onChange={(e) => setFormCode(e.target.value)} required placeholder="e.g. CC-100" />
-      <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
-      <div className="flex items-center gap-2">
-        <input type="checkbox" id="active" checked={formActive} onChange={(e) => setFormActive(e.target.checked)}
-          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-        <label htmlFor="active" className="text-sm font-medium text-slate-700">Active</label>
-      </div>
-      <div className="flex justify-end gap-3 pt-2">
-        <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-      </div>
-    </form>
-  )
 
   return (
     <>
       <Card title="Cost Centers" action={<Button size="sm" onClick={openAdd}>Add Cost Center</Button>}>
+        {deleteError && !deleteTarget && (
+          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>
+        )}
         {loading ? (
           <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
         ) : ccs.length === 0 ? (
@@ -128,7 +122,7 @@ export function CostCentersManager({ token }: Props) {
                     {cc.active ? 'Deactivate' : 'Activate'}
                   </Button>
                   <Button size="sm" variant="secondary" onClick={() => openEdit(cc)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => setDeleteTarget(cc)}>Delete</Button>
+                  <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(cc) }}>Delete</Button>
                 </div>
               </div>
             ))}
@@ -137,12 +131,39 @@ export function CostCentersManager({ token }: Props) {
       </Card>
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Cost Center" size="sm">
-        <CcForm onSubmit={handleAdd} />
+        <form onSubmit={handleAdd} className="space-y-4">
+          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          <Input label="Code" value={formCode} onChange={(e) => setFormCode(e.target.value)} required placeholder="e.g. CC-100" />
+          <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="add-active" checked={formActive} onChange={(e) => setFormActive(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+            <label htmlFor="add-active" className="text-sm font-medium text-slate-700">Active</label>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Cost Center" size="sm">
-        <CcForm onSubmit={handleEdit} />
+        <form onSubmit={handleEdit} className="space-y-4">
+          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          <Input label="Code" value={formCode} onChange={(e) => setFormCode(e.target.value)} required placeholder="e.g. CC-100" />
+          <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="edit-active" checked={formActive} onChange={(e) => setFormActive(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+            <label htmlFor="edit-active" className="text-sm font-medium text-slate-700">Active</label>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Cost Center" size="sm">
+        {deleteError && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>}
         <p className="text-sm text-slate-600 mb-6">Delete cost center <strong>{deleteTarget?.code}</strong> — {deleteTarget?.name}?</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>

@@ -13,6 +13,7 @@ export interface CreateParameterInput {
   scopeId?: number
   environmentId?: number | null
   name: string
+  label?: string
   type: 'string' | 'number' | 'bool' | 'dropdown'
   description?: string
   defaultValue?: string
@@ -22,6 +23,7 @@ export interface CreateParameterInput {
 
 export interface UpdateParameterInput {
   name?: string
+  label?: string
   type?: 'string' | 'number' | 'bool' | 'dropdown'
   description?: string
   defaultValue?: string
@@ -52,6 +54,7 @@ export const createParameter = async (input: CreateParameterInput): Promise<Resu
       scopeId: input.scopeId ?? 0,
       environmentId: input.environmentId ?? null,
       name: input.name,
+      label: input.label ?? '',
       type: input.type,
       description: input.description ?? '',
       defaultValue: input.defaultValue ?? '',

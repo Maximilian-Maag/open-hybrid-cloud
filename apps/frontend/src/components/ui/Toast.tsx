@@ -64,10 +64,10 @@ const typeIconPath: Record<ToastType, string> = {
 function ToastBubble({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) {
   return (
     <div
-      role="status"
+      role={item.type === 'error' ? 'alert' : 'status'}
       className={`flex items-center gap-3 rounded-lg px-4 py-3 shadow-xl text-sm font-medium text-white pointer-events-auto animate-toast-in min-w-56 max-w-xs ${typeClass[item.type]}`}
     >
-      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={typeIconPath[item.type]} />
       </svg>
       <span className="flex-1">{item.message}</span>

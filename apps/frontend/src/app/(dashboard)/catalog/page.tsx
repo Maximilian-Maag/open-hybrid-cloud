@@ -21,6 +21,7 @@ export default function CatalogPage() {
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   // sync URL search param into local state
   useEffect(() => {
@@ -30,6 +31,7 @@ export default function CatalogPage() {
   const load = useCallback(async () => {
     if (!token) return
     setLoading(true)
+    setError(false)
     try {
       const [prods, cats] = await Promise.all([
         get<Product[]>(`/api/catalog?lang=${lang}`, token),
@@ -38,7 +40,9 @@ export default function CatalogPage() {
       setProducts(prods ?? [])
       setCategories(cats ?? [])
     } catch {
-      /* ignore */
+      // Surface a genuine fetch failure instead of showing an empty catalog,
+      // which would look like "no products" during an outage.
+      setError(true)
     } finally {
       setLoading(false)
     }
@@ -104,7 +108,7 @@ export default function CatalogPage() {
             )}
           </div>
           {filtered.length > 0 && (
-            <span className="text-sm text-slate-400">{filtered.length} {t('products', lang)}</span>
+            <span className="text-sm text-slate-500">{filtered.length} {t('products', lang)}</span>
           )}
         </div>
 
@@ -135,12 +139,23 @@ export default function CatalogPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
           </div>
+        ) : error ? (
+          <div className="text-center py-20 bg-white rounded-lg border border-slate-200">
+            <p className="font-semibold text-slate-700">{t('somethingWentWrong', lang)}</p>
+            <button
+              onClick={() => load()}
+              className="text-sm mt-3 inline-block hover:underline"
+              style={{ color: 'var(--bp)' }}
+            >
+              {t('tryAgain', lang)}
+            </button>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-lg border border-slate-200">
             <svg className="h-14 w-14 mx-auto mb-4 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
-            <p className="font-semibold text-slate-400">{t('noProducts', lang)}</p>
+            <p className="font-semibold text-slate-500">{t('noProducts', lang)}</p>
             {search && (
               <button onClick={() => setSearch('')} className="text-sm mt-2 inline-block hover:underline" style={{ color: 'var(--bp)' }}>
                 ← {t('allProducts', lang)}

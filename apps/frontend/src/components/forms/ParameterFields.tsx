@@ -1,6 +1,5 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import type { Parameter } from '@open-hybrid-cloud/types'
 import { Input } from '@/components/ui/Input'
 
@@ -10,39 +9,30 @@ interface ParameterFieldsProps {
   onChange: (values: Record<string, string>) => void
 }
 
-export function ParameterFields({ parameters, values: externalValues, onChange }: ParameterFieldsProps) {
-  const [values, setValues] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {}
-    for (const p of parameters) {
-      init[p.name] = externalValues?.[p.name] ?? p.defaultValue ?? ''
-    }
-    return init
-  })
-
-  // Sync when parent pushes new values (e.g. template pre-fill)
-  useEffect(() => {
-    if (!externalValues || Object.keys(externalValues).length === 0) return
-    const next: Record<string, string> = {}
-    for (const p of parameters) {
-      next[p.name] = externalValues[p.name] ?? p.defaultValue ?? ''
-    }
-    setValues(next)
-    onChange(next)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalValues])
-
-  function update(name: string, value: string) {
-    const next = { ...values, [name]: value }
-    setValues(next)
-    onChange(next)
-  }
-
+// Fully controlled: the parent owns `values`, we only render and forward
+// changes. An earlier version kept a local copy synchronised through a
+// useEffect on `values`, which re-fired every parent render because the
+// prop reference changed each time — the effect then called setValues +
+// onChange, triggering another parent render, and so on. The infinite
+// re-render loop swallowed keystrokes ("hostname does not update") and
+// disabled the Cost Center Select ("cannot be selected"). Removing the
+// internal state and the sync effect fixes both.
+export function ParameterFields({ parameters, values, onChange }: ParameterFieldsProps) {
   if (parameters.length === 0) return null
+
+  const getValue = (p: Parameter): string => values?.[p.name] ?? p.defaultValue ?? ''
+  // Prefer the human-friendly label (manually set or generated from Terraform),
+  // falling back to the raw variable name when no label is configured.
+  const displayLabel = (p: Parameter): string => p.label?.trim() || p.name
+
+  const update = (name: string, value: string) => {
+    onChange({ ...(values ?? {}), [name]: value })
+  }
 
   return (
     <div className="space-y-4">
       {parameters.map((param) => {
-        const value = values[param.name] ?? ''
+        const value = getValue(param)
 
         if (param.type === 'bool') {
           return (
@@ -56,7 +46,7 @@ export function ParameterFields({ parameters, values: externalValues, onChange }
               />
               <div>
                 <label htmlFor={`param-${param.id}`} className="text-sm font-medium text-slate-700">
-                  {param.name}
+                  {displayLabel(param)}
                   {param.required && <span className="ml-1 text-red-500">*</span>}
                 </label>
                 {param.description && (
@@ -72,7 +62,7 @@ export function ParameterFields({ parameters, values: externalValues, onChange }
           return (
             <div key={param.id} className="flex flex-col gap-1">
               <label htmlFor={`param-${param.id}`} className="text-sm font-medium text-slate-700">
-                {param.name}
+                {displayLabel(param)}
                 {param.required && <span className="ml-1 text-red-500">*</span>}
               </label>
               {param.description && <p className="text-xs text-slate-500">{param.description}</p>}
@@ -95,7 +85,7 @@ export function ParameterFields({ parameters, values: externalValues, onChange }
         return (
           <Input
             key={param.id}
-            label={param.name}
+            label={displayLabel(param)}
             type={param.type === 'number' ? 'number' : param.sensitive ? 'password' : 'text'}
             value={value}
             onChange={(e) => update(param.name, e.target.value)}

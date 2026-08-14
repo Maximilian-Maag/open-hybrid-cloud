@@ -44,9 +44,20 @@ Under **Administration → Deployment Environments**:
    - **Name**: Label (e.g. "AWS Frankfurt", "On-Premises Vienna")
    - **Description**: Optional
    - **GitLab Source**: Select from configured sources
-   - **Webhook URL**: URL of the GitLab webhook for this environment
-   - **Webhook Token**: Security token for the webhook
+   - **Webhook URL**: URL of the GitLab pipeline trigger endpoint for this environment (`https://<gitlab>/api/v4/projects/<id>/trigger/pipeline`)
+   - **Webhook Token**: The **pipeline trigger token** from GitLab (`Settings → CI/CD → Pipeline trigger tokens`). Used by the portal to POST the trigger to GitLab.
 3. Save
+4. Open the newly-created environment via **Edit** → the **Callback Secret** panel is now populated with a portal-generated random value:
+   - Click **Reveal current** → **Copy**
+   - In GitLab, go to `<infra-templates project> → Settings → Webhooks → Add new webhook`:
+     - URL: `https://<your-portal>/api/webhooks/gitlab/pipeline`
+     - Secret token: **paste the callback secret**
+     - Trigger: only **Pipeline events**
+     - Save
+   - Any future pipeline event on that project now reaches the portal and updates the associated order/infrastructure status.
+5. If you ever need to rotate this secret, use **Regenerate** in the same panel — the new value is displayed once; paste it into the GitLab webhook to keep the callback flowing.
+
+> **Two separate tokens on the environment:** *Webhook Token* is what GitLab expects on the outbound pipeline-trigger POST; *Callback Secret* is what the portal expects on the inbound pipeline-event webhook. Since portal release ≥ v0004-migration they are stored in distinct columns and can be rotated independently.
 
 ### 2.3 Configuring SMTP
 
@@ -112,21 +123,25 @@ Under **Administration → Products → New**:
 
 **Step 3 – Parameters**
 
-*Option A: Import from `variables.tf`*
-1. Click **Browse Repo** → select a GitLab source
-2. Select repo and branch
-3. Select one or more `variables.tf` files
-4. Click **Import Parameters** — fields are automatically populated from the HCL parser
-5. Imported parameters can be adjusted or supplemented
+Parameters are configured on the product edit page under the **Parameters** card. There are two ways to populate them:
 
-*Option B: Manual Entry*
+*Option A: Sync from template (recommended)*
+1. First add a **Pipeline Stack** for this product (see section 4.5)
+2. Click **Sync from template** — the platform fetches the template's `variables.tf` from your CI source and creates parameters automatically
+3. Each parameter is created with:
+   - **Variable Name**: exact Terraform variable name (e.g. `hostname`) — sent to GitLab CI as `TF_VAR_hostname`
+   - **Display Label**: auto-generated human-readable name (e.g. `Hostname`) — shown to users in the order form. Edit this to be more descriptive if needed.
+4. Sensitive variables and internal CI variables are automatically excluded
+
+*Option B: Manual entry*
 - Click **Add Parameter**
-- Set name, type (text, number, bool, dropdown), description, default value, required flag, and visibility per environment
+- Set **Variable Name** (must match the Terraform variable name), **Display Label** (user-facing), type (string, number, bool, dropdown), description, default value, and the required/sensitive flags
+- Click **Edit** on any existing parameter to modify it
 
 **Step 4 – Deployment Environments**
 - Select environments in which the product should be available
 - Per environment: webhook URL (if different from environment configuration) and environment-specific parameters
-- **Product Webhooks:** For each selected environment, you can configure multiple webhook endpoints via **Administration → Products → [product] → Webhooks**. Each entry has a name, webhook URL, webhook token, and execution order (`exec_order`). Webhooks with the same `exec_order` fire concurrently; a lower `exec_order` fires before a higher one. If no product webhooks are configured for a given environment, the system falls back to the deployment environment's default webhook URL.
+- **Order Callbacks:** For each selected environment, you can configure optional HTTP callbacks via the **Order Callbacks** card on the product edit page. These notify external systems (e.g. ticketing, monitoring) after an order is processed — they do not trigger provisioning (that is handled by Pipeline Stacks).
 
 **Step 5 – Pricing**
 - Enter a price in the base currency per environment (e.g. AWS: 70 EUR, on-premises: 20 EUR)
@@ -155,6 +170,47 @@ Open the desired product under **Administration → Products**. All fields from 
 Under **Administration → Global Parameters**:
 
 Parameters that apply to *all* products and *all* environments (e.g. project tag, cost center label). These are automatically added to the order form.
+
+### 4.5 Pipeline Stacks
+
+Under **Administration → Products → [product] → Pipeline Stacks**:
+
+Pipeline Stacks let you define an ordered sequence of CI/CD template steps per product+environment directly in the portal — no changes to `.gitlab-ci.yml` required. When an order is approved (or placed directly by an Admin), the portal sends the full step list as `PIPELINE_STACK` JSON to the CI orchestrator pipeline alongside the normal order parameters.
+
+**Creating a pipeline stack:**
+
+1. Open the product under **Administration → Products** and click **Edit**
+2. Scroll to the **Pipeline Stacks** card and click **+ Add Stack**
+3. Fill in the required fields:
+   - **Name**: Label for this stack (e.g. "VM + DNS")
+   - **Environment**: Which deployment environment this stack applies to. The stack inherits the environment's **Webhook URL** and **Webhook Token** for outbound pipeline triggers — manage them once under **Admin → Environments**, not per stack.
+   - **State Key Parameter**: Name of the order parameter whose value is used as the OpenTofu state key (default: `hostname`). Must be stable across provision and destroy so state can be reused.
+4. Click **+ Add Step** one or more times to build the step sequence:
+   - **Template**: Path to the step template in the infra-templates repo (e.g. `linode/virtual-machine`)
+   - **State Suffix**: Appended to the state key to form the unique state name for this step (e.g. `-vm`)
+   - **Exec Order** *(default `0`)*: Non-negative integer. Steps with the same value run in parallel (single GitLab stage); groups with a higher value wait for all lower groups to finish. On destroy the group order is reversed automatically.
+   - **Upstream State Refs** *(optional, one or more)*: Each entry maps a CI variable name (UPPER_SNAKE_CASE, e.g. `VM_STATE_NAME`) to the `stateSuffix` of an earlier step. At runtime the orchestrator sets that variable to the state name of the referenced step, and the base pipeline promotes it to `TF_VAR_<lowercase>` — so a Terraform template can read cross-step outputs via `terraform_remote_state`.
+   - **Fixed Params** *(optional)*: Additional CI variables specific to this step, one `KEY=value` per line
+5. *(Optional)* Click **Preview YAML** to inspect the generated GitLab pipeline before saving.
+6. Click **Add** — the stack appears in the list
+
+**How it works at runtime:**
+
+When an order is triggered, the portal calls the configured webhook URL with:
+- `TEMPLATE=orchestrator`
+- `TF_STATE_NAME=<value of the stateKeyParam from the order>`
+- `PIPELINE_STACK=<JSON array of steps>`
+- All standard order parameters (`ORDER_ID`, `NAME`, etc.)
+
+The orchestrator pipeline reads `PIPELINE_STACK` and dynamically triggers the individual template pipelines in the defined order.
+
+**Managing existing stacks:**
+
+- Each stack is listed with its name, environment, and step count
+- Click **Edit** on a stack to update its name, state key parameter, or steps. The environment cannot be changed after creation. Trigger URL and token are managed on the environment itself — rotate them in one place and every stack picks up the new value automatically.
+- Click **Delete** on a stack entry to remove it — active infrastructure is not affected, but future orders for that product+environment will no longer trigger that stack
+
+> **Order Callbacks vs. Pipeline Stacks:** Order Callbacks (section 4.1 "Step 4") notify external HTTP endpoints after order processing and are optional. Pipeline Stacks call a single orchestrator CI pipeline and let the portal define the execution DAG as data — suitable when all steps share one orchestrator entry point.
 
 ---
 

@@ -8,6 +8,7 @@ import { t } from '@/lib/i18n'
 
 interface TopNavProps {
   role: Role
+  lang?: string
 }
 
 function navLinkClass(current: string, href: string, exact = false): string {
@@ -18,9 +19,9 @@ function navLinkClass(current: string, href: string, exact = false): string {
     : base + 'text-white/75 hover:text-white hover:bg-white/10'
 }
 
-export function TopNav({ role }: TopNavProps) {
+export function TopNav({ role, lang: initialLang = 'en' }: TopNavProps) {
   const pathname = usePathname()
-  const lang = useLang()
+  const lang = useLang(initialLang)
 
   return (
     <div className="border-t border-white/10" style={{ backgroundColor: 'var(--bp)' }}>

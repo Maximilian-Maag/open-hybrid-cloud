@@ -72,6 +72,31 @@ describe('updateSmtpConfig', () => {
       expect(result.data.tls).toBe(false)
     }
   })
+
+  // NFA-06.3: omitting the credential field preserves the existing stored value
+  it('preserves existing SMTP password when password is not provided (NFA-06.3)', async () => {
+    // Seed with a password
+    await updateSmtpConfig({
+      host: 'smtp.example.com',
+      port: 25,
+      from: 'no@example.com',
+      user: 'u',
+      password: 'original-secret',
+    })
+
+    // Update without providing a password (as the frontend does when the field is blank)
+    await updateSmtpConfig({
+      host: 'smtp2.example.com',
+      port: 587,
+      from: 'other@example.com',
+      user: 'u2',
+    })
+
+    const [row] = await db.select().from(appConfig)
+    expect(row?.smtpHost).toBe('smtp2.example.com')
+    expect(row?.smtpUser).toBe('u2')
+    expect(row?.smtpPass).toBe('original-secret')
+  })
 })
 
 describe('getAiConfig', () => {
@@ -121,5 +146,29 @@ describe('updateAiConfig', () => {
     // Sanity check: DB row also has the apiKey persisted
     const rows = await db.select().from(appConfig)
     expect(rows[0]?.aiApiKey).toBe('k')
+  })
+
+  // NFA-06.3: omitting the credential field preserves the existing stored value
+  it('preserves existing AI API key when apiKey is not provided (NFA-06.3)', async () => {
+    // Seed with an apiKey
+    await updateAiConfig({
+      provider: 'openai',
+      endpoint: 'https://api.openai.com',
+      apiKey: 'sk-original',
+      model: 'gpt-4o',
+    })
+
+    // Update without providing apiKey (frontend omits it when the input is blank)
+    await updateAiConfig({
+      provider: 'claude',
+      endpoint: 'https://api.anthropic.com',
+      model: 'claude-sonnet-4-6',
+    })
+
+    const [row] = await db.select().from(appConfig)
+    expect(row?.aiProvider).toBe('claude')
+    expect(row?.aiEndpoint).toBe('https://api.anthropic.com')
+    expect(row?.aiModel).toBe('claude-sonnet-4-6')
+    expect(row?.aiApiKey).toBe('sk-original')
   })
 })

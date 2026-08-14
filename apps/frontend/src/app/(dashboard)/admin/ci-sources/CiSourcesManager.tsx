@@ -28,11 +28,15 @@ export function CiSourcesManager({ token }: Props) {
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       setSources((await get<CiSource[]>('/api/admin/ci-sources', token)) ?? [])
+      setDeleteError(null)
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to load CI sources.')
     } finally {
       setLoading(false)
     }
@@ -101,30 +105,17 @@ export function CiSourcesManager({ token }: Props) {
 
   async function handleDelete() {
     if (!deleteTarget) return
-    setSaving(true)
+    setSaving(true); setDeleteError(null)
     try {
       await del(`/api/admin/ci-sources/${deleteTarget.id}`, token)
       setDeleteTarget(null)
       load()
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete.')
     } finally {
       setSaving(false)
     }
   }
-
-  const CiForm = ({ onSubmit, isEdit }: { onSubmit: (e: React.FormEvent) => void; isEdit?: boolean }) => (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
-      <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
-      <Input label="URL" type="url" value={form.url} onChange={(e) => setField('url', e.target.value)} required />
-      <Select label="Provider" value={form.provider} onChange={(e) => setField('provider', e.target.value)} options={PROVIDERS} />
-      <Input label={isEdit ? 'Access Token (leave blank to keep)' : 'Access Token'} type="password"
-        value={form.accessToken} onChange={(e) => setField('accessToken', e.target.value)} required={!isEdit} />
-      <div className="flex justify-end gap-3 pt-2">
-        <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-      </div>
-    </form>
-  )
 
   const providerBadge: Record<CiProvider, string> = {
     gitlab: 'bg-orange-100 text-orange-700',
@@ -135,6 +126,9 @@ export function CiSourcesManager({ token }: Props) {
   return (
     <>
       <Card title="CI Sources" action={<Button size="sm" onClick={openAdd}>Add CI Source</Button>}>
+        {deleteError && !deleteTarget && (
+          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>
+        )}
         {loading ? (
           <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
         ) : sources.length === 0 ? (
@@ -154,7 +148,7 @@ export function CiSourcesManager({ token }: Props) {
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(src)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => setDeleteTarget(src)}>Delete</Button>
+                  <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(src) }}>Delete</Button>
                 </div>
               </div>
             ))}
@@ -163,12 +157,33 @@ export function CiSourcesManager({ token }: Props) {
       </Card>
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add CI Source" size="md">
-        <CiForm onSubmit={handleAdd} />
+        <form onSubmit={handleAdd} className="space-y-4">
+          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <Input label="URL" type="url" value={form.url} onChange={(e) => setField('url', e.target.value)} required />
+          <Select label="Provider" value={form.provider} onChange={(e) => setField('provider', e.target.value)} options={PROVIDERS} />
+          <Input label="Access Token" type="password" value={form.accessToken} onChange={(e) => setField('accessToken', e.target.value)} required />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit CI Source" size="md">
-        <CiForm onSubmit={handleEdit} isEdit />
+        <form onSubmit={handleEdit} className="space-y-4">
+          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <Input label="URL" type="url" value={form.url} onChange={(e) => setField('url', e.target.value)} required />
+          <Select label="Provider" value={form.provider} onChange={(e) => setField('provider', e.target.value)} options={PROVIDERS} />
+          <Input label="Access Token (leave blank to keep)" type="password" value={form.accessToken} onChange={(e) => setField('accessToken', e.target.value)} />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete CI Source" size="sm">
+        {deleteError && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>}
         <p className="text-sm text-slate-600 mb-6">Delete <strong>{deleteTarget?.name}</strong>?</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>

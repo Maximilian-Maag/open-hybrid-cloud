@@ -4,7 +4,7 @@ vi.mock('@/lib/ci', () => ({
   triggerPipeline: vi.fn(),
 }))
 
-import { triggerProductWebhooks } from './webhooks'
+import { triggerProductWebhooks, triggerProductWebhooksTracked } from './webhooks'
 import { triggerPipeline } from './index'
 import { db } from '@/lib/db/client'
 import { productWebhooks } from '@/lib/db/schema'
@@ -122,5 +122,70 @@ describe('triggerProductWebhooks', () => {
     expect(mockedTriggerPipeline).toHaveBeenCalledTimes(2)
 
     errSpy.mockRestore()
+  })
+})
+
+describe('triggerProductWebhooksTracked', () => {
+  it('reports the webhooks that could not be started alongside the ones that were', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+
+    await db.insert(productWebhooks).values([
+      {
+        productId: product.id,
+        environmentId: env.id,
+        name: 'will-fail',
+        webhookUrl: 'https://gl.example.com/api/v4/projects/1/trigger/pipeline',
+        webhookToken: 'tok-a',
+        execOrder: 1,
+      },
+      {
+        productId: product.id,
+        environmentId: env.id,
+        name: 'will-succeed',
+        webhookUrl: 'https://gl.example.com/api/v4/projects/2/trigger/pipeline',
+        webhookToken: 'tok-b',
+        execOrder: 2,
+      },
+    ])
+
+    mockedTriggerPipeline
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce('pipe-ok')
+
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    // The failure must not abort the remaining webhooks, but it must not vanish
+    // either — the teardown paths decide what to do based on `failures`.
+    const outcome = await triggerProductWebhooksTracked(product.id, env.id, {})
+
+    expect(outcome.pipelineIds).toEqual(['pipe-ok'])
+    expect(outcome.failures).toHaveLength(1)
+    expect(outcome.failures[0]).toContain('will-fail')
+    expect(outcome.failures[0]).toContain('boom')
+
+    errSpy.mockRestore()
+  })
+
+  it('reports no failures when every webhook starts', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+
+    await db.insert(productWebhooks).values({
+      productId: product.id,
+      environmentId: env.id,
+      name: 'ok',
+      webhookUrl: 'https://gl.example.com/api/v4/projects/1/trigger/pipeline',
+      webhookToken: 'tok',
+      execOrder: 1,
+    })
+    mockedTriggerPipeline.mockResolvedValueOnce('pipe-1')
+
+    const outcome = await triggerProductWebhooksTracked(product.id, env.id, {})
+    expect(outcome).toEqual({ pipelineIds: ['pipe-1'], failures: [] })
   })
 })

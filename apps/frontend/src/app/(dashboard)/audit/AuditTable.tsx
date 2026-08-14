@@ -25,8 +25,21 @@ export function AuditTable({ token }: Props) {
   const [actionFilter, setActionFilter] = useState('')
   const [fromFilter, setFromFilter] = useState('')
   const [toFilter, setToFilter] = useState('')
+  // Debounced copies of the free-text filters so typing doesn't fire a request
+  // per keystroke. Date filters stay immediate.
+  const [debouncedUser, setDebouncedUser] = useState('')
+  const [debouncedAction, setDebouncedAction] = useState('')
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const pageSize = 20
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedUser(userFilter)
+      setDebouncedAction(actionFilter)
+    }, 300)
+    return () => clearTimeout(id)
+  }, [userFilter, actionFilter])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -34,8 +47,8 @@ export function AuditTable({ token }: Props) {
       const params = new URLSearchParams()
       params.set('page', String(page))
       params.set('pageSize', String(pageSize))
-      if (userFilter) params.set('userId', userFilter)
-      if (actionFilter) params.set('action', actionFilter)
+      if (debouncedUser) params.set('userId', debouncedUser)
+      if (debouncedAction) params.set('action', debouncedAction)
       if (fromFilter) params.set('from', fromFilter)
       if (toFilter) params.set('to', toFilter)
 
@@ -55,18 +68,44 @@ export function AuditTable({ token }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [token, page, userFilter, actionFilter, fromFilter, toFilter])
+  }, [token, page, debouncedUser, debouncedAction, fromFilter, toFilter])
 
   useEffect(() => { load() }, [load])
 
-  function handleExport(format: 'csv' | 'pdf') {
+  async function handleExport(format: 'csv' | 'pdf') {
     const params = new URLSearchParams()
     if (userFilter) params.set('userId', userFilter)
     if (actionFilter) params.set('action', actionFilter)
     if (fromFilter) params.set('from', fromFilter)
     if (toFilter) params.set('to', toFilter)
     params.set('format', format)
-    window.open(`${API_URL}/api/audit/export?${params.toString()}&token=${token}`, '_blank')
+
+    setExportError(null)
+    // The export endpoint authenticates via the Authorization header, which a
+    // plain window.open GET cannot set — fetch it and trigger a download from
+    // the response blob. This also keeps the token out of the URL/history/logs.
+    try {
+      const res = await fetch(`${API_URL}/api/audit/export?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      })
+      if (!res.ok) {
+        setExportError(t('exportFailed', lang))
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `audit.${format}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      setExportError(null)
+    } catch {
+      setExportError(t('exportFailed', lang))
+    }
   }
 
   const totalPages = Math.ceil(total / pageSize)
@@ -101,13 +140,18 @@ export function AuditTable({ token }: Props) {
         />
       </div>
 
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" size="sm" onClick={() => handleExport('csv')}>
-          {t('exportCsv', lang)}
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => handleExport('pdf')}>
-          {t('exportPdf', lang)}
-        </Button>
+      <div className="flex flex-col items-end gap-2">
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => handleExport('csv')}>
+            {t('exportCsv', lang)}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => handleExport('pdf')}>
+            {t('exportPdf', lang)}
+          </Button>
+        </div>
+        {exportError && (
+          <p className="text-xs text-red-600" role="alert">{exportError}</p>
+        )}
       </div>
 
       {loading ? (
@@ -132,7 +176,7 @@ export function AuditTable({ token }: Props) {
               header: t('date', lang),
               render: (row) => (
                 <span className="text-xs text-slate-500 whitespace-nowrap">
-                  {new Date(row.createdAt).toLocaleString()}
+                  {new Date(row.createdAt).toLocaleString(lang)}
                 </span>
               ),
             },

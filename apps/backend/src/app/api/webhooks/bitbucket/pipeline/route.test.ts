@@ -2,11 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { POST } from './route'
 import { createCiSource, createEnvironment } from '@/test/helpers'
+import { db } from '@/lib/db/client'
+import { deploymentEnvironments } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import { createHmac } from 'crypto'
+import { handlePipelineEvent } from '@/lib/webhook/handler'
 
 vi.mock('@/lib/webhook/handler', () => ({
   handlePipelineEvent: vi.fn().mockResolvedValue(undefined),
 }))
+
+const mockedHandle = vi.mocked(handlePipelineEvent)
 
 const WEBHOOK_SECRET = 'bitbucket-test-secret'
 
@@ -39,6 +45,7 @@ const validPipelineBody = {
 
 // runs AFTER global beforeEach (which truncates tables), so token is always fresh
 beforeEach(async () => {
+  mockedHandle.mockClear()
   const ci = await createCiSource()
   await createEnvironment(ci.id, WEBHOOK_SECRET)
 })
@@ -56,6 +63,21 @@ describe('POST /api/webhooks/bitbucket/pipeline', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.received).toBe(true)
+  })
+
+  it('passes the environment whose secret matched to the handler (event scoping)', async () => {
+    const ci2 = await createCiSource({ name: 'CI-Other' })
+    await createEnvironment(ci2.id, 'other-secret')
+
+    const [matched] = await db
+      .select({ id: deploymentEnvironments.id })
+      .from(deploymentEnvironments)
+      .where(eq(deploymentEnvironments.callbackSecret, WEBHOOK_SECRET))
+
+    const res = await POST(makeSignedRequest(validPipelineBody))
+    expect(res.status).toBe(200)
+    expect(mockedHandle).toHaveBeenCalledTimes(1)
+    expect(mockedHandle.mock.calls[0][1]).toBe(matched.id)
   })
 
   it('returns 401 for invalid signature', async () => {
@@ -124,5 +146,64 @@ describe('POST /api/webhooks/bitbucket/pipeline', () => {
       }),
     )
     expect(res.status).toBe(200)
+  })
+
+  // Regression: inbound callbacks must be verified against callback_secret, not
+  // the outbound webhook_token. When an operator rotates the two apart, a
+  // callback signed with the callback_secret is accepted and one signed with
+  // the webhook_token is rejected.
+  it('validates the signature against callback_secret, not webhook_token', async () => {
+    const ci = await createCiSource()
+    await db.insert(deploymentEnvironments).values({
+      name: 'Rotated Env',
+      ciSourceId: ci.id,
+      webhookUrl: 'https://example.com/trigger',
+      webhookToken: 'outbound-trigger-token',
+      callbackSecret: 'inbound-callback-secret',
+    })
+
+    const rawBody = JSON.stringify(validPipelineBody)
+    const makeReq = (secret: string) =>
+      new NextRequest('http://localhost/api/webhooks/bitbucket/pipeline', {
+        method: 'POST',
+        body: rawBody,
+        headers: {
+          'content-type': 'application/json',
+          'x-hub-signature': `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`,
+        },
+      })
+
+    const accepted = await POST(makeReq('inbound-callback-secret'))
+    expect(accepted.status).toBe(200)
+
+    const rejected = await POST(makeReq('outbound-trigger-token'))
+    expect(rejected.status).toBe(401)
+  })
+
+  // Migration 0006 makes callback_secret UNIQUE, but a DB that hasn't been
+  // migrated can still hold duplicates from the 0004 backfill of the
+  // (non-unique) webhook_token. Two environments sharing a secret produce the
+  // SAME valid HMAC, so the first match is arbitrary — the route must refuse
+  // rather than scope the event to the wrong environment.
+  it('rejects a signature that matches more than one environment instead of guessing', async () => {
+    const { sql } = await import('drizzle-orm')
+    await db.execute(
+      sql`ALTER TABLE deployment_environments DROP CONSTRAINT deployment_environments_callback_secret_unique`,
+    )
+    try {
+      const ci2 = await createCiSource({ name: 'CI-dup' })
+      await createEnvironment(ci2.id, WEBHOOK_SECRET)
+
+      const res = await POST(makeSignedRequest(validPipelineBody))
+      expect(res.status).toBe(409)
+      const body = await res.json()
+      expect(body.error).toBe('Ambiguous callback secret')
+      expect(mockedHandle).not.toHaveBeenCalled()
+    } finally {
+      await db.execute(sql`DELETE FROM deployment_environments WHERE callback_secret = ${WEBHOOK_SECRET}`)
+      await db.execute(
+        sql`ALTER TABLE deployment_environments ADD CONSTRAINT deployment_environments_callback_secret_unique UNIQUE (callback_secret)`,
+      )
+    }
   })
 })

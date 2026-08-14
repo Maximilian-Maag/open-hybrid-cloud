@@ -60,6 +60,51 @@ const format = (violations: Result[]): string =>
     })
     .join('\n\n')
 
+/**
+ * Is a focus indicator actually painted on this element?
+ *
+ * Tailwind renders its focus ring as a box-shadow AND always emits the ring
+ * custom properties, so `boxShadow !== 'none'` is not enough — an unset ring
+ * colour produces a shadow made entirely of fully transparent layers. A layer
+ * counts only if its colour is not transparent.
+ *
+ * Deliberately not a regex: the obvious one (a repeated group containing
+ * `[^,]*`) backtracks exponentially on a long all-transparent shadow, which
+ * CodeQL flags as a ReDoS.
+ */
+const focusProbe = () => {
+  const el = document.activeElement as HTMLElement | null
+  if (!el) return null
+  const c = getComputedStyle(el)
+  const outlined = c.outlineStyle !== 'none' && parseFloat(c.outlineWidth) > 0
+
+  const paints = (shadow: string): boolean => {
+    if (!shadow || shadow === 'none') return false
+    // Split on the colour function each layer starts with, then keep any layer
+    // whose colour is not fully transparent.
+    return shadow
+      .split(/(?=rgba?\(|oklch\(|color\()/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .some((layer) => {
+        const alpha = /rgba\(\s*\d+,\s*\d+,\s*\d+,\s*([\d.]+)\s*\)/.exec(layer)
+        if (alpha) return parseFloat(alpha[1]) > 0
+        // oklch()/color() layers here carry no alpha, so they paint.
+        return true
+      })
+  }
+
+  return {
+    outlined,
+    ringed: paints(c.boxShadow),
+    inDialog: !!el.closest('dialog'),
+    id:
+      el.tagName.toLowerCase() +
+      (el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : '') +
+      (el.getAttribute('type') ? `:${el.getAttribute('type')}` : ''),
+  }
+}
+
 const scan = async (page: import('@playwright/test').Page) =>
   await new AxeBuilder({ page }).withTags(WCAG).analyze()
 
@@ -176,14 +221,11 @@ test.describe('Accessibility — things axe cannot check', () => {
     for (const [label, selector] of controls) {
       const el = page.locator(selector).first()
       await el.focus()
-      const visible = await el.evaluate((n) => {
-        const c = getComputedStyle(n)
-        const outlined = c.outlineStyle !== 'none' && parseFloat(c.outlineWidth) > 0
-        // Tailwind renders its focus ring as a box-shadow, and the ring vars
-        // default to transparent — so a shadow only counts if it actually paints.
-        const ringed = c.boxShadow !== 'none' && !/^(rgba\(0, 0, 0, 0\)[^,]*,?\s*)+$/.test(c.boxShadow)
-        return outlined || ringed
-      })
+      // Some of these carry `transition-all`, so let the ring finish fading in
+      // before reading the computed style.
+      await page.waitForTimeout(250)
+      const probe = await page.evaluate(focusProbe)
+      const visible = !!probe && (probe.outlined || probe.ringed)
       expect(visible, `${label} (${selector}) must show a focus indicator`).toBe(true)
     }
   })
@@ -202,23 +244,19 @@ test.describe('Accessibility — things axe cannot check', () => {
     let stops = 0
     for (let i = 0; i < 8; i++) {
       await page.keyboard.press('Tab')
-      const stop = await page.evaluate(() => {
-        const el = document.activeElement as HTMLElement | null
-        if (!el || !el.closest('dialog')) return null
-        const c = getComputedStyle(el)
-        const outlined = c.outlineStyle !== 'none' && parseFloat(c.outlineWidth) > 0
-        // Tailwind paints its ring as a box-shadow, and the ring vars default to
-        // transparent — a shadow only counts when it actually renders a colour.
-        const ringed =
-          c.boxShadow !== 'none' && !/^(rgba\(0, 0, 0, 0\)[^,]*,?\s*)+$/.test(c.boxShadow)
-        return {
-          id: `${el.tagName.toLowerCase()}${el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : ''}${el.getAttribute('type') ? `:${el.getAttribute('type')}` : ''}`,
-          visible: outlined || ringed,
-        }
-      })
+      // Button carries `transition-all`, so its ring fades in over ~150ms. Reading
+      // the computed box-shadow immediately catches the transparent start of that
+      // transition and reports a false failure.
+      await page.waitForTimeout(250)
+      const probe = await page.evaluate(focusProbe)
+      // Tabbing can leave the dialog (browser chrome); only judge stops inside it.
+      const stop = probe?.inDialog ? probe : null
       if (!stop) continue
       stops++
-      expect(stop.visible, `${stop.id} inside the dialog must show a focus indicator`).toBe(true)
+      expect(
+        stop.outlined || stop.ringed,
+        `${stop.id} inside the dialog must show a focus indicator`,
+      ).toBe(true)
     }
 
     // Guard against the loop silently finding nothing to check.

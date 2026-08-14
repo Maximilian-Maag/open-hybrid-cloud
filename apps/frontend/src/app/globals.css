@@ -10,6 +10,8 @@
   --bs-ink: #101827;
   /* Brand colour used as text on a light surface, AA-adjusted. */
   --bp-text: #131921;
+  /* Overlay for states on the branding colour — opposite pole of --bp-ink. */
+  --bp-tint: #000000;
 }
 
 /* ── Modal backdrop: blur + fade ─────────────────────────────────────────── */
@@ -83,3 +85,12 @@ dialog::backdrop {
   }
   dialog::backdrop { animation: none; }
 }
+
+/* ── States on the branding colour ───────────────────────────────────────────
+   Hover and active tints for the header, nav and footer. They deliberately use
+   --bp-tint rather than currentColor: currentColor IS the text, so tinting with
+   it pulls the background toward the text and destroys the contrast --bp-ink
+   guarantees. --bp-tint is the opposite pole, so these only ever help. */
+.brand-state       { transition: background-color .15s ease; }
+.brand-state:hover { background-color: color-mix(in srgb, var(--bp-tint) 14%, transparent); }
+.brand-state-active { background-color: color-mix(in srgb, var(--bp-tint) 22%, transparent); }

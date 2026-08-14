@@ -166,21 +166,32 @@ test.describe('Accessibility — dialogs', () => {
 })
 
 test.describe('Accessibility — branding colours cannot break the chrome', () => {
+  // Writes shared server state, so no parallel worker may observe it half-applied.
+  test.describe.configure({ mode: 'serial' })
+
   // The regression this guards: the portal chrome used to hardcode white text on
   // the operator's primary colour. A mid-tone choice dropped the nav to 1.88:1.
   // Foregrounds are now derived from the colour's luminance, so a hostile colour
   // has to stay AA-clean.
   const HOSTILE = '#ca8a04' // amber-600 — the value that produced 246 failures
 
-  test('a mid-tone primary colour keeps the dashboard AA-clean', async ({ page, request }) => {
-    const original = await (await request.get('/api/admin/branding')).json().catch(() => null)
-
+  test('a mid-tone primary colour keeps the dashboard AA-clean', async ({ page }) => {
+    // This test mutates shared server state, so it reads the current value from
+    // the FORM (not an API call that might fail) and restores it in an
+    // afterEach-style finally. Serial mode keeps a parallel worker from seeing
+    // the hostile colour mid-flight.
+    test.slow()
     await page.goto('/admin/branding')
     const hex = page.getByRole('textbox', { name: /primary color — hex value/i })
-    await hex.fill(HOSTILE)
-    await page.getByRole('button', { name: /save branding/i }).click()
+    const original = await hex.inputValue()
+    expect(original, 'could not read the current branding colour to restore later').toMatch(/^#[0-9a-fA-F]{3,6}$/)
+
+    const save = () => page.getByRole('button', { name: /save branding/i }).click()
 
     try {
+      await hex.fill(HOSTILE)
+      await save()
+
       for (const path of ['/', '/catalog', '/admin']) {
         await page.goto(path)
         const { violations } = await scan(page)
@@ -188,12 +199,12 @@ test.describe('Accessibility — branding colours cannot break the chrome', () =
         expect(contrast, `${path} with primary ${HOSTILE}:\n${format(contrast)}`).toEqual([])
       }
     } finally {
-      // Leave branding as it was, so this test does not colour every later one.
-      if (original?.primaryColor) {
-        await page.goto('/admin/branding')
-        await page.getByRole('textbox', { name: /primary color — hex value/i }).fill(original.primaryColor)
-        await page.getByRole('button', { name: /save branding/i }).click()
-      }
+      await page.goto('/admin/branding')
+      await page.getByRole('textbox', { name: /primary color — hex value/i }).fill(original)
+      await save()
+      // Prove the restore landed rather than assuming it did.
+      await page.reload()
+      await expect(page.getByRole('textbox', { name: /primary color — hex value/i })).toHaveValue(original)
     }
   })
 
@@ -295,13 +306,23 @@ test.describe('Accessibility — things axe cannot check', () => {
   test('reduced-motion is honoured', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/orders')
-    // The page-in animation is decorative; under reduce it must not run for a
-    // perceptible duration.
-    const duration = await page
-      .locator('main .animate-page-in, main [class*="animate-"]')
+
+    // Assert the element EXISTS before judging it: the previous version swallowed
+    // a missing locator into a default of '0s' and passed while checking nothing.
+    const animated = page.locator('main [class*="animate-"]').first()
+    await expect(animated, 'expected an animated element to test against').toHaveCount(1)
+
+    const duration = await animated.evaluate((n) => getComputedStyle(n).animationDuration)
+    expect(parseFloat(duration), `animation-duration was ${duration}`).toBeLessThan(0.05)
+
+    // And confirm the same element really does animate without the preference,
+    // so this cannot pass just because nothing was animated in the first place.
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.goto('/orders')
+    const normal = await page
+      .locator('main [class*="animate-"]')
       .first()
       .evaluate((n) => getComputedStyle(n).animationDuration)
-      .catch(() => '0s')
-    expect(parseFloat(duration)).toBeLessThan(0.05)
+    expect(parseFloat(normal), `expected a real animation without the preference, got ${normal}`).toBeGreaterThan(0.05)
   })
 })

@@ -9,7 +9,7 @@ import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
-import { readableInk, parseHex, AA_BODY } from '@/lib/contrast'
+import { readableInk, parseHex, toCanonicalHex, AA_BODY } from '@/lib/contrast'
 
 interface Props {
   initial: Branding
@@ -155,7 +155,9 @@ function ColorField({
       <div className="flex items-center gap-2">
         <input
           type="color"
-          value={parsed ? value : '#000000'}
+          // The picker only accepts canonical lowercase #rrggbb, so feed it the
+          // normalised form of whatever the operator typed.
+          value={parsed ? toCanonicalHex(parsed) : '#000000'}
           onChange={(e) => onChange(e.target.value)}
           aria-label={`${label} — colour picker`}
           aria-describedby={hintId}

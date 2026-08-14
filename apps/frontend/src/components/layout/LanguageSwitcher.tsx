@@ -43,7 +43,7 @@ export function LanguageSwitcher({ lang }: Props) {
       <button
         ref={toggleRef}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 opacity-90 hover:opacity-100 text-xs font-medium border border-current/30 rounded-md px-2 py-1 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-current active:scale-95"
+        className="flex items-center gap-1 text-xs font-medium border border-current/40 rounded-md px-2 py-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current active:scale-95"
         style={{ color: 'var(--bp-ink)' }}
         aria-label={`Language: ${currentName}`}
         aria-expanded={open}

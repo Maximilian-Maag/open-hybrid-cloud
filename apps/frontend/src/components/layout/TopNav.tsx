@@ -17,13 +17,15 @@ function isActive(current: string, href: string, exact = false): boolean {
 
 function navLinkClass(current: string, href: string, exact = false): string {
   const active = isActive(current, href, exact)
-  // Colour comes from --bp-ink (derived from the branding colour), so these
-  // stay legible whatever the operator picked. The active item is additionally
+  // Colour comes from --bp-ink (derived from the branding colour) at FULL
+  // opacity — readableInk's 4.5:1 guarantee is measured at full opacity, so
+  // dimming the resting state would give it back. The active item is
+  // distinguished by background and weight, plus aria-current. The active item is additionally
   // marked with aria-current so it is not signalled by colour alone.
   const base = 'px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap '
   return active
-    ? base + 'bg-current/15 font-semibold'
-    : base + 'opacity-80 hover:opacity-100 hover:bg-current/10'
+    ? base + 'brand-state-active font-semibold'
+    : base + 'brand-state'
 }
 
 export function TopNav({ role, lang: initialLang = 'en' }: TopNavProps) {

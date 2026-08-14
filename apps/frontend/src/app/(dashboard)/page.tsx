@@ -58,7 +58,7 @@ export default async function DashboardHome() {
             <h2 className="text-2xl sm:text-3xl font-bold leading-tight mb-2">
               {t('welcomeBack', lang)}, {session.user?.name ?? 'User'}
             </h2>
-            <p className="opacity-90 text-sm sm:text-base mb-5">
+            <p className="text-sm sm:text-base mb-5">
               {t('heroSubtitle', lang)}
             </p>
             <Link

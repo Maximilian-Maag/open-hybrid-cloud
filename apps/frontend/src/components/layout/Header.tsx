@@ -72,7 +72,7 @@ export function Header({
         <div className="ml-auto flex items-center gap-3">
           {/* User dropdown */}
           <details className="relative group">
-            <summary className="list-none cursor-pointer select-none flex flex-col items-end leading-tight hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-current rounded px-1"
+            <summary className="list-none cursor-pointer select-none flex flex-col items-end leading-tight rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
               style={{ color: 'var(--bp-ink)' }}>
               {userName && <span className="text-xs">{userName}</span>}
               <span className="text-sm font-semibold">{t('myAccount', lang)}</span>

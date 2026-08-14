@@ -75,6 +75,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
         // The brand colour used AS text on a white card — darkened until it
         // clears AA, so a pale brand stays readable.
         '--bp-text': readableAccent(primaryColor),
+        // Overlay colour for hover/active states on the branding colour. It is
+        // the OPPOSITE pole of --bp-ink: tinting with the ink itself darkens the
+        // background toward the text and costs contrast (a 25 % ink overlay took
+        // the active nav pill to 3.89:1). The opposite pole moves the background
+        // away from the text, so contrast only improves.
+        '--bp-tint': readableInk(primaryColor).ink === '#ffffff' ? '#000000' : '#ffffff',
       } as React.CSSProperties}
     >
       <a
@@ -96,15 +102,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
       </main>
       {imprintText && (
-        <footer className="mt-10 border-t border-current/10" style={{ backgroundColor: 'var(--bp)' }}>
+        <footer className="mt-10 border-t border-current/25" style={{ backgroundColor: 'var(--bp)' }}>
           <div className="max-w-screen-2xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <span className="text-xs opacity-80" style={{ color: 'var(--bp-ink)' }}>
+            <span className="text-xs" style={{ color: 'var(--bp-ink)' }}>
               © {shopName}{shopSubtitle ? ` — ${shopSubtitle}` : ''}
             </span>
             <div className="flex gap-4">
-              <Link href="/catalog" className="text-xs opacity-80 hover:opacity-100 transition-opacity" style={{ color: 'var(--bp-ink)' }}>{t('catalog', lang)}</Link>
-              <Link href="/orders" className="text-xs opacity-80 hover:opacity-100 transition-opacity" style={{ color: 'var(--bp-ink)' }}>{t('orders', lang)}</Link>
-              <Link href="/impressum" className="text-xs opacity-80 hover:opacity-100 transition-opacity" style={{ color: 'var(--bp-ink)' }}>{t('imprint', lang)}</Link>
+              <Link href="/catalog" className="text-xs rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current" style={{ color: 'var(--bp-ink)' }}>{t('catalog', lang)}</Link>
+              <Link href="/orders" className="text-xs rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current" style={{ color: 'var(--bp-ink)' }}>{t('orders', lang)}</Link>
+              <Link href="/impressum" className="text-xs rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current" style={{ color: 'var(--bp-ink)' }}>{t('imprint', lang)}</Link>
             </div>
           </div>
         </footer>

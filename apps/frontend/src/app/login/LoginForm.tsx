@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 import { Alert } from '@/components/ui/Alert'
-import { readableInk, readableAccent } from '@/lib/contrast'
+import { readableInk, readableAccent, AA_LARGE } from '@/lib/contrast'
 
 interface Props {
   shopName: string
@@ -54,6 +54,8 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         // The brand colour used AS text on a white card — darkened until it
         // clears AA, so a pale brand stays readable.
         '--bp-text': readableAccent(primaryColor),
+        // Focus rings sit on the white card, so they need the same treatment.
+        '--ring-accent': readableAccent(secondaryColor, '#ffffff', AA_LARGE),
       } as React.CSSProperties}
     >
       <div className="w-full max-w-sm">
@@ -87,7 +89,9 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
-                style={{ '--tw-ring-color': 'var(--bs)' } as React.CSSProperties}
+                // Not var(--bs) directly: a pale secondary colour makes the focus ring
+                // invisible. --ring-accent is the AA-adjusted variant.
+                style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
                 placeholder="you@example.com"
               />
             </div>
@@ -104,7 +108,9 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
-                style={{ '--tw-ring-color': 'var(--bs)' } as React.CSSProperties}
+                // Not var(--bs) directly: a pale secondary colour makes the focus ring
+                // invisible. --ring-accent is the AA-adjusted variant.
+                style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
                 placeholder="••••••••"
               />
             </div>

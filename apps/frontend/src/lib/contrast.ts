@@ -26,6 +26,10 @@ export const parseHex = (hex: string): [number, number, number] | null => {
   return null
 }
 
+/** [r, g, b] → canonical lowercase #rrggbb, which is what <input type="color"> requires. */
+export const toCanonicalHex = (rgb: [number, number, number]): string =>
+  '#' + rgb.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('')
+
 /** WCAG relative luminance, 0 (black) – 1 (white). */
 export const relativeLuminance = (rgb: [number, number, number]): number => {
   const [r, g, b] = rgb.map((v) => {
@@ -102,9 +106,6 @@ export const readableAccent = (
   if (!rgb || !bg) return colour
   if (contrastRatio(colour, background) >= target) return colour
 
-  const toHex = (c: [number, number, number]) =>
-    '#' + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('')
-
   // Darken against a light background, lighten against a dark one.
   const bgIsLight = relativeLuminance(bg) > 0.5
   const at = (t: number): [number, number, number] =>
@@ -116,8 +117,8 @@ export const readableAccent = (
   let hi = 1
   for (let i = 0; i < 20; i++) {
     const mid = (lo + hi) / 2
-    if (contrastRatio(toHex(at(mid)), background) >= target) hi = mid
+    if (contrastRatio(toCanonicalHex(at(mid)), background) >= target) hi = mid
     else lo = mid
   }
-  return toHex(at(hi))
+  return toCanonicalHex(at(hi))
 }

@@ -530,7 +530,9 @@ export function ProductEditForm({ product, categories, environments, translation
         </div>
       }>
         {paramSyncMsg && <Alert tone="success" className="mb-3">{paramSyncMsg}</Alert>}
-        {paramError && <Alert className="mb-3">{paramError}</Alert>}
+        {/* Only when the modal is closed: the modal renders paramError itself,
+            and two role="alert" regions with the same text are announced twice. */}
+        {paramError && !paramModal && <Alert className="mb-3">{paramError}</Alert>}
         {productParams.length === 0 ? (
           <p className="text-sm text-slate-600">No parameters yet. Use &quot;Sync from template&quot; to import from the template&apos;s variables.tf, or add manually.</p>
         ) : (

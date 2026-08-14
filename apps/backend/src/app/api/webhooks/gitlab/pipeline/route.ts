@@ -48,14 +48,28 @@ export async function POST(req: NextRequest) {
   // the rollout the two are identical for legacy environments (see the
   // backfill in 0004_add_callback_secret.sql), so this stays backward
   // compatible for setups that haven't rotated yet.
+  // Fetch up to TWO matches: callback_secret is UNIQUE since migration 0006,
+  // but a DB that hasn't been migrated yet can still hold duplicates from the
+  // 0004 backfill of the (non-unique) webhook_token. Attributing the event to
+  // an arbitrary one of them would silently apply it to the wrong environment,
+  // so refuse instead of guessing.
   const envRows = await db
     .select({ id: deploymentEnvironments.id })
     .from(deploymentEnvironments)
     .where(eq(deploymentEnvironments.callbackSecret, token))
-    .limit(1)
+    .limit(2)
 
   if (!envRows.length) {
     return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+  }
+
+  if (envRows.length > 1) {
+    console.error(
+      '[webhook] Ambiguous callback secret — shared by environments',
+      envRows.map((e) => e.id).join(', '),
+      '— rotate them (Admin → Environments) so each is unique.',
+    )
+    return NextResponse.json({ error: 'Ambiguous callback secret' }, { status: 409 })
   }
 
   const body = await req.json().catch(() => null) as GitLabPipelineBody | null

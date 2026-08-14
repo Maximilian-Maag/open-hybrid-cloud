@@ -60,19 +60,25 @@ export const createCiSource = async (overrides?: { name?: string; url?: string }
   return src
 }
 
-export const createEnvironment = async (ciSourceId: number, webhookToken = 'wh-secret') => {
+let envSeq = 0
+
+export const createEnvironment = async (ciSourceId: number, webhookToken?: string) => {
+  // Default to a per-call unique token: callback_secret mirrors it (see below)
+  // and is UNIQUE since migration 0006, so a shared default would collide for
+  // any test that seeds more than one environment.
+  const token = webhookToken ?? `wh-secret-${++envSeq}`
   const [env] = await db
     .insert(schema.deploymentEnvironments)
     .values({
       name: 'Test Env',
       ciSourceId,
       webhookUrl: 'https://gitlab.example.com/api/v4/projects/1/trigger/pipeline',
-      webhookToken,
+      webhookToken: token,
       // Mirror the migration 0004 backfill: legacy envs get callback_secret =
       // webhook_token. Tests that seed with a specific webhookToken and then
       // POST to /api/webhooks/gitlab/pipeline with that same value continue
       // to pass without special handling.
-      callbackSecret: webhookToken,
+      callbackSecret: token,
     })
     .returning()
   return env
@@ -130,7 +136,7 @@ export const createInfraElement = async (
   projectId: number,
   environmentId: number,
   productId: number,
-  overrides?: { status?: string; pipelineId?: string[] },
+  overrides?: { status?: string; pipelineId?: string[]; pipelineStatus?: Record<string, string> },
 ) => {
   const [el] = await db
     .insert(schema.infrastructureElements)
@@ -141,6 +147,7 @@ export const createInfraElement = async (
       productId,
       status: (overrides?.status ?? 'active') as schema.InfrastructureElement['status'],
       pipelineId: overrides?.pipelineId ?? [],
+      pipelineStatus: overrides?.pipelineStatus ?? {},
     })
     .returning()
   return el

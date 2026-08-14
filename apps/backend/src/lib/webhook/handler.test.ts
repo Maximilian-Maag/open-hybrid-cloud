@@ -247,6 +247,96 @@ describe('handlePipelineEvent — environment scoping', () => {
   })
 })
 
+describe('handlePipelineEvent — infra decommission completion', () => {
+  it('waits for EVERY destroy pipeline before marking the element decommissioned', async () => {
+    const { user, product, env, project } = await buildScenario()
+    const order = await createOrder(project.id, product.id, env.id, user.id, { status: 'completed' })
+    // Teardown fanned out to a product webhook AND a pipeline stack.
+    const el = await createInfraElement(order.id, project.id, env.id, product.id, {
+      status: 'decommissioning',
+      pipelineId: ['pipe-wh', 'pipe-stack'],
+    })
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-wh', status: 'success' }, env.id)
+
+    const [partial] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, el.id))
+    // One of two done — the stack is still running, so the teardown is NOT complete.
+    expect(partial.status).toBe('decommissioning')
+    expect(partial.pipelineStatus).toEqual({ 'pipe-wh': 'success' })
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-stack', status: 'success' }, env.id)
+
+    const [complete] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, el.id))
+    expect(complete.status).toBe('decommissioned')
+    expect(complete.pipelineStatus).toEqual({ 'pipe-wh': 'success', 'pipe-stack': 'success' })
+  })
+
+  it('a failed destroy pipeline keeps a later sibling success from reporting completion', async () => {
+    const { user, product, env, project } = await buildScenario()
+    const order = await createOrder(project.id, product.id, env.id, user.id, { status: 'completed' })
+    const el = await createInfraElement(order.id, project.id, env.id, product.id, {
+      status: 'decommissioning',
+      pipelineId: ['pipe-wh', 'pipe-stack'],
+    })
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-stack', status: 'failed' }, env.id)
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-wh', status: 'success' }, env.id)
+
+    const [row] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, el.id))
+    // One stack was never destroyed — reporting 'decommissioned' here would
+    // hide leaked infrastructure.
+    expect(row.status).toBe('decommissioning')
+    expect(row.pipelineStatus).toEqual({ 'pipe-stack': 'failed', 'pipe-wh': 'success' })
+  })
+
+  it('a trigger-failed sentinel blocks completion even when every started pipeline succeeds', async () => {
+    const { user, product, env, project } = await buildScenario()
+    const order = await createOrder(project.id, product.id, env.id, user.id, { status: 'completed' })
+    // A destroy trigger that never started contributes no pipeline id, only the
+    // sentinel written by fireDestroyTriggers.
+    const el = await createInfraElement(order.id, project.id, env.id, product.id, {
+      status: 'decommissioning',
+      pipelineId: ['pipe-wh'],
+      pipelineStatus: { 'trigger-failed:0': 'pipeline stack "stack-1" (#1): boom' },
+    })
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-wh', status: 'success' }, env.id)
+
+    const [row] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, el.id))
+    expect(row.status).toBe('decommissioning')
+  })
+
+  it('a stale duplicate success does not re-run the terminal transition', async () => {
+    const { user, product, env, project } = await buildScenario()
+    const order = await createOrder(project.id, product.id, env.id, user.id, { status: 'completed' })
+    const el = await createInfraElement(order.id, project.id, env.id, product.id, {
+      status: 'decommissioning',
+      pipelineId: ['pipe-only'],
+    })
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-only', status: 'success' }, env.id)
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-only', status: 'success' }, env.id)
+
+    const [row] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, el.id))
+    expect(row.status).toBe('decommissioned')
+  })
+})
+
 describe('handlePipelineEvent — no-ops', () => {
   it('does nothing when no matching order exists', async () => {
     await expect(

@@ -40,10 +40,28 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
   const [templates, setTemplates] = useState<InfrastructureElement[]>([])
   const [templateId, setTemplateId] = useState<string>('')
 
+  // Parameter definitions for the selected environment. The page loads the
+  // product without an environment (it is picked here), so the server can only
+  // return one candidate per name *per environment* — the scope/environment
+  // precedence that decides which one actually applies needs a concrete
+  // environment. Refetch with it rather than re-deriving that precedence here,
+  // so the rendered controls are exactly the definitions `createOrder`
+  // validates against. Falls back to the unresolved list until the fetch lands.
+  const [resolvedParameters, setResolvedParameters] = useState(product.parameters)
+
+  useEffect(() => {
+    if (!envId) { setResolvedParameters(product.parameters); return }
+    let stale = false
+    get<ProductDetail>(`/api/catalog/${product.id}?lang=${lang}&environmentId=${envId}`, token)
+      .then((detail) => { if (!stale && detail) setResolvedParameters(detail.parameters) })
+      .catch(() => { /* keep the unresolved list — submit still validates server-side */ })
+    return () => { stale = true }
+  }, [envId, product.id, product.parameters, lang, token])
+
   const selectedEnv = product.environments.find((e) => String(e.environmentId) === envId)
   const needsCostCenter =
     selectedEnv?.costCenterMode === 'select' || selectedEnv?.costCenterMode === 'overhead'
-  const envParameters = product.parameters.filter(
+  const envParameters = resolvedParameters.filter(
     (p) => p.environmentId === null || String(p.environmentId) === envId,
   )
 

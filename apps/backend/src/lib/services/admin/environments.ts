@@ -142,44 +142,48 @@ export const updateEnvironment = async (
 }
 
 export const deleteEnvironment = async (id: number): Promise<Result<void>> => {
-  const existing = await db
-    .select({ id: deploymentEnvironments.id })
-    .from(deploymentEnvironments)
-    .where(eq(deploymentEnvironments.id, id))
-    .limit(1)
-  if (!existing.length) return err(404, 'Not found')
+  // Serialize the reference checks and the DELETE in one transaction, holding a
+  // FOR UPDATE lock on the environment row. A concurrent insert of a referencing
+  // row takes a FK KEY-SHARE lock on the same row, so it can't slip in between
+  // the pre-check and the delete (which would resurrect the 500 this guards).
+  return db.transaction(async (tx): Promise<Result<void>> => {
+    const existing = await tx
+      .select({ id: deploymentEnvironments.id })
+      .from(deploymentEnvironments)
+      .where(eq(deploymentEnvironments.id, id))
+      .for('update')
+      .limit(1)
+    if (!existing.length) return err(404, 'Not found')
 
-  // Refuse when ANY non-cascading FK still references this env — the previous
-  // silent 500 (FK violation from Postgres) was the frontend's "Delete does
-  // nothing" symptom. infrastructure_elements, product_environments,
-  // product_webhooks and orders all reference deployment_environments without
-  // ON DELETE CASCADE, so each must be pre-checked. Return 409 with a message
-  // the UI can surface directly so the operator knows what to clean up first.
-  const [infraRefs, prodEnvRefs, webhookRefs, orderRefs] = await Promise.all([
-    db.select({ id: infrastructureElements.id }).from(infrastructureElements).where(eq(infrastructureElements.environmentId, id)),
-    db.select({ productId: productEnvironments.productId }).from(productEnvironments).where(eq(productEnvironments.environmentId, id)),
-    db.select({ id: productWebhooks.id }).from(productWebhooks).where(eq(productWebhooks.environmentId, id)),
-    db.select({ id: orders.id }).from(orders).where(eq(orders.environmentId, id)),
-  ])
+    // Refuse when ANY non-cascading FK still references this env — the previous
+    // silent 500 (FK violation) was the frontend's "Delete does nothing"
+    // symptom. infrastructure_elements, product_environments, product_webhooks
+    // and orders all reference deployment_environments without ON DELETE
+    // CASCADE. Checks run sequentially since they share the tx connection.
+    const infraRefs = await tx.select({ id: infrastructureElements.id }).from(infrastructureElements).where(eq(infrastructureElements.environmentId, id))
+    const prodEnvRefs = await tx.select({ productId: productEnvironments.productId }).from(productEnvironments).where(eq(productEnvironments.environmentId, id))
+    const webhookRefs = await tx.select({ id: productWebhooks.id }).from(productWebhooks).where(eq(productWebhooks.environmentId, id))
+    const orderRefs = await tx.select({ id: orders.id }).from(orders).where(eq(orders.environmentId, id))
 
-  const blockers: string[] = []
-  if (infraRefs.length > 0) blockers.push(`${infraRefs.length} infrastructure element(s)`)
-  if (prodEnvRefs.length > 0) blockers.push(`${prodEnvRefs.length} product-environment offering(s)`)
-  if (webhookRefs.length > 0) blockers.push(`${webhookRefs.length} product webhook(s)`)
-  if (orderRefs.length > 0) blockers.push(`${orderRefs.length} order(s)`)
+    const blockers: string[] = []
+    if (infraRefs.length > 0) blockers.push(`${infraRefs.length} infrastructure element(s)`)
+    if (prodEnvRefs.length > 0) blockers.push(`${prodEnvRefs.length} product-environment offering(s)`)
+    if (webhookRefs.length > 0) blockers.push(`${webhookRefs.length} product webhook(s)`)
+    if (orderRefs.length > 0) blockers.push(`${orderRefs.length} order(s)`)
 
-  if (blockers.length > 0) {
-    return err(
-      409,
-      `Cannot delete environment: ${blockers.join(', ')} still reference it. Remove them first.`,
-    )
-  }
+    if (blockers.length > 0) {
+      return err(
+        409,
+        `Cannot delete environment: ${blockers.join(', ')} still reference it. Remove them first.`,
+      )
+    }
 
-  const deleted = await db
-    .delete(deploymentEnvironments)
-    .where(eq(deploymentEnvironments.id, id))
-    .returning({ id: deploymentEnvironments.id })
+    const deleted = await tx
+      .delete(deploymentEnvironments)
+      .where(eq(deploymentEnvironments.id, id))
+      .returning({ id: deploymentEnvironments.id })
 
-  if (!deleted.length) return err(404, 'Not found')
-  return ok(undefined)
+    if (!deleted.length) return err(404, 'Not found')
+    return ok(undefined)
+  })
 }

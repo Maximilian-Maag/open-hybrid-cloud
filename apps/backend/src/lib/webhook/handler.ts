@@ -41,6 +41,8 @@ export const handlePipelineEvent = async (
       orderId: infrastructureElements.orderId,
       productId: infrastructureElements.productId,
       environmentId: infrastructureElements.environmentId,
+      pipelineId: infrastructureElements.pipelineId,
+      pipelineStatus: infrastructureElements.pipelineStatus,
     })
     .from(infrastructureElements)
     .where(
@@ -117,10 +119,47 @@ export const handlePipelineEvent = async (
     }
 
     for (const infra of matchingInfra) {
-      await db
+      // Same all-pipelines rule as orders: a teardown can fan out to several
+      // pipelines (product webhooks + pipeline stacks), so merge this one's
+      // success into the JSONB map (`||` is a single atomic UPDATE, so
+      // concurrent events can't lose each other's keys) and only flip the
+      // element to 'decommissioned' once EVERY pipeline it is waiting on has
+      // succeeded. Guard on 'decommissioning' so a stale event can't resurrect
+      // an already-terminal element.
+      const successPatch = JSON.stringify({ [event.pipelineId]: 'success' })
+      const merged = await db
+        .update(infrastructureElements)
+        .set({ pipelineStatus: sql`${infrastructureElements.pipelineStatus} || ${successPatch}::jsonb` })
+        .where(
+          sql`${infrastructureElements.id} = ${infra.id} AND ${infrastructureElements.status} = 'decommissioning'`,
+        )
+        .returning({
+          pipelineId: infrastructureElements.pipelineId,
+          pipelineStatus: infrastructureElements.pipelineStatus,
+        })
+
+      if (!merged.length) continue // already terminal — ignore stale/duplicate event
+
+      const statusMap = merged[0].pipelineStatus
+      const allSucceeded =
+        merged[0].pipelineId.every((pid) => statusMap[pid] === 'success') &&
+        // Also require every recorded entry to be a success. A destroy trigger
+        // that never started contributes no pipeline id but does leave a
+        // `trigger-failed:*` sentinel (see fireDestroyTriggers), so this is what
+        // stops a partially-fired teardown from reporting itself complete.
+        Object.values(statusMap).every((status) => status === 'success')
+      if (!allSucceeded) continue
+
+      // Compare-and-swap so only the caller that flips decommissioning →
+      // decommissioned runs the terminal effects (audit, notification).
+      const done = await db
         .update(infrastructureElements)
         .set({ status: 'decommissioned' })
-        .where(eq(infrastructureElements.id, infra.id))
+        .where(
+          sql`${infrastructureElements.id} = ${infra.id} AND ${infrastructureElements.status} = 'decommissioning'`,
+        )
+        .returning({ id: infrastructureElements.id })
+      if (!done.length) continue
 
       await logAudit(
         null,
@@ -185,6 +224,19 @@ export const handlePipelineEvent = async (
     }
 
     for (const infra of matchingInfra) {
+      // Record the failure in the per-pipeline map so a sibling pipeline's
+      // later success can never satisfy the all-succeeded check and report the
+      // teardown as complete. The element deliberately stays 'decommissioning'
+      // — there is no terminal failure status, and leaving it non-'active'
+      // keeps it out of service while flagging it for manual attention.
+      const failPatch = JSON.stringify({ [event.pipelineId]: event.status })
+      await db
+        .update(infrastructureElements)
+        .set({ pipelineStatus: sql`${infrastructureElements.pipelineStatus} || ${failPatch}::jsonb` })
+        .where(
+          sql`${infrastructureElements.id} = ${infra.id} AND ${infrastructureElements.status} = 'decommissioning'`,
+        )
+
       await logAudit(
         null,
         'infra.decommission_failed',

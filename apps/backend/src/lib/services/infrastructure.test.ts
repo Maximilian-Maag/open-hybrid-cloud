@@ -4,10 +4,14 @@ import type { SessionUser } from '@open-hybrid-cloud/types'
 vi.mock('@/lib/ci/webhooks', () => ({
   triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-destroy']),
   triggerPipelineStacks: vi.fn().mockResolvedValue([]),
+  // The teardown paths use the *Tracked variants so a trigger that fails to
+  // start is reported rather than swallowed.
+  triggerProductWebhooksTracked: vi.fn().mockResolvedValue({ pipelineIds: ['pipe-destroy'], failures: [] }),
+  triggerPipelineStacksTracked: vi.fn().mockResolvedValue({ pipelineIds: [], failures: [] }),
 }))
 
 import { listInfrastructure, decommissionInfra } from './infrastructure'
-import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
 import { infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -25,12 +29,12 @@ import {
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
   ({ id: u.id, email: u.email, name: u.name, role: u.role as SessionUser['role'] })
 
-const mockedWebhooks = vi.mocked(triggerProductWebhooks)
-const mockedStacks = vi.mocked(triggerPipelineStacks)
+const mockedWebhooks = vi.mocked(triggerProductWebhooksTracked)
+const mockedStacks = vi.mocked(triggerPipelineStacksTracked)
 
 beforeEach(() => {
-  mockedWebhooks.mockReset().mockResolvedValue(['pipe-destroy'])
-  mockedStacks.mockReset().mockResolvedValue([])
+  mockedWebhooks.mockReset().mockResolvedValue({ pipelineIds: ['pipe-destroy'], failures: [] })
+  mockedStacks.mockReset().mockResolvedValue({ pipelineIds: [], failures: [] })
 })
 
 const setup = async () => {
@@ -140,7 +144,7 @@ describe('decommissionInfra', () => {
     const { admin, pm, product, env, project } = await setup()
     const order = await seedOrder(project.id, product.id, env.id, pm.id)
     const infra = await createInfraElement(order.id, project.id, env.id, product.id)
-    mockedWebhooks.mockResolvedValueOnce(['pipe-dc-1'])
+    mockedWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-dc-1'], failures: [] })
 
     const result = await decommissionInfra(makeSession(admin), infra.id)
     expect(result.ok).toBe(true)
@@ -165,8 +169,8 @@ describe('decommissionInfra', () => {
     const { admin, pm, product, env, project } = await setup()
     const order = await seedOrder(project.id, product.id, env.id, pm.id)
     const infra = await createInfraElement(order.id, project.id, env.id, product.id)
-    mockedWebhooks.mockResolvedValueOnce(['pipe-wh'])
-    mockedStacks.mockResolvedValueOnce(['pipe-stack'])
+    mockedWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-wh'], failures: [] })
+    mockedStacks.mockResolvedValueOnce({ pipelineIds: ['pipe-stack'], failures: [] })
 
     const result = await decommissionInfra(makeSession(admin), infra.id)
     expect(result.ok).toBe(true)
@@ -199,5 +203,71 @@ describe('decommissionInfra', () => {
       .from(infrastructureElements)
       .where(eq(infrastructureElements.id, infra.id))
     expect(dbInfra.status).toBe('decommissioning')
+  })
+
+  it('hands the element back to active and reports an error when NO destroy pipeline could be started', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    const infra = await createInfraElement(order.id, project.id, env.id, product.id)
+    mockedWebhooks.mockResolvedValueOnce({ pipelineIds: [], failures: ['product webhook "wh" (#1): boom'] })
+    mockedStacks.mockResolvedValueOnce({ pipelineIds: [], failures: [] })
+
+    const result = await decommissionInfra(makeSession(admin), infra.id)
+    // Nothing was destroyed, so this must not read as a started decommission.
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(502)
+      expect(result.message).toContain('boom')
+    }
+
+    const [dbInfra] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, infra.id))
+    // Back to active so the operator can retry.
+    expect(dbInfra.status).toBe('active')
+  })
+
+  it('reports a partial destroy and records a sentinel so the teardown cannot self-complete', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    const infra = await createInfraElement(order.id, project.id, env.id, product.id)
+    mockedWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-wh'], failures: [] })
+    mockedStacks.mockResolvedValueOnce({ pipelineIds: [], failures: ['pipeline stack "s" (#7): refused'] })
+
+    const result = await decommissionInfra(makeSession(admin), infra.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(502)
+      expect(result.message).toContain('refused')
+    }
+
+    const [dbInfra] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, infra.id))
+    // The webhook destroy IS running, so the element cannot go back to active.
+    expect(dbInfra.status).toBe('decommissioning')
+    expect(dbInfra.pipelineId).toEqual(['pipe-wh'])
+    // The sentinel is what stops pipe-wh's success from reporting a complete
+    // teardown while the stack was never destroyed.
+    expect(dbInfra.pipelineStatus).toEqual({
+      'trigger-failed:0': 'pipeline stack "s" (#7): refused',
+    })
+  })
+
+  it('starts a clean decommission with an empty pipeline-status map', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    const infra = await createInfraElement(order.id, project.id, env.id, product.id)
+
+    const result = await decommissionInfra(makeSession(admin), infra.id)
+    expect(result.ok).toBe(true)
+
+    const [dbInfra] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, infra.id))
+    expect(dbInfra.pipelineStatus).toEqual({})
   })
 })

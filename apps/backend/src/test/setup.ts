@@ -92,6 +92,13 @@ beforeAll(async () => {
     -- Older test DBs may not have callback_secret; add and backfill.
     ALTER TABLE deployment_environments ADD COLUMN IF NOT EXISTS callback_secret TEXT NOT NULL DEFAULT '';
     UPDATE deployment_environments SET callback_secret = webhook_token WHERE callback_secret = '';
+    -- Migration 0006: the callback secret identifies the calling environment on
+    -- an inbound callback, so it must be unique. Dropped first so re-running
+    -- setup against an existing test DB is idempotent.
+    ALTER TABLE deployment_environments
+      DROP CONSTRAINT IF EXISTS deployment_environments_callback_secret_unique;
+    ALTER TABLE deployment_environments
+      ADD CONSTRAINT deployment_environments_callback_secret_unique UNIQUE (callback_secret);
     CREATE TABLE IF NOT EXISTS product_environments (
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
@@ -162,8 +169,11 @@ beforeAll(async () => {
       parameters JSONB NOT NULL DEFAULT '{}',
       outputs JSONB NOT NULL DEFAULT '{}',
       pipeline_id JSONB NOT NULL DEFAULT '[]',
+      pipeline_status JSONB NOT NULL DEFAULT '{}',
       deployed_at TIMESTAMPTZ DEFAULT NOW()
     );
+    -- Older test DBs may not have pipeline_status; add it (migration 0007).
+    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
     CREATE TABLE IF NOT EXISTS audit_log (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT,

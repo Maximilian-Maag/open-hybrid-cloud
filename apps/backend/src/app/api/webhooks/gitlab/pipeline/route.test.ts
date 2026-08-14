@@ -133,4 +133,32 @@ describe('POST /api/webhooks/gitlab/pipeline', () => {
     const denyRes = await POST(makeRequest(validPayload, 'rotated-trigger-only'))
     expect(denyRes.status).toBe(401)
   })
+
+  // Migration 0006 makes callback_secret UNIQUE, but a DB that hasn't been
+  // migrated can still hold duplicates from the 0004 backfill of the
+  // (non-unique) webhook_token. The constraint is dropped here to reproduce
+  // that state: picking one of the matching environments arbitrarily would
+  // apply the event to the wrong one, so the route must refuse.
+  it('rejects a callback secret shared by more than one environment instead of guessing', async () => {
+    const { sql } = await import('drizzle-orm')
+    await db.execute(
+      sql`ALTER TABLE deployment_environments DROP CONSTRAINT deployment_environments_callback_secret_unique`,
+    )
+    try {
+      const ci2 = await createCiSource({ name: 'CI-dup' })
+      await createEnvironment(ci2.id, VALID_TOKEN)
+
+      const res = await POST(makeRequest(validPayload, VALID_TOKEN))
+      expect(res.status).toBe(409)
+      const body = await res.json()
+      expect(body.error).toBe('Ambiguous callback secret')
+      // Nothing was transitioned.
+      expect(mockedHandle).not.toHaveBeenCalled()
+    } finally {
+      await db.execute(sql`DELETE FROM deployment_environments WHERE callback_secret = ${VALID_TOKEN}`)
+      await db.execute(
+        sql`ALTER TABLE deployment_environments ADD CONSTRAINT deployment_environments_callback_secret_unique UNIQUE (callback_secret)`,
+      )
+    }
+  })
 })

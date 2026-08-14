@@ -53,7 +53,13 @@ export async function POST(req: NextRequest) {
     .select({ id: deploymentEnvironments.id, callbackSecret: deploymentEnvironments.callbackSecret })
     .from(deploymentEnvironments)
 
-  const matchedEnv = envRows.find((env) => {
+  // Collect ALL matches rather than the first: callback_secret is UNIQUE since
+  // migration 0006, but a DB that hasn't been migrated yet can still hold
+  // duplicates from the 0004 backfill of the (non-unique) webhook_token. Two
+  // environments sharing a secret produce the same HMAC, and attributing the
+  // event to an arbitrary one of them would silently apply it to the wrong
+  // environment — refuse instead of guessing.
+  const matchedEnvs = envRows.filter((env) => {
     const expected = `sha256=${createHmac('sha256', env.callbackSecret).update(rawBody).digest('hex')}`
     try {
       return timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
@@ -62,9 +68,20 @@ export async function POST(req: NextRequest) {
     }
   })
 
-  if (!matchedEnv) {
+  if (!matchedEnvs.length) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
+
+  if (matchedEnvs.length > 1) {
+    console.error(
+      '[webhook] Ambiguous callback secret — shared by environments',
+      matchedEnvs.map((e) => e.id).join(', '),
+      '— rotate them (Admin → Environments) so each is unique.',
+    )
+    return NextResponse.json({ error: 'Ambiguous callback secret' }, { status: 409 })
+  }
+
+  const matchedEnv = matchedEnvs[0]
 
   let body: GitHubWorkflowRunBody
   try {

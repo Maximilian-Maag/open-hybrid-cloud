@@ -179,4 +179,31 @@ describe('POST /api/webhooks/bitbucket/pipeline', () => {
     const rejected = await POST(makeReq('outbound-trigger-token'))
     expect(rejected.status).toBe(401)
   })
+
+  // Migration 0006 makes callback_secret UNIQUE, but a DB that hasn't been
+  // migrated can still hold duplicates from the 0004 backfill of the
+  // (non-unique) webhook_token. Two environments sharing a secret produce the
+  // SAME valid HMAC, so the first match is arbitrary — the route must refuse
+  // rather than scope the event to the wrong environment.
+  it('rejects a signature that matches more than one environment instead of guessing', async () => {
+    const { sql } = await import('drizzle-orm')
+    await db.execute(
+      sql`ALTER TABLE deployment_environments DROP CONSTRAINT deployment_environments_callback_secret_unique`,
+    )
+    try {
+      const ci2 = await createCiSource({ name: 'CI-dup' })
+      await createEnvironment(ci2.id, WEBHOOK_SECRET)
+
+      const res = await POST(makeSignedRequest(validPipelineBody))
+      expect(res.status).toBe(409)
+      const body = await res.json()
+      expect(body.error).toBe('Ambiguous callback secret')
+      expect(mockedHandle).not.toHaveBeenCalled()
+    } finally {
+      await db.execute(sql`DELETE FROM deployment_environments WHERE callback_secret = ${WEBHOOK_SECRET}`)
+      await db.execute(
+        sql`ALTER TABLE deployment_environments ADD CONSTRAINT deployment_environments_callback_secret_unique UNIQUE (callback_secret)`,
+      )
+    }
+  })
 })

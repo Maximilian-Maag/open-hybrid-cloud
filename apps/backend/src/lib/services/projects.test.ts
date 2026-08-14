@@ -4,10 +4,14 @@ import type { SessionUser } from '@open-hybrid-cloud/types'
 vi.mock('@/lib/ci/webhooks', () => ({
   triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-destroy']),
   triggerPipelineStacks: vi.fn().mockResolvedValue([]),
+  // The teardown paths use the *Tracked variants so a trigger that fails to
+  // start is reported rather than swallowed.
+  triggerProductWebhooksTracked: vi.fn().mockResolvedValue({ pipelineIds: ['pipe-destroy'], failures: [] }),
+  triggerPipelineStacksTracked: vi.fn().mockResolvedValue({ pipelineIds: [], failures: [] }),
 }))
 
 import { listProjects, getProjectById, createProject, updateProject, deleteProject } from './projects'
-import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
 import { projects, infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -22,12 +26,12 @@ import {
   createInfraElement,
 } from '@/test/helpers'
 
-const mockedWebhooks = vi.mocked(triggerProductWebhooks)
-const mockedStacks = vi.mocked(triggerPipelineStacks)
+const mockedWebhooks = vi.mocked(triggerProductWebhooksTracked)
+const mockedStacks = vi.mocked(triggerPipelineStacksTracked)
 
 beforeEach(() => {
-  mockedWebhooks.mockReset().mockResolvedValue(['pipe-destroy'])
-  mockedStacks.mockReset().mockResolvedValue([])
+  mockedWebhooks.mockReset().mockResolvedValue({ pipelineIds: ['pipe-destroy'], failures: [] })
+  mockedStacks.mockReset().mockResolvedValue({ pipelineIds: [], failures: [] })
 })
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
@@ -261,7 +265,7 @@ describe('deleteProject', () => {
         (await db.select().from(projects).where(eq(projects.id, project.id))).length > 0
       infraExistedAtTrigger =
         (await db.select().from(infrastructureElements).where(eq(infrastructureElements.projectId, project.id))).length > 0
-      return ['pipe-destroy']
+      return { pipelineIds: ['pipe-destroy'], failures: [] }
     })
 
     const result = await deleteProject(makeSession(admin), project.id)
@@ -273,5 +277,35 @@ describe('deleteProject', () => {
     // And afterwards the project is gone
     const rows = await db.select().from(projects).where(eq(projects.id, project.id))
     expect(rows.length).toBe(0)
+  })
+
+  it('refuses to delete the project when a destroy trigger could not be started', async () => {
+    const admin = await createUser({ role: 'admin', email: 'admin2@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'pm2@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await seedProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id)
+    mockedStacks.mockResolvedValueOnce({ pipelineIds: [], failures: ['pipeline stack "s" (#3): refused'] })
+
+    const result = await deleteProject(makeSession(admin), project.id)
+    // The cascade would remove the infrastructure_elements rows and leave the
+    // provisioned infrastructure running untracked.
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(502)
+      expect(result.message).toContain('refused')
+    }
+
+    const rows = await db.select().from(projects).where(eq(projects.id, project.id))
+    expect(rows.length).toBe(1)
+    const infra = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.projectId, project.id))
+    expect(infra.length).toBe(1)
   })
 })

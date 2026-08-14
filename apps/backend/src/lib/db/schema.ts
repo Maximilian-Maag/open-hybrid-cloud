@@ -81,7 +81,13 @@ export const deploymentEnvironments = pgTable('deployment_environments', {
   // Portal-generated secret sent by GitLab as X-Gitlab-Token on the pipeline
   // event callback. Kept separate from webhook_token (the outbound trigger
   // token) so operators can rotate the two independently.
-  callbackSecret: text('callback_secret').notNull(),
+  //
+  // UNIQUE: the secret is what identifies the calling environment on an inbound
+  // callback (see the webhook routes). If two environments shared it the route
+  // could only pick one arbitrarily and would mis-scope valid events — the
+  // legacy 0004 backfill from webhook_token made that possible, so migration
+  // 0006 rotates duplicates and enforces uniqueness.
+  callbackSecret: text('callback_secret').notNull().unique(),
 })
 
 export const productEnvironments = pgTable('product_environments', {
@@ -157,6 +163,11 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   status: text({ enum: ['active', 'decommissioning', 'decommissioned'] }).notNull().default('active'),
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
   pipelineId: jsonb('pipeline_id').$type<string[]>().notNull().default([]),
+  // Per-pipeline terminal status for the current decommission run, keyed by
+  // pipeline id (mirrors orders.pipeline_status). A teardown may fan out to
+  // several pipelines (product webhooks + pipeline stacks); the element only
+  // becomes 'decommissioned' once EVERY id in pipeline_id succeeded.
+  pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   outputs: jsonb().$type<Record<string, string>>().notNull().default({}),
   deployedAt: timestamp('deployed_at', { withTimezone: true }).defaultNow(),
 })

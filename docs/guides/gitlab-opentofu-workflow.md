@@ -185,6 +185,11 @@ Settings → Webhooks → Add new webhook
 
 The portal's webhook receiver (`POST /api/webhooks/gitlab/pipeline`) verifies the `X-Gitlab-Token` header against every environment's `callback_secret`. If no environment has a matching secret the request is rejected with `401`. Rotate the callback secret in the portal via the **Regenerate** button; the outbound trigger token can be rotated separately at any time.
 
+The matching environment is also what the event is *scoped* to — its orders and infrastructure elements are the only ones the callback can transition. The secret therefore has to identify exactly one environment, and migration **0006** enforces that with a `UNIQUE` constraint on `callback_secret`. Two notes for existing installations:
+
+- The 0004 backfill copied `webhook_token` into `callback_secret`, and trigger tokens are *not* unique. If you reused one trigger token across several environments, 0006 keeps the lowest-id environment on its original value and **rotates the others** to freshly generated secrets. Those environments need their new secret copied into GitLab (`Reveal → Copy`) before their callbacks are accepted again — until then they return `401`. This is the intended outcome: before 0006 their callbacks were being attributed to the wrong environment.
+- On a database that has not yet run 0006, a callback whose secret matches more than one environment is rejected with `409 Ambiguous callback secret` rather than attributed to an arbitrary one of them.
+
 **How the callback is processed:**
 
 1. GitLab sends a `pipeline` event payload for every status transition (`pending`, `running`, `success`, `failed`, `canceled`).

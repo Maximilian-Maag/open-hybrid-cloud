@@ -94,6 +94,33 @@ describe('createEnvironment', () => {
     expect(updated.ok).toBe(true)
     if (updated.ok) expect(updated.data).not.toHaveProperty('callbackSecret')
   })
+
+  // Migration 0006. The callback secret is what identifies the calling
+  // environment on an inbound callback, so two environments must never be able
+  // to share one — the 0004 backfill from the non-unique webhook_token made
+  // that possible and left callbacks silently mis-scoped.
+  it('rejects two environments sharing a callback secret at the DB level', async () => {
+    const ci = await createCiSource()
+    const first = await createEnvironment({
+      name: 'unique-1',
+      ciSourceId: ci.id,
+      webhookUrl: 'http://e',
+      webhookToken: 'tok',
+    })
+    if (!first.ok) throw new Error('seed failed')
+    const revealed = await getCallbackSecret(first.data.id)
+    if (!revealed.ok) throw new Error('reveal failed')
+
+    await expect(
+      db.insert(deploymentEnvironments).values({
+        name: 'unique-2',
+        ciSourceId: ci.id,
+        webhookUrl: 'http://e2',
+        webhookToken: 'tok2',
+        callbackSecret: revealed.data.callbackSecret,
+      }),
+    ).rejects.toThrow()
+  })
 })
 
 describe('generateCallbackSecret', () => {

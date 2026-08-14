@@ -3,6 +3,13 @@
 :root {
   --bp: #131921;
   --bs: #febd69;
+  /* Foreground for content painted on the branding colours. Overridden per
+     subtree with the value derived from the operator's actual colours (see
+     lib/contrast.ts); these defaults match the shipped --bp/--bs. */
+  --bp-ink: #ffffff;
+  --bs-ink: #101827;
+  /* Brand colour used as text on a light surface, AA-adjusted. */
+  --bp-text: #131921;
 }
 
 /* ── Modal backdrop: blur + fade ─────────────────────────────────────────── */
@@ -57,4 +64,22 @@ dialog::backdrop {
   --animate-page-in:    page-in    0.25s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-toast-in:   toast-in   0.25s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-flash-row:  flash-row  1.4s ease-out forwards;
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────────
+   Everything above is decorative: modal/backdrop entrances, page and toast
+   transitions, the row-flash highlight and StatusBadge's indefinite pulse on
+   provisioning/decommissioning. None of it carries information, so for users who
+   ask for less motion we drop it entirely rather than merely shortening it.
+   The pulse in particular runs forever, which is what WCAG 2.2.2 is about. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  dialog::backdrop { animation: none; }
 }

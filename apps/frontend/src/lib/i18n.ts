@@ -73,6 +73,35 @@ export type Translations = {
   approvals: string
   audit: string
   myAccount: string
+  // Shared chrome + admin page headers
+  mainNavigation: string
+  dismiss: string
+  close: string
+  search: string
+  skipToContent: string
+  ciSources: string
+  environments: string
+  costCenters: string
+  users: string
+  branding: string
+  smtpConfiguration: string
+  aiConfiguration: string
+  exchangeRates: string
+  adminDashboard: string
+  profileSettings: string
+  globalParameters: string
+  categoriesSubtitle: string
+  ciSourcesSubtitle: string
+  environmentsSubtitle: string
+  costCentersSubtitle: string
+  usersSubtitle: string
+  brandingSubtitle: string
+  smtpSubtitle: string
+  aiSubtitle: string
+  exchangeRatesSubtitle: string
+  adminDashboardSubtitle: string
+  profileSettingsSubtitle: string
+  globalParametersSubtitle: string
   profile: string
   // Login
   emailAddress: string
@@ -203,7 +232,12 @@ export type Translations = {
   noImprintConfigured: string
 }
 
-const translations: Record<string, Translations> = {
+// English is the complete reference table; every other language may omit keys
+// and t() falls back to English for those (see t() below). Modelling it this way
+// is what lets a new UI string ship without 25 hand-written translations —
+// the alternative, which this replaced, was hardcoding English into components
+// where no translator would ever find it.
+const translations: { en: Translations } & Record<string, Partial<Translations>> = {
   bg: {
     signOut: 'Изход',
     infrastructure: 'Инфраструктура',
@@ -734,6 +768,34 @@ const translations: Record<string, Translations> = {
     approvals: 'Genehmigungen',
     audit: 'Audit',
     myAccount: 'Mein Konto',
+    mainNavigation: 'Hauptnavigation',
+    dismiss: 'Schließen',
+    close: 'Schließen',
+    search: 'Suchen',
+    skipToContent: 'Zum Inhalt springen',
+    ciSources: 'CI-Quellen',
+    environments: 'Deployment-Umgebungen',
+    costCenters: 'Kostenstellen',
+    users: 'Benutzer',
+    branding: 'Branding',
+    smtpConfiguration: 'SMTP-Konfiguration',
+    aiConfiguration: 'KI-Konfiguration',
+    exchangeRates: 'Wechselkurse',
+    adminDashboard: 'Administration',
+    profileSettings: 'Profileinstellungen',
+    globalParameters: 'Globale Parameter',
+    categoriesSubtitle: 'Produktkategorien verwalten.',
+    ciSourcesSubtitle: 'CI-Systeme konfigurieren, die die Pipelines ausführen.',
+    environmentsSubtitle: 'Umgebungen konfigurieren, in die Produkte ausgerollt werden können.',
+    costCentersSubtitle: 'Kostenstellen für die Kostenzuordnung verwalten.',
+    usersSubtitle: 'Portal-Benutzer und ihre Rollen verwalten.',
+    brandingSubtitle: 'Das Erscheinungsbild des Portals anpassen.',
+    smtpSubtitle: 'Ausgehende E-Mails konfigurieren.',
+    aiSubtitle: 'KI-Anbieter für Übersetzungen konfigurieren.',
+    exchangeRatesSubtitle: 'Wechselkurse für die Preisumrechnung.',
+    adminDashboardSubtitle: 'Portal-Konfiguration verwalten.',
+    profileSettingsSubtitle: 'Namen und Passwort ändern.',
+    globalParametersSubtitle: 'Gemeinsame Parameterdefinitionen für Produkte.',
     profile: 'Profil',
     emailAddress: 'E-Mail-Adresse',
     password: 'Passwort',
@@ -1058,6 +1120,34 @@ const translations: Record<string, Translations> = {
     approvals: 'Approvals',
     audit: 'Audit',
     myAccount: 'My Account',
+    mainNavigation: 'Main navigation',
+    dismiss: 'Dismiss',
+    close: 'Close',
+    search: 'Search',
+    skipToContent: 'Skip to content',
+    ciSources: 'CI Sources',
+    environments: 'Deployment Environments',
+    costCenters: 'Cost Centers',
+    users: 'Users',
+    branding: 'Branding',
+    smtpConfiguration: 'SMTP Configuration',
+    aiConfiguration: 'AI Configuration',
+    exchangeRates: 'Exchange Rates',
+    adminDashboard: 'Admin Dashboard',
+    profileSettings: 'Profile Settings',
+    globalParameters: 'Global Parameters',
+    categoriesSubtitle: 'Manage product categories.',
+    ciSourcesSubtitle: 'Configure the CI systems that run your pipelines.',
+    environmentsSubtitle: 'Configure the environments products can be deployed into.',
+    costCentersSubtitle: 'Manage cost centers used for billing attribution.',
+    usersSubtitle: 'Manage portal users and their roles.',
+    brandingSubtitle: 'Customize the look of the portal.',
+    smtpSubtitle: 'Configure outgoing email.',
+    aiSubtitle: 'Configure the AI provider used for translations.',
+    exchangeRatesSubtitle: 'Currency conversion rates used for pricing.',
+    adminDashboardSubtitle: 'Manage the portal configuration.',
+    profileSettingsSubtitle: 'Update your name and password.',
+    globalParametersSubtitle: 'Shared parameter definitions available to products.',
     profile: 'Profile',
     emailAddress: 'Email address',
     password: 'Password',
@@ -4258,7 +4348,11 @@ const translations: Record<string, Translations> = {
 
 export function t(key: keyof Translations, lang: string): string {
   const l = lang.split('-')[0].toLowerCase()
-  return (translations[l] ?? translations.en)[key]
+  // Fall back PER KEY, not per language: a language that is missing a newly
+  // added key used to yield `undefined`, which renders as an empty control or
+  // the literal string "undefined". English is always complete, so it is the
+  // backstop.
+  return translations[l]?.[key] ?? translations.en[key]
 }
 
 export function isValidLang(lang: string): lang is LangCode {

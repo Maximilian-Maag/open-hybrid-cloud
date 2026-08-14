@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { InfrastructureElement } from '@open-hybrid-cloud/types'
 import { post } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
 import { Modal } from '@/components/ui/Modal'
 import { t } from '@/lib/i18n'
 
@@ -48,9 +49,9 @@ export function InfraActions({ item, token, lang = 'en' }: Props) {
           {' '}{t('cannotBeUndone', lang)}
         </p>
         {error && (
-          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          <Alert className="mb-4">
             {error}
-          </div>
+          </Alert>
         )}
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setOpen(false)}>{t('cancel', lang)}</Button>

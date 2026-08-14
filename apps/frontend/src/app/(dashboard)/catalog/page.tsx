@@ -68,7 +68,7 @@ export default function CatalogPage() {
               <button
                 onClick={() => setSelectedCategory(null)}
                 className="w-full text-left block px-3 py-1.5 rounded text-sm transition-colors font-semibold"
-                style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: '#fff' } : { color: '#475569' }}
+                style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { color: '#475569' }}
                 onMouseEnter={(e) => { if (selectedCategory !== null) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
                 onMouseLeave={(e) => { if (selectedCategory !== null) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
               >
@@ -80,7 +80,7 @@ export default function CatalogPage() {
                 <button
                   onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
                   className="w-full text-left block px-3 py-1.5 rounded text-sm transition-colors"
-                  style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: '#fff', fontWeight: 600 } : { color: '#475569' }}
+                  style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)', fontWeight: 600 } : { color: '#475569' }}
                   onMouseEnter={(e) => { if (selectedCategory !== cat.id) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
                   onMouseLeave={(e) => { if (selectedCategory !== cat.id) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
                 >
@@ -98,7 +98,7 @@ export default function CatalogPage() {
           <div>
             {search ? (
               <h2 className="text-xl font-bold text-slate-800">
-                {t('resultsFor', lang)}: <span style={{ color: 'var(--bp)' }}>&ldquo;{search}&rdquo;</span>
+                {t('resultsFor', lang)}: <span style={{ color: 'var(--bp-text)' }}>&ldquo;{search}&rdquo;</span>
               </h2>
             ) : (
               <>
@@ -118,7 +118,7 @@ export default function CatalogPage() {
             <button
               onClick={() => setSelectedCategory(null)}
               className="rounded-full px-3 py-1 text-sm font-medium transition-colors"
-              style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: '#fff' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
+              style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
             >
               {t('all', lang)}
             </button>
@@ -127,7 +127,7 @@ export default function CatalogPage() {
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
                 className="rounded-full px-3 py-1 text-sm font-medium transition-colors"
-                style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: '#fff' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
+                style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
               >
                 {cat.name}
               </button>
@@ -145,7 +145,7 @@ export default function CatalogPage() {
             <button
               onClick={() => load()}
               className="text-sm mt-3 inline-block hover:underline"
-              style={{ color: 'var(--bp)' }}
+              style={{ color: 'var(--bp-text)' }}
             >
               {t('tryAgain', lang)}
             </button>
@@ -157,7 +157,7 @@ export default function CatalogPage() {
             </svg>
             <p className="font-semibold text-slate-500">{t('noProducts', lang)}</p>
             {search && (
-              <button onClick={() => setSearch('')} className="text-sm mt-2 inline-block hover:underline" style={{ color: 'var(--bp)' }}>
+              <button onClick={() => setSearch('')} className="text-sm mt-2 inline-block hover:underline" style={{ color: 'var(--bp-text)' }}>
                 ← {t('allProducts', lang)}
               </button>
             )}
@@ -177,13 +177,13 @@ export default function CatalogPage() {
                     className="h-40 flex items-center justify-center border-b border-slate-100"
                     style={{ backgroundColor: 'color-mix(in srgb, var(--bp) 8%, white)' }}
                   >
-                    <svg className="h-14 w-14 opacity-25" style={{ color: 'var(--bp)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="h-14 w-14 opacity-25" style={{ color: 'var(--bp-text)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
                     </svg>
                   </div>
                   <div className="p-3 flex flex-col flex-1">
                     {catName && (
-                      <span className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--bp)' }}>
+                      <span className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--bp-text)' }}>
                         {catName}
                       </span>
                     )}

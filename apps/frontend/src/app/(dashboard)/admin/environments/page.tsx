@@ -4,6 +4,8 @@ import type { Role, CiSource } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EnvironmentsManager } from './EnvironmentsManager'
 import { get } from '@/lib/api'
+import { t } from '@/lib/i18n'
+import { getLang } from '@/lib/getLang'
 
 export default async function EnvironmentsPage() {
   const session = await auth()
@@ -17,9 +19,11 @@ export default async function EnvironmentsPage() {
     ciSources = (await get<CiSource[]>('/api/admin/ci-sources', token)) ?? []
   } catch { /* empty */ }
 
+  const lang = await getLang()
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <PageHeader title="Deployment Environments" subtitle="Configure deployment targets." />
+      <PageHeader title={t('environments', lang)} subtitle={t('environmentsSubtitle', lang)} />
       <EnvironmentsManager token={token} ciSources={ciSources} />
     </div>
   )

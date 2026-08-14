@@ -4,6 +4,8 @@ import type { Role, SmtpConfig } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { SmtpForm } from './SmtpForm'
+import { t } from '@/lib/i18n'
+import { getLang } from '@/lib/getLang'
 
 export default async function SmtpConfigPage() {
   const session = await auth()
@@ -17,9 +19,11 @@ export default async function SmtpConfigPage() {
     config = await get<SmtpConfig>('/api/admin/config/smtp', token)
   } catch { /* use null */ }
 
+  const lang = await getLang()
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <PageHeader title="SMTP Configuration" subtitle="Configure email delivery settings." />
+      <PageHeader title={t('smtpConfiguration', lang)} subtitle={t('smtpSubtitle', lang)} />
       <SmtpForm initial={config} token={token} />
     </div>
   )

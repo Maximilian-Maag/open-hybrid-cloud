@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { Category, CreateCategoryRequest, UpdateCategoryRequest } from '@open-hybrid-cloud/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -114,21 +115,21 @@ export function CategoriesManager({ token }: Props) {
         action={<Button size="sm" onClick={openAdd}>Add Category</Button>}
       >
         {error && !deleteTarget && (
-          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
+          <Alert className="mb-4">{error}</Alert>
         )}
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
           </div>
         ) : categories.length === 0 ? (
-          <p className="text-center py-6 text-slate-400">No categories yet.</p>
+          <p className="text-center py-6 text-slate-600">No categories yet.</p>
         ) : (
           <div className="space-y-2">
             {categories.map((cat) => (
               <div key={cat.id} className={`flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3 ${cat.id === flashId ? 'animate-flash-row' : ''}`}>
                 <div>
                   <span className="font-medium text-slate-900">{cat.name}</span>
-                  <span className="ml-2 text-xs text-slate-400">order: {cat.displayOrder}</span>
+                  <span className="ml-2 text-xs text-slate-600">order: {cat.displayOrder}</span>
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(cat)}>Edit</Button>
@@ -143,7 +144,7 @@ export function CategoriesManager({ token }: Props) {
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Category" size="sm">
         <form onSubmit={handleAdd} className="space-y-4">
           {formError && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>
+            <Alert>{formError}</Alert>
           )}
           <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
           <Input label="Display Order" type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
@@ -157,7 +158,7 @@ export function CategoriesManager({ token }: Props) {
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Category" size="sm">
         <form onSubmit={handleEdit} className="space-y-4">
           {formError && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>
+            <Alert>{formError}</Alert>
           )}
           <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
           <Input label="Display Order" type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
@@ -169,7 +170,7 @@ export function CategoriesManager({ token }: Props) {
       </Modal>
 
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Category" size="sm">
-        {error && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {error && <Alert className="mb-4">{error}</Alert>}
         <p className="text-sm text-slate-600 mb-6">
           Delete category <strong>{deleteTarget?.name}</strong>? This cannot be undone.
         </p>

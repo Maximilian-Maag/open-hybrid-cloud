@@ -6,6 +6,7 @@ import { TopNav } from '@/components/layout/TopNav'
 import type { Branding } from '@open-hybrid-cloud/types'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
+import { readableInk, readableAccent } from '@/lib/contrast'
 
 const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
 
@@ -63,13 +64,24 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div
       className="min-h-screen flex flex-col bg-slate-50 text-slate-900 antialiased"
-      style={{ '--bp': primaryColor, '--bs': secondaryColor } as React.CSSProperties}
+      style={{
+        '--bp': primaryColor,
+        '--bs': secondaryColor,
+        // Foreground for anything painted ON the branding colours. Derived from
+        // each colour's luminance instead of hardcoded white, which only stayed
+        // legible while the operator happened to pick something dark.
+        '--bp-ink': readableInk(primaryColor).ink,
+        '--bs-ink': readableInk(secondaryColor).ink,
+        // The brand colour used AS text on a white card — darkened until it
+        // clears AA, so a pale brand stays readable.
+        '--bp-text': readableAccent(primaryColor),
+      } as React.CSSProperties}
     >
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:shadow-lg focus:ring-2 focus:ring-blue-500"
       >
-        Skip to content
+        {t('skipToContent', lang)}
       </a>
       <Header
         userName={session.user?.name}
@@ -84,15 +96,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
       </main>
       {imprintText && (
-        <footer className="mt-10 border-t border-white/10" style={{ backgroundColor: 'var(--bp)' }}>
+        <footer className="mt-10 border-t border-current/10" style={{ backgroundColor: 'var(--bp)' }}>
           <div className="max-w-screen-2xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <span className="text-white/50 text-xs">
+            <span className="text-xs opacity-80" style={{ color: 'var(--bp-ink)' }}>
               © {shopName}{shopSubtitle ? ` — ${shopSubtitle}` : ''}
             </span>
             <div className="flex gap-4">
-              <Link href="/catalog" className="text-white/60 text-xs hover:text-white transition-colors">{t('catalog', lang)}</Link>
-              <Link href="/orders" className="text-white/60 text-xs hover:text-white transition-colors">{t('orders', lang)}</Link>
-              <Link href="/impressum" className="text-white/60 text-xs hover:text-white transition-colors">{t('imprint', lang)}</Link>
+              <Link href="/catalog" className="text-xs opacity-80 hover:opacity-100 transition-opacity" style={{ color: 'var(--bp-ink)' }}>{t('catalog', lang)}</Link>
+              <Link href="/orders" className="text-xs opacity-80 hover:opacity-100 transition-opacity" style={{ color: 'var(--bp-ink)' }}>{t('orders', lang)}</Link>
+              <Link href="/impressum" className="text-xs opacity-80 hover:opacity-100 transition-opacity" style={{ color: 'var(--bp-ink)' }}>{t('imprint', lang)}</Link>
             </div>
           </div>
         </footer>

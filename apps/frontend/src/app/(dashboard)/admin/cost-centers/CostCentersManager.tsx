@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { CostCenter, CreateCostCenterRequest, UpdateCostCenterRequest } from '@open-hybrid-cloud/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -100,12 +101,12 @@ export function CostCentersManager({ token }: Props) {
     <>
       <Card title="Cost Centers" action={<Button size="sm" onClick={openAdd}>Add Cost Center</Button>}>
         {deleteError && !deleteTarget && (
-          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>
+          <Alert className="mb-3">{deleteError}</Alert>
         )}
         {loading ? (
           <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
         ) : ccs.length === 0 ? (
-          <p className="text-center py-6 text-slate-400">No cost centers yet.</p>
+          <p className="text-center py-6 text-slate-600">No cost centers yet.</p>
         ) : (
           <div className="space-y-2">
             {ccs.map((cc) => (
@@ -132,7 +133,7 @@ export function CostCentersManager({ token }: Props) {
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Cost Center" size="sm">
         <form onSubmit={handleAdd} className="space-y-4">
-          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <Alert>{formError}</Alert>}
           <Input label="Code" value={formCode} onChange={(e) => setFormCode(e.target.value)} required placeholder="e.g. CC-100" />
           <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
           <div className="flex items-center gap-2">
@@ -148,7 +149,7 @@ export function CostCentersManager({ token }: Props) {
       </Modal>
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Cost Center" size="sm">
         <form onSubmit={handleEdit} className="space-y-4">
-          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <Alert>{formError}</Alert>}
           <Input label="Code" value={formCode} onChange={(e) => setFormCode(e.target.value)} required placeholder="e.g. CC-100" />
           <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
           <div className="flex items-center gap-2">
@@ -163,7 +164,7 @@ export function CostCentersManager({ token }: Props) {
         </form>
       </Modal>
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Cost Center" size="sm">
-        {deleteError && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>}
+        {deleteError && <Alert className="mb-4">{deleteError}</Alert>}
         <p className="text-sm text-slate-600 mb-6">Delete cost center <strong>{deleteTarget?.code}</strong> — {deleteTarget?.name}?</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>

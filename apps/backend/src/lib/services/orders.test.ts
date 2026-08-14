@@ -26,6 +26,7 @@ import {
   createProject,
   linkProductEnvironment,
   createOrder as seedOrder,
+  createCostCenter,
 } from '@/test/helpers'
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
@@ -467,5 +468,91 @@ describe('createOrder — validation & ownership', () => {
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(400)
+  })
+})
+
+// FA-10.4 / issue #22. These rules live on the product/environment offering and
+// used to be enforced only by OrderForm in the browser, so a direct POST could
+// bypass them entirely — and the result lands in billing attribution.
+describe('createOrder — cost centre rules are enforced server-side', () => {
+  const buildWith = async (
+    mode: 'project' | 'select' | 'overhead',
+    forced: boolean,
+  ) => {
+    const admin = await createUser({ role: 'admin', email: 'cc-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'cc-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'CC Product')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id, { costCenterMode: mode, forcedCostCenter: forced })
+    const project = await createProject(pm.id)
+    return { admin, product, env, project }
+  }
+
+  const base = (p: { product: { id: number }; env: { id: number }; project: { id: number } }) => ({
+    projectId: p.project.id,
+    productId: p.product.id,
+    environmentId: p.env.id,
+    parameters: {},
+  })
+
+  it('rejects an order with no cost centre when the environment forces one', async () => {
+    const ctx = await buildWith('select', true)
+    const result = await createOrder(makeSession(ctx.admin), base(ctx))
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/cost center is required/i)
+    }
+  })
+
+  it('rejects a cost centre that has been deactivated', async () => {
+    const ctx = await buildWith('select', true)
+    const cc = await createCostCenter({ active: false })
+    const result = await createOrder(makeSession(ctx.admin), { ...base(ctx), costCenterId: cc.id })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/not active/i)
+    }
+  })
+
+  it('rejects a cost centre id that does not exist', async () => {
+    const ctx = await buildWith('overhead', true)
+    const result = await createOrder(makeSession(ctx.admin), { ...base(ctx), costCenterId: 999_999 })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  it('stores an active cost centre when the environment asks the user to choose', async () => {
+    const ctx = await buildWith('select', true)
+    const cc = await createCostCenter()
+    const result = await createOrder(makeSession(ctx.admin), { ...base(ctx), costCenterId: cc.id })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.costCenterId).toBe(cc.id)
+  })
+
+  it('allows omitting the cost centre when selection is offered but not forced', async () => {
+    const ctx = await buildWith('select', false)
+    const result = await createOrder(makeSession(ctx.admin), base(ctx))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.costCenterId).toBeNull()
+  })
+
+  it('ignores a submitted cost centre in project mode, where attribution follows the project', async () => {
+    const ctx = await buildWith('project', false)
+    const cc = await createCostCenter()
+    const result = await createOrder(makeSession(ctx.admin), { ...base(ctx), costCenterId: cc.id })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    // The UI never offers the field in this mode, so a value that arrives anyway
+    // must not be stored against the order.
+    expect(row.costCenterId).toBeNull()
   })
 })

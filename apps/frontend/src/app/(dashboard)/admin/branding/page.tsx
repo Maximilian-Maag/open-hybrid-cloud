@@ -4,6 +4,8 @@ import type { Role, Branding } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { BrandingForm } from './BrandingForm'
+import { t } from '@/lib/i18n'
+import { getLang } from '@/lib/getLang'
 
 export default async function BrandingPage() {
   const session = await auth()
@@ -24,9 +26,11 @@ export default async function BrandingPage() {
     branding = await get<Branding>('/api/admin/branding', token)
   } catch { /* use defaults */ }
 
+  const lang = await getLang()
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <PageHeader title="Branding" subtitle="Customize the portal appearance." />
+      <PageHeader title={t('branding', lang)} subtitle={t('brandingSubtitle', lang)} />
       <BrandingForm initial={branding} token={token} />
     </div>
   )

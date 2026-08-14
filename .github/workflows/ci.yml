@@ -218,7 +218,16 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: pnpm exec playwright test
+        run: pnpm exec playwright test --grep-invert "Accessibility"
+
+      # Separate step so a red pipeline says which of the two broke. Covers
+      # WCAG 2.1 A/AA on every page and dialog, plus the things axe cannot see:
+      # focus visibility, accessible-name language, aria-current and
+      # reduced-motion. Also re-scans the dashboard under a deliberately hostile
+      # branding colour, because the chrome is painted on an operator-chosen
+      # value and default-config scanning hid 235 of 246 failures.
+      - name: Run accessibility gate (WCAG 2.1 AA)
+        run: pnpm exec playwright test e2e/a11y.spec.ts
 
       - name: Upload Playwright report
         if: failure()

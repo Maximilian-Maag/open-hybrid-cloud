@@ -5,6 +5,7 @@ import Link from 'next/link'
 import type { Order } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Button } from '@/components/ui/Button'
 import { getLang } from '@/lib/getLang'
@@ -81,10 +82,10 @@ export default async function OrderDetailPage({ params }: Props) {
         </dl>
 
         {order.status === 'rejected' && order.rejectionNote && (
-          <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+          <Alert className="mt-4">
             <p className="text-sm font-medium text-red-800 mb-1">{t('rejectionNote', lang)}</p>
             <p className="text-sm text-red-700">{order.rejectionNote}</p>
-          </div>
+          </Alert>
         )}
       </Card>
 

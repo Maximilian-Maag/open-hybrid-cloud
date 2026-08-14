@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { UpdateProfileRequest, ChangePasswordRequest } from '@open-hybrid-cloud/types'
 import { put } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useLang } from '@/lib/useLang'
@@ -73,10 +74,10 @@ export function SettingsForms({ token, initialName, email }: Props) {
       <Card title={t('profileTitle', lang)}>
         <form onSubmit={handleProfileSave} className="space-y-4">
           {profileError && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{profileError}</div>
+            <Alert>{profileError}</Alert>
           )}
           {profileSuccess && (
-            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">{t('profileUpdated', lang)}</div>
+            <Alert tone="success">{t('profileUpdated', lang)}</Alert>
           )}
           <Input label={t('email', lang)} type="email" value={email} disabled />
           <Input label={t('name', lang)} value={name} onChange={(e) => setName(e.target.value)} required />
@@ -91,10 +92,10 @@ export function SettingsForms({ token, initialName, email }: Props) {
       <Card title={t('changePassword', lang)}>
         <form onSubmit={handlePasswordChange} className="space-y-4">
           {pwError && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{pwError}</div>
+            <Alert>{pwError}</Alert>
           )}
           {pwSuccess && (
-            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">{t('passwordChanged', lang)}</div>
+            <Alert tone="success">{t('passwordChanged', lang)}</Alert>
           )}
           <Input
             label={t('currentPassword', lang)}

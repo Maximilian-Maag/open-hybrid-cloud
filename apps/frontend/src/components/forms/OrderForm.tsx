@@ -12,6 +12,7 @@ import type {
 } from '@open-hybrid-cloud/types'
 import { post, get } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
 import { Select } from '@/components/ui/Select'
 import { ParameterFields } from './ParameterFields'
 import { t } from '@/lib/i18n'
@@ -129,18 +130,18 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
 
   if (success) {
     return (
-      <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+      <Alert tone="success">
         {t('orderSuccess', lang)}
-      </div>
+      </Alert>
     )
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        <Alert>
           {error}
-        </div>
+        </Alert>
       )}
 
       <Select

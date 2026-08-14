@@ -8,6 +8,7 @@ import {
   products,
   projects,
   users,
+  costCenters,
   type Parameter,
 } from '@/lib/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
@@ -186,6 +187,50 @@ const validateAndApplyParameters = (
   return ok(result)
 }
 
+/**
+ * Resolve and validate the cost centre for an order against the rules stored on
+ * the product/environment offering.
+ *
+ * - `project`  the cost centre comes from the project, so a submitted one is
+ *              ignored rather than silently stored against the order.
+ * - `select` / `overhead`  the user picks one. `forcedCostCenter` makes that
+ *              choice mandatory; otherwise it may be omitted.
+ *
+ * A submitted id must additionally name a cost centre that exists AND is active
+ * — the foreign key only proves existence, and ordering against a deactivated
+ * cost centre is exactly what deactivating one is meant to prevent.
+ */
+const validateCostCenter = async (
+  offering: { costCenterMode: string; forcedCostCenter: boolean },
+  costCenterId: number | undefined,
+): Promise<Result<number | null>> => {
+  const userChooses = offering.costCenterMode === 'select' || offering.costCenterMode === 'overhead'
+
+  if (!userChooses) {
+    // 'project' mode: attribution follows the project, so don't store a
+    // caller-supplied value that the UI never offered.
+    return ok(null)
+  }
+
+  if (costCenterId === undefined || costCenterId === null) {
+    if (offering.forcedCostCenter) {
+      return err(400, 'A cost center is required for this environment')
+    }
+    return ok(null)
+  }
+
+  const [cc] = await db
+    .select({ id: costCenters.id, active: costCenters.active })
+    .from(costCenters)
+    .where(eq(costCenters.id, costCenterId))
+    .limit(1)
+
+  if (!cc) return err(400, 'Cost center not found')
+  if (!cc.active) return err(400, 'Cost center is not active')
+
+  return ok(cc.id)
+}
+
 export const createOrder = async (
   session: SessionUser,
   input: CreateOrderInput,
@@ -212,9 +257,14 @@ export const createOrder = async (
     .limit(1)
   if (!product) return err(404, 'Product not found')
 
-  // … and must actually be offered in the chosen environment.
+  // … and must actually be offered in the chosen environment. The offering row
+  // also carries the cost-centre rules, which are validated below.
   const [offered] = await db
-    .select({ productId: productEnvironments.productId })
+    .select({
+      productId: productEnvironments.productId,
+      costCenterMode: productEnvironments.costCenterMode,
+      forcedCostCenter: productEnvironments.forcedCostCenter,
+    })
     .from(productEnvironments)
     .where(
       and(
@@ -224,6 +274,15 @@ export const createOrder = async (
     )
     .limit(1)
   if (!offered) return err(400, 'Product is not offered in the selected environment')
+
+  // Cost-centre rules (FA-10.4). These were previously enforced only in the
+  // browser — OrderForm computes `needsCostCenter` and marks the field required —
+  // so a direct POST could omit the cost centre on an environment that forces
+  // one, or attach an inactive one. Both land in billing attribution, so the
+  // server has to decide.
+  const costCenterResult = await validateCostCenter(offered, costCenterId)
+  if (!costCenterResult.ok) return costCenterResult
+  const resolvedCostCenterId = costCenterResult.data
 
   // Server-side parameter validation (required/type checks + defaults).
   const defs = await loadApplicableParameters(productId, product.categoryId, environmentId)
@@ -241,7 +300,7 @@ export const createOrder = async (
         userId: session.id,
         status: 'provisioning',
         parameters,
-        costCenterId: costCenterId ?? null,
+        costCenterId: resolvedCostCenterId,
       })
       .returning()
 
@@ -286,7 +345,7 @@ export const createOrder = async (
         userId: session.id,
         status: 'pending',
         parameters,
-        costCenterId: costCenterId ?? null,
+        costCenterId: resolvedCostCenterId,
       })
       .returning()
 

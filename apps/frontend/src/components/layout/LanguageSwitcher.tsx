@@ -43,7 +43,8 @@ export function LanguageSwitcher({ lang }: Props) {
       <button
         ref={toggleRef}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 text-white/80 hover:text-white text-xs font-medium border border-white/20 rounded-md px-2 py-1 transition-colors focus:outline-none active:scale-95"
+        className="flex items-center gap-1 text-xs font-medium border border-current/40 rounded-md px-2 py-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current active:scale-95"
+        style={{ color: 'var(--bp-ink)' }}
         aria-label={`Language: ${currentName}`}
         aria-expanded={open}
       >
@@ -64,7 +65,7 @@ export function LanguageSwitcher({ lang }: Props) {
                   onClick={() => selectLang(l.code)}
                   className="w-full flex flex-col items-center rounded-lg px-1 py-2 transition-colors text-center active:scale-95"
                   style={l.code === current
-                    ? { backgroundColor: 'var(--bs)', color: '#111' }
+                    ? { backgroundColor: 'var(--bs)', color: 'var(--bs-ink)' }
                     : { color: '#475569' }
                   }
                   onMouseEnter={(e) => { if (l.code !== current) (e.currentTarget as HTMLElement).style.backgroundColor = '#f8fafc' }}

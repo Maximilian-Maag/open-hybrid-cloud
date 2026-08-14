@@ -50,7 +50,7 @@ export default async function InfrastructurePage() {
       />
 
       {elements.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">{t('noInfrastructure', lang)}</div>
+        <div className="text-center py-12 text-slate-600">{t('noInfrastructure', lang)}</div>
       ) : (
         Object.entries(byProject).map(([projectName, items]) => (
           <Card key={projectName} title={projectName}>

@@ -87,7 +87,12 @@ export const createEnvironment = async (ciSourceId: number, webhookToken?: strin
 export const linkProductEnvironment = async (
   productId: number,
   environmentId: number,
-  overrides?: { price?: string; currency?: string },
+  overrides?: {
+    price?: string
+    currency?: string
+    costCenterMode?: 'project' | 'select' | 'overhead'
+    forcedCostCenter?: boolean
+  },
 ) => {
   const [row] = await db
     .insert(schema.productEnvironments)
@@ -96,6 +101,8 @@ export const linkProductEnvironment = async (
       environmentId,
       price: overrides?.price ?? '0',
       currency: overrides?.currency ?? 'EUR',
+      ...(overrides?.costCenterMode ? { costCenterMode: overrides.costCenterMode } : {}),
+      ...(overrides?.forcedCostCenter !== undefined ? { forcedCostCenter: overrides.forcedCostCenter } : {}),
     })
     .onConflictDoNothing()
     .returning()
@@ -161,4 +168,18 @@ export const makeAuthHeader = async (user: schema.User): Promise<string> => {
     role: user.role as Role,
   })
   return `Bearer ${token}`
+}
+
+let ccSeq = 0
+
+export const createCostCenter = async (overrides?: { code?: string; name?: string; active?: boolean }) => {
+  const [cc] = await db
+    .insert(schema.costCenters)
+    .values({
+      code: overrides?.code ?? `CC-${++ccSeq}`,
+      name: overrides?.name ?? 'Test Cost Center',
+      active: overrides?.active ?? true,
+    })
+    .returning()
+  return cc
 }

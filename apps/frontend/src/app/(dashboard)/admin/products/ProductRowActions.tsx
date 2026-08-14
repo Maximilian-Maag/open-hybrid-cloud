@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import type { Product } from '@open-hybrid-cloud/types'
 import { del } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 
@@ -53,7 +54,7 @@ export function ProductRowActions({ product, token }: Props) {
           removed). Translations, parameters, and environment assignments are dropped via cascading deletes.
         </p>
         {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">{error}</div>
+          <Alert className="mb-4">{error}</Alert>
         )}
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={deleting}>Cancel</Button>

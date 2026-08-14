@@ -5,6 +5,8 @@ import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
+import { Alert } from '@/components/ui/Alert'
+import { readableInk, readableAccent, AA_LARGE } from '@/lib/contrast'
 
 interface Props {
   shopName: string
@@ -44,7 +46,17 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
   return (
     <div
       className="min-h-screen flex items-center justify-center bg-slate-100 px-4"
-      style={{ '--bp': primaryColor, '--bs': secondaryColor } as React.CSSProperties}
+      style={{
+        '--bp': primaryColor,
+        '--bs': secondaryColor,
+        '--bp-ink': readableInk(primaryColor).ink,
+        '--bs-ink': readableInk(secondaryColor).ink,
+        // The brand colour used AS text on a white card — darkened until it
+        // clears AA, so a pale brand stays readable.
+        '--bp-text': readableAccent(primaryColor),
+        // Focus rings sit on the white card, so they need the same treatment.
+        '--ring-accent': readableAccent(secondaryColor, '#ffffff', AA_LARGE),
+      } as React.CSSProperties}
     >
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
@@ -53,14 +65,14 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
             <img src={logoDataUrl} alt={shopName} className="h-12 mx-auto mb-4 object-contain" />
           ) : null}
           <h1 className="text-2xl font-bold text-slate-900">{shopName}</h1>
-          {shopSubtitle && <p className="text-sm text-slate-500 mt-1">{shopSubtitle}</p>}
+          {shopSubtitle && <p className="text-sm text-slate-600 mt-1">{shopSubtitle}</p>}
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
           {error && (
-            <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            <Alert className="mb-4">
               {error}
-            </div>
+            </Alert>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -76,8 +88,10 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                 autoFocus
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:border-transparent"
-                style={{ '--tw-ring-color': 'var(--bs)' } as React.CSSProperties}
+                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
+                // Not var(--bs) directly: a pale secondary colour makes the focus ring
+                // invisible. --ring-accent is the AA-adjusted variant.
+                style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
                 placeholder="you@example.com"
               />
             </div>
@@ -93,8 +107,10 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:border-transparent"
-                style={{ '--tw-ring-color': 'var(--bs)' } as React.CSSProperties}
+                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
+                // Not var(--bs) directly: a pale secondary colour makes the focus ring
+                // invisible. --ring-accent is the AA-adjusted variant.
+                style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
                 placeholder="••••••••"
               />
             </div>
@@ -102,8 +118,8 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-              style={{ backgroundColor: 'var(--bp)' }}
+              className="w-full rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
             >
               {loading ? t('signingIn', lang) : t('signIn', lang)}
             </button>

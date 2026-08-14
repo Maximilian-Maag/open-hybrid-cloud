@@ -24,6 +24,7 @@ import type {
 import { put, post, del, get } from '@/lib/api'
 import { generatePipelineYaml } from '@/lib/pipelineStackPreview'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
@@ -445,8 +446,8 @@ export function ProductEditForm({ product, categories, environments, translation
       {/* Basic Info */}
       <Card title="Basic Information">
         <form onSubmit={handleSaveBasic} className="space-y-4">
-          {error && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
-          {success && <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">Saved.</div>}
+          {error && <Alert>{error}</Alert>}
+          {success && <Alert tone="success">Saved.</Alert>}
           <div className="grid grid-cols-2 gap-4">
             <Select label="Category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required
               options={categories.map((c) => ({ value: c.id, label: c.name }))} />
@@ -477,17 +478,17 @@ export function ProductEditForm({ product, categories, environments, translation
         </div>
       }>
         {aiError && (
-          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          <Alert className="mb-3">
             {aiError}
-          </div>
+          </Alert>
         )}
         {translations.length === 0 ? (
-          <p className="text-sm text-slate-400">No translations yet.</p>
+          <p className="text-sm text-slate-600">No translations yet.</p>
         ) : (
           <div className="space-y-2">
             {translations.map((t) => (
               <div key={t.languageCode} className="rounded-lg border border-slate-100 p-3">
-                <span className="text-xs font-mono text-slate-400 uppercase">{t.languageCode}</span>
+                <span className="text-xs font-mono text-slate-600 uppercase">{t.languageCode}</span>
                 <p className="font-medium text-slate-900">{t.name}</p>
                 <p className="text-sm text-slate-500 line-clamp-2">{t.description}</p>
               </div>
@@ -499,7 +500,7 @@ export function ProductEditForm({ product, categories, environments, translation
       {/* Environments */}
       <Card title="Environments">
         {environments.length === 0 ? (
-          <p className="text-sm text-slate-400">No environments configured.</p>
+          <p className="text-sm text-slate-600">No environments configured.</p>
         ) : (
           <div className="space-y-4">
             {environments.map((env) => {
@@ -528,10 +529,12 @@ export function ProductEditForm({ product, categories, environments, translation
           <Button size="sm" onClick={openAddParamModal}>Add Parameter</Button>
         </div>
       }>
-        {paramSyncMsg && <div className="mb-3 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">{paramSyncMsg}</div>}
-        {paramError && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{paramError}</div>}
+        {paramSyncMsg && <Alert tone="success" className="mb-3">{paramSyncMsg}</Alert>}
+        {/* Only when the modal is closed: the modal renders paramError itself,
+            and two role="alert" regions with the same text are announced twice. */}
+        {paramError && !paramModal && <Alert className="mb-3">{paramError}</Alert>}
         {productParams.length === 0 ? (
-          <p className="text-sm text-slate-400">No parameters yet. Use &quot;Sync from template&quot; to import from the template&apos;s variables.tf, or add manually.</p>
+          <p className="text-sm text-slate-600">No parameters yet. Use &quot;Sync from template&quot; to import from the template&apos;s variables.tf, or add manually.</p>
         ) : (
           <div className="space-y-2">
             {productParams.map((p) => (
@@ -539,13 +542,13 @@ export function ProductEditForm({ product, categories, environments, translation
                 <div>
                   <div className="flex items-center gap-2 mb-0.5">
                     <p className="font-medium text-slate-900">{p.label || p.name}</p>
-                    <span className="font-mono text-xs text-slate-400">{p.name}</span>
+                    <span className="font-mono text-xs text-slate-600">{p.name}</span>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{p.type}</span>
                     {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-600">required</span>}
                     {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">sensitive</span>}
                   </div>
                   {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
-                  {p.defaultValue && <p className="text-xs text-slate-400 font-mono">default: {p.defaultValue}</p>}
+                  {p.defaultValue && <p className="text-xs text-slate-600 font-mono">default: {p.defaultValue}</p>}
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEditParamModal(p)}>Edit</Button>
@@ -562,9 +565,9 @@ export function ProductEditForm({ product, categories, environments, translation
         <Button size="sm" onClick={() => { setWhError(null); setWebhookModal(true) }}>Add Webhook</Button>
       }>
         <p className="text-xs text-slate-500 mb-3">Optional HTTP callbacks the platform calls after an order is processed — use these to notify external systems such as ticketing or monitoring tools. Pipeline Stacks handle the actual provisioning.</p>
-        {whDeleteError && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{whDeleteError}</div>}
+        {whDeleteError && <Alert className="mb-3">{whDeleteError}</Alert>}
         {webhooks.length === 0 ? (
-          <p className="text-sm text-slate-400">No callbacks configured.</p>
+          <p className="text-sm text-slate-600">No callbacks configured.</p>
         ) : (
           <div className="space-y-2">
             {webhooks.map((wh) => (
@@ -584,9 +587,9 @@ export function ProductEditForm({ product, categories, environments, translation
       <Card title="Pipeline Stacks" action={
         <Button size="sm" onClick={openStackModal}>Add Stack</Button>
       }>
-        {stackDeleteError && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{stackDeleteError}</div>}
+        {stackDeleteError && <Alert className="mb-3">{stackDeleteError}</Alert>}
         {stacks.length === 0 ? (
-          <p className="text-sm text-slate-400">No pipeline stacks configured. Click &quot;Add Stack&quot; to configure one.</p>
+          <p className="text-sm text-slate-600">No pipeline stacks configured. Click &quot;Add Stack&quot; to configure one.</p>
         ) : (
           <div className="space-y-2">
             {stacks.map((s) => {
@@ -611,7 +614,7 @@ export function ProductEditForm({ product, categories, environments, translation
       {/* Translation Modal */}
       <Modal open={transModal} onClose={() => setTransModal(false)} title="Add Translation" size="md">
         <form onSubmit={handleAddTranslation} className="space-y-4">
-          {transError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{transError}</div>}
+          {transError && <Alert>{transError}</Alert>}
           <Select label="Language" value={translationLang} onChange={(e) => setTranslationLang(e.target.value)} options={LANGUAGES} />
           <Input label="Name" value={translationName} onChange={(e) => setTranslationName(e.target.value)} required />
           <div className="flex flex-col gap-1">
@@ -629,7 +632,7 @@ export function ProductEditForm({ product, categories, environments, translation
       {/* Pipeline Stack Modal */}
       <Modal open={stackModal} onClose={() => setStackModal(false)} title={editStack ? 'Edit Pipeline Stack' : 'Add Pipeline Stack'} size="lg">
         <form onSubmit={handleSaveStack} className="space-y-4">
-          {psError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{psError}</div>}
+          {psError && <Alert>{psError}</Alert>}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Name" value={psName} onChange={(e) => setPsName(e.target.value)} required />
             <Select label="Environment" required={!editStack} value={psEnvId} onChange={(e) => setPsEnvId(e.target.value)}
@@ -648,7 +651,7 @@ export function ProductEditForm({ product, categories, environments, translation
               <Button type="button" size="sm" variant="secondary" onClick={addStep}>+ Add Step</Button>
             </div>
             {psSteps.length === 0 && (
-              <p className="text-sm text-slate-400">No steps yet. Add at least one step.</p>
+              <p className="text-sm text-slate-600">No steps yet. Add at least one step.</p>
             )}
             {psSteps.map((step, i) => (
               <div key={i} className="rounded-lg border border-slate-200 p-3 space-y-2">
@@ -674,7 +677,7 @@ export function ProductEditForm({ product, categories, environments, translation
                   </div>
                   <p className="text-xs text-slate-500">Expose an earlier step&apos;s Terraform state to this step as a CI variable (promoted to TF_VAR_*). varName must be UPPER_SNAKE_CASE.</p>
                   {step.upstreamRefs.length === 0 && (
-                    <p className="text-xs text-slate-400 italic">No upstream refs.</p>
+                    <p className="text-xs text-slate-600 italic">No upstream refs.</p>
                   )}
                   {step.upstreamRefs.map((ref, ri) => (
                     <div key={ri} className="flex gap-2 items-end">
@@ -718,7 +721,7 @@ export function ProductEditForm({ product, categories, environments, translation
       {/* Webhook Modal */}
       <Modal open={webhookModal} onClose={() => setWebhookModal(false)} title="Add Webhook" size="md">
         <form onSubmit={handleAddWebhook} className="space-y-4">
-          {whError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{whError}</div>}
+          {whError && <Alert>{whError}</Alert>}
           <Select label="Environment" required value={whEnvId} onChange={(e) => setWhEnvId(e.target.value)}
             placeholder="Select environment…" options={environments.map((e) => ({ value: e.id, label: e.name }))} />
           <Input label="Name" value={whName} onChange={(e) => setWhName(e.target.value)} required />
@@ -735,7 +738,7 @@ export function ProductEditForm({ product, categories, environments, translation
       {/* Parameter Modal */}
       <Modal open={paramModal} onClose={() => setParamModal(false)} title={editParam ? 'Edit Parameter' : 'Add Parameter'} size="md">
         <form onSubmit={handleSaveParam} className="space-y-4">
-          {paramError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{paramError}</div>}
+          {paramError && <Alert>{paramError}</Alert>}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Variable Name" value={paramForm.name} onChange={(e) => setParamForm((f) => ({ ...f, name: e.target.value }))} required
               hint="Terraform variable name — sent as TF_VAR_name" />

@@ -10,6 +10,16 @@ interface Column<T> {
 interface TableProps<T> {
   columns: Column<T>[]
   data: T[]
+  /**
+   * Mouse-only convenience: makes the whole row clickable in addition to
+   * whatever it already contains. It deliberately does NOT add role/tabIndex —
+   * `role="button"` on a <tr> takes the row out of the table's accessibility
+   * tree and costs screen-reader users grid navigation.
+   *
+   * So this must never be the ONLY way to reach a destination. Put a real
+   * <Link> or <Button> in one of the cells and let this widen its hit area
+   * (see the projects table). Table.test.tsx locks the plain semantics in.
+   */
   onRowClick?: (row: T) => void
   emptyMessage?: string
 }

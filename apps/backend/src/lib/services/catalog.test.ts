@@ -115,6 +115,99 @@ describe('getProduct', () => {
     const paramNames = (result.data.parameters as { name: string }[]).map((p) => p.name).sort()
     expect(paramNames).toEqual(['CAT_P', 'GLOBAL_P', 'PROD_P'])
   })
+
+  it('collapses same-name rows to the product-scoped definition (resolved precedence)', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Overlap Product')
+
+    // A global and a product row share the name SHARED. The resolved set the
+    // order form renders must keep only the product-scoped definition (product
+    // > category > global), not both duplicate controls.
+    await db.insert(parameters).values([
+      { scope: 'global', scopeId: 0, name: 'SHARED', type: 'string', defaultValue: 'from-global' },
+      { scope: 'product', scopeId: product.id, name: 'SHARED', type: 'string', defaultValue: 'from-product' },
+    ])
+
+    const result = await getProduct(product.id, 'en')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const shared = (result.data.parameters as { name: string; scope: string; defaultValue: string }[])
+      .filter((p) => p.name === 'SHARED')
+    expect(shared).toHaveLength(1)
+    expect(shared[0].scope).toBe('product')
+    expect(shared[0].defaultValue).toBe('from-product')
+  })
+
+  it('does not let an env-A override erase the all-environments definition when no environment is requested', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Cross-Env Product')
+    const ci = await createCiSource()
+    const envA = await createEnvironment(ci.id)
+    const envB = await createEnvironment(ci.id)
+
+    // SHARED exists as an all-environments global row and as a product-scoped
+    // override for env A only. Collapsing purely by name (the catalog page
+    // fetches WITHOUT an environment — the user picks it in the order form)
+    // would keep only the env-A row, and the form would then render no control
+    // at all for env B while createOrder still resolves the global one.
+    await db.insert(parameters).values([
+      { scope: 'global', scopeId: 0, name: 'SHARED', type: 'string', defaultValue: 'all-envs' },
+      { scope: 'product', scopeId: product.id, environmentId: envA.id, name: 'SHARED', type: 'string', defaultValue: 'env-a' },
+    ])
+
+    const unscoped = await getProduct(product.id, 'en')
+    expect(unscoped.ok).toBe(true)
+    if (!unscoped.ok) return
+
+    const shared = (unscoped.data.parameters as { name: string; environmentId: number | null; defaultValue: string }[])
+      .filter((p) => p.name === 'SHARED')
+    // Both candidates survive — one per environment scope, not one overall.
+    expect(shared).toHaveLength(2)
+    expect(shared.map((p) => p.defaultValue).sort()).toEqual(['all-envs', 'env-a'])
+
+    // Refetching with a concrete environment collapses to exactly what the
+    // order service validates against: env A gets its override…
+    const forA = await getProduct(product.id, 'en', envA.id)
+    expect(forA.ok).toBe(true)
+    if (forA.ok) {
+      const rows = (forA.data.parameters as { name: string; defaultValue: string }[]).filter((p) => p.name === 'SHARED')
+      expect(rows).toHaveLength(1)
+      expect(rows[0].defaultValue).toBe('env-a')
+    }
+
+    // …and env B still gets the all-environments definition.
+    const forB = await getProduct(product.id, 'en', envB.id)
+    expect(forB.ok).toBe(true)
+    if (forB.ok) {
+      const rows = (forB.data.parameters as { name: string; defaultValue: string }[]).filter((p) => p.name === 'SHARED')
+      expect(rows).toHaveLength(1)
+      expect(rows[0].defaultValue).toBe('all-envs')
+    }
+  })
+
+  it('still de-duplicates same-name rows within one environment when no environment is requested', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Intra-Env Product')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+
+    // Two rows, same name, SAME environment, different scopes — the form must
+    // not render duplicate controls for these.
+    await db.insert(parameters).values([
+      { scope: 'global', scopeId: 0, environmentId: env.id, name: 'DUP', type: 'string', defaultValue: 'from-global' },
+      { scope: 'product', scopeId: product.id, environmentId: env.id, name: 'DUP', type: 'string', defaultValue: 'from-product' },
+    ])
+
+    const result = await getProduct(product.id, 'en')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const dup = (result.data.parameters as { name: string; scope: string; defaultValue: string }[])
+      .filter((p) => p.name === 'DUP')
+    expect(dup).toHaveLength(1)
+    expect(dup[0].scope).toBe('product')
+  })
 })
 
 describe('getProductImage', () => {

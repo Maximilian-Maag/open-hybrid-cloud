@@ -1,0 +1,130 @@
+import { type NextRequest, NextResponse } from 'next/server'
+import { requireRole, isAuth } from '@/lib/auth/middleware'
+import { db } from '@/lib/db/client'
+import { pipelineStacks, parameters, ciSources, deploymentEnvironments } from '@/lib/db/schema'
+import { eq, and } from 'drizzle-orm'
+import { getFileContent } from '@/lib/ci'
+import { parseTerraformVariables } from '@/lib/tfparser'
+import type { CiProvider } from '@open-hybrid-cloud/types'
+
+const CI_INTERNAL_VARS = new Set(['ci_api_url', 'ci_project_id', 'ci_job_token', 'vm_state_name'])
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await requireRole('root')(req)
+  if (!isAuth(session)) return session
+
+  const { id } = await params
+  const productId = parseInt(id, 10)
+
+  const stacks = await db
+    .select()
+    .from(pipelineStacks)
+    .where(eq(pipelineStacks.productId, productId))
+    .limit(1)
+
+  if (!stacks.length || !(stacks[0].steps as unknown[]).length) {
+    return NextResponse.json(
+      { error: 'No pipeline stack with steps found — add a pipeline stack first' },
+      { status: 422 },
+    )
+  }
+
+  const stack = stacks[0]
+  const steps = stack.steps as Array<{ template: string }>
+  const template = steps[0].template
+
+  // The stack no longer carries its own webhook URL — it inherits from the
+  // deployment environment. Fetch the env row for both the URL (to derive
+  // the GitLab project ID) and the ci source id below.
+  const [env] = await db
+    .select({ ciSourceId: deploymentEnvironments.ciSourceId, webhookUrl: deploymentEnvironments.webhookUrl })
+    .from(deploymentEnvironments)
+    .where(eq(deploymentEnvironments.id, stack.environmentId))
+    .limit(1)
+  if (!env) {
+    return NextResponse.json({ error: 'Deployment environment for pipeline stack not found' }, { status: 422 })
+  }
+
+  const projectIdMatch = env.webhookUrl.match(/\/projects\/(\d+)\//)
+  if (!projectIdMatch) {
+    return NextResponse.json(
+      { error: 'Could not extract project ID from deployment environment webhook URL' },
+      { status: 422 },
+    )
+  }
+  const projectId = projectIdMatch[1]
+
+  const envRows = await db
+    .select({ ciSourceId: deploymentEnvironments.ciSourceId })
+    .from(deploymentEnvironments)
+    .where(eq(deploymentEnvironments.id, stack.environmentId))
+    .limit(1)
+
+  if (!envRows.length) {
+    return NextResponse.json({ error: 'Deployment environment not found' }, { status: 422 })
+  }
+
+  const ciSourceRows = await db
+    .select()
+    .from(ciSources)
+    .where(eq(ciSources.id, envRows[0].ciSourceId))
+    .limit(1)
+
+  if (!ciSourceRows.length) {
+    return NextResponse.json({ error: 'CI source not found' }, { status: 422 })
+  }
+
+  const src = ciSourceRows[0]
+
+  let content: string
+  try {
+    content = await getFileContent(
+      { url: src.url, accessToken: src.accessToken, provider: src.provider as CiProvider },
+      projectId,
+      'main',
+      `templates/${template}/variables.tf`,
+    )
+  } catch {
+    return NextResponse.json(
+      { error: `Could not fetch templates/${template}/variables.tf from the CI source` },
+      { status: 422 },
+    )
+  }
+
+  // Use the canonical HCL parser (shared with the CI import-vars path) so
+  // nested/validation braces are handled and numeric/boolean defaults are
+  // recognised (a var with `default = 3` is optional, not required). Then
+  // filter out sensitive and CI-internal variables explicitly, as before.
+  const vars = parseTerraformVariables(content).filter(
+    (v) => !v.sensitive && !CI_INTERNAL_VARS.has(v.name),
+  )
+
+  const existing = await db
+    .select({ name: parameters.name })
+    .from(parameters)
+    .where(and(eq(parameters.scope, 'product'), eq(parameters.scopeId, productId)))
+
+  const existingNames = new Set(existing.map((p) => p.name))
+
+  let created = 0
+  for (const v of vars) {
+    if (existingNames.has(v.name)) continue
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: productId,
+      name: v.name,
+      label: v.label,
+      type: v.type,
+      description: v.description,
+      defaultValue: v.defaultValue,
+      required: v.required,
+      sensitive: false,
+    })
+    created++
+  }
+
+  return NextResponse.json({ created, skipped: vars.length - created })
+}

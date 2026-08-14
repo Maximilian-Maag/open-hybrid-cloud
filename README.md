@@ -10,7 +10,7 @@ Self-service portal through which Admins and Project Managers can order, manage,
 | Backend | Next.js 15 · Drizzle ORM · Zod · JWT (jose) |
 | Shared types | TypeScript workspace package (`packages/types`) |
 | Database | PostgreSQL 16 |
-| CI integration | GitLab · GitHub · Bitbucket (webhook-based) |
+| CI integration | GitLab · GitHub · Bitbucket (webhook-based, pipeline stacks) |
 | Package manager | pnpm (workspaces) |
 | Deployment | Two containers: `frontend` + `backend` |
 
@@ -45,6 +45,10 @@ project_manager:  Orders → Pending Approval → [Approved] → Provisioning �
 
 admin:            Orders → Provisioning → Completed
 ```
+
+On approval/creation the backend fires two sets of CI triggers in parallel:
+- **Product Webhooks** (`product_webhooks` table) — ordered, multi-target webhook list per product+environment
+- **Pipeline Stacks** (`pipeline_stacks` table) — step sequences sent as `PIPELINE_STACK` JSON to an orchestrator pipeline. Each step carries an `execOrder` (steps sharing a value run in parallel, higher values wait) and zero or more `upstreamRefs` mapping named CI variables to earlier steps' Terraform state — so portal-defined DAGs with cross-step data passing work without touching CI YAML
 
 ## Environment Variables
 
@@ -94,7 +98,7 @@ open-hybrid-cloud/
 │   │   │       ├── http.ts       # toResponse() — maps Result<T> to NextResponse
 │   │   │       ├── notification/ # nodemailer email notifications
 │   │   │       ├── services/     # Domain services: all business logic, returns Result<T>
-│   │   │       │   └── admin/    # Admin-domain services (catalog, config, users, …)
+│   │   │       │   └── admin/    # Admin-domain services (catalog, config, users, pipeline-stacks, …)
 │   │   │       └── webhook/      # CI pipeline event handler
 │   │   ├── Dockerfile
 │   │   └── drizzle.config.ts

@@ -2,6 +2,7 @@ import { db } from '@/lib/db/client'
 import { appConfig } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { ok, type Result } from '@/lib/services/result'
+import { resetSmtpCache } from '@/lib/notification'
 
 export interface SmtpConfig {
   host: string
@@ -74,6 +75,9 @@ export const updateSmtpConfig = async (input: UpdateSmtpInput): Promise<Result<v
     .insert(appConfig)
     .values({ id: 1, ...setValues })
     .onConflictDoUpdate({ target: appConfig.id, set: setValues })
+
+  // Invalidate the cached transporter so the new settings take effect at once.
+  resetSmtpCache()
 
   return ok(undefined)
 }

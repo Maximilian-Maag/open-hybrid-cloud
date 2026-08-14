@@ -119,6 +119,7 @@ export interface Parameter {
   scopeId: number
   environmentId: number | null
   name: string
+  label: string
   type: ParameterType
   description: string
   defaultValue: string
@@ -131,6 +132,7 @@ export interface CreateParameterRequest {
   scopeId: number
   environmentId?: number
   name: string
+  label?: string
   type: ParameterType
   description?: string
   defaultValue?: string
@@ -140,6 +142,7 @@ export interface CreateParameterRequest {
 
 export interface UpdateParameterRequest {
   name?: string
+  label?: string
   type?: ParameterType
   description?: string
   defaultValue?: string
@@ -175,6 +178,13 @@ export interface DeploymentEnvironment {
   name: string
   description: string
   ciSourceId: number
+}
+
+// Response shape for GET/POST /api/admin/environments/:id/callback-secret.
+// The portal-owned inbound webhook secret is returned in the clear here so
+// the operator can copy it into GitLab (Settings → Webhooks → Secret token).
+export interface CallbackSecretResponse {
+  callbackSecret: string
 }
 
 export interface CreateEnvironmentRequest {
@@ -227,6 +237,51 @@ export interface CreateProductWebhookRequest {
   webhookUrl: string
   webhookToken: string
   execOrder?: number
+}
+
+// Pipeline Stacks
+export interface UpstreamRef {
+  // CI variable name exposed to the child template (uppercase convention).
+  // The base pipeline promotes this to TF_VAR_<lowercase> for Terraform.
+  varName: string
+  // stateSuffix of an earlier step whose state this ref points to.
+  suffix: string
+}
+
+export interface StackStep {
+  template: string
+  stateSuffix: string
+  // execOrder groups: steps with the same value run in parallel; groups run
+  // sequentially from lowest to highest. Defaults to 0.
+  execOrder?: number
+  // Zero or more upstream state references (replaces the single upstreamSuffix).
+  upstreamRefs?: UpstreamRef[]
+  fixedParams?: Record<string, string>
+}
+
+export interface PipelineStack {
+  id: number
+  productId: number
+  environmentId: number
+  name: string
+  stateKeyParam: string
+  steps: StackStep[]
+}
+
+// Stacks inherit the deployment environment's webhook_url + webhook_token —
+// having them on the stack itself let the two tokens diverge and broke the
+// outbound trigger while the inbound callback still validated the env token.
+export interface CreatePipelineStackRequest {
+  environmentId: number
+  name: string
+  stateKeyParam?: string
+  steps: StackStep[]
+}
+
+export interface UpdatePipelineStackRequest {
+  name?: string
+  stateKeyParam?: string
+  steps?: StackStep[]
 }
 
 // Cost Centers

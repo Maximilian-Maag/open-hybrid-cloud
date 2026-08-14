@@ -61,6 +61,7 @@
 | FA-05.2 | Multiple deployment environments can be configured (e.g., "AWS Frankfurt", "On-Premise Vienna"). |
 | FA-05.3 | Each deployment environment references a GitLab source and a specific repo/webhook. |
 | FA-05.4 | When creating a product, the Root can browse repositories on configured GitLab sources and select `variables.tf` files. |
+| FA-05.5 | Each deployment environment stores two independent secrets: a **webhook token** used by the portal to trigger pipelines outbound (`POST /projects/:id/trigger/pipeline`), and a portal-generated **callback secret** used to authenticate inbound pipeline-event webhooks (validated against the `X-Gitlab-Token` header). Both can be rotated independently via the admin UI. |
 
 ---
 

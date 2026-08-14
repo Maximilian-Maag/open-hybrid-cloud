@@ -4,14 +4,19 @@ import {
   orders,
   infrastructureElements,
   deploymentEnvironments,
+  productEnvironments,
+  products,
+  projects,
   users,
+  type Parameter,
 } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
+import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
 
 export interface OrderRow {
   id: number
@@ -133,12 +138,98 @@ export const getOrderById = async (
   return ok(order)
 }
 
+/**
+ * Validate the submitted parameter values against the applicable parameter
+ * definitions and fill in defaults for omitted optional parameters. Returns the
+ * effective parameter map to persist/trigger with, or a 400 Result on the first
+ * validation failure. Only keys that have a matching definition are kept —
+ * submitted keys with no applicable definition are dropped so a client cannot
+ * inject arbitrary CI trigger variables (e.g. REF, TF_ACTION). Server-only
+ * trigger vars (ORDER_ID, TF_ACTION, …) are appended later in the trigger layer.
+ */
+const validateAndApplyParameters = (
+  defs: Parameter[],
+  submitted: Record<string, string>,
+): Result<Record<string, string>> => {
+  const resolved = resolveParameterDefs(defs)
+  const result: Record<string, string> = {}
+
+  for (const def of resolved) {
+    const raw = submitted[def.name]
+    // Normalize once, then validate and store the normalized value so a value
+    // like `" true "` or `" 4 "` is accepted and persisted without whitespace
+    // (which would otherwise leak into the CI trigger variables).
+    const value = raw?.trim() ?? ''
+    const provided = value !== ''
+
+    if (!provided) {
+      if (def.required) return err(400, `Missing required parameter: ${def.name}`)
+      if (def.defaultValue !== '') result[def.name] = def.defaultValue
+      continue
+    }
+
+    if (def.type === 'number') {
+      if (!/^-?\d+(\.\d+)?$/.test(value) || Number.isNaN(Number(value))) {
+        return err(400, `Parameter ${def.name} must be a number`)
+      }
+    } else if (def.type === 'bool') {
+      if (value !== 'true' && value !== 'false') {
+        return err(400, `Parameter ${def.name} must be 'true' or 'false'`)
+      }
+    }
+    // `dropdown` definitions carry no stored option list in the schema, so
+    // there is no allowed-value constraint to enforce here.
+
+    result[def.name] = value
+  }
+
+  return ok(result)
+}
+
 export const createOrder = async (
   session: SessionUser,
   input: CreateOrderInput,
 ): Promise<Result<CreatedOrder>> => {
-  const { projectId, productId, environmentId, costCenterId, parameters } = input
+  const { projectId, productId, environmentId, costCenterId } = input
   const isAdmin = session.role === 'admin' || session.role === 'root'
+
+  // Ownership: a project_manager may only order into a project they own.
+  if (!isAdmin) {
+    const [project] = await db
+      .select({ ownerId: projects.ownerId })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1)
+    if (!project) return err(404, 'Project not found')
+    if (project.ownerId !== session.id) return err(403, 'Forbidden')
+  }
+
+  // The product must be resolvable (needed for parameter scope) …
+  const [product] = await db
+    .select({ categoryId: products.categoryId })
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1)
+  if (!product) return err(404, 'Product not found')
+
+  // … and must actually be offered in the chosen environment.
+  const [offered] = await db
+    .select({ productId: productEnvironments.productId })
+    .from(productEnvironments)
+    .where(
+      and(
+        eq(productEnvironments.productId, productId),
+        eq(productEnvironments.environmentId, environmentId),
+      ),
+    )
+    .limit(1)
+  if (!offered) return err(400, 'Product is not offered in the selected environment')
+
+  // Server-side parameter validation (required/type checks + defaults).
+  const defs = await loadApplicableParameters(productId, product.categoryId, environmentId)
+  const validated = validateAndApplyParameters(defs, input.parameters)
+  if (!validated.ok) return validated
+  const parameters = validated.data
 
   if (isAdmin) {
     const [order] = await db
@@ -154,10 +245,10 @@ export const createOrder = async (
       })
       .returning()
 
-    const pipelineIds = await triggerProductWebhooks(productId, environmentId, {
-      ...parameters,
-      ORDER_ID: String(order.id),
-    })
+    const triggerVars = { ...parameters, ORDER_ID: String(order.id) }
+    const webhookIds = await triggerProductWebhooks(productId, environmentId, triggerVars)
+    const stackIds = await triggerPipelineStacks(productId, environmentId, triggerVars)
+    const pipelineIds = [...webhookIds, ...stackIds]
 
     if (pipelineIds.length > 0) {
       await db.update(orders).set({ pipelineId: pipelineIds }).where(eq(orders.id, order.id))

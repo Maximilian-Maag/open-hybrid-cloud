@@ -6,6 +6,7 @@ import { updateParameter, deleteParameter } from '@/lib/services/admin/parameter
 
 const UpdateParameterSchema = z.object({
   name: z.string().min(1).optional(),
+  label: z.string().optional(),
   type: z.enum(['string', 'number', 'bool', 'dropdown']).optional(),
   description: z.string().optional(),
   defaultValue: z.string().optional(),

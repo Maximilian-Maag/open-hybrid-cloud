@@ -84,4 +84,64 @@ test.describe('Admin - Environment Management', () => {
     await page.getByRole('button', { name: /^delete$/i }).last().click()
     await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
   })
+
+  // Migration 0004: callback secret is portal-generated and rotatable
+  // independently from the outbound trigger token. Verify the Edit modal
+  // exposes Reveal + Regenerate, and that Regenerate produces a fresh
+  // `ohc-cb-<hex>` value that persists on re-reveal.
+  test('Edit modal reveals and regenerates the callback secret', async ({ page }) => {
+    // Ensure at least one CI source + one environment exist
+    await page.goto('/admin/ci-sources')
+    await expect(page.getByRole('button', { name: /add ci source/i })).toBeVisible({ timeout: 8000 })
+    const ts = Date.now()
+    const ciName = `E2E CI CB ${ts}`
+    await page.getByRole('button', { name: /add ci source/i }).click()
+    let dialog = page.locator('dialog[open]')
+    await dialog.getByLabel(/^name/i).fill(ciName)
+    await dialog.getByLabel(/^url/i).fill('https://gitlab.example.com')
+    await dialog.getByLabel(/^access token/i).fill('glpat-token')
+    await dialog.getByRole('button', { name: /^save$/i }).click()
+    await expect(page.getByText(ciName)).toBeVisible({ timeout: 8000 })
+
+    await page.goto('/admin/environments')
+    const envName = `E2E Env CB ${ts}`
+    await page.getByRole('button', { name: /add environment/i }).click()
+    dialog = page.locator('dialog[open]')
+    await dialog.getByLabel(/^name/i).fill(envName)
+    await dialog.getByLabel(/ci source/i).selectOption({ label: ciName })
+    await dialog.getByLabel(/webhook url/i).fill('https://gitlab.example.com/api/v4/projects/1/trigger/pipeline')
+    await dialog.getByLabel(/webhook token/i).fill('glptt-outbound-only')
+    await dialog.getByRole('button', { name: /^save$/i }).click()
+    await expect(page.getByText(envName)).toBeVisible({ timeout: 8000 })
+
+    // Open Edit
+    const envRow = page.locator('div').filter({ has: page.getByText(envName) }).filter({ has: page.getByRole('button', { name: /^edit$/i }) }).last()
+    await envRow.getByRole('button', { name: /^edit$/i }).click()
+    dialog = page.locator('dialog[open]')
+    await expect(dialog.getByText(/callback secret/i)).toBeVisible()
+
+    // Reveal current secret
+    await dialog.getByRole('button', { name: /reveal current/i }).click()
+    const revealed = dialog.locator('input[readonly]')
+    await expect(revealed).toBeVisible({ timeout: 5000 })
+    const firstValue = await revealed.inputValue()
+    expect(firstValue).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+
+    // Regenerate — the edit modal's Regenerate opens a confirmation modal
+    // (the app uses a Modal, not a native confirm()); confirm it there.
+    await dialog.getByRole('button', { name: /^regenerate$/i }).click()
+    const regenConfirm = page.getByRole('dialog', { name: /regenerate callback secret/i })
+    await regenConfirm.getByRole('button', { name: /^regenerate$/i }).click()
+    // New value replaces old one
+    await expect.poll(async () => await revealed.inputValue()).not.toBe(firstValue)
+    const newValue = await revealed.inputValue()
+    expect(newValue).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+
+    // Close + reopen the modal to confirm the new value is persisted
+    await dialog.getByRole('button', { name: /^cancel$/i }).click()
+    await envRow.getByRole('button', { name: /^edit$/i }).click()
+    dialog = page.locator('dialog[open]')
+    await dialog.getByRole('button', { name: /reveal current/i }).click()
+    await expect(dialog.locator('input[readonly]')).toHaveValue(newValue, { timeout: 5000 })
+  })
 })

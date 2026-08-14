@@ -19,7 +19,7 @@ const TYPES: { value: ParameterType; label: string }[] = [
 ]
 
 const emptyForm = () => ({
-  name: '', type: 'string' as ParameterType, description: '',
+  name: '', label: '', type: 'string' as ParameterType, description: '',
   defaultValue: '', required: false, sensitive: false,
 })
 
@@ -32,12 +32,16 @@ export function ParametersManager({ token }: Props) {
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const all = (await get<Parameter[]>('/api/admin/parameters', token)) ?? []
       setParams(all.filter((p) => p.scope === 'global'))
+      setDeleteError(null)
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to load parameters.')
     } finally {
       setLoading(false)
     }
@@ -55,7 +59,7 @@ export function ParametersManager({ token }: Props) {
 
   function openEdit(param: Parameter) {
     setForm({
-      name: param.name, type: param.type, description: param.description,
+      name: param.name, label: param.label ?? '', type: param.type, description: param.description,
       defaultValue: param.defaultValue, required: param.required, sensitive: param.sensitive,
     })
     setFormError(null); setEditTarget(param)
@@ -67,7 +71,7 @@ export function ParametersManager({ token }: Props) {
     try {
       const body: CreateParameterRequest = {
         scope: 'global', scopeId: 0,
-        name: form.name.trim(), type: form.type,
+        name: form.name.trim(), label: form.label.trim() || undefined, type: form.type,
         description: form.description.trim() || undefined,
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
@@ -87,7 +91,7 @@ export function ParametersManager({ token }: Props) {
     setSaving(true); setFormError(null)
     try {
       const body: UpdateParameterRequest = {
-        name: form.name.trim(), type: form.type,
+        name: form.name.trim(), label: form.label.trim() || undefined, type: form.type,
         description: form.description.trim() || undefined,
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
@@ -103,45 +107,23 @@ export function ParametersManager({ token }: Props) {
 
   async function handleDelete() {
     if (!deleteTarget) return
-    setSaving(true)
+    setSaving(true); setDeleteError(null)
     try {
       await del(`/api/admin/parameters/${deleteTarget.id}`, token)
       setDeleteTarget(null); load()
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete.')
     } finally {
       setSaving(false)
     }
   }
 
-  const ParamForm = ({ onSubmit }: { onSubmit: (e: React.FormEvent) => void }) => (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
-      <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
-      <Select label="Type" value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
-      <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
-      <Input label="Default Value" value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
-        hint={form.type === 'dropdown' ? 'Comma-separated options' : undefined} />
-      <div className="flex gap-6">
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="required" checked={form.required} onChange={(e) => setField('required', e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-          <label htmlFor="required" className="text-sm font-medium text-slate-700">Required</label>
-        </div>
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="sensitive" checked={form.sensitive} onChange={(e) => setField('sensitive', e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-          <label htmlFor="sensitive" className="text-sm font-medium text-slate-700">Sensitive</label>
-        </div>
-      </div>
-      <div className="flex justify-end gap-3 pt-2">
-        <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-      </div>
-    </form>
-  )
-
   return (
     <>
       <Card title="Global Parameters" action={<Button size="sm" onClick={openAdd}>Add Parameter</Button>}>
+        {deleteError && !deleteTarget && (
+          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>
+        )}
         {loading ? (
           <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
         ) : params.length === 0 ? (
@@ -152,16 +134,17 @@ export function ParametersManager({ token }: Props) {
               <div key={p.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
                 <div>
                   <div className="flex items-center gap-2 mb-0.5">
-                    <p className="font-medium text-slate-900">{p.name}</p>
+                    <p className="font-medium text-slate-900">{p.label || p.name}</p>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{p.type}</span>
                     {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-600">required</span>}
                     {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">sensitive</span>}
                   </div>
+                  <p className="text-xs font-mono text-slate-400">{p.name}</p>
                   {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(p)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => setDeleteTarget(p)}>Delete</Button>
+                  <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(p) }}>Delete</Button>
                 </div>
               </div>
             ))}
@@ -170,12 +153,65 @@ export function ParametersManager({ token }: Props) {
       </Card>
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Parameter" size="md">
-        <ParamForm onSubmit={handleAdd} />
+        <form onSubmit={handleAdd} className="space-y-4">
+          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Variable Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required hint="Sent as TF_VAR_name" />
+            <Input label="Display Label" value={form.label} onChange={(e) => setField('label', e.target.value)} hint="Shown in order form" />
+          </div>
+          <Select label="Type" value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
+          <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
+          <Input label="Default Value" value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
+            hint={form.type === 'dropdown' ? 'Comma-separated options' : undefined} />
+          <div className="flex gap-6">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="add-required" checked={form.required} onChange={(e) => setField('required', e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="add-required" className="text-sm font-medium text-slate-700">Required</label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="add-sensitive" checked={form.sensitive} onChange={(e) => setField('sensitive', e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="add-sensitive" className="text-sm font-medium text-slate-700">Sensitive</label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Parameter" size="md">
-        <ParamForm onSubmit={handleEdit} />
+        <form onSubmit={handleEdit} className="space-y-4">
+          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Variable Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required hint="Sent as TF_VAR_name" />
+            <Input label="Display Label" value={form.label} onChange={(e) => setField('label', e.target.value)} hint="Shown in order form" />
+          </div>
+          <Select label="Type" value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
+          <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
+          <Input label="Default Value" value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
+            hint={form.type === 'dropdown' ? 'Comma-separated options' : undefined} />
+          <div className="flex gap-6">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="edit-required" checked={form.required} onChange={(e) => setField('required', e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="edit-required" className="text-sm font-medium text-slate-700">Required</label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="edit-sensitive" checked={form.sensitive} onChange={(e) => setField('sensitive', e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+              <label htmlFor="edit-sensitive" className="text-sm font-medium text-slate-700">Sensitive</label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
       </Modal>
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Parameter" size="sm">
+        {deleteError && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>}
         <p className="text-sm text-slate-600 mb-6">Delete parameter <strong>{deleteTarget?.name}</strong>?</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>

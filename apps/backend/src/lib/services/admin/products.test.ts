@@ -4,6 +4,15 @@ vi.mock('@/lib/ai', () => ({
   translateProduct: vi.fn().mockResolvedValue({}),
 }))
 
+vi.mock('@/lib/ci/webhooks', () => ({
+  triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-destroy']),
+  triggerPipelineStacks: vi.fn().mockResolvedValue([]),
+  // The teardown paths use the *Tracked variants so a trigger that fails to
+  // start is reported rather than swallowed.
+  triggerProductWebhooksTracked: vi.fn().mockResolvedValue({ pipelineIds: ['pipe-destroy'], failures: [] }),
+  triggerPipelineStacksTracked: vi.fn().mockResolvedValue({ pipelineIds: [], failures: [] }),
+}))
+
 import {
   listProducts,
   createProduct,
@@ -24,20 +33,29 @@ import {
   deleteProductWebhook,
 } from './products'
 import { translateProduct } from '@/lib/ai'
+import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { products, productTranslations } from '@/lib/db/schema'
+import { products, productTranslations, infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
+  createUser,
   createCategory,
   createCiSource,
   createEnvironment,
   createProduct as seedProduct,
+  createProject,
+  createOrder as seedOrder,
+  createInfraElement,
 } from '@/test/helpers'
 
 const mockedTranslate = vi.mocked(translateProduct)
+const mockedWebhooks = vi.mocked(triggerProductWebhooksTracked)
+const mockedStacks = vi.mocked(triggerPipelineStacksTracked)
 
 beforeEach(() => {
   mockedTranslate.mockReset().mockResolvedValue({})
+  mockedWebhooks.mockReset().mockResolvedValue({ pipelineIds: ['pipe-destroy'], failures: [] })
+  mockedStacks.mockReset().mockResolvedValue({ pipelineIds: [], failures: [] })
 })
 
 describe('listProducts', () => {
@@ -132,6 +150,121 @@ describe('deleteProduct', () => {
 
     const rows = await db.select().from(products).where(eq(products.id, p.id))
     expect(rows.length).toBe(0)
+  })
+
+  // FA-09.6: cascade decommissioning on product delete
+  it('cascade-decommissions all active infra elements provisioned from the product (FA-09.6)', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'ToDelete')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id)
+    await createInfraElement(order.id, project.id, env.id, product.id)
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+
+    expect(mockedWebhooks).toHaveBeenCalledTimes(2)
+    expect(mockedWebhooks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ TF_ACTION: 'destroy' }),
+    )
+    // Pipeline-stack destroy fired for every active element too.
+    expect(mockedStacks).toHaveBeenCalledTimes(2)
+    expect(mockedStacks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ TF_ACTION: 'destroy' }),
+    )
+    // Infra rows are gone via ON DELETE CASCADE on product_id
+    const rows = await db.select().from(infrastructureElements).where(eq(infrastructureElements.productId, product.id))
+    expect(rows.length).toBe(0)
+  })
+
+  // FA-09.8: skip already-in-flight elements
+  it('does not re-trigger destroy for elements already decommissioning/decommissioned (FA-09.8)', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'MixState')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id, { status: 'decommissioning' })
+    await createInfraElement(order.id, project.id, env.id, product.id, { status: 'decommissioned' })
+    await createInfraElement(order.id, project.id, env.id, product.id, { status: 'active' })
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+
+    expect(mockedWebhooks).toHaveBeenCalledTimes(1)
+    expect(mockedStacks).toHaveBeenCalledTimes(1)
+  })
+
+  // Cascade-delete race: the destroy trigger must complete BEFORE the product
+  // (and its cascaded infra rows) are deleted.
+  it('awaits the destroy trigger before deleting the product', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'AwaitDestroy')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id)
+
+    let productExistedAtTrigger = false
+    let infraExistedAtTrigger = false
+    mockedWebhooks.mockImplementationOnce(async () => {
+      productExistedAtTrigger =
+        (await db.select().from(products).where(eq(products.id, product.id))).length > 0
+      infraExistedAtTrigger =
+        (await db.select().from(infrastructureElements).where(eq(infrastructureElements.productId, product.id))).length > 0
+      return { pipelineIds: ['pipe-destroy'], failures: [] }
+    })
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+
+    expect(productExistedAtTrigger).toBe(true)
+    expect(infraExistedAtTrigger).toBe(true)
+
+    const rows = await db.select().from(products).where(eq(products.id, product.id))
+    expect(rows.length).toBe(0)
+  })
+
+  it('refuses to delete the product when a destroy trigger could not be started', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'TriggerFails')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id)
+    mockedStacks.mockResolvedValueOnce({ pipelineIds: [], failures: ['pipeline stack "s" (#3): refused'] })
+
+    const result = await deleteProduct(product.id)
+    // Deleting would cascade the infrastructure_elements rows away and leave the
+    // provisioned infrastructure running with nothing to reconcile it against.
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(502)
+      expect(result.message).toContain('refused')
+    }
+
+    // Product and its tracking rows survive so the operator can retry.
+    const rows = await db.select().from(products).where(eq(products.id, product.id))
+    expect(rows.length).toBe(1)
+    const infra = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.productId, product.id))
+    expect(infra.length).toBe(1)
   })
 })
 

@@ -38,12 +38,16 @@ export function UsersManager({ token }: Props) {
   const [formPassword, setFormPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [flashId, setFlashId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       setUsers((await get<User[]>('/api/admin/users', token)) ?? [])
+      setDeleteError(null)
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to load users.')
     } finally {
       setLoading(false)
     }
@@ -101,12 +105,14 @@ export function UsersManager({ token }: Props) {
 
   async function handleDelete() {
     if (!deleteTarget) return
-    setSaving(true)
+    setSaving(true); setDeleteError(null)
     try {
       await del(`/api/admin/users/${deleteTarget.id}`, token)
       setDeleteTarget(null)
       toast('User deleted.', 'info')
       load()
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to delete.')
     } finally {
       setSaving(false)
     }
@@ -116,12 +122,17 @@ export function UsersManager({ token }: Props) {
     try {
       await put(`/api/admin/users/${user.id}`, { active: !user.active } satisfies UpdateUserRequest, token)
       load()
-    } catch { /* ignore */ }
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Failed to update.')
+    }
   }
 
   return (
     <>
       <Card title="Users" action={<Button size="sm" onClick={openAdd}>Add User</Button>}>
+        {deleteError && !deleteTarget && (
+          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>
+        )}
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
@@ -149,7 +160,7 @@ export function UsersManager({ token }: Props) {
                     {user.active ? 'Deactivate' : 'Activate'}
                   </Button>
                   <Button size="sm" variant="secondary" onClick={() => openEdit(user)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => setDeleteTarget(user)}>Delete</Button>
+                  <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(user) }}>Delete</Button>
                 </div>
               </div>
             ))}
@@ -184,6 +195,7 @@ export function UsersManager({ token }: Props) {
       </Modal>
 
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete User" size="sm">
+        {deleteError && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>}
         <p className="text-sm text-slate-600 mb-6">Delete user <strong>{deleteTarget?.name}</strong> ({deleteTarget?.email})?</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>

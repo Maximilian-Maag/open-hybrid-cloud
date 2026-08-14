@@ -77,6 +77,7 @@ export const parseTerraformVariables = (content: string): ParsedParameter[] => {
     const rawType = extractStringValue(body, 'type') ?? extractBareValue(body, 'type')
     return {
       name,
+      label: name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
       type: mapType(rawType, body),
       description: extractStringValue(body, 'description') ?? '',
       defaultValue: extractDefault(body),

@@ -1,10 +1,49 @@
 import type { CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
 
+// See gitlab.ts — cap pages followed so a large org isn't truncated at 100 rows
+// while still bounding the number of requests.
+const MAX_LIST_PAGES = 10
+
 const ghHeaders = (token: string) => ({
   Authorization: `Bearer ${token}`,
   Accept: 'application/vnd.github+json',
   'X-GitHub-Api-Version': '2022-11-28',
 })
+
+// Extract the rel="next" URL from a GitHub `Link` header, if present.
+// Format: <https://api.github.com/...&page=2>; rel="next", <...>; rel="last"
+const parseNextLink = (linkHeader: string | null): string | null => {
+  if (!linkHeader) return null
+  for (const part of linkHeader.split(',')) {
+    const match = part.match(/<([^>]+)>;\s*rel="next"/)
+    if (match) return match[1]
+  }
+  return null
+}
+
+/**
+ * Follow GitHub's `Link: rel="next"` pagination, concatenating each page.
+ * `extract` pulls the row array out of the page body (repos search wraps rows in
+ * `items`, other endpoints return a bare array).
+ */
+const githubListAll = async <T>(
+  firstUrl: string,
+  token: string,
+  errorLabel: string,
+  extract: (body: unknown) => T[],
+): Promise<T[]> => {
+  const results: T[] = []
+  let url: string | null = firstUrl
+
+  for (let i = 0; i < MAX_LIST_PAGES && url; i++) {
+    const res: Response = await fetch(url, { headers: ghHeaders(token) })
+    if (!res.ok) throw new Error(`${errorLabel}: ${res.status}`)
+    results.push(...extract(await res.json()))
+    url = parseNextLink(res.headers.get('link'))
+  }
+
+  return results
+}
 
 // repoUrl: e.g. https://github.com/owner/repo
 const parseRepoUrl = (repoUrl: string): { owner: string; repo: string } => {
@@ -47,20 +86,19 @@ export const listGitHubRepos = async (
   const params = new URLSearchParams({ per_page: '100', visibility: 'all' })
   if (search) params.set('q', search)
 
-  const res = await fetch(
+  type Repo = { id: number; name: string; full_name: string }
+  const repos = await githubListAll<Repo>(
     search
       ? `https://api.github.com/search/repositories?q=${encodeURIComponent(search)}&per_page=100`
       : `https://api.github.com/user/repos?${params}`,
-    { headers: ghHeaders(token) },
+    token,
+    'GitHub list repos failed',
+    (body) =>
+      Array.isArray(body)
+        ? (body as Repo[])
+        : ((body as { items?: Repo[] }).items ?? []),
   )
 
-  if (!res.ok) throw new Error(`GitHub list repos failed: ${res.status}`)
-
-  const data = await res.json() as {
-    items?: Array<{ id: number; name: string; full_name: string }>
-  } | Array<{ id: number; name: string; full_name: string }>
-
-  const repos = Array.isArray(data) ? data : (data.items ?? [])
   return repos.map((r) => ({
     id: String(r.id),
     name: r.name,
@@ -74,14 +112,12 @@ export const listGitHubBranches = async (
   projectId: string,
 ): Promise<CiBranch[]> => {
   // projectId is owner/repo
-  const res = await fetch(
+  const data = await githubListAll<{ name: string }>(
     `https://api.github.com/repos/${projectId}/branches?per_page=100`,
-    { headers: ghHeaders(token) },
+    token,
+    'GitHub list branches failed',
+    (body) => body as Array<{ name: string }>,
   )
-
-  if (!res.ok) throw new Error(`GitHub list branches failed: ${res.status}`)
-
-  const data = await res.json() as Array<{ name: string }>
   return data.map((b) => ({ name: b.name }))
 }
 
@@ -93,18 +129,13 @@ export const listGitHubFiles = async (
   path: string,
 ): Promise<CiFile[]> => {
   const encodedPath = path.split('/').map(encodeURIComponent).join('/')
-  const res = await fetch(
+  type Entry = { name: string; path: string; type: 'file' | 'dir' | 'symlink' | 'submodule' }
+  const data = await githubListAll<Entry>(
     `https://api.github.com/repos/${projectId}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`,
-    { headers: ghHeaders(token) },
+    token,
+    'GitHub list files failed',
+    (body) => (Array.isArray(body) ? (body as Entry[]) : []),
   )
-
-  if (!res.ok) throw new Error(`GitHub list files failed: ${res.status}`)
-
-  const data = await res.json() as Array<{
-    name: string
-    path: string
-    type: 'file' | 'dir' | 'symlink' | 'submodule'
-  }>
 
   return data.map((f) => ({
     name: f.name,

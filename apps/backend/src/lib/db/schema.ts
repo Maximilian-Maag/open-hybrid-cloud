@@ -11,6 +11,7 @@ import {
   primaryKey,
   customType,
 } from 'drizzle-orm/pg-core'
+import type { StackStep } from '@open-hybrid-cloud/types'
 
 const bytea = customType<{ data: Buffer }>({
   dataType() { return 'bytea' },
@@ -54,6 +55,7 @@ export const parameters = pgTable('parameters', {
   scopeId: bigint('scope_id', { mode: 'number' }).notNull().default(0),
   environmentId: bigint('environment_id', { mode: 'number' }),
   name: text().notNull(),
+  label: text().notNull().default(''),
   type: text({ enum: ['string', 'number', 'bool', 'dropdown'] }).notNull(),
   description: text().notNull().default(''),
   defaultValue: text('default_value').notNull().default(''),
@@ -76,6 +78,16 @@ export const deploymentEnvironments = pgTable('deployment_environments', {
   ciSourceId: bigint('ci_source_id', { mode: 'number' }).notNull().references(() => ciSources.id),
   webhookUrl: text('webhook_url').notNull(),
   webhookToken: text('webhook_token').notNull(),
+  // Portal-generated secret sent by GitLab as X-Gitlab-Token on the pipeline
+  // event callback. Kept separate from webhook_token (the outbound trigger
+  // token) so operators can rotate the two independently.
+  //
+  // UNIQUE: the secret is what identifies the calling environment on an inbound
+  // callback (see the webhook routes). If two environments shared it the route
+  // could only pick one arbitrarily and would mis-scope valid events — the
+  // legacy 0004 backfill from webhook_token made that possible, so migration
+  // 0006 rotates duplicates and enforces uniqueness.
+  callbackSecret: text('callback_secret').notNull().unique(),
 })
 
 export const productEnvironments = pgTable('product_environments', {
@@ -95,6 +107,15 @@ export const productWebhooks = pgTable('product_webhooks', {
   webhookUrl: text('webhook_url').notNull(),
   webhookToken: text('webhook_token').notNull(),
   execOrder: integer('exec_order').notNull().default(0),
+})
+
+export const pipelineStacks = pgTable('pipeline_stacks', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
+  environmentId: bigint('environment_id', { mode: 'number' }).notNull().references(() => deploymentEnvironments.id, { onDelete: 'cascade' }),
+  name: text().notNull(),
+  stateKeyParam: text('state_key_param').notNull().default('hostname'),
+  steps: jsonb().$type<StackStep[]>().notNull().default([]),
 })
 
 export const costCenters = pgTable('cost_centers', {
@@ -124,6 +145,11 @@ export const orders = pgTable('orders', {
   costCenterId: bigint('cost_center_id', { mode: 'number' }).references(() => costCenters.id),
   rejectionNote: text('rejection_note'),
   pipelineId: jsonb('pipeline_id').$type<string[]>().notNull().default([]),
+  // Per-pipeline terminal status keyed by pipeline id, e.g.
+  // { "pipe-a": "success", "pipe-b": "failed" }. Lets a multi-pipeline order
+  // wait for ALL its pipelines to succeed before completing (and fail fast if
+  // any one fails/cancels) instead of completing on the first success event.
+  pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -137,6 +163,11 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   status: text({ enum: ['active', 'decommissioning', 'decommissioned'] }).notNull().default('active'),
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
   pipelineId: jsonb('pipeline_id').$type<string[]>().notNull().default([]),
+  // Per-pipeline terminal status for the current decommission run, keyed by
+  // pipeline id (mirrors orders.pipeline_status). A teardown may fan out to
+  // several pipelines (product webhooks + pipeline stacks); the element only
+  // becomes 'decommissioned' once EVERY id in pipeline_id succeeded.
+  pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   outputs: jsonb().$type<Record<string, string>>().notNull().default({}),
   deployedAt: timestamp('deployed_at', { withTimezone: true }).defaultNow(),
 })
@@ -191,6 +222,7 @@ export type CiSource = typeof ciSources.$inferSelect
 export type DeploymentEnvironment = typeof deploymentEnvironments.$inferSelect
 export type ProductEnvironment = typeof productEnvironments.$inferSelect
 export type ProductWebhook = typeof productWebhooks.$inferSelect
+export type PipelineStack = typeof pipelineStacks.$inferSelect
 export type CostCenter = typeof costCenters.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type Order = typeof orders.$inferSelect

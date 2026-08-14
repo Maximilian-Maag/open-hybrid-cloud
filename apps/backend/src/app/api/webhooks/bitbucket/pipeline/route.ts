@@ -41,12 +41,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing signature' }, { status: 401 })
   }
 
+  // Validate against the inbound callback_secret, not the outbound
+  // webhook_token used to trigger pipelines (migration 0004 split the two).
+  // Legacy environments have callback_secret backfilled to webhook_token.
+  // Identify WHICH environment the signature belongs to so the event is scoped
+  // to that environment — one env's secret must not transition another's orders.
   const envRows = await db
-    .select({ webhookToken: deploymentEnvironments.webhookToken })
+    .select({ id: deploymentEnvironments.id, callbackSecret: deploymentEnvironments.callbackSecret })
     .from(deploymentEnvironments)
 
-  const isValid = envRows.some((env) => {
-    const expected = `sha256=${createHmac('sha256', env.webhookToken).update(rawBody).digest('hex')}`
+  // Collect ALL matches rather than the first: callback_secret is UNIQUE since
+  // migration 0006, but a DB that hasn't been migrated yet can still hold
+  // duplicates from the 0004 backfill of the (non-unique) webhook_token. Two
+  // environments sharing a secret produce the same HMAC, and attributing the
+  // event to an arbitrary one of them would silently apply it to the wrong
+  // environment — refuse instead of guessing.
+  const matchedEnvs = envRows.filter((env) => {
+    const expected = `sha256=${createHmac('sha256', env.callbackSecret).update(rawBody).digest('hex')}`
     try {
       return timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
     } catch {
@@ -54,9 +65,20 @@ export async function POST(req: NextRequest) {
     }
   })
 
-  if (!isValid) {
+  if (!matchedEnvs.length) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
+
+  if (matchedEnvs.length > 1) {
+    console.error(
+      '[webhook] Ambiguous callback secret — shared by environments',
+      matchedEnvs.map((e) => e.id).join(', '),
+      '— rotate them (Admin → Environments) so each is unique.',
+    )
+    return NextResponse.json({ error: 'Ambiguous callback secret' }, { status: 409 })
+  }
+
+  const matchedEnv = matchedEnvs[0]
 
   let body: BitbucketPipelineBody
   try {
@@ -78,7 +100,7 @@ export async function POST(req: NextRequest) {
     ),
   }
 
-  await handlePipelineEvent(event)
+  await handlePipelineEvent(event, matchedEnv.id)
 
   return NextResponse.json({ received: true })
 }

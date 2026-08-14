@@ -3,7 +3,7 @@ import { db } from '@/lib/db/client'
 import { infrastructureElements, deploymentEnvironments, projects } from '@/lib/db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { fireDestroyTriggers } from '@/lib/services/teardown'
 import { ok, err, type Result } from '@/lib/services/result'
 
 export interface InfraRow {
@@ -96,20 +96,70 @@ export const decommissionInfra = async (
     }
   }
 
-  if (infra.status !== 'active') return err(400, 'Infrastructure element is not active')
+  // Atomically claim the element (active → decommissioning) so two concurrent
+  // decommission calls can't both fire a destroy pipeline.
+  const claimed = await db
+    .update(infrastructureElements)
+    .set({ status: 'decommissioning' })
+    .where(sql`${infrastructureElements.id} = ${infraId} AND ${infrastructureElements.status} = 'active'`)
+    .returning({ id: infrastructureElements.id })
+
+  if (!claimed.length) return err(400, 'Infrastructure element is not active')
 
   const variables = {
     ...(infra.parameters as Record<string, string>),
     TF_ACTION: 'destroy',
     INFRA_ID: String(infra.id),
+    // Pipeline stacks derive TF_STATE_NAME from stateKeyParam ?? ORDER_ID; the
+    // stored infra parameters don't carry the server-generated ORDER_ID, so pass
+    // it explicitly or a stack whose stateKeyParam is absent would destroy an
+    // empty/wrong state.
+    ORDER_ID: String(infra.orderId),
   }
 
-  const pipelineIds = await triggerProductWebhooks(infra.productId, infra.environmentId, variables)
+  // Fires product webhooks AND pipeline stacks, and persists the started
+  // pipeline ids (plus a sentinel per trigger that failed to start) so the
+  // outcome is durable rather than swallowed.
+  let outcome: Awaited<ReturnType<typeof fireDestroyTriggers>>
+  try {
+    outcome = await fireDestroyTriggers(infra, variables)
+  } catch (e) {
+    // Destroy pipeline could not be started — restore the element to active.
+    await db
+      .update(infrastructureElements)
+      .set({ status: 'active' })
+      .where(eq(infrastructureElements.id, infraId))
+    throw e
+  }
 
-  await db
-    .update(infrastructureElements)
-    .set({ status: 'decommissioning', pipelineId: pipelineIds })
-    .where(eq(infrastructureElements.id, infraId))
+  if (outcome.restoredToActive) {
+    // Nothing was started, so nothing was destroyed: the element is back to
+    // 'active' and the caller can simply try again.
+    await logAudit(
+      session.id,
+      'infra.decommission_failed',
+      infraId,
+      `No destroy pipeline could be started: ${outcome.failures.join('; ')}`,
+    )
+    return err(502, `Could not start the destroy pipeline: ${outcome.failures.join('; ')}`)
+  }
+
+  if (outcome.failures.length > 0) {
+    // Some destroys ARE running and cannot be recalled, so the element stays
+    // 'decommissioning' — and the sentinel written by fireDestroyTriggers keeps
+    // it from ever reporting itself fully decommissioned. Tell the operator
+    // which triggers need manual cleanup instead of returning success.
+    await logAudit(
+      session.id,
+      'infra.decommission_partial',
+      infraId,
+      `Destroy started for ${outcome.pipelineIds.length} pipeline(s); could not start: ${outcome.failures.join('; ')}`,
+    )
+    return err(
+      502,
+      `Destroy started for ${outcome.pipelineIds.length} pipeline(s), but ${outcome.failures.length} could not be started and need manual cleanup: ${outcome.failures.join('; ')}`,
+    )
+  }
 
   await logAudit(
     session.id,
@@ -118,5 +168,5 @@ export const decommissionInfra = async (
     `Decommission initiated by ${session.email}`,
   )
 
-  return ok({ pipelineIds })
+  return ok({ pipelineIds: outcome.pipelineIds })
 }

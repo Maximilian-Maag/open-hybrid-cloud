@@ -13,6 +13,7 @@ const TABLES = [
   schema.auditLog,
   schema.infrastructureElements,
   schema.orders,
+  schema.pipelineStacks,
   schema.productWebhooks,
   schema.productEnvironments,
   schema.parameters,
@@ -65,6 +66,7 @@ beforeAll(async () => {
       scope_id BIGINT NOT NULL DEFAULT 0,
       environment_id BIGINT,
       name TEXT NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
       type TEXT NOT NULL CHECK (type IN ('string','number','bool','dropdown')),
       description TEXT NOT NULL DEFAULT '',
       default_value TEXT NOT NULL DEFAULT '',
@@ -84,8 +86,19 @@ beforeAll(async () => {
       description TEXT NOT NULL DEFAULT '',
       ci_source_id BIGINT NOT NULL REFERENCES ci_sources(id),
       webhook_url TEXT NOT NULL,
-      webhook_token TEXT NOT NULL
+      webhook_token TEXT NOT NULL,
+      callback_secret TEXT NOT NULL DEFAULT ''
     );
+    -- Older test DBs may not have callback_secret; add and backfill.
+    ALTER TABLE deployment_environments ADD COLUMN IF NOT EXISTS callback_secret TEXT NOT NULL DEFAULT '';
+    UPDATE deployment_environments SET callback_secret = webhook_token WHERE callback_secret = '';
+    -- Migration 0006: the callback secret identifies the calling environment on
+    -- an inbound callback, so it must be unique. Dropped first so re-running
+    -- setup against an existing test DB is idempotent.
+    ALTER TABLE deployment_environments
+      DROP CONSTRAINT IF EXISTS deployment_environments_callback_secret_unique;
+    ALTER TABLE deployment_environments
+      ADD CONSTRAINT deployment_environments_callback_secret_unique UNIQUE (callback_secret);
     CREATE TABLE IF NOT EXISTS product_environments (
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
@@ -104,6 +117,17 @@ beforeAll(async () => {
       webhook_token TEXT NOT NULL,
       exec_order INT NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS pipeline_stacks (
+      id BIGSERIAL PRIMARY KEY,
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      state_key_param TEXT NOT NULL DEFAULT 'hostname',
+      steps JSONB NOT NULL DEFAULT '[]'
+    );
+    -- Existing test DBs may have webhook_url/webhook_token columns; align with migration 0003.
+    ALTER TABLE pipeline_stacks DROP COLUMN IF EXISTS webhook_url;
+    ALTER TABLE pipeline_stacks DROP COLUMN IF EXISTS webhook_token;
     CREATE TABLE IF NOT EXISTS cost_centers (
       id BIGSERIAL PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
@@ -121,7 +145,7 @@ beforeAll(async () => {
     CREATE TABLE IF NOT EXISTS orders (
       id BIGSERIAL PRIMARY KEY,
       project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      product_id BIGINT NOT NULL REFERENCES products(id),
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
       user_id BIGINT NOT NULL REFERENCES users(id),
       status TEXT NOT NULL DEFAULT 'pending',
@@ -129,9 +153,12 @@ beforeAll(async () => {
       cost_center_id BIGINT REFERENCES cost_centers(id),
       rejection_note TEXT,
       pipeline_id JSONB NOT NULL DEFAULT '[]',
+      pipeline_status JSONB NOT NULL DEFAULT '{}',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- Older test DBs may not have pipeline_status; add it (migration 0005).
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
     CREATE TABLE IF NOT EXISTS infrastructure_elements (
       id BIGSERIAL PRIMARY KEY,
       order_id BIGINT NOT NULL REFERENCES orders(id),
@@ -142,8 +169,11 @@ beforeAll(async () => {
       parameters JSONB NOT NULL DEFAULT '{}',
       outputs JSONB NOT NULL DEFAULT '{}',
       pipeline_id JSONB NOT NULL DEFAULT '[]',
+      pipeline_status JSONB NOT NULL DEFAULT '{}',
       deployed_at TIMESTAMPTZ DEFAULT NOW()
     );
+    -- Older test DBs may not have pipeline_status; add it (migration 0007).
+    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
     CREATE TABLE IF NOT EXISTS audit_log (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT,
@@ -183,6 +213,15 @@ beforeAll(async () => {
     INSERT INTO exchange_rates (currency_code, rate) VALUES ('EUR', 1.000000) ON CONFLICT DO NOTHING;
     INSERT INTO branding (id) VALUES (1) ON CONFLICT DO NOTHING;
     INSERT INTO app_config (id) VALUES (1) ON CONFLICT DO NOTHING;
+  `)
+
+  // Realign orders.product_id FK with schema.ts (ON DELETE CASCADE). Older
+  // test databases created before this constraint change still have the
+  // non-cascading FK, so drop-and-recreate keeps local dev in sync with CI.
+  await testDb.execute(sql`
+    ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_product_id_fkey;
+    ALTER TABLE orders ADD CONSTRAINT orders_product_id_fkey
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE;
   `)
 })
 

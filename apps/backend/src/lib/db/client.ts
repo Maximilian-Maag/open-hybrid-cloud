@@ -9,3 +9,4 @@ const client = g.__pgClient ?? postgres(process.env.DATABASE_URL ?? '')
 if (process.env.NODE_ENV !== 'production') g.__pgClient = client
 
 export const db = drizzle(client, { schema })
+export { client }

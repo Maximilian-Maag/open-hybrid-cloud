@@ -141,6 +141,13 @@ describe('createOrder (admin path)', () => {
   it('creates order with status provisioning, triggers webhooks with ORDER_ID, creates infra, notifies, returns infraId', async () => {
     const { admin, product, env, project } = await buildBase()
     mockedTriggerWebhooks.mockResolvedValueOnce(['pipe-admin-1'])
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'FOO',
+      type: 'string',
+      required: false,
+    })
 
     const input = {
       projectId: project.id,
@@ -188,6 +195,13 @@ describe('createOrder (PM path)', () => {
     // Add another admin and an inactive admin
     const admin2 = await createUser({ role: 'admin', email: 'admin2@test.dev' })
     await createUser({ role: 'admin', email: 'inactive@test.dev', active: false })
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'FOO',
+      type: 'string',
+      required: false,
+    })
 
     const input = {
       projectId: project.id,
@@ -320,7 +334,7 @@ describe('createOrder — validation & ownership', () => {
     if (!result.ok) expect(result.status).toBe(400)
   })
 
-  it('applies the default value for an omitted optional parameter', async () => {
+  it('applies the default for an omitted optional parameter and drops unknown submitted keys', async () => {
     const { admin, product, env, project } = await buildBase()
     await db.insert(parameters).values({
       scope: 'product',
@@ -335,13 +349,48 @@ describe('createOrder — validation & ownership', () => {
       projectId: project.id,
       productId: product.id,
       environmentId: env.id,
+      // FOO has no parameter definition — it must be dropped, not persisted.
       parameters: { FOO: 'bar' },
     })
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
     const [dbOrder] = await db.select().from(orders).where(eq(orders.id, result.data.id))
-    expect(dbOrder.parameters).toMatchObject({ FOO: 'bar', REGION: 'eu-west' })
+    expect(dbOrder.parameters).toEqual({ REGION: 'eu-west' })
+    expect(dbOrder.parameters).not.toHaveProperty('FOO')
+  })
+
+  it('does not store submitted keys that have no parameter definition (CI-variable injection)', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'REGION',
+      type: 'string',
+      required: false,
+      defaultValue: 'eu-west',
+    })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      // Attempt to inject synthetic trigger vars with no definition.
+      parameters: { REGION: 'us-east', REF: 'attacker-branch', TF_ACTION: 'destroy' },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [dbOrder] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(dbOrder.parameters).toEqual({ REGION: 'us-east' })
+    expect(dbOrder.parameters).not.toHaveProperty('REF')
+    expect(dbOrder.parameters).not.toHaveProperty('TF_ACTION')
+
+    // And they must not reach the CI trigger layer either.
+    const [, , vars] = mockedTriggerWebhooks.mock.calls[0]
+    expect(vars).not.toHaveProperty('REF')
+    expect(vars).not.toHaveProperty('TF_ACTION')
   })
 
   it('trims surrounding whitespace before validating and storing values', async () => {

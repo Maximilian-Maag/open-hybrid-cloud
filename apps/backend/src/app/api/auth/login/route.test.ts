@@ -111,35 +111,96 @@ describe('POST /api/auth/login', () => {
     }
   })
 
-  it('does not rate-limit different IPs against each other when TRUST_PROXY set (NFA-05.1)', async () => {
+  // NFA-05.1: password-spraying cap — with TRUST_PROXY set, one IP hammering
+  // MANY different accounts must eventually trip the per-IP bucket, even though
+  // each individual account bucket is nowhere near its limit.
+  it('caps password spraying across different accounts from one IP when TRUST_PROXY set (NFA-05.1)', async () => {
     const prev = process.env.TRUST_PROXY
     process.env.TRUST_PROXY = '1'
     try {
-      await createUser({ email: 'per-ip@test.dev', password: 'correct-pass' })
+      const ip = `10.5.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
+      const attempt = async (email: string, password: string) =>
+        POST(
+          new NextRequest('http://localhost/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password }),
+            headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+          }),
+        )
+
+      // 10 failed guesses, each against a DIFFERENT (non-existent) account, so
+      // no single account bucket is near its cap — only the shared IP bucket is.
+      for (let i = 0; i < 10; i++) {
+        const res = await attempt(`spray-${i}@test.dev`, 'wrong-pass')
+        expect(res.status).toBe(401)
+      }
+
+      // The 11th attempt from this IP — even targeting yet another fresh account
+      // with valid-looking creds — is blocked by the per-IP bucket.
+      const blocked = await attempt('spray-victim@test.dev', 'whatever')
+      expect(blocked.status).toBe(429)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
+  it('limits an account regardless of source IP — rotating IPs does not refresh its budget (NFA-05.1)', async () => {
+    const prev = process.env.TRUST_PROXY
+    process.env.TRUST_PROXY = '1'
+    try {
+      await createUser({ email: 'per-account@test.dev', password: 'correct-pass' })
 
       const attempt = async (ip: string, password: string) =>
         POST(
           new NextRequest('http://localhost/api/auth/login', {
             method: 'POST',
-            body: JSON.stringify({ email: 'per-ip@test.dev', password }),
+            body: JSON.stringify({ email: 'per-account@test.dev', password }),
             headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
           }),
         )
 
-      const ipA = `10.1.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
-      const ipB = `10.2.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
-
-      // Burn out ipA
+      // 10 failed guesses against the same account, each from a DIFFERENT IP.
       for (let i = 0; i < 10; i++) {
-        const res = await attempt(ipA, 'wrong')
+        const res = await attempt(`10.9.0.${i + 1}`, 'wrong')
         expect(res.status).toBe(401)
       }
-      const blockedA = await attempt(ipA, 'correct-pass')
-      expect(blockedA.status).toBe(429)
 
-      // ipB should still be able to log in successfully
-      const okFromB = await attempt(ipB, 'correct-pass')
-      expect(okFromB.status).toBe(200)
+      // An 11th attempt from yet another fresh IP is still blocked: the account
+      // bucket is IP-independent, so rotating source IPs can't refresh it.
+      const blocked = await attempt('10.9.0.250', 'correct-pass')
+      expect(blocked.status).toBe(429)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
+  it('a successful login does not reset the per-IP spraying bucket (NFA-05.1)', async () => {
+    const prev = process.env.TRUST_PROXY
+    process.env.TRUST_PROXY = '1'
+    try {
+      await createUser({ email: 'ipreset@test.dev', password: 'correct-pass' })
+      const ip = `10.7.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
+      const attempt = async (email: string, password: string) =>
+        POST(
+          new NextRequest('http://localhost/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password }),
+            headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+          }),
+        )
+
+      // 9 failed sprays across different accounts from this IP (IP bucket → 9).
+      for (let i = 0; i < 9; i++) {
+        expect((await attempt(`ips-${i}@test.dev`, 'wrong')).status).toBe(401)
+      }
+      // A successful login from the same IP (IP bucket → 10) resets only the
+      // account bucket — not the IP bucket.
+      expect((await attempt('ipreset@test.dev', 'correct-pass')).status).toBe(200)
+      // The next attempt from this IP is still blocked: the success did not
+      // clear the accumulated per-IP failures.
+      expect((await attempt('another@test.dev', 'whatever')).status).toBe(429)
     } finally {
       if (prev === undefined) delete process.env.TRUST_PROXY
       else process.env.TRUST_PROXY = prev

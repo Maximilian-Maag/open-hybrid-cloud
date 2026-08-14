@@ -4,11 +4,15 @@ import { POST } from './route'
 import { createCiSource, createEnvironment } from '@/test/helpers'
 import { db } from '@/lib/db/client'
 import { deploymentEnvironments } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import { createHmac } from 'crypto'
+import { handlePipelineEvent } from '@/lib/webhook/handler'
 
 vi.mock('@/lib/webhook/handler', () => ({
   handlePipelineEvent: vi.fn().mockResolvedValue(undefined),
 }))
+
+const mockedHandle = vi.mocked(handlePipelineEvent)
 
 const WEBHOOK_SECRET = 'github-test-secret'
 
@@ -41,6 +45,7 @@ const validWorkflowRunBody = {
 
 // runs AFTER global beforeEach (which truncates tables), so token is always fresh
 beforeEach(async () => {
+  mockedHandle.mockClear()
   const ci = await createCiSource()
   await createEnvironment(ci.id, WEBHOOK_SECRET)
 })
@@ -58,6 +63,22 @@ describe('POST /api/webhooks/github/workflow', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.received).toBe(true)
+  })
+
+  it('passes the environment whose secret matched to the handler (event scoping)', async () => {
+    // A second environment with a different secret must NOT be the one passed.
+    const ci2 = await createCiSource({ name: 'CI-Other' })
+    await createEnvironment(ci2.id, 'other-secret')
+
+    const [matched] = await db
+      .select({ id: deploymentEnvironments.id })
+      .from(deploymentEnvironments)
+      .where(eq(deploymentEnvironments.callbackSecret, WEBHOOK_SECRET))
+
+    const res = await POST(makeSignedRequest(validWorkflowRunBody))
+    expect(res.status).toBe(200)
+    expect(mockedHandle).toHaveBeenCalledTimes(1)
+    expect(mockedHandle.mock.calls[0][1]).toBe(matched.id)
   })
 
   it('returns 401 for invalid signature', async () => {
@@ -162,5 +183,32 @@ describe('POST /api/webhooks/github/workflow', () => {
 
     const rejected = await POST(makeReq('outbound-trigger-token'))
     expect(rejected.status).toBe(401)
+  })
+
+  // Migration 0006 makes callback_secret UNIQUE, but a DB that hasn't been
+  // migrated can still hold duplicates from the 0004 backfill of the
+  // (non-unique) webhook_token. Two environments sharing a secret produce the
+  // SAME valid HMAC, so the first match is arbitrary — the route must refuse
+  // rather than scope the event to the wrong environment.
+  it('rejects a signature that matches more than one environment instead of guessing', async () => {
+    const { sql } = await import('drizzle-orm')
+    await db.execute(
+      sql`ALTER TABLE deployment_environments DROP CONSTRAINT deployment_environments_callback_secret_unique`,
+    )
+    try {
+      const ci2 = await createCiSource({ name: 'CI-dup' })
+      await createEnvironment(ci2.id, WEBHOOK_SECRET)
+
+      const res = await POST(makeSignedRequest(validWorkflowRunBody))
+      expect(res.status).toBe(409)
+      const body = await res.json()
+      expect(body.error).toBe('Ambiguous callback secret')
+      expect(mockedHandle).not.toHaveBeenCalled()
+    } finally {
+      await db.execute(sql`DELETE FROM deployment_environments WHERE callback_secret = ${WEBHOOK_SECRET}`)
+      await db.execute(
+        sql`ALTER TABLE deployment_environments ADD CONSTRAINT deployment_environments_callback_secret_unique UNIQUE (callback_secret)`,
+      )
+    }
   })
 })

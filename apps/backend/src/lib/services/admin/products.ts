@@ -17,7 +17,7 @@ import {
 import { eq, sql, and } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { fireDestroyTriggers } from '@/lib/services/teardown'
 
 export interface ProductAdminRow {
   id: number
@@ -222,7 +222,7 @@ export const deleteProduct = async (id: number): Promise<Result<void>> => {
   if (!existing.length) return err(404, 'Not found')
 
   const activeInfra = await db
-    .select({ id: infrastructureElements.id, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
+    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
     .from(infrastructureElements)
     .where(and(eq(infrastructureElements.productId, id), eq(infrastructureElements.status, 'active')))
 
@@ -231,6 +231,7 @@ export const deleteProduct = async (id: number): Promise<Result<void>> => {
   // fire-and-forget raced the cascade. NOTE: awaiting only guarantees the CI
   // system accepted the trigger — the destroy pipeline still runs asynchronously
   // afterwards, so a late failure cannot be reconciled once the rows are gone.
+  const triggerFailures: string[] = []
   for (const infra of activeInfra) {
     // Atomically claim the row (active → decommissioning) so two concurrent
     // deletes can't both fire a destroy pipeline for the same element.
@@ -240,11 +241,28 @@ export const deleteProduct = async (id: number): Promise<Result<void>> => {
       .where(and(eq(infrastructureElements.id, infra.id), eq(infrastructureElements.status, 'active')))
       .returning({ id: infrastructureElements.id })
     if (!claimed.length) continue
+    const destroyVars = { ...infra.parameters, TF_ACTION: 'destroy', INFRA_ID: String(infra.id), ORDER_ID: String(infra.orderId) }
     try {
-      await triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy', INFRA_ID: String(infra.id) })
+      // Fires destroy for BOTH product webhooks and pipeline stacks — stack-
+      // provisioned infra would otherwise leak on product deletion.
+      const outcome = await fireDestroyTriggers(infra, destroyVars)
+      triggerFailures.push(...outcome.failures.map((f) => `infra #${infra.id}: ${f}`))
     } catch (e) {
       console.error(e)
+      triggerFailures.push(`infra #${infra.id}: ${e instanceof Error ? e.message : String(e)}`)
     }
+  }
+
+  // Block the delete when any destroy could not be started. Deleting anyway
+  // cascades the infrastructure_elements rows away, which would leave the
+  // provisioned infrastructure running with nothing left to reconcile it
+  // against. The claimed rows keep their state (fireDestroyTriggers hands back
+  // the ones where nothing started), so the operator can retry.
+  if (triggerFailures.length > 0) {
+    return err(
+      502,
+      `Cannot delete product: ${triggerFailures.length} destroy trigger(s) could not be started, so deleting now would leak infrastructure. Fix and retry — ${triggerFailures.join('; ')}`,
+    )
   }
 
   const deleted = await db.delete(products).where(eq(products.id, id)).returning({ id: products.id })

@@ -4,41 +4,10 @@ import { db } from '@/lib/db/client'
 import { pipelineStacks, parameters, ciSources, deploymentEnvironments } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { getFileContent } from '@/lib/ci'
+import { parseTerraformVariables } from '@/lib/tfparser'
 import type { CiProvider } from '@open-hybrid-cloud/types'
 
 const CI_INTERNAL_VARS = new Set(['ci_api_url', 'ci_project_id', 'ci_job_token', 'vm_state_name'])
-
-function parseHclVariables(content: string) {
-  const results: Array<{
-    name: string
-    description: string
-    defaultValue: string
-    type: 'string' | 'number' | 'bool'
-  }> = []
-
-  const blockRegex = /variable\s+"([^"]+)"\s*\{([^}]*)\}/g
-  let match
-  while ((match = blockRegex.exec(content)) !== null) {
-    const name = match[1]
-    const body = match[2]
-
-    if (/sensitive\s*=\s*true/.test(body)) continue
-    if (CI_INTERNAL_VARS.has(name)) continue
-
-    const description = body.match(/description\s*=\s*"([^"]*)"/)
-    const defaultVal = body.match(/default\s*=\s*"([^"]*)"/)
-    const typeMatch = body.match(/type\s*=\s*(string|number|bool)/)
-
-    results.push({
-      name,
-      description: description?.[1] ?? '',
-      defaultValue: defaultVal?.[1] ?? '',
-      type: (typeMatch?.[1] ?? 'string') as 'string' | 'number' | 'bool',
-    })
-  }
-
-  return results
-}
 
 export async function POST(
   req: NextRequest,
@@ -125,7 +94,13 @@ export async function POST(
     )
   }
 
-  const vars = parseHclVariables(content)
+  // Use the canonical HCL parser (shared with the CI import-vars path) so
+  // nested/validation braces are handled and numeric/boolean defaults are
+  // recognised (a var with `default = 3` is optional, not required). Then
+  // filter out sensitive and CI-internal variables explicitly, as before.
+  const vars = parseTerraformVariables(content).filter(
+    (v) => !v.sensitive && !CI_INTERNAL_VARS.has(v.name),
+  )
 
   const existing = await db
     .select({ name: parameters.name })
@@ -137,16 +112,15 @@ export async function POST(
   let created = 0
   for (const v of vars) {
     if (existingNames.has(v.name)) continue
-    const label = v.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
     await db.insert(parameters).values({
       scope: 'product',
       scopeId: productId,
       name: v.name,
-      label,
+      label: v.label,
       type: v.type,
       description: v.description,
       defaultValue: v.defaultValue,
-      required: v.defaultValue === '',
+      required: v.required,
       sensitive: false,
     })
     created++

@@ -13,6 +13,10 @@ const UpsertProductEnvironmentSchema = z.object({
   // Nullable so the admin form can clear the overhead account again; the
   // service rejects an id that is unknown or deactivated.
   overheadCostCenterId: z.number().int().positive().nullable().default(null),
+  // Time-boxed trials are opt-in per offering (issue #1): a trial provisions real
+  // infrastructure with elevated rights inside it.
+  trialEnabled: z.boolean().default(false),
+  trialDurationMinutes: z.number().int().positive().default(30),
 })
 
 export async function GET(

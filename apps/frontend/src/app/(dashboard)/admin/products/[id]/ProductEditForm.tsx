@@ -807,6 +807,8 @@ function EnvironmentRow({
     costCenterMode: CostCenterMode
     forcedCostCenter: boolean
     overheadCostCenterId: number | null
+    trialEnabled: boolean
+    trialDurationMinutes: number
   }
   costCenters: CostCenter[]
   onSave: (data: UpsertProductEnvironmentRequest) => Promise<void>
@@ -816,6 +818,10 @@ function EnvironmentRow({
   const [currency, setCurrency] = useState(existing?.currency ?? 'EUR')
   const [costCenterMode, setCostCenterMode] = useState<CostCenterMode>(existing?.costCenterMode ?? 'project')
   const [forcedCostCenter, setForcedCostCenter] = useState(existing?.forcedCostCenter ?? false)
+  const [trialEnabled, setTrialEnabled] = useState(existing?.trialEnabled ?? false)
+  const [trialDurationMinutes, setTrialDurationMinutes] = useState(
+    String(existing?.trialDurationMinutes ?? 30),
+  )
   const [overheadCostCenterId, setOverheadCostCenterId] = useState(
     existing?.overheadCostCenterId !== null && existing?.overheadCostCenterId !== undefined
       ? String(existing.overheadCostCenterId)
@@ -842,6 +848,11 @@ function EnvironmentRow({
         // account from being applied if the mode is switched back later.
         overheadCostCenterId:
           costCenterMode === 'overhead' && overheadCostCenterId ? Number(overheadCostCenterId) : null,
+        trialEnabled,
+        // Fall back to 30 rather than sending NaN or 0 for a cleared field: the
+        // server rejects a non-positive duration, which would surface as a
+        // confusing save error on a field the operator may not have touched.
+        trialDurationMinutes: Number(trialDurationMinutes) > 0 ? Number(trialDurationMinutes) : 30,
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -889,6 +900,34 @@ function EnvironmentRow({
               className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
           </div>
         </div>
+      </div>
+
+      {/* Trials are opt-in per offering: one provisions real infrastructure and
+          asks the pipeline to grant elevated rights inside it. */}
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="flex items-center gap-2 h-9">
+          <input
+            type="checkbox"
+            id={`trial-${env.id}`}
+            checked={trialEnabled}
+            onChange={(e) => setTrialEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+          />
+          <label htmlFor={`trial-${env.id}`} className="text-sm font-medium text-slate-700">
+            Offer as trial
+          </label>
+        </div>
+        {trialEnabled && (
+          <Input
+            label="Trial duration (minutes)"
+            type="number"
+            min={1}
+            value={trialDurationMinutes}
+            onChange={(e) => setTrialDurationMinutes(e.target.value)}
+            hint="The element is decommissioned automatically after this long. Needs the sweep configured — see README."
+            className="w-64"
+          />
+        )}
       </div>
 
       {/* Overhead mode bills every order to one fixed shared account, so it

@@ -15,7 +15,7 @@ import { listApprovals, approveOrder, rejectOrder } from './approvals'
 import { sendOrderApproved, sendOrderRejected } from '@/lib/notification'
 import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements } from '@/lib/db/schema'
+import { orders, infrastructureElements, productEnvironments } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -25,6 +25,7 @@ import {
   createEnvironment,
   createProject,
   createOrder as seedOrder,
+  linkProductEnvironment,
 } from '@/test/helpers'
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
@@ -167,5 +168,114 @@ describe('rejectOrder', () => {
     expect(mockedRejected).toHaveBeenCalledTimes(1)
     expect(mockedRejected.mock.calls[0][0]).toBe('pm@test.dev')
     expect(mockedRejected.mock.calls[0][3]).toBe('Budget exceeded')
+  })
+})
+
+// Issue #1. A project manager's trial waits for approval like any other order, so
+// approval is where the trial is actually provisioned — and where its clock has to
+// start. Starting it at order time could burn the whole trial, or expire it
+// outright, before the infrastructure existed.
+describe('approveOrder — time-boxed trials', () => {
+  const buildTrial = async (over?: { trialEnabled?: boolean; trialDurationMinutes?: number }) => {
+    const ctx = await setup()
+    await linkProductEnvironment(ctx.product.id, ctx.env.id, { trialEnabled: true, ...over })
+    return ctx
+  }
+
+  const infraFor = async (orderId: number) =>
+    (await db.select().from(infrastructureElements).where(eq(infrastructureElements.orderId, orderId)))[0]
+
+  it('starts the clock at approval, not at order time', async () => {
+    const ctx = await buildTrial({ trialDurationMinutes: 30 })
+    const order = await seedOrder(ctx.project.id, ctx.product.id, ctx.env.id, ctx.pm.id, {
+      status: 'pending',
+      isTrial: true,
+    })
+
+    const approvedAt = Date.now()
+    const result = await approveOrder(makeSession(ctx.admin), order.id)
+    expect(result.ok).toBe(true)
+
+    const infra = await infraFor(order.id)
+    const expiry = infra.scheduledDecommissionAt?.getTime() ?? 0
+    expect(expiry).toBeGreaterThanOrEqual(approvedAt + 30 * 60_000)
+    expect(expiry).toBeLessThanOrEqual(Date.now() + 30 * 60_000)
+  })
+
+  it('passes the trial variables to CI on approval', async () => {
+    const ctx = await buildTrial({ trialDurationMinutes: 45 })
+    const order = await seedOrder(ctx.project.id, ctx.product.id, ctx.env.id, ctx.pm.id, {
+      status: 'pending',
+      isTrial: true,
+    })
+
+    await approveOrder(makeSession(ctx.admin), order.id)
+    expect(mockedWebhooks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ TRIAL: 'true', TRIAL_DURATION_MINUTES: '45' }),
+    )
+  })
+
+  it('applies a duration an admin corrected while the order was pending', async () => {
+    // Re-read from the offering rather than snapshotted on the order, so the
+    // current configuration is the one that applies.
+    const ctx = await buildTrial({ trialDurationMinutes: 30 })
+    const order = await seedOrder(ctx.project.id, ctx.product.id, ctx.env.id, ctx.pm.id, {
+      status: 'pending',
+      isTrial: true,
+    })
+    await db
+      .update(productEnvironments)
+      .set({ trialDurationMinutes: 90 })
+      .where(eq(productEnvironments.productId, ctx.product.id))
+
+    await approveOrder(makeSession(ctx.admin), order.id)
+    expect(mockedWebhooks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ TRIAL_DURATION_MINUTES: '90' }),
+    )
+  })
+
+  it('falls back to 30 minutes when the offering was withdrawn while pending', async () => {
+    // Blocking an approval an admin already decided on would be worse; the trial
+    // is still torn down.
+    const ctx = await setup()
+    const order = await seedOrder(ctx.project.id, ctx.product.id, ctx.env.id, ctx.pm.id, {
+      status: 'pending',
+      isTrial: true,
+    })
+
+    const approvedAt = Date.now()
+    const result = await approveOrder(makeSession(ctx.admin), order.id)
+    expect(result.ok).toBe(true)
+
+    const infra = await infraFor(order.id)
+    const expiry = infra.scheduledDecommissionAt?.getTime() ?? 0
+    expect(expiry).toBeGreaterThanOrEqual(approvedAt + 30 * 60_000)
+  })
+
+  it('leaves a non-trial approval unscheduled and un-flagged', async () => {
+    const ctx = await buildTrial()
+    const order = await seedOrder(ctx.project.id, ctx.product.id, ctx.env.id, ctx.pm.id, { status: 'pending' })
+
+    await approveOrder(makeSession(ctx.admin), order.id)
+
+    const infra = await infraFor(order.id)
+    expect(infra.scheduledDecommissionAt).toBeNull()
+    const vars = mockedWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars.TRIAL).toBeUndefined()
+  })
+
+  it('surfaces the trial flag in the approval queue', async () => {
+    // It changes what the approver is agreeing to: a trial is torn down shortly
+    // after it comes up and asks the pipeline for elevated rights inside it.
+    const ctx = await buildTrial()
+    await seedOrder(ctx.project.id, ctx.product.id, ctx.env.id, ctx.pm.id, { status: 'pending', isTrial: true })
+
+    const result = await listApprovals()
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data[0].isTrial).toBe(true)
   })
 })

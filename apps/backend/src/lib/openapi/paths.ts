@@ -31,6 +31,7 @@ const orderSchema = z.object({
   pipelineId: z.array(z.string()).nullable(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
+  isTrial: z.boolean().openapi({ description: 'Ordered as a time-boxed trial (issue #1).' }),
   productName: z.string().nullable(),
   environmentName: z.string().nullable(),
   userName: z.string().nullable(),
@@ -151,6 +152,12 @@ const productEnvironmentSchema = z.object({
   costCenterMode: z.string(),
   forcedCostCenter: z.boolean(),
   overheadCostCenterId: z.number().nullable(),
+  trialEnabled: z.boolean().openapi({
+    description:
+      'Whether this offering can be ordered as a time-boxed trial. Opt-in per offering: a trial ' +
+      'provisions real infrastructure and asks the pipeline to grant elevated rights inside it.',
+  }),
+  trialDurationMinutes: z.number().openapi({ description: 'How long a trial lives. Default 30.' }),
   environmentName: z.string().nullable(),
   overheadCostCenterName: z.string().nullable().optional(),
 })
@@ -422,6 +429,13 @@ registry.registerPath({
             environmentId: z.number().int().positive(),
             costCenterId: z.number().int().positive().optional(),
             parameters: z.record(z.string()),
+            trial: z.boolean().optional().openapi({
+              description:
+                'Order as a time-boxed trial (issue #1). Rejected unless the offering has trialEnabled. ' +
+                'Does NOT bypass approval — a project manager\'s trial still needs an admin to approve it. ' +
+                'The pipeline receives TRIAL=true and TRIAL_DURATION_MINUTES, and the element is scheduled ' +
+                'for automatic decommissioning once provisioning starts.',
+            }),
           }),
         },
       },
@@ -1508,6 +1522,8 @@ registry.registerPath({
             costCenterMode: z.enum(['project', 'select', 'overhead']).optional(),
             forcedCostCenter: z.boolean().optional(),
             overheadCostCenterId: z.number().nullable().optional(),
+            trialEnabled: z.boolean().optional(),
+            trialDurationMinutes: z.number().int().positive().optional(),
           }),
         },
       },
@@ -1541,6 +1557,8 @@ registry.registerPath({
             costCenterMode: z.enum(['project', 'select', 'overhead']).optional(),
             forcedCostCenter: z.boolean().optional(),
             overheadCostCenterId: z.number().nullable().optional(),
+            trialEnabled: z.boolean().optional(),
+            trialDurationMinutes: z.number().int().positive().optional(),
           }),
         },
       },

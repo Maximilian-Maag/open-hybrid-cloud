@@ -50,6 +50,7 @@ export function OrderForm({
   const [envId, setEnvId] = useState<string>('')
   const [projectId, setProjectId] = useState<string>(initialProjectId ?? '')
   const [costCenterId, setCostCenterId] = useState<string>('')
+  const [trial, setTrial] = useState(false)
   const [paramValues, setParamValues] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -88,6 +89,9 @@ export function OrderForm({
   // account is now stored on the offering, so the user is shown it, not asked.
   const isOverhead = selectedEnv?.costCenterMode === 'overhead'
   const needsCostCenter = selectedEnv?.costCenterMode === 'select'
+  // Trials are opt-in per offering (issue #1), so the toggle only exists where one
+  // is actually offered. The server re-checks — a hidden control is not a control.
+  const trialAvailable = selectedEnv?.trialEnabled === true
   const envParameters = resolvedParameters.filter(
     (p) => p.environmentId === null || String(p.environmentId) === envId,
   )
@@ -156,6 +160,9 @@ export function OrderForm({
         projectId: Number(projectId),
         parameters: parametersWithDefaults,
         ...(needsCostCenter && costCenterId ? { costCenterId: Number(costCenterId) } : {}),
+        // Only sent when the selected environment offers a trial: switching
+        // environments after ticking the box must not smuggle the flag through.
+        ...(trialAvailable && trial ? { trial: true } : {}),
       }
       await post<Order>('/api/orders', body, token)
       setSuccess(true)
@@ -233,6 +240,26 @@ export function OrderForm({
             {selectedEnv?.overheadCostCenterName ?? '—'}
           </p>
           <p className="mt-1 text-xs text-slate-500">{t('overheadCostCenterHint', lang)}</p>
+        </div>
+      )}
+
+      {trialAvailable && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="order-trial"
+              checked={trial}
+              onChange={(e) => setTrial(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="order-trial" className="text-sm font-medium text-slate-800">
+              {t('tryItOut', lang)}
+              {' — '}
+              {selectedEnv?.trialDurationMinutes ?? 30} {t('trialMinutes', lang)}
+            </label>
+          </div>
+          <p className="mt-1 ml-6 text-xs text-slate-600">{t('trialHint', lang)}</p>
         </div>
       )}
 

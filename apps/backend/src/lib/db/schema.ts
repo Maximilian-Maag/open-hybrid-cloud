@@ -103,6 +103,13 @@ export const productEnvironments = pgTable('product_environments', {
   // overhead account. Nullable because the other two modes never use it, and
   // because an offering may be switched to `overhead` before one is chosen.
   overheadCostCenterId: bigint('overhead_cost_center_id', { mode: 'number' }).references(() => costCenters.id, { onDelete: 'set null' }),
+  // Time-boxed trial of this offering (issue #1). Opt-in per offering rather than
+  // catalogue-wide: a trial provisions real infrastructure with elevated rights
+  // inside it, which is not something every product should hand out.
+  trialEnabled: boolean('trial_enabled').notNull().default(false),
+  // Configurable so a heavier app can get longer than the 30 minutes the issue
+  // names; 30 is the default, not a constant.
+  trialDurationMinutes: integer('trial_duration_minutes').notNull().default(30),
 }, (t) => [primaryKey({ columns: [t.productId, t.environmentId] })])
 
 export const productWebhooks = pgTable('product_webhooks', {
@@ -158,6 +165,11 @@ export const orders = pgTable('orders', {
   status: text({ enum: ['pending', 'provisioning', 'completed', 'failed', 'rejected'] }).notNull().default('pending'),
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
   costCenterId: bigint('cost_center_id', { mode: 'number' }).references(() => costCenters.id),
+  // Ordered as a time-boxed trial (issue #1). Recorded on the ORDER rather than
+  // only acted on at creation time: a project manager's order is provisioned at
+  // approval, which is where the trial clock has to start and where the trial
+  // variables have to be passed to CI.
+  isTrial: boolean('is_trial').notNull().default(false),
   rejectionNote: text('rejection_note'),
   pipelineId: jsonb('pipeline_id').$type<string[]>().notNull().default([]),
   // Per-pipeline terminal status keyed by pipeline id, e.g.

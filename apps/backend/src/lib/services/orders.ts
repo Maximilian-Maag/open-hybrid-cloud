@@ -18,6 +18,7 @@ import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
+import { resolveTrial, trialVariables, trialExpiry } from '@/lib/services/trial'
 
 export interface OrderRow {
   id: number
@@ -32,6 +33,8 @@ export interface OrderRow {
   pipelineId: string[]
   createdAt: Date
   updatedAt: Date
+  /** Ordered as a time-boxed trial (issue #1). */
+  isTrial: boolean
   productName: string
   environmentName: string | null
   userName: string | null
@@ -43,6 +46,8 @@ export interface CreateOrderInput {
   environmentId: number
   costCenterId?: number
   parameters: Record<string, string>
+  /** Order as a time-boxed trial (issue #1). Requires a trial-enabled offering. */
+  trial?: boolean
 }
 
 export interface CreatedOrder {
@@ -58,6 +63,7 @@ export interface CreatedOrder {
   pipelineId: string[]
   createdAt: Date
   updatedAt: Date
+  isTrial: boolean
   infraId?: number
 }
 
@@ -78,6 +84,7 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
       pipelineId: orders.pipelineId,
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
+      isTrial: orders.isTrial,
       productName: sql<string>`(
         SELECT name FROM product_translations
         WHERE product_id = ${orders.productId}
@@ -114,6 +121,7 @@ export const getOrderById = async (
       pipelineId: orders.pipelineId,
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
+      isTrial: orders.isTrial,
       productName: sql<string>`(
         SELECT name FROM product_translations
         WHERE product_id = ${orders.productId}
@@ -307,6 +315,17 @@ export const createOrder = async (
   if (!costCenterResult.ok) return costCenterResult
   const resolvedCostCenterId = costCenterResult.data
 
+  // Trials are opt-in per offering (issue #1). Checked here rather than trusted
+  // from the request: the toggle is hidden in the browser for products that do
+  // not offer one, and a hidden control is not a control.
+  const isTrial = input.trial === true
+  let trialDurationMinutes = 0
+  if (isTrial) {
+    const trial = await resolveTrial(productId, environmentId)
+    if (!trial.ok) return trial
+    trialDurationMinutes = trial.data.trialDurationMinutes
+  }
+
   // Server-side parameter validation (required/type checks + defaults).
   const defs = await loadApplicableParameters(productId, product.categoryId, environmentId)
   const validated = validateAndApplyParameters(defs, input.parameters)
@@ -324,10 +343,15 @@ export const createOrder = async (
         status: 'provisioning',
         parameters,
         costCenterId: resolvedCostCenterId,
+        isTrial,
       })
       .returning()
 
-    const triggerVars = { ...parameters, ORDER_ID: String(order.id) }
+    const triggerVars = {
+      ...parameters,
+      ORDER_ID: String(order.id),
+      ...(isTrial ? trialVariables(trialDurationMinutes) : {}),
+    }
     const webhookIds = await triggerProductWebhooks(productId, environmentId, triggerVars)
     const stackIds = await triggerPipelineStacks(productId, environmentId, triggerVars)
     const pipelineIds = [...webhookIds, ...stackIds]
@@ -346,6 +370,10 @@ export const createOrder = async (
         status: 'active',
         parameters,
         pipelineId: pipelineIds,
+        // The trial's clock starts here, at provisioning. The scheduled-decommission
+        // sweep (issue #30) is what actually tears it down, so a trial needs no
+        // teardown mechanism of its own.
+        ...(isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
       })
       .returning()
 
@@ -369,6 +397,9 @@ export const createOrder = async (
         status: 'pending',
         parameters,
         costCenterId: resolvedCostCenterId,
+        // Carried to approval time, which is where the trial is actually
+        // provisioned and where its clock starts.
+        isTrial,
       })
       .returning()
 

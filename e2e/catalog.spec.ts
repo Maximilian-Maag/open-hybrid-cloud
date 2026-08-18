@@ -115,3 +115,35 @@ test.describe('Catalog favorites', () => {
     await expect(page.getByRole('region', { name: /my favorites/i })).toBeHidden({ timeout: 8000 })
   })
 })
+
+// Issue #1. The toggle only exists for an offering that was opted in, and a trial
+// does NOT bypass approval — a project manager's trial still queues for one.
+test.describe('Catalog trial ordering', () => {
+  test('the trial toggle is absent for offerings that do not allow one', async ({ page }) => {
+    await loginAsRoot(page)
+    await page.goto('/catalog')
+
+    const firstOrder = page.getByRole('link', { name: /place order/i }).first()
+    const noProducts = page.getByText(/no products/i)
+    await expect(firstOrder.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await firstOrder.click()
+    const envSelect = page.getByLabel(/environment/i)
+    await expect(envSelect).toBeVisible({ timeout: 10000 })
+
+    const options = await envSelect.locator('option:not([disabled])').count()
+    if (options === 0) { test.skip(); return }
+    await envSelect.selectOption({ index: 1 })
+
+    // Either the offering allows a trial and the toggle explains itself, or it
+    // does not and there is nothing to show.
+    const toggle = page.getByLabel(/try it out/i)
+    if (await toggle.count() > 0) {
+      await expect(toggle).toBeVisible()
+      await expect(page.getByText(/decommissioned automatically/i)).toBeVisible()
+    } else {
+      await expect(toggle).toHaveCount(0)
+    }
+  })
+})

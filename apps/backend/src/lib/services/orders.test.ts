@@ -622,3 +622,134 @@ describe('createOrder — cost centre rules are enforced server-side', () => {
     }
   })
 })
+
+// Issue #1: "test a 1ClickApp for 30 minutes with Admin priv". "Admin priv" is
+// elevated rights INSIDE the provisioned app — the portal cannot grant rights in
+// somebody else's Terraform, so it passes the intent to CI. A trial therefore does
+// NOT bypass approval; that would make every trial-enabled product a way around
+// the approval workflow entirely.
+describe('createOrder — time-boxed trials', () => {
+  const buildTrial = async (over?: { trialEnabled?: boolean; trialDurationMinutes?: number }) => {
+    const admin = await createUser({ role: 'admin', email: 'trial-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'trial-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'OneClick App')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id, over)
+    const project = await createProject(pm.id)
+    return {
+      admin,
+      pm,
+      base: { projectId: project.id, productId: product.id, environmentId: env.id, parameters: {} },
+    }
+  }
+
+  it('refuses a trial of an offering that has not opted in', async () => {
+    // The toggle is hidden in the browser for such products, and a hidden control
+    // is not a control.
+    const { admin, base } = await buildTrial()
+    const result = await createOrder(makeSession(admin), { ...base, trial: true })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/not available as a trial/i)
+    }
+  })
+
+  it('still allows a normal order of a trial-enabled offering', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true })
+    const result = await createOrder(makeSession(admin), base)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.isTrial).toBe(false)
+  })
+
+  it('marks the order and schedules the teardown for an admin trial', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true, trialDurationMinutes: 30 })
+    const before = Date.now()
+    const result = await createOrder(makeSession(admin), { ...base, trial: true })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [order] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(order.isTrial).toBe(true)
+
+    const [infra] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, order.id))
+    // The scheduled-decommission sweep (issue #30) is what tears it down, so a
+    // trial needs no expiry mechanism of its own.
+    const expiry = infra.scheduledDecommissionAt?.getTime() ?? 0
+    expect(expiry).toBeGreaterThanOrEqual(before + 30 * 60_000)
+    expect(expiry).toBeLessThanOrEqual(Date.now() + 30 * 60_000)
+  })
+
+  it('honours a configured duration other than 30 minutes', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true, trialDurationMinutes: 120 })
+    const before = Date.now()
+    const result = await createOrder(makeSession(admin), { ...base, trial: true })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [infra] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, result.data.id))
+    expect(infra.scheduledDecommissionAt?.getTime()).toBeGreaterThanOrEqual(before + 120 * 60_000)
+  })
+
+  it('passes the trial variables to CI', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true, trialDurationMinutes: 45 })
+    await createOrder(makeSession(admin), { ...base, trial: true })
+
+    expect(mockedTriggerWebhooks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ TRIAL: 'true', TRIAL_DURATION_MINUTES: '45' }),
+    )
+  })
+
+  it('sends no trial variables for an ordinary order', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true })
+    await createOrder(makeSession(admin), base)
+
+    const vars = mockedTriggerWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars.TRIAL).toBeUndefined()
+    expect(vars.TRIAL_DURATION_MINUTES).toBeUndefined()
+  })
+
+  it('leaves an ordinary order with no teardown schedule', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true })
+    const result = await createOrder(makeSession(admin), base)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [infra] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, result.data.id))
+    expect(infra.scheduledDecommissionAt).toBeNull()
+  })
+
+  it('does NOT bypass approval for a project manager', async () => {
+    // Self-service trials would turn every trial-enabled product into a way around
+    // the approval workflow.
+    const { pm, base } = await buildTrial({ trialEnabled: true })
+    const result = await createOrder(makeSession(pm), { ...base, trial: true })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [order] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(order.status).toBe('pending')
+    expect(order.isTrial).toBe(true)
+    // Nothing is provisioned yet, so nothing is scheduled yet either.
+    const infra = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, order.id))
+    expect(infra).toHaveLength(0)
+  })
+})

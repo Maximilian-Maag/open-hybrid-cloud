@@ -93,6 +93,8 @@ export const linkProductEnvironment = async (
     costCenterMode?: 'project' | 'select' | 'overhead'
     forcedCostCenter?: boolean
     overheadCostCenterId?: number | null
+    trialEnabled?: boolean
+    trialDurationMinutes?: number
   },
 ) => {
   const [row] = await db
@@ -105,6 +107,8 @@ export const linkProductEnvironment = async (
       ...(overrides?.costCenterMode ? { costCenterMode: overrides.costCenterMode } : {}),
       ...(overrides?.forcedCostCenter !== undefined ? { forcedCostCenter: overrides.forcedCostCenter } : {}),
       ...(overrides?.overheadCostCenterId !== undefined ? { overheadCostCenterId: overrides.overheadCostCenterId } : {}),
+      ...(overrides?.trialEnabled !== undefined ? { trialEnabled: overrides.trialEnabled } : {}),
+      ...(overrides?.trialDurationMinutes !== undefined ? { trialDurationMinutes: overrides.trialDurationMinutes } : {}),
     })
     .onConflictDoNothing()
     .returning()
@@ -124,7 +128,7 @@ export const createOrder = async (
   productId: number,
   environmentId: number,
   userId: number,
-  overrides?: { status?: string; pipelineId?: string[] },
+  overrides?: { status?: string; pipelineId?: string[]; isTrial?: boolean },
 ) => {
   const [order] = await db
     .insert(schema.orders)
@@ -135,6 +139,7 @@ export const createOrder = async (
       userId,
       status: (overrides?.status ?? 'pending') as schema.Order['status'],
       pipelineId: overrides?.pipelineId ?? [],
+      ...(overrides?.isTrial !== undefined ? { isTrial: overrides.isTrial } : {}),
     })
     .returning()
   return order

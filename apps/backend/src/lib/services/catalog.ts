@@ -180,6 +180,8 @@ export const getProduct = async (
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
       overheadCostCenterId: productEnvironments.overheadCostCenterId,
+      trialEnabled: productEnvironments.trialEnabled,
+      trialDurationMinutes: productEnvironments.trialDurationMinutes,
       environmentName: deploymentEnvironments.name,
       // Resolved for display: in `overhead` mode the order form shows which
       // shared account the order will be billed to instead of a picker.

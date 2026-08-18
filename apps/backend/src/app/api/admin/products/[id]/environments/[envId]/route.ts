@@ -12,6 +12,8 @@ const UpdateProductEnvironmentSchema = z.object({
   // Nullable so the admin form can clear the overhead account again; the
   // service rejects an id that is unknown or deactivated.
   overheadCostCenterId: z.number().int().positive().nullable().optional(),
+  trialEnabled: z.boolean().optional(),
+  trialDurationMinutes: z.number().int().positive().optional(),
 })
 
 export async function PUT(

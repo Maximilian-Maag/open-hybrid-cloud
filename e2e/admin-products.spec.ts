@@ -136,3 +136,32 @@ test.describe('Admin - Product Environment Removal', () => {
     await expect(envCard.getByRole('button', { name: /^remove$/i }).first()).toBeVisible()
   })
 })
+
+test.describe('Admin - Trial Offerings', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+  })
+
+  // Issue #1. Trials are opt-in per offering, so the duration field is gated on
+  // the checkbox rather than always present.
+  test('the trial duration appears only once the offering is opted in', async ({ page }) => {
+    await page.goto('/admin/products')
+    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    const trialToggle = page.getByLabel(/offer as trial/i).first()
+    if (await trialToggle.count() === 0) { test.skip(); return }
+
+    await expect(page.getByLabel(/trial duration/i)).toHaveCount(0)
+    await trialToggle.check()
+    await expect(page.getByLabel(/trial duration/i).first()).toBeVisible()
+    // 30 minutes is the issue's number, carried as the default.
+    await expect(page.getByLabel(/trial duration/i).first()).toHaveValue('30')
+
+    // Leave the offering as it was.
+    await trialToggle.uncheck()
+  })
+})

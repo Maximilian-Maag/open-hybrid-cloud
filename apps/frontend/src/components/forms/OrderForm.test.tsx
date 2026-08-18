@@ -13,9 +13,10 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { OrderForm } from './OrderForm'
-import { get } from '@/lib/api'
+import { get, post } from '@/lib/api'
 
 const mockedGet = vi.mocked(get)
+const mockedPost = vi.mocked(post)
 
 const param = (over: Partial<ProductDetail['parameters'][number]>) => ({
   id: 1,
@@ -53,6 +54,7 @@ const product = {
 } as unknown as ProductDetail
 
 beforeEach(() => {
+  mockedPost.mockReset().mockResolvedValue(undefined as never)
   mockedGet.mockReset()
   // Templates lookup (fired on project selection) — not exercised here.
   mockedGet.mockResolvedValue([] as never)
@@ -272,5 +274,127 @@ describe('OrderForm parameter resolution', () => {
 
     await waitFor(() => expect(mockedGet).toHaveBeenCalled())
     expect(screen.queryByText(/parameters were pre-filled/i)).not.toBeInTheDocument()
+  })
+
+  // ── Time-boxed trials (issue #1) ───────────────────────────────────────────
+  // Opt-in per offering: a trial provisions real infrastructure and asks the
+  // pipeline for elevated rights inside it, so the toggle only exists where one
+  // is actually offered. The server re-checks regardless.
+  const trialEnv = (over?: { trialEnabled?: boolean; trialDurationMinutes?: number }) => ({
+    ...product,
+    environments: [
+      {
+        productId: 7,
+        environmentId: 1,
+        price: '0',
+        currency: 'EUR',
+        costCenterMode: 'project',
+        forcedCostCenter: false,
+        overheadCostCenterId: null,
+        trialEnabled: over?.trialEnabled ?? true,
+        trialDurationMinutes: over?.trialDurationMinutes ?? 30,
+        environmentName: 'Env One',
+      },
+      {
+        productId: 7,
+        environmentId: 2,
+        price: '0',
+        currency: 'EUR',
+        costCenterMode: 'project',
+        forcedCostCenter: false,
+        overheadCostCenterId: null,
+        trialEnabled: false,
+        trialDurationMinutes: 30,
+        environmentName: 'Env Two',
+      },
+    ],
+  } as unknown as ProductDetail)
+
+  const renderTrial = (detail: ProductDetail) => {
+    mockedGet.mockImplementation((async (path: string) =>
+      path.startsWith('/api/catalog/') ? detail : []) as never)
+    return render(
+      <OrderForm
+        product={detail}
+        projects={[{ id: 5, name: 'Webshop', description: '', ownerId: 1, costCenterId: null, createdAt: '' }] as never}
+        costCenters={[]}
+        token="t"
+      />,
+    )
+  }
+
+  it('offers the trial toggle only for an environment that allows one', async () => {
+    renderTrial(trialEnv())
+    // Nothing selected yet, so nothing to offer.
+    expect(screen.queryByLabelText(/try it out/i)).not.toBeInTheDocument()
+
+    await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
+    expect(await screen.findByLabelText(/try it out/i)).toBeInTheDocument()
+
+    await userEvent.selectOptions(screen.getByLabelText(/environment/i), '2')
+    await waitFor(() => expect(screen.queryByLabelText(/try it out/i)).not.toBeInTheDocument())
+  })
+
+  it('shows the configured duration, not a hard-coded 30', async () => {
+    renderTrial(trialEnv({ trialDurationMinutes: 120 }))
+    await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
+
+    expect(await screen.findByLabelText(/120 min trial/i)).toBeInTheDocument()
+  })
+
+  it('explains what a trial does before it is ticked', async () => {
+    renderTrial(trialEnv())
+    await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
+
+    expect(await screen.findByText(/decommissioned automatically|elevated rights/i)).toBeInTheDocument()
+  })
+
+  // Two tests rather than one: a successful submit replaces the form with the
+  // confirmation, so a single render cannot exercise both branches.
+  it('omits the trial flag when the box is left unticked', async () => {
+    const user = userEvent.setup()
+    renderTrial(trialEnv())
+    await user.selectOptions(screen.getByLabelText(/environment/i), '1')
+    await user.selectOptions(screen.getByLabelText(/project/i), '5')
+
+    await user.click(screen.getByRole('button', { name: /place order/i }))
+    await waitFor(() => expect(mockedPost).toHaveBeenCalled())
+    expect((mockedPost.mock.calls[0][1] as Record<string, unknown>).trial).toBeUndefined()
+  })
+
+  it('sends trial: true when the box is ticked', async () => {
+    const user = userEvent.setup()
+    renderTrial(trialEnv())
+    await user.selectOptions(screen.getByLabelText(/environment/i), '1')
+    await user.selectOptions(screen.getByLabelText(/project/i), '5')
+    await user.click(await screen.findByLabelText(/try it out/i))
+
+    await user.click(screen.getByRole('button', { name: /place order/i }))
+    await waitFor(() => expect(mockedPost).toHaveBeenCalled())
+    expect((mockedPost.mock.calls[0][1] as Record<string, unknown>).trial).toBe(true)
+  })
+
+  it('does not smuggle the flag through after switching to a non-trial environment', async () => {
+    // Ticking the box, then moving to an environment with no trial, must not send
+    // trial: true — the server would reject it, and the intent is gone anyway.
+    const user = userEvent.setup()
+    renderTrial(trialEnv())
+    await user.selectOptions(screen.getByLabelText(/environment/i), '1')
+    await user.selectOptions(screen.getByLabelText(/project/i), '5')
+    await user.click(await screen.findByLabelText(/try it out/i))
+
+    await user.selectOptions(screen.getByLabelText(/environment/i), '2')
+    await user.click(screen.getByRole('button', { name: /place order/i }))
+
+    await waitFor(() => expect(mockedPost).toHaveBeenCalled())
+    expect((mockedPost.mock.calls[0][1] as Record<string, unknown>).trial).toBeUndefined()
+  })
+
+  it('shows nothing for an offering that does not allow trials', async () => {
+    renderTrial(trialEnv({ trialEnabled: false }))
+    await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
+
+    await waitFor(() => expect(screen.getByLabelText(/project/i)).toBeInTheDocument())
+    expect(screen.queryByLabelText(/try it out/i)).not.toBeInTheDocument()
   })
 })

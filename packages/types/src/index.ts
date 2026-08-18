@@ -217,6 +217,14 @@ export interface ProductEnvironment {
    * account chosen yet.
    */
   overheadCostCenterId: number | null
+  /**
+   * Whether this offering can be ordered as a time-boxed trial (issue #1).
+   * Opt-in per offering: a trial provisions real infrastructure and asks the
+   * pipeline to grant elevated rights inside it.
+   */
+  trialEnabled: boolean
+  /** How long a trial of this offering lives. Defaults to 30 minutes. */
+  trialDurationMinutes: number
   environmentName?: string
   /** Resolved name of `overheadCostCenterId`, for display in the order form. */
   overheadCostCenterName?: string | null
@@ -228,6 +236,8 @@ export interface UpsertProductEnvironmentRequest {
   costCenterMode: CostCenterMode
   forcedCostCenter: boolean
   overheadCostCenterId?: number | null
+  trialEnabled?: boolean
+  trialDurationMinutes?: number
 }
 
 // Product Webhooks
@@ -351,6 +361,8 @@ export interface Order {
   pipelineId: string[]
   createdAt: string
   updatedAt: string
+  /** Ordered as a time-boxed trial (issue #1). */
+  isTrial?: boolean
   productName?: string
   environmentName?: string
   projectName?: string
@@ -363,6 +375,12 @@ export interface CreateOrderRequest {
   environmentId: number
   costCenterId?: number
   parameters: Record<string, string>
+  /**
+   * Order as a time-boxed trial (issue #1). Only accepted for an offering with
+   * `trialEnabled`; it does NOT bypass approval — a project manager's trial still
+   * needs an admin to approve it.
+   */
+  trial?: boolean
 }
 
 export interface RejectOrderRequest {

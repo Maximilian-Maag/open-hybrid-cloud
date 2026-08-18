@@ -51,6 +51,8 @@ export interface CreateProductEnvironmentInput {
   costCenterMode?: 'project' | 'select' | 'overhead'
   forcedCostCenter?: boolean
   overheadCostCenterId?: number | null
+  trialEnabled?: boolean
+  trialDurationMinutes?: number
 }
 
 export interface UpdateProductEnvironmentInput {
@@ -59,6 +61,8 @@ export interface UpdateProductEnvironmentInput {
   costCenterMode?: 'project' | 'select' | 'overhead'
   forcedCostCenter?: boolean
   overheadCostCenterId?: number | null
+  trialEnabled?: boolean
+  trialDurationMinutes?: number
 }
 
 export interface CreateWebhookInput {
@@ -151,6 +155,8 @@ export const getProductAdmin = async (id: number): Promise<Result<ProductAdminRo
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
       overheadCostCenterId: productEnvironments.overheadCostCenterId,
+      trialEnabled: productEnvironments.trialEnabled,
+      trialDurationMinutes: productEnvironments.trialDurationMinutes,
     })
     .from(productEnvironments)
     .where(eq(productEnvironments.productId, id))
@@ -363,6 +369,8 @@ export const listProductEnvironments = async (
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
       overheadCostCenterId: productEnvironments.overheadCostCenterId,
+      trialEnabled: productEnvironments.trialEnabled,
+      trialDurationMinutes: productEnvironments.trialDurationMinutes,
       environmentName: deploymentEnvironments.name,
     })
     .from(productEnvironments)
@@ -402,12 +410,30 @@ export const createProductEnvironment = async (
   id: number,
   input: CreateProductEnvironmentInput,
 ): Promise<Result<ProductEnvironment>> => {
-  const { environmentId, price = '0', currency = 'EUR', costCenterMode = 'project', forcedCostCenter = false, overheadCostCenterId = null } = input
+  const {
+    environmentId,
+    price = '0',
+    currency = 'EUR',
+    costCenterMode = 'project',
+    forcedCostCenter = false,
+    overheadCostCenterId = null,
+    trialEnabled = false,
+    trialDurationMinutes = 30,
+  } = input
 
   const validated = await validateOverheadCostCenter(overheadCostCenterId)
   if (!validated.ok) return validated
 
-  const values = { price, currency, costCenterMode, forcedCostCenter, overheadCostCenterId }
+  // A non-positive duration would schedule the teardown at or before the moment of
+  // provisioning, so the trial would be swept away before it came up.
+  if (trialEnabled && trialDurationMinutes <= 0) {
+    return err(400, 'The trial duration must be at least one minute')
+  }
+
+  const values = {
+    price, currency, costCenterMode, forcedCostCenter, overheadCostCenterId,
+    trialEnabled, trialDurationMinutes,
+  }
   const [row] = await db
     .insert(productEnvironments)
     .values({ productId: id, environmentId, ...values })
@@ -427,6 +453,10 @@ export const updateProductEnvironment = async (
 ): Promise<Result<ProductEnvironment>> => {
   const validated = await validateOverheadCostCenter(input.overheadCostCenterId)
   if (!validated.ok) return validated
+
+  if (input.trialDurationMinutes !== undefined && input.trialDurationMinutes <= 0) {
+    return err(400, 'The trial duration must be at least one minute')
+  }
 
   const [updated] = await db
     .update(productEnvironments)

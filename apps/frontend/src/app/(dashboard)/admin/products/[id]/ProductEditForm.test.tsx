@@ -55,7 +55,7 @@ const product = {
   description: '',
   // Only AWS Frankfurt is offered — On-Premise Vienna is listed but unlinked.
   environments: [
-    { productId: 7, environmentId: LINKED_ENV, price: '12.00', currency: 'EUR', costCenterMode: 'project', forcedCostCenter: false, overheadCostCenterId: null },
+    { productId: 7, environmentId: LINKED_ENV, price: '12.00', currency: 'EUR', costCenterMode: 'project', forcedCostCenter: false, overheadCostCenterId: null, trialEnabled: false, trialDurationMinutes: 30 },
   ],
   parameters: [],
 } as unknown as ProductDetail
@@ -229,5 +229,79 @@ describe('ProductEditForm overhead cost centre', () => {
       costCenterMode: 'select',
       overheadCostCenterId: null,
     })
+  })
+})
+
+// Issue #1. Trials are opt-in per offering, so the duration field only appears
+// once the offering has actually been opted in.
+describe('ProductEditForm trial configuration', () => {
+  const envRow = () => {
+    const row = screen.getAllByRole('button', { name: 'Remove' })[0].closest('form')
+    if (!row) throw new Error('environment row not found')
+    return row
+  }
+
+  const trialProduct = (trialEnabled: boolean, trialDurationMinutes = 30) => ({
+    environments: [
+      {
+        productId: 7,
+        environmentId: LINKED_ENV,
+        price: '12.00',
+        currency: 'EUR',
+        costCenterMode: 'project',
+        forcedCostCenter: false,
+        overheadCostCenterId: null,
+        trialEnabled,
+        trialDurationMinutes,
+      },
+    ],
+  } as unknown as Partial<ProductDetail>)
+
+  it('hides the duration field until the offering is opted in', async () => {
+    const user = userEvent.setup()
+    renderForm()
+    expect(screen.queryByLabelText(/trial duration/i)).not.toBeInTheDocument()
+
+    await user.click(within(envRow()).getByLabelText(/offer as trial/i))
+    expect(await screen.findByLabelText(/trial duration/i)).toBeInTheDocument()
+  })
+
+  it('prefills the stored flag and duration', () => {
+    renderForm(trialProduct(true, 120))
+    expect(within(envRow()).getByLabelText(/offer as trial/i)).toBeChecked()
+    expect(screen.getByLabelText(/trial duration/i)).toHaveValue(120)
+  })
+
+  it('saves the flag and duration', async () => {
+    const user = userEvent.setup()
+    const { put } = await import('@/lib/api')
+    const mockedPut = vi.mocked(put)
+    mockedPut.mockReset().mockResolvedValue(undefined as never)
+    renderForm(trialProduct(true, 30))
+
+    const row = envRow()
+    await user.clear(screen.getByLabelText(/trial duration/i))
+    await user.type(screen.getByLabelText(/trial duration/i), '45')
+    await user.click(within(row).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    expect(mockedPut.mock.calls[0][1]).toMatchObject({ trialEnabled: true, trialDurationMinutes: 45 })
+  })
+
+  it('falls back to 30 rather than sending a cleared duration', async () => {
+    // The server rejects a non-positive duration, which would surface as a
+    // confusing save error on a field the operator may not have meant to empty.
+    const user = userEvent.setup()
+    const { put } = await import('@/lib/api')
+    const mockedPut = vi.mocked(put)
+    mockedPut.mockReset().mockResolvedValue(undefined as never)
+    renderForm(trialProduct(true, 30))
+
+    const row = envRow()
+    await user.clear(screen.getByLabelText(/trial duration/i))
+    await user.click(within(row).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    expect(mockedPut.mock.calls[0][1]).toMatchObject({ trialDurationMinutes: 30 })
   })
 })

@@ -36,6 +36,31 @@ frontend:
   secrets:
     nextauthSecret: ""    # NEXTAUTH_SECRET  32+ random bytes
 
+# ── Scheduled decommissioning (issue #30) ─────────────────────────────────────
+# Drives POST /api/internal/decommission-sweep, which tears down infrastructure
+# whose scheduled_decommission_at has arrived.
+#
+# A CronJob rather than a timer inside the backend: the backend is horizontally
+# scaled (see backend.autoscaling), so an in-process interval would run once per
+# replica. The sweep is safe either way — its active → decommissioning claim is
+# atomic, so overlapping runs cannot double-destroy — but one caller is enough.
+#
+# `schedule` is the granularity of the feature: an element is torn down at the
+# first sweep at or after its scheduled time, not to the second.
+decommissionSweep:
+  enabled: false
+  schedule: "*/15 * * * *"
+  # Shared secret sent as X-Sweep-Secret. Required when enabled; the endpoint
+  # stays disabled (503) while unset, so it can never be called anonymously.
+  secret: ""
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
 # ── Backend ───────────────────────────────────────────────────────────────────
 backend:
   replicaCount: 2

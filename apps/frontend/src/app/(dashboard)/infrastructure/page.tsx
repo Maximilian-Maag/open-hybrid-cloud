@@ -159,6 +159,19 @@ function InfraRow({
                 {t('deploymentFailed', lang)} · #{item.orderId}
               </span>
             )}
+            {/* Scheduled teardown is a pending state change with a deadline, so it
+                belongs next to the status rather than buried in the metadata line. */}
+            {item.scheduledDecommissionAt && item.status === 'active' && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800"
+                title={new Date(item.scheduledDecommissionAt).toISOString()}
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {t('scheduledFor', lang)} {new Date(item.scheduledDecommissionAt).toLocaleString(lang)}
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500">
             {showProject && <>{item.projectName ?? `Project #${item.projectId}`} · </>}

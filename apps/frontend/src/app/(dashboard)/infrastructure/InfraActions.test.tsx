@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { InfrastructureElement } from '@open-hybrid-cloud/types'
 
@@ -141,5 +141,102 @@ describe('InfraActions reorder', () => {
       )
       unmount()
     }
+  })
+})
+
+// Issue #30. The control converts between the API's ISO-8601 and the
+// YYYY-MM-DDTHH:mm local-time format datetime-local requires, which is the part
+// most likely to silently shift a time by the viewer's UTC offset.
+describe('InfraActions scheduled decommissioning', () => {
+  const field = () => screen.getByLabelText(/scheduled for/i)
+
+  const openSchedule = async (
+    user: ReturnType<typeof userEvent.setup>,
+    over?: Partial<InfrastructureElement>,
+  ) => {
+    renderActions(over)
+    await user.click(screen.getByRole('button', { name: /automatic decommissioning/i }))
+    return screen.findByRole('dialog', { name: /schedule decommissioning/i })
+  }
+
+  it('offers the schedule control only for a healthy active element', () => {
+    const { unmount } = renderActions({ status: 'decommissioned' } as Partial<InfrastructureElement>)
+    expect(screen.queryByRole('button', { name: /automatic decommissioning/i })).not.toBeInTheDocument()
+    unmount()
+
+    const failed = renderActions({ orderStatus: 'failed' })
+    expect(screen.queryByRole('button', { name: /automatic decommissioning/i })).not.toBeInTheDocument()
+    failed.unmount()
+
+    renderActions()
+    expect(screen.getByRole('button', { name: /automatic decommissioning/i })).toBeInTheDocument()
+  })
+
+  it('sends the chosen local time as ISO-8601', async () => {
+    const user = userEvent.setup()
+    const dialog = await openSchedule(user)
+
+    await user.type(field(), '2099-06-01T14:30')
+    await user.click(within(dialog).getByRole('button', { name: /confirm/i }))
+
+    await waitFor(() => expect(mockedPost).toHaveBeenCalled())
+    const [path, body] = mockedPost.mock.calls[0]
+    expect(path).toBe('/api/infrastructure/42/schedule-decommission')
+    // The wire value is the same instant the user picked in their own zone.
+    const sent = (body as { scheduledAt: string }).scheduledAt
+    expect(new Date(sent).getTime()).toBe(new Date(2099, 5, 1, 14, 30).getTime())
+  })
+
+  it('prefills an existing schedule as local time, not a sliced ISO string', async () => {
+    // Slicing would present a UTC instant as local and shift it by the offset.
+    const user = userEvent.setup()
+    const existing = new Date(2099, 5, 1, 14, 30)
+    await openSchedule(user, { scheduledDecommissionAt: existing.toISOString() })
+
+    expect(field()).toHaveValue('2099-06-01T14:30')
+  })
+
+  it('offers Clear only when a schedule already exists', async () => {
+    const user = userEvent.setup()
+
+    const unscheduled = await openSchedule(user)
+    expect(within(unscheduled).queryByRole('button', { name: /clear schedule/i })).not.toBeInTheDocument()
+    cleanup()
+
+    const scheduled = await openSchedule(user, {
+      scheduledDecommissionAt: new Date(2099, 5, 1).toISOString(),
+    })
+    expect(within(scheduled).getByRole('button', { name: /clear schedule/i })).toBeInTheDocument()
+  })
+
+  it('clears the schedule by sending an explicit null', async () => {
+    const user = userEvent.setup()
+    const dialog = await openSchedule(user, {
+      scheduledDecommissionAt: new Date(2099, 5, 1).toISOString(),
+    })
+
+    await user.click(within(dialog).getByRole('button', { name: /clear schedule/i }))
+    await waitFor(() => expect(mockedPost).toHaveBeenCalled())
+    expect(mockedPost.mock.calls[0][1]).toEqual({ scheduledAt: null })
+    expect(refresh).toHaveBeenCalled()
+  })
+
+  it('does not submit an empty time', async () => {
+    const user = userEvent.setup()
+    const dialog = await openSchedule(user)
+    expect(within(dialog).getByRole('button', { name: /confirm/i })).toBeDisabled()
+  })
+
+  it('surfaces the server refusal and keeps the dialog open', async () => {
+    const user = userEvent.setup()
+    mockedPost.mockRejectedValue(new Error('The scheduled time must be in the future'))
+    const dialog = await openSchedule(user)
+
+    await user.type(field(), '2099-06-01T14:30')
+    await user.click(within(dialog).getByRole('button', { name: /confirm/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/must be in the future/i)
+    expect(screen.getByRole('dialog', { name: /schedule decommissioning/i })).toBeInTheDocument()
+    expect(refresh).not.toHaveBeenCalled()
   })
 })

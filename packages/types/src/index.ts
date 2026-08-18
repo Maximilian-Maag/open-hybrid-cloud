@@ -381,6 +381,11 @@ export interface InfrastructureElement {
   pipelineId: string[]
   outputs: Record<string, string>
   deployedAt: string | null
+  /**
+   * When set, the element is torn down automatically at or after this instant
+   * (issue #30). null = no schedule.
+   */
+  scheduledDecommissionAt?: string | null
   productName?: string
   environmentName?: string
   projectName?: string

@@ -268,3 +268,67 @@ test.describe('Infrastructure retry', () => {
     await expect(dialog).not.toBeVisible()
   })
 })
+
+// Issue #30. Setting a schedule works out of the box; acting on it needs an
+// external sweep (see README → Scheduled decommissioning), so what is asserted
+// here is the storing, the badge and the clearing.
+test.describe('Infrastructure scheduled decommissioning', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+    await page.goto('/infrastructure')
+  })
+
+  test('an active element offers automatic decommissioning', async ({ page }) => {
+    const emptyState = page.getByText(/no infrastructure elements yet/i)
+    const schedule = page.getByRole('button', { name: /automatic decommissioning/i }).first()
+    await expect(schedule.or(emptyState)).toBeVisible({ timeout: 10000 })
+    if (await emptyState.isVisible()) { test.skip(); return }
+
+    await schedule.click()
+    const dialog = page.locator('dialog[open]')
+    await expect(dialog.getByRole('heading', { name: /schedule decommissioning/i })).toBeVisible()
+    await expect(dialog.getByLabel(/scheduled for/i)).toBeVisible()
+    // Confirm is inert until a time is chosen.
+    await expect(dialog.getByRole('button', { name: /confirm/i })).toBeDisabled()
+    await dialog.getByRole('button', { name: /cancel/i }).click()
+    await expect(dialog).not.toBeVisible()
+  })
+
+  test('a stored schedule shows as a badge and can be cleared again', async ({ page }) => {
+    const emptyState = page.getByText(/no infrastructure elements yet/i)
+    const schedule = page.getByRole('button', { name: /automatic decommissioning/i }).first()
+    await expect(schedule.or(emptyState)).toBeVisible({ timeout: 10000 })
+    if (await emptyState.isVisible()) { test.skip(); return }
+
+    await schedule.click()
+    let dialog = page.locator('dialog[open]')
+    await dialog.getByLabel(/scheduled for/i).fill('2099-06-01T14:30')
+    await dialog.getByRole('button', { name: /confirm/i }).click()
+
+    // Badge appears on the row, so a pending teardown is visible at a glance.
+    await expect(page.getByText(/scheduled for/i).first()).toBeVisible({ timeout: 8000 })
+
+    // Clean up so the run is repeatable — and prove Clear works.
+    await page.getByRole('button', { name: /automatic decommissioning/i }).first().click()
+    dialog = page.locator('dialog[open]')
+    await expect(dialog.getByLabel(/scheduled for/i)).toHaveValue('2099-06-01T14:30')
+    await dialog.getByRole('button', { name: /clear schedule/i }).click()
+    await expect(page.getByText(/scheduled for/i)).toHaveCount(0, { timeout: 8000 })
+  })
+
+  test('a past time is refused by the server', async ({ page }) => {
+    const emptyState = page.getByText(/no infrastructure elements yet/i)
+    const schedule = page.getByRole('button', { name: /automatic decommissioning/i }).first()
+    await expect(schedule.or(emptyState)).toBeVisible({ timeout: 10000 })
+    if (await emptyState.isVisible()) { test.skip(); return }
+
+    await schedule.click()
+    const dialog = page.locator('dialog[open]')
+    // The `min` attribute only constrains the picker, so the server is the guard.
+    await dialog.getByLabel(/scheduled for/i).fill('2020-01-01T00:00')
+    await dialog.getByRole('button', { name: /confirm/i }).click()
+
+    await expect(dialog.getByRole('alert')).toContainText(/future/i, { timeout: 8000 })
+    await expect(dialog).toBeVisible()
+  })
+})

@@ -186,6 +186,8 @@ beforeAll(async () => {
     );
     -- Older test DBs may not have pipeline_status; add it (migration 0007).
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
+    -- Migration 0010: scheduled automatic teardown.
+    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS scheduled_decommission_at TIMESTAMPTZ;
     CREATE TABLE IF NOT EXISTS audit_log (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT,

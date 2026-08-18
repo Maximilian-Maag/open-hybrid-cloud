@@ -10,7 +10,14 @@ vi.mock('@/lib/ci/webhooks', () => ({
   triggerPipelineStacksTracked: vi.fn().mockResolvedValue({ pipelineIds: [], failures: [] }),
 }))
 
-import { listInfrastructure, listInfrastructureFacets, decommissionInfra, retryProvisioning } from './infrastructure'
+import {
+  listInfrastructure,
+  listInfrastructureFacets,
+  decommissionInfra,
+  retryProvisioning,
+  scheduleDecommission,
+  sweepDueDecommissions,
+} from './infrastructure'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
 import { infrastructureElements, orders, auditLog } from '@/lib/db/schema'
@@ -746,5 +753,265 @@ describe('retryProvisioning', () => {
     const loser = first.ok ? second : first
     if (!loser.ok) expect([400, 409]).toContain(loser.status)
     expect(mockedWebhooks).toHaveBeenCalledTimes(1)
+  })
+})
+
+// Issue #30. The issue asks for the polling worker to be extended; there is no
+// polling worker (status arrives by webhook) and the backend is horizontally
+// scaled, so the sweep is an explicit call an external scheduler drives. What
+// makes that safe is the atomic claim inside claimAndDestroy, which these tests
+// lean on directly.
+describe('scheduleDecommission', () => {
+  const build = async () => {
+    const admin = await createUser({ role: 'admin', email: 'sched-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'sched-pm@test.dev' })
+    const outsider = await createUser({ role: 'project_manager', email: 'sched-outsider@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'P')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    const el = await createInfraElement(order.id, project.id, env.id, product.id)
+    return { admin, pm, outsider, product, env, project, el }
+  }
+
+  const row = async (id: number) =>
+    (await db.select().from(infrastructureElements).where(eq(infrastructureElements.id, id)))[0]
+
+  const future = () => new Date(Date.now() + 60 * 60 * 1000)
+
+  it('returns 404 for an unknown element', async () => {
+    const { admin } = await build()
+    const result = await scheduleDecommission(makeSession(admin), 999_999, future())
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+  })
+
+  it('stores a future time', async () => {
+    const { admin, el } = await build()
+    const at = future()
+    const result = await scheduleDecommission(makeSession(admin), el.id, at)
+    expect(result.ok).toBe(true)
+    expect((await row(el.id)).scheduledDecommissionAt?.getTime()).toBe(at.getTime())
+  })
+
+  it('clears the schedule when passed null', async () => {
+    const { admin, el } = await build()
+    await scheduleDecommission(makeSession(admin), el.id, future())
+    const result = await scheduleDecommission(makeSession(admin), el.id, null)
+    expect(result.ok).toBe(true)
+    expect((await row(el.id)).scheduledDecommissionAt).toBeNull()
+  })
+
+  it('refuses a time in the past', async () => {
+    // It would be swept on the very next run — that is a decommission, not a
+    // schedule, so say so rather than silently tearing something down.
+    const { admin, el } = await build()
+    const result = await scheduleDecommission(makeSession(admin), el.id, new Date(Date.now() - 1000))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toMatch(/must be in the future/i)
+    expect((await row(el.id)).scheduledDecommissionAt).toBeNull()
+  })
+
+  it.each(['decommissioning', 'decommissioned'])('refuses to schedule a %s element', async (status) => {
+    const { admin, el } = await build()
+    await db.update(infrastructureElements).set({ status: status as 'decommissioning' }).where(eq(infrastructureElements.id, el.id))
+
+    const result = await scheduleDecommission(makeSession(admin), el.id, future())
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  it('lets the owning PM schedule their own element', async () => {
+    const { pm, el } = await build()
+    const result = await scheduleDecommission(makeSession(pm), el.id, future())
+    expect(result.ok).toBe(true)
+  })
+
+  it('forbids a PM from scheduling somebody else\'s element', async () => {
+    // Scheduling is a deferred teardown, so it cannot be a lower bar than doing
+    // it now.
+    const { outsider, el } = await build()
+    const result = await scheduleDecommission(makeSession(outsider), el.id, future())
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(403)
+    expect((await row(el.id)).scheduledDecommissionAt).toBeNull()
+  })
+
+  it('audits both setting and clearing', async () => {
+    const { admin, el } = await build()
+    await scheduleDecommission(makeSession(admin), el.id, future())
+    await scheduleDecommission(makeSession(admin), el.id, null)
+
+    const actions = (await db.select().from(auditLog).where(eq(auditLog.entityId, el.id))).map((a) => a.action)
+    expect(actions).toContain('infra.decommission_scheduled')
+    expect(actions).toContain('infra.decommission_schedule_cleared')
+  })
+})
+
+describe('sweepDueDecommissions', () => {
+  const build = async () => {
+    const pm = await createUser({ role: 'project_manager', email: 'sweep-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'P')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const mk = async (scheduledDecommissionAt: Date | null, status = 'active') => {
+      const order = await seedOrder(project.id, product.id, env.id, pm.id)
+      const el = await createInfraElement(order.id, project.id, env.id, product.id, { status })
+      if (scheduledDecommissionAt) {
+        await db
+          .update(infrastructureElements)
+          .set({ scheduledDecommissionAt })
+          .where(eq(infrastructureElements.id, el.id))
+      }
+      return el
+    }
+    return { pm, mk }
+  }
+
+  const status = async (id: number) =>
+    (await db.select().from(infrastructureElements).where(eq(infrastructureElements.id, id)))[0].status
+
+  const past = new Date('2026-01-01T00:00:00.000Z')
+  const later = new Date('2099-01-01T00:00:00.000Z')
+
+  it('tears down an element whose time has arrived', async () => {
+    const { mk } = await build()
+    const due = await mk(past)
+
+    const result = await sweepDueDecommissions()
+    expect(result.decommissioned).toEqual([due.id])
+    expect(result.failed).toEqual([])
+    expect(await status(due.id)).toBe('decommissioning')
+    expect(mockedWebhooks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ TF_ACTION: 'destroy' }),
+    )
+  })
+
+  it('leaves an element whose time has not arrived alone', async () => {
+    const { mk } = await build()
+    const notDue = await mk(later)
+
+    const result = await sweepDueDecommissions()
+    expect(result.decommissioned).toEqual([])
+    expect(await status(notDue.id)).toBe('active')
+    expect(mockedWebhooks).not.toHaveBeenCalled()
+  })
+
+  it('ignores elements with no schedule', async () => {
+    const { mk } = await build()
+    const unscheduled = await mk(null)
+
+    const result = await sweepDueDecommissions()
+    expect(result.decommissioned).toEqual([])
+    expect(await status(unscheduled.id)).toBe('active')
+  })
+
+  it('ignores an element that is already tearing down', async () => {
+    // Its schedule is moot; re-firing would double-destroy.
+    const { mk } = await build()
+    await mk(past, 'decommissioning')
+
+    const result = await sweepDueDecommissions()
+    expect(result.decommissioned).toEqual([])
+    expect(mockedWebhooks).not.toHaveBeenCalled()
+  })
+
+  it('treats the exact scheduled instant as due', async () => {
+    const { mk } = await build()
+    const at = new Date('2026-06-01T12:00:00.000Z')
+    const el = await mk(at)
+
+    const result = await sweepDueDecommissions(at)
+    expect(result.decommissioned).toEqual([el.id])
+  })
+
+  it('handles each element independently when one product is broken', async () => {
+    // One broken product's triggers must not stop the rest of the sweep.
+    const { mk } = await build()
+    const first = await mk(new Date('2026-01-01T00:00:00.000Z'))
+    const second = await mk(new Date('2026-02-01T00:00:00.000Z'))
+
+    mockedWebhooks
+      .mockResolvedValueOnce({ pipelineIds: [], failures: ['webhook "a" (#1): boom'] })
+      .mockResolvedValueOnce({ pipelineIds: ['pipe-ok'], failures: [] })
+
+    const result = await sweepDueDecommissions()
+    expect(result.failed.map((f) => f.infraId)).toEqual([first.id])
+    expect(result.decommissioned).toEqual([second.id])
+    // Nothing started for the first, so it is back to active and the next sweep
+    // will try again.
+    expect(await status(first.id)).toBe('active')
+    expect(await status(second.id)).toBe('decommissioning')
+  })
+
+  it('keeps a thrown trigger from aborting the sweep', async () => {
+    const { mk } = await build()
+    const first = await mk(new Date('2026-01-01T00:00:00.000Z'))
+    const second = await mk(new Date('2026-02-01T00:00:00.000Z'))
+
+    mockedWebhooks
+      .mockRejectedValueOnce(new Error('CI unreachable'))
+      .mockResolvedValueOnce({ pipelineIds: ['pipe-ok'], failures: [] })
+
+    const result = await sweepDueDecommissions()
+    expect(result.failed.map((f) => f.infraId)).toEqual([first.id])
+    expect(result.decommissioned).toEqual([second.id])
+    expect(await status(first.id)).toBe('active')
+  })
+
+  it('is idempotent — a second sweep finds nothing left to do', async () => {
+    const { mk } = await build()
+    await mk(past)
+
+    const first = await sweepDueDecommissions()
+    const second = await sweepDueDecommissions()
+    expect(first.decommissioned).toHaveLength(1)
+    // The claim moved it out of 'active', so a replayed or overlapping sweep is
+    // a no-op rather than a second destroy.
+    expect(second.decommissioned).toEqual([])
+    expect(mockedWebhooks).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires nothing twice when two sweeps run concurrently', async () => {
+    const { mk } = await build()
+    await mk(past)
+
+    const [a, b] = await Promise.all([sweepDueDecommissions(), sweepDueDecommissions()])
+    expect([...a.decommissioned, ...b.decommissioned]).toHaveLength(1)
+    expect(mockedWebhooks).toHaveBeenCalledTimes(1)
+  })
+
+  it('audits the teardown as system-initiated', async () => {
+    const { mk } = await build()
+    const el = await mk(past)
+
+    await sweepDueDecommissions()
+    const entries = await db.select().from(auditLog).where(eq(auditLog.entityId, el.id))
+    const scheduled = entries.find((e) => e.action === 'infra.decommissioning')
+    // No user asked for it interactively, matching how the webhook handler
+    // audits callback-driven transitions.
+    expect(scheduled?.userId).toBeNull()
+    expect(scheduled?.details).toMatch(/by schedule/i)
+  })
+
+  it('processes the earliest-due element first', async () => {
+    const { mk } = await build()
+    const later = await mk(new Date('2026-05-01T00:00:00.000Z'))
+    const earlier = await mk(new Date('2026-01-01T00:00:00.000Z'))
+
+    const result = await sweepDueDecommissions()
+    expect(result.decommissioned).toEqual([earlier.id, later.id])
+  })
+
+  it('returns empty lists when nothing is due', async () => {
+    await build()
+    const result = await sweepDueDecommissions()
+    expect(result).toEqual({ decommissioned: [], failed: [] })
   })
 })

@@ -185,6 +185,12 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   outputs: jsonb().$type<Record<string, string>>().notNull().default({}),
   deployedAt: timestamp('deployed_at', { withTimezone: true }).defaultNow(),
+  // When set, the element is torn down automatically at or after this instant
+  // (issue #30). Temporary environments — test, demo, PoC — are otherwise
+  // forgotten and keep accruing cost. NULL means "no schedule", which is the
+  // only way to express "never": a sentinel far-future date would eventually
+  // arrive.
+  scheduledDecommissionAt: timestamp('scheduled_decommission_at', { withTimezone: true }),
 })
 
 export const exchangeRates = pgTable('exchange_rates', {

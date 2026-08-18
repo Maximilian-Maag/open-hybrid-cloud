@@ -18,6 +18,8 @@ export interface InfraRow {
   pipelineId: string[]
   outputs: Record<string, string>
   deployedAt: Date | null
+  /** When set, the element is torn down automatically at or after this instant. */
+  scheduledDecommissionAt: Date | null
   productName: string
   environmentName: string | null
   projectName: string | null
@@ -121,6 +123,7 @@ export const listInfrastructure = async (
       pipelineId: infrastructureElements.pipelineId,
       outputs: infrastructureElements.outputs,
       deployedAt: infrastructureElements.deployedAt,
+      scheduledDecommissionAt: infrastructureElements.scheduledDecommissionAt,
       productName: productNameSql,
       environmentName: deploymentEnvironments.name,
       projectName: projects.name,
@@ -353,24 +356,168 @@ export const decommissionInfra = async (
 
   const infra = infraRows[0]
 
-  if (session.role === 'project_manager') {
-    const projectRows = await db
-      .select({ ownerId: projects.ownerId })
-      .from(projects)
-      .where(eq(projects.id, infra.projectId))
-      .limit(1)
+  const authorized = await assertMayTeardown(session, infra.projectId)
+  if (!authorized.ok) return authorized
 
-    if (!projectRows.length || projectRows[0].ownerId !== session.id) {
-      return err(403, 'Forbidden')
+  return claimAndDestroy(infra, { userId: session.id, reason: `initiated by ${session.email}` })
+}
+
+/**
+ * Set or clear an element's automatic-teardown time (issue #30).
+ *
+ * Pass null to clear. Authorisation matches decommissionInfra — scheduling a
+ * teardown is a deferred teardown, so it cannot be a lower bar than doing it now.
+ */
+export const scheduleDecommission = async (
+  session: SessionUser,
+  infraId: number,
+  scheduledAt: Date | null,
+): Promise<Result<{ scheduledDecommissionAt: Date | null }>> => {
+  const [infra] = await db
+    .select()
+    .from(infrastructureElements)
+    .where(eq(infrastructureElements.id, infraId))
+    .limit(1)
+
+  if (!infra) return err(404, 'Infrastructure element not found')
+
+  const authorized = await assertMayTeardown(session, infra.projectId)
+  if (!authorized.ok) return authorized
+
+  // Only an active element can be scheduled. One already tearing down has
+  // nothing left to schedule, and a schedule on a decommissioned element would
+  // sit there forever waiting for a status that will never come back.
+  if (infra.status !== 'active') {
+    return err(400, 'Only an active infrastructure element can be scheduled for decommissioning')
+  }
+
+  if (scheduledAt !== null && scheduledAt.getTime() <= Date.now()) {
+    // A past time would be swept on the very next run, which is a decommission,
+    // not a schedule. Refuse rather than silently tearing something down now.
+    return err(400, 'The scheduled time must be in the future')
+  }
+
+  await db
+    .update(infrastructureElements)
+    .set({ scheduledDecommissionAt: scheduledAt })
+    .where(eq(infrastructureElements.id, infraId))
+
+  await logAudit(
+    session.id,
+    scheduledAt ? 'infra.decommission_scheduled' : 'infra.decommission_schedule_cleared',
+    infraId,
+    scheduledAt
+      ? `Scheduled for ${scheduledAt.toISOString()} by ${session.email}`
+      : `Schedule cleared by ${session.email}`,
+  )
+
+  return ok({ scheduledDecommissionAt: scheduledAt })
+}
+
+const assertMayTeardown = async (
+  session: SessionUser,
+  projectId: number,
+): Promise<Result<void>> => {
+  if (session.role !== 'project_manager') return ok(undefined)
+
+  const [project] = await db
+    .select({ ownerId: projects.ownerId })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1)
+
+  if (!project || project.ownerId !== session.id) return err(403, 'Forbidden')
+  return ok(undefined)
+}
+
+export interface SweepResult {
+  /** Elements whose teardown was started. */
+  decommissioned: number[]
+  /** Elements that were due but could not be torn down, with the reason. */
+  failed: { infraId: number; message: string }[]
+}
+
+/**
+ * Tear down every active element whose scheduled time has arrived.
+ *
+ * On why this is an explicit call rather than an in-process timer: the issue asks
+ * for the polling worker to be extended, but there is no polling worker — pipeline
+ * status arrives by inbound webhook — and the backend is a horizontally scaled
+ * Next.js app (see infra/helm .../hpa.yaml). An interval inside it would run once
+ * per replica. So the sweep is exposed as an endpoint for an external scheduler
+ * (a Kubernetes CronJob, a systemd timer, plain cron) to drive.
+ *
+ * That makes the timing coarse: an element is torn down at the first sweep at or
+ * after its scheduled time, not to the second. For forgotten test environments —
+ * what the feature is for — that is the right trade.
+ *
+ * Safe to call concurrently and repeatedly: claimAndDestroy's atomic
+ * active → decommissioning claim means only one caller ever fires the destroy,
+ * so overlapping sweeps or a sweep racing a user's Decommission button cannot
+ * double-destroy. Each element is handled independently — one broken product's
+ * triggers must not stop the rest of the sweep.
+ */
+export const sweepDueDecommissions = async (now: Date = new Date()): Promise<SweepResult> => {
+  const due = await db
+    .select()
+    .from(infrastructureElements)
+    .where(
+      and(
+        eq(infrastructureElements.status, 'active'),
+        sql`${infrastructureElements.scheduledDecommissionAt} IS NOT NULL`,
+        lte(infrastructureElements.scheduledDecommissionAt, now),
+      ),
+    )
+    .orderBy(infrastructureElements.scheduledDecommissionAt)
+
+  const result: SweepResult = { decommissioned: [], failed: [] }
+
+  for (const infra of due) {
+    try {
+      const outcome = await claimAndDestroy(infra, {
+        userId: null,
+        reason: `by schedule (due ${infra.scheduledDecommissionAt?.toISOString()})`,
+      })
+      if (outcome.ok) result.decommissioned.push(infra.id)
+      else result.failed.push({ infraId: infra.id, message: outcome.message })
+    } catch (e) {
+      // A thrown trigger has already restored the element to 'active', so it will
+      // be picked up again by the next sweep.
+      result.failed.push({ infraId: infra.id, message: e instanceof Error ? e.message : String(e) })
     }
   }
 
-  // Atomically claim the element (active → decommissioning) so two concurrent
-  // decommission calls can't both fire a destroy pipeline.
+  return result
+}
+
+/**
+ * Identity recorded against a teardown. `userId: null` marks a teardown nobody
+ * asked for interactively — the scheduled sweep — matching how the webhook
+ * handler audits callback-driven transitions.
+ */
+interface TeardownActor {
+  userId: number | null
+  reason: string
+}
+
+/**
+ * Claim an active element and fire its destroy triggers.
+ *
+ * Shared by the interactive decommission and the scheduled sweep so both get the
+ * same atomic claim and the same partial-failure reporting. The claim is what
+ * makes the sweep safe to run from anywhere, any number of times: only the caller
+ * that flips active → decommissioning fires anything, so a sweep racing a user's
+ * Decommission button — or two replicas running the sweep at once — cannot
+ * double-destroy.
+ */
+const claimAndDestroy = async (
+  infra: typeof infrastructureElements.$inferSelect,
+  actor: TeardownActor,
+): Promise<Result<{ pipelineIds: string[] }>> => {
   const claimed = await db
     .update(infrastructureElements)
     .set({ status: 'decommissioning' })
-    .where(sql`${infrastructureElements.id} = ${infraId} AND ${infrastructureElements.status} = 'active'`)
+    .where(and(eq(infrastructureElements.id, infra.id), eq(infrastructureElements.status, 'active')))
     .returning({ id: infrastructureElements.id })
 
   if (!claimed.length) return err(400, 'Infrastructure element is not active')
@@ -397,7 +544,7 @@ export const decommissionInfra = async (
     await db
       .update(infrastructureElements)
       .set({ status: 'active' })
-      .where(eq(infrastructureElements.id, infraId))
+      .where(eq(infrastructureElements.id, infra.id))
     throw e
   }
 
@@ -405,10 +552,10 @@ export const decommissionInfra = async (
     // Nothing was started, so nothing was destroyed: the element is back to
     // 'active' and the caller can simply try again.
     await logAudit(
-      session.id,
+      actor.userId,
       'infra.decommission_failed',
-      infraId,
-      `No destroy pipeline could be started: ${outcome.failures.join('; ')}`,
+      infra.id,
+      `No destroy pipeline could be started (${actor.reason}): ${outcome.failures.join('; ')}`,
     )
     return err(502, `Could not start the destroy pipeline: ${outcome.failures.join('; ')}`)
   }
@@ -419,10 +566,10 @@ export const decommissionInfra = async (
     // it from ever reporting itself fully decommissioned. Tell the operator
     // which triggers need manual cleanup instead of returning success.
     await logAudit(
-      session.id,
+      actor.userId,
       'infra.decommission_partial',
-      infraId,
-      `Destroy started for ${outcome.pipelineIds.length} pipeline(s); could not start: ${outcome.failures.join('; ')}`,
+      infra.id,
+      `Destroy started for ${outcome.pipelineIds.length} pipeline(s) (${actor.reason}); could not start: ${outcome.failures.join('; ')}`,
     )
     return err(
       502,
@@ -431,10 +578,10 @@ export const decommissionInfra = async (
   }
 
   await logAudit(
-    session.id,
+    actor.userId,
     'infra.decommissioning',
-    infraId,
-    `Decommission initiated by ${session.email}`,
+    infra.id,
+    `Decommission ${actor.reason}`,
   )
 
   return ok({ pipelineIds: outcome.pipelineIds })

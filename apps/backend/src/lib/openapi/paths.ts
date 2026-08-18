@@ -112,6 +112,9 @@ const infraSchema = z.object({
   productName: z.string().nullable(),
   environmentName: z.string().nullable(),
   projectName: z.string().nullable(),
+  scheduledDecommissionAt: z.string().nullable().openapi({
+    description: 'When set, the element is torn down automatically at or after this instant. null = no schedule.',
+  }),
   orderStatus: z.string().nullable().openapi({
     description:
       "Status of the order this element came from. The element's own status cannot express a failed " +
@@ -772,6 +775,75 @@ registry.registerPath({
     404: { description: 'Infrastructure element or order not found' },
     409: { description: 'A retry is already in progress' },
     502: { description: 'No pipeline, or only some pipelines, could be started' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/infrastructure/{id}/schedule-decommission',
+  summary: 'Set or clear automatic decommissioning for an element',
+  description:
+    'Pass null to clear. Same authorisation as the immediate decommission — scheduling a teardown is a ' +
+    'deferred teardown. The element must be active and the time must be in the future. Nothing acts on ' +
+    'the schedule until the sweep runs (POST /internal/decommission-sweep).',
+  tags: ['Infrastructure'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ scheduledAt: z.string().datetime({ offset: true }).nullable() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Schedule stored or cleared',
+      content: {
+        'application/json': {
+          schema: z.object({ scheduledDecommissionAt: z.string().nullable() }),
+        },
+      },
+    },
+    400: { description: 'Invalid id or timestamp, time not in the future, or the element is not active' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Infrastructure element not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/internal/decommission-sweep',
+  summary: '[scheduler] Tear down every element whose scheduled time has arrived',
+  description:
+    'Driven by an external scheduler (Kubernetes CronJob, cron), not a user: the backend has no worker ' +
+    'process and is horizontally scaled, so an in-process timer would run once per replica. ' +
+    'Authenticated with the DECOMMISSION_SWEEP_SECRET shared secret in an X-Sweep-Secret header rather ' +
+    'than a session, and disabled entirely (503) while that is unset. Idempotent — the underlying ' +
+    'active/decommissioning claim is atomic, so overlapping or replayed calls tear nothing down twice.',
+  tags: ['Infrastructure'],
+  security: [],
+  request: {
+    headers: z.object({ 'x-sweep-secret': z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'All due elements torn down',
+      content: {
+        'application/json': {
+          schema: z.object({
+            decommissioned: z.array(z.number()),
+            failed: z.array(z.object({ infraId: z.number(), message: z.string() })),
+          }),
+        },
+      },
+    },
+    207: { description: 'Some teardowns could not be started — see failed[]' },
+    401: { description: 'Missing or wrong sweep secret' },
+    503: { description: 'DECOMMISSION_SWEEP_SECRET is not configured' },
   },
 })
 

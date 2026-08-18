@@ -85,6 +85,13 @@
       "when": 1787011200000,
       "tag": "0011_trial_offerings",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787097600000,
+      "tag": "0012_order_comments",
+      "breakpoints": true
     }
   ]
 }

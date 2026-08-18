@@ -12,6 +12,7 @@ export const testDb = drizzle(client, { schema })
 const TABLES = [
   schema.auditLog,
   schema.productFavorites,
+  schema.orderComments,
   schema.infrastructureElements,
   schema.orders,
   schema.pipelineStacks,
@@ -178,6 +179,15 @@ beforeAll(async () => {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
     -- Migration 0011: the order carries the trial intent to approval time.
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_trial BOOLEAN NOT NULL DEFAULT FALSE;
+    CREATE TABLE IF NOT EXISTS order_comments (
+      id BIGSERIAL PRIMARY KEY,
+      order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      user_id BIGINT NOT NULL REFERENCES users(id),
+      body TEXT NOT NULL,
+      internal BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS infrastructure_elements (
       id BIGSERIAL PRIMARY KEY,
       order_id BIGINT NOT NULL REFERENCES orders(id),

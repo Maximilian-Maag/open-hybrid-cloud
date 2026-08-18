@@ -383,6 +383,35 @@ export interface CreateOrderRequest {
   trial?: boolean
 }
 
+/**
+ * A comment on an order (issue #34).
+ *
+ * An `internal` comment is only ever returned to admin/root — the API filters
+ * them out for other callers rather than relying on the client to hide them.
+ */
+export interface OrderComment {
+  id: number
+  orderId: number
+  userId: number
+  body: string
+  internal: boolean
+  createdAt: string
+  updatedAt: string
+  userName: string | null
+  /** True when the comment was edited after posting. */
+  edited: boolean
+}
+
+export interface CreateOrderCommentRequest {
+  body: string
+  /** Admin/root only; rejected with 403 otherwise. */
+  internal?: boolean
+}
+
+export interface UpdateOrderCommentRequest {
+  body: string
+}
+
 export interface RejectOrderRequest {
   rejectionNote: string
 }

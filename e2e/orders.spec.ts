@@ -53,3 +53,87 @@ test.describe('Orders', () => {
     }
   })
 })
+
+// Issue #34. Root can write internal notes, so this run exercises both kinds and
+// cleans up after itself.
+test.describe('Order comments', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+  })
+
+  const openFirstOrder = async (page: import('@playwright/test').Page) => {
+    await page.goto('/orders')
+    const detailLinks = page.getByRole('link', { name: /^#\d+$/ })
+    const noOrders = page.getByText(/no orders/i)
+    await expect(detailLinks.first().or(noOrders)).toBeVisible({ timeout: 10000 })
+    if (await noOrders.isVisible()) return false
+    await detailLinks.first().click()
+    await expect(page.getByRole('heading', { name: /comments/i })).toBeVisible({ timeout: 10000 })
+    return true
+  }
+
+  test('the order detail page carries a comment thread', async ({ page }) => {
+    if (!(await openFirstOrder(page))) { test.skip(); return }
+
+    await expect(page.getByLabel(/add comment/i)).toBeVisible()
+    // Empty box, nothing to post.
+    await expect(page.getByRole('button', { name: /add comment/i })).toBeDisabled()
+  })
+
+  test('a posted comment appears immediately and survives a reload', async ({ page }) => {
+    if (!(await openFirstOrder(page))) { test.skip(); return }
+
+    const body = `e2e comment ${Date.now()}`
+    await page.getByLabel(/add comment/i).fill(body)
+    await page.getByRole('button', { name: /add comment/i }).click()
+
+    await expect(page.getByText(body)).toBeVisible({ timeout: 8000 })
+    await page.reload()
+    await expect(page.getByText(body)).toBeVisible({ timeout: 10000 })
+
+    // Clean up, which also exercises delete.
+    const item = page.locator('li').filter({ hasText: body })
+    await item.getByRole('button', { name: /delete/i }).click()
+    await expect(page.getByText(body)).toHaveCount(0, { timeout: 8000 })
+  })
+
+  test('an edited comment is marked as edited', async ({ page }) => {
+    if (!(await openFirstOrder(page))) { test.skip(); return }
+
+    const body = `e2e edit ${Date.now()}`
+    await page.getByLabel(/add comment/i).fill(body)
+    await page.getByRole('button', { name: /add comment/i }).click()
+    await expect(page.getByText(body)).toBeVisible({ timeout: 8000 })
+
+    const item = page.locator('li').filter({ hasText: body })
+    await item.getByRole('button', { name: /edit/i }).click()
+    const editBox = item.getByRole('textbox')
+    await editBox.fill(`${body} revised`)
+    await item.getByRole('button', { name: /save changes/i }).click()
+
+    // Shown as edited rather than silently rewritten under a reader who replied.
+    await expect(page.locator('li').filter({ hasText: `${body} revised` }).getByText(/\(edited\)/i))
+      .toBeVisible({ timeout: 8000 })
+
+    await page.locator('li').filter({ hasText: `${body} revised` })
+      .getByRole('button', { name: /delete/i }).click()
+    await expect(page.getByText(`${body} revised`)).toHaveCount(0, { timeout: 8000 })
+  })
+
+  test('root can post an internal note and it is labelled as one', async ({ page }) => {
+    if (!(await openFirstOrder(page))) { test.skip(); return }
+
+    const body = `e2e internal ${Date.now()}`
+    await page.getByLabel(/add comment/i).fill(body)
+    await page.getByLabel(/internal note/i).check()
+    await page.getByRole('button', { name: /add comment/i }).click()
+
+    const item = page.locator('li').filter({ hasText: body })
+    await expect(item.getByText(/internal note/i)).toBeVisible({ timeout: 8000 })
+    // The toggle resets, so the next comment does not silently inherit it.
+    await expect(page.getByLabel(/internal note/i)).not.toBeChecked()
+
+    await item.getByRole('button', { name: /delete/i }).click()
+    await expect(page.getByText(body)).toHaveCount(0, { timeout: 8000 })
+  })
+})

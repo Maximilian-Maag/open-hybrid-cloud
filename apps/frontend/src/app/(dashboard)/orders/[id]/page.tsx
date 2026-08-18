@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
-import type { Order } from '@open-hybrid-cloud/types'
+import type { Order, OrderComment, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Button } from '@/components/ui/Button'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
+import { OrderComments } from './OrderComments'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -28,6 +29,20 @@ export default async function OrderDetailPage({ params }: Props) {
     order = await get<Order>(`/api/orders/${id}`, token)
   } catch {
     notFound()
+  }
+
+  const role = (session.user as unknown as { role: Role }).role
+  // The API already excludes internal notes for a non-admin, so nothing has to be
+  // filtered here — this only decides whether the WRITE control is offered.
+  const canWriteInternal = role === 'admin' || role === 'root'
+  const currentUserId = Number((session.user as unknown as { id: string }).id)
+
+  // Non-fatal: a comments outage should cost the thread, not the order page.
+  let comments: OrderComment[] = []
+  try {
+    comments = (await get<OrderComment[]>(`/api/orders/${id}/comments`, token)) ?? []
+  } catch {
+    /* empty */
   }
 
   const paramEntries = Object.entries(order.parameters ?? {})
@@ -111,6 +126,17 @@ export default async function OrderDetailPage({ params }: Props) {
           </div>
         </Card>
       )}
+
+      <Card title={`${t('comments', lang)}${comments.length > 0 ? ` (${comments.length})` : ''}`}>
+        <OrderComments
+          orderId={order.id}
+          initialComments={comments}
+          currentUserId={currentUserId}
+          canWriteInternal={canWriteInternal}
+          token={token}
+          lang={lang}
+        />
+      </Card>
 
       {order.pipelineId && order.pipelineId.length > 0 && (
         <Card title={t('pipelineIds', lang)}>

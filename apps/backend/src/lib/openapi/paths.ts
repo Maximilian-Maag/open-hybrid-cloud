@@ -266,6 +266,119 @@ registry.registerPath({
   },
 })
 
+// ─── Order comments ───────────────────────────────────────────────────────────
+
+const orderCommentSchema = z.object({
+  id: z.number(),
+  orderId: z.number(),
+  userId: z.number(),
+  body: z.string(),
+  internal: z.boolean().openapi({
+    description: 'Visible to admin/root only. Filtered out in SQL for other callers, not hidden client-side.',
+  }),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  userName: z.string().nullable(),
+  edited: z.boolean(),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/orders/{id}/comments',
+  summary: 'List the comment thread on an order',
+  description:
+    'Oldest first. An admin sees every comment; a project manager sees only their own orders, and never ' +
+    'an internal note — those are excluded by the query, so they never reach the browser.',
+  tags: ['Orders'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Comments visible to the caller',
+      content: { 'application/json': { schema: z.array(orderCommentSchema) } },
+    },
+    400: { description: 'Invalid order id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the caller\'s order' },
+    404: { description: 'Order not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/orders/{id}/comments',
+  summary: 'Add a comment to an order',
+  description:
+    'A public comment emails the orderer and the admins, never the author. An internal note (admin/root ' +
+    'only) emails nobody — telling the orderer a note they cannot read exists would leak what the flag is for.',
+  tags: ['Orders'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ body: z.string().min(1).max(4000), internal: z.boolean().optional() }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Comment created',
+      content: { 'application/json': { schema: orderCommentSchema } },
+    },
+    400: { description: 'Invalid or empty body' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the caller\'s order, or internal requested by a non-admin' },
+    404: { description: 'Order not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'put',
+  path: '/orders/{id}/comments/{commentId}',
+  summary: 'Edit your own comment',
+  description:
+    'Author-only, admins included — rewriting somebody else\'s words under their name is worse than a ' +
+    'correction in the thread. The original text stays in the audit log.',
+  tags: ['Orders'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string(), commentId: z.string() }),
+    body: { content: { 'application/json': { schema: z.object({ body: z.string().min(1).max(4000) }) } } },
+  },
+  responses: {
+    200: {
+      description: 'Comment updated',
+      content: { 'application/json': { schema: orderCommentSchema } },
+    },
+    400: { description: 'Invalid id or empty body' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the author' },
+    404: { description: 'Comment not found (also returned to a non-admin for an internal note)' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/orders/{id}/comments/{commentId}',
+  summary: 'Delete your own comment',
+  description:
+    'Author-only. A hard delete: the immutable audit log holds the body, so no "deleted" placeholder is ' +
+    'left announcing that something was withdrawn.',
+  tags: ['Orders'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string(), commentId: z.string() }) },
+  responses: {
+    200: { description: 'Comment deleted' },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the author' },
+    404: { description: 'Comment not found' },
+  },
+})
+
 // ─── Favorites ────────────────────────────────────────────────────────────────
 
 const favoriteSchema = z.object({

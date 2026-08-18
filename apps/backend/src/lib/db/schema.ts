@@ -181,6 +181,24 @@ export const orders = pgTable('orders', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// Free-text discussion on an order (issue #34). The rejection note already proved
+// a note can be stored per order; this generalises it into a thread.
+export const orderComments = pgTable('order_comments', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  orderId: bigint('order_id', { mode: 'number' }).notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  // No ON DELETE: a comment must not lose its author. Deactivating a user is how
+  // they are retired, and the audit trail depends on attribution surviving.
+  userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id),
+  body: text().notNull(),
+  // Visible to admin/root only. The orderer must never see one, so every read
+  // path filters on this rather than relying on the UI to hide it.
+  internal: boolean().notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Distinct from createdAt so an edited comment can be shown as edited rather
+  // than silently rewritten under a reader who already replied to it.
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const infrastructureElements = pgTable('infrastructure_elements', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   orderId: bigint('order_id', { mode: 'number' }).notNull().references(() => orders.id),
@@ -260,6 +278,7 @@ export type ProductFavorite = typeof productFavorites.$inferSelect
 export type CostCenter = typeof costCenters.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type Order = typeof orders.$inferSelect
+export type OrderComment = typeof orderComments.$inferSelect
 export type InfrastructureElement = typeof infrastructureElements.$inferSelect
 export type ExchangeRate = typeof exchangeRates.$inferSelect
 export type AuditEntry = typeof auditLog.$inferSelect

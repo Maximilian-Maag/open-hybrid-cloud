@@ -124,6 +124,15 @@ export const pipelineStacks = pgTable('pipeline_stacks', {
   steps: jsonb().$type<StackStep[]>().notNull().default([]),
 })
 
+// Per-user product bookmarks. Composite primary key rather than a surrogate id:
+// a user can favourite a product once, and the uniqueness that expresses is the
+// same thing the lookup needs — no separate index, no way to store a duplicate.
+export const productFavorites = pgTable('product_favorites', {
+  userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.userId, t.productId] })])
+
 export const costCenters = pgTable('cost_centers', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   code: text().notNull().unique(),
@@ -229,6 +238,7 @@ export type DeploymentEnvironment = typeof deploymentEnvironments.$inferSelect
 export type ProductEnvironment = typeof productEnvironments.$inferSelect
 export type ProductWebhook = typeof productWebhooks.$inferSelect
 export type PipelineStack = typeof pipelineStacks.$inferSelect
+export type ProductFavorite = typeof productFavorites.$inferSelect
 export type CostCenter = typeof costCenters.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type Order = typeof orders.$inferSelect

@@ -76,3 +76,42 @@ test.describe('Product Catalog', () => {
     await expect(allButtons.or(page.getByRole('button', { name: /all products/i }))).toBeVisible()
   })
 })
+
+// Issue #39. Favourites are per-user and stored server-side, so the contract
+// worth pinning end to end is that a star survives a reload.
+test.describe('Catalog favorites', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+    await page.goto('/catalog')
+  })
+
+  test('every product card offers a favourite toggle', async ({ page }) => {
+    const noProducts = page.getByText(/no products/i)
+    const firstStar = page.getByRole('button', { name: /add to favorites|remove from favorites/i }).first()
+    await expect(firstStar.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    // aria-pressed carries the state — the fill colour alone would not.
+    await expect(firstStar).toHaveAttribute('aria-pressed', /true|false/)
+  })
+
+  test('starring a product persists across a reload and shows the favourites section', async ({ page }) => {
+    const noProducts = page.getByText(/no products/i)
+    const addStar = page.getByRole('button', { name: /add to favorites/i }).first()
+    await expect(addStar.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await expect(page.getByRole('region', { name: /my favorites/i })).toBeHidden()
+    await addStar.click()
+
+    const favorites = page.getByRole('region', { name: /my favorites/i })
+    await expect(favorites).toBeVisible({ timeout: 8000 })
+
+    await page.reload()
+    await expect(page.getByRole('region', { name: /my favorites/i })).toBeVisible({ timeout: 10000 })
+
+    // Clean up so the run is repeatable.
+    await page.getByRole('button', { name: /remove from favorites/i }).first().click()
+    await expect(page.getByRole('region', { name: /my favorites/i })).toBeHidden({ timeout: 8000 })
+  })
+})

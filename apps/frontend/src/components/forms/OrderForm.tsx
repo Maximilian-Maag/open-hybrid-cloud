@@ -26,12 +26,29 @@ interface OrderFormProps {
   lang?: string
   exchangeRates?: Record<string, number>
   localeCurrency?: string
+  /**
+   * Quick reorder (issue #39): the infrastructure element to copy parameters
+   * from, plus its project. The project has to come along — the template list is
+   * loaded per project, so without it there is nothing to match the id against.
+   */
+  fromInfraId?: string
+  initialProjectId?: string
 }
 
-export function OrderForm({ product, projects, costCenters, token, lang = 'en', exchangeRates = {}, localeCurrency = 'EUR' }: OrderFormProps) {
+export function OrderForm({
+  product,
+  projects,
+  costCenters,
+  token,
+  lang = 'en',
+  exchangeRates = {},
+  localeCurrency = 'EUR',
+  fromInfraId,
+  initialProjectId,
+}: OrderFormProps) {
   const router = useRouter()
   const [envId, setEnvId] = useState<string>('')
-  const [projectId, setProjectId] = useState<string>('')
+  const [projectId, setProjectId] = useState<string>(initialProjectId ?? '')
   const [costCenterId, setCostCenterId] = useState<string>('')
   const [paramValues, setParamValues] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -40,6 +57,9 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
 
   const [templates, setTemplates] = useState<InfrastructureElement[]>([])
   const [templateId, setTemplateId] = useState<string>('')
+  // Applied at most once, so re-picking "start fresh" after arriving via a
+  // reorder link is not immediately undone by this effect.
+  const [reorderApplied, setReorderApplied] = useState(false)
 
   // Parameter definitions for the selected environment. The page loads the
   // product without an environment (it is picked here), so the server can only
@@ -83,7 +103,29 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
       .catch(() => { setTemplates([]) })
   }, [projectId, product.id, token])
 
+  // Quick reorder: once the project's elements have loaded, adopt the one the
+  // link named. Routed through applyTemplate rather than duplicating its logic,
+  // so a reorder fills the form exactly the way picking the template by hand
+  // does — same parameters, same environment.
+  useEffect(() => {
+    if (!fromInfraId || reorderApplied || templates.length === 0) return
+    const match = templates.find((tpl) => String(tpl.id) === fromInfraId)
+    if (!match) return
+    setReorderApplied(true)
+    setTemplateId(fromInfraId)
+    setParamValues(match.parameters ?? {})
+    setEnvId(String(match.environmentId))
+  }, [fromInfraId, reorderApplied, templates])
+
   function applyTemplate(id: string) {
+    if (id === '') {
+      // Start fresh: drop the copied parameters but leave the chosen environment
+      // alone — clearing that too would undo a deliberate selection the user
+      // may have made before reaching for this control.
+      setTemplateId('')
+      setParamValues({})
+      return
+    }
     const tpl = templates.find((tpl) => String(tpl.id) === id)
     if (!tpl) return
     setTemplateId(id)
@@ -200,16 +242,24 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
             label={t('loadFromExisting', lang)}
             value={templateId}
             onChange={(e) => applyTemplate(e.target.value)}
-            placeholder={t('startFresh', lang)}
-            options={templates.map((tpl) => ({
-              value: tpl.id,
-              label: `#${tpl.id} · ${tpl.environmentName ?? `Env ${tpl.environmentId}`} · ${tpl.deployedAt ? new Date(tpl.deployedAt).toLocaleDateString() : 'n/a'}`,
-            }))}
+            // A real option rather than Select's `placeholder`, which renders
+            // DISABLED: once a template had been picked — and a quick-reorder
+            // link picks one on arrival — "start fresh" would be unreachable.
+            options={[
+              { value: '', label: t('startFresh', lang) },
+              ...templates.map((tpl) => ({
+                value: tpl.id,
+                label: `#${tpl.id} · ${tpl.environmentName ?? `Env ${tpl.environmentId}`} · ${tpl.deployedAt ? new Date(tpl.deployedAt).toLocaleDateString() : 'n/a'}`,
+              })),
+            ]}
           />
           {templateId && (
             <p className="mt-1 text-xs text-slate-500">
               {t('paramsPrefilled', lang)}{templateId}. Edit as needed before submitting.
             </p>
+          )}
+          {fromInfraId && templateId === fromInfraId && (
+            <p className="mt-1 text-xs text-slate-500" role="status">{t('reorderHint', lang)}</p>
           )}
         </div>
       )}

@@ -395,6 +395,15 @@ export interface InfraFacets {
 
 export type InfraSortField = 'date' | 'name' | 'status'
 
+/** A product the current user has favourited (GET /favorites). */
+export interface FavoriteProduct {
+  productId: number
+  categoryId: number
+  name: string
+  description: string
+  createdAt: string
+}
+
 // Exchange Rates
 export interface ExchangeRate {
   currencyCode: string

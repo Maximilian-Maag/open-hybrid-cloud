@@ -11,6 +11,7 @@ export const testDb = drizzle(client, { schema })
 // Tables in dependency order so truncation respects FKs
 const TABLES = [
   schema.auditLog,
+  schema.productFavorites,
   schema.infrastructureElements,
   schema.orders,
   schema.pipelineStacks,
@@ -139,6 +140,12 @@ beforeAll(async () => {
     ALTER TABLE product_environments
       ADD COLUMN IF NOT EXISTS overhead_cost_center_id BIGINT
       REFERENCES cost_centers(id) ON DELETE SET NULL;
+    CREATE TABLE IF NOT EXISTS product_favorites (
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, product_id)
+    );
     CREATE TABLE IF NOT EXISTS projects (
       id BIGSERIAL PRIMARY KEY,
       name TEXT NOT NULL,

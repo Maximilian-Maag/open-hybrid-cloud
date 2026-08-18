@@ -64,6 +64,13 @@
       "when": 1786752000000,
       "tag": "0008_overhead_cost_center",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786838400000,
+      "tag": "0009_product_favorites",
+      "breakpoints": true
     }
   ]
 }

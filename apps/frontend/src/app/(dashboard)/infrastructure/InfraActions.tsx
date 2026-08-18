@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { InfrastructureElement } from '@open-hybrid-cloud/types'
 import { post } from '@/lib/api'
@@ -21,7 +22,6 @@ export function InfraActions({ item, token, lang = 'en' }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  if (item.status !== 'active') return null
 
   async function handleDecommission() {
     setLoading(true)
@@ -37,11 +37,27 @@ export function InfraActions({ item, token, lang = 'en' }: Props) {
     }
   }
 
+  // Reorder stays available for decommissioned elements too — reprovisioning
+  // something that was torn down is exactly when the original parameters are
+  // hardest to reconstruct by hand.
+  const reorderHref =
+    `/catalog/${item.productId}?fromInfra=${item.id}&projectId=${item.projectId}`
+
   return (
-    <>
-      <Button variant="danger" size="sm" onClick={() => setOpen(true)}>
-        {t('decommission', lang)}
-      </Button>
+    <div className="flex items-center gap-2">
+      {/* Styled as a button rather than wrapping one: an <a> containing a
+          <button> is nested-interactive, which the axe gate flags on this page. */}
+      <Link
+        href={reorderHref}
+        className="inline-flex items-center justify-center gap-2 rounded-md font-medium transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white px-3 py-1.5 text-xs bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+      >
+        {t('reorder', lang)}
+      </Link>
+      {item.status === 'active' && (
+        <Button variant="danger" size="sm" onClick={() => setOpen(true)}>
+          {t('decommission', lang)}
+        </Button>
+      )}
       <Modal open={open} onClose={() => setOpen(false)} title={t('decommissionConfirm', lang)} size="sm">
         <p className="text-sm text-slate-600 mb-4">
           {t('decommissionWarning', lang)}{' '}
@@ -60,6 +76,6 @@ export function InfraActions({ item, token, lang = 'en' }: Props) {
           </Button>
         </div>
       </Modal>
-    </>
+    </div>
   )
 }

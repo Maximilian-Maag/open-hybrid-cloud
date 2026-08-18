@@ -176,4 +176,101 @@ describe('OrderForm parameter resolution', () => {
     expect(screen.queryByLabelText(/^cost center/i)).not.toBeInTheDocument()
     expect(screen.queryByTestId('overhead-cost-center')).not.toBeInTheDocument()
   })
+
+  // ── Quick reorder (issue #39) ──────────────────────────────────────────────
+  // The infrastructure list links here with ?fromInfra=&projectId=. The element
+  // is found in the project's template list, so no new endpoint is involved.
+  const projects = [{ id: 5, name: 'Webshop', description: '', ownerId: 1, costCenterId: null, createdAt: '' }] as never
+
+  const infraElement = {
+    id: 99,
+    orderId: 1,
+    projectId: 5,
+    environmentId: 2,
+    productId: 7,
+    status: 'active',
+    parameters: { REGION: 'eu-central-1' },
+    pipelineId: [],
+    outputs: {},
+    deployedAt: '2026-03-01T00:00:00.000Z',
+    environmentName: 'Env Two',
+  }
+
+  const mockReorderApi = (elements: unknown[] = [infraElement]) => {
+    mockedGet.mockImplementation((async (path: string) => {
+      if (path.startsWith('/api/infrastructure')) return elements
+      if (path.startsWith('/api/catalog/')) {
+        return { ...product, parameters: [param({ id: 2, name: 'REGION', environmentId: 2, scope: 'product', scopeId: 7, label: 'Region (env two)' })] }
+      }
+      return []
+    }) as never)
+  }
+
+  it('preselects the project it was given', async () => {
+    mockReorderApi()
+    render(<OrderForm product={product} projects={projects} costCenters={[]} token="t" initialProjectId="5" />)
+
+    expect(screen.getByLabelText(/project/i)).toHaveValue('5')
+  })
+
+  it('adopts the named element: its environment and its parameters', async () => {
+    mockReorderApi()
+    render(
+      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+        fromInfraId="99" initialProjectId="5" />,
+    )
+
+    // Environment comes from the element, so the user does not have to remember
+    // which one it was deployed to.
+    await waitFor(() => expect(screen.getByLabelText(/environment/i)).toHaveValue('2'))
+    await waitFor(() => expect(screen.getByLabelText('Region (env two)')).toHaveValue('eu-central-1'))
+  })
+
+  it('explains that the form was pre-filled', async () => {
+    mockReorderApi()
+    render(
+      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+        fromInfraId="99" initialProjectId="5" />,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByText(/parameters were pre-filled from this element/i)).toBeInTheDocument(),
+    )
+  })
+
+  it('leaves the form untouched when the named element is not in the project', async () => {
+    // A stale or hand-edited link must not silently apply someone else's config.
+    mockReorderApi([])
+    render(
+      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+        fromInfraId="99" initialProjectId="5" />,
+    )
+
+    await waitFor(() => expect(mockedGet).toHaveBeenCalled())
+    expect(screen.getByLabelText(/environment/i)).toHaveValue('')
+    expect(screen.queryByText(/parameters were pre-filled/i)).not.toBeInTheDocument()
+  })
+
+  it('does not re-apply the element after the user picks "start fresh"', async () => {
+    const user = userEvent.setup()
+    mockReorderApi()
+    render(
+      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+        fromInfraId="99" initialProjectId="5" />,
+    )
+
+    await waitFor(() => expect(screen.getByLabelText(/environment/i)).toHaveValue('2'))
+    await user.selectOptions(screen.getByLabelText(/load parameters from existing/i), '')
+    // Applied at most once — otherwise the effect would immediately undo the
+    // user's choice to start over.
+    expect(screen.getByLabelText(/load parameters from existing/i)).toHaveValue('')
+  })
+
+  it('ignores the reorder hint when no element was named', async () => {
+    mockReorderApi()
+    render(<OrderForm product={product} projects={projects} costCenters={[]} token="t" initialProjectId="5" />)
+
+    await waitFor(() => expect(mockedGet).toHaveBeenCalled())
+    expect(screen.queryByText(/parameters were pre-filled/i)).not.toBeInTheDocument()
+  })
 })

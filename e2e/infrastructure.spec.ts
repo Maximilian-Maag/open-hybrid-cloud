@@ -173,3 +173,52 @@ test.describe('Infrastructure export', () => {
     expect(res.headers()['content-type']).toContain('application/pdf')
   })
 })
+
+// Issue #39: quick reorder. The link carries the element and its project, and the
+// order form finds the element in that project's template list — no new endpoint.
+test.describe('Infrastructure quick reorder', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+    await page.goto('/infrastructure')
+  })
+
+  test('every element offers Reorder, including decommissioned ones', async ({ page }) => {
+    const emptyState = page.getByText(/no infrastructure elements yet/i)
+    const reorder = page.getByRole('link', { name: /^reorder$/i }).first()
+    await expect(reorder.or(emptyState)).toBeVisible({ timeout: 10000 })
+    if (await emptyState.isVisible()) { test.skip(); return }
+
+    // Reprovisioning a torn-down element is exactly when the original
+    // parameters are hardest to reconstruct, so the link is not status-gated.
+    const href = await reorder.getAttribute('href')
+    expect(href).toMatch(/^\/catalog\/\d+\?fromInfra=\d+&projectId=\d+$/)
+  })
+
+  test('Reorder lands on the product page with the form pre-filled', async ({ page }) => {
+    const emptyState = page.getByText(/no infrastructure elements yet/i)
+    const reorder = page.getByRole('link', { name: /^reorder$/i }).first()
+    await expect(reorder.or(emptyState)).toBeVisible({ timeout: 10000 })
+    if (await emptyState.isVisible()) { test.skip(); return }
+
+    await reorder.click()
+    await expect(page).toHaveURL(/\/catalog\/\d+\?fromInfra=\d+/)
+    await expect(page.getByText(/parameters were pre-filled from this element/i)).toBeVisible({ timeout: 10000 })
+    // The environment came from the element rather than being left unset.
+    await expect(page.getByLabel(/environment/i)).not.toHaveValue('')
+  })
+
+  test('the pre-fill can be cleared with "start fresh"', async ({ page }) => {
+    const emptyState = page.getByText(/no infrastructure elements yet/i)
+    const reorder = page.getByRole('link', { name: /^reorder$/i }).first()
+    await expect(reorder.or(emptyState)).toBeVisible({ timeout: 10000 })
+    if (await emptyState.isVisible()) { test.skip(); return }
+
+    await reorder.click()
+    const templates = page.getByLabel(/load parameters from existing/i)
+    await expect(templates).toBeVisible({ timeout: 10000 })
+    // Selectable, not a disabled placeholder — otherwise arriving via a reorder
+    // link would leave the user with no way back to an empty form.
+    await templates.selectOption('')
+    await expect(templates).toHaveValue('')
+  })
+})

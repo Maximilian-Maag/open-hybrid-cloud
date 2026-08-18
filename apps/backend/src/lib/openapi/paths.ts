@@ -250,6 +250,64 @@ registry.registerPath({
   },
 })
 
+// ─── Favorites ────────────────────────────────────────────────────────────────
+
+const favoriteSchema = z.object({
+  productId: z.number(),
+  categoryId: z.number(),
+  name: z.string(),
+  description: z.string(),
+  createdAt: z.string().nullable(),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/favorites',
+  summary: "List the caller's favourited products",
+  description:
+    'Always scoped to the calling user — the user id comes from the session and is never read off ' +
+    'the request. Names are translated with the same fallback chain as the catalogue.',
+  tags: ['Favorites'],
+  security: bearerAuth,
+  request: { query: z.object({ lang: z.string().optional() }) },
+  responses: {
+    200: {
+      description: 'Favourited products, most recently added first',
+      content: { 'application/json': { schema: z.array(favoriteSchema) } },
+    },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'put',
+  path: '/favorites/{productId}',
+  summary: 'Favourite a product (idempotent)',
+  tags: ['Favorites'],
+  security: bearerAuth,
+  request: { params: z.object({ productId: z.string() }) },
+  responses: {
+    200: { description: 'Favourited' },
+    400: { description: 'Invalid product id' },
+    401: { description: 'Unauthorized' },
+    404: { description: 'Product not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/favorites/{productId}',
+  summary: 'Un-favourite a product (idempotent)',
+  tags: ['Favorites'],
+  security: bearerAuth,
+  request: { params: z.object({ productId: z.string() }) },
+  responses: {
+    200: { description: 'Removed' },
+    400: { description: 'Invalid product id' },
+    401: { description: 'Unauthorized' },
+  },
+})
+
 // ─── Catalog ──────────────────────────────────────────────────────────────────
 
 registry.registerPath({

@@ -210,6 +210,26 @@ export const orders = pgTable('orders', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// Items a user has collected but not yet ordered (issue #28).
+//
+// Not an order in a 'draft' state: a cart item has no project, no validated
+// parameters and no cost centre, so putting it in `orders` would mean every query
+// over orders had to exclude drafts, and a draft would appear in approval queues
+// and audit exports the moment someone forgot a WHERE clause.
+export const cartItems = pgTable('cart_items', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
+  environmentId: bigint('environment_id', { mode: 'number' }).notNull().references(() => deploymentEnvironments.id, { onDelete: 'cascade' }),
+  // Whatever the user had typed when they added the item. Deliberately NOT
+  // validated on the way in — a cart is a shopping list, and refusing to hold an
+  // incomplete item would defeat the point of collecting first and filling in at
+  // checkout. Validation happens at checkout, against the same rules a single
+  // order goes through.
+  parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // Free-text discussion on an order (issue #34). The rejection note already proved
 // a note can be stored per order; this generalises it into a thread.
 export const orderComments = pgTable('order_comments', {
@@ -308,6 +328,7 @@ export type ProductVersion = typeof productVersions.$inferSelect
 export type CostCenter = typeof costCenters.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type Order = typeof orders.$inferSelect
+export type CartItem = typeof cartItems.$inferSelect
 export type OrderComment = typeof orderComments.$inferSelect
 export type InfrastructureElement = typeof infrastructureElements.$inferSelect
 export type ExchangeRate = typeof exchangeRates.$inferSelect

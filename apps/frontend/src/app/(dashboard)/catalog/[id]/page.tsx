@@ -6,6 +6,7 @@ import type { ProductDetail, Project, CostCenter, ExchangeRate } from '@open-hyb
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { OrderForm } from '@/components/forms/OrderForm'
+import { AddToCart } from './AddToCart'
 import { t, isValidLang } from '@/lib/i18n'
 import { localeToCurrency, convertPrice } from '@/lib/locale'
 
@@ -88,6 +89,12 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
             </div>
           </div>
         )}
+      </Card>
+
+      {/* Alongside "Order now", per the issue: collect several items and fill the
+          parameters in once at checkout. */}
+      <Card title={t('cart', lang)}>
+        <AddToCart product={product} token={token} lang={lang} />
       </Card>
 
       <Card title={t('placeOrder', lang)}>

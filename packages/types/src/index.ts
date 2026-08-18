@@ -393,6 +393,51 @@ export interface CreateOrderRequest {
   trial?: boolean
 }
 
+// ─── Cart (issue #28) ─────────────────────────────────────────────────────────
+
+export interface CartItem {
+  id: number
+  productId: number
+  environmentId: number
+  /** Prefill only — validated at checkout, not when added. */
+  parameters: Record<string, string>
+  createdAt: string
+  productName: string | null
+  environmentName: string | null
+  price: string | null
+  currency: string | null
+  /** False when the product is no longer offered in that environment. */
+  stillOffered: boolean
+}
+
+export interface AddToCartRequest {
+  productId: number
+  environmentId: number
+  parameters?: Record<string, string>
+}
+
+export interface CheckoutItem {
+  cartItemId: number
+  parameters: Record<string, string>
+  costCenterId?: number
+  trial?: boolean
+}
+
+export interface CheckoutRequest {
+  projectId: number
+  items: CheckoutItem[]
+}
+
+export interface CheckoutResponse {
+  orderIds: number[]
+  /**
+   * Items whose orders could not be created after validation passed. These stay in
+   * the cart — a fired pipeline cannot be recalled, so partial failure is reported
+   * rather than hidden.
+   */
+  failed: { cartItemId: number; message: string }[]
+}
+
 // ─── Product versioning (issue #38) ───────────────────────────────────────────
 
 /** One parameter definition as it stood when a snapshot was taken. */

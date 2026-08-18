@@ -272,6 +272,158 @@ registry.registerPath({
   },
 })
 
+// ─── Cart ─────────────────────────────────────────────────────────────────────
+
+const cartItemSchema = z.object({
+  id: z.number(),
+  productId: z.number(),
+  environmentId: z.number(),
+  parameters: z.record(z.string()),
+  createdAt: z.string().nullable(),
+  productName: z.string().nullable(),
+  environmentName: z.string().nullable(),
+  price: z.string().nullable(),
+  currency: z.string().nullable(),
+  stillOffered: z.boolean().openapi({
+    description:
+      'False when the product is no longer offered in that environment. The item stays in the cart and ' +
+      'says so, rather than vanishing without explanation.',
+  }),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/cart',
+  summary: "List the caller's cart",
+  description: 'Oldest first. Items whose product has been deleted are pruned before listing.',
+  tags: ['Cart'],
+  security: bearerAuth,
+  responses: {
+    200: { description: 'Cart items', content: { 'application/json': { schema: z.array(cartItemSchema) } } },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/cart',
+  summary: 'Add a product+environment to the cart',
+  description:
+    'Parameters are stored as a prefill and deliberately NOT validated here — a cart is a shopping list, ' +
+    'and refusing to hold an incomplete item would defeat collecting first and filling in at checkout. The ' +
+    'offering must exist, since an item that could never be ordered has no business in the cart.',
+  tags: ['Cart'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            productId: z.number().int().positive(),
+            environmentId: z.number().int().positive(),
+            parameters: z.record(z.string()).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: { description: 'Item added', content: { 'application/json': { schema: cartItemSchema } } },
+    400: { description: 'Not offered in that environment, or the cart is full' },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/cart',
+  summary: "Empty the caller's cart",
+  tags: ['Cart'],
+  security: bearerAuth,
+  responses: { 200: { description: 'Cart cleared' }, 401: { description: 'Unauthorized' } },
+})
+
+registry.registerPath({
+  method: 'put',
+  path: '/cart/{itemId}',
+  summary: "Save a cart item's parameter prefill",
+  tags: ['Cart'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ itemId: z.string() }),
+    body: { content: { 'application/json': { schema: z.object({ parameters: z.record(z.string()) }) } } },
+  },
+  responses: {
+    200: { description: 'Prefill saved' },
+    400: { description: 'Invalid id or body' },
+    401: { description: 'Unauthorized' },
+    404: { description: "Not the caller's cart item" },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/cart/{itemId}',
+  summary: 'Remove one cart item (idempotent)',
+  tags: ['Cart'],
+  security: bearerAuth,
+  request: { params: z.object({ itemId: z.string() }) },
+  responses: {
+    200: { description: 'Item removed' },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/cart/checkout',
+  summary: 'Order every cart item against one project',
+  description:
+    'Validates EVERY item first, through the same code path a single order uses, and creates nothing unless ' +
+    'all of them pass — a cart of five with one bad item creates zero orders, not two. Full transactional ' +
+    'atomicity is not available because order creation fires CI pipelines and a fired pipeline cannot be ' +
+    'recalled; past the validation gate, failures are reported per item in failed[] and those items stay in ' +
+    'the cart for a retry. Parameters submitted here win over the stored prefill.',
+  tags: ['Cart'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            projectId: z.number().int().positive(),
+            items: z.array(
+              z.object({
+                cartItemId: z.number().int().positive(),
+                parameters: z.record(z.string()),
+                costCenterId: z.number().int().positive().optional(),
+                trial: z.boolean().optional(),
+              }),
+            ),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Orders created',
+      content: {
+        'application/json': {
+          schema: z.object({
+            orderIds: z.array(z.number()),
+            failed: z.array(z.object({ cartItemId: z.number(), message: z.string() })),
+          }),
+        },
+      },
+    },
+    400: { description: 'Validation failed for at least one item — nothing was created' },
+    401: { description: 'Unauthorized' },
+    502: { description: 'No order could be created' },
+  },
+})
+
 // ─── Product versioning ───────────────────────────────────────────────────────
 
 const productVersionSchema = z.object({

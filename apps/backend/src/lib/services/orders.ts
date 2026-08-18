@@ -269,10 +269,31 @@ const validateActiveCostCenter = async (
   return ok(cc.id)
 }
 
-export const createOrder = async (
+/**
+ * Everything an order needs, resolved and validated, with nothing written yet.
+ *
+ * Extracted so the cart checkout (issue #28) can validate EVERY item before
+ * creating any of them. Order creation fires CI pipelines, which cannot be
+ * un-fired, so a checkout's only meaningful atomicity is an all-or-nothing
+ * validation gate — and that gate has to apply exactly the rules a single order
+ * would, not a second copy of them that drifts.
+ */
+export interface PreparedOrder {
+  projectId: number
+  productId: number
+  environmentId: number
+  parameters: Record<string, string>
+  costCenterId: number | null
+  isTrial: boolean
+  trialDurationMinutes: number
+  productSnapshot: ProductSnapshot | null
+  isAdmin: boolean
+}
+
+export const prepareOrder = async (
   session: SessionUser,
   input: CreateOrderInput,
-): Promise<Result<CreatedOrder>> => {
+): Promise<Result<PreparedOrder>> => {
   const { projectId, productId, environmentId, costCenterId } = input
   const isAdmin = session.role === 'admin' || session.role === 'root'
 
@@ -340,10 +361,51 @@ export const createOrder = async (
   if (!validated.ok) return validated
   const parameters = validated.data
 
-  // Captured once, before either branch inserts, so both an admin's direct order
-  // and a project manager's pending order record what was actually offered
-  // (issue #38). Taken after validation, so the offering is known to exist.
+  // Captured before anything is written, so both an admin's direct order and a
+  // project manager's pending order record what was actually offered (issue #38).
+  // Taken after validation, so the offering is known to exist.
   const productSnapshot = await captureProductSnapshot(productId, product.categoryId, environmentId)
+
+  return ok({
+    projectId,
+    productId,
+    environmentId,
+    parameters,
+    costCenterId: resolvedCostCenterId,
+    isTrial,
+    trialDurationMinutes,
+    productSnapshot,
+    isAdmin,
+  })
+}
+
+/**
+ * Create one order, provisioning it immediately for an admin or queueing it for
+ * approval for a project manager.
+ */
+export const createOrder = async (
+  session: SessionUser,
+  input: CreateOrderInput,
+): Promise<Result<CreatedOrder>> => {
+  const prepared = await prepareOrder(session, input)
+  if (!prepared.ok) return prepared
+  return createPreparedOrder(session, prepared.data)
+}
+
+/**
+ * Write and provision an order that has already been validated.
+ *
+ * Separate from prepareOrder so the cart checkout can put its validation gate
+ * between the two.
+ */
+export const createPreparedOrder = async (
+  session: SessionUser,
+  prepared: PreparedOrder,
+): Promise<Result<CreatedOrder>> => {
+  const {
+    projectId, productId, environmentId, parameters,
+    costCenterId: resolvedCostCenterId, isTrial, trialDurationMinutes, productSnapshot, isAdmin,
+  } = prepared
 
   if (isAdmin) {
     const [order] = await db

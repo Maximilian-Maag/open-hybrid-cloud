@@ -14,6 +14,7 @@ const TABLES = [
   schema.productFavorites,
   schema.orderComments,
   schema.productVersions,
+  schema.cartItems,
   schema.infrastructureElements,
   schema.orders,
   schema.pipelineStacks,
@@ -182,6 +183,14 @@ beforeAll(async () => {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_trial BOOLEAN NOT NULL DEFAULT FALSE;
     -- Migration 0013: what the customer was offered when the order was placed.
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_snapshot JSONB;
+    CREATE TABLE IF NOT EXISTS cart_items (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id) ON DELETE CASCADE,
+      parameters JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS product_versions (
       id BIGSERIAL PRIMARY KEY,
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,

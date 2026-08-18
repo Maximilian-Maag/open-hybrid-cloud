@@ -111,3 +111,65 @@ test.describe('Infrastructure filtering', () => {
     await expect(status).toContainText(/matching elements/i)
   })
 })
+
+// Issue #33. The export is admin-and-above and must carry the active filters, so
+// it is the URL the button builds that matters, not the bytes it returns.
+test.describe('Infrastructure export', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+  })
+
+  test('Export buttons are offered to root', async ({ page }) => {
+    await page.goto('/infrastructure')
+    await expect(page.getByRole('button', { name: /export csv/i })).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('button', { name: /export pdf/i })).toBeVisible()
+    await expect(page.getByLabel(/include parameters/i)).toBeVisible()
+  })
+
+  test('the export request carries the active filters', async ({ page }) => {
+    await page.goto('/infrastructure?status=active&search=web')
+    await expect(page.getByRole('button', { name: /export csv/i })).toBeVisible({ timeout: 8000 })
+
+    const request = page.waitForRequest((r) => r.url().includes('/api/infrastructure/export'))
+    await page.getByRole('button', { name: /export csv/i }).click()
+    const url = new URL((await request).url())
+
+    expect(url.searchParams.get('format')).toBe('csv')
+    expect(url.searchParams.get('status')).toBe('active')
+    expect(url.searchParams.get('search')).toBe('web')
+    // The token travels in the Authorization header, never the query string.
+    expect(url.search).not.toContain('Bearer')
+  })
+
+  test('ticking Include parameters is reflected in the request', async ({ page }) => {
+    await page.goto('/infrastructure')
+    await expect(page.getByRole('button', { name: /export csv/i })).toBeVisible({ timeout: 8000 })
+
+    await page.getByLabel(/include parameters/i).check()
+    const request = page.waitForRequest((r) => r.url().includes('/api/infrastructure/export'))
+    await page.getByRole('button', { name: /export csv/i }).click()
+    expect(new URL((await request).url()).searchParams.get('includeParameters')).toBe('true')
+  })
+
+  test('the CSV download succeeds and carries the inventory header', async ({ page }) => {
+    await page.goto('/infrastructure')
+    await expect(page.getByRole('button', { name: /export csv/i })).toBeVisible({ timeout: 8000 })
+
+    const response = page.waitForResponse((r) => r.url().includes('/api/infrastructure/export'))
+    await page.getByRole('button', { name: /export csv/i }).click()
+    const res = await response
+    expect(res.status()).toBe(200)
+    expect(await res.text()).toContain('id,product,environment,project,costCenter,status,deployedAt')
+  })
+
+  test('the PDF download succeeds', async ({ page }) => {
+    await page.goto('/infrastructure')
+    await expect(page.getByRole('button', { name: /export pdf/i })).toBeVisible({ timeout: 8000 })
+
+    const response = page.waitForResponse((r) => r.url().includes('/api/infrastructure/export'))
+    await page.getByRole('button', { name: /export pdf/i }).click()
+    const res = await response
+    expect(res.status()).toBe(200)
+    expect(res.headers()['content-type']).toContain('application/pdf')
+  })
+})

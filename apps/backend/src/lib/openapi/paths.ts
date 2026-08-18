@@ -653,6 +653,39 @@ registry.registerPath({
 })
 
 registry.registerPath({
+  method: 'get',
+  path: '/infrastructure/export',
+  summary: '[admin] Export the infrastructure inventory as CSV or PDF',
+  description:
+    'Accepts exactly the same filters as GET /infrastructure and applies them identically, so the ' +
+    'file matches the list it was taken from. Parameter values are omitted unless includeParameters ' +
+    'is set, and any parameter whose name is flagged sensitive anywhere in the catalogue is redacted.',
+  tags: ['Infrastructure'],
+  security: bearerAuth,
+  request: {
+    query: z.object({
+      format: z.enum(['csv', 'pdf']).optional(),
+      includeParameters: z.enum(['true', 'false']).optional(),
+      productId: z.string().optional(),
+      projectId: z.string().optional(),
+      environmentId: z.string().optional(),
+      search: z.string().optional(),
+      status: z.enum(['active', 'decommissioning', 'decommissioned', 'all']).optional(),
+      deployedFrom: z.string().optional(),
+      deployedTo: z.string().optional(),
+      sort: z.enum(['date', 'name', 'status']).optional(),
+      direction: z.enum(['asc', 'desc']).optional(),
+    }),
+  },
+  responses: {
+    200: { description: 'CSV or PDF attachment' },
+    400: { description: 'Invalid filter or format' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+})
+
+registry.registerPath({
   method: 'post',
   path: '/infrastructure/{id}/decommission',
   summary: 'Decommission an infrastructure element',

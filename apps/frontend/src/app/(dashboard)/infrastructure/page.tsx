@@ -2,12 +2,13 @@ import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import type { InfrastructureElement, InfraFacets } from '@open-hybrid-cloud/types'
+import type { InfrastructureElement, InfraFacets, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from './InfraActions'
 import { InfraFilters } from './InfraFilters'
+import { InfraExport } from './InfraExport'
 import { t, isValidLang } from '@/lib/i18n'
 
 // Filters live in the URL (see InfraFilters), so every distinct filter
@@ -42,6 +43,10 @@ export default async function InfrastructurePage({ searchParams }: Props) {
   const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await detectLang()
   const params = await searchParams
+  // The export endpoint is admin-and-above, so don't offer a button that would
+  // only ever come back 403.
+  const role = (session.user as unknown as { role: Role }).role
+  const canExport = role === 'admin' || role === 'root'
 
   const query = new URLSearchParams()
   for (const key of FILTER_KEYS) {
@@ -84,6 +89,7 @@ export default async function InfrastructurePage({ searchParams }: Props) {
       <PageHeader
         title={t('infrastructureTitle', lang)}
         subtitle={t('infrastructureSubtitle', lang)}
+        actions={canExport ? <InfraExport token={token} lang={lang} /> : undefined}
       />
 
       <InfraFilters facets={facets} lang={lang} resultCount={elements.length} />

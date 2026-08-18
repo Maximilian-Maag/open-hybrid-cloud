@@ -272,6 +272,84 @@ registry.registerPath({
   },
 })
 
+// ─── Costs ────────────────────────────────────────────────────────────────────
+
+const costBucketSchema = z.object({
+  id: z.number().nullable(),
+  label: z.string(),
+  totalEur: z.number(),
+  orderCount: z.number(),
+})
+
+const costFilterQuery = z.object({
+  range: z.enum(['currentMonth', 'last3Months', 'last12Months', 'all', 'custom']).optional().openapi({
+    description: 'Preset window, resolved server-side so the report and its export cannot disagree.',
+  }),
+  from: z.string().optional().openapi({ description: 'Inclusive. A bare YYYY-MM-DD means the start of that day.' }),
+  to: z.string().optional().openapi({ description: 'Inclusive. A bare YYYY-MM-DD means the END of that day.' }),
+  projectId: z.string().optional(),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/costs',
+  summary: 'Spending overview per project, cost centre, product and environment',
+  description:
+    'Counts only orders that reached provisioning ("provisioning"/"completed") — a rejected, pending or ' +
+    'failed order never delivered infrastructure. Prices come from each order\'s snapshot, so an admin ' +
+    'editing a price cannot restate past spend; orders predating snapshots fall back to the live price and ' +
+    'are counted in estimatedOrders. Totals are in EUR (the exchange-rate base) and the client converts to ' +
+    'the viewer\'s currency; an amount whose currency has no stored rate appears in unconverted[] rather ' +
+    'than being silently treated as EUR. These are sums of recorded prices, NOT a time-based projection — ' +
+    'the catalogue stores no billing period. Scoped by role: a project manager sees the projects they own.',
+  tags: ['Costs'],
+  security: bearerAuth,
+  request: { query: costFilterQuery },
+  responses: {
+    200: {
+      description: 'Cost report',
+      content: {
+        'application/json': {
+          schema: z.object({
+            totalEur: z.number(),
+            orderCount: z.number(),
+            estimatedOrders: z.number(),
+            byProject: z.array(costBucketSchema),
+            byCostCenter: z.array(costBucketSchema),
+            byProduct: z.array(costBucketSchema),
+            byEnvironment: z.array(costBucketSchema),
+            unconverted: z.array(z.object({ currency: z.string(), amount: z.number() })),
+            global: z.boolean(),
+          }),
+        },
+      },
+    },
+    400: { description: 'Invalid filter' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the caller\'s project' },
+    404: { description: 'Project not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/costs/export',
+  summary: 'Export the cost breakdown as CSV or PDF',
+  description:
+    'One row per counted order rather than the aggregate, so a total can be reconciled. Uses the same ' +
+    'filter parser as GET /costs, so the two always cover the same orders. priceEur is blank when the ' +
+    'currency has no stored rate — 0 would read as "free".',
+  tags: ['Costs'],
+  security: bearerAuth,
+  request: { query: costFilterQuery.extend({ format: z.enum(['csv', 'pdf']).optional() }) },
+  responses: {
+    200: { description: 'CSV or PDF attachment' },
+    400: { description: 'Invalid filter or format' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the caller\'s project' },
+  },
+})
+
 // ─── Cart ─────────────────────────────────────────────────────────────────────
 
 const cartItemSchema = z.object({

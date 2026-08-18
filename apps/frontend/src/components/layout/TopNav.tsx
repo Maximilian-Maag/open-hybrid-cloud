@@ -41,6 +41,7 @@ export function TopNav({ role, lang: initialLang = 'en' }: TopNavProps) {
         <Link href="/orders" aria-current={isActive(pathname, '/orders') ? 'page' : undefined} className={navLinkClass(pathname, '/orders')}>{t('orders', lang)}</Link>
         <Link href="/projects" aria-current={isActive(pathname, '/projects') ? 'page' : undefined} className={navLinkClass(pathname, '/projects')}>{t('projects', lang)}</Link>
         <Link href="/infrastructure" aria-current={isActive(pathname, '/infrastructure') ? 'page' : undefined} className={navLinkClass(pathname, '/infrastructure')}>{t('infrastructure', lang)}</Link>
+        <Link href="/costs" aria-current={isActive(pathname, '/costs') ? 'page' : undefined} className={navLinkClass(pathname, '/costs')}>{t('costs', lang)}</Link>
         {(role === 'admin' || role === 'root') && (
           <>
             <Link href="/approvals" aria-current={isActive(pathname, '/approvals') ? 'page' : undefined} className={navLinkClass(pathname, '/approvals')}>{t('approvals', lang)}</Link>

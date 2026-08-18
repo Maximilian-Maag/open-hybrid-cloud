@@ -28,6 +28,7 @@ const AUTHED_PAGES = [
   '/orders',
   '/projects',
   '/infrastructure',
+  '/costs',
   '/approvals',
   '/audit',
   '/settings',

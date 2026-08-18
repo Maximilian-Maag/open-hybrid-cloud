@@ -393,6 +393,36 @@ export interface CreateOrderRequest {
   trial?: boolean
 }
 
+// ─── Costs (issue #32) ────────────────────────────────────────────────────────
+
+export type CostRange = 'currentMonth' | 'last3Months' | 'last12Months' | 'all' | 'custom'
+
+export interface CostBucket {
+  id: number | null
+  label: string
+  /** EUR, the exchange-rate base. Convert client-side for display. */
+  totalEur: number
+  orderCount: number
+}
+
+export interface CostReport {
+  totalEur: number
+  orderCount: number
+  /**
+   * Orders whose price came from the live offering because they predate snapshots.
+   * Non-zero means the total is partly inferred rather than exact.
+   */
+  estimatedOrders: number
+  byProject: CostBucket[]
+  byCostCenter: CostBucket[]
+  byProduct: CostBucket[]
+  byEnvironment: CostBucket[]
+  /** Amounts with no stored exchange rate, reported rather than silently dropped. */
+  unconverted: { currency: string; amount: number }[]
+  /** True when the caller sees every project's spend. */
+  global: boolean
+}
+
 // ─── Cart (issue #28) ─────────────────────────────────────────────────────────
 
 export interface CartItem {

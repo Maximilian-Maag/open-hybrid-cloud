@@ -64,7 +64,9 @@ test.describe('Infrastructure filtering', () => {
   })
 
   test('a searched term reaches the URL after the debounce', async ({ page }) => {
-    await page.getByLabel(/^search$/i).fill('nginx')
+    // By role, not by label alone: the page header carries a global-search submit
+    // button whose accessible name is also "Search".
+    await page.getByRole('searchbox', { name: /^search$/i }).fill('nginx')
     await expect(page).toHaveURL(/[?&]search=nginx/, { timeout: 8000 })
   })
 
@@ -79,7 +81,7 @@ test.describe('Infrastructure filtering', () => {
   test('a bookmarked filtered URL renders its controls already set', async ({ page }) => {
     await page.goto('/infrastructure?status=decommissioned&search=web&deployedFrom=2026-02-01')
     await expect(page.getByLabel(/^status$/i)).toHaveValue('decommissioned')
-    await expect(page.getByLabel(/^search$/i)).toHaveValue('web')
+    await expect(page.getByRole('searchbox', { name: /^search$/i })).toHaveValue('web')
     await expect(page.getByLabel(/deployed from/i)).toHaveValue('2026-02-01')
   })
 
@@ -151,7 +153,7 @@ test.describe('Infrastructure export', () => {
     expect(new URL((await request).url()).searchParams.get('includeParameters')).toBe('true')
   })
 
-  test('the CSV download succeeds and carries the inventory header', async ({ page }) => {
+  test('the CSV download succeeds', async ({ page }) => {
     await page.goto('/infrastructure')
     await expect(page.getByRole('button', { name: /export csv/i })).toBeVisible({ timeout: 8000 })
 
@@ -159,7 +161,11 @@ test.describe('Infrastructure export', () => {
     await page.getByRole('button', { name: /export csv/i }).click()
     const res = await response
     expect(res.status()).toBe(200)
-    expect(await res.text()).toContain('id,product,environment,project,costCenter,status,deployedAt')
+    expect(res.headers()['content-type']).toContain('text/csv')
+    // Not the body: Chromium does not retain the payload of a Content-Disposition
+    // attachment for response.text(), so it comes back empty here regardless of
+    // what was served. The inventory header is pinned where it can be read —
+    // apps/backend/src/app/api/infrastructure/export/route.test.ts.
   })
 
   test('the PDF download succeeds', async ({ page }) => {

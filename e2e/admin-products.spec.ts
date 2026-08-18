@@ -100,3 +100,39 @@ test.describe('Admin - Product Delete Button', () => {
     await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
   })
 })
+
+test.describe('Admin - Product Environment Removal', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+  })
+
+  // The Remove button only appears for environments the product is actually
+  // linked to, so this needs a product with a saved offering. Skips cleanly on a
+  // stack with no products or no deployment environments configured.
+  test('Remove asks for confirmation and explains what is discarded', async ({ page }) => {
+    await page.goto('/admin/products')
+    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    const envCard = page.locator('div').filter({ has: page.getByRole('heading', { name: /^environments$/i }) }).last()
+    await expect(envCard).toBeVisible({ timeout: 8000 })
+
+    const remove = envCard.getByRole('button', { name: /^remove$/i }).first()
+    if (await remove.count() === 0) { test.skip(); return }
+
+    await remove.click()
+    const dialog = page.locator('dialog[open]')
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: /^remove .+\?$/i })).toBeVisible()
+    // Blast radius is spelled out: the offering goes, provisioned infra does not.
+    await expect(dialog.getByText(/no longer be orderable/i)).toBeVisible()
+
+    // Cancel leaves the offering in place.
+    await dialog.getByRole('button', { name: /cancel/i }).click()
+    await expect(dialog).not.toBeVisible()
+    await expect(envCard.getByRole('button', { name: /^remove$/i }).first()).toBeVisible()
+  })
+})

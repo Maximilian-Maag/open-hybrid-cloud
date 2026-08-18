@@ -1336,6 +1336,7 @@ registry.registerPath({
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },
+    409: { description: 'Infrastructure is still deployed in this environment' },
   },
 })
 

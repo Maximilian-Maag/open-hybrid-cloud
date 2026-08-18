@@ -14,7 +14,7 @@ import {
   type ProductWebhook,
   type Parameter,
 } from '@/lib/db/schema'
-import { eq, sql, and } from 'drizzle-orm'
+import { eq, sql, and, inArray } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
 import { fireDestroyTriggers } from '@/lib/services/teardown'
@@ -412,6 +412,27 @@ export const deleteProductEnvironment = async (
   id: number,
   envId: number,
 ): Promise<Result<void>> => {
+  // Refuse while infrastructure is still live in this environment. Unlike
+  // deleteProduct there is no cascade to follow here — infrastructure_elements
+  // references products/deployment_environments directly — so removing the
+  // offering would silently strand running infra without the price, currency
+  // and cost-centre config that its order was placed under. Decommission first.
+  const liveInfra = await db
+    .select({ id: infrastructureElements.id })
+    .from(infrastructureElements)
+    .where(
+      and(
+        eq(infrastructureElements.productId, id),
+        eq(infrastructureElements.environmentId, envId),
+        inArray(infrastructureElements.status, ['active', 'decommissioning']),
+      ),
+    )
+    .limit(1)
+
+  if (liveInfra.length) {
+    return err(409, 'Infrastructure is still deployed in this environment — decommission it first')
+  }
+
   const deleted = await db
     .delete(productEnvironments)
     .where(

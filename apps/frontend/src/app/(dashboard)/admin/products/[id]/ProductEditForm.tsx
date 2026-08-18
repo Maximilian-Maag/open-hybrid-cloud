@@ -146,6 +146,13 @@ export function ProductEditForm({ product, categories, environments, translation
     await put(`/api/admin/products/${product.id}/environments/${envId}`, data, token)
   }
 
+  async function handleDeleteEnv(envId: number) {
+    // Propagates so the row surfaces the reason — most often the 409 the backend
+    // returns while infrastructure is still deployed in this environment.
+    await del(`/api/admin/products/${product.id}/environments/${envId}`, token)
+    router.refresh()
+  }
+
   async function handleAddTranslation(e: React.FormEvent) {
     e.preventDefault()
     setTransSaving(true)
@@ -511,6 +518,7 @@ export function ProductEditForm({ product, categories, environments, translation
                   env={env}
                   existing={existing}
                   onSave={(data) => handleSaveEnv(env.id, data)}
+                  onDelete={() => handleDeleteEnv(env.id)}
                 />
               )
             })}
@@ -786,10 +794,12 @@ function EnvironmentRow({
   env,
   existing,
   onSave,
+  onDelete,
 }: {
   env: DeploymentEnvironment
   existing?: { price: string; currency: string; costCenterMode: CostCenterMode; forcedCostCenter: boolean }
   onSave: (data: UpsertProductEnvironmentRequest) => Promise<void>
+  onDelete: () => Promise<void>
 }) {
   const [price, setPrice] = useState(existing?.price ?? '')
   const [currency, setCurrency] = useState(existing?.currency ?? 'EUR')
@@ -798,6 +808,8 @@ function EnvironmentRow({
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [removing, setRemoving] = useState(false)
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
@@ -815,9 +827,31 @@ function EnvironmentRow({
     }
   }
 
+  async function handleRemove() {
+    setRemoving(true)
+    setSaveError(null)
+    try {
+      await onDelete()
+      setConfirmRemove(false)
+    } catch (err) {
+      // Keep the dialog open so the reason stays next to the action that failed
+      // — a 409 here means the operator has to decommission first.
+      setSaveError(err instanceof Error ? err.message : 'Failed to remove environment.')
+    } finally {
+      setRemoving(false)
+    }
+  }
+
   return (
     <form onSubmit={handleSave} className="rounded-lg border border-slate-200 p-4 space-y-3">
-      <h4 className="font-medium text-slate-900">{env.name}</h4>
+      <div className="flex items-center justify-between">
+        <h4 className="font-medium text-slate-900">{env.name}</h4>
+        {existing && (
+          <Button type="button" size="sm" variant="danger" onClick={() => { setSaveError(null); setConfirmRemove(true) }}>
+            Remove
+          </Button>
+        )}
+      </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Input label="Price" value={price} onChange={(e) => setPrice(e.target.value)} required placeholder="0.00" />
         <Input label="Currency" value={currency} onChange={(e) => setCurrency(e.target.value)} required placeholder="EUR" />
@@ -834,8 +868,25 @@ function EnvironmentRow({
       <div className="flex items-center gap-3">
         <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
         {saved && <span className="text-xs text-green-600">Saved!</span>}
-        {saveError && <span className="text-xs text-red-600">{saveError}</span>}
+        {/* Only when the dialog is closed: the dialog renders saveError itself,
+            and two live regions with the same text are announced twice. */}
+        {saveError && !confirmRemove && <span className="text-xs text-red-600" role="alert">{saveError}</span>}
       </div>
+
+      <Modal open={confirmRemove} onClose={() => setConfirmRemove(false)} title={`Remove ${env.name}?`} size="md">
+        {saveError && <Alert className="mb-3">{saveError}</Alert>}
+        <p className="text-sm text-slate-600">
+          This product will no longer be orderable in <strong>{env.name}</strong>. Its price, currency and
+          cost-centre settings for this environment are discarded. Already provisioned infrastructure is not
+          touched — remove the environment only once nothing is deployed in it.
+        </p>
+        <div className="flex justify-end gap-3 mt-4">
+          <Button type="button" variant="secondary" onClick={() => setConfirmRemove(false)}>Cancel</Button>
+          <Button type="button" variant="danger" disabled={removing} onClick={handleRemove}>
+            {removing ? 'Removing…' : 'Remove'}
+          </Button>
+        </div>
+      </Modal>
     </form>
   )
 }

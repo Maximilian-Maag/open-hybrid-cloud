@@ -373,6 +373,51 @@ describe('product environments', () => {
     const ok = await deleteProductEnvironment(p.id, env.id)
     expect(ok.ok).toBe(true)
   })
+
+  it.each(['active', 'decommissioning'])(
+    'deleteProductEnvironment refuses while %s infrastructure exists',
+    async (status) => {
+      const { p, env } = await buildEnv()
+      await createProductEnvironment(p.id, { environmentId: env.id })
+      const user = await createUser({ role: 'admin' })
+      const project = await createProject(user.id)
+      const order = await seedOrder(project.id, p.id, env.id, user.id)
+      await createInfraElement(order.id, project.id, env.id, p.id, { status })
+
+      const result = await deleteProductEnvironment(p.id, env.id)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.status).toBe(409)
+
+      // The offering must survive the refused delete.
+      const listRes = await listProductEnvironments(p.id)
+      expect(listRes.ok && listRes.data.length).toBe(1)
+    },
+  )
+
+  it('deleteProductEnvironment ignores decommissioned infrastructure', async () => {
+    const { p, env } = await buildEnv()
+    await createProductEnvironment(p.id, { environmentId: env.id })
+    const user = await createUser({ role: 'admin' })
+    const project = await createProject(user.id)
+    const order = await seedOrder(project.id, p.id, env.id, user.id)
+    await createInfraElement(order.id, project.id, env.id, p.id, { status: 'decommissioned' })
+
+    const result = await deleteProductEnvironment(p.id, env.id)
+    expect(result.ok).toBe(true)
+  })
+
+  it('deleteProductEnvironment ignores live infrastructure in a different environment', async () => {
+    const { p, env } = await buildEnv()
+    const otherEnv = await createEnvironment((await createCiSource()).id)
+    await createProductEnvironment(p.id, { environmentId: env.id })
+    const user = await createUser({ role: 'admin' })
+    const project = await createProject(user.id)
+    const order = await seedOrder(project.id, p.id, otherEnv.id, user.id)
+    await createInfraElement(order.id, project.id, otherEnv.id, p.id, { status: 'active' })
+
+    const result = await deleteProductEnvironment(p.id, env.id)
+    expect(result.ok).toBe(true)
+  })
 })
 
 describe('product webhooks', () => {

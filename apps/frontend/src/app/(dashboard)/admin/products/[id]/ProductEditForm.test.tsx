@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ProductDetail, Category, DeploymentEnvironment } from '@open-hybrid-cloud/types'
+import type { ProductDetail, Category, DeploymentEnvironment, CostCenter } from '@open-hybrid-cloud/types'
 
 // jsdom does not implement the native <dialog> methods; stub them so Modal's
 // open/close effects don't throw (same stub as Modal.test.tsx).
@@ -41,6 +41,11 @@ const environments = [
   { id: UNLINKED_ENV, name: 'On-Premise Vienna' },
 ] as unknown as DeploymentEnvironment[]
 
+const costCenters: CostCenter[] = [
+  { id: 10, code: 'CC-100', name: 'Shared Platform', active: true },
+  { id: 11, code: 'CC-200', name: 'Retired Account', active: false },
+]
+
 const product = {
   id: 7,
   categoryId: 1,
@@ -50,18 +55,19 @@ const product = {
   description: '',
   // Only AWS Frankfurt is offered — On-Premise Vienna is listed but unlinked.
   environments: [
-    { productId: 7, environmentId: LINKED_ENV, price: '12.00', currency: 'EUR', costCenterMode: 'project', forcedCostCenter: false },
+    { productId: 7, environmentId: LINKED_ENV, price: '12.00', currency: 'EUR', costCenterMode: 'project', forcedCostCenter: false, overheadCostCenterId: null },
   ],
   parameters: [],
 } as unknown as ProductDetail
 
-const renderForm = () =>
+const renderForm = (over?: Partial<ProductDetail>) =>
   render(
     <ProductEditForm
-      product={product}
+      product={{ ...product, ...over }}
       categories={[{ id: 1, name: 'Databases', displayOrder: 0 }] as Category[]}
       environments={environments}
       translations={[]}
+      costCenters={costCenters}
       token="test-token"
     />,
   )
@@ -134,5 +140,94 @@ describe('ProductEditForm environment removal', () => {
     // Still open, so the operator sees the reason next to the action that failed.
     expect(screen.getByRole('dialog', { name: /Remove AWS Frankfurt\?/ })).toBeInTheDocument()
     expect(refresh).not.toHaveBeenCalled()
+  })
+})
+
+describe('ProductEditForm overhead cost centre', () => {
+  const overheadProduct = (overheadCostCenterId: number | null, forcedCostCenter = false) => ({
+    environments: [
+      {
+        productId: 7,
+        environmentId: LINKED_ENV,
+        price: '12.00',
+        currency: 'EUR',
+        costCenterMode: 'overhead',
+        forcedCostCenter,
+        overheadCostCenterId,
+      },
+    ],
+  } as unknown as Partial<ProductDetail>)
+
+  const envRow = () => {
+    const row = screen.getAllByRole('button', { name: 'Remove' })[0].closest('form')
+    if (!row) throw new Error('environment row not found')
+    return row
+  }
+
+  it('hides the overhead picker for modes that do not use it', () => {
+    renderForm() // 'project' mode
+    expect(screen.queryByLabelText(/overhead cost center/i)).not.toBeInTheDocument()
+  })
+
+  it('shows the picker when the mode is switched to overhead', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    await user.selectOptions(within(envRow()).getByLabelText(/cost center mode/i), 'overhead')
+    expect(await screen.findByLabelText(/overhead cost center/i)).toBeInTheDocument()
+  })
+
+  it('preselects the stored account and offers only active ones', () => {
+    renderForm(overheadProduct(10))
+
+    const picker = screen.getByLabelText(/overhead cost center/i)
+    expect(picker).toHaveValue('10')
+    expect(within(picker).getByRole('option', { name: /CC-100/ })).toBeInTheDocument()
+    // The inactive account is not offered — ordering would reject it anyway.
+    expect(within(picker).queryByRole('option', { name: /CC-200/ })).not.toBeInTheDocument()
+  })
+
+  it('still offers an already-stored account that has since been deactivated', () => {
+    // Otherwise the picker would silently show a blank selection and a Save
+    // would clear the configuration the operator never touched.
+    renderForm(overheadProduct(11))
+
+    const picker = screen.getByLabelText(/overhead cost center/i)
+    expect(picker).toHaveValue('11')
+    expect(within(picker).getByRole('option', { name: /CC-200 — Retired Account \(inactive\)/ })).toBeInTheDocument()
+  })
+
+  it('warns that a forced overhead offering rejects orders until an account is chosen', () => {
+    renderForm(overheadProduct(null, true))
+    expect(screen.getByText(/orders in this environment are rejected/i)).toBeInTheDocument()
+  })
+
+  it('saves the chosen account, and clears it when the mode moves away from overhead', async () => {
+    const user = userEvent.setup()
+    const { put } = await import('@/lib/api')
+    const mockedPut = vi.mocked(put)
+    mockedPut.mockReset().mockResolvedValue(undefined as never)
+    renderForm(overheadProduct(null))
+
+    const row = envRow()
+    await user.selectOptions(screen.getByLabelText(/overhead cost center/i), '10')
+    await user.click(within(row).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    expect(mockedPut.mock.calls[0][1]).toMatchObject({
+      costCenterMode: 'overhead',
+      overheadCostCenterId: 10,
+    })
+
+    // Switching to a mode that never uses the account must not leave it stored,
+    // or flipping back to overhead would silently resurrect it.
+    await user.selectOptions(within(row).getByLabelText(/cost center mode/i), 'select')
+    await user.click(within(row).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalledTimes(2))
+    expect(mockedPut.mock.calls[1][1]).toMatchObject({
+      costCenterMode: 'select',
+      overheadCostCenterId: null,
+    })
   })
 })

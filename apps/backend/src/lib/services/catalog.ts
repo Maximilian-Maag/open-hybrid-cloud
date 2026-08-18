@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/client'
-import { products, productEnvironments, deploymentEnvironments, parameters, type Parameter } from '@/lib/db/schema'
+import { products, productEnvironments, deploymentEnvironments, costCenters, parameters, type Parameter } from '@/lib/db/schema'
 import { eq, or, and, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 
@@ -179,12 +179,20 @@ export const getProduct = async (
       currency: productEnvironments.currency,
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
+      overheadCostCenterId: productEnvironments.overheadCostCenterId,
       environmentName: deploymentEnvironments.name,
+      // Resolved for display: in `overhead` mode the order form shows which
+      // shared account the order will be billed to instead of a picker.
+      overheadCostCenterName: costCenters.name,
     })
     .from(productEnvironments)
     .leftJoin(
       deploymentEnvironments,
       eq(productEnvironments.environmentId, deploymentEnvironments.id),
+    )
+    .leftJoin(
+      costCenters,
+      eq(productEnvironments.overheadCostCenterId, costCenters.id),
     )
     .where(eq(productEnvironments.productId, productId))
 

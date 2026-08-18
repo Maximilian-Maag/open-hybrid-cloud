@@ -6,6 +6,7 @@ import {
   productWebhooks,
   deploymentEnvironments,
   categories,
+  costCenters,
   infrastructureElements,
   parameters,
   type Product,
@@ -49,6 +50,7 @@ export interface CreateProductEnvironmentInput {
   currency?: string
   costCenterMode?: 'project' | 'select' | 'overhead'
   forcedCostCenter?: boolean
+  overheadCostCenterId?: number | null
 }
 
 export interface UpdateProductEnvironmentInput {
@@ -56,6 +58,7 @@ export interface UpdateProductEnvironmentInput {
   currency?: string
   costCenterMode?: 'project' | 'select' | 'overhead'
   forcedCostCenter?: boolean
+  overheadCostCenterId?: number | null
 }
 
 export interface CreateWebhookInput {
@@ -147,6 +150,7 @@ export const getProductAdmin = async (id: number): Promise<Result<ProductAdminRo
       currency: productEnvironments.currency,
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
+      overheadCostCenterId: productEnvironments.overheadCostCenterId,
     })
     .from(productEnvironments)
     .where(eq(productEnvironments.productId, id))
@@ -358,6 +362,7 @@ export const listProductEnvironments = async (
       currency: productEnvironments.currency,
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
+      overheadCostCenterId: productEnvironments.overheadCostCenterId,
       environmentName: deploymentEnvironments.name,
     })
     .from(productEnvironments)
@@ -370,18 +375,45 @@ export const listProductEnvironments = async (
   return ok(rows as (ProductEnvironment & { environmentName: string | null })[])
 }
 
+/**
+ * Reject an overhead account that does not exist or has been deactivated.
+ *
+ * Ordering already refuses an inactive cost centre, so accepting one here would
+ * only defer the failure to the next order placed against the offering — at
+ * which point the operator who misconfigured it is long gone.
+ */
+const validateOverheadCostCenter = async (
+  overheadCostCenterId: number | null | undefined,
+): Promise<Result<void>> => {
+  if (overheadCostCenterId === undefined || overheadCostCenterId === null) return ok(undefined)
+
+  const [cc] = await db
+    .select({ active: costCenters.active })
+    .from(costCenters)
+    .where(eq(costCenters.id, overheadCostCenterId))
+    .limit(1)
+
+  if (!cc) return err(400, 'Overhead cost center not found')
+  if (!cc.active) return err(400, 'Overhead cost center is not active')
+  return ok(undefined)
+}
+
 export const createProductEnvironment = async (
   id: number,
   input: CreateProductEnvironmentInput,
 ): Promise<Result<ProductEnvironment>> => {
-  const { environmentId, price = '0', currency = 'EUR', costCenterMode = 'project', forcedCostCenter = false } = input
+  const { environmentId, price = '0', currency = 'EUR', costCenterMode = 'project', forcedCostCenter = false, overheadCostCenterId = null } = input
 
+  const validated = await validateOverheadCostCenter(overheadCostCenterId)
+  if (!validated.ok) return validated
+
+  const values = { price, currency, costCenterMode, forcedCostCenter, overheadCostCenterId }
   const [row] = await db
     .insert(productEnvironments)
-    .values({ productId: id, environmentId, price, currency, costCenterMode, forcedCostCenter })
+    .values({ productId: id, environmentId, ...values })
     .onConflictDoUpdate({
       target: [productEnvironments.productId, productEnvironments.environmentId],
-      set: { price, currency, costCenterMode, forcedCostCenter },
+      set: values,
     })
     .returning()
 
@@ -393,6 +425,9 @@ export const updateProductEnvironment = async (
   envId: number,
   input: UpdateProductEnvironmentInput,
 ): Promise<Result<ProductEnvironment>> => {
+  const validated = await validateOverheadCostCenter(input.overheadCostCenterId)
+  if (!validated.ok) return validated
+
   const [updated] = await db
     .update(productEnvironments)
     .set(input)

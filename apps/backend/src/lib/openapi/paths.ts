@@ -141,7 +141,9 @@ const productEnvironmentSchema = z.object({
   currency: z.string(),
   costCenterMode: z.string(),
   forcedCostCenter: z.boolean(),
+  overheadCostCenterId: z.number().nullable(),
   environmentName: z.string().nullable(),
+  overheadCostCenterName: z.string().nullable().optional(),
 })
 
 const exchangeRateSchema = z.object({
@@ -1270,6 +1272,7 @@ registry.registerPath({
             currency: z.string().optional(),
             costCenterMode: z.enum(['project', 'select', 'overhead']).optional(),
             forcedCostCenter: z.boolean().optional(),
+            overheadCostCenterId: z.number().nullable().optional(),
           }),
         },
       },
@@ -1302,6 +1305,7 @@ registry.registerPath({
             currency: z.string().optional(),
             costCenterMode: z.enum(['project', 'select', 'overhead']).optional(),
             forcedCostCenter: z.boolean().optional(),
+            overheadCostCenterId: z.number().nullable().optional(),
           }),
         },
       },

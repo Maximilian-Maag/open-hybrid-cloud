@@ -134,6 +134,11 @@ beforeAll(async () => {
       name TEXT NOT NULL,
       active BOOLEAN NOT NULL DEFAULT TRUE
     );
+    -- Added here rather than in the product_environments block above: the FK
+    -- target has to exist first, and cost_centers is created after it.
+    ALTER TABLE product_environments
+      ADD COLUMN IF NOT EXISTS overhead_cost_center_id BIGINT
+      REFERENCES cost_centers(id) ON DELETE SET NULL;
     CREATE TABLE IF NOT EXISTS projects (
       id BIGSERIAL PRIMARY KEY,
       name TEXT NOT NULL,

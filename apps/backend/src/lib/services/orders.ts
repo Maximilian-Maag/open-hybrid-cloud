@@ -189,24 +189,39 @@ const validateAndApplyParameters = (
 
 /**
  * Resolve and validate the cost centre for an order against the rules stored on
- * the product/environment offering.
+ * the product/environment offering (FA-10.4).
  *
- * - `project`  the cost centre comes from the project, so a submitted one is
- *              ignored rather than silently stored against the order.
- * - `select` / `overhead`  the user picks one. `forcedCostCenter` makes that
- *              choice mandatory; otherwise it may be omitted.
+ * - `project`   the cost centre comes from the project, so a submitted one is
+ *               ignored rather than silently stored against the order.
+ * - `overhead`  the offering names a fixed shared cost centre. The user never
+ *               picks, so a submitted one is ignored here too.
+ * - `select`    the user picks one. `forcedCostCenter` makes that choice
+ *               mandatory; otherwise it may be omitted.
  *
- * A submitted id must additionally name a cost centre that exists AND is active
- * — the foreign key only proves existence, and ordering against a deactivated
- * cost centre is exactly what deactivating one is meant to prevent.
+ * A cost centre must exist AND be active, whichever way it was arrived at — the
+ * foreign key only proves existence, and ordering against a deactivated cost
+ * centre is exactly what deactivating one is meant to prevent. That applies to a
+ * configured overhead account as much as to a user's choice: it may have been
+ * deactivated long after the offering was set up.
  */
 const validateCostCenter = async (
-  offering: { costCenterMode: string; forcedCostCenter: boolean },
+  offering: { costCenterMode: string; forcedCostCenter: boolean; overheadCostCenterId: number | null },
   costCenterId: number | undefined,
 ): Promise<Result<number | null>> => {
-  const userChooses = offering.costCenterMode === 'select' || offering.costCenterMode === 'overhead'
+  if (offering.costCenterMode === 'overhead') {
+    // The whole point of an overhead account is that it is fixed by the
+    // offering. Falling back to the submitted value here is what made this mode
+    // indistinguishable from 'select'.
+    if (offering.overheadCostCenterId === null) {
+      if (offering.forcedCostCenter) {
+        return err(400, 'No overhead cost center is configured for this environment')
+      }
+      return ok(null)
+    }
+    return validateActiveCostCenter(offering.overheadCostCenterId, 'Overhead cost center')
+  }
 
-  if (!userChooses) {
+  if (offering.costCenterMode !== 'select') {
     // 'project' mode: attribution follows the project, so don't store a
     // caller-supplied value that the UI never offered.
     return ok(null)
@@ -219,14 +234,21 @@ const validateCostCenter = async (
     return ok(null)
   }
 
+  return validateActiveCostCenter(costCenterId, 'Cost center')
+}
+
+const validateActiveCostCenter = async (
+  costCenterId: number,
+  label: string,
+): Promise<Result<number>> => {
   const [cc] = await db
     .select({ id: costCenters.id, active: costCenters.active })
     .from(costCenters)
     .where(eq(costCenters.id, costCenterId))
     .limit(1)
 
-  if (!cc) return err(400, 'Cost center not found')
-  if (!cc.active) return err(400, 'Cost center is not active')
+  if (!cc) return err(400, `${label} not found`)
+  if (!cc.active) return err(400, `${label} is not active`)
 
   return ok(cc.id)
 }
@@ -264,6 +286,7 @@ export const createOrder = async (
       productId: productEnvironments.productId,
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
+      overheadCostCenterId: productEnvironments.overheadCostCenterId,
     })
     .from(productEnvironments)
     .where(

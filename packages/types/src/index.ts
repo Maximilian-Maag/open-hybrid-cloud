@@ -211,7 +211,15 @@ export interface ProductEnvironment {
   currency: string
   costCenterMode: CostCenterMode
   forcedCostCenter: boolean
+  /**
+   * The fixed shared cost centre used by `overhead` mode (FA-10.4). null for
+   * the other two modes, and for an `overhead` offering that has not had an
+   * account chosen yet.
+   */
+  overheadCostCenterId: number | null
   environmentName?: string
+  /** Resolved name of `overheadCostCenterId`, for display in the order form. */
+  overheadCostCenterName?: string | null
 }
 
 export interface UpsertProductEnvironmentRequest {
@@ -219,6 +227,7 @@ export interface UpsertProductEnvironmentRequest {
   currency: string
   costCenterMode: CostCenterMode
   forcedCostCenter: boolean
+  overheadCostCenterId?: number | null
 }
 
 // Product Webhooks

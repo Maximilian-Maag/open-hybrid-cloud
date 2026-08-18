@@ -92,6 +92,7 @@ export const linkProductEnvironment = async (
     currency?: string
     costCenterMode?: 'project' | 'select' | 'overhead'
     forcedCostCenter?: boolean
+    overheadCostCenterId?: number | null
   },
 ) => {
   const [row] = await db
@@ -103,6 +104,7 @@ export const linkProductEnvironment = async (
       currency: overrides?.currency ?? 'EUR',
       ...(overrides?.costCenterMode ? { costCenterMode: overrides.costCenterMode } : {}),
       ...(overrides?.forcedCostCenter !== undefined ? { forcedCostCenter: overrides.forcedCostCenter } : {}),
+      ...(overrides?.overheadCostCenterId !== undefined ? { overheadCostCenterId: overrides.overheadCostCenterId } : {}),
     })
     .onConflictDoNothing()
     .returning()

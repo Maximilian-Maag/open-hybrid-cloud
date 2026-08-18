@@ -478,6 +478,7 @@ describe('createOrder — cost centre rules are enforced server-side', () => {
   const buildWith = async (
     mode: 'project' | 'select' | 'overhead',
     forced: boolean,
+    overheadCostCenterId?: number | null,
   ) => {
     const admin = await createUser({ role: 'admin', email: 'cc-admin@test.dev' })
     const pm = await createUser({ role: 'project_manager', email: 'cc-pm@test.dev' })
@@ -485,7 +486,11 @@ describe('createOrder — cost centre rules are enforced server-side', () => {
     const product = await createProduct(cat.id, 'CC Product')
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
-    await linkProductEnvironment(product.id, env.id, { costCenterMode: mode, forcedCostCenter: forced })
+    await linkProductEnvironment(product.id, env.id, {
+      costCenterMode: mode,
+      forcedCostCenter: forced,
+      ...(overheadCostCenterId !== undefined ? { overheadCostCenterId } : {}),
+    })
     const project = await createProject(pm.id)
     return { admin, product, env, project }
   }
@@ -519,7 +524,7 @@ describe('createOrder — cost centre rules are enforced server-side', () => {
   })
 
   it('rejects a cost centre id that does not exist', async () => {
-    const ctx = await buildWith('overhead', true)
+    const ctx = await buildWith('select', true)
     const result = await createOrder(makeSession(ctx.admin), { ...base(ctx), costCenterId: 999_999 })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(400)
@@ -554,5 +559,66 @@ describe('createOrder — cost centre rules are enforced server-side', () => {
     // The UI never offers the field in this mode, so a value that arrives anyway
     // must not be stored against the order.
     expect(row.costCenterId).toBeNull()
+  })
+
+  // ── overhead mode (issue #22) ───────────────────────────────────────────────
+  // Before product_environments carried an account to point at, `overhead` fell
+  // through to the same branch as `select` and asked the user to pick — the
+  // opposite of a fixed shared account.
+  it('bills an overhead order to the account configured on the offering', async () => {
+    const overhead = await createCostCenter({ code: 'CC-OVERHEAD' })
+    const ctx = await buildWith('overhead', true, overhead.id)
+
+    const result = await createOrder(makeSession(ctx.admin), base(ctx))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.costCenterId).toBe(overhead.id)
+  })
+
+  it('ignores a submitted cost centre in overhead mode', async () => {
+    const overhead = await createCostCenter({ code: 'CC-OVERHEAD' })
+    const submitted = await createCostCenter({ code: 'CC-USER-PICKED' })
+    const ctx = await buildWith('overhead', true, overhead.id)
+
+    const result = await createOrder(makeSession(ctx.admin), { ...base(ctx), costCenterId: submitted.id })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    // The account is fixed by the offering — a caller cannot redirect the spend.
+    expect(row.costCenterId).toBe(overhead.id)
+  })
+
+  it('rejects a forced overhead order when no account is configured', async () => {
+    const ctx = await buildWith('overhead', true, null)
+    const result = await createOrder(makeSession(ctx.admin), base(ctx))
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/no overhead cost center is configured/i)
+    }
+  })
+
+  it('records no cost centre when an unforced overhead offering has no account', async () => {
+    const ctx = await buildWith('overhead', false, null)
+    const result = await createOrder(makeSession(ctx.admin), base(ctx))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.costCenterId).toBeNull()
+  })
+
+  it('rejects an overhead account that has since been deactivated', async () => {
+    // The offering was configured while the account was live; deactivating it
+    // must stop new spend rather than silently attributing to a dead account.
+    const overhead = await createCostCenter({ code: 'CC-OVERHEAD', active: false })
+    const ctx = await buildWith('overhead', true, overhead.id)
+
+    const result = await createOrder(makeSession(ctx.admin), base(ctx))
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/overhead cost center is not active/i)
+    }
   })
 })

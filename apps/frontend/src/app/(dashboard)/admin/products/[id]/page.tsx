@@ -7,6 +7,7 @@ import type {
   Category,
   DeploymentEnvironment,
   ProductTranslation,
+  CostCenter,
 } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -25,11 +26,13 @@ export default async function AdminProductDetailPage({ params }: Props) {
   if (role !== 'root') redirect('/admin')
   const token = (session as unknown as { apiToken: string }).apiToken
 
-  const [productRes, categoriesRes, environmentsRes, translationsRes] = await Promise.allSettled([
+  const [productRes, categoriesRes, environmentsRes, translationsRes, costCentersRes] = await Promise.allSettled([
     get<ProductDetail>(`/api/admin/products/${id}`, token),
     get<Category[]>('/api/admin/categories', token),
     get<DeploymentEnvironment[]>('/api/admin/environments', token),
     get<ProductTranslation[]>(`/api/admin/products/${id}/translations`, token),
+    // Needed to pick the fixed account for an `overhead` offering (FA-10.4).
+    get<CostCenter[]>('/api/admin/cost-centers', token),
   ])
 
   if (productRes.status === 'rejected') notFound()
@@ -38,6 +41,7 @@ export default async function AdminProductDetailPage({ params }: Props) {
   const categories = categoriesRes.status === 'fulfilled' ? (categoriesRes.value ?? []) : []
   const environments = environmentsRes.status === 'fulfilled' ? (environmentsRes.value ?? []) : []
   const translations = translationsRes.status === 'fulfilled' ? (translationsRes.value ?? []) : []
+  const costCenters = costCentersRes.status === 'fulfilled' ? (costCentersRes.value ?? []) : []
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -55,6 +59,7 @@ export default async function AdminProductDetailPage({ params }: Props) {
         categories={categories}
         environments={environments}
         translations={translations}
+        costCenters={costCenters}
         token={token}
       />
     </div>

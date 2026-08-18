@@ -43,8 +43,8 @@ const product = {
   name: 'P',
   description: '',
   environments: [
-    { productId: 7, environmentId: 1, price: '0', currency: 'EUR', costCenterMode: 'project', forcedCostCenter: false, environmentName: 'Env One' },
-    { productId: 7, environmentId: 2, price: '0', currency: 'EUR', costCenterMode: 'project', forcedCostCenter: false, environmentName: 'Env Two' },
+    { productId: 7, environmentId: 1, price: '0', currency: 'EUR', costCenterMode: 'project', forcedCostCenter: false, overheadCostCenterId: null, environmentName: 'Env One' },
+    { productId: 7, environmentId: 2, price: '0', currency: 'EUR', costCenterMode: 'project', forcedCostCenter: false, overheadCostCenterId: null, environmentName: 'Env Two' },
   ],
   parameters: [
     param({ id: 1, name: 'REGION', environmentId: null, label: 'Region (all envs)' }),
@@ -101,5 +101,79 @@ describe('OrderForm parameter resolution', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Region (env two)')).toBeInTheDocument()
     })
+  })
+
+  // ── Cost-centre modes (FA-10.4) ───────────────────────────────────────────
+  // `overhead` names a fixed shared account on the offering. Before it had
+  // somewhere to store one it was lumped in with `select` and rendered a
+  // picker, so a fixed overhead account was indistinguishable from a free
+  // choice.
+  const envWithMode = (
+    mode: 'project' | 'select' | 'overhead',
+    over?: { overheadCostCenterId?: number | null; overheadCostCenterName?: string | null; forcedCostCenter?: boolean },
+  ) => ({
+    ...product,
+    environments: [{
+      productId: 7,
+      environmentId: 1,
+      price: '0',
+      currency: 'EUR',
+      costCenterMode: mode,
+      forcedCostCenter: over?.forcedCostCenter ?? false,
+      overheadCostCenterId: over?.overheadCostCenterId ?? null,
+      overheadCostCenterName: over?.overheadCostCenterName ?? null,
+      environmentName: 'Env One',
+    }],
+  } as unknown as ProductDetail)
+
+  const costCenters = [
+    { id: 10, code: 'CC-100', name: 'Shared Platform', active: true },
+  ] as never
+
+  // The env-scoped refetch has to return a product-shaped payload — the
+  // component reads `.parameters` off it.
+  const mockCatalogFor = (detail: ProductDetail) => {
+    mockedGet.mockImplementation((async (path: string) =>
+      path.startsWith('/api/catalog/') ? detail : []) as never)
+  }
+
+  it('offers a cost-centre picker in select mode', async () => {
+    const detail = envWithMode('select')
+    mockCatalogFor(detail)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
+
+    expect(await screen.findByLabelText(/^cost center/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('overhead-cost-center')).not.toBeInTheDocument()
+  })
+
+  it('shows the fixed account instead of a picker in overhead mode', async () => {
+    const detail = envWithMode('overhead', { overheadCostCenterId: 10, overheadCostCenterName: 'Shared Platform' })
+    mockCatalogFor(detail)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
+
+    expect(await screen.findByTestId('overhead-cost-center')).toHaveTextContent('Shared Platform')
+    // No picker: the account is fixed by the offering, so there is nothing to choose.
+    expect(screen.queryByLabelText(/^cost center/i)).not.toBeInTheDocument()
+  })
+
+  it('renders a placeholder when an overhead offering has no account configured', async () => {
+    const detail = envWithMode('overhead')
+    mockCatalogFor(detail)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
+
+    expect(await screen.findByTestId('overhead-cost-center')).toHaveTextContent('—')
+  })
+
+  it('shows no cost-centre control at all in project mode', async () => {
+    const detail = envWithMode('project')
+    mockCatalogFor(detail)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
+
+    expect(screen.queryByLabelText(/^cost center/i)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('overhead-cost-center')).not.toBeInTheDocument()
   })
 })

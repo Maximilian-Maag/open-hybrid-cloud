@@ -10,6 +10,9 @@ const UpsertProductEnvironmentSchema = z.object({
   currency: z.string().default('EUR'),
   costCenterMode: z.enum(['project', 'select', 'overhead']).default('project'),
   forcedCostCenter: z.boolean().default(false),
+  // Nullable so the admin form can clear the overhead account again; the
+  // service rejects an id that is unknown or deactivated.
+  overheadCostCenterId: z.number().int().positive().nullable().default(null),
 })
 
 export async function GET(

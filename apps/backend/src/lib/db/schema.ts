@@ -97,6 +97,12 @@ export const productEnvironments = pgTable('product_environments', {
   currency: text().notNull().default('EUR'),
   costCenterMode: text('cost_center_mode', { enum: ['project', 'select', 'overhead'] }).notNull().default('project'),
   forcedCostCenter: boolean('forced_cost_center').notNull().default(false),
+  // The fixed shared cost centre used by `overhead` mode (FA-10.4). Without it
+  // `overhead` had no cost centre to point at and fell through to the same
+  // behaviour as `select` — the user picked, which is the opposite of a fixed
+  // overhead account. Nullable because the other two modes never use it, and
+  // because an offering may be switched to `overhead` before one is chosen.
+  overheadCostCenterId: bigint('overhead_cost_center_id', { mode: 'number' }).references(() => costCenters.id, { onDelete: 'set null' }),
 }, (t) => [primaryKey({ columns: [t.productId, t.environmentId] })])
 
 export const productWebhooks = pgTable('product_webhooks', {

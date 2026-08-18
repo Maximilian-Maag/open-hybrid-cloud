@@ -20,6 +20,7 @@ import type {
   ParameterType,
   CreateParameterRequest,
   UpdateParameterRequest,
+  CostCenter,
 } from '@open-hybrid-cloud/types'
 import { put, post, del, get } from '@/lib/api'
 import { generatePipelineYaml } from '@/lib/pipelineStackPreview'
@@ -48,10 +49,11 @@ interface Props {
   categories: Category[]
   environments: DeploymentEnvironment[]
   translations: ProductTranslation[]
+  costCenters: CostCenter[]
   token: string
 }
 
-export function ProductEditForm({ product, categories, environments, translations: initTranslations, token }: Props) {
+export function ProductEditForm({ product, categories, environments, translations: initTranslations, costCenters, token }: Props) {
   const router = useRouter()
 
   // Basic info
@@ -517,6 +519,7 @@ export function ProductEditForm({ product, categories, environments, translation
                   key={env.id}
                   env={env}
                   existing={existing}
+                  costCenters={costCenters}
                   onSave={(data) => handleSaveEnv(env.id, data)}
                   onDelete={() => handleDeleteEnv(env.id)}
                 />
@@ -793,11 +796,19 @@ export function ProductEditForm({ product, categories, environments, translation
 function EnvironmentRow({
   env,
   existing,
+  costCenters,
   onSave,
   onDelete,
 }: {
   env: DeploymentEnvironment
-  existing?: { price: string; currency: string; costCenterMode: CostCenterMode; forcedCostCenter: boolean }
+  existing?: {
+    price: string
+    currency: string
+    costCenterMode: CostCenterMode
+    forcedCostCenter: boolean
+    overheadCostCenterId: number | null
+  }
+  costCenters: CostCenter[]
   onSave: (data: UpsertProductEnvironmentRequest) => Promise<void>
   onDelete: () => Promise<void>
 }) {
@@ -805,6 +816,11 @@ function EnvironmentRow({
   const [currency, setCurrency] = useState(existing?.currency ?? 'EUR')
   const [costCenterMode, setCostCenterMode] = useState<CostCenterMode>(existing?.costCenterMode ?? 'project')
   const [forcedCostCenter, setForcedCostCenter] = useState(existing?.forcedCostCenter ?? false)
+  const [overheadCostCenterId, setOverheadCostCenterId] = useState(
+    existing?.overheadCostCenterId !== null && existing?.overheadCostCenterId !== undefined
+      ? String(existing.overheadCostCenterId)
+      : '',
+  )
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -817,7 +833,16 @@ function EnvironmentRow({
     setSaved(false)
     setSaveError(null)
     try {
-      await onSave({ price, currency, costCenterMode, forcedCostCenter })
+      await onSave({
+        price,
+        currency,
+        costCenterMode,
+        forcedCostCenter,
+        // Only meaningful for `overhead`; sending null otherwise keeps a stale
+        // account from being applied if the mode is switched back later.
+        overheadCostCenterId:
+          costCenterMode === 'overhead' && overheadCostCenterId ? Number(overheadCostCenterId) : null,
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
@@ -865,6 +890,25 @@ function EnvironmentRow({
           </div>
         </div>
       </div>
+
+      {/* Overhead mode bills every order to one fixed shared account, so it
+          needs to name which one — the other two modes never use it. */}
+      {costCenterMode === 'overhead' && (
+        <Select
+          label="Overhead Cost Center"
+          value={overheadCostCenterId}
+          onChange={(e) => setOverheadCostCenterId(e.target.value)}
+          placeholder="Select cost center…"
+          hint={
+            forcedCostCenter
+              ? 'Required: orders in this environment are rejected until an account is chosen.'
+              : 'Without one, orders in this environment are recorded with no cost centre.'
+          }
+          options={costCenters
+            .filter((cc) => cc.active || String(cc.id) === overheadCostCenterId)
+            .map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}${cc.active ? '' : ' (inactive)'}` }))}
+        />
+      )}
       <div className="flex items-center gap-3">
         <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
         {saved && <span className="text-xs text-green-600">Saved!</span>}

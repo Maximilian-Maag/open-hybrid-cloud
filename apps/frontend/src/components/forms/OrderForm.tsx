@@ -54,14 +54,20 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
     if (!envId) { setResolvedParameters(product.parameters); return }
     let stale = false
     get<ProductDetail>(`/api/catalog/${product.id}?lang=${lang}&environmentId=${envId}`, token)
-      .then((detail) => { if (!stale && detail) setResolvedParameters(detail.parameters) })
+      // Guard on `parameters`, not just on `detail`: a truthy-but-shapeless
+      // response (an error envelope, an empty array) would otherwise store
+      // undefined and crash the next render on `.filter`.
+      .then((detail) => { if (!stale && detail?.parameters) setResolvedParameters(detail.parameters) })
       .catch(() => { /* keep the unresolved list — submit still validates server-side */ })
     return () => { stale = true }
   }, [envId, product.id, product.parameters, lang, token])
 
   const selectedEnv = product.environments.find((e) => String(e.environmentId) === envId)
-  const needsCostCenter =
-    selectedEnv?.costCenterMode === 'select' || selectedEnv?.costCenterMode === 'overhead'
+  // `overhead` used to be lumped in with `select` and rendered a picker, which
+  // made a fixed shared account indistinguishable from a free choice. The
+  // account is now stored on the offering, so the user is shown it, not asked.
+  const isOverhead = selectedEnv?.costCenterMode === 'overhead'
+  const needsCostCenter = selectedEnv?.costCenterMode === 'select'
   const envParameters = resolvedParameters.filter(
     (p) => p.environmentId === null || String(p.environmentId) === envId,
   )
@@ -176,6 +182,16 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
             .filter((cc) => cc.active)
             .map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}` }))}
         />
+      )}
+
+      {isOverhead && (
+        <div>
+          <p className="text-sm font-medium text-slate-700">{t('overheadCostCenter', lang)}</p>
+          <p className="mt-1 text-sm text-slate-900" data-testid="overhead-cost-center">
+            {selectedEnv?.overheadCostCenterName ?? '—'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">{t('overheadCostCenterHint', lang)}</p>
+        </div>
       )}
 
       {projectId && templates.length > 0 && (

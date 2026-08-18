@@ -10,10 +10,10 @@ vi.mock('@/lib/ci/webhooks', () => ({
   triggerPipelineStacksTracked: vi.fn().mockResolvedValue({ pipelineIds: [], failures: [] }),
 }))
 
-import { listInfrastructure, listInfrastructureFacets, decommissionInfra } from './infrastructure'
+import { listInfrastructure, listInfrastructureFacets, decommissionInfra, retryProvisioning } from './infrastructure'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { infrastructureElements } from '@/lib/db/schema'
+import { infrastructureElements, orders, auditLog } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -290,6 +290,21 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     )
   })
 
+  it('carries the order status so a failed deployment is distinguishable', async () => {
+    // The element is 'active' either way — the order is the only thing that knows
+    // the deployment failed.
+    const ctx = await searchable()
+    const el = await ctx.mk(ctx.nginx, ctx.frankfurt, ctx.webshop)
+    await db.update(orders).set({ status: 'failed' }).where(eq(orders.id, el.orderId))
+
+    const result = await listInfrastructure(makeSession(ctx.admin), {})
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const row = result.data.find((r) => r.id === el.id)
+    expect(row?.status).toBe('active')
+    expect(row?.orderStatus).toBe('failed')
+  })
+
   it('returns an empty list rather than an error when nothing matches', async () => {
     const ctx = await searchable()
     await ctx.mk(ctx.nginx, ctx.frankfurt, ctx.webshop)
@@ -530,5 +545,206 @@ describe('decommissionInfra', () => {
       .from(infrastructureElements)
       .where(eq(infrastructureElements.id, infra.id))
     expect(dbInfra.pipelineStatus).toEqual({})
+  })
+})
+
+// Issue #29. Note the failure model the issue describes does not exist here:
+// there is no `failed` infrastructure status. The element is inserted `active`
+// when provisioning STARTS, and a failed pipeline sets orders.status = 'failed'
+// while leaving the element `active`. The retryable condition is on the order.
+describe('retryProvisioning', () => {
+  const failedDeployment = async (orderStatus = 'failed') => {
+    const admin = await createUser({ role: 'admin', email: 'retry-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'retry-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Nginx Gateway')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, {
+      status: orderStatus,
+      pipelineId: ['old-pipe'],
+    })
+    await db
+      .update(orders)
+      .set({ parameters: { hostname: 'web-01' }, pipelineStatus: { 'old-pipe': 'failed' } })
+      .where(eq(orders.id, order.id))
+    const el = await createInfraElement(order.id, project.id, env.id, product.id, {
+      parameters: { hostname: 'web-01' },
+      pipelineId: ['old-pipe'],
+    })
+    return { admin, pm, product, env, project, order, el }
+  }
+
+  const orderRow = async (id: number) =>
+    (await db.select().from(orders).where(eq(orders.id, id)))[0]
+  const infraRow = async (id: number) =>
+    (await db.select().from(infrastructureElements).where(eq(infrastructureElements.id, id)))[0]
+
+  it('returns 404 for an unknown element', async () => {
+    const { admin } = await failedDeployment()
+    const result = await retryProvisioning(makeSession(admin), 999_999)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+  })
+
+  it.each(['completed', 'provisioning', 'pending', 'rejected'])(
+    'refuses to retry an order that is %s',
+    async (status) => {
+      const { admin, el } = await failedDeployment(status)
+      const result = await retryProvisioning(makeSession(admin), el.id)
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.status).toBe(400)
+        expect(result.message).toMatch(new RegExp(status))
+      }
+    },
+  )
+
+  it('re-fires both trigger kinds with the ORIGINAL parameters', async () => {
+    // A retry must not quietly provision something different from what was
+    // approved, so the parameters come from the stored element.
+    const { admin, product, env, el } = await failedDeployment()
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-webhook'], failures: [] })
+    mockedStacks.mockResolvedValue({ pipelineIds: ['new-stack'], failures: [] })
+
+    const result = await retryProvisioning(makeSession(admin), el.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.pipelineIds).toEqual(['new-webhook', 'new-stack'])
+
+    for (const mock of [mockedWebhooks, mockedStacks]) {
+      expect(mock).toHaveBeenCalledWith(
+        product.id,
+        env.id,
+        expect.objectContaining({ hostname: 'web-01' }),
+      )
+    }
+  })
+
+  it('reuses the original ORDER_ID so the retry targets the same Terraform state', async () => {
+    const { admin, el, order } = await failedDeployment()
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+    mockedStacks.mockResolvedValue({ pipelineIds: [], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+    expect(mockedWebhooks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ ORDER_ID: String(order.id) }),
+    )
+  })
+
+  it('resets the order to provisioning and clears the previous attempt tracking', async () => {
+    const { admin, el, order } = await failedDeployment()
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+    mockedStacks.mockResolvedValue({ pipelineIds: [], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const updated = await orderRow(order.id)
+    expect(updated.status).toBe('provisioning')
+    // The failed attempt's ids and statuses must be gone, or the callback
+    // handler would still be reconciling against them.
+    expect(updated.pipelineId).toEqual(['new-pipe'])
+    expect(updated.pipelineStatus).toEqual({})
+  })
+
+  it('repoints the element at the new pipelines and clears stale outputs', async () => {
+    const { admin, el } = await failedDeployment()
+    await db.update(infrastructureElements).set({ outputs: { ip: '10.0.0.1' } }).where(eq(infrastructureElements.id, el.id))
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+    mockedStacks.mockResolvedValue({ pipelineIds: [], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const updated = await infraRow(el.id)
+    expect(updated.pipelineId).toEqual(['new-pipe'])
+    expect(updated.pipelineStatus).toEqual({})
+    // Outputs described infrastructure this retry is about to replace.
+    expect(updated.outputs).toEqual({})
+    expect(updated.status).toBe('active')
+  })
+
+  it('records an infra.retried audit entry', async () => {
+    const { admin, el } = await failedDeployment()
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+    mockedStacks.mockResolvedValue({ pipelineIds: [], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const entries = await db.select().from(auditLog).where(eq(auditLog.action, 'infra.retried'))
+    expect(entries).toHaveLength(1)
+    expect(entries[0].entityId).toBe(el.id)
+    expect(entries[0].userId).toBe(admin.id)
+  })
+
+  it('hands the order back to failed when nothing could be started', async () => {
+    // Otherwise it would sit in 'provisioning' forever, waiting for a callback
+    // that no pipeline will ever send — and the Retry button would be gone.
+    const { admin, el, order } = await failedDeployment()
+    mockedWebhooks.mockResolvedValue({ pipelineIds: [], failures: ['webhook "a" (#1): boom'] })
+    mockedStacks.mockResolvedValue({ pipelineIds: [], failures: [] })
+
+    const result = await retryProvisioning(makeSession(admin), el.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(502)
+      expect(result.message).toMatch(/could not start/i)
+    }
+
+    expect((await orderRow(order.id)).status).toBe('failed')
+    const entries = await db.select().from(auditLog).where(eq(auditLog.action, 'infra.retry_failed'))
+    expect(entries).toHaveLength(1)
+  })
+
+  it('hands the order back to failed when a trigger throws outright', async () => {
+    const { admin, el, order } = await failedDeployment()
+    mockedWebhooks.mockRejectedValue(new Error('CI unreachable'))
+
+    await expect(retryProvisioning(makeSession(admin), el.id)).rejects.toThrow('CI unreachable')
+    expect((await orderRow(order.id)).status).toBe('failed')
+  })
+
+  it('reports a partial retry and records a sentinel so it cannot complete silently', async () => {
+    // Started pipelines cannot be recalled, so the order stays 'provisioning' —
+    // but a trigger that never fired contributes no pipeline id, so without the
+    // sentinel the order would complete as soon as the others succeed.
+    const { admin, el, order } = await failedDeployment()
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['started'], failures: [] })
+    mockedStacks.mockResolvedValue({ pipelineIds: [], failures: ['stack "b" (#2): boom'] })
+
+    const result = await retryProvisioning(makeSession(admin), el.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(502)
+      expect(result.message).toMatch(/could not be started/i)
+    }
+
+    const updated = await orderRow(order.id)
+    expect(updated.status).toBe('provisioning')
+    expect(updated.pipelineId).toEqual(['started'])
+    expect(updated.pipelineStatus).toMatchObject({ 'trigger-failed:0': 'stack "b" (#2): boom' })
+    // The attempt still happened, so it is still audited as a retry.
+    const entries = await db.select().from(auditLog).where(eq(auditLog.action, 'infra.retried'))
+    expect(entries).toHaveLength(1)
+  })
+
+  it('lets only one of two concurrent retries fire pipelines', async () => {
+    const { admin, el } = await failedDeployment()
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+    mockedStacks.mockResolvedValue({ pipelineIds: [], failures: [] })
+
+    const [first, second] = await Promise.all([
+      retryProvisioning(makeSession(admin), el.id),
+      retryProvisioning(makeSession(admin), el.id),
+    ])
+
+    // Exactly one wins the failed → provisioning claim; a double-clicked Retry
+    // must not fire two sets of pipelines at the same infrastructure.
+    const outcomes = [first.ok, second.ok].filter(Boolean)
+    expect(outcomes).toHaveLength(1)
+    const loser = first.ok ? second : first
+    if (!loser.ok) expect([400, 409]).toContain(loser.status)
+    expect(mockedWebhooks).toHaveBeenCalledTimes(1)
   })
 })

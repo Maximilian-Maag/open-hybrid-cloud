@@ -384,6 +384,13 @@ export interface InfrastructureElement {
   productName?: string
   environmentName?: string
   projectName?: string
+  /**
+   * Status of the order this element came from. The element's own status cannot
+   * express a failed deployment — it is created `active` when provisioning starts
+   * and stays there if the pipeline fails — so a failed deployment is
+   * `status: 'active'` with `orderStatus: 'failed'`.
+   */
+  orderStatus?: OrderStatus | null
 }
 
 /** Option lists for the infrastructure list filters (GET /infrastructure/facets). */

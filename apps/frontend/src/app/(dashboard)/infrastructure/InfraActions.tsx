@@ -14,13 +14,38 @@ interface Props {
   item: InfrastructureElement
   token: string
   lang?: string
+  /** Retry re-fires CI pipelines, so it is offered to admin and root only. */
+  canRetry?: boolean
 }
 
-export function InfraActions({ item, token, lang = 'en' }: Props) {
+export function InfraActions({ item, token, lang = 'en', canRetry = false }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [retryOpen, setRetryOpen] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
+
+  // The element is 'active' whether or not provisioning succeeded — it is created
+  // when provisioning starts — so the failure lives on the order.
+  const deploymentFailed = item.orderStatus === 'failed'
+
+  async function handleRetry() {
+    setRetrying(true)
+    setRetryError(null)
+    try {
+      await post(`/api/infrastructure/${item.id}/retry`, {}, token)
+      setRetryOpen(false)
+      router.refresh()
+    } catch (err) {
+      // Keep the dialog open: a partial retry comes back 502 with the list of
+      // triggers that still need attention, which is the whole message.
+      setRetryError(err instanceof Error ? err.message : t('orderError', lang))
+    } finally {
+      setRetrying(false)
+    }
+  }
 
 
   async function handleDecommission() {
@@ -53,11 +78,30 @@ export function InfraActions({ item, token, lang = 'en' }: Props) {
       >
         {t('reorder', lang)}
       </Link>
-      {item.status === 'active' && (
+      {canRetry && deploymentFailed && (
+        <Button variant="secondary" size="sm" onClick={() => { setRetryError(null); setRetryOpen(true) }}>
+          {t('retry', lang)}
+        </Button>
+      )}
+      {item.status === 'active' && !deploymentFailed && (
         <Button variant="danger" size="sm" onClick={() => setOpen(true)}>
           {t('decommission', lang)}
         </Button>
       )}
+
+      <Modal open={retryOpen} onClose={() => setRetryOpen(false)} title={t('retryDeployment', lang)} size="sm">
+        <p className="text-sm text-slate-600 mb-4">
+          {t('retryWarning', lang)}{' '}
+          <strong>{item.productName ?? `element #${item.id}`}</strong>
+        </p>
+        {retryError && <Alert className="mb-4">{retryError}</Alert>}
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={() => setRetryOpen(false)}>{t('cancel', lang)}</Button>
+          <Button onClick={handleRetry} disabled={retrying}>
+            {retrying ? t('retrying', lang) : t('retry', lang)}
+          </Button>
+        </div>
+      </Modal>
       <Modal open={open} onClose={() => setOpen(false)} title={t('decommissionConfirm', lang)} size="sm">
         <p className="text-sm text-slate-600 mb-4">
           {t('decommissionWarning', lang)}{' '}

@@ -1,9 +1,10 @@
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
-import { infrastructureElements, deploymentEnvironments, projects } from '@/lib/db/schema'
-import { eq, sql, gte, lte } from 'drizzle-orm'
+import { infrastructureElements, deploymentEnvironments, projects, orders } from '@/lib/db/schema'
+import { eq, and, sql, gte, lte } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { fireDestroyTriggers } from '@/lib/services/teardown'
+import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { ok, err, type Result } from '@/lib/services/result'
 
 export interface InfraRow {
@@ -20,6 +21,16 @@ export interface InfraRow {
   productName: string
   environmentName: string | null
   projectName: string | null
+  /**
+   * Status of the order this element was provisioned from.
+   *
+   * Exposed because the element's own status cannot express a failed deployment:
+   * it is inserted `active` the moment provisioning starts and stays there when
+   * the pipeline fails. Without this the list shows `active` for infrastructure
+   * that was never successfully provisioned — and the Retry action (issue #29)
+   * has nothing to key off.
+   */
+  orderStatus: string | null
 }
 
 /** The `status` values an infrastructure element can actually hold. */
@@ -113,6 +124,7 @@ export const listInfrastructure = async (
       productName: productNameSql,
       environmentName: deploymentEnvironments.name,
       projectName: projects.name,
+      orderStatus: orders.status,
     })
     .from(infrastructureElements)
     .leftJoin(
@@ -120,6 +132,7 @@ export const listInfrastructure = async (
       eq(infrastructureElements.environmentId, deploymentEnvironments.id),
     )
     .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
+    .leftJoin(orders, eq(infrastructureElements.orderId, orders.id))
     .where(where)
     // Tie-break on id so a page of rows sharing a sort key (same status, same
     // deploy timestamp) comes back in a stable order across requests — an
@@ -185,6 +198,145 @@ export const listInfrastructureFacets = async (
     projects: collect(rows.map((r) => ({ id: r.projectId, name: r.projectName }))),
     products: collect(rows.map((r) => ({ id: r.productId, name: r.productName }))),
   })
+}
+
+/**
+ * Re-fire provisioning for an element whose deployment failed (issue #29).
+ *
+ * On the failure model, since issue #29 describes one this codebase does not
+ * have: there is no `failed` infrastructure status. The element is inserted as
+ * `active` the moment provisioning STARTS (see approveOrder / createOrder), and a
+ * failed pipeline sets `orders.status = 'failed'` while leaving the element
+ * `active` — claiming infrastructure that was never successfully provisioned.
+ * So the retryable condition lives on the order, and that is what this checks.
+ *
+ * Recovery uses the element's stored parameters, which are the ones the order was
+ * placed with, so a retry cannot quietly provision something different from what
+ * was approved. Previously the only route was a brand-new order, which duplicated
+ * the record and lost the original approval context.
+ */
+export const retryProvisioning = async (
+  session: SessionUser,
+  infraId: number,
+): Promise<Result<{ pipelineIds: string[] }>> => {
+  const [infra] = await db
+    .select()
+    .from(infrastructureElements)
+    .where(eq(infrastructureElements.id, infraId))
+    .limit(1)
+
+  if (!infra) return err(404, 'Infrastructure element not found')
+
+  const [order] = await db
+    .select({ id: orders.id, status: orders.status })
+    .from(orders)
+    .where(eq(orders.id, infra.orderId))
+    .limit(1)
+
+  if (!order) return err(404, 'Order not found')
+  if (order.status !== 'failed') {
+    return err(400, `Only a failed deployment can be retried — this order is ${order.status}`)
+  }
+
+  // Atomically claim the order (failed → provisioning) and clear the previous
+  // attempt's pipeline tracking in the same statement. Only one concurrent
+  // caller can win, so a double-clicked Retry cannot fire two sets of pipelines
+  // against the same infrastructure.
+  const claimed = await db
+    .update(orders)
+    .set({ status: 'provisioning', pipelineId: [], pipelineStatus: {}, updatedAt: new Date() })
+    .where(and(eq(orders.id, order.id), eq(orders.status, 'failed')))
+    .returning({ id: orders.id })
+
+  if (!claimed.length) return err(409, 'Retry already in progress for this deployment')
+
+  const variables = {
+    ...(infra.parameters as Record<string, string>),
+    // Pipeline stacks derive TF_STATE_NAME from stateKeyParam ?? ORDER_ID, and
+    // the stored parameters do not carry the server-generated order id. Reusing
+    // the ORIGINAL order id is the point: the retry has to target the same
+    // Terraform state the failed attempt was working on.
+    ORDER_ID: String(infra.orderId),
+  }
+
+  let outcome: { pipelineIds: string[]; failures: string[] }
+  try {
+    const webhooks = await triggerProductWebhooksTracked(infra.productId, infra.environmentId, variables)
+    const stacks = await triggerPipelineStacksTracked(infra.productId, infra.environmentId, variables)
+    outcome = {
+      pipelineIds: [...webhooks.pipelineIds, ...stacks.pipelineIds],
+      failures: [...webhooks.failures, ...stacks.failures],
+    }
+  } catch (e) {
+    await releaseRetryClaim(order.id)
+    throw e
+  }
+
+  if (outcome.pipelineIds.length === 0) {
+    // Nothing started, so nothing changed: hand the order back to 'failed' so
+    // the Retry button stays available rather than leaving it stuck in a
+    // 'provisioning' state no callback will ever resolve.
+    await releaseRetryClaim(order.id)
+    await logAudit(
+      session.id,
+      'infra.retry_failed',
+      infraId,
+      `No pipeline could be started: ${outcome.failures.join('; ')}`,
+    )
+    return err(502, `Could not start the deployment: ${outcome.failures.join('; ')}`)
+  }
+
+  // Sentinel per trigger that failed to start, mirroring fireDestroyTriggers. A
+  // failed trigger contributes no pipeline id, so without this the order would
+  // complete as soon as the pipelines that DID start succeed — reporting a
+  // successful retry while one webhook never fired.
+  const pipelineStatus: Record<string, string> = {}
+  outcome.failures.forEach((failure, i) => {
+    pipelineStatus[`trigger-failed:${i}`] = failure
+  })
+
+  await db
+    .update(orders)
+    .set({ pipelineId: outcome.pipelineIds, pipelineStatus, updatedAt: new Date() })
+    .where(eq(orders.id, order.id))
+
+  await db
+    .update(infrastructureElements)
+    .set({
+      status: 'active',
+      pipelineId: outcome.pipelineIds,
+      pipelineStatus: {},
+      // Outputs are parsed from the job trace on success. Any left over from an
+      // earlier attempt describe infrastructure this retry is about to replace.
+      outputs: {},
+    })
+    .where(eq(infrastructureElements.id, infraId))
+
+  await logAudit(
+    session.id,
+    'infra.retried',
+    infraId,
+    `Deployment retried by ${session.email} (order #${infra.orderId}, ${outcome.pipelineIds.length} pipeline(s))`,
+  )
+
+  if (outcome.failures.length > 0) {
+    // Some pipelines ARE running and cannot be recalled, so the order stays
+    // 'provisioning' and the sentinels above keep it from ever reporting itself
+    // complete. Tell the operator what still needs attention.
+    return err(
+      502,
+      `Retry started ${outcome.pipelineIds.length} pipeline(s), but ${outcome.failures.length} could not be started: ${outcome.failures.join('; ')}`,
+    )
+  }
+
+  return ok({ pipelineIds: outcome.pipelineIds })
+}
+
+const releaseRetryClaim = async (orderId: number): Promise<void> => {
+  await db
+    .update(orders)
+    .set({ status: 'failed', updatedAt: new Date() })
+    .where(eq(orders.id, orderId))
 }
 
 export const decommissionInfra = async (

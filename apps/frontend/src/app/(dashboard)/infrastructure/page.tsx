@@ -47,6 +47,8 @@ export default async function InfrastructurePage({ searchParams }: Props) {
   // only ever come back 403.
   const role = (session.user as unknown as { role: Role }).role
   const canExport = role === 'admin' || role === 'root'
+  // Retry re-fires CI pipelines against real infrastructure — same bar as export.
+  const canRetry = canExport
 
   const query = new URLSearchParams()
   for (const key of FILTER_KEYS) {
@@ -105,7 +107,7 @@ export default async function InfrastructurePage({ searchParams }: Props) {
           <Card key={projectName} title={projectName}>
             <div className="space-y-3">
               {items.map((item) => (
-                <InfraRow key={item.id} item={item} token={token} lang={lang} />
+                <InfraRow key={item.id} item={item} token={token} lang={lang} canRetry={canRetry} />
               ))}
             </div>
           </Card>
@@ -114,7 +116,7 @@ export default async function InfrastructurePage({ searchParams }: Props) {
         <Card>
           <div className="space-y-3">
             {elements.map((item) => (
-              <InfraRow key={item.id} item={item} token={token} lang={lang} showProject />
+              <InfraRow key={item.id} item={item} token={token} lang={lang} canRetry={canRetry} showProject />
             ))}
           </div>
         </Card>
@@ -127,16 +129,22 @@ function InfraRow({
   item,
   token,
   lang,
+  canRetry = false,
   showProject = false,
 }: {
   item: InfrastructureElement
   token: string
   lang: string
+  canRetry?: boolean
   /** Set in the flat (explicitly-sorted) view, where no Card header names it. */
   showProject?: boolean
 }) {
   const outputs = Object.entries(item.outputs ?? {})
   const outputLabel = outputs.length === 1 ? t('output', lang) : t('outputs', lang)
+  // An element whose provisioning pipeline failed is still stored as 'active' —
+  // it is created when provisioning starts. Showing only that badge claims
+  // infrastructure that was never successfully deployed, so say so explicitly.
+  const deploymentFailed = item.orderStatus === 'failed'
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="flex items-start justify-between">
@@ -145,7 +153,12 @@ function InfraRow({
             <span className="font-medium text-slate-900">
               {item.productName ?? `Product #${item.productId}`}
             </span>
-            <StatusBadge status={item.status} lang={lang} />
+            <StatusBadge status={deploymentFailed ? 'failed' : item.status} lang={lang} />
+            {deploymentFailed && (
+              <span className="text-xs text-slate-500">
+                {t('deploymentFailed', lang)} · #{item.orderId}
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500">
             {showProject && <>{item.projectName ?? `Project #${item.projectId}`} · </>}
@@ -168,7 +181,7 @@ function InfraRow({
             </details>
           )}
         </div>
-        <InfraActions item={item} token={token} lang={lang} />
+        <InfraActions item={item} token={token} lang={lang} canRetry={canRetry} />
       </div>
     </div>
   )

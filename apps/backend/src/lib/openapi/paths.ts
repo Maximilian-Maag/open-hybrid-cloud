@@ -112,6 +112,12 @@ const infraSchema = z.object({
   productName: z.string().nullable(),
   environmentName: z.string().nullable(),
   projectName: z.string().nullable(),
+  orderStatus: z.string().nullable().openapi({
+    description:
+      "Status of the order this element came from. The element's own status cannot express a failed " +
+      'deployment (it is created active when provisioning starts), so a failed deployment is ' +
+      "status: 'active' with orderStatus: 'failed'.",
+  }),
 })
 
 const auditEntrySchema = z.object({
@@ -740,6 +746,32 @@ registry.registerPath({
     400: { description: 'Invalid filter or format' },
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/infrastructure/{id}/retry',
+  summary: '[admin] Re-fire provisioning for a failed deployment',
+  description:
+    'Retries the deployment using the parameters the order was placed with, so a retry cannot ' +
+    'provision something different from what was approved. Only valid while the element\'s ORDER is ' +
+    "'failed' — the element itself has no failed status. Returns 502 if no pipeline could be started " +
+    '(the order is handed back to failed) or if only some could.',
+  tags: ['Infrastructure'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Retry started',
+      content: { 'application/json': { schema: z.object({ pipelineIds: z.array(z.string()) }) } },
+    },
+    400: { description: 'Invalid id, or the deployment is not in a failed state' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Infrastructure element or order not found' },
+    409: { description: 'A retry is already in progress' },
+    502: { description: 'No pipeline, or only some pipelines, could be started' },
   },
 })
 

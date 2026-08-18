@@ -222,3 +222,49 @@ test.describe('Infrastructure quick reorder', () => {
     await expect(templates).toHaveValue('')
   })
 })
+
+// Issue #29. The Retry action only appears for a deployment whose ORDER failed —
+// the element itself is stored 'active' either way — so this asserts the gating
+// and the confirmation, which hold whatever the stack happens to contain.
+test.describe('Infrastructure retry', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+    await page.goto('/infrastructure')
+  })
+
+  test('Retry is absent for deployments that did not fail', async ({ page }) => {
+    const emptyState = page.getByText(/no infrastructure elements yet/i)
+    const anyRow = page.getByRole('link', { name: /^reorder$/i }).first()
+    await expect(anyRow.or(emptyState)).toBeVisible({ timeout: 10000 })
+    if (await emptyState.isVisible()) { test.skip(); return }
+
+    // Every row offering Retry must also be showing the failed badge.
+    const retries = page.getByRole('button', { name: /^retry$/i })
+    const failedBadges = page.getByText(/deployment failed/i)
+    expect(await retries.count()).toBe(await failedBadges.count())
+  })
+
+  test('a failed deployment shows the failed state rather than claiming to be active', async ({ page }) => {
+    const failedBadge = page.getByText(/deployment failed/i).first()
+    if (await failedBadge.count() === 0) { test.skip(); return }
+    await expect(failedBadge).toBeVisible()
+
+    // Decommission is not offered — tearing down something never provisioned
+    // would fire a destroy against nothing.
+    const row = page.locator('div').filter({ has: failedBadge }).last()
+    await expect(row.getByRole('button', { name: /decommission/i })).toHaveCount(0)
+  })
+
+  test('Retry asks for confirmation and says the parameters are reused', async ({ page }) => {
+    const retry = page.getByRole('button', { name: /^retry$/i }).first()
+    if (await retry.count() === 0) { test.skip(); return }
+
+    await retry.click()
+    const dialog = page.locator('dialog[open]')
+    await expect(dialog.getByRole('heading', { name: /retry deployment/i })).toBeVisible()
+    await expect(dialog.getByText(/same parameters/i)).toBeVisible()
+
+    await dialog.getByRole('button', { name: /cancel/i }).click()
+    await expect(dialog).not.toBeVisible()
+  })
+})

@@ -1,7 +1,7 @@
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
 import { infrastructureElements, deploymentEnvironments, projects } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { eq, sql, gte, lte } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { fireDestroyTriggers } from '@/lib/services/teardown'
 import { ok, err, type Result } from '@/lib/services/result'
@@ -22,9 +22,41 @@ export interface InfraRow {
   projectName: string | null
 }
 
+/** The `status` values an infrastructure element can actually hold. */
+export const INFRA_STATUSES = ['active', 'decommissioning', 'decommissioned'] as const
+export type InfraStatus = (typeof INFRA_STATUSES)[number]
+
+export const INFRA_SORT_FIELDS = ['date', 'name', 'status'] as const
+export type InfraSortField = (typeof INFRA_SORT_FIELDS)[number]
+
+export interface InfraFilters {
+  productId?: number
+  projectId?: number
+  environmentId?: number
+  /** Free text matched against product, environment and project name. */
+  search?: string
+  status?: InfraStatus
+  /** Inclusive lower / upper bound on `deployed_at`. */
+  deployedFrom?: Date
+  deployedTo?: Date
+  sort?: InfraSortField
+  direction?: 'asc' | 'desc'
+}
+
+// Matched against the same expression the row displays, so a search hit is
+// always visibly explicable. Deliberately excludes `parameters`: the values
+// there include ones flagged sensitive, and a substring match would turn the
+// filter into an oracle for confirming a secret's value.
+const productNameSql = sql<string>`(
+  SELECT name FROM product_translations
+  WHERE product_id = ${infrastructureElements.productId}
+    AND language_code = 'en'
+  LIMIT 1
+)`
+
 export const listInfrastructure = async (
   session: SessionUser,
-  filters: { productId?: number; projectId?: number },
+  filters: InfraFilters,
 ): Promise<Result<InfraRow[]>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
 
@@ -32,10 +64,39 @@ export const listInfrastructure = async (
   if (!isAdmin) conditions.push(sql`${projects.ownerId} = ${session.id}`)
   if (filters.productId) conditions.push(sql`${infrastructureElements.productId} = ${filters.productId}`)
   if (filters.projectId) conditions.push(sql`${infrastructureElements.projectId} = ${filters.projectId}`)
+  if (filters.environmentId) conditions.push(sql`${infrastructureElements.environmentId} = ${filters.environmentId}`)
+  if (filters.status) conditions.push(sql`${infrastructureElements.status} = ${filters.status}`)
+
+  if (filters.search) {
+    // Escape the LIKE metacharacters so a literal % or _ in the query narrows
+    // the result set instead of widening it to everything.
+    const pattern = `%${filters.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+    conditions.push(sql`(
+      ${productNameSql} ILIKE ${pattern} ESCAPE '\\'
+      OR ${deploymentEnvironments.name} ILIKE ${pattern} ESCAPE '\\'
+      OR ${projects.name} ILIKE ${pattern} ESCAPE '\\'
+    )`)
+  }
+
+  // Both bounds are inclusive; the caller passes the exact boundary it wants
+  // (parseInfraFilters widens a bare date to cover the whole day). gte/lte
+  // rather than a raw sql template because the driver needs the column's type to
+  // bind a JS Date — a hand-written `>= ${date}` fails at query time.
+  if (filters.deployedFrom) conditions.push(gte(infrastructureElements.deployedAt, filters.deployedFrom))
+  if (filters.deployedTo) conditions.push(lte(infrastructureElements.deployedAt, filters.deployedTo))
 
   const where = conditions.length > 0
     ? conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`)
     : undefined
+
+  // Whitelisted rather than interpolated — the sort field reaches this from a
+  // query string.
+  const direction = filters.direction === 'asc' ? sql`ASC` : sql`DESC`
+  const orderBy = {
+    date: sql`${infrastructureElements.deployedAt} ${direction}`,
+    name: sql`${productNameSql} ${direction}`,
+    status: sql`${infrastructureElements.status} ${direction}`,
+  }[filters.sort ?? 'date']
 
   const rows = await db
     .select({
@@ -49,12 +110,7 @@ export const listInfrastructure = async (
       pipelineId: infrastructureElements.pipelineId,
       outputs: infrastructureElements.outputs,
       deployedAt: infrastructureElements.deployedAt,
-      productName: sql<string>`(
-        SELECT name FROM product_translations
-        WHERE product_id = ${infrastructureElements.productId}
-          AND language_code = 'en'
-        LIMIT 1
-      )`,
+      productName: productNameSql,
       environmentName: deploymentEnvironments.name,
       projectName: projects.name,
     })
@@ -65,9 +121,70 @@ export const listInfrastructure = async (
     )
     .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
     .where(where)
-    .orderBy(sql`${infrastructureElements.deployedAt} DESC`)
+    // Tie-break on id so a page of rows sharing a sort key (same status, same
+    // deploy timestamp) comes back in a stable order across requests — an
+    // export is expected to match the list it was taken from.
+    .orderBy(orderBy, sql`${infrastructureElements.id} DESC`)
 
   return ok(rows as InfraRow[])
+}
+
+export interface InfraFacets {
+  environments: { id: number; name: string }[]
+  projects: { id: number; name: string }[]
+  products: { id: number; name: string }[]
+}
+
+/**
+ * The distinct environments, projects and products present in the caller's
+ * visible infrastructure — the option lists for the list page's filters.
+ *
+ * Derived from the elements rather than from the admin catalogue endpoints for
+ * two reasons: those are root-only, so a project manager could not populate the
+ * dropdowns at all; and offering an environment with nothing deployed in it only
+ * gives the user a way to filter down to an empty list.
+ *
+ * Scoping mirrors listInfrastructure exactly, so the facets can never hint at
+ * the existence of a project the caller cannot otherwise see.
+ */
+export const listInfrastructureFacets = async (
+  session: SessionUser,
+): Promise<Result<InfraFacets>> => {
+  const isAdmin = session.role === 'admin' || session.role === 'root'
+  const scope = isAdmin ? undefined : sql`${projects.ownerId} = ${session.id}`
+
+  const rows = await db
+    .selectDistinct({
+      environmentId: infrastructureElements.environmentId,
+      environmentName: deploymentEnvironments.name,
+      projectId: infrastructureElements.projectId,
+      projectName: projects.name,
+      productId: infrastructureElements.productId,
+      productName: productNameSql,
+    })
+    .from(infrastructureElements)
+    .leftJoin(
+      deploymentEnvironments,
+      eq(infrastructureElements.environmentId, deploymentEnvironments.id),
+    )
+    .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
+    .where(scope)
+
+  const collect = (
+    pairs: { id: number; name: string | null }[],
+  ): { id: number; name: string }[] => {
+    const byId = new Map<number, string>()
+    for (const { id, name } of pairs) if (!byId.has(id)) byId.set(id, name ?? `#${id}`)
+    return [...byId.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  return ok({
+    environments: collect(rows.map((r) => ({ id: r.environmentId, name: r.environmentName }))),
+    projects: collect(rows.map((r) => ({ id: r.projectId, name: r.projectName }))),
+    products: collect(rows.map((r) => ({ id: r.productId, name: r.productName }))),
+  })
 }
 
 export const decommissionInfra = async (

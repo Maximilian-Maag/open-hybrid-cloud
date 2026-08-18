@@ -386,6 +386,15 @@ export interface InfrastructureElement {
   projectName?: string
 }
 
+/** Option lists for the infrastructure list filters (GET /infrastructure/facets). */
+export interface InfraFacets {
+  environments: { id: number; name: string }[]
+  projects: { id: number; name: string }[]
+  products: { id: number; name: string }[]
+}
+
+export type InfraSortField = 'date' | 'name' | 'status'
+
 // Exchange Rates
 export interface ExchangeRate {
   currencyCode: string

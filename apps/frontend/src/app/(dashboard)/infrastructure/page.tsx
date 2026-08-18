@@ -2,12 +2,23 @@ import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import type { InfrastructureElement } from '@open-hybrid-cloud/types'
+import type { InfrastructureElement, InfraFacets } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from './InfraActions'
+import { InfraFilters } from './InfraFilters'
 import { t, isValidLang } from '@/lib/i18n'
+
+// Filters live in the URL (see InfraFilters), so every distinct filter
+// combination is its own render — nothing here may be cached across them.
+export const dynamic = 'force-dynamic'
+
+/** Query parameters forwarded to the API verbatim; anything else is ignored. */
+const FILTER_KEYS = [
+  'search', 'status', 'environmentId', 'projectId', 'productId',
+  'deployedFrom', 'deployedTo', 'sort', 'direction',
+] as const
 
 async function detectLang(): Promise<string> {
   const cookieStore = await cookies()
@@ -20,21 +31,47 @@ async function detectLang(): Promise<string> {
   return 'en'
 }
 
-export default async function InfrastructurePage() {
+interface Props {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+export default async function InfrastructurePage({ searchParams }: Props) {
   const session = await auth()
   if (!session) redirect('/login')
 
   const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await detectLang()
+  const params = await searchParams
 
-  let elements: InfrastructureElement[] = []
-  try {
-    elements = (await get<InfrastructureElement[]>('/api/infrastructure', token)) ?? []
-  } catch {
-    /* empty */
+  const query = new URLSearchParams()
+  for (const key of FILTER_KEYS) {
+    const raw = params[key]
+    // Take the first value if a key was repeated: the API expects one, and
+    // guessing which of two conflicting values was meant is worse than picking.
+    const value = Array.isArray(raw) ? raw[0] : raw
+    if (value) query.set(key, value)
   }
+  const qs = query.toString()
+  const isFiltered = qs !== ''
 
-  // Group by project
+  const [listRes, facetsRes] = await Promise.allSettled([
+    get<InfrastructureElement[]>(`/api/infrastructure${qs ? `?${qs}` : ''}`, token),
+    get<InfraFacets>('/api/infrastructure/facets', token),
+  ])
+
+  const elements = listRes.status === 'fulfilled' ? (listRes.value ?? []) : []
+  // Empty facets degrade to unpopulated dropdowns rather than a broken page —
+  // the free-text search and date filters still work.
+  const facets = facetsRes.status === 'fulfilled'
+    ? (facetsRes.value ?? { environments: [], projects: [], products: [] })
+    : { environments: [], projects: [], products: [] }
+
+  // Group by project — but only for the default date ordering. Bucketing by
+  // project silently overrides an explicit name or status sort, since the group
+  // a row lands in matters more than its position within it, so an explicit
+  // sort gets a flat list that actually honours it.
+  const sort = Array.isArray(params.sort) ? params.sort[0] : params.sort
+  const grouped = !sort || sort === 'date'
   const byProject: Record<string, InfrastructureElement[]> = {}
   for (const el of elements) {
     const key = el.projectName ?? `Project #${el.projectId}`
@@ -49,9 +86,15 @@ export default async function InfrastructurePage() {
         subtitle={t('infrastructureSubtitle', lang)}
       />
 
+      <InfraFilters facets={facets} lang={lang} resultCount={elements.length} />
+
       {elements.length === 0 ? (
-        <div className="text-center py-12 text-slate-600">{t('noInfrastructure', lang)}</div>
-      ) : (
+        <div className="text-center py-12 text-slate-600">
+          {/* Distinguish "nothing deployed" from "nothing matches" — the first is
+              a state to act on, the second means the filters are too narrow. */}
+          {isFiltered ? t('noMatchingInfrastructure', lang) : t('noInfrastructure', lang)}
+        </div>
+      ) : grouped ? (
         Object.entries(byProject).map(([projectName, items]) => (
           <Card key={projectName} title={projectName}>
             <div className="space-y-3">
@@ -61,12 +104,31 @@ export default async function InfrastructurePage() {
             </div>
           </Card>
         ))
+      ) : (
+        <Card>
+          <div className="space-y-3">
+            {elements.map((item) => (
+              <InfraRow key={item.id} item={item} token={token} lang={lang} showProject />
+            ))}
+          </div>
+        </Card>
       )}
     </div>
   )
 }
 
-function InfraRow({ item, token, lang }: { item: InfrastructureElement; token: string; lang: string }) {
+function InfraRow({
+  item,
+  token,
+  lang,
+  showProject = false,
+}: {
+  item: InfrastructureElement
+  token: string
+  lang: string
+  /** Set in the flat (explicitly-sorted) view, where no Card header names it. */
+  showProject?: boolean
+}) {
   const outputs = Object.entries(item.outputs ?? {})
   const outputLabel = outputs.length === 1 ? t('output', lang) : t('outputs', lang)
   return (
@@ -80,6 +142,7 @@ function InfraRow({ item, token, lang }: { item: InfrastructureElement; token: s
             <StatusBadge status={item.status} lang={lang} />
           </div>
           <p className="text-xs text-slate-500">
+            {showProject && <>{item.projectName ?? `Project #${item.projectId}`} · </>}
             {item.environmentName} ·{' '}
             {item.deployedAt ? new Date(item.deployedAt).toLocaleString(lang) : t('notDeployed', lang)}
           </p>

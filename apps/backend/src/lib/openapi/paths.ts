@@ -601,12 +601,52 @@ registry.registerPath({
     query: z.object({
       productId: z.string().optional(),
       projectId: z.string().optional(),
+      environmentId: z.string().optional(),
+      search: z.string().optional().openapi({
+        description: 'Free text matched against product, environment and project name',
+      }),
+      status: z.enum(['active', 'decommissioning', 'decommissioned', 'all']).optional(),
+      deployedFrom: z.string().optional().openapi({
+        description: 'Inclusive lower bound. A bare YYYY-MM-DD means the start of that day (UTC).',
+      }),
+      deployedTo: z.string().optional().openapi({
+        description: 'Inclusive upper bound. A bare YYYY-MM-DD means the END of that day (UTC).',
+      }),
+      sort: z.enum(['date', 'name', 'status']).optional(),
+      direction: z.enum(['asc', 'desc']).optional(),
     }),
   },
   responses: {
     200: {
       description: 'List of infrastructure elements',
       content: { 'application/json': { schema: z.array(infraSchema) } },
+    },
+    400: { description: 'Invalid filter' },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/infrastructure/facets',
+  summary: 'Distinct environments, projects and products present in the visible infrastructure',
+  description:
+    'Option lists for the infrastructure list filters. Scoped exactly like GET /infrastructure, ' +
+    'so a project manager only sees facets drawn from their own projects.',
+  tags: ['Infrastructure'],
+  security: bearerAuth,
+  responses: {
+    200: {
+      description: 'Facet values',
+      content: {
+        'application/json': {
+          schema: z.object({
+            environments: z.array(z.object({ id: z.number(), name: z.string() })),
+            projects: z.array(z.object({ id: z.number(), name: z.string() })),
+            products: z.array(z.object({ id: z.number(), name: z.string() })),
+          }),
+        },
+      },
     },
     401: { description: 'Unauthorized' },
   },

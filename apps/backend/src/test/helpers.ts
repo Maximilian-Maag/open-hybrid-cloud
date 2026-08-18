@@ -62,7 +62,7 @@ export const createCiSource = async (overrides?: { name?: string; url?: string }
 
 let envSeq = 0
 
-export const createEnvironment = async (ciSourceId: number, webhookToken?: string) => {
+export const createEnvironment = async (ciSourceId: number, webhookToken?: string, name?: string) => {
   // Default to a per-call unique token: callback_secret mirrors it (see below)
   // and is UNIQUE since migration 0006, so a shared default would collide for
   // any test that seeds more than one environment.
@@ -70,7 +70,7 @@ export const createEnvironment = async (ciSourceId: number, webhookToken?: strin
   const [env] = await db
     .insert(schema.deploymentEnvironments)
     .values({
-      name: 'Test Env',
+      name: name ?? 'Test Env',
       ciSourceId,
       webhookUrl: 'https://gitlab.example.com/api/v4/projects/1/trigger/pipeline',
       webhookToken: token,
@@ -111,10 +111,10 @@ export const linkProductEnvironment = async (
   return row
 }
 
-export const createProject = async (ownerId: number) => {
+export const createProject = async (ownerId: number, name?: string) => {
   const [project] = await db
     .insert(schema.projects)
-    .values({ name: 'Test Project', ownerId })
+    .values({ name: name ?? 'Test Project', ownerId })
     .returning()
   return project
 }
@@ -145,7 +145,13 @@ export const createInfraElement = async (
   projectId: number,
   environmentId: number,
   productId: number,
-  overrides?: { status?: string; pipelineId?: string[]; pipelineStatus?: Record<string, string> },
+  overrides?: {
+    status?: string
+    pipelineId?: string[]
+    pipelineStatus?: Record<string, string>
+    parameters?: Record<string, string>
+    deployedAt?: Date
+  },
 ) => {
   const [el] = await db
     .insert(schema.infrastructureElements)
@@ -157,6 +163,8 @@ export const createInfraElement = async (
       status: (overrides?.status ?? 'active') as schema.InfrastructureElement['status'],
       pipelineId: overrides?.pipelineId ?? [],
       pipelineStatus: overrides?.pipelineStatus ?? {},
+      ...(overrides?.parameters ? { parameters: overrides.parameters } : {}),
+      ...(overrides?.deployedAt ? { deployedAt: overrides.deployedAt } : {}),
     })
     .returning()
   return el

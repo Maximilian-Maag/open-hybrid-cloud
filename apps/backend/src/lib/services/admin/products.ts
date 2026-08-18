@@ -19,6 +19,7 @@ import { eq, sql, and, inArray } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
 import { fireDestroyTriggers } from '@/lib/services/teardown'
+import { recordProductVersion } from '@/lib/services/versions'
 
 export interface ProductAdminRow {
   id: number
@@ -42,10 +43,17 @@ export interface UpdateProductInput {
   baseLanguage?: string
   name?: string
   description?: string
+  /** Optional free text describing the change (issue #38). */
+  changelog?: string
+  /** Recorded as the version's author. */
+  userId?: number | null
 }
 
 export interface CreateProductEnvironmentInput {
   environmentId: number
+  /** Optional free text describing the change (issue #38). */
+  changelog?: string
+  userId?: number | null
   price?: string
   currency?: string
   costCenterMode?: 'project' | 'select' | 'overhead'
@@ -56,6 +64,8 @@ export interface CreateProductEnvironmentInput {
 }
 
 export interface UpdateProductEnvironmentInput {
+  changelog?: string
+  userId?: number | null
   price?: string
   currency?: string
   costCenterMode?: 'project' | 'select' | 'overhead'
@@ -173,7 +183,7 @@ export const updateProduct = async (
   id: number,
   input: UpdateProductInput,
 ): Promise<Result<Product>> => {
-  const { name, description, ...productFields } = input
+  const { name, description, changelog, userId, ...productFields } = input
 
   const existing = await db
     .select({ id: products.id, baseLanguage: products.baseLanguage })
@@ -224,7 +234,26 @@ export const updateProduct = async (
     .where(eq(products.id, id))
     .limit(1)
 
+  // A product-level change is not specific to one environment, so it carries no
+  // offering snapshot — there is no single one to take.
+  await recordProductVersion({
+    productId: id,
+    environmentId: null,
+    summary: describeProductChange(input),
+    changelog,
+    userId: userId ?? null,
+  })
+
   return ok(updated[0])
+}
+
+const describeProductChange = (input: UpdateProductInput): string => {
+  const changed: string[] = []
+  if (input.name !== undefined) changed.push('name')
+  if (input.description !== undefined) changed.push('description')
+  if (input.categoryId !== undefined) changed.push('category')
+  if (input.baseLanguage !== undefined) changed.push('base language')
+  return changed.length > 0 ? `Product updated: ${changed.join(', ')}` : 'Product updated'
 }
 
 export const deleteProduct = async (id: number): Promise<Result<void>> => {
@@ -434,6 +463,20 @@ export const createProductEnvironment = async (
     price, currency, costCenterMode, forcedCostCenter, overheadCostCenterId,
     trialEnabled, trialDurationMinutes,
   }
+
+  // Read before the write so the version entry can say what actually changed
+  // rather than just "saved".
+  const [previous] = await db
+    .select()
+    .from(productEnvironments)
+    .where(
+      and(
+        eq(productEnvironments.productId, id),
+        eq(productEnvironments.environmentId, environmentId),
+      ),
+    )
+    .limit(1)
+
   const [row] = await db
     .insert(productEnvironments)
     .values({ productId: id, environmentId, ...values })
@@ -443,7 +486,34 @@ export const createProductEnvironment = async (
     })
     .returning()
 
+  await recordProductVersion({
+    productId: id,
+    environmentId,
+    summary: previous ? describeOfferingChange(previous, row) : 'Environment offered',
+    changelog: input.changelog,
+    userId: input.userId ?? null,
+  })
+
   return ok(row)
+}
+
+/**
+ * Name the fields that changed, for the history row's summary.
+ *
+ * A summary derived from the actual before/after rather than from which fields the
+ * request happened to include: the admin form submits every field on every save, so
+ * "what was sent" would report a change on every row every time.
+ */
+const describeOfferingChange = (
+  before: ProductEnvironment,
+  after: ProductEnvironment,
+): string => {
+  const fields: (keyof ProductEnvironment)[] = [
+    'price', 'currency', 'costCenterMode', 'forcedCostCenter',
+    'overheadCostCenterId', 'trialEnabled', 'trialDurationMinutes',
+  ]
+  const changed = fields.filter((f) => String(before[f] ?? '') !== String(after[f] ?? ''))
+  return changed.length > 0 ? `Offering updated: ${changed.join(', ')}` : 'Offering saved (no change)'
 }
 
 export const updateProductEnvironment = async (
@@ -458,9 +528,21 @@ export const updateProductEnvironment = async (
     return err(400, 'The trial duration must be at least one minute')
   }
 
+  const [previous] = await db
+    .select()
+    .from(productEnvironments)
+    .where(
+      and(
+        eq(productEnvironments.productId, id),
+        eq(productEnvironments.environmentId, envId),
+      ),
+    )
+    .limit(1)
+
+  const { changelog, userId, ...columns } = input
   const [updated] = await db
     .update(productEnvironments)
-    .set(input)
+    .set(columns)
     .where(
       and(
         eq(productEnvironments.productId, id),
@@ -470,6 +552,15 @@ export const updateProductEnvironment = async (
     .returning()
 
   if (!updated) return err(404, 'Not found')
+
+  await recordProductVersion({
+    productId: id,
+    environmentId: envId,
+    summary: previous ? describeOfferingChange(previous, updated) : 'Offering updated',
+    changelog,
+    userId: userId ?? null,
+  })
+
   return ok(updated)
 }
 
@@ -509,6 +600,16 @@ export const deleteProductEnvironment = async (
     .returning({ productId: productEnvironments.productId })
 
   if (!deleted.length) return err(404, 'Not found')
+
+  // Recorded without a snapshot: there is no offering left to capture, and the
+  // withdrawal is exactly what a reader of the history needs to see.
+  await recordProductVersion({
+    productId: id,
+    environmentId: null,
+    summary: `Environment #${envId} withdrawn`,
+    userId: null,
+  })
+
   return ok(undefined)
 }
 

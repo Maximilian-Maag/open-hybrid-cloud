@@ -92,6 +92,13 @@
       "when": 1787097600000,
       "tag": "0012_order_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787184000000,
+      "tag": "0013_product_versioning",
+      "breakpoints": true
     }
   ]
 }

@@ -32,6 +32,12 @@ const orderSchema = z.object({
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
   isTrial: z.boolean().openapi({ description: 'Ordered as a time-boxed trial (issue #1).' }),
+  productSnapshot: z.unknown().nullable().openapi({
+    description:
+      'What the customer was offered when the order was placed (issue #38): product name and description, ' +
+      'price, currency, cost-centre rules and the parameter DEFINITIONS that applied. Sensitive defaults ' +
+      'are redacted. Null for orders placed before snapshots existed.',
+  }),
   productName: z.string().nullable(),
   environmentName: z.string().nullable(),
   userName: z.string().nullable(),
@@ -263,6 +269,80 @@ registry.registerPath({
     400: { description: 'Missing or invalid code / claims' },
     500: { description: 'Entra ID not configured' },
     502: { description: 'Token exchange failed' },
+  },
+})
+
+// ─── Product versioning ───────────────────────────────────────────────────────
+
+const productVersionSchema = z.object({
+  id: z.number(),
+  productId: z.number(),
+  environmentId: z.number().nullable(),
+  changelog: z.string(),
+  summary: z.string(),
+  snapshot: z.unknown().nullable(),
+  createdBy: z.number().nullable(),
+  createdAt: z.string().nullable(),
+  authorName: z.string().nullable(),
+  environmentName: z.string().nullable(),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/products/{id}/versions',
+  summary: "[root] Timeline of catalogue changes to a product",
+  description:
+    'Newest first. One entry per change that affects what a customer would be offered. An entry scoped to ' +
+    'an environment carries a configuration snapshot; a product-level change (rename, category) does not, ' +
+    'since there is no single offering to capture.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Version history',
+      content: { 'application/json': { schema: z.array(productVersionSchema) } },
+    },
+    400: { description: 'Invalid product id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/products/{id}/versions/diff',
+  summary: '[root] Compare two versions of a product',
+  description:
+    'Compares the fields that describe what a customer was offered. capturedAt and environmentName are ' +
+    'deliberately excluded: a later capture of the same configuration is not a change, and every version of ' +
+    'one offering names the same environment.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({ from: z.string(), to: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'Field and parameter changes between the two versions',
+      content: {
+        'application/json': {
+          schema: z.object({
+            fields: z.array(z.object({ field: z.string(), from: z.string(), to: z.string() })),
+            parameters: z.array(z.unknown()),
+            identical: z.boolean(),
+            fromVersionId: z.number(),
+            toVersionId: z.number(),
+          }),
+        },
+      },
+    },
+    400: { description: 'Missing/malformed ids, or a version with no snapshot to compare' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'A version id does not belong to this product' },
   },
 })
 
@@ -1637,6 +1717,9 @@ registry.registerPath({
             overheadCostCenterId: z.number().nullable().optional(),
             trialEnabled: z.boolean().optional(),
             trialDurationMinutes: z.number().int().positive().optional(),
+            changelog: z.string().max(2000).optional().openapi({
+              description: 'Optional free text describing the change; recorded in the product history (issue #38).',
+            }),
           }),
         },
       },
@@ -1672,6 +1755,9 @@ registry.registerPath({
             overheadCostCenterId: z.number().nullable().optional(),
             trialEnabled: z.boolean().optional(),
             trialDurationMinutes: z.number().int().positive().optional(),
+            changelog: z.string().max(2000).optional().openapi({
+              description: 'Optional free text describing the change; recorded in the product history (issue #38).',
+            }),
           }),
         },
       },

@@ -15,7 +15,7 @@ import { listOrders, getOrderById, createOrder } from './orders'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements, parameters } from '@/lib/db/schema'
+import { orders, infrastructureElements, parameters, productEnvironments } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -751,5 +751,102 @@ describe('createOrder — time-boxed trials', () => {
       .from(infrastructureElements)
       .where(eq(infrastructureElements.orderId, order.id))
     expect(infra).toHaveLength(0)
+  })
+})
+
+// Issue #38. Orders reference the product by id, so without a snapshot a later
+// price change silently rewrites what the order detail page reports as approved.
+describe('createOrder — product snapshot', () => {
+  const buildSnapshot = async () => {
+    const admin = await createUser({ role: 'admin', email: 'snap-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'snap-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Nginx Gateway')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id, undefined, 'AWS Frankfurt')
+    await linkProductEnvironment(product.id, env.id, { price: '10.00', currency: 'CHF' })
+    const project = await createProject(pm.id)
+    return {
+      admin,
+      pm,
+      product,
+      env,
+      base: { projectId: project.id, productId: product.id, environmentId: env.id, parameters: {} },
+    }
+  }
+
+  it('stores what was offered on an admin order', async () => {
+    const ctx = await buildSnapshot()
+    const result = await createOrder(makeSession(ctx.admin), ctx.base)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.productSnapshot).toMatchObject({
+      version: 1,
+      productName: 'Nginx Gateway',
+      environmentName: 'AWS Frankfurt',
+      price: '10.00',
+      currency: 'CHF',
+    })
+  })
+
+  it('stores it on a pending order too, at order time', async () => {
+    // The snapshot has to be what the customer SAW, so it is taken when the order
+    // is placed rather than when it is approved.
+    const ctx = await buildSnapshot()
+    const result = await createOrder(makeSession(ctx.pm), ctx.base)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.status).toBe('pending')
+    expect(row.productSnapshot?.price).toBe('10.00')
+  })
+
+  it('is unaffected by a later price change', async () => {
+    // This is the whole point: the order keeps reporting the price it was placed at.
+    const ctx = await buildSnapshot()
+    const result = await createOrder(makeSession(ctx.admin), ctx.base)
+    if (!result.ok) throw new Error('setup failed')
+
+    await linkProductEnvironment(ctx.product.id, ctx.env.id, { price: '99.00' })
+    await db
+      .update(productEnvironments)
+      .set({ price: '99.00' })
+      .where(eq(productEnvironments.productId, ctx.product.id))
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.productSnapshot?.price).toBe('10.00')
+  })
+
+  it('records the parameter definitions that applied', async () => {
+    const ctx = await buildSnapshot()
+    await db.insert(parameters).values({
+      scope: 'product', scopeId: ctx.product.id, name: 'REGION', type: 'string', defaultValue: 'eu-central-1',
+    })
+
+    const result = await createOrder(makeSession(ctx.admin), {
+      ...ctx.base,
+      parameters: { REGION: 'eu-west-1' },
+    })
+    if (!result.ok) throw new Error('setup failed')
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    // The DEFINITION, with its default — the submitted value lives in `parameters`.
+    expect(row.productSnapshot?.parameters).toMatchObject([{ name: 'REGION', defaultValue: 'eu-central-1' }])
+    expect(row.parameters).toEqual({ REGION: 'eu-west-1' })
+  })
+
+  it('surfaces the snapshot on the order read paths', async () => {
+    const ctx = await buildSnapshot()
+    const created = await createOrder(makeSession(ctx.admin), ctx.base)
+    if (!created.ok) throw new Error('setup failed')
+
+    const detail = await getOrderById(makeSession(ctx.admin), created.data.id)
+    expect(detail.ok && detail.data.productSnapshot?.price).toBe('10.00')
+
+    const listed = await listOrders(makeSession(ctx.admin))
+    expect(listed.ok && listed.data[0].productSnapshot?.price).toBe('10.00')
   })
 })

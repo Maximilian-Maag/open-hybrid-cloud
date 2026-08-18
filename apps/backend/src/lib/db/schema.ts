@@ -12,6 +12,7 @@ import {
   customType,
 } from 'drizzle-orm/pg-core'
 import type { StackStep } from '@open-hybrid-cloud/types'
+import type { ProductSnapshot } from '@/lib/services/snapshot'
 
 const bytea = customType<{ data: Buffer }>({
   dataType() { return 'bytea' },
@@ -140,6 +141,28 @@ export const productFavorites = pgTable('product_favorites', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [primaryKey({ columns: [t.userId, t.productId] })])
 
+// Timeline of catalogue changes to a product (issue #38). One row per change that
+// affects what a customer would be offered, so the history explains what an
+// existing order's snapshot differs FROM.
+export const productVersions = pgTable('product_versions', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
+  // Which offering the snapshot describes. Null for a change to the product itself
+  // (name, description, category) which is not specific to one environment.
+  environmentId: bigint('environment_id', { mode: 'number' }).references(() => deploymentEnvironments.id, { onDelete: 'set null' }),
+  // Optional free text from whoever made the change. The issue calls it optional;
+  // an empty string is the "no note" case rather than a null, so readers do not
+  // have to handle both.
+  changelog: text().notNull().default(''),
+  /** What changed, so the row is meaningful without diffing. */
+  summary: text().notNull().default(''),
+  snapshot: jsonb().$type<ProductSnapshot>(),
+  // No ON DELETE on the author: a version entry that loses its attribution stops
+  // being a history.
+  createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const costCenters = pgTable('cost_centers', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   code: text().notNull().unique(),
@@ -170,6 +193,12 @@ export const orders = pgTable('orders', {
   // approval, which is where the trial clock has to start and where the trial
   // variables have to be passed to CI.
   isTrial: boolean('is_trial').notNull().default(false),
+  // What the customer was actually offered when the order was placed (issue #38).
+  // Orders reference the product by id, so without this a later price change or a
+  // removed parameter silently rewrites history and the order detail page shows
+  // today's configuration as the one that was approved. Nullable: orders placed
+  // before this existed have no snapshot, and inventing one would be a lie.
+  productSnapshot: jsonb('product_snapshot').$type<ProductSnapshot>(),
   rejectionNote: text('rejection_note'),
   pipelineId: jsonb('pipeline_id').$type<string[]>().notNull().default([]),
   // Per-pipeline terminal status keyed by pipeline id, e.g.
@@ -275,6 +304,7 @@ export type ProductEnvironment = typeof productEnvironments.$inferSelect
 export type ProductWebhook = typeof productWebhooks.$inferSelect
 export type PipelineStack = typeof pipelineStacks.$inferSelect
 export type ProductFavorite = typeof productFavorites.$inferSelect
+export type ProductVersion = typeof productVersions.$inferSelect
 export type CostCenter = typeof costCenters.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type Order = typeof orders.$inferSelect

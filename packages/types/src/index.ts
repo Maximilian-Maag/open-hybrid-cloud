@@ -103,6 +103,8 @@ export interface UpdateProductRequest {
   baseLanguage?: string
   name?: string
   description?: string
+  /** Optional free text describing the change, recorded in the history (issue #38). */
+  changelog?: string
 }
 
 export interface ProductTranslation {
@@ -238,6 +240,8 @@ export interface UpsertProductEnvironmentRequest {
   overheadCostCenterId?: number | null
   trialEnabled?: boolean
   trialDurationMinutes?: number
+  /** Optional free text describing the change, recorded in the history (issue #38). */
+  changelog?: string
 }
 
 // Product Webhooks
@@ -363,6 +367,12 @@ export interface Order {
   updatedAt: string
   /** Ordered as a time-boxed trial (issue #1). */
   isTrial?: boolean
+  /**
+   * What the customer was offered when the order was placed (issue #38). Null for
+   * orders placed before snapshots existed — the order detail page falls back to
+   * the live product for those, and says so.
+   */
+  productSnapshot?: ProductSnapshot | null
   productName?: string
   environmentName?: string
   projectName?: string
@@ -381,6 +391,75 @@ export interface CreateOrderRequest {
    * needs an admin to approve it.
    */
   trial?: boolean
+}
+
+// ─── Product versioning (issue #38) ───────────────────────────────────────────
+
+/** One parameter definition as it stood when a snapshot was taken. */
+export interface ParameterSnapshot {
+  name: string
+  label: string
+  type: string
+  description: string
+  /** '[redacted]' when the parameter is flagged sensitive. */
+  defaultValue: string
+  required: boolean
+  sensitive: boolean
+}
+
+/**
+ * Point-in-time capture of what a customer was offered.
+ *
+ * Stored on the order so a later price change or removed parameter cannot rewrite
+ * what the order detail page reports as approved.
+ */
+export interface ProductSnapshot {
+  version: 1
+  capturedAt: string
+  productName: string
+  productDescription: string
+  environmentName: string
+  price: string
+  currency: string
+  costCenterMode: CostCenterMode
+  forcedCostCenter: boolean
+  trialEnabled: boolean
+  trialDurationMinutes: number
+  parameters: ParameterSnapshot[]
+}
+
+/** One entry in a product's change history. */
+export interface ProductVersion {
+  id: number
+  productId: number
+  /** Null for a change to the product itself rather than to one offering. */
+  environmentId: number | null
+  changelog: string
+  summary: string
+  snapshot: ProductSnapshot | null
+  createdBy: number | null
+  createdAt: string
+  authorName: string | null
+  environmentName: string | null
+}
+
+export interface SnapshotFieldChange {
+  field: string
+  from: string
+  to: string
+}
+
+export type SnapshotParameterChange =
+  | { kind: 'added'; name: string; to: ParameterSnapshot }
+  | { kind: 'removed'; name: string; from: ParameterSnapshot }
+  | { kind: 'changed'; name: string; fields: SnapshotFieldChange[] }
+
+export interface ProductVersionDiff {
+  fields: SnapshotFieldChange[]
+  parameters: SnapshotParameterChange[]
+  identical: boolean
+  fromVersionId: number
+  toVersionId: number
 }
 
 /**

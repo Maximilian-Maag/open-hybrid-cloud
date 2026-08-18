@@ -47,6 +47,16 @@ export default async function OrderDetailPage({ params }: Props) {
 
   const paramEntries = Object.entries(order.parameters ?? {})
 
+  // Issue #38: render from the snapshot taken when the order was placed, not from
+  // the live product. Showing today's price and description on a months-old order
+  // silently misreports what was approved. Orders placed before snapshots existed
+  // have none, and the page says so rather than pretending.
+  const snapshot = order.productSnapshot ?? null
+  // The snapshot records the DEFINITIONS that applied; the submitted values live in
+  // order.parameters. Pairing them lets the page label a value with the definition
+  // it was validated against, even if that definition has since been removed.
+  const snapshotParams = new Map((snapshot?.parameters ?? []).map((p) => [p.name, p]))
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <PageHeader
@@ -62,8 +72,16 @@ export default async function OrderDetailPage({ params }: Props) {
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
           <div>
             <dt className="font-medium text-slate-500">{t('product', lang)}</dt>
-            <dd className="text-slate-900">{order.productName ?? `#${order.productId}`}</dd>
+            <dd className="text-slate-900">{snapshot?.productName ?? order.productName ?? `#${order.productId}`}</dd>
           </div>
+          {snapshot && (
+            <div>
+              <dt className="font-medium text-slate-500">{t('price', lang)}</dt>
+              <dd className="text-slate-900">
+                {snapshot.price} {snapshot.currency}
+              </dd>
+            </div>
+          )}
           <div>
             <dt className="font-medium text-slate-500">{t('status', lang)}</dt>
             <dd><StatusBadge status={order.status} lang={lang} /></dd>
@@ -96,6 +114,12 @@ export default async function OrderDetailPage({ params }: Props) {
           )}
         </dl>
 
+        <p className="mt-4 text-xs text-slate-500">
+          {snapshot
+            ? `${t('asOrdered', lang)} — ${t('asOrderedHint', lang)}`
+            : t('noSnapshotHint', lang)}
+        </p>
+
         {order.status === 'rejected' && order.rejectionNote && (
           <Alert className="mt-4">
             <p className="text-sm font-medium text-red-800 mb-1">{t('rejectionNote', lang)}</p>
@@ -115,12 +139,22 @@ export default async function OrderDetailPage({ params }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {paramEntries.map(([key, val]) => (
-                  <tr key={key}>
-                    <td className="py-2 pr-4 font-mono text-xs text-slate-600">{key}</td>
-                    <td className="py-2 font-mono text-xs text-slate-900 break-all">{val}</td>
-                  </tr>
-                ))}
+                {paramEntries.map(([key, val]) => {
+                  const def = snapshotParams.get(key)
+                  return (
+                    <tr key={key}>
+                      <td className="py-2 pr-4 text-xs text-slate-600">
+                        {/* The label as it was at order time; the raw name stays
+                            visible because that is what reaches the pipeline. */}
+                        {def?.label ? <span className="text-slate-900">{def.label} </span> : null}
+                        <span className="font-mono">{key}</span>
+                      </td>
+                      <td className="py-2 font-mono text-xs text-slate-900 break-all">
+                        {def?.sensitive ? '••••••' : val}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

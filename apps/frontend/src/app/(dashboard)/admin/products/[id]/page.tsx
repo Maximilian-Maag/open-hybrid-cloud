@@ -10,6 +10,7 @@ import type {
   CostCenter,
 } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/api'
+import { getLang } from '@/lib/getLang'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { ProductEditForm } from './ProductEditForm'
@@ -25,6 +26,7 @@ export default async function AdminProductDetailPage({ params }: Props) {
   const role = (session.user as unknown as { role: Role }).role
   if (role !== 'root') redirect('/admin')
   const token = (session as unknown as { apiToken: string }).apiToken
+  const lang = await getLang()
 
   const [productRes, categoriesRes, environmentsRes, translationsRes, costCentersRes] = await Promise.allSettled([
     get<ProductDetail>(`/api/admin/products/${id}`, token),
@@ -61,6 +63,7 @@ export default async function AdminProductDetailPage({ params }: Props) {
         translations={translations}
         costCenters={costCenters}
         token={token}
+        lang={lang}
       />
     </div>
   )

@@ -137,3 +137,25 @@ test.describe('Order comments', () => {
     await expect(page.getByText(body)).toHaveCount(0, { timeout: 8000 })
   })
 })
+
+// Issue #38. The order detail page renders from the snapshot taken at order time,
+// so it reports what was approved rather than today's catalogue.
+test.describe('Order product snapshot', () => {
+  test('the detail page says which configuration it is showing', async ({ page }) => {
+    await loginAsRoot(page)
+    await page.goto('/orders')
+    const detailLinks = page.getByRole('link', { name: /^#\d+$/ })
+    const noOrders = page.getByText(/no orders/i)
+    await expect(detailLinks.first().or(noOrders)).toBeVisible({ timeout: 10000 })
+    if (await noOrders.isVisible()) { test.skip(); return }
+
+    await detailLinks.first().click()
+    await expect(page.getByRole('heading', { name: /order details/i })).toBeVisible({ timeout: 10000 })
+
+    // Either the order has a snapshot and says the values are from order time, or
+    // it predates snapshots and says that instead. Silence would be the bug.
+    const asOrdered = page.getByText(/values are from the moment the order was placed/i)
+    const noSnapshot = page.getByText(/predates snapshots/i)
+    await expect(asOrdered.or(noSnapshot)).toBeVisible()
+  })
+})

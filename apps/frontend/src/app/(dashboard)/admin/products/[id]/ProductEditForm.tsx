@@ -30,6 +30,8 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { ProductVersionHistory } from './ProductVersionHistory'
+import { t } from '@/lib/i18n'
 
 const LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -51,9 +53,11 @@ interface Props {
   translations: ProductTranslation[]
   costCenters: CostCenter[]
   token: string
+  /** The rest of this form is English-only admin chrome; only the new strings are translated. */
+  lang?: string
 }
 
-export function ProductEditForm({ product, categories, environments, translations: initTranslations, costCenters, token }: Props) {
+export function ProductEditForm({ product, categories, environments, translations: initTranslations, costCenters, token, lang = 'en' }: Props) {
   const router = useRouter()
 
   // Basic info
@@ -61,7 +65,11 @@ export function ProductEditForm({ product, categories, environments, translation
   const [description, setDescription] = useState(product.description)
   const [categoryId, setCategoryId] = useState(String(product.categoryId))
   const [baseLanguage, setBaseLanguage] = useState(product.baseLanguage)
+  const [changelog, setChangelog] = useState('')
   const [saving, setSaving] = useState(false)
+  // Bumped after a save so the history panel refetches and shows the entry the
+  // save just created.
+  const [historyKey, setHistoryKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
@@ -131,8 +139,13 @@ export function ProductEditForm({ product, categories, environments, translation
         description: description.trim(),
         categoryId: Number(categoryId),
         baseLanguage,
+        // Optional, and cleared after saving: a changelog note describes one
+        // change, so carrying it into the next save would misattribute it.
+        ...(changelog.trim() ? { changelog: changelog.trim() } : {}),
       }
       await put(`/api/admin/products/${product.id}`, body, token)
+      setChangelog('')
+      setHistoryKey((k) => k + 1)
       setSuccess(true)
       router.refresh()
     } catch (e) {
@@ -469,10 +482,31 @@ export function ProductEditForm({ product, categories, environments, translation
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
+          {/* Optional, per the issue. Cleared after saving, since a note describes
+              one change and carrying it forward would misattribute it. */}
+          <div className="flex flex-col gap-1">
+            <label htmlFor="product-changelog" className="text-sm font-medium text-slate-700">
+              {t('changelog', lang)}
+            </label>
+            <textarea
+              id="product-changelog"
+              value={changelog}
+              onChange={(e) => setChangelog(e.target.value)}
+              rows={2}
+              maxLength={2000}
+              placeholder={t('changelogHint', lang)}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p className="text-xs text-slate-500">{t('changelogHint', lang)}</p>
+          </div>
           <div className="flex justify-end">
             <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
           </div>
         </form>
+      </Card>
+
+      {/* Version history (issue #38) */}
+      <Card title={t('versionHistory', lang)}>
+        <ProductVersionHistory key={historyKey} productId={product.id} token={token} lang={lang} />
       </Card>
 
       {/* Translations */}

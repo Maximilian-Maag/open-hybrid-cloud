@@ -19,6 +19,7 @@ import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@
 import { ok, err, type Result } from '@/lib/services/result'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
 import { resolveTrial, trialVariables, trialExpiry } from '@/lib/services/trial'
+import { captureProductSnapshot, type ProductSnapshot } from '@/lib/services/snapshot'
 
 export interface OrderRow {
   id: number
@@ -35,6 +36,11 @@ export interface OrderRow {
   updatedAt: Date
   /** Ordered as a time-boxed trial (issue #1). */
   isTrial: boolean
+  /**
+   * What the customer was offered when the order was placed (issue #38). Null for
+   * orders placed before snapshots existed.
+   */
+  productSnapshot: ProductSnapshot | null
   productName: string
   environmentName: string | null
   userName: string | null
@@ -85,6 +91,7 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
       isTrial: orders.isTrial,
+      productSnapshot: orders.productSnapshot,
       productName: sql<string>`(
         SELECT name FROM product_translations
         WHERE product_id = ${orders.productId}
@@ -122,6 +129,7 @@ export const getOrderById = async (
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
       isTrial: orders.isTrial,
+      productSnapshot: orders.productSnapshot,
       productName: sql<string>`(
         SELECT name FROM product_translations
         WHERE product_id = ${orders.productId}
@@ -332,6 +340,11 @@ export const createOrder = async (
   if (!validated.ok) return validated
   const parameters = validated.data
 
+  // Captured once, before either branch inserts, so both an admin's direct order
+  // and a project manager's pending order record what was actually offered
+  // (issue #38). Taken after validation, so the offering is known to exist.
+  const productSnapshot = await captureProductSnapshot(productId, product.categoryId, environmentId)
+
   if (isAdmin) {
     const [order] = await db
       .insert(orders)
@@ -344,6 +357,7 @@ export const createOrder = async (
         parameters,
         costCenterId: resolvedCostCenterId,
         isTrial,
+        productSnapshot,
       })
       .returning()
 
@@ -400,6 +414,7 @@ export const createOrder = async (
         // Carried to approval time, which is where the trial is actually
         // provisioned and where its clock starts.
         isTrial,
+        productSnapshot,
       })
       .returning()
 

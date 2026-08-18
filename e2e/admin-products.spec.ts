@@ -165,3 +165,42 @@ test.describe('Admin - Trial Offerings', () => {
     await trialToggle.uncheck()
   })
 })
+
+// Issue #38. History rows appear as a side effect of edits, so what is asserted
+// here is that the panel exists and the changelog field feeds it.
+test.describe('Admin - Product Version History', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+    await page.goto('/admin/products')
+  })
+
+  test('the product edit page carries a version history panel', async ({ page }) => {
+    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    await expect(page.getByRole('heading', { name: /version history/i })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByLabel(/^changelog$/i)).toBeVisible()
+  })
+
+  test('saving with a changelog note adds it to the history', async ({ page }) => {
+    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    await expect(page.getByLabel(/^changelog$/i)).toBeVisible({ timeout: 10000 })
+
+    const note = `e2e changelog ${Date.now()}`
+    await page.getByLabel(/^changelog$/i).fill(note)
+    // The first Save button belongs to the basic-info form.
+    await page.getByRole('button', { name: /^save$/i }).first().click()
+
+    await expect(page.getByText(note)).toBeVisible({ timeout: 10000 })
+    // Cleared after saving, since a note describes one change.
+    await expect(page.getByLabel(/^changelog$/i)).toHaveValue('')
+  })
+})

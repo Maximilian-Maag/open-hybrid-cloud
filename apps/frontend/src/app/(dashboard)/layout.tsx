@@ -39,6 +39,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
     if (res.ok) branding = await res.json()
   } catch { /* use defaults */ }
 
+  // The header badge needs the count on first paint, so it is fetched here rather
+  // than by the client component. Non-fatal: a cart outage costs the badge, not
+  // the whole shell.
+  let cartCount = 0
+  try {
+    const res = await fetch(`${API_SSR}/api/cart`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    })
+    if (res.ok) {
+      const items: unknown = await res.json()
+      if (Array.isArray(items)) cartCount = items.length
+    }
+  } catch { /* leave the badge off */ }
+
   let logoDataUrl: string | null = null
   if (branding.logoMime) {
     try {
@@ -94,6 +109,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         shopName={shopName}
         logoDataUrl={logoDataUrl}
         lang={lang}
+        cartCount={cartCount}
       />
       <TopNav role={role} lang={lang} />
       <main id="main" tabIndex={-1} className="flex-1">

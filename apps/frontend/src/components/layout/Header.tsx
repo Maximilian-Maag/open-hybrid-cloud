@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
 import { LanguageSwitcher } from './LanguageSwitcher'
+import { CartLink } from './CartLink'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
@@ -13,6 +14,8 @@ interface HeaderProps {
   shopName?: string
   logoDataUrl?: string | null
   lang?: string
+  /** Items in the caller's cart, rendered as the badge on the cart link. */
+  cartCount?: number
 }
 
 export function Header({
@@ -20,6 +23,7 @@ export function Header({
   shopName = 'Open Hybrid Cloud',
   logoDataUrl,
   lang: initialLang = 'en',
+  cartCount = 0,
 }: HeaderProps) {
   const router = useRouter()
   const lang = useLang(initialLang)
@@ -68,8 +72,11 @@ export function Header({
           </div>
         </form>
 
-        {/* Right controls */}
+        {/* Right controls, ending in the cart — the one control a shop is built
+            around belongs at the far right, not among the section links below. */}
         <div className="ml-auto flex items-center gap-3">
+          <LanguageSwitcher lang={lang} />
+
           {/* User dropdown */}
           <details className="relative group">
             <summary className="list-none cursor-pointer select-none flex flex-col items-end leading-tight rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
@@ -92,7 +99,7 @@ export function Header({
             </div>
           </details>
 
-          <LanguageSwitcher lang={lang} />
+          <CartLink count={cartCount} lang={lang} />
         </div>
       </div>
     </header>

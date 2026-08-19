@@ -29,7 +29,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateParameter(parseInt(id, 10), parsed.data))
+  return toResponse(await updateParameter(parseInt(id, 10), parsed.data, session.id))
 }
 
 export async function DELETE(
@@ -40,5 +40,5 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await deleteParameter(parseInt(id, 10)))
+  return toResponse(await deleteParameter(parseInt(id, 10), session.id))
 }

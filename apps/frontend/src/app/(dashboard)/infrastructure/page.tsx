@@ -66,6 +66,11 @@ export default async function InfrastructurePage({ searchParams }: Props) {
     get<InfraFacets>('/api/infrastructure/facets', token),
   ])
 
+  // A rejected list is NOT an empty inventory. An invalid bookmarked filter comes
+  // back 400 — exactly what parseInfraFilters rejects rather than silently ignores —
+  // and a backend outage rejects too; showing "nothing matches" for either claims
+  // the infrastructure is gone.
+  const listFailed = listRes.status === 'rejected'
   const elements = listRes.status === 'fulfilled' ? (listRes.value ?? []) : []
   // Empty facets degrade to unpopulated dropdowns rather than a broken page —
   // the free-text search and date filters still work.
@@ -96,7 +101,11 @@ export default async function InfrastructurePage({ searchParams }: Props) {
 
       <InfraFilters facets={facets} lang={lang} resultCount={elements.length} />
 
-      {elements.length === 0 ? (
+      {listFailed ? (
+        <div className="text-center py-12 text-red-600" role="alert">
+          {t('unexpectedError', lang)}
+        </div>
+      ) : elements.length === 0 ? (
         <div className="text-center py-12 text-slate-600">
           {/* Distinguish "nothing deployed" from "nothing matches" — the first is
               a state to act on, the second means the filters are too narrow. */}

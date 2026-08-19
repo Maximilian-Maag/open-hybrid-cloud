@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import type { Product, Category, FavoriteProduct } from '@open-hybrid-cloud/types'
@@ -26,6 +26,11 @@ export default function CatalogPage() {
   // without scanning a list per render.
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
   const [favoriteBusy, setFavoriteBusy] = useState<Set<number>>(new Set())
+  // Bumped on every toggle. The favourites request below is not awaited, so a star
+  // clicked while it is in flight is NEWER than the answer coming back — applying
+  // that answer would silently revert what the user just did. Starring a product
+  // immediately after the page appeared did exactly that.
+  const toggleGeneration = useRef(0)
 
   // sync URL search param into local state
   useEffect(() => {
@@ -45,9 +50,15 @@ export default function CatalogPage() {
       setCategories(cats ?? [])
       // Separately and non-fatally: a favourites outage should cost the stars,
       // not the whole catalogue.
+      const generation = toggleGeneration.current
       get<FavoriteProduct[]>(`/api/favorites?lang=${lang}`, token)
-        .then((favs) => setFavorites(new Set((favs ?? []).map((f) => f.productId))))
-        .catch(() => setFavorites(new Set()))
+        .then((favs) => {
+          if (toggleGeneration.current !== generation) return
+          setFavorites(new Set((favs ?? []).map((f) => f.productId)))
+        })
+        .catch(() => {
+          if (toggleGeneration.current === generation) setFavorites(new Set())
+        })
     } catch {
       // Surface a genuine fetch failure instead of showing an empty catalog,
       // which would look like "no products" during an outage.
@@ -61,6 +72,7 @@ export default function CatalogPage() {
 
   async function toggleFavorite(productId: number) {
     if (!token || favoriteBusy.has(productId)) return
+    toggleGeneration.current += 1
     const wasFavorited = favorites.has(productId)
 
     // Optimistic: the star is the whole feedback, so waiting a round trip to

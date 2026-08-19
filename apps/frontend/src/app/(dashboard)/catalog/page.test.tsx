@@ -103,6 +103,38 @@ describe('CatalogPage favorites', () => {
     expect(within(section).queryByTestId('product-card-11')).not.toBeInTheDocument()
   })
 
+  it('does not let a slow favourites response revert a star clicked meanwhile', async () => {
+    // The favourites request is deliberately not awaited, so the stars are already
+    // on screen while it is in flight. Its answer is older than a click that
+    // happened after it was sent, and applying it silently un-starred the product.
+    const user = userEvent.setup()
+    let releaseFavorites: (value: FavoriteProduct[]) => void = () => {}
+    const pending = new Promise<FavoriteProduct[]>((resolve) => { releaseFavorites = resolve })
+
+    mockedGet.mockImplementation((async (path: string) => {
+      if (path.startsWith('/api/catalog')) return products
+      if (path.startsWith('/api/admin/categories')) return categories
+      if (path.startsWith('/api/favorites')) return pending
+      return []
+    }) as never)
+
+    render(<CatalogPage />)
+    const card = await screen.findByTestId('product-card-10')
+    await user.click(within(card).getByRole('button', { name: /add to favorites/i }))
+
+    // The server answers with what it knew BEFORE the click: nothing starred.
+    releaseFavorites([])
+    await waitFor(() => expect(mockedPut).toHaveBeenCalledWith('/api/favorites/10', {}, 'test-token'))
+
+    // The star stays filled — and the product now also appears in the favourites
+    // section, which is what a reverted state would have hidden. (Its card is a
+    // second copy of the same tile, hence getAllByTestId.)
+    await waitFor(() => expect(favoritesSection()).toBeInTheDocument())
+    for (const copy of screen.getAllByTestId('product-card-10')) {
+      expect(within(copy).getByRole('button', { name: /remove from favorites/i })).toBeInTheDocument()
+    }
+  })
+
   it('PUTs on star and DELETEs on un-star', async () => {
     const user = userEvent.setup()
     mockApi([])

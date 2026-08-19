@@ -1,11 +1,18 @@
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
-import { infrastructureElements, deploymentEnvironments, projects, orders } from '@/lib/db/schema'
+import {
+  infrastructureElements,
+  deploymentEnvironments,
+  projects,
+  orders,
+  productEnvironments,
+} from '@/lib/db/schema'
 import { eq, and, sql, gte, lte } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { fireDestroyTriggers } from '@/lib/services/teardown'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { ok, err, type Result } from '@/lib/services/result'
+import { trialVariables, trialExpiry } from '@/lib/services/trial'
 
 export interface InfraRow {
   id: number
@@ -39,6 +46,17 @@ export interface InfraRow {
 export const INFRA_STATUSES = ['active', 'decommissioning', 'decommissioned'] as const
 export type InfraStatus = (typeof INFRA_STATUSES)[number]
 
+/**
+ * What the list can be filtered by, which is NOT the same set.
+ *
+ * 'failed' is not a stored status — a failed deployment is an `active` element
+ * whose ORDER failed (see orderStatus above), which is what the row already
+ * displays. Without it in the filter vocabulary the list showed a Failed badge it
+ * could not filter for, and 'active' silently included those rows.
+ */
+export const INFRA_STATUS_FILTERS = [...INFRA_STATUSES, 'failed'] as const
+export type InfraStatusFilter = (typeof INFRA_STATUS_FILTERS)[number]
+
 export const INFRA_SORT_FIELDS = ['date', 'name', 'status'] as const
 export type InfraSortField = (typeof INFRA_SORT_FIELDS)[number]
 
@@ -48,7 +66,7 @@ export interface InfraFilters {
   environmentId?: number
   /** Free text matched against product, environment and project name. */
   search?: string
-  status?: InfraStatus
+  status?: InfraStatusFilter
   /** Inclusive lower / upper bound on `deployed_at`. */
   deployedFrom?: Date
   deployedTo?: Date
@@ -78,7 +96,17 @@ export const listInfrastructure = async (
   if (filters.productId) conditions.push(sql`${infrastructureElements.productId} = ${filters.productId}`)
   if (filters.projectId) conditions.push(sql`${infrastructureElements.projectId} = ${filters.projectId}`)
   if (filters.environmentId) conditions.push(sql`${infrastructureElements.environmentId} = ${filters.environmentId}`)
-  if (filters.status) conditions.push(sql`${infrastructureElements.status} = ${filters.status}`)
+  if (filters.status === 'failed') {
+    // The failure lives on the order, not the element.
+    conditions.push(sql`${orders.status} = 'failed'`)
+  } else if (filters.status === 'active') {
+    // A failed deployment is stored 'active', and the row shows it as Failed — so
+    // including it here would contradict the badge the user is looking at.
+    conditions.push(sql`${infrastructureElements.status} = 'active'`)
+    conditions.push(sql`(${orders.status} IS NULL OR ${orders.status} <> 'failed')`)
+  } else if (filters.status) {
+    conditions.push(sql`${infrastructureElements.status} = ${filters.status}`)
+  }
 
   if (filters.search) {
     // Escape the LIKE metacharacters so a literal % or _ in the query narrows
@@ -231,7 +259,7 @@ export const retryProvisioning = async (
   if (!infra) return err(404, 'Infrastructure element not found')
 
   const [order] = await db
-    .select({ id: orders.id, status: orders.status })
+    .select({ id: orders.id, status: orders.status, isTrial: orders.isTrial })
     .from(orders)
     .where(eq(orders.id, infra.orderId))
     .limit(1)
@@ -253,6 +281,15 @@ export const retryProvisioning = async (
 
   if (!claimed.length) return err(409, 'Retry already in progress for this deployment')
 
+  // A trial's CI variables are server-generated, so they are not in the element's
+  // stored parameters — without them the retried pipeline would run as an ordinary
+  // deployment and lose the trial intent the order was placed with. The duration is
+  // re-read from the offering, exactly as initial provisioning does, so a duration
+  // an admin corrected in the meantime is the one that applies.
+  const trialDurationMinutes = order.isTrial
+    ? await resolveTrialDuration(infra.productId, infra.environmentId)
+    : 0
+
   const variables = {
     ...(infra.parameters as Record<string, string>),
     // Pipeline stacks derive TF_STATE_NAME from stateKeyParam ?? ORDER_ID, and
@@ -260,6 +297,7 @@ export const retryProvisioning = async (
     // the ORIGINAL order id is the point: the retry has to target the same
     // Terraform state the failed attempt was working on.
     ORDER_ID: String(infra.orderId),
+    ...(order.isTrial ? trialVariables(trialDurationMinutes) : {}),
   }
 
   let outcome: { pipelineIds: string[]; failures: string[] }
@@ -312,6 +350,12 @@ export const retryProvisioning = async (
       // Outputs are parsed from the job trace on success. Any left over from an
       // earlier attempt describe infrastructure this retry is about to replace.
       outputs: {},
+      // A trial's clock restarts here for the same reason it starts at
+      // provisioning rather than ordering: the failed attempt may have burned the
+      // whole window, and the sweep would tear this retry down on sight. Only a
+      // trial's schedule is touched — a decommission an operator scheduled by hand
+      // (issue #30) must survive a retry.
+      ...(order.isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
     })
     .where(eq(infrastructureElements.id, infraId))
 
@@ -333,6 +377,27 @@ export const retryProvisioning = async (
   }
 
   return ok({ pipelineIds: outcome.pipelineIds })
+}
+
+/**
+ * The trial duration currently configured for an offering.
+ *
+ * Falls back to the schema default rather than blocking a retry an operator asked
+ * for: an offering withdrawn or misconfigured since the order was placed still
+ * gets a time-boxed deployment, which is the point of the trial.
+ */
+const resolveTrialDuration = async (productId: number, environmentId: number): Promise<number> => {
+  const [offering] = await db
+    .select({ trialDurationMinutes: productEnvironments.trialDurationMinutes })
+    .from(productEnvironments)
+    .where(
+      and(
+        eq(productEnvironments.productId, productId),
+        eq(productEnvironments.environmentId, environmentId),
+      ),
+    )
+    .limit(1)
+  return offering && offering.trialDurationMinutes > 0 ? offering.trialDurationMinutes : 30
 }
 
 const releaseRetryClaim = async (orderId: number): Promise<void> => {

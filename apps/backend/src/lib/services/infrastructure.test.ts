@@ -31,6 +31,7 @@ import {
   createProject,
   createOrder as seedOrder,
   createInfraElement,
+  linkProductEnvironment,
 } from '@/test/helpers'
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
@@ -154,6 +155,26 @@ describe('listInfrastructure — search, filtering and sorting', () => {
 
     const result = await listInfrastructure(makeSession(ctx.admin), { search: 'nginx' })
     expect(result.ok && names(result.data)).toEqual(['Nginx Gateway'])
+  })
+
+  it("filters for failed deployments, which are stored 'active'", async () => {
+    // The failure lives on the order — the element is inserted 'active' when
+    // provisioning starts — so without this the Failed badge on the row could not
+    // be filtered for, and 'Active' silently included it.
+    const ctx = await searchable()
+    const okOrder = await seedOrder(ctx.webshop.id, ctx.nginx.id, ctx.frankfurt.id, ctx.pm.id)
+    await createInfraElement(okOrder.id, ctx.webshop.id, ctx.frankfurt.id, ctx.nginx.id)
+    const badOrder = await seedOrder(ctx.billing.id, ctx.postgres.id, ctx.frankfurt.id, ctx.pm.id, {
+      status: 'failed',
+    })
+    await createInfraElement(badOrder.id, ctx.billing.id, ctx.frankfurt.id, ctx.postgres.id)
+
+    const failed = await listInfrastructure(makeSession(ctx.admin), { status: 'failed' })
+    expect(failed.ok && names(failed.data)).toEqual(['Managed Postgres'])
+
+    // And 'active' means what the badge beside it says.
+    const active = await listInfrastructure(makeSession(ctx.admin), { status: 'active' })
+    expect(active.ok && names(active.data)).toEqual(['Nginx Gateway'])
   })
 
   it('matches the search term against the environment and project name too', async () => {
@@ -761,6 +782,90 @@ describe('retryProvisioning', () => {
 // scaled, so the sweep is an explicit call an external scheduler drives. What
 // makes that safe is the atomic claim inside claimAndDestroy, which these tests
 // lean on directly.
+describe('retryProvisioning — trials (issue #1 × #29)', () => {
+  const failedTrial = async (trialDurationMinutes = 45) => {
+    const admin = await createUser({ role: 'admin', email: 'retry-trial-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'retry-trial-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Trial Product')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id, { trialEnabled: true, trialDurationMinutes })
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, {
+      status: 'failed',
+      isTrial: true,
+    })
+    const el = await createInfraElement(order.id, project.id, env.id, product.id, {
+      parameters: { hostname: 'trial-01' },
+    })
+    return { admin, el, order }
+  }
+
+  it('re-sends the trial variables the stored parameters cannot carry', async () => {
+    // TRIAL and TRIAL_DURATION_MINUTES are server-generated at provisioning, so a
+    // retry that only replayed the element's parameters silently turned a trial
+    // into an ordinary deployment.
+    const { admin, el } = await failedTrial(45)
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['trial-pipe'], failures: [] })
+
+    const result = await retryProvisioning(makeSession(admin), el.id)
+    expect(result.ok).toBe(true)
+
+    const vars = mockedWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars.TRIAL).toBe('true')
+    expect(vars.TRIAL_DURATION_MINUTES).toBe('45')
+    expect(vars.hostname).toBe('trial-01')
+  })
+
+  it('restarts the trial clock, so the sweep does not tear the retry down at once', async () => {
+    const { admin, el } = await failedTrial(45)
+    // The first attempt's window has already run out.
+    await db
+      .update(infrastructureElements)
+      .set({ scheduledDecommissionAt: new Date('2020-01-01T00:00:00.000Z') })
+      .where(eq(infrastructureElements.id, el.id))
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['trial-pipe'], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const [row] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, el.id))
+    expect(row.scheduledDecommissionAt?.getTime() ?? 0).toBeGreaterThan(Date.now())
+  })
+
+  it('leaves a hand-scheduled decommission alone on a non-trial retry', async () => {
+    // Issue #30's schedule is an operator's decision and must survive a retry.
+    const admin = await createUser({ role: 'admin', email: 'retry-sched-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'retry-sched-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Plain Product')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'failed' })
+    const el = await createInfraElement(order.id, project.id, env.id, product.id)
+    const scheduled = new Date('2099-06-01T14:30:00.000Z')
+    await db
+      .update(infrastructureElements)
+      .set({ scheduledDecommissionAt: scheduled })
+      .where(eq(infrastructureElements.id, el.id))
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['pipe'], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const [row] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, el.id))
+    expect(row.scheduledDecommissionAt?.toISOString()).toBe(scheduled.toISOString())
+    const vars = mockedWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars.TRIAL).toBeUndefined()
+  })
+})
+
 describe('scheduleDecommission', () => {
   const build = async () => {
     const admin = await createUser({ role: 'admin', email: 'sched-admin@test.dev' })

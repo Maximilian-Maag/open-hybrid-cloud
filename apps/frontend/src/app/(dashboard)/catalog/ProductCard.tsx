@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { t } from '@/lib/i18n'
 import { FavoriteButton } from './FavoriteButton'
+import { ProductImage } from '@/components/ui/ProductImage'
 
 interface Props {
   id: number
@@ -40,12 +41,21 @@ export function ProductCard({
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
     >
       <div
-        className="relative h-40 flex items-center justify-center border-b border-slate-100"
+        className="relative h-40 border-b border-slate-100"
         style={{ backgroundColor: 'color-mix(in srgb, var(--bp) 8%, white)' }}
       >
-        <svg className="h-14 w-14 opacity-25" style={{ color: 'var(--bp-text)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
-        </svg>
+        {/* The picture is the obvious thing to click, so it is the link. Named for
+            the product rather than left nameless: when the fallback placeholder
+            renders there is no alt text for the link to borrow. */}
+        <Link
+          href={`/catalog/${id}`}
+          aria-label={name}
+          className="block h-full w-full p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        >
+          <ProductImage productId={id} name="" />
+        </Link>
+        {/* A SIBLING of the link, not a child: a button inside a link is
+            nested-interactive, which the axe gate in e2e/a11y.spec.ts rejects. */}
         <div className="absolute top-2 right-2">
           <FavoriteButton favorited={favorited} busy={busy} onToggle={onToggleFavorite} lang={lang} />
         </div>
@@ -60,12 +70,15 @@ export function ProductCard({
         {description && (
           <p className="text-xs text-slate-500 leading-relaxed flex-1 mb-3 line-clamp-2">{description}</p>
         )}
+        {/* "Details", not "Place Order": it opens the product page, where the
+            environment, the price and the parameters are chosen. Promising an order
+            and delivering a form is a broken promise. */}
         <Link
           href={`/catalog/${id}`}
           className="w-full py-2 px-3 rounded text-center text-sm font-semibold block text-gray-900 hover:brightness-95 transition-all mt-auto"
           style={{ backgroundColor: 'var(--bs)' }}
         >
-          {t('placeOrder', lang)}
+          {t('details', lang)}
         </Link>
       </div>
     </div>

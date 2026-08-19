@@ -20,7 +20,7 @@ import { ParameterFields } from '@/components/forms/ParameterFields'
 import { publishCartCount } from '@/components/layout/CartLink'
 import { t } from '@/lib/i18n'
 import { convertPrice } from '@/lib/locale'
-import { ProductImage } from '../catalog/[id]/ProductImage'
+import { ProductImage } from '@/components/ui/ProductImage'
 
 interface Props {
   initialItems: CartItem[]

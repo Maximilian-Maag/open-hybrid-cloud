@@ -6,7 +6,7 @@ import type { ProductDetail, Project, CostCenter, ExchangeRate, Category } from 
 import { Card } from '@/components/ui/Card'
 import { OrderForm } from '@/components/forms/OrderForm'
 import { AddToCart } from './AddToCart'
-import { ProductImage } from './ProductImage'
+import { ProductImage } from '@/components/ui/ProductImage'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 import { localeToCurrency, convertPrice } from '@/lib/locale'

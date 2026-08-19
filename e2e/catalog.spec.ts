@@ -36,9 +36,9 @@ test.describe('Product Catalog', () => {
     await expect(productCount.or(noProducts).first()).toBeVisible()
   })
 
-  test('products have Place Order links when catalog has items', async ({ page }) => {
+  test('every product tile links to its detail page', async ({ page }) => {
     await goToCatalog(page)
-    const placeOrderLinks = page.getByRole('link', { name: /place order/i })
+    const placeOrderLinks = page.getByRole('link', { name: /^details$/i })
     const noProducts = page.getByText(/no products found/i)
     // Wait for catalog to finish loading (client component fetches async)
     await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
@@ -123,7 +123,7 @@ test.describe('Catalog trial ordering', () => {
     await loginAsRoot(page)
     await page.goto('/catalog')
 
-    const firstOrder = page.getByRole('link', { name: /place order/i }).first()
+    const firstOrder = page.getByRole('link', { name: /^details$/i }).first()
     const noProducts = page.getByText(/no products/i)
     await expect(firstOrder.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }

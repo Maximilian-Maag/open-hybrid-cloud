@@ -114,6 +114,11 @@ export function InfraFilters({ facets, lang, resultCount }: Props) {
           onChange={(e) => apply({ status: e.target.value })}
           options={anyOption(t('allStatuses', lang), [
             { value: 'active', label: t('statusActive', lang) },
+            // Not a stored element status: a failed deployment is an 'active'
+            // element whose order failed, which is what the row shows as Failed.
+            // Offering it here is what makes that badge filterable — and keeps
+            // 'active' meaning what the badge beside it says.
+            { value: 'failed', label: t('statusFailed', lang) },
             { value: 'decommissioning', label: t('decommissioning', lang) },
             { value: 'decommissioned', label: t('statusDecommissioned', lang) },
           ])}

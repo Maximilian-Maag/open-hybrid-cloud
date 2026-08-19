@@ -1,9 +1,9 @@
 import { ok, err, type Result } from '@/lib/services/result'
 import {
-  INFRA_STATUSES,
+  INFRA_STATUS_FILTERS,
   INFRA_SORT_FIELDS,
   type InfraFilters,
-  type InfraStatus,
+  type InfraStatusFilter,
   type InfraSortField,
 } from '@/lib/services/infrastructure'
 
@@ -36,10 +36,10 @@ export const parseInfraFilters = (params: URLSearchParams): Result<InfraFilters>
   // 'all' is what the UI's unfiltered option submits; treat it as absent so the
   // client does not have to strip the parameter.
   if (status && status !== 'all') {
-    if (!(INFRA_STATUSES as readonly string[]).includes(status)) {
-      return err(400, `Invalid status — expected one of ${INFRA_STATUSES.join(', ')}`)
+    if (!(INFRA_STATUS_FILTERS as readonly string[]).includes(status)) {
+      return err(400, `Invalid status — expected one of ${INFRA_STATUS_FILTERS.join(', ')}`)
     }
-    filters.status = status as InfraStatus
+    filters.status = status as InfraStatusFilter
   }
 
   // A bare YYYY-MM-DD is widened to cover the whole day: `to` is the end of the

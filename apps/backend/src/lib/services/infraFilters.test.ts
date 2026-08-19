@@ -50,6 +50,13 @@ describe('parseInfraFilters', () => {
     expect(all.ok && all.data.status).toBeUndefined()
   })
 
+  it("accepts 'failed', which is an order state rather than an element status", () => {
+    // The list shows a Failed badge for an 'active' element whose order failed;
+    // rejecting the value here would leave that badge unfilterable.
+    const result = parse('status=failed')
+    expect(result.ok && result.data.status).toBe('failed')
+  })
+
   it('rejects an unknown status instead of silently ignoring it', () => {
     // Dropping it would render an unfiltered list as though the filter applied.
     const result = parse('status=activ')

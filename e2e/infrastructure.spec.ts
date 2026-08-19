@@ -85,6 +85,14 @@ test.describe('Infrastructure filtering', () => {
     await expect(page.getByLabel(/deployed from/i)).toHaveValue('2026-02-01')
   })
 
+  test('Failed is offered as a status and reaches the URL', async ({ page }) => {
+    // Issue #29 gave the list a Failed badge; issue #31's filter has to be able to
+    // ask for it, or "Active" quietly includes rows the badge calls failed.
+    await page.getByLabel(/^status$/i).selectOption('failed')
+    await expect(page).toHaveURL(/[?&]status=failed/)
+    await expect(page.locator('body')).not.toContainText('500')
+  })
+
   test('the "all" option is selectable, so a filter can be undone in place', async ({ page }) => {
     await page.goto('/infrastructure?status=active')
     // Select's own placeholder renders disabled; the filter bar uses a real

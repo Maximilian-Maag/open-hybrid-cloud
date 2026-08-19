@@ -1109,7 +1109,7 @@ registry.registerPath({
       search: z.string().optional().openapi({
         description: 'Free text matched against product, environment and project name',
       }),
-      status: z.enum(['active', 'decommissioning', 'decommissioned', 'all']).optional(),
+      status: z.enum(['active', 'decommissioning', 'decommissioned', 'failed', 'all']).optional(),
       deployedFrom: z.string().optional().openapi({
         description: 'Inclusive lower bound. A bare YYYY-MM-DD means the start of that day (UTC).',
       }),
@@ -1174,7 +1174,7 @@ registry.registerPath({
       projectId: z.string().optional(),
       environmentId: z.string().optional(),
       search: z.string().optional(),
-      status: z.enum(['active', 'decommissioning', 'decommissioned', 'all']).optional(),
+      status: z.enum(['active', 'decommissioning', 'decommissioned', 'failed', 'all']).optional(),
       deployedFrom: z.string().optional(),
       deployedTo: z.string().optional(),
       sort: z.enum(['date', 'name', 'status']).optional(),

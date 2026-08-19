@@ -82,6 +82,16 @@ describe('InfraFilters', () => {
     expect(params.get('direction')).toBe('asc')
   })
 
+  it('offers Failed as a status, since the list shows a Failed badge', async () => {
+    const user = userEvent.setup()
+    renderBar()
+
+    // A failed deployment is stored 'active' with a failed ORDER, so without this
+    // option the badge on the row could not be filtered for at all.
+    await user.selectOptions(screen.getByLabelText(/^status$/i), 'failed')
+    expect(replace).toHaveBeenCalledWith('/infrastructure?status=failed')
+  })
+
   it('shows an active-filter count and hides Clear when nothing is filtered', () => {
     const { unmount } = renderBar()
     expect(screen.queryByRole('button', { name: /clear filters/i })).not.toBeInTheDocument()

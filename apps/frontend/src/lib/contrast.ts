@@ -72,6 +72,20 @@ export const readableInk = (background: string): { ink: string; ratio: number } 
 /** AA thresholds: 4.5:1 for body text, 3:1 for large (>=18.66px bold / 24px). */
 export const AA_BODY = 4.5
 export const AA_LARGE = 3
+/** WCAG 1.4.11: a UI component's boundary needs 3:1 against what is next to it. */
+export const AA_NON_TEXT = 3
+
+/**
+ * The reference surface for accent colours used AS text or as a filled control.
+ *
+ * NOT white. The dashboard body is `bg-slate-50` (#f8fafc) and several chips sit on
+ * `bg-slate-100` (#f1f5f9), so a colour tuned to exactly 4.5:1 against #ffffff
+ * measures ~4.3:1 where it is actually painted — which is how two 12px links on the
+ * home page failed the axe gate with a mid-tone brand colour. Deriving against the
+ * darkest of those surfaces satisfies all three, and the extra darkening is
+ * imperceptible.
+ */
+export const SURFACE = '#f1f5f9'
 
 /**
  * Does this background support AA body text with the best available ink?
@@ -89,7 +103,8 @@ export const meetsAaBody = (background: string): boolean =>
  * painted ON the brand colour; this handles the brand colour used AS text on a
  * light surface — "View all", "Order now", the category links. A pale or
  * mid-tone brand colour is unreadable there no matter what the surface does:
- * #ca8a04 on white measures 2.93:1.
+ * #ca8a04 on white measures 2.93:1. The default background is SURFACE rather than
+ * white for the reason given there.
  *
  * Scaling the RGB channels toward black (or toward white on a dark surface)
  * keeps the colour recognisably the same hue while moving its luminance, which
@@ -98,7 +113,7 @@ export const meetsAaBody = (background: string): boolean =>
  */
 export const readableAccent = (
   colour: string,
-  background = '#ffffff',
+  background = SURFACE,
   target = AA_BODY,
 ): string => {
   const rgb = parseHex(colour)

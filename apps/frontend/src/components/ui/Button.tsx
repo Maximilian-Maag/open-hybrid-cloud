@@ -33,8 +33,19 @@ export function Button({
   if (variant === 'primary') {
     return (
       <button
-        className={`${base} ${sizeClass[size]} hover:brightness-95 ${className}`}
-        style={{ backgroundColor: 'var(--bs)', color: 'var(--bs-ink)', ...(style as CSSProperties) }}
+        className={`${base} ${sizeClass[size]} border hover:brightness-95 ${className}`}
+        style={{
+          backgroundColor: 'var(--bs)',
+          color: 'var(--bs-ink)',
+          // The fill alone is not always a visible control: an operator whose
+          // secondary colour is near-white (#f5f5f4 is a real configuration here)
+          // gets a button indistinguishable from the page, which reads as disabled
+          // and fails WCAG 1.4.11. --bs-edge is that colour darkened to 3:1 against
+          // the page, so the boundary is always there; on a saturated colour it is
+          // close enough to the fill to look like a deliberate outline.
+          borderColor: 'var(--bs-edge, transparent)',
+          ...(style as CSSProperties),
+        }}
         {...props}
       >
         {children}

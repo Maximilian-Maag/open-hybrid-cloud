@@ -9,7 +9,7 @@ test.describe('Product Detail Page', () => {
     // Wait for catalog to finish loading (client component)
     const placeOrderLinks = page.getByRole('link', { name: /place order/i })
     const noProducts = page.getByText(/no products found/i)
-    await expect(placeOrderLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
 
     if (await noProducts.isVisible()) {
       test.skip()
@@ -28,7 +28,7 @@ test.describe('Product Detail Page', () => {
 
     const placeOrderLinks = page.getByRole('link', { name: /place order/i })
     const noProducts = page.getByText(/no products found/i)
-    await expect(placeOrderLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await placeOrderLinks.first().click()
@@ -45,7 +45,7 @@ test.describe('Product Detail Page', () => {
 
     const placeOrderLinks = page.getByRole('link', { name: /place order/i })
     const noProducts = page.getByText(/no products found/i)
-    await expect(placeOrderLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await placeOrderLinks.first().click()
@@ -64,16 +64,20 @@ test.describe('Order Placement Flow', () => {
     // Wait for catalog to load
     const placeOrderLinks = page.getByRole('link', { name: /place order/i })
     const noProducts = page.getByText(/no products found/i)
-    await expect(placeOrderLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await placeOrderLinks.first().click()
     await expect(page).toHaveURL(/\/catalog\/\d+/)
 
     // Check if environments are available (product may have zero environments configured)
-    const envSelect = page.getByLabel(/select environment/i)
+    // Scoped to the order form: the buy box has an environment select of its own,
+    // so an unscoped label match is ambiguous. (It used to match nothing at all —
+    // "Select environment…" is the placeholder option, not the label — so this
+    // test always skipped here.)
+    const envSelect = page.locator('#order').getByLabel(/environment/i)
     const noEnvText = page.getByText(/no environments|not configured/i)
-    await expect(envSelect.or(noEnvText)).toBeVisible({ timeout: 5000 })
+    await expect(envSelect.or(noEnvText).first()).toBeVisible({ timeout: 5000 })
     if (await noEnvText.isVisible()) { test.skip(); return }
 
     // Check if there are selectable environment options (not just placeholder)
@@ -85,7 +89,7 @@ test.describe('Order Placement Flow', () => {
     await envSelect.selectOption({ index: 1 })
 
     // Select a project if available
-    const projectSelect = page.getByLabel(/select project/i)
+    const projectSelect = page.locator('#order').getByLabel(/project/i)
     if (await projectSelect.isVisible()) {
       const projectOptions = projectSelect.locator('option')
       if (await projectOptions.count() > 1) {
@@ -93,8 +97,16 @@ test.describe('Order Placement Flow', () => {
       }
     }
 
+    // A required parameter needs a value this test cannot invent per product, so
+    // fill the text inputs generically and skip if anything required is still empty.
+    const requiredInputs = page.locator('#order input[required]')
+    for (let i = 0; i < await requiredInputs.count(); i++) {
+      const input = requiredInputs.nth(i)
+      if ((await input.inputValue()) === '') await input.fill('e2e-order-flow')
+    }
+
     // Submit the order
-    const submitButton = page.getByRole('button', { name: /order now/i })
+    const submitButton = page.locator('#order').getByRole('button', { name: /place order/i })
     if (!await submitButton.isVisible()) { test.skip(); return }
     await submitButton.click()
 
@@ -148,7 +160,7 @@ test.describe('Catalog - Category Filter', () => {
 
     // Wait for catalog to finish loading
     await expect(
-      page.getByRole('link', { name: /place order/i }).or(page.getByText(/no products found/i))
+      page.getByRole('link', { name: /place order/i }).or(page.getByText(/no products found/i)).first()
     ).toBeVisible({ timeout: 10000 })
 
     // Check if there are category filter buttons (sidebar for md+, pills for mobile)
@@ -162,13 +174,13 @@ test.describe('Catalog - Category Filter', () => {
     // After clicking, page still shows either products or empty state (no 500 error)
     await expect(page.locator('body')).not.toContainText('500')
     await expect(
-      page.getByRole('link', { name: /place order/i }).or(page.getByText(/no products found/i))
+      page.getByRole('link', { name: /place order/i }).or(page.getByText(/no products found/i)).first()
     ).toBeVisible({ timeout: 5000 })
 
     // Click "All products" to reset
     await page.getByRole('button', { name: /all products/i }).click()
     await expect(
-      page.getByRole('link', { name: /place order/i }).or(page.getByText(/no products found/i))
+      page.getByRole('link', { name: /place order/i }).or(page.getByText(/no products found/i)).first()
     ).toBeVisible({ timeout: 5000 })
   })
 })

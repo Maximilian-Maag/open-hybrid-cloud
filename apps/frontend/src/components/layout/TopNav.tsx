@@ -37,7 +37,6 @@ export function TopNav({ role, lang: initialLang = 'en' }: TopNavProps) {
       <nav aria-label={t('mainNavigation', lang)} className="max-w-screen-2xl mx-auto px-4 py-1 flex items-center gap-0.5 overflow-x-auto" style={{ color: 'var(--bp-ink)' }}>
         <Link href="/" aria-current={isActive(pathname, '/', true) ? 'page' : undefined} className={navLinkClass(pathname, '/', true)}>{t('home', lang)}</Link>
         <Link href="/catalog" aria-current={isActive(pathname, '/catalog') ? 'page' : undefined} className={navLinkClass(pathname, '/catalog')}>{t('catalog', lang)}</Link>
-        <Link href="/cart" aria-current={isActive(pathname, '/cart') ? 'page' : undefined} className={navLinkClass(pathname, '/cart')}>{t('cart', lang)}</Link>
         <Link href="/orders" aria-current={isActive(pathname, '/orders') ? 'page' : undefined} className={navLinkClass(pathname, '/orders')}>{t('orders', lang)}</Link>
         <Link href="/projects" aria-current={isActive(pathname, '/projects') ? 'page' : undefined} className={navLinkClass(pathname, '/projects')}>{t('projects', lang)}</Link>
         <Link href="/infrastructure" aria-current={isActive(pathname, '/infrastructure') ? 'page' : undefined} className={navLinkClass(pathname, '/infrastructure')}>{t('infrastructure', lang)}</Link>

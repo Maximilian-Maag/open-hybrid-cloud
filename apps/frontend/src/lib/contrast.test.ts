@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseHex, contrastRatio, readableInk, meetsAaBody, AA_BODY } from './contrast'
+import { parseHex, contrastRatio, readableInk, meetsAaBody, AA_BODY, readableAccent, SURFACE, AA_NON_TEXT } from './contrast'
 
 describe('parseHex', () => {
   it('parses #rrggbb', () => {
@@ -98,5 +98,52 @@ describe('meetsAaBody', () => {
 
   it('treats an unparseable colour as failing rather than passing', () => {
     expect(meetsAaBody('#zzz')).toBe(false)
+  })
+})
+
+describe('readableAccent', () => {
+  it('leaves a colour that already clears AA alone', () => {
+    // No point darkening something already readable — that would drift the brand.
+    expect(readableAccent('#101827')).toBe('#101827')
+  })
+
+  it('darkens a mid-tone brand colour until it clears AA as text', () => {
+    const accent = readableAccent('#ca8a04')
+    expect(contrastRatio(accent, SURFACE)).toBeGreaterThanOrEqual(AA_BODY)
+  })
+
+  it('clears AA on every light surface the app paints it on, not just white', () => {
+    // The regression this exists for: tuned against #ffffff, the amber accent
+    // measured 4.5:1 in theory and 4.3:1 where it was actually painted — two 12px
+    // links on the dashboard home page, on the slate-50 body.
+    const accent = readableAccent('#ca8a04')
+    for (const surface of ['#ffffff', '#f8fafc', '#f1f5f9']) {
+      expect(contrastRatio(accent, surface), `on ${surface}`).toBeGreaterThanOrEqual(AA_BODY)
+    }
+  })
+
+  it('lightens instead of darkening against a dark surface', () => {
+    const accent = readableAccent('#1d4ed8', '#101827')
+    expect(contrastRatio(accent, '#101827')).toBeGreaterThanOrEqual(AA_BODY)
+  })
+
+  it('reaches a lower target with less adjustment', () => {
+    // The non-text threshold is what the filled-button boundary uses; it must not
+    // darken as far as body text would.
+    const text = readableAccent('#febd69', undefined, AA_BODY)
+    const edge = readableAccent('#febd69', undefined, AA_NON_TEXT)
+    expect(contrastRatio(edge, SURFACE)).toBeGreaterThanOrEqual(AA_NON_TEXT)
+    expect(contrastRatio(edge, SURFACE)).toBeLessThan(contrastRatio(text, SURFACE))
+  })
+
+  it('gives a near-white secondary colour a boundary that is actually visible', () => {
+    // #f5f5f4 is a real branding value in this repo's dev data: filled with it, a
+    // button was indistinguishable from the page.
+    const edge = readableAccent('#f5f5f4', undefined, AA_NON_TEXT)
+    expect(contrastRatio(edge, '#f5f5f4')).toBeGreaterThanOrEqual(AA_NON_TEXT)
+  })
+
+  it('returns the input unchanged when it cannot be parsed', () => {
+    expect(readableAccent('not-a-colour')).toBe('not-a-colour')
   })
 })

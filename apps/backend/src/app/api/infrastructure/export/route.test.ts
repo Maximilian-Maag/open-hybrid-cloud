@@ -125,6 +125,40 @@ describe('GET /api/infrastructure/export', () => {
     expect(text).not.toContain('sup3rs3cret')
   })
 
+  it('keeps redacting after the parameter definition is deleted', async () => {
+    // The catalogue is not a durable record of what was secret: delete the
+    // definition and a name-based redaction set no longer knows. The order's own
+    // snapshot does, and it is what the export falls back on.
+    const { admin, nginx, el1 } = await seed()
+    await db.update(orders).set({
+      productSnapshot: {
+        version: 1,
+        capturedAt: '2026-03-01T00:00:00.000Z',
+        productName: 'Nginx Gateway',
+        productDescription: '',
+        environmentName: 'AWS Frankfurt',
+        price: '0',
+        currency: 'EUR',
+        costCenterMode: 'project',
+        forcedCostCenter: false,
+        trialEnabled: false,
+        trialDurationMinutes: 30,
+        parameters: [
+          { name: 'admin_password', label: '', type: 'string', description: '', defaultValue: '', required: false, sensitive: true },
+          { name: 'hostname', label: '', type: 'string', description: '', defaultValue: '', required: false, sensitive: false },
+        ],
+      },
+    }).where(eq(orders.id, el1.orderId))
+    await db.delete(parameters).where(eq(parameters.scopeId, nginx.id))
+
+    const res = await GET(makeReq(`${URL_BASE}?includeParameters=true`, await auth(admin)))
+    const text = await res.text()
+
+    expect(text).toContain('admin_password=[redacted]')
+    expect(text).not.toContain('sup3rs3cret')
+    expect(text).toContain('hostname=web-01')
+  })
+
   it('applies the same filters as the list', async () => {
     const { admin, el1, el2 } = await seed()
 

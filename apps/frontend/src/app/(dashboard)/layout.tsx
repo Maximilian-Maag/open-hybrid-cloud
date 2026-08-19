@@ -6,7 +6,7 @@ import { TopNav } from '@/components/layout/TopNav'
 import type { Branding } from '@open-hybrid-cloud/types'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
-import { readableInk, readableAccent } from '@/lib/contrast'
+import { readableInk, readableAccent, AA_NON_TEXT } from '@/lib/contrast'
 
 const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
 
@@ -87,9 +87,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
         // legible while the operator happened to pick something dark.
         '--bp-ink': readableInk(primaryColor).ink,
         '--bs-ink': readableInk(secondaryColor).ink,
-        // The brand colour used AS text on a white card — darkened until it
-        // clears AA, so a pale brand stays readable.
+        // The brand colour used AS text on a card — darkened until it clears AA
+        // against the app's own surfaces (see contrast.SURFACE; tuning against pure
+        // white left 12px links at 4.3:1 on the slate-50 body).
         '--bp-text': readableAccent(primaryColor),
+        // Boundary for filled controls painted in the secondary colour. A near-white
+        // secondary is otherwise invisible against the page — a button that reads as
+        // disabled, and a 1.4.11 failure.
+        '--bs-edge': readableAccent(secondaryColor, undefined, AA_NON_TEXT),
         // Overlay colour for hover/active states on the branding colour. It is
         // the OPPOSITE pole of --bp-ink: tinting with the ink itself darkens the
         // background toward the text and costs contrast (a 25 % ink overlay took

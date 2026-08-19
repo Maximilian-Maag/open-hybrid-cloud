@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 import { Alert } from '@/components/ui/Alert'
-import { readableInk, readableAccent, AA_LARGE } from '@/lib/contrast'
+import { readableInk, readableAccent, AA_LARGE, AA_NON_TEXT } from '@/lib/contrast'
 
 interface Props {
   shopName: string
@@ -54,6 +54,8 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         // The brand colour used AS text on a white card — darkened until it
         // clears AA, so a pale brand stays readable.
         '--bp-text': readableAccent(primaryColor),
+        // Same boundary as the dashboard gives its filled controls.
+        '--bs-edge': readableAccent(secondaryColor, undefined, AA_NON_TEXT),
         // Focus rings sit on the white card, so they need the same treatment.
         '--ring-accent': readableAccent(secondaryColor, '#ffffff', AA_LARGE),
       } as React.CSSProperties}

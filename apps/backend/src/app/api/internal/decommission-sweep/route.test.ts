@@ -65,6 +65,31 @@ const status = async (id: number) =>
   (await db.select().from(infrastructureElements).where(eq(infrastructureElements.id, id)))[0].status
 
 describe('POST /api/internal/decommission-sweep', () => {
+  it('rejects a long secret that only shares its first 128 characters', async () => {
+    // The comparison used to pad both sides to 128 characters and check the total
+    // length, so a >128-character secret was verified by its prefix alone.
+    const long = 'a'.repeat(200)
+    process.env.DECOMMISSION_SWEEP_SECRET = long
+    const el = await dueElement()
+
+    const forged = 'a'.repeat(128) + 'b'.repeat(72)
+    expect(forged.length).toBe(long.length)
+    const res = await POST(makeReq(forged))
+    expect(res.status).toBe(401)
+    expect(await status(el.id)).toBe('active')
+    expect(mockedWebhooks).not.toHaveBeenCalled()
+  })
+
+  it('accepts a secret longer than 128 characters', async () => {
+    const long = 'x'.repeat(200)
+    process.env.DECOMMISSION_SWEEP_SECRET = long
+    const el = await dueElement()
+
+    const res = await POST(makeReq(long))
+    expect(res.status).toBe(200)
+    expect(await status(el.id)).toBe('decommissioning')
+  })
+
   it('returns 503 when no secret is configured', async () => {
     // A deployment that never configured one must not be sweepable by an
     // unauthenticated caller, so the endpoint is off rather than open.

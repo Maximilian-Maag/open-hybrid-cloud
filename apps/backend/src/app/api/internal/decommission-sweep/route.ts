@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { timingSafeEqual } from 'node:crypto'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { sweepDueDecommissions } from '@/lib/services/infrastructure'
 
 /**
@@ -47,11 +47,16 @@ export async function POST(req: NextRequest) {
 
 /**
  * Compare without leaking the secret's length or a prefix match through timing.
- * Both sides are hashed to a fixed width first, since timingSafeEqual throws on a
- * length mismatch — which would itself be an oracle for the length.
+ *
+ * Hashed to a fixed width first, since timingSafeEqual throws on a length
+ * mismatch — which would itself be an oracle for the length. It has to be a hash
+ * rather than a padded truncation: padding to 128 characters compared a longer
+ * secret by its first 128 characters plus its total length, so anyone knowing that
+ * prefix could authenticate with any same-length suffix. A digest covers the whole
+ * value at a fixed width.
  */
-const constantTimeMatch = (provided: string, expected: string): boolean => {
-  const a = Buffer.from(provided.padEnd(128, '\0').slice(0, 128), 'utf8')
-  const b = Buffer.from(expected.padEnd(128, '\0').slice(0, 128), 'utf8')
-  return timingSafeEqual(a, b) && provided.length === expected.length
-}
+const constantTimeMatch = (provided: string, expected: string): boolean =>
+  timingSafeEqual(
+    createHash('sha256').update(provided, 'utf8').digest(),
+    createHash('sha256').update(expected, 'utf8').digest(),
+  )

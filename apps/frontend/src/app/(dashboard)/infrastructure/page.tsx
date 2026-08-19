@@ -2,12 +2,24 @@ import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import type { InfrastructureElement } from '@open-hybrid-cloud/types'
+import type { InfrastructureElement, InfraFacets, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from './InfraActions'
+import { InfraFilters } from './InfraFilters'
+import { InfraExport } from './InfraExport'
 import { t, isValidLang } from '@/lib/i18n'
+
+// Filters live in the URL (see InfraFilters), so every distinct filter
+// combination is its own render — nothing here may be cached across them.
+export const dynamic = 'force-dynamic'
+
+/** Query parameters forwarded to the API verbatim; anything else is ignored. */
+const FILTER_KEYS = [
+  'search', 'status', 'environmentId', 'projectId', 'productId',
+  'deployedFrom', 'deployedTo', 'sort', 'direction',
+] as const
 
 async function detectLang(): Promise<string> {
   const cookieStore = await cookies()
@@ -20,21 +32,58 @@ async function detectLang(): Promise<string> {
   return 'en'
 }
 
-export default async function InfrastructurePage() {
+interface Props {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+export default async function InfrastructurePage({ searchParams }: Props) {
   const session = await auth()
   if (!session) redirect('/login')
 
   const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await detectLang()
+  const params = await searchParams
+  // The export endpoint is admin-and-above, so don't offer a button that would
+  // only ever come back 403.
+  const role = (session.user as unknown as { role: Role }).role
+  const canExport = role === 'admin' || role === 'root'
+  // Retry re-fires CI pipelines against real infrastructure — same bar as export.
+  const canRetry = canExport
 
-  let elements: InfrastructureElement[] = []
-  try {
-    elements = (await get<InfrastructureElement[]>('/api/infrastructure', token)) ?? []
-  } catch {
-    /* empty */
+  const query = new URLSearchParams()
+  for (const key of FILTER_KEYS) {
+    const raw = params[key]
+    // Take the first value if a key was repeated: the API expects one, and
+    // guessing which of two conflicting values was meant is worse than picking.
+    const value = Array.isArray(raw) ? raw[0] : raw
+    if (value) query.set(key, value)
   }
+  const qs = query.toString()
+  const isFiltered = qs !== ''
 
-  // Group by project
+  const [listRes, facetsRes] = await Promise.allSettled([
+    get<InfrastructureElement[]>(`/api/infrastructure${qs ? `?${qs}` : ''}`, token),
+    get<InfraFacets>('/api/infrastructure/facets', token),
+  ])
+
+  // A rejected list is NOT an empty inventory. An invalid bookmarked filter comes
+  // back 400 — exactly what parseInfraFilters rejects rather than silently ignores —
+  // and a backend outage rejects too; showing "nothing matches" for either claims
+  // the infrastructure is gone.
+  const listFailed = listRes.status === 'rejected'
+  const elements = listRes.status === 'fulfilled' ? (listRes.value ?? []) : []
+  // Empty facets degrade to unpopulated dropdowns rather than a broken page —
+  // the free-text search and date filters still work.
+  const facets = facetsRes.status === 'fulfilled'
+    ? (facetsRes.value ?? { environments: [], projects: [], products: [] })
+    : { environments: [], projects: [], products: [] }
+
+  // Group by project — but only for the default date ordering. Bucketing by
+  // project silently overrides an explicit name or status sort, since the group
+  // a row lands in matters more than its position within it, so an explicit
+  // sort gets a flat list that actually honours it.
+  const sort = Array.isArray(params.sort) ? params.sort[0] : params.sort
+  const grouped = !sort || sort === 'date'
   const byProject: Record<string, InfrastructureElement[]> = {}
   for (const el of elements) {
     const key = el.projectName ?? `Project #${el.projectId}`
@@ -47,28 +96,64 @@ export default async function InfrastructurePage() {
       <PageHeader
         title={t('infrastructureTitle', lang)}
         subtitle={t('infrastructureSubtitle', lang)}
+        actions={canExport ? <InfraExport token={token} lang={lang} /> : undefined}
       />
 
-      {elements.length === 0 ? (
-        <div className="text-center py-12 text-slate-600">{t('noInfrastructure', lang)}</div>
-      ) : (
+      <InfraFilters facets={facets} lang={lang} resultCount={elements.length} />
+
+      {listFailed ? (
+        <div className="text-center py-12 text-red-600" role="alert">
+          {t('unexpectedError', lang)}
+        </div>
+      ) : elements.length === 0 ? (
+        <div className="text-center py-12 text-slate-600">
+          {/* Distinguish "nothing deployed" from "nothing matches" — the first is
+              a state to act on, the second means the filters are too narrow. */}
+          {isFiltered ? t('noMatchingInfrastructure', lang) : t('noInfrastructure', lang)}
+        </div>
+      ) : grouped ? (
         Object.entries(byProject).map(([projectName, items]) => (
           <Card key={projectName} title={projectName}>
             <div className="space-y-3">
               {items.map((item) => (
-                <InfraRow key={item.id} item={item} token={token} lang={lang} />
+                <InfraRow key={item.id} item={item} token={token} lang={lang} canRetry={canRetry} />
               ))}
             </div>
           </Card>
         ))
+      ) : (
+        <Card>
+          <div className="space-y-3">
+            {elements.map((item) => (
+              <InfraRow key={item.id} item={item} token={token} lang={lang} canRetry={canRetry} showProject />
+            ))}
+          </div>
+        </Card>
       )}
     </div>
   )
 }
 
-function InfraRow({ item, token, lang }: { item: InfrastructureElement; token: string; lang: string }) {
+function InfraRow({
+  item,
+  token,
+  lang,
+  canRetry = false,
+  showProject = false,
+}: {
+  item: InfrastructureElement
+  token: string
+  lang: string
+  canRetry?: boolean
+  /** Set in the flat (explicitly-sorted) view, where no Card header names it. */
+  showProject?: boolean
+}) {
   const outputs = Object.entries(item.outputs ?? {})
   const outputLabel = outputs.length === 1 ? t('output', lang) : t('outputs', lang)
+  // An element whose provisioning pipeline failed is still stored as 'active' —
+  // it is created when provisioning starts. Showing only that badge claims
+  // infrastructure that was never successfully deployed, so say so explicitly.
+  const deploymentFailed = item.orderStatus === 'failed'
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="flex items-start justify-between">
@@ -77,9 +162,28 @@ function InfraRow({ item, token, lang }: { item: InfrastructureElement; token: s
             <span className="font-medium text-slate-900">
               {item.productName ?? `Product #${item.productId}`}
             </span>
-            <StatusBadge status={item.status} lang={lang} />
+            <StatusBadge status={deploymentFailed ? 'failed' : item.status} lang={lang} />
+            {deploymentFailed && (
+              <span className="text-xs text-slate-500">
+                {t('deploymentFailed', lang)} · #{item.orderId}
+              </span>
+            )}
+            {/* Scheduled teardown is a pending state change with a deadline, so it
+                belongs next to the status rather than buried in the metadata line. */}
+            {item.scheduledDecommissionAt && item.status === 'active' && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800"
+                title={new Date(item.scheduledDecommissionAt).toISOString()}
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {t('scheduledFor', lang)} {new Date(item.scheduledDecommissionAt).toLocaleString(lang)}
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500">
+            {showProject && <>{item.projectName ?? `Project #${item.projectId}`} · </>}
             {item.environmentName} ·{' '}
             {item.deployedAt ? new Date(item.deployedAt).toLocaleString(lang) : t('notDeployed', lang)}
           </p>
@@ -99,7 +203,7 @@ function InfraRow({ item, token, lang }: { item: InfrastructureElement; token: s
             </details>
           )}
         </div>
-        <InfraActions item={item} token={token} lang={lang} />
+        <InfraActions item={item} token={token} lang={lang} canRetry={canRetry} />
       </div>
     </div>
   )

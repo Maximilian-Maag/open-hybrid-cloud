@@ -1,10 +1,18 @@
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
-import { infrastructureElements, deploymentEnvironments, projects } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import {
+  infrastructureElements,
+  deploymentEnvironments,
+  projects,
+  orders,
+  productEnvironments,
+} from '@/lib/db/schema'
+import { eq, and, sql, gte, lte } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { fireDestroyTriggers } from '@/lib/services/teardown'
+import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { ok, err, type Result } from '@/lib/services/result'
+import { trialVariables, trialExpiry } from '@/lib/services/trial'
 
 export interface InfraRow {
   id: number
@@ -17,14 +25,69 @@ export interface InfraRow {
   pipelineId: string[]
   outputs: Record<string, string>
   deployedAt: Date | null
+  /** When set, the element is torn down automatically at or after this instant. */
+  scheduledDecommissionAt: Date | null
   productName: string
   environmentName: string | null
   projectName: string | null
+  /**
+   * Status of the order this element was provisioned from.
+   *
+   * Exposed because the element's own status cannot express a failed deployment:
+   * it is inserted `active` the moment provisioning starts and stays there when
+   * the pipeline fails. Without this the list shows `active` for infrastructure
+   * that was never successfully provisioned — and the Retry action (issue #29)
+   * has nothing to key off.
+   */
+  orderStatus: string | null
 }
+
+/** The `status` values an infrastructure element can actually hold. */
+export const INFRA_STATUSES = ['active', 'decommissioning', 'decommissioned'] as const
+export type InfraStatus = (typeof INFRA_STATUSES)[number]
+
+/**
+ * What the list can be filtered by, which is NOT the same set.
+ *
+ * 'failed' is not a stored status — a failed deployment is an `active` element
+ * whose ORDER failed (see orderStatus above), which is what the row already
+ * displays. Without it in the filter vocabulary the list showed a Failed badge it
+ * could not filter for, and 'active' silently included those rows.
+ */
+export const INFRA_STATUS_FILTERS = [...INFRA_STATUSES, 'failed'] as const
+export type InfraStatusFilter = (typeof INFRA_STATUS_FILTERS)[number]
+
+export const INFRA_SORT_FIELDS = ['date', 'name', 'status'] as const
+export type InfraSortField = (typeof INFRA_SORT_FIELDS)[number]
+
+export interface InfraFilters {
+  productId?: number
+  projectId?: number
+  environmentId?: number
+  /** Free text matched against product, environment and project name. */
+  search?: string
+  status?: InfraStatusFilter
+  /** Inclusive lower / upper bound on `deployed_at`. */
+  deployedFrom?: Date
+  deployedTo?: Date
+  sort?: InfraSortField
+  direction?: 'asc' | 'desc'
+}
+
+// Matched against the same expression the row displays, so a search hit is
+// always visibly explicable. Deliberately excludes `parameters`: the values
+// there include ones flagged sensitive, and a substring match would turn the
+// filter into an oracle for confirming a secret's value.
+const productNameSql = sql<string>`(
+  SELECT name FROM product_translations
+  WHERE product_id = ${infrastructureElements.productId}
+    AND language_code = 'en'
+  LIMIT 1
+)`
 
 export const listInfrastructure = async (
   session: SessionUser,
-  filters: { productId?: number; projectId?: number },
+  filters: InfraFilters,
 ): Promise<Result<InfraRow[]>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
 
@@ -32,10 +95,49 @@ export const listInfrastructure = async (
   if (!isAdmin) conditions.push(sql`${projects.ownerId} = ${session.id}`)
   if (filters.productId) conditions.push(sql`${infrastructureElements.productId} = ${filters.productId}`)
   if (filters.projectId) conditions.push(sql`${infrastructureElements.projectId} = ${filters.projectId}`)
+  if (filters.environmentId) conditions.push(sql`${infrastructureElements.environmentId} = ${filters.environmentId}`)
+  if (filters.status === 'failed') {
+    // The failure lives on the order, not the element.
+    conditions.push(sql`${orders.status} = 'failed'`)
+  } else if (filters.status === 'active') {
+    // A failed deployment is stored 'active', and the row shows it as Failed — so
+    // including it here would contradict the badge the user is looking at.
+    conditions.push(sql`${infrastructureElements.status} = 'active'`)
+    conditions.push(sql`(${orders.status} IS NULL OR ${orders.status} <> 'failed')`)
+  } else if (filters.status) {
+    conditions.push(sql`${infrastructureElements.status} = ${filters.status}`)
+  }
+
+  if (filters.search) {
+    // Escape the LIKE metacharacters so a literal % or _ in the query narrows
+    // the result set instead of widening it to everything.
+    const pattern = `%${filters.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+    conditions.push(sql`(
+      ${productNameSql} ILIKE ${pattern} ESCAPE '\\'
+      OR ${deploymentEnvironments.name} ILIKE ${pattern} ESCAPE '\\'
+      OR ${projects.name} ILIKE ${pattern} ESCAPE '\\'
+    )`)
+  }
+
+  // Both bounds are inclusive; the caller passes the exact boundary it wants
+  // (parseInfraFilters widens a bare date to cover the whole day). gte/lte
+  // rather than a raw sql template because the driver needs the column's type to
+  // bind a JS Date — a hand-written `>= ${date}` fails at query time.
+  if (filters.deployedFrom) conditions.push(gte(infrastructureElements.deployedAt, filters.deployedFrom))
+  if (filters.deployedTo) conditions.push(lte(infrastructureElements.deployedAt, filters.deployedTo))
 
   const where = conditions.length > 0
     ? conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`)
     : undefined
+
+  // Whitelisted rather than interpolated — the sort field reaches this from a
+  // query string.
+  const direction = filters.direction === 'asc' ? sql`ASC` : sql`DESC`
+  const orderBy = {
+    date: sql`${infrastructureElements.deployedAt} ${direction}`,
+    name: sql`${productNameSql} ${direction}`,
+    status: sql`${infrastructureElements.status} ${direction}`,
+  }[filters.sort ?? 'date']
 
   const rows = await db
     .select({
@@ -49,14 +151,11 @@ export const listInfrastructure = async (
       pipelineId: infrastructureElements.pipelineId,
       outputs: infrastructureElements.outputs,
       deployedAt: infrastructureElements.deployedAt,
-      productName: sql<string>`(
-        SELECT name FROM product_translations
-        WHERE product_id = ${infrastructureElements.productId}
-          AND language_code = 'en'
-        LIMIT 1
-      )`,
+      scheduledDecommissionAt: infrastructureElements.scheduledDecommissionAt,
+      productName: productNameSql,
       environmentName: deploymentEnvironments.name,
       projectName: projects.name,
+      orderStatus: orders.status,
     })
     .from(infrastructureElements)
     .leftJoin(
@@ -64,10 +163,248 @@ export const listInfrastructure = async (
       eq(infrastructureElements.environmentId, deploymentEnvironments.id),
     )
     .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
+    .leftJoin(orders, eq(infrastructureElements.orderId, orders.id))
     .where(where)
-    .orderBy(sql`${infrastructureElements.deployedAt} DESC`)
+    // Tie-break on id so a page of rows sharing a sort key (same status, same
+    // deploy timestamp) comes back in a stable order across requests — an
+    // export is expected to match the list it was taken from.
+    .orderBy(orderBy, sql`${infrastructureElements.id} DESC`)
 
   return ok(rows as InfraRow[])
+}
+
+export interface InfraFacets {
+  environments: { id: number; name: string }[]
+  projects: { id: number; name: string }[]
+  products: { id: number; name: string }[]
+}
+
+/**
+ * The distinct environments, projects and products present in the caller's
+ * visible infrastructure — the option lists for the list page's filters.
+ *
+ * Derived from the elements rather than from the admin catalogue endpoints for
+ * two reasons: those are root-only, so a project manager could not populate the
+ * dropdowns at all; and offering an environment with nothing deployed in it only
+ * gives the user a way to filter down to an empty list.
+ *
+ * Scoping mirrors listInfrastructure exactly, so the facets can never hint at
+ * the existence of a project the caller cannot otherwise see.
+ */
+export const listInfrastructureFacets = async (
+  session: SessionUser,
+): Promise<Result<InfraFacets>> => {
+  const isAdmin = session.role === 'admin' || session.role === 'root'
+  const scope = isAdmin ? undefined : sql`${projects.ownerId} = ${session.id}`
+
+  const rows = await db
+    .selectDistinct({
+      environmentId: infrastructureElements.environmentId,
+      environmentName: deploymentEnvironments.name,
+      projectId: infrastructureElements.projectId,
+      projectName: projects.name,
+      productId: infrastructureElements.productId,
+      productName: productNameSql,
+    })
+    .from(infrastructureElements)
+    .leftJoin(
+      deploymentEnvironments,
+      eq(infrastructureElements.environmentId, deploymentEnvironments.id),
+    )
+    .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
+    .where(scope)
+
+  const collect = (
+    pairs: { id: number; name: string | null }[],
+  ): { id: number; name: string }[] => {
+    const byId = new Map<number, string>()
+    for (const { id, name } of pairs) if (!byId.has(id)) byId.set(id, name ?? `#${id}`)
+    return [...byId.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  return ok({
+    environments: collect(rows.map((r) => ({ id: r.environmentId, name: r.environmentName }))),
+    projects: collect(rows.map((r) => ({ id: r.projectId, name: r.projectName }))),
+    products: collect(rows.map((r) => ({ id: r.productId, name: r.productName }))),
+  })
+}
+
+/**
+ * Re-fire provisioning for an element whose deployment failed (issue #29).
+ *
+ * On the failure model, since issue #29 describes one this codebase does not
+ * have: there is no `failed` infrastructure status. The element is inserted as
+ * `active` the moment provisioning STARTS (see approveOrder / createOrder), and a
+ * failed pipeline sets `orders.status = 'failed'` while leaving the element
+ * `active` — claiming infrastructure that was never successfully provisioned.
+ * So the retryable condition lives on the order, and that is what this checks.
+ *
+ * Recovery uses the element's stored parameters, which are the ones the order was
+ * placed with, so a retry cannot quietly provision something different from what
+ * was approved. Previously the only route was a brand-new order, which duplicated
+ * the record and lost the original approval context.
+ */
+export const retryProvisioning = async (
+  session: SessionUser,
+  infraId: number,
+): Promise<Result<{ pipelineIds: string[] }>> => {
+  const [infra] = await db
+    .select()
+    .from(infrastructureElements)
+    .where(eq(infrastructureElements.id, infraId))
+    .limit(1)
+
+  if (!infra) return err(404, 'Infrastructure element not found')
+
+  const [order] = await db
+    .select({ id: orders.id, status: orders.status, isTrial: orders.isTrial })
+    .from(orders)
+    .where(eq(orders.id, infra.orderId))
+    .limit(1)
+
+  if (!order) return err(404, 'Order not found')
+  if (order.status !== 'failed') {
+    return err(400, `Only a failed deployment can be retried — this order is ${order.status}`)
+  }
+
+  // Atomically claim the order (failed → provisioning) and clear the previous
+  // attempt's pipeline tracking in the same statement. Only one concurrent
+  // caller can win, so a double-clicked Retry cannot fire two sets of pipelines
+  // against the same infrastructure.
+  const claimed = await db
+    .update(orders)
+    .set({ status: 'provisioning', pipelineId: [], pipelineStatus: {}, updatedAt: new Date() })
+    .where(and(eq(orders.id, order.id), eq(orders.status, 'failed')))
+    .returning({ id: orders.id })
+
+  if (!claimed.length) return err(409, 'Retry already in progress for this deployment')
+
+  // A trial's CI variables are server-generated, so they are not in the element's
+  // stored parameters — without them the retried pipeline would run as an ordinary
+  // deployment and lose the trial intent the order was placed with. The duration is
+  // re-read from the offering, exactly as initial provisioning does, so a duration
+  // an admin corrected in the meantime is the one that applies.
+  const trialDurationMinutes = order.isTrial
+    ? await resolveTrialDuration(infra.productId, infra.environmentId)
+    : 0
+
+  const variables = {
+    ...(infra.parameters as Record<string, string>),
+    // Pipeline stacks derive TF_STATE_NAME from stateKeyParam ?? ORDER_ID, and
+    // the stored parameters do not carry the server-generated order id. Reusing
+    // the ORIGINAL order id is the point: the retry has to target the same
+    // Terraform state the failed attempt was working on.
+    ORDER_ID: String(infra.orderId),
+    ...(order.isTrial ? trialVariables(trialDurationMinutes) : {}),
+  }
+
+  let outcome: { pipelineIds: string[]; failures: string[] }
+  try {
+    const webhooks = await triggerProductWebhooksTracked(infra.productId, infra.environmentId, variables)
+    const stacks = await triggerPipelineStacksTracked(infra.productId, infra.environmentId, variables)
+    outcome = {
+      pipelineIds: [...webhooks.pipelineIds, ...stacks.pipelineIds],
+      failures: [...webhooks.failures, ...stacks.failures],
+    }
+  } catch (e) {
+    await releaseRetryClaim(order.id)
+    throw e
+  }
+
+  if (outcome.pipelineIds.length === 0) {
+    // Nothing started, so nothing changed: hand the order back to 'failed' so
+    // the Retry button stays available rather than leaving it stuck in a
+    // 'provisioning' state no callback will ever resolve.
+    await releaseRetryClaim(order.id)
+    await logAudit(
+      session.id,
+      'infra.retry_failed',
+      infraId,
+      `No pipeline could be started: ${outcome.failures.join('; ')}`,
+    )
+    return err(502, `Could not start the deployment: ${outcome.failures.join('; ')}`)
+  }
+
+  // Sentinel per trigger that failed to start, mirroring fireDestroyTriggers. A
+  // failed trigger contributes no pipeline id, so without this the order would
+  // complete as soon as the pipelines that DID start succeed — reporting a
+  // successful retry while one webhook never fired.
+  const pipelineStatus: Record<string, string> = {}
+  outcome.failures.forEach((failure, i) => {
+    pipelineStatus[`trigger-failed:${i}`] = failure
+  })
+
+  await db
+    .update(orders)
+    .set({ pipelineId: outcome.pipelineIds, pipelineStatus, updatedAt: new Date() })
+    .where(eq(orders.id, order.id))
+
+  await db
+    .update(infrastructureElements)
+    .set({
+      status: 'active',
+      pipelineId: outcome.pipelineIds,
+      pipelineStatus: {},
+      // Outputs are parsed from the job trace on success. Any left over from an
+      // earlier attempt describe infrastructure this retry is about to replace.
+      outputs: {},
+      // A trial's clock restarts here for the same reason it starts at
+      // provisioning rather than ordering: the failed attempt may have burned the
+      // whole window, and the sweep would tear this retry down on sight. Only a
+      // trial's schedule is touched — a decommission an operator scheduled by hand
+      // (issue #30) must survive a retry.
+      ...(order.isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
+    })
+    .where(eq(infrastructureElements.id, infraId))
+
+  await logAudit(
+    session.id,
+    'infra.retried',
+    infraId,
+    `Deployment retried by ${session.email} (order #${infra.orderId}, ${outcome.pipelineIds.length} pipeline(s))`,
+  )
+
+  if (outcome.failures.length > 0) {
+    // Some pipelines ARE running and cannot be recalled, so the order stays
+    // 'provisioning' and the sentinels above keep it from ever reporting itself
+    // complete. Tell the operator what still needs attention.
+    return err(
+      502,
+      `Retry started ${outcome.pipelineIds.length} pipeline(s), but ${outcome.failures.length} could not be started: ${outcome.failures.join('; ')}`,
+    )
+  }
+
+  return ok({ pipelineIds: outcome.pipelineIds })
+}
+
+/**
+ * The trial duration currently configured for an offering.
+ *
+ * Falls back to the schema default rather than blocking a retry an operator asked
+ * for: an offering withdrawn or misconfigured since the order was placed still
+ * gets a time-boxed deployment, which is the point of the trial.
+ */
+const resolveTrialDuration = async (productId: number, environmentId: number): Promise<number> => {
+  const [offering] = await db
+    .select({ trialDurationMinutes: productEnvironments.trialDurationMinutes })
+    .from(productEnvironments)
+    .where(
+      and(
+        eq(productEnvironments.productId, productId),
+        eq(productEnvironments.environmentId, environmentId),
+      ),
+    )
+    .limit(1)
+  return offering && offering.trialDurationMinutes > 0 ? offering.trialDurationMinutes : 30
+}
+
+const releaseRetryClaim = async (orderId: number): Promise<void> => {
+  await db
+    .update(orders)
+    .set({ status: 'failed', updatedAt: new Date() })
+    .where(eq(orders.id, orderId))
 }
 
 export const decommissionInfra = async (
@@ -84,24 +421,168 @@ export const decommissionInfra = async (
 
   const infra = infraRows[0]
 
-  if (session.role === 'project_manager') {
-    const projectRows = await db
-      .select({ ownerId: projects.ownerId })
-      .from(projects)
-      .where(eq(projects.id, infra.projectId))
-      .limit(1)
+  const authorized = await assertMayTeardown(session, infra.projectId)
+  if (!authorized.ok) return authorized
 
-    if (!projectRows.length || projectRows[0].ownerId !== session.id) {
-      return err(403, 'Forbidden')
+  return claimAndDestroy(infra, { userId: session.id, reason: `initiated by ${session.email}` })
+}
+
+/**
+ * Set or clear an element's automatic-teardown time (issue #30).
+ *
+ * Pass null to clear. Authorisation matches decommissionInfra — scheduling a
+ * teardown is a deferred teardown, so it cannot be a lower bar than doing it now.
+ */
+export const scheduleDecommission = async (
+  session: SessionUser,
+  infraId: number,
+  scheduledAt: Date | null,
+): Promise<Result<{ scheduledDecommissionAt: Date | null }>> => {
+  const [infra] = await db
+    .select()
+    .from(infrastructureElements)
+    .where(eq(infrastructureElements.id, infraId))
+    .limit(1)
+
+  if (!infra) return err(404, 'Infrastructure element not found')
+
+  const authorized = await assertMayTeardown(session, infra.projectId)
+  if (!authorized.ok) return authorized
+
+  // Only an active element can be scheduled. One already tearing down has
+  // nothing left to schedule, and a schedule on a decommissioned element would
+  // sit there forever waiting for a status that will never come back.
+  if (infra.status !== 'active') {
+    return err(400, 'Only an active infrastructure element can be scheduled for decommissioning')
+  }
+
+  if (scheduledAt !== null && scheduledAt.getTime() <= Date.now()) {
+    // A past time would be swept on the very next run, which is a decommission,
+    // not a schedule. Refuse rather than silently tearing something down now.
+    return err(400, 'The scheduled time must be in the future')
+  }
+
+  await db
+    .update(infrastructureElements)
+    .set({ scheduledDecommissionAt: scheduledAt })
+    .where(eq(infrastructureElements.id, infraId))
+
+  await logAudit(
+    session.id,
+    scheduledAt ? 'infra.decommission_scheduled' : 'infra.decommission_schedule_cleared',
+    infraId,
+    scheduledAt
+      ? `Scheduled for ${scheduledAt.toISOString()} by ${session.email}`
+      : `Schedule cleared by ${session.email}`,
+  )
+
+  return ok({ scheduledDecommissionAt: scheduledAt })
+}
+
+const assertMayTeardown = async (
+  session: SessionUser,
+  projectId: number,
+): Promise<Result<void>> => {
+  if (session.role !== 'project_manager') return ok(undefined)
+
+  const [project] = await db
+    .select({ ownerId: projects.ownerId })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1)
+
+  if (!project || project.ownerId !== session.id) return err(403, 'Forbidden')
+  return ok(undefined)
+}
+
+export interface SweepResult {
+  /** Elements whose teardown was started. */
+  decommissioned: number[]
+  /** Elements that were due but could not be torn down, with the reason. */
+  failed: { infraId: number; message: string }[]
+}
+
+/**
+ * Tear down every active element whose scheduled time has arrived.
+ *
+ * On why this is an explicit call rather than an in-process timer: the issue asks
+ * for the polling worker to be extended, but there is no polling worker — pipeline
+ * status arrives by inbound webhook — and the backend is a horizontally scaled
+ * Next.js app (see infra/helm .../hpa.yaml). An interval inside it would run once
+ * per replica. So the sweep is exposed as an endpoint for an external scheduler
+ * (a Kubernetes CronJob, a systemd timer, plain cron) to drive.
+ *
+ * That makes the timing coarse: an element is torn down at the first sweep at or
+ * after its scheduled time, not to the second. For forgotten test environments —
+ * what the feature is for — that is the right trade.
+ *
+ * Safe to call concurrently and repeatedly: claimAndDestroy's atomic
+ * active → decommissioning claim means only one caller ever fires the destroy,
+ * so overlapping sweeps or a sweep racing a user's Decommission button cannot
+ * double-destroy. Each element is handled independently — one broken product's
+ * triggers must not stop the rest of the sweep.
+ */
+export const sweepDueDecommissions = async (now: Date = new Date()): Promise<SweepResult> => {
+  const due = await db
+    .select()
+    .from(infrastructureElements)
+    .where(
+      and(
+        eq(infrastructureElements.status, 'active'),
+        sql`${infrastructureElements.scheduledDecommissionAt} IS NOT NULL`,
+        lte(infrastructureElements.scheduledDecommissionAt, now),
+      ),
+    )
+    .orderBy(infrastructureElements.scheduledDecommissionAt)
+
+  const result: SweepResult = { decommissioned: [], failed: [] }
+
+  for (const infra of due) {
+    try {
+      const outcome = await claimAndDestroy(infra, {
+        userId: null,
+        reason: `by schedule (due ${infra.scheduledDecommissionAt?.toISOString()})`,
+      })
+      if (outcome.ok) result.decommissioned.push(infra.id)
+      else result.failed.push({ infraId: infra.id, message: outcome.message })
+    } catch (e) {
+      // A thrown trigger has already restored the element to 'active', so it will
+      // be picked up again by the next sweep.
+      result.failed.push({ infraId: infra.id, message: e instanceof Error ? e.message : String(e) })
     }
   }
 
-  // Atomically claim the element (active → decommissioning) so two concurrent
-  // decommission calls can't both fire a destroy pipeline.
+  return result
+}
+
+/**
+ * Identity recorded against a teardown. `userId: null` marks a teardown nobody
+ * asked for interactively — the scheduled sweep — matching how the webhook
+ * handler audits callback-driven transitions.
+ */
+interface TeardownActor {
+  userId: number | null
+  reason: string
+}
+
+/**
+ * Claim an active element and fire its destroy triggers.
+ *
+ * Shared by the interactive decommission and the scheduled sweep so both get the
+ * same atomic claim and the same partial-failure reporting. The claim is what
+ * makes the sweep safe to run from anywhere, any number of times: only the caller
+ * that flips active → decommissioning fires anything, so a sweep racing a user's
+ * Decommission button — or two replicas running the sweep at once — cannot
+ * double-destroy.
+ */
+const claimAndDestroy = async (
+  infra: typeof infrastructureElements.$inferSelect,
+  actor: TeardownActor,
+): Promise<Result<{ pipelineIds: string[] }>> => {
   const claimed = await db
     .update(infrastructureElements)
     .set({ status: 'decommissioning' })
-    .where(sql`${infrastructureElements.id} = ${infraId} AND ${infrastructureElements.status} = 'active'`)
+    .where(and(eq(infrastructureElements.id, infra.id), eq(infrastructureElements.status, 'active')))
     .returning({ id: infrastructureElements.id })
 
   if (!claimed.length) return err(400, 'Infrastructure element is not active')
@@ -128,7 +609,7 @@ export const decommissionInfra = async (
     await db
       .update(infrastructureElements)
       .set({ status: 'active' })
-      .where(eq(infrastructureElements.id, infraId))
+      .where(eq(infrastructureElements.id, infra.id))
     throw e
   }
 
@@ -136,10 +617,10 @@ export const decommissionInfra = async (
     // Nothing was started, so nothing was destroyed: the element is back to
     // 'active' and the caller can simply try again.
     await logAudit(
-      session.id,
+      actor.userId,
       'infra.decommission_failed',
-      infraId,
-      `No destroy pipeline could be started: ${outcome.failures.join('; ')}`,
+      infra.id,
+      `No destroy pipeline could be started (${actor.reason}): ${outcome.failures.join('; ')}`,
     )
     return err(502, `Could not start the destroy pipeline: ${outcome.failures.join('; ')}`)
   }
@@ -150,10 +631,10 @@ export const decommissionInfra = async (
     // it from ever reporting itself fully decommissioned. Tell the operator
     // which triggers need manual cleanup instead of returning success.
     await logAudit(
-      session.id,
+      actor.userId,
       'infra.decommission_partial',
-      infraId,
-      `Destroy started for ${outcome.pipelineIds.length} pipeline(s); could not start: ${outcome.failures.join('; ')}`,
+      infra.id,
+      `Destroy started for ${outcome.pipelineIds.length} pipeline(s) (${actor.reason}); could not start: ${outcome.failures.join('; ')}`,
     )
     return err(
       502,
@@ -162,10 +643,10 @@ export const decommissionInfra = async (
   }
 
   await logAudit(
-    session.id,
+    actor.userId,
     'infra.decommissioning',
-    infraId,
-    `Decommission initiated by ${session.email}`,
+    infra.id,
+    `Decommission ${actor.reason}`,
   )
 
   return ok({ pipelineIds: outcome.pipelineIds })

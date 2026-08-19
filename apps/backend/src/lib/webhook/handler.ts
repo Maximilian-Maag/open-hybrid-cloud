@@ -70,7 +70,15 @@ export const handlePipelineEvent = async (
       // Only complete the order once EVERY pipeline that belongs to it has
       // succeeded (multi-pipeline products: webhooks + stacks).
       const statusMap = merged[0].pipelineStatus
-      const allSucceeded = merged[0].pipelineId.every((pid) => statusMap[pid] === 'success')
+      const allSucceeded =
+        merged[0].pipelineId.every((pid) => statusMap[pid] === 'success') &&
+        // Also require every recorded entry to be a success, mirroring the infra
+        // branch below. A trigger that never started contributes no pipeline id
+        // but does leave a `trigger-failed:*` sentinel (see retryProvisioning),
+        // so without this the order would complete as soon as the pipelines that
+        // DID start succeed — reporting a fully provisioned order while one
+        // webhook or stack was never fired at all.
+        Object.values(statusMap).every((status) => status === 'success')
       if (!allSucceeded) continue
 
       // Compare-and-swap: only the caller that flips provisioning → completed

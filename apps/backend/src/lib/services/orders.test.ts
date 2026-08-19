@@ -15,7 +15,7 @@ import { listOrders, getOrderById, createOrder } from './orders'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements, parameters } from '@/lib/db/schema'
+import { orders, infrastructureElements, parameters, productEnvironments } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -478,6 +478,7 @@ describe('createOrder — cost centre rules are enforced server-side', () => {
   const buildWith = async (
     mode: 'project' | 'select' | 'overhead',
     forced: boolean,
+    overheadCostCenterId?: number | null,
   ) => {
     const admin = await createUser({ role: 'admin', email: 'cc-admin@test.dev' })
     const pm = await createUser({ role: 'project_manager', email: 'cc-pm@test.dev' })
@@ -485,7 +486,11 @@ describe('createOrder — cost centre rules are enforced server-side', () => {
     const product = await createProduct(cat.id, 'CC Product')
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
-    await linkProductEnvironment(product.id, env.id, { costCenterMode: mode, forcedCostCenter: forced })
+    await linkProductEnvironment(product.id, env.id, {
+      costCenterMode: mode,
+      forcedCostCenter: forced,
+      ...(overheadCostCenterId !== undefined ? { overheadCostCenterId } : {}),
+    })
     const project = await createProject(pm.id)
     return { admin, product, env, project }
   }
@@ -519,7 +524,7 @@ describe('createOrder — cost centre rules are enforced server-side', () => {
   })
 
   it('rejects a cost centre id that does not exist', async () => {
-    const ctx = await buildWith('overhead', true)
+    const ctx = await buildWith('select', true)
     const result = await createOrder(makeSession(ctx.admin), { ...base(ctx), costCenterId: 999_999 })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(400)
@@ -554,5 +559,294 @@ describe('createOrder — cost centre rules are enforced server-side', () => {
     // The UI never offers the field in this mode, so a value that arrives anyway
     // must not be stored against the order.
     expect(row.costCenterId).toBeNull()
+  })
+
+  // ── overhead mode (issue #22) ───────────────────────────────────────────────
+  // Before product_environments carried an account to point at, `overhead` fell
+  // through to the same branch as `select` and asked the user to pick — the
+  // opposite of a fixed shared account.
+  it('bills an overhead order to the account configured on the offering', async () => {
+    const overhead = await createCostCenter({ code: 'CC-OVERHEAD' })
+    const ctx = await buildWith('overhead', true, overhead.id)
+
+    const result = await createOrder(makeSession(ctx.admin), base(ctx))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.costCenterId).toBe(overhead.id)
+  })
+
+  it('ignores a submitted cost centre in overhead mode', async () => {
+    const overhead = await createCostCenter({ code: 'CC-OVERHEAD' })
+    const submitted = await createCostCenter({ code: 'CC-USER-PICKED' })
+    const ctx = await buildWith('overhead', true, overhead.id)
+
+    const result = await createOrder(makeSession(ctx.admin), { ...base(ctx), costCenterId: submitted.id })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    // The account is fixed by the offering — a caller cannot redirect the spend.
+    expect(row.costCenterId).toBe(overhead.id)
+  })
+
+  it('rejects a forced overhead order when no account is configured', async () => {
+    const ctx = await buildWith('overhead', true, null)
+    const result = await createOrder(makeSession(ctx.admin), base(ctx))
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/no overhead cost center is configured/i)
+    }
+  })
+
+  it('records no cost centre when an unforced overhead offering has no account', async () => {
+    const ctx = await buildWith('overhead', false, null)
+    const result = await createOrder(makeSession(ctx.admin), base(ctx))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.costCenterId).toBeNull()
+  })
+
+  it('rejects an overhead account that has since been deactivated', async () => {
+    // The offering was configured while the account was live; deactivating it
+    // must stop new spend rather than silently attributing to a dead account.
+    const overhead = await createCostCenter({ code: 'CC-OVERHEAD', active: false })
+    const ctx = await buildWith('overhead', true, overhead.id)
+
+    const result = await createOrder(makeSession(ctx.admin), base(ctx))
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/overhead cost center is not active/i)
+    }
+  })
+})
+
+// Issue #1: "test a 1ClickApp for 30 minutes with Admin priv". "Admin priv" is
+// elevated rights INSIDE the provisioned app — the portal cannot grant rights in
+// somebody else's Terraform, so it passes the intent to CI. A trial therefore does
+// NOT bypass approval; that would make every trial-enabled product a way around
+// the approval workflow entirely.
+describe('createOrder — time-boxed trials', () => {
+  const buildTrial = async (over?: { trialEnabled?: boolean; trialDurationMinutes?: number }) => {
+    const admin = await createUser({ role: 'admin', email: 'trial-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'trial-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'OneClick App')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id, over)
+    const project = await createProject(pm.id)
+    return {
+      admin,
+      pm,
+      base: { projectId: project.id, productId: product.id, environmentId: env.id, parameters: {} },
+    }
+  }
+
+  it('refuses a trial of an offering that has not opted in', async () => {
+    // The toggle is hidden in the browser for such products, and a hidden control
+    // is not a control.
+    const { admin, base } = await buildTrial()
+    const result = await createOrder(makeSession(admin), { ...base, trial: true })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/not available as a trial/i)
+    }
+  })
+
+  it('still allows a normal order of a trial-enabled offering', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true })
+    const result = await createOrder(makeSession(admin), base)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.isTrial).toBe(false)
+  })
+
+  it('marks the order and schedules the teardown for an admin trial', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true, trialDurationMinutes: 30 })
+    const before = Date.now()
+    const result = await createOrder(makeSession(admin), { ...base, trial: true })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [order] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(order.isTrial).toBe(true)
+
+    const [infra] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, order.id))
+    // The scheduled-decommission sweep (issue #30) is what tears it down, so a
+    // trial needs no expiry mechanism of its own.
+    const expiry = infra.scheduledDecommissionAt?.getTime() ?? 0
+    expect(expiry).toBeGreaterThanOrEqual(before + 30 * 60_000)
+    expect(expiry).toBeLessThanOrEqual(Date.now() + 30 * 60_000)
+  })
+
+  it('honours a configured duration other than 30 minutes', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true, trialDurationMinutes: 120 })
+    const before = Date.now()
+    const result = await createOrder(makeSession(admin), { ...base, trial: true })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [infra] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, result.data.id))
+    expect(infra.scheduledDecommissionAt?.getTime()).toBeGreaterThanOrEqual(before + 120 * 60_000)
+  })
+
+  it('passes the trial variables to CI', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true, trialDurationMinutes: 45 })
+    await createOrder(makeSession(admin), { ...base, trial: true })
+
+    expect(mockedTriggerWebhooks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ TRIAL: 'true', TRIAL_DURATION_MINUTES: '45' }),
+    )
+  })
+
+  it('sends no trial variables for an ordinary order', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true })
+    await createOrder(makeSession(admin), base)
+
+    const vars = mockedTriggerWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars.TRIAL).toBeUndefined()
+    expect(vars.TRIAL_DURATION_MINUTES).toBeUndefined()
+  })
+
+  it('leaves an ordinary order with no teardown schedule', async () => {
+    const { admin, base } = await buildTrial({ trialEnabled: true })
+    const result = await createOrder(makeSession(admin), base)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [infra] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, result.data.id))
+    expect(infra.scheduledDecommissionAt).toBeNull()
+  })
+
+  it('does NOT bypass approval for a project manager', async () => {
+    // Self-service trials would turn every trial-enabled product into a way around
+    // the approval workflow.
+    const { pm, base } = await buildTrial({ trialEnabled: true })
+    const result = await createOrder(makeSession(pm), { ...base, trial: true })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [order] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(order.status).toBe('pending')
+    expect(order.isTrial).toBe(true)
+    // Nothing is provisioned yet, so nothing is scheduled yet either.
+    const infra = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, order.id))
+    expect(infra).toHaveLength(0)
+  })
+})
+
+// Issue #38. Orders reference the product by id, so without a snapshot a later
+// price change silently rewrites what the order detail page reports as approved.
+describe('createOrder — product snapshot', () => {
+  const buildSnapshot = async () => {
+    const admin = await createUser({ role: 'admin', email: 'snap-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'snap-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Nginx Gateway')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id, undefined, 'AWS Frankfurt')
+    await linkProductEnvironment(product.id, env.id, { price: '10.00', currency: 'CHF' })
+    const project = await createProject(pm.id)
+    return {
+      admin,
+      pm,
+      product,
+      env,
+      base: { projectId: project.id, productId: product.id, environmentId: env.id, parameters: {} },
+    }
+  }
+
+  it('stores what was offered on an admin order', async () => {
+    const ctx = await buildSnapshot()
+    const result = await createOrder(makeSession(ctx.admin), ctx.base)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.productSnapshot).toMatchObject({
+      version: 1,
+      productName: 'Nginx Gateway',
+      environmentName: 'AWS Frankfurt',
+      price: '10.00',
+      currency: 'CHF',
+    })
+  })
+
+  it('stores it on a pending order too, at order time', async () => {
+    // The snapshot has to be what the customer SAW, so it is taken when the order
+    // is placed rather than when it is approved.
+    const ctx = await buildSnapshot()
+    const result = await createOrder(makeSession(ctx.pm), ctx.base)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.status).toBe('pending')
+    expect(row.productSnapshot?.price).toBe('10.00')
+  })
+
+  it('is unaffected by a later price change', async () => {
+    // This is the whole point: the order keeps reporting the price it was placed at.
+    const ctx = await buildSnapshot()
+    const result = await createOrder(makeSession(ctx.admin), ctx.base)
+    if (!result.ok) throw new Error('setup failed')
+
+    await linkProductEnvironment(ctx.product.id, ctx.env.id, { price: '99.00' })
+    await db
+      .update(productEnvironments)
+      .set({ price: '99.00' })
+      .where(eq(productEnvironments.productId, ctx.product.id))
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(row.productSnapshot?.price).toBe('10.00')
+  })
+
+  it('records the parameter definitions that applied', async () => {
+    const ctx = await buildSnapshot()
+    await db.insert(parameters).values({
+      scope: 'product', scopeId: ctx.product.id, name: 'REGION', type: 'string', defaultValue: 'eu-central-1',
+    })
+
+    const result = await createOrder(makeSession(ctx.admin), {
+      ...ctx.base,
+      parameters: { REGION: 'eu-west-1' },
+    })
+    if (!result.ok) throw new Error('setup failed')
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    // The DEFINITION, with its default — the submitted value lives in `parameters`.
+    expect(row.productSnapshot?.parameters).toMatchObject([{ name: 'REGION', defaultValue: 'eu-central-1' }])
+    expect(row.parameters).toEqual({ REGION: 'eu-west-1' })
+  })
+
+  it('surfaces the snapshot on the order read paths', async () => {
+    const ctx = await buildSnapshot()
+    const created = await createOrder(makeSession(ctx.admin), ctx.base)
+    if (!created.ok) throw new Error('setup failed')
+
+    const detail = await getOrderById(makeSession(ctx.admin), created.data.id)
+    expect(detail.ok && detail.data.productSnapshot?.price).toBe('10.00')
+
+    const listed = await listOrders(makeSession(ctx.admin))
+    expect(listed.ok && listed.data[0].productSnapshot?.price).toBe('10.00')
   })
 })

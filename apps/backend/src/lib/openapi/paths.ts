@@ -31,6 +31,13 @@ const orderSchema = z.object({
   pipelineId: z.array(z.string()).nullable(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
+  isTrial: z.boolean().openapi({ description: 'Ordered as a time-boxed trial (issue #1).' }),
+  productSnapshot: z.unknown().nullable().openapi({
+    description:
+      'What the customer was offered when the order was placed (issue #38): product name and description, ' +
+      'price, currency, cost-centre rules and the parameter DEFINITIONS that applied. Sensitive defaults ' +
+      'are redacted. Null for orders placed before snapshots existed.',
+  }),
   productName: z.string().nullable(),
   environmentName: z.string().nullable(),
   userName: z.string().nullable(),
@@ -112,6 +119,15 @@ const infraSchema = z.object({
   productName: z.string().nullable(),
   environmentName: z.string().nullable(),
   projectName: z.string().nullable(),
+  scheduledDecommissionAt: z.string().nullable().openapi({
+    description: 'When set, the element is torn down automatically at or after this instant. null = no schedule.',
+  }),
+  orderStatus: z.string().nullable().openapi({
+    description:
+      "Status of the order this element came from. The element's own status cannot express a failed " +
+      'deployment (it is created active when provisioning starts), so a failed deployment is ' +
+      "status: 'active' with orderStatus: 'failed'.",
+  }),
 })
 
 const auditEntrySchema = z.object({
@@ -141,7 +157,15 @@ const productEnvironmentSchema = z.object({
   currency: z.string(),
   costCenterMode: z.string(),
   forcedCostCenter: z.boolean(),
+  overheadCostCenterId: z.number().nullable(),
+  trialEnabled: z.boolean().openapi({
+    description:
+      'Whether this offering can be ordered as a time-boxed trial. Opt-in per offering: a trial ' +
+      'provisions real infrastructure and asks the pipeline to grant elevated rights inside it.',
+  }),
+  trialDurationMinutes: z.number().openapi({ description: 'How long a trial lives. Default 30.' }),
   environmentName: z.string().nullable(),
+  overheadCostCenterName: z.string().nullable().optional(),
 })
 
 const exchangeRateSchema = z.object({
@@ -245,6 +269,481 @@ registry.registerPath({
     400: { description: 'Missing or invalid code / claims' },
     500: { description: 'Entra ID not configured' },
     502: { description: 'Token exchange failed' },
+  },
+})
+
+// ─── Costs ────────────────────────────────────────────────────────────────────
+
+const costBucketSchema = z.object({
+  id: z.number().nullable(),
+  label: z.string(),
+  totalEur: z.number(),
+  orderCount: z.number(),
+})
+
+const costFilterQuery = z.object({
+  range: z.enum(['currentMonth', 'last3Months', 'last12Months', 'all', 'custom']).optional().openapi({
+    description: 'Preset window, resolved server-side so the report and its export cannot disagree.',
+  }),
+  from: z.string().optional().openapi({ description: 'Inclusive. A bare YYYY-MM-DD means the start of that day.' }),
+  to: z.string().optional().openapi({ description: 'Inclusive. A bare YYYY-MM-DD means the END of that day.' }),
+  projectId: z.string().optional(),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/costs',
+  summary: 'Spending overview per project, cost centre, product and environment',
+  description:
+    'Counts only orders that reached provisioning ("provisioning"/"completed") — a rejected, pending or ' +
+    'failed order never delivered infrastructure. Prices come from each order\'s snapshot, so an admin ' +
+    'editing a price cannot restate past spend; orders predating snapshots fall back to the live price and ' +
+    'are counted in estimatedOrders. Totals are in EUR (the exchange-rate base) and the client converts to ' +
+    'the viewer\'s currency; an amount whose currency has no stored rate appears in unconverted[] rather ' +
+    'than being silently treated as EUR. These are sums of recorded prices, NOT a time-based projection — ' +
+    'the catalogue stores no billing period. Scoped by role: a project manager sees the projects they own.',
+  tags: ['Costs'],
+  security: bearerAuth,
+  request: { query: costFilterQuery },
+  responses: {
+    200: {
+      description: 'Cost report',
+      content: {
+        'application/json': {
+          schema: z.object({
+            totalEur: z.number(),
+            orderCount: z.number(),
+            estimatedOrders: z.number(),
+            byProject: z.array(costBucketSchema),
+            byCostCenter: z.array(costBucketSchema),
+            byProduct: z.array(costBucketSchema),
+            byEnvironment: z.array(costBucketSchema),
+            unconverted: z.array(z.object({ currency: z.string(), amount: z.number() })),
+            global: z.boolean(),
+          }),
+        },
+      },
+    },
+    400: { description: 'Invalid filter' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the caller\'s project' },
+    404: { description: 'Project not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/costs/export',
+  summary: 'Export the cost breakdown as CSV or PDF',
+  description:
+    'One row per counted order rather than the aggregate, so a total can be reconciled. Uses the same ' +
+    'filter parser as GET /costs, so the two always cover the same orders. priceEur is blank when the ' +
+    'currency has no stored rate — 0 would read as "free".',
+  tags: ['Costs'],
+  security: bearerAuth,
+  request: { query: costFilterQuery.extend({ format: z.enum(['csv', 'pdf']).optional() }) },
+  responses: {
+    200: { description: 'CSV or PDF attachment' },
+    400: { description: 'Invalid filter or format' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the caller\'s project' },
+  },
+})
+
+// ─── Cart ─────────────────────────────────────────────────────────────────────
+
+const cartItemSchema = z.object({
+  id: z.number(),
+  productId: z.number(),
+  environmentId: z.number(),
+  parameters: z.record(z.string()),
+  createdAt: z.string().nullable(),
+  productName: z.string().nullable(),
+  environmentName: z.string().nullable(),
+  price: z.string().nullable(),
+  currency: z.string().nullable(),
+  stillOffered: z.boolean().openapi({
+    description:
+      'False when the product is no longer offered in that environment. The item stays in the cart and ' +
+      'says so, rather than vanishing without explanation.',
+  }),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/cart',
+  summary: "List the caller's cart",
+  description: 'Oldest first. Items whose product has been deleted are pruned before listing.',
+  tags: ['Cart'],
+  security: bearerAuth,
+  responses: {
+    200: { description: 'Cart items', content: { 'application/json': { schema: z.array(cartItemSchema) } } },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/cart',
+  summary: 'Add a product+environment to the cart',
+  description:
+    'Parameters are stored as a prefill and deliberately NOT validated here — a cart is a shopping list, ' +
+    'and refusing to hold an incomplete item would defeat collecting first and filling in at checkout. The ' +
+    'offering must exist, since an item that could never be ordered has no business in the cart.',
+  tags: ['Cart'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            productId: z.number().int().positive(),
+            environmentId: z.number().int().positive(),
+            parameters: z.record(z.string()).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: { description: 'Item added', content: { 'application/json': { schema: cartItemSchema } } },
+    400: { description: 'Not offered in that environment, or the cart is full' },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/cart',
+  summary: "Empty the caller's cart",
+  tags: ['Cart'],
+  security: bearerAuth,
+  responses: { 200: { description: 'Cart cleared' }, 401: { description: 'Unauthorized' } },
+})
+
+registry.registerPath({
+  method: 'put',
+  path: '/cart/{itemId}',
+  summary: "Save a cart item's parameter prefill",
+  tags: ['Cart'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ itemId: z.string() }),
+    body: { content: { 'application/json': { schema: z.object({ parameters: z.record(z.string()) }) } } },
+  },
+  responses: {
+    200: { description: 'Prefill saved' },
+    400: { description: 'Invalid id or body' },
+    401: { description: 'Unauthorized' },
+    404: { description: "Not the caller's cart item" },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/cart/{itemId}',
+  summary: 'Remove one cart item (idempotent)',
+  tags: ['Cart'],
+  security: bearerAuth,
+  request: { params: z.object({ itemId: z.string() }) },
+  responses: {
+    200: { description: 'Item removed' },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/cart/checkout',
+  summary: 'Order every cart item against one project',
+  description:
+    'Validates EVERY item first, through the same code path a single order uses, and creates nothing unless ' +
+    'all of them pass — a cart of five with one bad item creates zero orders, not two. Full transactional ' +
+    'atomicity is not available because order creation fires CI pipelines and a fired pipeline cannot be ' +
+    'recalled; past the validation gate, failures are reported per item in failed[] and those items stay in ' +
+    'the cart for a retry. Parameters submitted here win over the stored prefill.',
+  tags: ['Cart'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            projectId: z.number().int().positive(),
+            items: z.array(
+              z.object({
+                cartItemId: z.number().int().positive(),
+                parameters: z.record(z.string()),
+                costCenterId: z.number().int().positive().optional(),
+                trial: z.boolean().optional(),
+              }),
+            ),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Orders created',
+      content: {
+        'application/json': {
+          schema: z.object({
+            orderIds: z.array(z.number()),
+            failed: z.array(z.object({ cartItemId: z.number(), message: z.string() })),
+          }),
+        },
+      },
+    },
+    400: { description: 'Validation failed for at least one item — nothing was created' },
+    401: { description: 'Unauthorized' },
+    502: { description: 'No order could be created' },
+  },
+})
+
+// ─── Product versioning ───────────────────────────────────────────────────────
+
+const productVersionSchema = z.object({
+  id: z.number(),
+  productId: z.number(),
+  environmentId: z.number().nullable(),
+  changelog: z.string(),
+  summary: z.string(),
+  snapshot: z.unknown().nullable(),
+  createdBy: z.number().nullable(),
+  createdAt: z.string().nullable(),
+  authorName: z.string().nullable(),
+  environmentName: z.string().nullable(),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/products/{id}/versions',
+  summary: "[root] Timeline of catalogue changes to a product",
+  description:
+    'Newest first. One entry per change that affects what a customer would be offered. An entry scoped to ' +
+    'an environment carries a configuration snapshot; a product-level change (rename, category) does not, ' +
+    'since there is no single offering to capture.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Version history',
+      content: { 'application/json': { schema: z.array(productVersionSchema) } },
+    },
+    400: { description: 'Invalid product id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/products/{id}/versions/diff',
+  summary: '[root] Compare two versions of a product',
+  description:
+    'Compares the fields that describe what a customer was offered. capturedAt and environmentName are ' +
+    'deliberately excluded: a later capture of the same configuration is not a change, and every version of ' +
+    'one offering names the same environment.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({ from: z.string(), to: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'Field and parameter changes between the two versions',
+      content: {
+        'application/json': {
+          schema: z.object({
+            fields: z.array(z.object({ field: z.string(), from: z.string(), to: z.string() })),
+            parameters: z.array(z.unknown()),
+            identical: z.boolean(),
+            fromVersionId: z.number(),
+            toVersionId: z.number(),
+          }),
+        },
+      },
+    },
+    400: { description: 'Missing/malformed ids, or a version with no snapshot to compare' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'A version id does not belong to this product' },
+  },
+})
+
+// ─── Order comments ───────────────────────────────────────────────────────────
+
+const orderCommentSchema = z.object({
+  id: z.number(),
+  orderId: z.number(),
+  userId: z.number(),
+  body: z.string(),
+  internal: z.boolean().openapi({
+    description: 'Visible to admin/root only. Filtered out in SQL for other callers, not hidden client-side.',
+  }),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  userName: z.string().nullable(),
+  edited: z.boolean(),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/orders/{id}/comments',
+  summary: 'List the comment thread on an order',
+  description:
+    'Oldest first. An admin sees every comment; a project manager sees only their own orders, and never ' +
+    'an internal note — those are excluded by the query, so they never reach the browser.',
+  tags: ['Orders'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Comments visible to the caller',
+      content: { 'application/json': { schema: z.array(orderCommentSchema) } },
+    },
+    400: { description: 'Invalid order id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the caller\'s order' },
+    404: { description: 'Order not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/orders/{id}/comments',
+  summary: 'Add a comment to an order',
+  description:
+    'A public comment emails the orderer and the admins, never the author. An internal note (admin/root ' +
+    'only) emails nobody — telling the orderer a note they cannot read exists would leak what the flag is for.',
+  tags: ['Orders'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ body: z.string().min(1).max(4000), internal: z.boolean().optional() }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Comment created',
+      content: { 'application/json': { schema: orderCommentSchema } },
+    },
+    400: { description: 'Invalid or empty body' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the caller\'s order, or internal requested by a non-admin' },
+    404: { description: 'Order not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'put',
+  path: '/orders/{id}/comments/{commentId}',
+  summary: 'Edit your own comment',
+  description:
+    'Author-only, admins included — rewriting somebody else\'s words under their name is worse than a ' +
+    'correction in the thread. The original text stays in the audit log.',
+  tags: ['Orders'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string(), commentId: z.string() }),
+    body: { content: { 'application/json': { schema: z.object({ body: z.string().min(1).max(4000) }) } } },
+  },
+  responses: {
+    200: {
+      description: 'Comment updated',
+      content: { 'application/json': { schema: orderCommentSchema } },
+    },
+    400: { description: 'Invalid id or empty body' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the author' },
+    404: { description: 'Comment not found (also returned to a non-admin for an internal note)' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/orders/{id}/comments/{commentId}',
+  summary: 'Delete your own comment',
+  description:
+    'Author-only. A hard delete: the immutable audit log holds the body, so no "deleted" placeholder is ' +
+    'left announcing that something was withdrawn.',
+  tags: ['Orders'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string(), commentId: z.string() }) },
+  responses: {
+    200: { description: 'Comment deleted' },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the author' },
+    404: { description: 'Comment not found' },
+  },
+})
+
+// ─── Favorites ────────────────────────────────────────────────────────────────
+
+const favoriteSchema = z.object({
+  productId: z.number(),
+  categoryId: z.number(),
+  name: z.string(),
+  description: z.string(),
+  createdAt: z.string().nullable(),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/favorites',
+  summary: "List the caller's favourited products",
+  description:
+    'Always scoped to the calling user — the user id comes from the session and is never read off ' +
+    'the request. Names are translated with the same fallback chain as the catalogue.',
+  tags: ['Favorites'],
+  security: bearerAuth,
+  request: { query: z.object({ lang: z.string().optional() }) },
+  responses: {
+    200: {
+      description: 'Favourited products, most recently added first',
+      content: { 'application/json': { schema: z.array(favoriteSchema) } },
+    },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'put',
+  path: '/favorites/{productId}',
+  summary: 'Favourite a product (idempotent)',
+  tags: ['Favorites'],
+  security: bearerAuth,
+  request: { params: z.object({ productId: z.string() }) },
+  responses: {
+    200: { description: 'Favourited' },
+    400: { description: 'Invalid product id' },
+    401: { description: 'Unauthorized' },
+    404: { description: 'Product not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/favorites/{productId}',
+  summary: 'Un-favourite a product (idempotent)',
+  tags: ['Favorites'],
+  security: bearerAuth,
+  request: { params: z.object({ productId: z.string() }) },
+  responses: {
+    200: { description: 'Removed' },
+    400: { description: 'Invalid product id' },
+    401: { description: 'Unauthorized' },
   },
 })
 
@@ -353,6 +852,13 @@ registry.registerPath({
             environmentId: z.number().int().positive(),
             costCenterId: z.number().int().positive().optional(),
             parameters: z.record(z.string()),
+            trial: z.boolean().optional().openapi({
+              description:
+                'Order as a time-boxed trial (issue #1). Rejected unless the offering has trialEnabled. ' +
+                'Does NOT bypass approval — a project manager\'s trial still needs an admin to approve it. ' +
+                'The pipeline receives TRIAL=true and TRIAL_DURATION_MINUTES, and the element is scheduled ' +
+                'for automatic decommissioning once provisioning starts.',
+            }),
           }),
         },
       },
@@ -599,6 +1105,19 @@ registry.registerPath({
     query: z.object({
       productId: z.string().optional(),
       projectId: z.string().optional(),
+      environmentId: z.string().optional(),
+      search: z.string().optional().openapi({
+        description: 'Free text matched against product, environment and project name',
+      }),
+      status: z.enum(['active', 'decommissioning', 'decommissioned', 'failed', 'all']).optional(),
+      deployedFrom: z.string().optional().openapi({
+        description: 'Inclusive lower bound. A bare YYYY-MM-DD means the start of that day (UTC).',
+      }),
+      deployedTo: z.string().optional().openapi({
+        description: 'Inclusive upper bound. A bare YYYY-MM-DD means the END of that day (UTC).',
+      }),
+      sort: z.enum(['date', 'name', 'status']).optional(),
+      direction: z.enum(['asc', 'desc']).optional(),
     }),
   },
   responses: {
@@ -606,7 +1125,162 @@ registry.registerPath({
       description: 'List of infrastructure elements',
       content: { 'application/json': { schema: z.array(infraSchema) } },
     },
+    400: { description: 'Invalid filter' },
     401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/infrastructure/facets',
+  summary: 'Distinct environments, projects and products present in the visible infrastructure',
+  description:
+    'Option lists for the infrastructure list filters. Scoped exactly like GET /infrastructure, ' +
+    'so a project manager only sees facets drawn from their own projects.',
+  tags: ['Infrastructure'],
+  security: bearerAuth,
+  responses: {
+    200: {
+      description: 'Facet values',
+      content: {
+        'application/json': {
+          schema: z.object({
+            environments: z.array(z.object({ id: z.number(), name: z.string() })),
+            projects: z.array(z.object({ id: z.number(), name: z.string() })),
+            products: z.array(z.object({ id: z.number(), name: z.string() })),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/infrastructure/export',
+  summary: '[admin] Export the infrastructure inventory as CSV or PDF',
+  description:
+    'Accepts exactly the same filters as GET /infrastructure and applies them identically, so the ' +
+    'file matches the list it was taken from. Parameter values are omitted unless includeParameters ' +
+    'is set, and any parameter whose name is flagged sensitive anywhere in the catalogue is redacted.',
+  tags: ['Infrastructure'],
+  security: bearerAuth,
+  request: {
+    query: z.object({
+      format: z.enum(['csv', 'pdf']).optional(),
+      includeParameters: z.enum(['true', 'false']).optional(),
+      productId: z.string().optional(),
+      projectId: z.string().optional(),
+      environmentId: z.string().optional(),
+      search: z.string().optional(),
+      status: z.enum(['active', 'decommissioning', 'decommissioned', 'failed', 'all']).optional(),
+      deployedFrom: z.string().optional(),
+      deployedTo: z.string().optional(),
+      sort: z.enum(['date', 'name', 'status']).optional(),
+      direction: z.enum(['asc', 'desc']).optional(),
+    }),
+  },
+  responses: {
+    200: { description: 'CSV or PDF attachment' },
+    400: { description: 'Invalid filter or format' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/infrastructure/{id}/retry',
+  summary: '[admin] Re-fire provisioning for a failed deployment',
+  description:
+    'Retries the deployment using the parameters the order was placed with, so a retry cannot ' +
+    'provision something different from what was approved. Only valid while the element\'s ORDER is ' +
+    "'failed' — the element itself has no failed status. Returns 502 if no pipeline could be started " +
+    '(the order is handed back to failed) or if only some could.',
+  tags: ['Infrastructure'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Retry started',
+      content: { 'application/json': { schema: z.object({ pipelineIds: z.array(z.string()) }) } },
+    },
+    400: { description: 'Invalid id, or the deployment is not in a failed state' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Infrastructure element or order not found' },
+    409: { description: 'A retry is already in progress' },
+    502: { description: 'No pipeline, or only some pipelines, could be started' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/infrastructure/{id}/schedule-decommission',
+  summary: 'Set or clear automatic decommissioning for an element',
+  description:
+    'Pass null to clear. Same authorisation as the immediate decommission — scheduling a teardown is a ' +
+    'deferred teardown. The element must be active and the time must be in the future. Nothing acts on ' +
+    'the schedule until the sweep runs (POST /internal/decommission-sweep).',
+  tags: ['Infrastructure'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ scheduledAt: z.string().datetime({ offset: true }).nullable() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Schedule stored or cleared',
+      content: {
+        'application/json': {
+          schema: z.object({ scheduledDecommissionAt: z.string().nullable() }),
+        },
+      },
+    },
+    400: { description: 'Invalid id or timestamp, time not in the future, or the element is not active' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Infrastructure element not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/internal/decommission-sweep',
+  summary: '[scheduler] Tear down every element whose scheduled time has arrived',
+  description:
+    'Driven by an external scheduler (Kubernetes CronJob, cron), not a user: the backend has no worker ' +
+    'process and is horizontally scaled, so an in-process timer would run once per replica. ' +
+    'Authenticated with the DECOMMISSION_SWEEP_SECRET shared secret in an X-Sweep-Secret header rather ' +
+    'than a session, and disabled entirely (503) while that is unset. Idempotent — the underlying ' +
+    'active/decommissioning claim is atomic, so overlapping or replayed calls tear nothing down twice.',
+  tags: ['Infrastructure'],
+  security: [],
+  request: {
+    headers: z.object({ 'x-sweep-secret': z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'All due elements torn down',
+      content: {
+        'application/json': {
+          schema: z.object({
+            decommissioned: z.array(z.number()),
+            failed: z.array(z.object({ infraId: z.number(), message: z.string() })),
+          }),
+        },
+      },
+    },
+    207: { description: 'Some teardowns could not be started — see failed[]' },
+    401: { description: 'Missing or wrong sweep secret' },
+    503: { description: 'DECOMMISSION_SWEEP_SECRET is not configured' },
   },
 })
 
@@ -1270,6 +1944,12 @@ registry.registerPath({
             currency: z.string().optional(),
             costCenterMode: z.enum(['project', 'select', 'overhead']).optional(),
             forcedCostCenter: z.boolean().optional(),
+            overheadCostCenterId: z.number().nullable().optional(),
+            trialEnabled: z.boolean().optional(),
+            trialDurationMinutes: z.number().int().positive().optional(),
+            changelog: z.string().max(2000).optional().openapi({
+              description: 'Optional free text describing the change; recorded in the product history (issue #38).',
+            }),
           }),
         },
       },
@@ -1302,6 +1982,12 @@ registry.registerPath({
             currency: z.string().optional(),
             costCenterMode: z.enum(['project', 'select', 'overhead']).optional(),
             forcedCostCenter: z.boolean().optional(),
+            overheadCostCenterId: z.number().nullable().optional(),
+            trialEnabled: z.boolean().optional(),
+            trialDurationMinutes: z.number().int().positive().optional(),
+            changelog: z.string().max(2000).optional().openapi({
+              description: 'Optional free text describing the change; recorded in the product history (issue #38).',
+            }),
           }),
         },
       },
@@ -1336,6 +2022,7 @@ registry.registerPath({
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },
+    409: { description: 'Infrastructure is still deployed in this environment' },
   },
 })
 

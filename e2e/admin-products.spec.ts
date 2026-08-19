@@ -100,3 +100,107 @@ test.describe('Admin - Product Delete Button', () => {
     await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
   })
 })
+
+test.describe('Admin - Product Environment Removal', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+  })
+
+  // The Remove button only appears for environments the product is actually
+  // linked to, so this needs a product with a saved offering. Skips cleanly on a
+  // stack with no products or no deployment environments configured.
+  test('Remove asks for confirmation and explains what is discarded', async ({ page }) => {
+    await page.goto('/admin/products')
+    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    const envCard = page.locator('div').filter({ has: page.getByRole('heading', { name: /^environments$/i }) }).last()
+    await expect(envCard).toBeVisible({ timeout: 8000 })
+
+    const remove = envCard.getByRole('button', { name: /^remove$/i }).first()
+    if (await remove.count() === 0) { test.skip(); return }
+
+    await remove.click()
+    const dialog = page.locator('dialog[open]')
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: /^remove .+\?$/i })).toBeVisible()
+    // Blast radius is spelled out: the offering goes, provisioned infra does not.
+    await expect(dialog.getByText(/no longer be orderable/i)).toBeVisible()
+
+    // Cancel leaves the offering in place.
+    await dialog.getByRole('button', { name: /cancel/i }).click()
+    await expect(dialog).not.toBeVisible()
+    await expect(envCard.getByRole('button', { name: /^remove$/i }).first()).toBeVisible()
+  })
+})
+
+test.describe('Admin - Trial Offerings', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+  })
+
+  // Issue #1. Trials are opt-in per offering, so the duration field is gated on
+  // the checkbox rather than always present.
+  test('the trial duration appears only once the offering is opted in', async ({ page }) => {
+    await page.goto('/admin/products')
+    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    const trialToggle = page.getByLabel(/offer as trial/i).first()
+    if (await trialToggle.count() === 0) { test.skip(); return }
+
+    await expect(page.getByLabel(/trial duration/i)).toHaveCount(0)
+    await trialToggle.check()
+    await expect(page.getByLabel(/trial duration/i).first()).toBeVisible()
+    // 30 minutes is the issue's number, carried as the default.
+    await expect(page.getByLabel(/trial duration/i).first()).toHaveValue('30')
+
+    // Leave the offering as it was.
+    await trialToggle.uncheck()
+  })
+})
+
+// Issue #38. History rows appear as a side effect of edits, so what is asserted
+// here is that the panel exists and the changelog field feeds it.
+test.describe('Admin - Product Version History', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+    await page.goto('/admin/products')
+  })
+
+  test('the product edit page carries a version history panel', async ({ page }) => {
+    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    await expect(page.getByRole('heading', { name: /version history/i })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByLabel(/^changelog$/i)).toBeVisible()
+  })
+
+  test('saving with a changelog note adds it to the history', async ({ page }) => {
+    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const noProducts = page.getByText(/no products/i)
+    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    if (await noProducts.isVisible()) { test.skip(); return }
+
+    await editLinks.first().click()
+    await expect(page.getByLabel(/^changelog$/i)).toBeVisible({ timeout: 10000 })
+
+    const note = `e2e changelog ${Date.now()}`
+    await page.getByLabel(/^changelog$/i).fill(note)
+    // The first Save button belongs to the basic-info form.
+    await page.getByRole('button', { name: /^save$/i }).first().click()
+
+    await expect(page.getByText(note)).toBeVisible({ timeout: 10000 })
+    // Cleared after saving, since a note describes one change.
+    await expect(page.getByLabel(/^changelog$/i)).toHaveValue('')
+  })
+})

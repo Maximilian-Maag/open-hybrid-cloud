@@ -18,6 +18,8 @@ import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
+import { resolveTrial, trialVariables, trialExpiry } from '@/lib/services/trial'
+import { captureProductSnapshot, type ProductSnapshot } from '@/lib/services/snapshot'
 
 export interface OrderRow {
   id: number
@@ -32,6 +34,13 @@ export interface OrderRow {
   pipelineId: string[]
   createdAt: Date
   updatedAt: Date
+  /** Ordered as a time-boxed trial (issue #1). */
+  isTrial: boolean
+  /**
+   * What the customer was offered when the order was placed (issue #38). Null for
+   * orders placed before snapshots existed.
+   */
+  productSnapshot: ProductSnapshot | null
   productName: string
   environmentName: string | null
   userName: string | null
@@ -43,6 +52,8 @@ export interface CreateOrderInput {
   environmentId: number
   costCenterId?: number
   parameters: Record<string, string>
+  /** Order as a time-boxed trial (issue #1). Requires a trial-enabled offering. */
+  trial?: boolean
 }
 
 export interface CreatedOrder {
@@ -58,6 +69,7 @@ export interface CreatedOrder {
   pipelineId: string[]
   createdAt: Date
   updatedAt: Date
+  isTrial: boolean
   infraId?: number
 }
 
@@ -78,6 +90,8 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
       pipelineId: orders.pipelineId,
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
+      isTrial: orders.isTrial,
+      productSnapshot: orders.productSnapshot,
       productName: sql<string>`(
         SELECT name FROM product_translations
         WHERE product_id = ${orders.productId}
@@ -114,6 +128,8 @@ export const getOrderById = async (
       pipelineId: orders.pipelineId,
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
+      isTrial: orders.isTrial,
+      productSnapshot: orders.productSnapshot,
       productName: sql<string>`(
         SELECT name FROM product_translations
         WHERE product_id = ${orders.productId}
@@ -189,24 +205,39 @@ const validateAndApplyParameters = (
 
 /**
  * Resolve and validate the cost centre for an order against the rules stored on
- * the product/environment offering.
+ * the product/environment offering (FA-10.4).
  *
- * - `project`  the cost centre comes from the project, so a submitted one is
- *              ignored rather than silently stored against the order.
- * - `select` / `overhead`  the user picks one. `forcedCostCenter` makes that
- *              choice mandatory; otherwise it may be omitted.
+ * - `project`   the cost centre comes from the project, so a submitted one is
+ *               ignored rather than silently stored against the order.
+ * - `overhead`  the offering names a fixed shared cost centre. The user never
+ *               picks, so a submitted one is ignored here too.
+ * - `select`    the user picks one. `forcedCostCenter` makes that choice
+ *               mandatory; otherwise it may be omitted.
  *
- * A submitted id must additionally name a cost centre that exists AND is active
- * — the foreign key only proves existence, and ordering against a deactivated
- * cost centre is exactly what deactivating one is meant to prevent.
+ * A cost centre must exist AND be active, whichever way it was arrived at — the
+ * foreign key only proves existence, and ordering against a deactivated cost
+ * centre is exactly what deactivating one is meant to prevent. That applies to a
+ * configured overhead account as much as to a user's choice: it may have been
+ * deactivated long after the offering was set up.
  */
 const validateCostCenter = async (
-  offering: { costCenterMode: string; forcedCostCenter: boolean },
+  offering: { costCenterMode: string; forcedCostCenter: boolean; overheadCostCenterId: number | null },
   costCenterId: number | undefined,
 ): Promise<Result<number | null>> => {
-  const userChooses = offering.costCenterMode === 'select' || offering.costCenterMode === 'overhead'
+  if (offering.costCenterMode === 'overhead') {
+    // The whole point of an overhead account is that it is fixed by the
+    // offering. Falling back to the submitted value here is what made this mode
+    // indistinguishable from 'select'.
+    if (offering.overheadCostCenterId === null) {
+      if (offering.forcedCostCenter) {
+        return err(400, 'No overhead cost center is configured for this environment')
+      }
+      return ok(null)
+    }
+    return validateActiveCostCenter(offering.overheadCostCenterId, 'Overhead cost center')
+  }
 
-  if (!userChooses) {
+  if (offering.costCenterMode !== 'select') {
     // 'project' mode: attribution follows the project, so don't store a
     // caller-supplied value that the UI never offered.
     return ok(null)
@@ -219,22 +250,50 @@ const validateCostCenter = async (
     return ok(null)
   }
 
+  return validateActiveCostCenter(costCenterId, 'Cost center')
+}
+
+const validateActiveCostCenter = async (
+  costCenterId: number,
+  label: string,
+): Promise<Result<number>> => {
   const [cc] = await db
     .select({ id: costCenters.id, active: costCenters.active })
     .from(costCenters)
     .where(eq(costCenters.id, costCenterId))
     .limit(1)
 
-  if (!cc) return err(400, 'Cost center not found')
-  if (!cc.active) return err(400, 'Cost center is not active')
+  if (!cc) return err(400, `${label} not found`)
+  if (!cc.active) return err(400, `${label} is not active`)
 
   return ok(cc.id)
 }
 
-export const createOrder = async (
+/**
+ * Everything an order needs, resolved and validated, with nothing written yet.
+ *
+ * Extracted so the cart checkout (issue #28) can validate EVERY item before
+ * creating any of them. Order creation fires CI pipelines, which cannot be
+ * un-fired, so a checkout's only meaningful atomicity is an all-or-nothing
+ * validation gate — and that gate has to apply exactly the rules a single order
+ * would, not a second copy of them that drifts.
+ */
+export interface PreparedOrder {
+  projectId: number
+  productId: number
+  environmentId: number
+  parameters: Record<string, string>
+  costCenterId: number | null
+  isTrial: boolean
+  trialDurationMinutes: number
+  productSnapshot: ProductSnapshot | null
+  isAdmin: boolean
+}
+
+export const prepareOrder = async (
   session: SessionUser,
   input: CreateOrderInput,
-): Promise<Result<CreatedOrder>> => {
+): Promise<Result<PreparedOrder>> => {
   const { projectId, productId, environmentId, costCenterId } = input
   const isAdmin = session.role === 'admin' || session.role === 'root'
 
@@ -264,6 +323,7 @@ export const createOrder = async (
       productId: productEnvironments.productId,
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
+      overheadCostCenterId: productEnvironments.overheadCostCenterId,
     })
     .from(productEnvironments)
     .where(
@@ -284,11 +344,68 @@ export const createOrder = async (
   if (!costCenterResult.ok) return costCenterResult
   const resolvedCostCenterId = costCenterResult.data
 
+  // Trials are opt-in per offering (issue #1). Checked here rather than trusted
+  // from the request: the toggle is hidden in the browser for products that do
+  // not offer one, and a hidden control is not a control.
+  const isTrial = input.trial === true
+  let trialDurationMinutes = 0
+  if (isTrial) {
+    const trial = await resolveTrial(productId, environmentId)
+    if (!trial.ok) return trial
+    trialDurationMinutes = trial.data.trialDurationMinutes
+  }
+
   // Server-side parameter validation (required/type checks + defaults).
   const defs = await loadApplicableParameters(productId, product.categoryId, environmentId)
   const validated = validateAndApplyParameters(defs, input.parameters)
   if (!validated.ok) return validated
   const parameters = validated.data
+
+  // Captured before anything is written, so both an admin's direct order and a
+  // project manager's pending order record what was actually offered (issue #38).
+  // Taken after validation, so the offering is known to exist.
+  const productSnapshot = await captureProductSnapshot(productId, product.categoryId, environmentId)
+
+  return ok({
+    projectId,
+    productId,
+    environmentId,
+    parameters,
+    costCenterId: resolvedCostCenterId,
+    isTrial,
+    trialDurationMinutes,
+    productSnapshot,
+    isAdmin,
+  })
+}
+
+/**
+ * Create one order, provisioning it immediately for an admin or queueing it for
+ * approval for a project manager.
+ */
+export const createOrder = async (
+  session: SessionUser,
+  input: CreateOrderInput,
+): Promise<Result<CreatedOrder>> => {
+  const prepared = await prepareOrder(session, input)
+  if (!prepared.ok) return prepared
+  return createPreparedOrder(session, prepared.data)
+}
+
+/**
+ * Write and provision an order that has already been validated.
+ *
+ * Separate from prepareOrder so the cart checkout can put its validation gate
+ * between the two.
+ */
+export const createPreparedOrder = async (
+  session: SessionUser,
+  prepared: PreparedOrder,
+): Promise<Result<CreatedOrder>> => {
+  const {
+    projectId, productId, environmentId, parameters,
+    costCenterId: resolvedCostCenterId, isTrial, trialDurationMinutes, productSnapshot, isAdmin,
+  } = prepared
 
   if (isAdmin) {
     const [order] = await db
@@ -301,10 +418,16 @@ export const createOrder = async (
         status: 'provisioning',
         parameters,
         costCenterId: resolvedCostCenterId,
+        isTrial,
+        productSnapshot,
       })
       .returning()
 
-    const triggerVars = { ...parameters, ORDER_ID: String(order.id) }
+    const triggerVars = {
+      ...parameters,
+      ORDER_ID: String(order.id),
+      ...(isTrial ? trialVariables(trialDurationMinutes) : {}),
+    }
     const webhookIds = await triggerProductWebhooks(productId, environmentId, triggerVars)
     const stackIds = await triggerPipelineStacks(productId, environmentId, triggerVars)
     const pipelineIds = [...webhookIds, ...stackIds]
@@ -323,6 +446,10 @@ export const createOrder = async (
         status: 'active',
         parameters,
         pipelineId: pipelineIds,
+        // The trial's clock starts here, at provisioning. The scheduled-decommission
+        // sweep (issue #30) is what actually tears it down, so a trial needs no
+        // teardown mechanism of its own.
+        ...(isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
       })
       .returning()
 
@@ -346,6 +473,10 @@ export const createOrder = async (
         status: 'pending',
         parameters,
         costCenterId: resolvedCostCenterId,
+        // Carried to approval time, which is where the trial is actually
+        // provisioned and where its clock starts.
+        isTrial,
+        productSnapshot,
       })
       .returning()
 

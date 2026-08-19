@@ -1,7 +1,8 @@
 import { db } from '@/lib/db/client'
-import { parameters, type Parameter } from '@/lib/db/schema'
+import { parameters, products, productEnvironments, type Parameter } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
+import { recordProductVersion } from '@/lib/services/versions'
 
 export interface ParameterFilters {
   scope?: 'global' | 'category' | 'product'
@@ -46,7 +47,10 @@ export const listParameters = async (filters: ParameterFilters): Promise<Result<
   return ok(rows)
 }
 
-export const createParameter = async (input: CreateParameterInput): Promise<Result<Parameter>> => {
+export const createParameter = async (
+  input: CreateParameterInput,
+  userId?: number,
+): Promise<Result<Parameter>> => {
   const [param] = await db
     .insert(parameters)
     .values({
@@ -63,13 +67,19 @@ export const createParameter = async (input: CreateParameterInput): Promise<Resu
     })
     .returning()
 
+  await recordParameterChange(param, 'added', userId ?? null)
   return ok(param)
 }
 
 export const updateParameter = async (
   id: number,
   input: UpdateParameterInput,
+  userId?: number,
 ): Promise<Result<Parameter>> => {
+  // Read the row first: an edit that MOVES the parameter to another environment
+  // changes two sets of offerings, and the old one is only knowable from before.
+  const [before] = await db.select().from(parameters).where(eq(parameters.id, id)).limit(1)
+
   const [updated] = await db
     .update(parameters)
     .set(input)
@@ -77,15 +87,74 @@ export const updateParameter = async (
     .returning()
 
   if (!updated) return err(404, 'Not found')
+
+  await recordParameterChange(updated, 'updated', userId ?? null)
+  if (before && before.environmentId !== updated.environmentId) {
+    await recordParameterChange(before, 'removed', userId ?? null)
+  }
   return ok(updated)
 }
 
-export const deleteParameter = async (id: number): Promise<Result<void>> => {
+export const deleteParameter = async (id: number, userId?: number): Promise<Result<void>> => {
   const deleted = await db
     .delete(parameters)
     .where(eq(parameters.id, id))
-    .returning({ id: parameters.id })
+    .returning()
 
   if (!deleted.length) return err(404, 'Not found')
+
+  await recordParameterChange(deleted[0], 'removed', userId ?? null)
   return ok(undefined)
+}
+
+/**
+ * Record a catalogue version on every offering a parameter change affects
+ * (issue #38).
+ *
+ * Parameter definitions are part of the offering snapshot, so without this a
+ * change to one — its default, whether it is required, whether it is sensitive —
+ * left no version to compare against and quietly folded itself into whatever
+ * unrelated edit happened to be recorded next.
+ *
+ * One version per affected OFFERING rather than per product, because that is the
+ * granularity a snapshot has. The fan-out is therefore the number of offerings in
+ * the parameter's scope: one product's for 'product', a category's for 'category',
+ * the catalogue's for 'global'. Best-effort, like the recorder itself — a change to
+ * a parameter must not fail because its history could not be written.
+ */
+const recordParameterChange = async (
+  param: { scope: string; scopeId: number; environmentId: number | null; name: string },
+  action: 'added' | 'updated' | 'removed',
+  userId: number | null,
+): Promise<void> => {
+  try {
+    const conditions = []
+    if (param.scope === 'product') conditions.push(eq(productEnvironments.productId, param.scopeId))
+    if (param.scope === 'category') conditions.push(eq(products.categoryId, param.scopeId))
+    // A parameter pinned to one environment only changes that offering; an
+    // environment-agnostic one changes every offering of the products in scope.
+    if (param.environmentId !== null) {
+      conditions.push(eq(productEnvironments.environmentId, param.environmentId))
+    }
+
+    const offerings = await db
+      .select({
+        productId: productEnvironments.productId,
+        environmentId: productEnvironments.environmentId,
+      })
+      .from(productEnvironments)
+      .innerJoin(products, eq(productEnvironments.productId, products.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+
+    for (const offering of offerings) {
+      await recordProductVersion({
+        productId: offering.productId,
+        environmentId: offering.environmentId,
+        summary: `Parameter ${param.name} ${action}`,
+        userId,
+      })
+    }
+  } catch (e) {
+    console.error('[parameters] Failed to record a version for a parameter change:', e)
+  }
 }

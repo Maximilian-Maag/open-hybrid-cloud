@@ -10,6 +10,10 @@ const CreateOrderSchema = z.object({
   environmentId: z.number().int().positive(),
   costCenterId: z.number().int().positive().optional(),
   parameters: z.record(z.string()),
+  // Time-boxed trial (issue #1). The offering must be trial-enabled; the service
+  // checks that rather than trusting the client, since the toggle is simply
+  // hidden for products that do not offer one.
+  trial: z.boolean().optional(),
 })
 
 export async function GET(req: NextRequest) {

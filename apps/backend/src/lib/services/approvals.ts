@@ -6,13 +6,15 @@ import {
   deploymentEnvironments,
   users,
   projects,
+  productEnvironments,
 } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { sendOrderApproved, sendOrderRejected } from '@/lib/notification'
 import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { findProductName, findUserEmail } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
+import { trialVariables, trialExpiry } from '@/lib/services/trial'
 
 export interface ApprovalRow {
   id: number
@@ -27,6 +29,12 @@ export interface ApprovalRow {
   pipelineId: string[]
   createdAt: Date
   updatedAt: Date
+  /**
+   * Ordered as a time-boxed trial (issue #1). Surfaced in the queue because it
+   * changes what the approver is agreeing to: a trial is torn down again shortly
+   * after it comes up, and asks the pipeline for elevated rights inside it.
+   */
+  isTrial: boolean
   productName: string
   environmentName: string | null
   userName: string | null
@@ -48,6 +56,7 @@ export const listApprovals = async (): Promise<Result<ApprovalRow[]>> => {
       pipelineId: orders.pipelineId,
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
+      isTrial: orders.isTrial,
       productName: sql<string>`(
         SELECT name FROM product_translations
         WHERE product_id = ${orders.productId}
@@ -92,7 +101,35 @@ export const approveOrder = async (
 
   const order = claimed[0]
 
-  const triggerVars = { ...(order.parameters as Record<string, string>), ORDER_ID: String(order.id) }
+  // A trial's clock starts HERE, at provisioning, not when the order was placed:
+  // the order may have waited for approval, and starting the clock then could
+  // burn the whole trial — or expire it outright — before the infrastructure
+  // existed. The duration is re-read from the offering rather than snapshotted on
+  // the order, so a duration an admin corrected while the order was pending is
+  // the one that applies.
+  let trialDurationMinutes = 0
+  if (order.isTrial) {
+    const [offering] = await db
+      .select({ trialDurationMinutes: productEnvironments.trialDurationMinutes })
+      .from(productEnvironments)
+      .where(
+        and(
+          eq(productEnvironments.productId, order.productId),
+          eq(productEnvironments.environmentId, order.environmentId),
+        ),
+      )
+      .limit(1)
+    // An offering withdrawn or with a nonsense duration while the order was
+    // pending falls back to the schema default rather than blocking an approval
+    // an admin already decided on — the trial is still torn down.
+    trialDurationMinutes = offering && offering.trialDurationMinutes > 0 ? offering.trialDurationMinutes : 30
+  }
+
+  const triggerVars = {
+    ...(order.parameters as Record<string, string>),
+    ORDER_ID: String(order.id),
+    ...(order.isTrial ? trialVariables(trialDurationMinutes) : {}),
+  }
   let pipelineIds: string[]
   try {
     const webhookIds = await triggerProductWebhooks(order.productId, order.environmentId, triggerVars)
@@ -122,6 +159,9 @@ export const approveOrder = async (
       status: 'active',
       parameters: order.parameters as Record<string, string>,
       pipelineId: pipelineIds,
+      // The scheduled-decommission sweep (issue #30) tears the trial down, so a
+      // trial needs no expiry mechanism of its own.
+      ...(order.isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
     })
     .returning()
 

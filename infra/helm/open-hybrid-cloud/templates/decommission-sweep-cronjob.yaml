@@ -1,0 +1,79 @@
+{{- if .Values.decommissionSweep.enabled }}
+{{- /*
+  Scheduled decommissioning sweep (issue #30).
+
+  The backend has no worker process and no in-process scheduler: pipeline status
+  arrives by inbound webhook, and the deployment is horizontally scaled, so an
+  interval inside the app would fire once per replica. This CronJob is the single
+  caller instead.
+
+  Overlap is concurrencyPolicy: Forbid for tidiness only — the sweep's atomic
+  active -> decommissioning claim already makes concurrent runs safe.
+*/}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "open-hybrid-cloud.fullname" . }}-decommission-sweep
+  labels:
+    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: decommission-sweep
+spec:
+  schedule: {{ .Values.decommissionSweep.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "open-hybrid-cloud.labels" . | nindent 12 }}
+            app.kubernetes.io/component: decommission-sweep
+        spec:
+          restartPolicy: Never
+          {{- with .Values.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: sweep
+              image: curlimages/curl:8.11.1
+              # --fail-with-body so a 401/503 fails the Job (and shows why in the
+              # logs) instead of passing silently. 207 is a partial success — some
+              # teardowns started, some could not — and must NOT fail the Job, so
+              # it is matched explicitly.
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  STATUS=$(curl -sS -o /tmp/out -w '%{http_code}' \
+                    -X POST \
+                    -H "X-Sweep-Secret: ${DECOMMISSION_SWEEP_SECRET}" \
+                    "http://{{ include "open-hybrid-cloud.backend.fullname" . }}:{{ .Values.backend.service.port }}/api/internal/decommission-sweep")
+                  cat /tmp/out
+                  echo
+                  case "$STATUS" in
+                    200) exit 0 ;;
+                    207) echo "sweep partially failed — see the failed[] entries above"; exit 0 ;;
+                    *)   echo "sweep failed with HTTP $STATUS"; exit 1 ;;
+                  esac
+              env:
+                - name: DECOMMISSION_SWEEP_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                      key: DECOMMISSION_SWEEP_SECRET
+              {{- with .Values.decommissionSweep.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

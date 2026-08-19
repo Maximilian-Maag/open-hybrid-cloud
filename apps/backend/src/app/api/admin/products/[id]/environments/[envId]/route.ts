@@ -9,6 +9,12 @@ const UpdateProductEnvironmentSchema = z.object({
   currency: z.string().optional(),
   costCenterMode: z.enum(['project', 'select', 'overhead']).optional(),
   forcedCostCenter: z.boolean().optional(),
+  // Nullable so the admin form can clear the overhead account again; the
+  // service rejects an id that is unknown or deactivated.
+  overheadCostCenterId: z.number().int().positive().nullable().optional(),
+  trialEnabled: z.boolean().optional(),
+  trialDurationMinutes: z.number().int().positive().optional(),
+  changelog: z.string().max(2000).optional(),
 })
 
 export async function PUT(
@@ -25,7 +31,13 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await createProductEnvironment(parseInt(id, 10), { environmentId: parseInt(envId, 10), ...parsed.data }))
+  return toResponse(
+    await createProductEnvironment(parseInt(id, 10), {
+      environmentId: parseInt(envId, 10),
+      ...parsed.data,
+      userId: session.id,
+    }),
+  )
 }
 
 export async function DELETE(

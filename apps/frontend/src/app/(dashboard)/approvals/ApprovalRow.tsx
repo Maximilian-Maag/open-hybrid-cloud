@@ -7,6 +7,7 @@ import { post } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { TrialBadge } from '@/components/ui/TrialBadge'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
@@ -65,6 +66,7 @@ export function ApprovalRow({ order, token }: Props) {
               {order.productName ?? `Product #${order.productId}`}
             </span>
             <StatusBadge status={order.status} lang={lang} />
+            {order.isTrial && <TrialBadge lang={lang} />}
           </div>
           <p className="text-sm text-slate-500">
             {order.environmentName} · {order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`} on{' '}

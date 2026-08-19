@@ -5,6 +5,7 @@ import Link from 'next/link'
 import type { Order } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { TrialBadge } from '@/components/ui/TrialBadge'
 import { Table } from '@/components/ui/Table'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
@@ -47,7 +48,12 @@ export default async function OrdersPage() {
           { header: t('project', lang), accessor: 'projectName' },
           {
             header: t('status', lang),
-            render: (row) => <StatusBadge status={row.status} lang={lang} />,
+            render: (row) => (
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge status={row.status} lang={lang} />
+                {row.isTrial && <TrialBadge lang={lang} />}
+              </div>
+            ),
           },
           {
             header: t('date', lang),

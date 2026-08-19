@@ -6,12 +6,18 @@ import type { ProductDetail, Project, CostCenter, ExchangeRate } from '@open-hyb
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { OrderForm } from '@/components/forms/OrderForm'
+import { AddToCart } from './AddToCart'
 import { t, isValidLang } from '@/lib/i18n'
 import { localeToCurrency, convertPrice } from '@/lib/locale'
 
 interface Props {
   params: Promise<{ id: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }
+
+/** First value only — a repeated key has no meaningful "both". */
+const one = (raw: string | string[] | undefined): string | undefined =>
+  Array.isArray(raw) ? raw[0] : raw
 
 async function detectLang(): Promise<string> {
   const cookieStore = await cookies()
@@ -24,8 +30,12 @@ async function detectLang(): Promise<string> {
   return 'en'
 }
 
-export default async function ProductDetailPage({ params }: Props) {
+export default async function ProductDetailPage({ params, searchParams }: Props) {
   const { id } = await params
+  const query = await searchParams
+  // Quick reorder from the infrastructure list (issue #39).
+  const fromInfraId = one(query.fromInfra)
+  const initialProjectId = one(query.projectId)
   const session = await auth()
   if (!session) redirect('/login')
 
@@ -81,6 +91,12 @@ export default async function ProductDetailPage({ params }: Props) {
         )}
       </Card>
 
+      {/* Alongside "Order now", per the issue: collect several items and fill the
+          parameters in once at checkout. */}
+      <Card title={t('cart', lang)}>
+        <AddToCart product={product} token={token} lang={lang} />
+      </Card>
+
       <Card title={t('placeOrder', lang)}>
         <OrderForm
           product={product}
@@ -90,6 +106,8 @@ export default async function ProductDetailPage({ params }: Props) {
           lang={lang}
           exchangeRates={ratesMap}
           localeCurrency={localeCurrency}
+          fromInfraId={fromInfraId}
+          initialProjectId={initialProjectId}
         />
       </Card>
     </div>

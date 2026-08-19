@@ -1,0 +1,100 @@
+import type { SessionUser } from '@open-hybrid-cloud/types'
+import { db } from '@/lib/db/client'
+import { productFavorites, products } from '@/lib/db/schema'
+import { and, eq, sql } from 'drizzle-orm'
+import { ok, err, type Result } from '@/lib/services/result'
+
+export interface FavoriteProduct {
+  productId: number
+  categoryId: number
+  name: string
+  description: string
+  createdAt: Date
+}
+
+/**
+ * The caller's favourited products, resolved to catalogue rows.
+ *
+ * Returns the same name/description shape as the catalogue list, translated with
+ * the same COALESCE fallback chain, so the favourites section can render product
+ * cards without a second round trip per product.
+ */
+export const listFavorites = async (
+  session: SessionUser,
+  lang: string,
+): Promise<Result<FavoriteProduct[]>> => {
+  const rows = await db
+    .select({
+      productId: productFavorites.productId,
+      categoryId: products.categoryId,
+      createdAt: productFavorites.createdAt,
+      name: sql<string>`COALESCE(
+        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
+        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
+        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
+        (SELECT name FROM product_translations WHERE product_id = ${products.id} LIMIT 1)
+      )`,
+      description: sql<string>`COALESCE(
+        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
+        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
+        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
+        ''
+      )`,
+    })
+    .from(productFavorites)
+    // Inner join, not left: a favourite whose product is gone has nothing to
+    // render. The FK cascades, so this only guards against a stale read.
+    .innerJoin(products, eq(productFavorites.productId, products.id))
+    .where(eq(productFavorites.userId, session.id))
+    // Most recently favourited first — the section is a shortcut list, and what
+    // a user just starred is what they are most likely reaching for.
+    .orderBy(sql`${productFavorites.createdAt} DESC`)
+
+  return ok(rows as FavoriteProduct[])
+}
+
+/**
+ * Favourite a product for the caller.
+ *
+ * Idempotent: starring something already starred is a no-op success rather than a
+ * conflict. The UI toggles optimistically, so a double-fire from an impatient
+ * click must not surface as an error.
+ */
+export const addFavorite = async (
+  session: SessionUser,
+  productId: number,
+): Promise<Result<void>> => {
+  const [product] = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1)
+  if (!product) return err(404, 'Product not found')
+
+  await db
+    .insert(productFavorites)
+    .values({ userId: session.id, productId })
+    .onConflictDoNothing()
+
+  return ok(undefined)
+}
+
+/**
+ * Un-favourite a product for the caller. Idempotent for the same reason as
+ * addFavorite — removing one that is already gone is the state the caller wanted.
+ */
+export const removeFavorite = async (
+  session: SessionUser,
+  productId: number,
+): Promise<Result<void>> => {
+  await db
+    .delete(productFavorites)
+    .where(
+      and(
+        eq(productFavorites.userId, session.id),
+        eq(productFavorites.productId, productId),
+      ),
+    )
+
+  return ok(undefined)
+}

@@ -132,6 +132,9 @@ const OFFERING_FIELDS = [
   'currency',
   'costCenterMode',
   'forcedCostCenter',
+  // Changing the fixed billing account IS an offering change; without it two
+  // versions that differ only in the overhead account diffed as identical.
+  'overheadCostCenter',
   'trialEnabled',
   'trialDurationMinutes',
 ] as const

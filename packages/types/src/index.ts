@@ -498,6 +498,14 @@ export interface ProductSnapshot {
   currency: string
   costCenterMode: CostCenterMode
   forcedCostCenter: boolean
+  /**
+   * The overhead account the offering bills to, as a label (issue #22).
+   *
+   * Optional: snapshots taken before it was captured do not carry it, so absent
+   * means "unknown" rather than "none" — a diff must not report every older
+   * version as a change.
+   */
+  overheadCostCenter?: string | null
   trialEnabled: boolean
   trialDurationMinutes: number
   parameters: ParameterSnapshot[]

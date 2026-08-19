@@ -1,5 +1,10 @@
 import { db } from '@/lib/db/client'
-import { productTranslations, productEnvironments, deploymentEnvironments } from '@/lib/db/schema'
+import {
+  productTranslations,
+  productEnvironments,
+  deploymentEnvironments,
+  costCenters,
+} from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
 
@@ -37,6 +42,15 @@ export interface ProductSnapshot {
   currency: string
   costCenterMode: string
   forcedCostCenter: boolean
+  /**
+   * The overhead account this offering bills to, as a durable label (issue #22).
+   *
+   * Optional because snapshots taken before it was recorded do not carry it; a
+   * reader must treat absent as "unknown", not as "none". Stored as a label rather
+   * than an id for the same reason every other field here is denormalised — the id
+   * could be reassigned or deleted out from under the record.
+   */
+  overheadCostCenter?: string | null
   trialEnabled: boolean
   trialDurationMinutes: number
   parameters: ParameterSnapshot[]
@@ -63,12 +77,15 @@ export const captureProductSnapshot = async (
       currency: productEnvironments.currency,
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
+      overheadCostCenterCode: costCenters.code,
+      overheadCostCenterName: costCenters.name,
       trialEnabled: productEnvironments.trialEnabled,
       trialDurationMinutes: productEnvironments.trialDurationMinutes,
       environmentName: deploymentEnvironments.name,
     })
     .from(productEnvironments)
     .leftJoin(deploymentEnvironments, eq(productEnvironments.environmentId, deploymentEnvironments.id))
+    .leftJoin(costCenters, eq(productEnvironments.overheadCostCenterId, costCenters.id))
     .where(
       and(
         eq(productEnvironments.productId, productId),
@@ -107,6 +124,13 @@ export const captureProductSnapshot = async (
     currency: offering.currency,
     costCenterMode: offering.costCenterMode,
     forcedCostCenter: offering.forcedCostCenter,
+    // Null, not omitted: "no overhead account is configured" is a fact worth
+    // recording, and it is what distinguishes this from an older snapshot that
+    // simply never captured the field.
+    overheadCostCenter:
+      offering.overheadCostCenterCode === null
+        ? null
+        : `${offering.overheadCostCenterCode} — ${offering.overheadCostCenterName}`,
     trialEnabled: offering.trialEnabled,
     trialDurationMinutes: offering.trialDurationMinutes,
     parameters: defs

@@ -9,6 +9,7 @@ import {
   createCiSource,
   createEnvironment,
   linkProductEnvironment,
+  createCostCenter,
 } from '@/test/helpers'
 
 const build = async (over?: Parameters<typeof linkProductEnvironment>[2]) => {
@@ -31,6 +32,27 @@ describe('captureProductSnapshot', () => {
     const other = await createEnvironment(ci.id)
 
     expect(await captureProductSnapshot(product.id, cat.id, other.id)).toBeNull()
+  })
+
+  it('records the overhead account, so a change to it is visible in the diff', async () => {
+    // Without it two versions that differ only in the fixed billing account
+    // produced identical snapshots and the history reported "no changes".
+    const cc = await createCostCenter({ code: 'CC-77', name: 'Shared Platform' })
+    const { cat, product, env } = await build({
+      costCenterMode: 'overhead',
+      overheadCostCenterId: cc.id,
+    })
+
+    const snapshot = await captureProductSnapshot(product.id, cat.id, env.id)
+    expect(snapshot?.overheadCostCenter).toBe('CC-77 — Shared Platform')
+  })
+
+  it('records a missing overhead account as null rather than omitting it', async () => {
+    // Explicitly "none", which is what distinguishes it from an older snapshot
+    // that never captured the field at all.
+    const { cat, product, env } = await build()
+    const snapshot = await captureProductSnapshot(product.id, cat.id, env.id)
+    expect(snapshot?.overheadCostCenter).toBeNull()
   })
 
   it('captures the offering as it stands now', async () => {

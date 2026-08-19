@@ -190,6 +190,25 @@ describe('diffSnapshots', () => {
     ])
   })
 
+  it('reports a changed overhead account', () => {
+    // An offering change like any other: the fixed billing account is what the
+    // orders against it are charged to.
+    const diff = diffSnapshots(
+      snapshot({ overheadCostCenter: 'CC-1 — Platform' }),
+      snapshot({ overheadCostCenter: 'CC-2 — Data' }),
+    )
+    expect(diff.fields).toEqual([
+      { field: 'overheadCostCenter', from: 'CC-1 — Platform', to: 'CC-2 — Data' },
+    ])
+  })
+
+  it('treats an older snapshot without the overhead field as unchanged against none', () => {
+    // Absent means "not captured", and reporting every pre-existing version as a
+    // change would drown the history it is meant to explain.
+    const diff = diffSnapshots(snapshot(), snapshot({ overheadCostCenter: null }))
+    expect(diff.identical).toBe(true)
+  })
+
   it('reports an added parameter', () => {
     const added = { name: 'SIZE', label: '', type: 'number', description: '', defaultValue: '', required: true, sensitive: false }
     const diff = diffSnapshots(snapshot(), snapshot({ parameters: [...snapshot().parameters, added] }))

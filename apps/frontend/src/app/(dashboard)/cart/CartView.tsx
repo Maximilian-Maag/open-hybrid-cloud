@@ -224,13 +224,11 @@ export function CartView({
               options={[{ value: '', label: t('selectProject', lang) }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
             />
 
-            {/* Same reasoning as the buy box: the strongest colour on the
-                strongest action, whatever the operator's secondary happens to be. */}
             <Button
               onClick={handleCheckout}
               disabled={!canCheckout}
               className="w-full"
-              style={{ borderRadius: '9999px', backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
+              style={{ borderRadius: '9999px' }}
             >
               {busy ? t('checkingOut', lang) : `${t('checkout', lang)} (${items.length})`}
             </Button>

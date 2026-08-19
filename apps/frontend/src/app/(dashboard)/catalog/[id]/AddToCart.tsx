@@ -75,17 +75,15 @@ export function AddToCart({ product, token, lang }: Props) {
           })),
         ]}
       />
-      {/* Painted in the branding's PRIMARY colour rather than the Button default of
-          --bs: the strongest action on the page should carry the strongest colour,
-          and an operator whose secondary is near-white (a real configuration in
-          this repo's dev data) would otherwise get a CTA that reads as disabled.
-          --bp-ink is contrast-checked against it. The radius comes from style, not
-          a class: two competing rounded-* utilities resolve by stylesheet order. */}
+      {/* Plain primary: the branding's secondary colour is the app's CTA colour, and
+          Button now draws it with a --bs-edge boundary so even a near-white one is a
+          visible control. The radius comes from style, not a class: two competing
+          rounded-* utilities resolve by stylesheet order, not source order. */}
       <Button
         onClick={handleAdd}
         disabled={busy || !environmentId}
         className="w-full"
-        style={{ borderRadius: '9999px', backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
+        style={{ borderRadius: '9999px' }}
       >
         {t('addToCart', lang)}
       </Button>

@@ -56,7 +56,17 @@ const param = (over?: Partial<Parameter>): Parameter => ({
 })
 
 const renderCart = (items: CartItem[], p: Project[] = projects) =>
-  render(<CartView initialItems={items} projects={p} costCenters={costCenters} token="t" lang="en" />)
+  render(
+    <CartView
+      initialItems={items}
+      projects={p}
+      costCenters={costCenters}
+      token="t"
+      lang="en"
+      exchangeRates={{}}
+      localeCurrency="EUR"
+    />,
+  )
 
 beforeEach(() => {
   push.mockReset()
@@ -73,13 +83,36 @@ describe('CartView', () => {
     expect(screen.queryByRole('button', { name: /check out/i })).not.toBeInTheDocument()
   })
 
-  it('renders one card per item with product, environment and price', () => {
+  it('renders one row per item with product, environment and price', () => {
     renderCart([item(), item({ id: 2, productName: 'Managed Postgres', price: '20.00' })])
 
     const first = screen.getByTestId('cart-item-1')
     expect(within(first).getByText('Nginx Gateway')).toBeInTheDocument()
-    expect(within(first).getByText(/AWS Frankfurt · 10.00 EUR/)).toBeInTheDocument()
+    expect(within(first).getByText('AWS Frankfurt')).toBeInTheDocument()
+    // The price is its own element at the right of the row, as in a shop cart.
+    expect(within(first).getByText('10.00 EUR')).toBeInTheDocument()
     expect(screen.getByTestId('cart-item-2')).toBeInTheDocument()
+  })
+
+  it("totals the cart in the viewer's currency", () => {
+    renderCart([item(), item({ id: 2, productName: 'Managed Postgres', price: '20.00' })])
+    expect(screen.getByText(/subtotal \(2 items\)/i)).toBeInTheDocument()
+    expect(screen.getByText('30.00 EUR')).toBeInTheDocument()
+  })
+
+  it('reports a price it cannot convert instead of adding it at par', () => {
+    // No rate is stored for SEK here, and counting 900 SEK as 900 EUR would
+    // overstate the subtotal by whatever the real rate happens to be.
+    renderCart([item(), item({ id: 2, price: '900.00', currency: 'SEK' })])
+    // The convertible item is the whole subtotal; the rest is reported beside it.
+    expect(within(screen.getByTestId('cart-item-1')).getByText('10.00 EUR')).toBeInTheDocument()
+    expect(screen.getByText(/subtotal \(2 items\)/i)).toBeInTheDocument()
+    expect(screen.getByText(/900.00 SEK/)).toBeInTheDocument()
+  })
+
+  it('shows no subtotal panel for an empty cart', () => {
+    renderCart([])
+    expect(screen.queryByText(/subtotal/i)).not.toBeInTheDocument()
   })
 
   it('preselects the only project, and asks when there are several', () => {

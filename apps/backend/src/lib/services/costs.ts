@@ -11,6 +11,7 @@ import {
   exchangeRates,
 } from '@/lib/db/schema'
 import { and, eq, gte, lte, inArray, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { ok, err, type Result } from '@/lib/services/result'
 
 /**
@@ -30,6 +31,14 @@ import { ok, err, type Result } from '@/lib/services/result'
  * problem snapshots exist to prevent. Orders that predate snapshots have none, so
  * they fall back to the current price and are counted in `estimatedOrders` so the
  * total can be read with that in mind rather than presented as exact.
+ *
+ * ── Which cost centre an order counts against ─────────────────────────────────
+ * The order's own `cost_center_id` where it has one — 'select' mode, where the
+ * orderer chose it, and 'overhead' mode, where the offering fixed it. In 'project'
+ * mode (the DEFAULT) the order deliberately stores none, because attribution
+ * follows the project, so the project's cost centre is used instead. Reading only
+ * the order-level column would file every default-mode order under "no cost
+ * centre" and leave the per-cost-centre breakdown empty for most catalogues.
  *
  * ── What the figures are NOT ───────────────────────────────────────────────────
  * `product_environments.price` records an amount and a currency but no billing
@@ -74,6 +83,9 @@ export interface CostReport {
   global: boolean
 }
 
+/** The cost_centers row reached through the project rather than the order. */
+const projectCostCenters = alias(costCenters, 'project_cost_centers')
+
 /** Statuses that represent infrastructure that was actually provisioned. */
 const SPENDING_STATUSES = ['provisioning', 'completed'] as const
 
@@ -83,6 +95,9 @@ interface CostRow {
   projectName: string | null
   costCenterId: number | null
   costCenterLabel: string | null
+  /** The project's cost centre, used when the order carries none. */
+  projectCostCenterId: number | null
+  projectCostCenterLabel: string | null
   productId: number
   productName: string | null
   environmentId: number
@@ -118,6 +133,8 @@ export const getCostReport = async (
       projectName: projects.name,
       costCenterId: orders.costCenterId,
       costCenterLabel: sql<string>`${costCenters.code} || ' — ' || ${costCenters.name}`,
+      projectCostCenterId: projects.costCenterId,
+      projectCostCenterLabel: sql<string>`${projectCostCenters.code} || ' — ' || ${projectCostCenters.name}`,
       productId: orders.productId,
       productName: productTranslations.name,
       environmentId: orders.environmentId,
@@ -132,6 +149,9 @@ export const getCostReport = async (
     .from(orders)
     .leftJoin(projects, eq(orders.projectId, projects.id))
     .leftJoin(costCenters, eq(orders.costCenterId, costCenters.id))
+    // Second join on the same table for the project's cost centre: a 'project'-mode
+    // order has no cost centre of its own to join to.
+    .leftJoin(projectCostCenters, eq(projects.costCenterId, projectCostCenters.id))
     .leftJoin(
       productTranslations,
       and(
@@ -217,12 +237,14 @@ const addTo = (
   eur: number,
 ): void => {
   bump(buckets.project, row.projectId, row.projectName ?? `Project #${row.projectId}`, eur)
+  // 'project' mode (the default) stores no cost centre on the order because
+  // attribution follows the project, so fall through to the project's own. Only an
+  // order whose project has none either is genuinely unattributed.
+  const costCenterId = row.costCenterId ?? row.projectCostCenterId
   bump(
     buckets.costCenter,
-    row.costCenterId,
-    // 'project' cost-centre mode stores none on the order, so these orders are
-    // grouped under an explicit label rather than dropped from the breakdown.
-    row.costCenterLabel ?? 'No cost centre',
+    costCenterId,
+    row.costCenterLabel ?? row.projectCostCenterLabel ?? 'No cost centre',
     eur,
   )
   bump(buckets.product, row.productId, row.productName ?? `Product #${row.productId}`, eur)
@@ -318,6 +340,7 @@ export const getCostRows = async (
       status: orders.status,
       projectName: projects.name,
       costCenterLabel: sql<string>`${costCenters.code} || ' — ' || ${costCenters.name}`,
+      projectCostCenterLabel: sql<string>`${projectCostCenters.code} || ' — ' || ${projectCostCenters.name}`,
       productName: productTranslations.name,
       environmentName: deploymentEnvironments.name,
       snapshotPrice: sql<string | null>`${orders.productSnapshot} ->> 'price'`,
@@ -331,6 +354,7 @@ export const getCostRows = async (
     .from(orders)
     .leftJoin(projects, eq(orders.projectId, projects.id))
     .leftJoin(costCenters, eq(orders.costCenterId, costCenters.id))
+    .leftJoin(projectCostCenters, eq(projects.costCenterId, projectCostCenters.id))
     .leftJoin(
       productTranslations,
       and(
@@ -362,7 +386,10 @@ export const getCostRows = async (
         orderId: row.orderId,
         createdAt: row.createdAt,
         projectName: row.projectName ?? `Project #${row.projectId}`,
-        costCenter: row.costCenterLabel ?? '',
+        // Same fall-through as the report: a 'project'-mode order counts against
+        // its project's cost centre, or the export would not reconcile with the
+        // per-cost-centre breakdown it is meant to explain.
+        costCenter: row.costCenterLabel ?? row.projectCostCenterLabel ?? '',
         productName: row.productName ?? `Product #${row.productId}`,
         environmentName: row.environmentName ?? `Environment #${row.environmentId}`,
         status: row.status,

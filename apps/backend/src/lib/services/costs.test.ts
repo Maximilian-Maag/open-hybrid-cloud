@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { getCostReport, getCostRows, assertMaySeeProject } from './costs'
 import { db } from '@/lib/db/client'
-import { orders, exchangeRates, productEnvironments } from '@/lib/db/schema'
+import { orders, exchangeRates, productEnvironments, projects } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import type { ProductSnapshot } from './snapshot'
 import {
@@ -231,6 +231,45 @@ describe('getCostReport — breakdowns', () => {
       // than dropped from the breakdown.
       ['No cost centre', 30],
       ['CC-1 — Platform', 10],
+    ])
+  })
+
+  it("attributes a 'project'-mode order to its project's cost centre", async () => {
+    // 'project' is the DEFAULT cost-centre mode and stores nothing on the order,
+    // because attribution follows the project. Reading only the order-level column
+    // filed every such order under "No cost centre", which emptied the breakdown
+    // for most catalogues.
+    const ctx = await setup()
+    const cc = await createCostCenter({ code: 'CC-9', name: 'Owning Team' })
+    await db.update(projects).set({ costCenterId: cc.id }).where(eq(projects.id, ctx.mine.id))
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '40.00' })
+
+    const result = await getCostReport(makeSession(ctx.admin))
+    expect(result.ok && result.data.byCostCenter).toEqual([
+      { id: cc.id, label: 'CC-9 — Owning Team', totalEur: 40, orderCount: 1 },
+    ])
+  })
+
+  it("prefers the order's own cost centre over the project's", async () => {
+    // 'select' and 'overhead' mode DO store one, and that choice is the specific
+    // one — it must not be overridden by the project's default.
+    const ctx = await setup()
+    const projectCc = await createCostCenter({ code: 'CC-P', name: 'Project Default' })
+    const orderCc = await createCostCenter({ code: 'CC-O', name: 'Chosen' })
+    await db.update(projects).set({ costCenterId: projectCc.id }).where(eq(projects.id, ctx.mine.id))
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '15.00', costCenterId: orderCc.id })
+
+    const result = await getCostReport(makeSession(ctx.admin))
+    expect(result.ok && result.data.byCostCenter.map((b) => b.label)).toEqual(['CC-O — Chosen'])
+  })
+
+  it('still reports an order as unattributed when its project has no cost centre', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '5.00' })
+
+    const result = await getCostReport(makeSession(ctx.admin))
+    expect(result.ok && result.data.byCostCenter).toEqual([
+      { id: null, label: 'No cost centre', totalEur: 5, orderCount: 1 },
     ])
   })
 

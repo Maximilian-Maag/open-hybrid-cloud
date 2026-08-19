@@ -126,7 +126,7 @@ Under **Administration → Products → New**:
 Parameters are configured on the product edit page under the **Parameters** card. There are two ways to populate them:
 
 *Option A: Sync from template (recommended)*
-1. First add a **Pipeline Stack** for this product (see section 4.5)
+1. First add a **Pipeline Stack** for this product (see section 4.6)
 2. Click **Sync from template** — the platform fetches the template's `variables.tf` from your CI source and creates parameters automatically
 3. Each parameter is created with:
    - **Variable Name**: exact Terraform variable name (e.g. `hostname`) — sent to GitLab CI as `TF_VAR_hostname`
@@ -171,7 +171,47 @@ Under **Administration → Global Parameters**:
 
 Parameters that apply to *all* products and *all* environments (e.g. project tag, cost center label). These are automatically added to the order form.
 
-### 4.5 Pipeline Stacks
+### 4.5 Available Templates
+
+What to enter as **Template** when configuring a product or a pipeline-stack step.
+The full parameter tables are in `docs/guides/gitlab-opentofu-workflow.md`
+(“Template Catalogue”) and in the `infra-templates` README; **Sync from template**
+reads the same `variables.tf`, so you rarely need to type parameters by hand.
+
+| Provider | Template | Provisions |
+|---|---|---|
+| Linode | `linode/virtual-machine` | Instance with its own firewall |
+| Linode | `linode/firewall` | Standalone firewall |
+| Linode | `linode/dns-record` | DNS record |
+| Linode | `linode/block-storage` | Volume, optionally attached to an instance |
+| Linode | `linode/kubernetes-cluster` | LKE cluster |
+| Linode | `linode/load-balancer` | NodeBalancer in front of given backends |
+| Linode | `linode/object-storage` | S3-compatible bucket |
+| AWS | `aws/network` | VPC with one public subnet per availability zone |
+| AWS | `aws/virtual-machine` | EC2 instance with its own security group |
+| AWS | `aws/object-storage` | S3 bucket |
+| AWS | `aws/database-postgres` | RDS Postgres |
+| vSphere | `vsphere/virtual-machine` | VM cloned from a template, Linux or Windows |
+
+Two things to know before offering these:
+
+- **AWS products need a network first.** `aws/virtual-machine` and
+  `aws/database-postgres` take a `vpc_id` and subnet ids that come from an
+  `aws/network` order. Either order the network once and configure its ids as fixed
+  parameters, or — better — build a **pipeline stack** with the network as the first
+  step and reference its state from the later ones (section 4.6).
+- **Credentials are per provider and live in GitLab**, not in the portal: Linode and
+  vSphere as `TF_VAR_*` variables, AWS as its own `AWS_ACCESS_KEY_ID` /
+  `AWS_SECRET_ACCESS_KEY`. A product whose provider has no credentials configured
+  fails in the apply job, not at order time.
+
+For a Windows VM in vSphere, set the product parameter `guest_os_family` to
+`windows`. Leaving it at `linux` clones the template but leaves the guest
+unconfigured — no hostname, no address, no domain membership.
+
+---
+
+### 4.6 Pipeline Stacks
 
 Under **Administration → Products → [product] → Pipeline Stacks**:
 

@@ -51,18 +51,98 @@ infra-templates/
 │   ├── linode-instance/
 │   ├── linode-firewall/
 │   ├── linode-dns-record/
+│   ├── linode-volume/
+│   ├── linode-lke/
+│   ├── linode-nodebalancer/
+│   ├── linode-object-storage/
+│   ├── aws-vpc/
+│   ├── aws-security-group/
+│   ├── aws-ec2-instance/
+│   ├── aws-s3-bucket/
+│   ├── aws-rds-postgres/
 │   └── vsphere-vm/
 └── templates/                           # deployable products
     ├── linode/
     │   ├── virtual-machine/             # instance + per-VM firewall
     │   ├── firewall/
-    │   └── dns-record/
+    │   ├── dns-record/
+    │   ├── block-storage/
+    │   ├── kubernetes-cluster/
+    │   ├── load-balancer/
+    │   └── object-storage/
+    ├── aws/
+    │   ├── network/                     # order first — its outputs feed the rest
+    │   ├── virtual-machine/
+    │   ├── object-storage/
+    │   └── database-postgres/
     ├── vsphere/
     │   └── virtual-machine/
     └── orchestrator/                    # pipeline stack entry point
 ```
 
 **Principle:** one trigger → `TEMPLATE` variable → one child pipeline → one OpenTofu state per resource instance. Cross-resource ordering (VM then DNS) is handled by pipeline stacks (Pattern 3) via the orchestrator template.
+
+---
+
+## Template Catalogue
+
+What `TEMPLATE` can be set to, and what each one needs. Full parameter tables with
+defaults live in the `infra-templates` README; this is the portal-side view.
+
+### Linode
+
+| `TEMPLATE` | Provisions | Key parameters | Outputs |
+|---|---|---|---|
+| `linode/virtual-machine` | Instance + its own firewall | `hostname`, `region`, `instance_type`, `image`, `inbound_ports_csv` | `hostname`, `ip_address`, `firewall_id` |
+| `linode/firewall` | Standalone firewall | `label`, `linode_id`, `inbound_ports_csv` | `firewall_id` |
+| `linode/dns-record` | DNS record | `domain`, `record_name`, `target` | `record_id`, `fqdn` |
+| `linode/block-storage` | Block storage volume, optionally attached | `volume_label`, `size_gb`, `linode_id` | `volume_id`, `device_path`, `size_gb` |
+| `linode/kubernetes-cluster` | LKE cluster with one node pool | `cluster_label`, `k8s_version`, `node_type`, `node_count`, `autoscale` | `cluster_id`, `api_endpoint`, `node_count` |
+| `linode/load-balancer` | NodeBalancer in front of given backends | `balancer_label`, `port`, `protocol`, `backends_csv` | `ip_address`, `hostname`, `backend_count` |
+| `linode/object-storage` | S3-compatible bucket | `bucket_label`, `region`, `acl`, `versioning` | `bucket_label`, `endpoint`, `region` |
+
+### AWS
+
+**Order `aws/network` first.** Its outputs are the inputs of the other AWS
+products, and RDS needs subnets in two availability zones even for a single-AZ
+instance — which is why the network template creates one subnet per AZ.
+
+| `TEMPLATE` | Provisions | Key parameters | Outputs |
+|---|---|---|---|
+| `aws/network` | VPC, internet gateway, one public subnet per AZ | `network_name`, `region`, `cidr_block`, `subnet_count` | `vpc_id`, `subnet_ids`, `first_subnet_id`, `cidr_block` |
+| `aws/virtual-machine` | EC2 instance + its own security group | `hostname`, `instance_type`, `vpc_id`, `subnet_id`, `inbound_ports_csv` | `instance_id`, `private_ip`, `public_ip`, `security_group_id` |
+| `aws/object-storage` | S3 bucket, private, encrypted, versioned | `bucket_name`, `region`, `versioning` | `bucket`, `arn`, `endpoint` |
+| `aws/database-postgres` | RDS Postgres + subnet group + security group | `database_identifier`, `vpc_id`, `subnet_ids_csv`, `instance_class`, `storage_gb` | `host`, `port`, `database_name` |
+
+Chaining them as a **pipeline stack** (Pattern 3) is the tidier route: the network
+step's state can be referenced by later steps through `Upstream State Refs`, so the
+orderer does not have to copy a VPC id from one order into the next.
+
+### vSphere
+
+| `TEMPLATE` | Provisions | Key parameters | Outputs |
+|---|---|---|---|
+| `vsphere/virtual-machine` | VM cloned from a template, Linux or Windows | `hostname`, `datacenter`, `cluster`, `datastore`, `template_name`, `guest_os_family` | `hostname`, `ip_address` |
+
+`guest_os_family` decides which guest customization runs. It matters: a Windows
+template cloned with the Linux customization comes up **unconfigured** — no
+hostname, no address, no domain membership — because the provider silently ignores
+`linux_options` on a Windows guest. Set it to `windows` and provide
+`windows_domain` (plus a domain-join account) or leave it empty for a workgroup.
+
+### Provider credentials
+
+Set as GitLab CI/CD variables on the `infra-templates` project, not as product
+parameters. Linode and vSphere pass through `TF_VAR_*`; **AWS deliberately does
+not** — the AWS provider reads its own standard environment variables, which also
+keeps the keys out of the Terraform state. The Linode provider cannot do this: it
+only accepts a `token` argument, so that token is in the state.
+
+| Provider | Variables |
+|---|---|
+| Linode | `TF_VAR_linode_token`, `TF_VAR_root_pass`, `TF_VAR_authorized_key` |
+| AWS | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` (temporary creds), `TF_VAR_db_password` |
+| vSphere | `TF_VAR_vsphere_server`, `TF_VAR_vsphere_user`, `TF_VAR_vsphere_password`, `TF_VAR_windows_admin_password`, `TF_VAR_windows_domain_admin_password` |
 
 ---
 
@@ -153,14 +233,29 @@ All CI pipeline logic is provided by `infra-templates`. To add a new product tem
        include:
          - local: templates/<provider>/<name>/.gitlab-ci.yml
        strategy: depend
+       forward:
+         pipeline_variables: true      # ← without this the template gets no parameters
      rules:
        - if: $TEMPLATE == "<provider>/<name>"
+   ```
+
+   `forward: pipeline_variables: true` is not optional. GitLab does **not** pass
+   API-trigger variables to a downstream pipeline by default, so without it the
+   order parameters never reach the template and the job fails with
+   `No value for required variable "hostname"`.
+
+5. Validate before pushing — nothing in CI does it for you, because the entry
+   pipeline only runs on `CI_PIPELINE_SOURCE == "trigger"`:
+   ```bash
+   make validate TEMPLATE=<provider>/<name>
+   tofu fmt -recursive modules/ templates/
    ```
 
 Key pipeline behaviours provided by `base.gitlab-ci.yml`:
 
 - Product parameters (uppercase CI variables) are automatically promoted to `TF_VAR_<lowercase>` so OpenTofu picks them up without extra `tfvars` files.
-- `TF_ACTION=destroy` switches the plan stage to `tofu plan -destroy`; the apply stage runs `tofu apply tfplan` in all cases.
+- `TF_ACTION=destroy` switches both stages to their destroy form: `tofu plan -destroy` and `tofu apply -destroy -auto-approve`.
+- The apply stage runs a **fresh plan and apply**, it does not consume the plan artefact from the plan stage. Applying the saved plan failed with `[401] Invalid Token` even where a live API call with the same token in the same job succeeded — the likely cause being how a `sensitive` provider-token variable is carried in a plan file. The plan artefact is still published for inspection.
 - The apply job's stdout is read by the portal to parse `Outputs:` and store them on the infrastructure element — no extra `tofu output` call needed.
 - State is stored in the `infra-templates` project itself via `CI_PROJECT_ID`; no external state backend is required.
 
@@ -261,7 +356,31 @@ output "hostname" {
 }
 ```
 
-Only string-valued outputs are captured. Complex types (maps, lists) are ignored by the parser.
+**The parser only accepts quoted strings.** It reads `name = "value"` lines out of
+the job trace, so anything OpenTofu prints unquoted is dropped without a trace —
+that includes plain **numbers** and booleans, not just maps and lists. A template
+that wants to surface a numeric value has to emit it as one:
+
+```hcl
+output "port" {
+  description = "Port to connect to"
+  value       = tostring(module.database.port)   # 5432 alone would be lost
+}
+```
+
+`linode/virtual-machine` still loses its `firewall_id` to exactly this.
+
+**Never output a credential.** Whatever a template prints is stored on the
+infrastructure element, shown in the UI and included in the CSV export. That is why
+`linode/kubernetes-cluster` does not output the kubeconfig and
+`linode/object-storage` does not output an access key, even though both are
+available inside the module.
+
+Lists have to be flattened to be usable at all — `aws/network` emits its subnet ids
+as a comma-separated `subnet_ids`, which is also the shape `aws/database-postgres`
+takes back in as `subnet_ids_csv`. Every product parameter arrives as a string, so
+comma-separated values are the convention throughout (`inbound_ports_csv`,
+`backends_csv`, `dns_servers_csv`).
 
 ---
 
@@ -585,7 +704,7 @@ orchestrate:
 
 ### Configuring in the portal
 
-See the Root Guide, section 4.5 "Pipeline Stacks" for step-by-step instructions on creating and managing stacks in the portal UI.
+See the Root Guide, section 4.6 "Pipeline Stacks" for step-by-step instructions on creating and managing stacks in the portal UI.
 
 ### When to use Pipeline Stacks vs. other patterns
 

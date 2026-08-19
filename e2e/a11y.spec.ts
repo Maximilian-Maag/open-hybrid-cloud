@@ -25,6 +25,7 @@ const PUBLIC_PAGES = ['/login', '/impressum']
 const AUTHED_PAGES = [
   '/',
   '/catalog',
+  '/cart',
   '/orders',
   '/projects',
   '/infrastructure',

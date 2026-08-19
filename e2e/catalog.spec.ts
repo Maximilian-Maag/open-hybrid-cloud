@@ -33,7 +33,7 @@ test.describe('Product Catalog', () => {
     // Either products are shown with a count, or no-products message is shown
     const productCount = page.getByText(/\d+ products/i)
     const noProducts = page.getByText(/no products found/i)
-    await expect(productCount.or(noProducts)).toBeVisible()
+    await expect(productCount.or(noProducts).first()).toBeVisible()
   })
 
   test('products have Place Order links when catalog has items', async ({ page }) => {
@@ -41,7 +41,7 @@ test.describe('Product Catalog', () => {
     const placeOrderLinks = page.getByRole('link', { name: /place order/i })
     const noProducts = page.getByText(/no products found/i)
     // Wait for catalog to finish loading (client component fetches async)
-    await expect(placeOrderLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     const count = await placeOrderLinks.count()
     const isEmpty = await noProducts.isVisible()
     expect(count > 0 || isEmpty).toBe(true)
@@ -88,7 +88,7 @@ test.describe('Catalog favorites', () => {
   test('every product card offers a favourite toggle', async ({ page }) => {
     const noProducts = page.getByText(/no products/i)
     const firstStar = page.getByRole('button', { name: /add to favorites|remove from favorites/i }).first()
-    await expect(firstStar.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(firstStar.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     // aria-pressed carries the state — the fill colour alone would not.
@@ -98,7 +98,7 @@ test.describe('Catalog favorites', () => {
   test('starring a product persists across a reload and shows the favourites section', async ({ page }) => {
     const noProducts = page.getByText(/no products/i)
     const addStar = page.getByRole('button', { name: /add to favorites/i }).first()
-    await expect(addStar.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(addStar.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await expect(page.getByRole('region', { name: /my favorites/i })).toBeHidden()
@@ -125,11 +125,12 @@ test.describe('Catalog trial ordering', () => {
 
     const firstOrder = page.getByRole('link', { name: /place order/i }).first()
     const noProducts = page.getByText(/no products/i)
-    await expect(firstOrder.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(firstOrder.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await firstOrder.click()
-    const envSelect = page.getByLabel(/environment/i)
+    // The order form's select, not the buy box's: both are labelled "Environment".
+    const envSelect = page.locator('#order').getByLabel(/environment/i)
     await expect(envSelect).toBeVisible({ timeout: 10000 })
 
     const options = await envSelect.locator('option:not([disabled])').count()

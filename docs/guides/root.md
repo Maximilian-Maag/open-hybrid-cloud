@@ -113,7 +113,12 @@ Under **Administration → Products → New**:
 **Step 1 – Basic Information**
 - Select a **category**
 - Enter **name** and **description** in the base language
-- Upload an **image** (JPEG/PNG, max 10 MB)
+- Upload an **image** (PNG, JPEG or WebP, max 10 MB) — optional, and addable later
+  on the product's edit page under **Product Image**
+
+  The type is determined from the file's own bytes, not from what the browser
+  declares, and SVG is refused: it can carry script and this file is served back to
+  every visitor of the product page.
 
 **Step 2 – Translations**
 - If an AI provider is configured: click **Generate AI Translation**

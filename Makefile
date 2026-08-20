@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio db-seed docs docs-clean clean
+.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check test-db test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio db-seed docs docs-clean clean
 
 # pnpm is installed via standalone script — add its bin dir to PATH so make can find it
 PNPM_HOME ?= $(HOME)/.local/share/pnpm
@@ -17,6 +17,7 @@ help:
 	@echo "  build                 build all workspace packages"
 	@echo "  lint                  lint all apps"
 	@echo "  type-check            TypeScript type-check all apps"
+	@echo "  test-db               create the test/e2e databases in the running Postgres"
 	@echo "  test                  run unit and integration tests"
 	@echo "  test-e2e              run end-to-end Playwright tests (requires live stack)"
 	@echo "  docker-build-backend  build backend Docker image"
@@ -55,6 +56,16 @@ lint:
 
 type-check:
 	$(PNPM) --parallel --filter './apps/*' exec tsc --noEmit
+
+# The backend suite is integration-tested against a real Postgres, and
+# vitest.config.ts points it at open_hybrid_cloud_test — a database the compose
+# file only creates on a fresh volume. Idempotent, so it is safe to re-run.
+test-db:
+	@for db in open_hybrid_cloud_test open_hybrid_cloud_e2e; do \
+	  docker exec ohc-postgres psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$$db'" | grep -q 1 \
+	    && echo "  exists  $$db" \
+	    || { docker exec ohc-postgres createdb -U postgres "$$db" && echo "  created $$db"; }; \
+	done
 
 test:
 	$(PNPM) --filter backend test

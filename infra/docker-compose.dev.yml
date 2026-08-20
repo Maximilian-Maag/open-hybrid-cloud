@@ -17,6 +17,9 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Creates the test and e2e databases on a FRESH volume. An existing volume
+      # never runs these — use `make test-db` there.
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d open_hybrid_cloud"]
       interval: 2s

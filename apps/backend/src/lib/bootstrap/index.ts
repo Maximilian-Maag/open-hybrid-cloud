@@ -69,8 +69,13 @@ export const runBootstrap = async (): Promise<void> => {
     await db.insert(branding).values({
       shopName: 'Open Hybrid Cloud',
       shopSubtitle: 'Self-Service Portal',
-      primaryColor: '#ca8a04',
-      secondaryColor: '#f5f5f4',
+      // Matches the fallbacks the frontend uses when branding cannot be loaded
+      // (see app/(dashboard)/layout.tsx). They disagreed: this seeded #ca8a04 with
+      // a near-white #f5f5f4 secondary, so every primary button was painted in a
+      // colour indistinguishable from the page and read as disabled — and #ca8a04
+      // is the very value e2e/a11y.spec.ts uses as its "hostile" colour.
+      primaryColor: '#131921',
+      secondaryColor: '#febd69',
     })
     console.warn(`[bootstrap] Default branding created.`)
   }

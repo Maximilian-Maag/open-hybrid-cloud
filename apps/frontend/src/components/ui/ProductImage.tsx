@@ -17,6 +17,14 @@ export function ProductImage({
   version,
 }: {
   productId: number
+  /**
+   * The image's description, from `product.imageAlt`.
+   *
+   * Empty string means decorative — appropriate only where the same information is
+   * already in text next to it (a cart row names the product it belongs to).
+   * Anything else is a description its uploader wrote; components no longer invent
+   * one.
+   */
   name: string
   /**
    * Bump to force a refetch after the image changed. The endpoint sets

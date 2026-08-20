@@ -114,6 +114,7 @@ export default function CatalogPage() {
       id={product.id}
       name={product.name}
       description={product.description}
+      imageAlt={product.imageAlt}
       categoryName={categoryName(product.categoryId)}
       favorited={favorites.has(product.id)}
       busy={favoriteBusy.has(product.id)}

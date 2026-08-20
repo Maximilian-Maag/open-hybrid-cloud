@@ -9,6 +9,8 @@ interface Props {
   id: number
   name: string
   description: string
+  /** The picture's own description; falls back to the product name. */
+  imageAlt?: string | null
   categoryName?: string
   favorited: boolean
   busy?: boolean
@@ -27,6 +29,7 @@ export function ProductCard({
   id,
   name,
   description,
+  imageAlt,
   categoryName,
   favorited,
   busy,
@@ -52,7 +55,7 @@ export function ProductCard({
           aria-label={name}
           className="block h-full w-full p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
         >
-          <ProductImage productId={id} name="" />
+          <ProductImage productId={id} name={imageAlt ?? name} />
         </Link>
         {/* A SIBLING of the link, not a child: a button inside a link is
             nested-interactive, which the axe gate in e2e/a11y.spec.ts rejects. */}

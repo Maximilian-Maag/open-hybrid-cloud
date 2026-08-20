@@ -29,6 +29,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 export function NewProductForm({ categories, token }: Props) {
   const router = useRouter()
   const [image, setImage] = useState<File | null>(null)
+  const [imageAlt, setImageAlt] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [categoryId, setCategoryId] = useState('')
@@ -39,6 +40,12 @@ export function NewProductForm({ categories, token }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!categoryId) { setError('Select a category.'); return }
+    // Enforced here as well as on the server: an image without a description is
+    // what makes every component downstream have to invent one.
+    if (image && imageAlt.trim() === '') {
+      setError('Describe what the image shows, or remove it.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -58,6 +65,7 @@ export function NewProductForm({ categories, token }: Props) {
       if (image) {
         const upload = new FormData()
         upload.append('image', image)
+        upload.append('alt', imageAlt.trim())
         const res = await fetch(`${API_URL}/api/admin/products/${created.id}/image`, {
           method: 'PUT',
           headers: { Authorization: `Bearer ${token}` },
@@ -135,6 +143,16 @@ export function NewProductForm({ categories, token }: Props) {
           />
           <p className="text-xs text-slate-500">Optional. PNG, JPEG or WebP, up to 10 MB — can also be added later.</p>
         </div>
+        {image && (
+          <Input
+            label="Image description"
+            required
+            value={imageAlt}
+            maxLength={300}
+            onChange={(e) => setImageAlt(e.target.value)}
+            hint="Read aloud instead of the picture, and shown if it fails to load."
+          />
+        )}
         <div className="flex justify-end">
           <Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create Product'}</Button>
         </div>

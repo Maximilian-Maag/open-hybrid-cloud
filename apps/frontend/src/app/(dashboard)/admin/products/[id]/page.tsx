@@ -73,7 +73,7 @@ export default async function AdminProductDetailPage({ params, searchParams }: P
             <Alert>The product was created, but {imageError}. Try uploading it again below.</Alert>
           </div>
         )}
-        <ProductImageUpload productId={product.id} token={token} />
+        <ProductImageUpload productId={product.id} token={token} initialAlt={product.imageAlt} />
       </Card>
 
       <ProductEditForm

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { rootEmail, rootPassword } from './helpers'
 
 test.describe('Login page', () => {
   test.beforeEach(async ({ page }) => {
@@ -21,8 +22,8 @@ test.describe('Login page', () => {
 
   test('redirects to dashboard after successful login', async ({ page }) => {
     // Requires the test admin user to exist in the DB (seeded by bootstrap)
-    const email = process.env.E2E_ADMIN_EMAIL ?? 'root@local.dev'
-    const password = process.env.E2E_ADMIN_PASSWORD ?? 'root1234'
+    const email = rootEmail
+    const password = rootPassword
 
     await page.getByRole('textbox', { name: /email/i }).fill(email)
     await page.getByRole('textbox', { name: /password/i }).fill(password)

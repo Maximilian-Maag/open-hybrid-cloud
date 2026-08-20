@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check test-db test-db-prune test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio db-seed docs docs-clean clean
+.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check test-db test-db-prune test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio db-seed db-seed-demo docs docs-clean clean
 
 # pnpm is installed via standalone script — add its bin dir to PATH so make can find it
 PNPM_HOME ?= $(HOME)/.local/share/pnpm
@@ -27,6 +27,7 @@ help:
 	@echo "  db-push               push Drizzle schema to the database"
 	@echo "  db-studio             open Drizzle Studio"
 	@echo "  db-seed               seed the database with the initial admin user"
+	@echo "  db-seed-demo          add a small demo catalogue (products, orders, infrastructure)"
 	@echo "  docs                  compile technical handbook to PDF"
 	@echo "  docs-clean            remove LaTeX auxiliary files"
 	@echo "  clean                 remove build artifacts"
@@ -100,6 +101,9 @@ db-push:
 
 db-studio:
 	$(PNPM) --filter backend db:studio
+
+db-seed-demo:
+	cd apps/backend && ../../node_modules/.bin/tsx --env-file=.env --tsconfig tsconfig.json src/seed-demo.ts
 
 db-seed:
 	cd apps/backend && ../../node_modules/.bin/tsx --env-file=.env --tsconfig tsconfig.json src/seed.ts

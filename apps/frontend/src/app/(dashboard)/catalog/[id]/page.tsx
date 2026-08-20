@@ -78,7 +78,11 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
   return (
     <div className="max-w-screen-xl mx-auto">
       <nav aria-label={t('catalog', lang)} className="mb-3 text-xs text-slate-500">
-        <Link href="/catalog" className="hover:underline" style={{ color: 'var(--bp-text)' }}>
+        {/* Underlined at rest, not only on hover: this link sits INSIDE a line of
+            text, so colour alone is the only thing that distinguished it — WCAG
+            1.4.1, and the branding colour makes it worse (1.03:1 against the
+            surrounding slate on the default palette). */}
+        <Link href="/catalog" className="underline" style={{ color: 'var(--bp-text)' }}>
           {t('catalog', lang)}
         </Link>
         {categoryName && <> <span aria-hidden="true">›</span> {categoryName}</>}

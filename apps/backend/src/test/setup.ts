@@ -3,13 +3,17 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from '@/lib/db/schema'
 import { sql } from 'drizzle-orm'
-import { ensureTestDatabase } from './database'
+import { acquireTestDatabase } from './database'
+
+// Claimed at MODULE scope, before any test file is imported: the app's db
+// singleton reads process.env.DATABASE_URL when its module first loads, so a URL
+// decided later in beforeAll would arrive too late to matter.
+const acquired = await acquireTestDatabase(process.env.DATABASE_URL ?? '')
+process.env.DATABASE_URL = acquired.url
+console.warn(`[test] database: ${acquired.name}`)
 
 // Module-level client for setup/teardown — tests use the app's db singleton.
-// postgres.js connects lazily, so the database it points at does not have to
-// exist until the first query in beforeAll.
-const databaseUrl = process.env.DATABASE_URL ?? ''
-const client = postgres(databaseUrl)
+const client = postgres(acquired.url)
 export const testDb = drizzle(client, { schema })
 
 // Tables in dependency order so truncation respects FKs
@@ -37,11 +41,6 @@ const TABLES = [
 ] as const
 
 beforeAll(async () => {
-  // This run's database may not exist yet — the name depends on where the run was
-  // started from (see ./database.ts), so it cannot be created up front.
-  await ensureTestDatabase(databaseUrl)
-  console.warn(`[test] database: ${new URL(databaseUrl).pathname.replace('/', '')}`)
-
   // Push schema to test DB (idempotent — creates tables that don't exist)
   await testDb.execute(sql`
     CREATE TABLE IF NOT EXISTS users (
@@ -67,6 +66,7 @@ beforeAll(async () => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE products ADD COLUMN IF NOT EXISTS image_mime TEXT;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS image_alt TEXT;
     CREATE TABLE IF NOT EXISTS product_translations (
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       language_code TEXT NOT NULL,
@@ -297,4 +297,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await client.end()
+  // Releases the advisory lock on this run's database, freeing the name for the
+  // next run in this directory.
+  await acquired.release()
 })

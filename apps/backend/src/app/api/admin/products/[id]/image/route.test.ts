@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { NextRequest } from 'next/server'
-import { PUT, DELETE } from './route'
+import { PUT, PATCH, DELETE } from './route'
 import { GET as SERVE } from '@/app/api/catalog/[id]/image/route'
 import { db } from '@/lib/db/client'
 import { products } from '@/lib/db/schema'
@@ -25,11 +25,13 @@ const makeReq = (
   auth?: string,
   payload: Buffer | null = png(),
   declaredType = 'image/png',
+  alt: string | null = 'A dashboard showing traffic graphs',
 ) => {
   const form = new FormData()
   if (payload) {
     form.append('image', new Blob([new Uint8Array(payload)], { type: declaredType }), 'image')
   }
+  if (alt !== null) form.append('alt', alt)
   return new NextRequest(`http://localhost/api/admin/products/${productId}/image`, {
     method: 'PUT',
     body: form,
@@ -47,7 +49,12 @@ const seedProduct = async () => {
 }
 
 const storedImage = async (id: number) =>
-  (await db.select({ image: products.image, mime: products.imageMime }).from(products).where(eq(products.id, id)))[0]
+  (
+    await db
+      .select({ image: products.image, mime: products.imageMime, alt: products.imageAlt })
+      .from(products)
+      .where(eq(products.id, id))
+  )[0]
 
 describe('PUT /api/admin/products/[id]/image', () => {
   it('returns 401 without auth', async () => {
@@ -144,6 +151,95 @@ describe('PUT /api/admin/products/[id]/image', () => {
   })
 })
 
+describe('PUT /api/admin/products/[id]/image — description (#105)', () => {
+  it('stores the description alongside the image', async () => {
+    const { auth, product } = await seedProduct()
+    await PUT(
+      makeReq(String(product.id), auth, png(), 'image/png', 'Traffic graphs for the managed gateway'),
+      params(String(product.id)),
+    )
+
+    expect((await storedImage(product.id)).alt).toBe('Traffic graphs for the managed gateway')
+  })
+
+  it('refuses an image with no description', async () => {
+    // An empty alt is a claim that the picture carries no information, and only
+    // the person uploading it can make that claim.
+    const { auth, product } = await seedProduct()
+    const res = await PUT(makeReq(String(product.id), auth, png(), 'image/png', null), params(String(product.id)))
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/description is required/i)
+    expect((await storedImage(product.id)).image).toBeNull()
+  })
+
+  it('refuses a description of only whitespace', async () => {
+    const { auth, product } = await seedProduct()
+    const res = await PUT(makeReq(String(product.id), auth, png(), 'image/png', '   '), params(String(product.id)))
+    expect(res.status).toBe(400)
+  })
+
+  it('refuses a description longer than the limit', async () => {
+    const { auth, product } = await seedProduct()
+    const res = await PUT(
+      makeReq(String(product.id), auth, png(), 'image/png', 'x'.repeat(301)),
+      params(String(product.id)),
+    )
+    expect(res.status).toBe(400)
+  })
+
+  it('trims the description before storing it', async () => {
+    const { auth, product } = await seedProduct()
+    await PUT(makeReq(String(product.id), auth, png(), 'image/png', '  a gateway  '), params(String(product.id)))
+    expect((await storedImage(product.id)).alt).toBe('a gateway')
+  })
+})
+
+describe('PATCH /api/admin/products/[id]/image', () => {
+  const patchReq = (id: string, auth: string | undefined, body: unknown) =>
+    new NextRequest(`http://localhost/api/admin/products/${id}/image`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      headers: auth ? { authorization: auth, 'content-type': 'application/json' } : {},
+    })
+
+  it('changes the description without re-uploading the file', async () => {
+    const { auth, product } = await seedProduct()
+    await PUT(makeReq(String(product.id), auth), params(String(product.id)))
+    const before = await storedImage(product.id)
+
+    const res = await PATCH(patchReq(String(product.id), auth, { alt: 'A clearer description' }), params(String(product.id)))
+    expect(res.status).toBe(204)
+
+    const after = await storedImage(product.id)
+    expect(after.alt).toBe('A clearer description')
+    // The bytes are untouched — this is not a re-upload.
+    expect(after.image?.length).toBe(before.image?.length)
+  })
+
+  it('refuses an empty description', async () => {
+    const { auth, product } = await seedProduct()
+    await PUT(makeReq(String(product.id), auth), params(String(product.id)))
+
+    const res = await PATCH(patchReq(String(product.id), auth, { alt: '  ' }), params(String(product.id)))
+    expect(res.status).toBe(400)
+  })
+
+  it('refuses a description for a product that has no image', async () => {
+    // It would sit there waiting to be attached to whatever is uploaded next.
+    const { auth, product } = await seedProduct()
+    const res = await PATCH(patchReq(String(product.id), auth, { alt: 'Describes nothing' }), params(String(product.id)))
+    expect(res.status).toBe(409)
+  })
+
+  it('requires root', async () => {
+    const admin = await createUser({ role: 'admin', email: 'img-patch-admin@test.dev' })
+    const auth = await makeAuthHeader(admin)
+    const res = await PATCH(patchReq('1', auth, { alt: 'x' }), params('1'))
+    expect(res.status).toBe(403)
+  })
+})
+
 describe('DELETE /api/admin/products/[id]/image', () => {
   it('removes the image and its type', async () => {
     const { auth, product } = await seedProduct()
@@ -161,6 +257,8 @@ describe('DELETE /api/admin/products/[id]/image', () => {
     const row = await storedImage(product.id)
     expect(row.image).toBeNull()
     expect(row.mime).toBeNull()
+    // The description goes with it, or it would describe the next upload.
+    expect(row.alt).toBeNull()
   })
 
   it('requires root', async () => {

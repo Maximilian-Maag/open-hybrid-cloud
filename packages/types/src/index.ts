@@ -84,6 +84,14 @@ export interface Product {
   createdAt: string
   name: string
   description: string
+  /**
+   * What the product picture shows, for its `alt` attribute.
+   *
+   * Null when the product has no image. Required whenever one is uploaded, so a
+   * component never has to invent a description or decide the picture is
+   * decorative — which is what every one of them used to do differently.
+   */
+  imageAlt?: string | null
 }
 
 export interface ProductDetail extends Product {
@@ -436,6 +444,8 @@ export interface CartItem {
   environmentName: string | null
   price: string | null
   currency: string | null
+  /** Description of the product picture, for its `alt` attribute. */
+  imageAlt?: string | null
   /** False when the product is no longer offered in that environment. */
   stillOffered: boolean
 }

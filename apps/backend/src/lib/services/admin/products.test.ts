@@ -572,7 +572,7 @@ describe('updateProductImage', () => {
     const cat = await createCategory()
     const p = await seedProduct(cat.id, 'Img')
 
-    const result = await updateProductImage(p.id, png)
+    const result = await updateProductImage(p.id, png, 'A screenshot of the gateway dashboard')
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.mime).toBe('image/png')
 
@@ -589,13 +589,13 @@ describe('updateProductImage', () => {
     const cat = await createCategory()
     const p = await seedProduct(cat.id, 'Img2')
 
-    const result = await updateProductImage(p.id, Buffer.from('not an image but long enough'))
+    const result = await updateProductImage(p.id, Buffer.from('not an image but long enough'), 'Some description')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(415)
   })
 
   it('reports an unknown product instead of silently succeeding', async () => {
-    const result = await updateProductImage(999_999, png)
+    const result = await updateProductImage(999_999, png, 'A description')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(404)
   })

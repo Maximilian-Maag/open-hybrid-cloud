@@ -340,10 +340,24 @@ const MAGIC: { mime: (typeof ALLOWED_IMAGE_MIMES)[number]; test: (b: Buffer) => 
 export const detectImageMime = (buffer: Buffer): string | null =>
   MAGIC.find((candidate) => buffer.length >= 12 && candidate.test(buffer))?.mime ?? null
 
+/** Longest useful alt text; beyond this it is a description, not a label. */
+export const MAX_IMAGE_ALT_LENGTH = 300
+
 export const updateProductImage = async (
   id: number,
   buffer: Buffer,
+  alt: string,
 ): Promise<Result<{ mime: string }>> => {
+  // Required, not optional: an empty alt is a claim that the picture carries no
+  // information, and only the person uploading it can make that claim. Every
+  // component that renders it used to decide for itself — the catalogue tile and
+  // the cart thumbnail passed "", the product page passed the product name.
+  const description = alt.trim()
+  if (description === '') return err(400, 'An image description is required')
+  if (description.length > MAX_IMAGE_ALT_LENGTH) {
+    return err(400, `The image description must be at most ${MAX_IMAGE_ALT_LENGTH} characters`)
+  }
+
   if (buffer.length === 0) return err(400, 'The uploaded file is empty')
   if (buffer.length > MAX_IMAGE_BYTES) {
     return err(413, `Image is larger than ${MAX_IMAGE_BYTES / (1024 * 1024)} MB`)
@@ -356,7 +370,7 @@ export const updateProductImage = async (
 
   const updated = await db
     .update(products)
-    .set({ image: buffer, imageMime: mime })
+    .set({ image: buffer, imageMime: mime, imageAlt: description })
     .where(eq(products.id, id))
     .returning({ id: products.id })
 
@@ -367,10 +381,32 @@ export const updateProductImage = async (
   return ok({ mime })
 }
 
+export const updateProductImageAlt = async (id: number, alt: string): Promise<Result<void>> => {
+  const description = alt.trim()
+  if (description === '') return err(400, 'An image description is required')
+  if (description.length > MAX_IMAGE_ALT_LENGTH) {
+    return err(400, `The image description must be at most ${MAX_IMAGE_ALT_LENGTH} characters`)
+  }
+
+  const [row] = await db
+    .select({ hasImage: products.image })
+    .from(products)
+    .where(eq(products.id, id))
+    .limit(1)
+
+  if (!row) return err(404, 'Product not found')
+  // Describing a picture that is not there would leave a description behind for
+  // whatever is uploaded next.
+  if (!row.hasImage) return err(409, 'This product has no image to describe')
+
+  await db.update(products).set({ imageAlt: description }).where(eq(products.id, id))
+  return ok(undefined)
+}
+
 export const deleteProductImage = async (id: number): Promise<Result<void>> => {
   const updated = await db
     .update(products)
-    .set({ image: null, imageMime: null })
+    .set({ image: null, imageMime: null, imageAlt: null })
     .where(eq(products.id, id))
     .returning({ id: products.id })
 

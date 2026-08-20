@@ -3,6 +3,7 @@ import { requireRole, isAuth } from '@/lib/auth/middleware'
 import { toResponse } from '@/lib/http'
 import {
   updateProductImage,
+  updateProductImageAlt,
   deleteProductImage,
   MAX_IMAGE_BYTES,
 } from '@/lib/services/admin/products'
@@ -39,7 +40,35 @@ export async function PUT(
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  return toResponse(await updateProductImage(productId, buffer))
+  // Uploaded together with the file, because an image without a description is
+  // exactly what this endpoint must stop producing.
+  const alt = formData?.get('alt')
+  return toResponse(await updateProductImage(productId, buffer, typeof alt === 'string' ? alt : ''))
+}
+
+/** Change the description without re-uploading the file. */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await requireRole('root')(req)
+  if (!isAuth(session)) return session
+
+  const { id } = await params
+  const productId = parseInt(id, 10)
+  if (!Number.isInteger(productId) || productId <= 0) {
+    return NextResponse.json({ error: 'Invalid product id' }, { status: 400 })
+  }
+
+  const body = await req.json().catch(() => null)
+  const alt = (body as { alt?: unknown } | null)?.alt
+  if (typeof alt !== 'string') {
+    return NextResponse.json({ error: 'An image description is required' }, { status: 400 })
+  }
+
+  const result = await updateProductImageAlt(productId, alt)
+  if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
+  return new NextResponse(null, { status: 204 })
 }
 
 export async function DELETE(

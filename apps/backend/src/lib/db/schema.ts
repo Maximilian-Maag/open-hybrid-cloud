@@ -42,6 +42,14 @@ export const products = pgTable('products', {
   image: bytea('image'),
   /** MIME type of `image`. Null on rows written before it was recorded. */
   imageMime: text('image_mime'),
+  /**
+   * What the picture shows, for the `alt` attribute (WCAG 1.1.1).
+   *
+   * Required whenever `image` is set — enforced in the service, because the column
+   * cannot express "not null only when another column is not null" without a table
+   * constraint that would break the legacy rows the migration backfills.
+   */
+  imageAlt: text('image_alt'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

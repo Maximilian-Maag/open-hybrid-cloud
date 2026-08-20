@@ -27,14 +27,67 @@ describe('parseTofuOutputs', () => {
     expect(parseTofuOutputs('Apply complete! No outputs.')).toEqual({})
   })
 
-  it('stops collecting at the next non-empty section header', () => {
+  it('stops collecting at the next non-assignment line', () => {
     const trace = ['Outputs:', '', 'foo = "bar"', '', 'Warning: something else'].join('\n')
     expect(parseTofuOutputs(trace)).toEqual({ foo: 'bar' })
   })
 
-  it('ignores lines without quoted values', () => {
+  it('stops at a summary line that follows the block', () => {
+    const trace = ['Outputs:', '', 'foo = "bar"', 'Apply complete! Resources: 1 added.'].join('\n')
+    expect(parseTofuOutputs(trace)).toEqual({ foo: 'bar' })
+  })
+
+  it('keeps unquoted scalars — numbers and booleans are outputs too', () => {
+    // These used to be dropped without trace, so a template that declared a port
+    // looked like one that had forgotten to.
     const trace = ['Outputs:', '', 'foo = "valid"', 'bar = 42', 'baz = true'].join('\n')
-    expect(parseTofuOutputs(trace)).toEqual({ foo: 'valid' })
+    expect(parseTofuOutputs(trace)).toEqual({ foo: 'valid', bar: '42', baz: 'true' })
+  })
+
+  it('records a sensitive output as such rather than omitting it', () => {
+    // "There is a value here and it is not shown" is information; a missing key
+    // reads as a template that never declared the output.
+    const trace = ['Outputs:', '', 'db_password = <sensitive>', 'host = "db.internal"'].join('\n')
+    expect(parseTofuOutputs(trace)).toEqual({ db_password: '<sensitive>', host: 'db.internal' })
+  })
+
+  it('collects a multi-line list into one value', () => {
+    const trace = [
+      'Outputs:',
+      '',
+      'addresses = [',
+      '  "10.0.0.4",',
+      '  "10.0.0.5",',
+      ']',
+      'name = "cluster"',
+    ].join('\n')
+    expect(parseTofuOutputs(trace)).toEqual({
+      addresses: '[ "10.0.0.4", "10.0.0.5", ]',
+      name: 'cluster',
+    })
+  })
+
+  it('collects a multi-line map, including nested brackets', () => {
+    const trace = [
+      'Outputs:',
+      '',
+      'config = {',
+      '  "limits" = {',
+      '    "cpu" = "2"',
+      '  }',
+      '}',
+      'ready = true',
+    ].join('\n')
+    const parsed = parseTofuOutputs(trace)
+    expect(parsed.config).toContain('"cpu" = "2"')
+    expect(parsed.ready).toBe('true')
+  })
+
+  it('does not treat a blank line as the end of the block', () => {
+    // Terraform prints one after the header, and the old parser only survived that
+    // by accident.
+    const trace = ['Outputs:', '', 'first = "a"', '', 'second = "b"'].join('\n')
+    expect(parseTofuOutputs(trace)).toEqual({ first: 'a', second: 'b' })
   })
 
   it('handles multiple ANSI sequences in a single line', () => {

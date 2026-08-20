@@ -3,9 +3,13 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from '@/lib/db/schema'
 import { sql } from 'drizzle-orm'
+import { ensureTestDatabase } from './database'
 
-// Module-level client for setup/teardown — tests use the app's db singleton
-const client = postgres(process.env.DATABASE_URL ?? '')
+// Module-level client for setup/teardown — tests use the app's db singleton.
+// postgres.js connects lazily, so the database it points at does not have to
+// exist until the first query in beforeAll.
+const databaseUrl = process.env.DATABASE_URL ?? ''
+const client = postgres(databaseUrl)
 export const testDb = drizzle(client, { schema })
 
 // Tables in dependency order so truncation respects FKs
@@ -33,6 +37,11 @@ const TABLES = [
 ] as const
 
 beforeAll(async () => {
+  // This run's database may not exist yet — the name depends on where the run was
+  // started from (see ./database.ts), so it cannot be created up front.
+  await ensureTestDatabase(databaseUrl)
+  console.warn(`[test] database: ${new URL(databaseUrl).pathname.replace('/', '')}`)
+
   // Push schema to test DB (idempotent — creates tables that don't exist)
   await testDb.execute(sql`
     CREATE TABLE IF NOT EXISTS users (

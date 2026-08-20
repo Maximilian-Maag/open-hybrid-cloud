@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
 import path from 'path'
+import { testDatabaseUrl } from './src/test/database'
 
 export default defineConfig({
   test: {
@@ -12,7 +13,10 @@ export default defineConfig({
     exclude: ['**/node_modules/**', '**/dist/**', '**/.stryker-tmp/**'],
     setupFiles: ['./src/test/setup.ts'],
     env: {
-      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/open_hybrid_cloud_test',
+      // Per working directory, so a mutation run in .stryker-tmp/sandbox-* and an
+      // ordinary run in the checkout do not truncate each other's tables. Set
+      // TEST_DB_SUFFIX to separate two runs started by hand in one checkout.
+      DATABASE_URL: testDatabaseUrl(),
       JWT_SECRET: 'test-jwt-secret-32-chars-minimum!!',
       ADMIN_EMAIL: 'root@test.dev',
       ADMIN_PASSWORD: 'testpassword123',

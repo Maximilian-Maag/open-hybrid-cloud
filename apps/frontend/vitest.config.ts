@@ -7,6 +7,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    // Stryker copies the whole source tree into .stryker-tmp/sandbox-*/ while a
+    // mutation run is in progress. Those copies contain test files, so an ordinary
+    // `vitest run` picks them up: the suite doubles, and the copies fail against a
+    // mutated source — which looks like a broken working tree.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.stryker-tmp/**'],
     setupFiles: ['./src/test/setup.ts'],
     coverage: {
       provider: 'v8',

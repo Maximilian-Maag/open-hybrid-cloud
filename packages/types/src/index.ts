@@ -625,7 +625,13 @@ export interface InfrastructureElement {
  * were redacted — the names stay visible, the values do not.
  */
 export interface InfrastructureDetail extends InfrastructureElement {
+  /** Status per id in `pipelineId`, from the run named by `pipelinePhase`. */
   pipelineStatus: Record<string, string>
+  /**
+   * Which run `pipelineId` describes: provisioning while the element is active,
+   * teardown once decommissioning started (a teardown rewrites the id list).
+   */
+  pipelinePhase: 'provisioning' | 'teardown'
   costCenter: string | null
   orderCreatedAt: string | null
   isTrial: boolean

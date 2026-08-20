@@ -34,10 +34,13 @@ const scenario = async () => {
   const project = await createProject(pm.id, 'Webshop Platform')
   const order = await createOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
   await db.update(orders).set({ costCenterId: cc.id }).where(eq(orders.id, order.id))
+  // As provisioning leaves it: the element carries the pipeline IDS, the ORDER
+  // carries their status (webhook/handler.ts merges into orders.pipeline_status),
+  // and the element's own status map stays empty until a teardown writes it.
+  await db.update(orders).set({ pipelineStatus: { 'pipe-1': 'success' } }).where(eq(orders.id, order.id))
   const element = await createInfraElement(order.id, project.id, env.id, product.id, {
     parameters: { hostname: 'web-01', admin_password: 'sup3rs3cret' },
     pipelineId: ['pipe-1'],
-    pipelineStatus: { 'pipe-1': 'success' },
     deployedAt: new Date('2026-03-01T10:00:00.000Z'),
   })
   await db
@@ -91,7 +94,10 @@ describe('GET /api/infrastructure/[id]', () => {
     })
     expect(body.outputs).toEqual({ ip_address: '203.0.113.10' })
     expect(body.pipelineId).toEqual(['pipe-1'])
+    // Read off the ORDER, not the element. Taking the element's own (empty) map
+    // reported a finished deployment's pipelines as pending.
     expect(body.pipelineStatus).toEqual({ 'pipe-1': 'success' })
+    expect(body.pipelinePhase).toBe('provisioning')
     expect(body.deployedAt).toBeTruthy()
   })
 
@@ -127,6 +133,31 @@ describe('GET /api/infrastructure/[id]', () => {
     const { other, element } = await scenario()
     const res = await GET(makeReq(String(element.id), await makeAuthHeader(other)), params(String(element.id)))
     expect(res.status).toBe(404)
+  })
+
+  it('takes a teardown run\'s status from the element, not the order', async () => {
+    // A teardown REPLACES the element's pipeline ids with the destroy pipelines
+    // and records their status on the element (services/teardown). The order's
+    // map still describes the provisioning run and must not be shown here.
+    const { root, element, order } = await scenario()
+    await db
+      .update(infrastructureElements)
+      .set({
+        status: 'decommissioning',
+        pipelineId: ['destroy-1'],
+        pipelineStatus: { 'destroy-1': 'success', 'trigger-failed:0': 'webhook 500' },
+      })
+      .where(eq(infrastructureElements.id, element.id))
+
+    const res = await GET(makeReq(String(element.id), await makeAuthHeader(root)), params(String(element.id)))
+    const body = await res.json()
+
+    expect(body.pipelinePhase).toBe('teardown')
+    expect(body.pipelineStatus).toEqual({ 'destroy-1': 'success', 'trigger-failed:0': 'webhook 500' })
+    // The provisioning run's ids are gone from the element, so its status must
+    // not leak in from the order.
+    expect(Object.keys(body.pipelineStatus)).not.toContain('pipe-1')
+    expect(order.id).toBeGreaterThan(0)
   })
 
   it('reports a failed deployment as active-with-failed-order', async () => {

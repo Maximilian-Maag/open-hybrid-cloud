@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId } from '@/lib/http'
 import { getInfrastructureElement } from '@/lib/services/infrastructure'
 
 /**
@@ -18,13 +18,8 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  // Digits only: parseInt would read '1abc' and '1.5' as 1 and quietly serve a
-  // different element than the one that was asked for.
-  if (!/^\d+$/.test(id)) {
-    return NextResponse.json({ error: 'Invalid infrastructure id' }, { status: 400 })
-  }
-  const elementId = Number(id)
-  if (!Number.isSafeInteger(elementId) || elementId <= 0) {
+  const elementId = parseRouteId(id)
+  if (elementId === null) {
     return NextResponse.json({ error: 'Invalid infrastructure id' }, { status: 400 })
   }
 

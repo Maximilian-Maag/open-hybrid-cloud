@@ -671,7 +671,20 @@ const claimAndDestroy = async (
  * value cannot be hidden in one place and shown in the other.
  */
 export interface InfraDetail extends InfraRow {
+  /**
+   * Status per pipeline id in `pipelineId`, taken from the run those ids belong
+   * to — see `pipelinePhase`.
+   */
   pipelineStatus: Record<string, string>
+  /**
+   * Which run `pipelineId` describes.
+   *
+   * The element's `pipelineId` is rewritten by a teardown (services/teardown),
+   * so it holds provisioning ids while the element is active and destroy ids
+   * once decommissioning has started. The two runs record their status in
+   * different places, so the caller has to be told which one it is looking at.
+   */
+  pipelinePhase: 'provisioning' | 'teardown'
   costCenter: string | null
   orderCreatedAt: Date | null
   isTrial: boolean
@@ -696,6 +709,7 @@ export const getInfrastructureElement = async (
       parameters: infrastructureElements.parameters,
       pipelineId: infrastructureElements.pipelineId,
       pipelineStatus: infrastructureElements.pipelineStatus,
+      orderPipelineStatus: orders.pipelineStatus,
       outputs: infrastructureElements.outputs,
       deployedAt: infrastructureElements.deployedAt,
       scheduledDecommissionAt: infrastructureElements.scheduledDecommissionAt,
@@ -737,9 +751,22 @@ export const getInfrastructureElement = async (
   const parameters = row.parameters as Record<string, string>
   const redactedParameters = Object.keys(parameters ?? {}).filter((name) => sensitive.has(name))
 
-  const { projectOwnerId: _ownerId, ...rest } = row
+  // The status of a PROVISIONING pipeline lives on the order: the webhook handler
+  // merges success and failure into orders.pipeline_status, and only a teardown
+  // writes the element's own map (see webhook/handler.ts and services/teardown).
+  // Pairing the element's provisioning ids with the element's map — which is what
+  // this endpoint used to do — reported every finished deployment as pending.
+  const pipelinePhase = row.status === 'active' ? 'provisioning' : 'teardown'
+  const pipelineStatus =
+    pipelinePhase === 'teardown'
+      ? (row.pipelineStatus ?? {})
+      : (row.orderPipelineStatus ?? {})
+
+  const { projectOwnerId: _ownerId, orderPipelineStatus: _orderStatus, ...rest } = row
   return ok({
     ...rest,
+    pipelineStatus,
+    pipelinePhase,
     parameters: redactParameters(parameters, sensitive),
     redactedParameters,
   } as InfraDetail)

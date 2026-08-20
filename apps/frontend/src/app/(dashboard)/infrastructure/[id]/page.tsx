@@ -46,6 +46,13 @@ export default async function InfrastructureDetailPage({ params }: Props) {
   const outputs = Object.entries(element.outputs ?? {})
   const parameters = Object.entries(element.parameters ?? {})
   const pipelines = element.pipelineId ?? []
+  // Entries in the status map with no matching pipeline id: a trigger that never
+  // started leaves a `trigger-failed:<n>` sentinel whose value is the reason (see
+  // fireDestroyTriggers / retryProvisioning). Listing only the ids would hide the
+  // one case where nothing ran at all.
+  const failedTriggers = Object.entries(element.pipelineStatus ?? {}).filter(
+    ([key]) => !pipelines.includes(key),
+  )
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -146,7 +153,7 @@ export default async function InfrastructureDetailPage({ params }: Props) {
       </Card>
 
       <Card title={t('pipelines', lang)}>
-        {pipelines.length === 0 ? (
+        {pipelines.length === 0 && failedTriggers.length === 0 ? (
           <p className="text-sm text-slate-600">{t('noPipelines', lang)}</p>
         ) : (
           <ul className="divide-y divide-slate-100">
@@ -154,8 +161,17 @@ export default async function InfrastructureDetailPage({ params }: Props) {
               <li key={pipelineId} className="flex items-baseline justify-between gap-4 py-2">
                 <span className="font-mono text-xs text-slate-700">{pipelineId}</span>
                 <span className="text-xs text-slate-500">
+                  {/* The status comes from the run these ids belong to — the order
+                      for a provisioning run, the element for a teardown — which the
+                      API resolves via pipelinePhase. */}
                   {element.pipelineStatus?.[pipelineId] ?? t('statusPending', lang)}
                 </span>
+              </li>
+            ))}
+            {failedTriggers.map(([key, reason]) => (
+              <li key={key} className="flex items-baseline justify-between gap-4 py-2">
+                <span className="font-mono text-xs text-slate-700">{key}</span>
+                <span className="text-xs text-red-700">{reason}</span>
               </li>
             ))}
           </ul>

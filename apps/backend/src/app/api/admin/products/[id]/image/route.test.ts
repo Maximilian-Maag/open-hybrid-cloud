@@ -39,6 +39,19 @@ const makeReq = (
   })
 }
 
+const patchReq = (id: string, auth: string | undefined, body: unknown) =>
+  new NextRequest(`http://localhost/api/admin/products/${id}/image`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+    headers: auth ? { authorization: auth, 'content-type': 'application/json' } : {},
+  })
+
+const deleteReq = (id: string, auth?: string) =>
+  new NextRequest(`http://localhost/api/admin/products/${id}/image`, {
+    method: 'DELETE',
+    headers: auth ? { authorization: auth } : {},
+  })
+
 const params = (id: string) => ({ params: Promise.resolve({ id }) })
 
 const seedProduct = async () => {
@@ -210,13 +223,6 @@ describe('PUT /api/admin/products/[id]/image — description (#105)', () => {
 })
 
 describe('PATCH /api/admin/products/[id]/image', () => {
-  const patchReq = (id: string, auth: string | undefined, body: unknown) =>
-    new NextRequest(`http://localhost/api/admin/products/${id}/image`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-      headers: auth ? { authorization: auth, 'content-type': 'application/json' } : {},
-    })
-
   it('changes the description without re-uploading the file', async () => {
     const { auth, product } = await seedProduct()
     await PUT(makeReq(String(product.id), auth), params(String(product.id)))
@@ -273,6 +279,25 @@ describe('DELETE /api/admin/products/[id]/image', () => {
     expect(row.mime).toBeNull()
     // The description goes with it, or it would describe the next upload.
     expect(row.alt).toBeNull()
+  })
+
+  it('rejects a partially numeric id on every verb, and touches nothing', async () => {
+    // parseInt('1abc') is 1, so PUT/PATCH/DELETE on /products/1abc/image all acted
+    // on product 1 — writing, renaming or deleting the image of a product the
+    // caller never named.
+    const { auth, product } = await seedProduct()
+    await PUT(makeReq(String(product.id), auth), params(String(product.id)))
+    const before = await storedImage(product.id)
+    expect(before.image).not.toBeNull()
+
+    const bad = `${product.id}abc`
+    expect((await PUT(makeReq(bad, auth), params(bad))).status).toBe(400)
+    expect((await PATCH(patchReq(bad, auth, { alt: 'hijacked' }), params(bad))).status).toBe(400)
+    expect((await DELETE(deleteReq(bad, auth), params(bad))).status).toBe(400)
+
+    const after = await storedImage(product.id)
+    expect(after.image?.length).toBe(before.image?.length)
+    expect(after.alt).toBe(before.alt)
   })
 
   it('requires root', async () => {

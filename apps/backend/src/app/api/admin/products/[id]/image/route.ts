@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId } from '@/lib/http'
 import {
   updateProductImage,
   updateProductImageAlt,
@@ -16,8 +16,8 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const productId = parseInt(id, 10)
-  if (!Number.isInteger(productId) || productId <= 0) {
+  const productId = parseRouteId(id)
+  if (productId === null) {
     return NextResponse.json({ error: 'Invalid product id' }, { status: 400 })
   }
 
@@ -65,8 +65,8 @@ export async function PATCH(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const productId = parseInt(id, 10)
-  if (!Number.isInteger(productId) || productId <= 0) {
+  const productId = parseRouteId(id)
+  if (productId === null) {
     return NextResponse.json({ error: 'Invalid product id' }, { status: 400 })
   }
 
@@ -89,8 +89,8 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const productId = parseInt(id, 10)
-  if (!Number.isInteger(productId) || productId <= 0) {
+  const productId = parseRouteId(id)
+  if (productId === null) {
     return NextResponse.json({ error: 'Invalid product id' }, { status: 400 })
   }
 

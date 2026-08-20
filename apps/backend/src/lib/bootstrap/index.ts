@@ -3,6 +3,7 @@ import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { db, client } from '@/lib/db/client'
 import { users, branding } from '@/lib/db/schema'
 import bcrypt from 'bcryptjs'
+import { reportConfigProblems } from '@/lib/config/validate'
 
 // PostgreSQL error codes that mean the object already exists — safe to skip
 // when the DB was seeded via db:push instead of the migration runner.
@@ -49,6 +50,11 @@ let bootstrapped = false
 export const runBootstrap = async (): Promise<void> => {
   if (bootstrapped) return
   bootstrapped = true
+
+  // Before anything else, and never fatal: a server that refuses logins is
+  // easier to diagnose than one that will not start, but the reason has to be
+  // on stderr at boot rather than surfacing later as a failed sign-in.
+  reportConfigProblems()
 
   try {
     await runMigrations()

@@ -44,7 +44,20 @@ export const loginWithCredentials = async (
   if (!valid) return err(401, 'Invalid credentials')
 
   const sessionUser = { id: user.id, email: user.email, name: user.name, role: user.role }
-  const token = await signToken(sessionUser)
+
+  // The credentials were correct; anything failing from here is the server's
+  // fault. Without this the JWT_SECRET check inside signToken throws, the route
+  // 500s with no body, and NextAuth reports CredentialsSignin — so a
+  // misconfigured deployment looks exactly like a wrong password, which is what
+  // an operator then spends the afternoon debugging.
+  let token: string
+  try {
+    token = await signToken(sessionUser)
+  } catch (e) {
+    console.error('[auth] Could not sign a session token — check JWT_SECRET:', e)
+    return err(500, 'The server is misconfigured and cannot issue a session. See the server log.')
+  }
+
   return ok(token)
 }
 

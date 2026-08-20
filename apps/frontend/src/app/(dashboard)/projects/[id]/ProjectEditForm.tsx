@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { Project, CostCenter, UpdateProjectRequest } from '@open-hybrid-cloud/types'
 import { put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
@@ -76,7 +77,7 @@ export function ProjectEditForm({ project, costCenters, token }: Props) {
       >
         <form onSubmit={handleSave} className="space-y-4">
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
+            <Alert>{error}</Alert>
           )}
           <Input label={t('name', lang)} value={name} onChange={(e) => setName(e.target.value)} required />
           <div className="flex flex-col gap-1">

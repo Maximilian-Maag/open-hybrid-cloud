@@ -51,6 +51,16 @@ spec:
               value: {{ .clientSecret | quote }}
             {{- end }}
             {{- end }}
+            {{- if .Values.decommissionSweep.enabled }}
+            # Presence of this secret is what enables POST
+            # /api/internal/decommission-sweep; without it the endpoint returns
+            # 503 rather than accepting unauthenticated calls.
+            - name: DECOMMISSION_SWEEP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  key: DECOMMISSION_SWEEP_SECRET
+            {{- end }}
             {{- with .Values.backend.env.smtp }}
             {{- if .host }}
             - name: SMTP_HOST

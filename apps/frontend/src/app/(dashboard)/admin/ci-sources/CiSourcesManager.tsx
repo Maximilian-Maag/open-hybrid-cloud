@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { CiSource, CiProvider, CreateCiSourceRequest, UpdateCiSourceRequest } from '@open-hybrid-cloud/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
@@ -127,12 +128,12 @@ export function CiSourcesManager({ token }: Props) {
     <>
       <Card title="CI Sources" action={<Button size="sm" onClick={openAdd}>Add CI Source</Button>}>
         {deleteError && !deleteTarget && (
-          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>
+          <Alert className="mb-3">{deleteError}</Alert>
         )}
         {loading ? (
           <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
         ) : sources.length === 0 ? (
-          <p className="text-center py-6 text-slate-400">No CI sources yet.</p>
+          <p className="text-center py-6 text-slate-600">No CI sources yet.</p>
         ) : (
           <div className="space-y-2">
             {sources.map((src) => (
@@ -158,7 +159,7 @@ export function CiSourcesManager({ token }: Props) {
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add CI Source" size="md">
         <form onSubmit={handleAdd} className="space-y-4">
-          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <Alert>{formError}</Alert>}
           <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
           <Input label="URL" type="url" value={form.url} onChange={(e) => setField('url', e.target.value)} required />
           <Select label="Provider" value={form.provider} onChange={(e) => setField('provider', e.target.value)} options={PROVIDERS} />
@@ -171,7 +172,7 @@ export function CiSourcesManager({ token }: Props) {
       </Modal>
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit CI Source" size="md">
         <form onSubmit={handleEdit} className="space-y-4">
-          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <Alert>{formError}</Alert>}
           <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
           <Input label="URL" type="url" value={form.url} onChange={(e) => setField('url', e.target.value)} required />
           <Select label="Provider" value={form.provider} onChange={(e) => setField('provider', e.target.value)} options={PROVIDERS} />
@@ -183,7 +184,7 @@ export function CiSourcesManager({ token }: Props) {
         </form>
       </Modal>
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete CI Source" size="sm">
-        {deleteError && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>}
+        {deleteError && <Alert className="mb-4">{deleteError}</Alert>}
         <p className="text-sm text-slate-600 mb-6">Delete <strong>{deleteTarget?.name}</strong>?</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>

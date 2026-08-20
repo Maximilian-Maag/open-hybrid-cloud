@@ -199,6 +199,32 @@ describe('handlePipelineEvent — multi-pipeline orders', () => {
     const [after] = await db.select().from(orders).where(eq(orders.id, order.id))
     expect(after.status).toBe('failed')
   })
+
+  it('does not complete an order that carries a trigger-failed sentinel', async () => {
+    // A trigger that never started contributes no pipeline id but does leave a
+    // `trigger-failed:*` entry (see retryProvisioning). Checking only the
+    // pipeline ids would complete the order as soon as the pipelines that DID
+    // start succeed — reporting a fully provisioned order while one webhook or
+    // stack was never fired at all.
+    const { user, product, env, project } = await buildScenario()
+    const order = await createOrder(project.id, product.id, env.id, user.id, {
+      status: 'provisioning',
+      pipelineId: ['pipe-A'],
+    })
+    await db
+      .update(orders)
+      .set({ pipelineStatus: { 'trigger-failed:0': 'product webhook "b" (#2): boom' } })
+      .where(eq(orders.id, order.id))
+
+    await handlePipelineEvent({ provider: 'gitlab', pipelineId: 'pipe-A', status: 'success' }, env.id)
+
+    const [after] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(after.status).toBe('provisioning')
+    expect(after.pipelineStatus).toMatchObject({
+      'pipe-A': 'success',
+      'trigger-failed:0': 'product webhook "b" (#2): boom',
+    })
+  })
 })
 
 describe('handlePipelineEvent — environment scoping', () => {

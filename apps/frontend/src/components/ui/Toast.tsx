@@ -1,6 +1,8 @@
 'use client'
 
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { t } from '@/lib/i18n'
+import { useLang } from '@/lib/useLang'
 
 type ToastType = 'success' | 'error' | 'info'
 
@@ -36,7 +38,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none" aria-live="polite">
+      {/* The live region is on each bubble (role="alert"/"status"), not here —
+          an aria-live container wrapping children that declare their own live
+          role nests two regions, and some screen readers then announce twice. */}
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
           <ToastBubble
             key={t.id}
@@ -62,6 +67,7 @@ const typeIconPath: Record<ToastType, string> = {
 }
 
 function ToastBubble({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) {
+  const lang = useLang()
   return (
     <div
       role={item.type === 'error' ? 'alert' : 'status'}
@@ -73,8 +79,8 @@ function ToastBubble({ item, onDismiss }: { item: ToastItem; onDismiss: () => vo
       <span className="flex-1">{item.message}</span>
       <button
         onClick={onDismiss}
-        className="shrink-0 opacity-70 hover:opacity-100 transition-opacity"
-        aria-label="Dismiss"
+        className="shrink-0 opacity-80 hover:opacity-100 transition-opacity rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+        aria-label={t('dismiss', lang)}
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

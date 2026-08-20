@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { t } from '@/lib/i18n'
+import { getLang } from '@/lib/getLang'
 
 const adminSections = [
   { href: '/admin/categories', title: 'Categories', description: 'Manage product categories' },
@@ -25,9 +27,11 @@ export default async function AdminPage() {
   const role = (session.user as unknown as { role: Role }).role
   if (role !== 'root') redirect('/')
 
+  const lang = await getLang()
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      <PageHeader title="Admin Dashboard" subtitle="Manage system configuration and settings." />
+      <PageHeader title={t('adminDashboard', lang)} subtitle={t('adminDashboardSubtitle', lang)} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {adminSections.map((section) => (

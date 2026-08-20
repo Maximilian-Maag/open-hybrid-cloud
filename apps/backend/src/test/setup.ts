@@ -11,6 +11,10 @@ export const testDb = drizzle(client, { schema })
 // Tables in dependency order so truncation respects FKs
 const TABLES = [
   schema.auditLog,
+  schema.productFavorites,
+  schema.orderComments,
+  schema.productVersions,
+  schema.cartItems,
   schema.infrastructureElements,
   schema.orders,
   schema.pipelineStacks,
@@ -134,6 +138,22 @@ beforeAll(async () => {
       name TEXT NOT NULL,
       active BOOLEAN NOT NULL DEFAULT TRUE
     );
+    -- Added here rather than in the product_environments block above: the FK
+    -- target has to exist first, and cost_centers is created after it.
+    ALTER TABLE product_environments
+      ADD COLUMN IF NOT EXISTS overhead_cost_center_id BIGINT
+      REFERENCES cost_centers(id) ON DELETE SET NULL;
+    -- Migration 0011: time-boxed trials.
+    ALTER TABLE product_environments
+      ADD COLUMN IF NOT EXISTS trial_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE product_environments
+      ADD COLUMN IF NOT EXISTS trial_duration_minutes INTEGER NOT NULL DEFAULT 30;
+    CREATE TABLE IF NOT EXISTS product_favorites (
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, product_id)
+    );
     CREATE TABLE IF NOT EXISTS projects (
       id BIGSERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -159,6 +179,37 @@ beforeAll(async () => {
     );
     -- Older test DBs may not have pipeline_status; add it (migration 0005).
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
+    -- Migration 0011: the order carries the trial intent to approval time.
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_trial BOOLEAN NOT NULL DEFAULT FALSE;
+    -- Migration 0013: what the customer was offered when the order was placed.
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_snapshot JSONB;
+    CREATE TABLE IF NOT EXISTS cart_items (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id) ON DELETE CASCADE,
+      parameters JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS product_versions (
+      id BIGSERIAL PRIMARY KEY,
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      environment_id BIGINT REFERENCES deployment_environments(id) ON DELETE SET NULL,
+      changelog TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
+      snapshot JSONB,
+      created_by BIGINT REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS order_comments (
+      id BIGSERIAL PRIMARY KEY,
+      order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      user_id BIGINT NOT NULL REFERENCES users(id),
+      body TEXT NOT NULL,
+      internal BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS infrastructure_elements (
       id BIGSERIAL PRIMARY KEY,
       order_id BIGINT NOT NULL REFERENCES orders(id),
@@ -174,6 +225,8 @@ beforeAll(async () => {
     );
     -- Older test DBs may not have pipeline_status; add it (migration 0007).
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
+    -- Migration 0010: scheduled automatic teardown.
+    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS scheduled_decommission_at TIMESTAMPTZ;
     CREATE TABLE IF NOT EXISTS audit_log (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT,

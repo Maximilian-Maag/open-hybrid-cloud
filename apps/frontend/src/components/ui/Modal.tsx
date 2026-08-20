@@ -1,12 +1,16 @@
 'use client'
 
 import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { t } from '@/lib/i18n'
+import { useLang } from '@/lib/useLang'
 
 interface ModalProps {
   open: boolean
   onClose: () => void
   title?: string
   ariaLabel?: string
+  /** Overrides the detected language for the close button's accessible name. */
+  lang?: string
   children: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl'
 }
@@ -18,7 +22,12 @@ const sizeClass: Record<string, string> = {
   xl: 'max-w-2xl',
 }
 
-export function Modal({ open, onClose, title, ariaLabel, children, size = 'md' }: ModalProps) {
+export function Modal({ open, onClose, title, ariaLabel, children, size = 'md', lang }: ModalProps) {
+  // The close button's accessible name has to match the document language, and
+  // Modal is already a client component — reading the language here keeps all 11
+  // call sites from having to thread it through.
+  const detected = useLang(lang ?? 'en')
+  const closeLabel = t('close', lang ?? detected)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
@@ -55,8 +64,8 @@ export function Modal({ open, onClose, title, ariaLabel, children, size = 'md' }
           <h2 id={titleId} className="text-lg font-semibold text-slate-900">{title}</h2>
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 focus:outline-none transition-colors"
-            aria-label="Close"
+            className="rounded-md p-1 text-slate-500 hover:text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+            aria-label={closeLabel}
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

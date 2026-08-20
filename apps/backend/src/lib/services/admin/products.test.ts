@@ -46,6 +46,7 @@ import {
   createProject,
   createOrder as seedOrder,
   createInfraElement,
+  createCostCenter,
 } from '@/test/helpers'
 
 const mockedTranslate = vi.mocked(translateProduct)
@@ -372,6 +373,122 @@ describe('product environments', () => {
     await createProductEnvironment(p.id, { environmentId: env.id })
     const ok = await deleteProductEnvironment(p.id, env.id)
     expect(ok.ok).toBe(true)
+  })
+
+  it.each(['active', 'decommissioning'])(
+    'deleteProductEnvironment refuses while %s infrastructure exists',
+    async (status) => {
+      const { p, env } = await buildEnv()
+      await createProductEnvironment(p.id, { environmentId: env.id })
+      const user = await createUser({ role: 'admin' })
+      const project = await createProject(user.id)
+      const order = await seedOrder(project.id, p.id, env.id, user.id)
+      await createInfraElement(order.id, project.id, env.id, p.id, { status })
+
+      const result = await deleteProductEnvironment(p.id, env.id)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.status).toBe(409)
+
+      // The offering must survive the refused delete.
+      const listRes = await listProductEnvironments(p.id)
+      expect(listRes.ok && listRes.data.length).toBe(1)
+    },
+  )
+
+  it('deleteProductEnvironment ignores decommissioned infrastructure', async () => {
+    const { p, env } = await buildEnv()
+    await createProductEnvironment(p.id, { environmentId: env.id })
+    const user = await createUser({ role: 'admin' })
+    const project = await createProject(user.id)
+    const order = await seedOrder(project.id, p.id, env.id, user.id)
+    await createInfraElement(order.id, project.id, env.id, p.id, { status: 'decommissioned' })
+
+    const result = await deleteProductEnvironment(p.id, env.id)
+    expect(result.ok).toBe(true)
+  })
+
+  // ── overhead cost centre (issue #22) ──────────────────────────────────────
+  it('stores and clears the overhead cost centre', async () => {
+    const { p, env } = await buildEnv()
+    const cc = await createCostCenter({ code: 'CC-OVERHEAD' })
+
+    const created = await createProductEnvironment(p.id, {
+      environmentId: env.id,
+      costCenterMode: 'overhead',
+      overheadCostCenterId: cc.id,
+    })
+    expect(created.ok).toBe(true)
+    if (created.ok) expect(created.data.overheadCostCenterId).toBe(cc.id)
+
+    const cleared = await updateProductEnvironment(p.id, env.id, { overheadCostCenterId: null })
+    expect(cleared.ok).toBe(true)
+    if (cleared.ok) expect(cleared.data.overheadCostCenterId).toBeNull()
+  })
+
+  it('defaults the overhead cost centre to null', async () => {
+    const { p, env } = await buildEnv()
+    const created = await createProductEnvironment(p.id, { environmentId: env.id })
+    expect(created.ok && created.data.overheadCostCenterId).toBeNull()
+  })
+
+  it('rejects an unknown overhead cost centre on create and update', async () => {
+    const { p, env } = await buildEnv()
+
+    const created = await createProductEnvironment(p.id, { environmentId: env.id, overheadCostCenterId: 999_999 })
+    expect(created.ok).toBe(false)
+    if (!created.ok) {
+      expect(created.status).toBe(400)
+      expect(created.message).toMatch(/overhead cost center not found/i)
+    }
+
+    await createProductEnvironment(p.id, { environmentId: env.id })
+    const updated = await updateProductEnvironment(p.id, env.id, { overheadCostCenterId: 999_999 })
+    expect(updated.ok).toBe(false)
+    if (!updated.ok) expect(updated.status).toBe(400)
+  })
+
+  it('rejects a deactivated overhead cost centre', async () => {
+    // Accepting it here would only defer the failure to the next order placed
+    // against the offering, long after the operator who set it has moved on.
+    const { p, env } = await buildEnv()
+    const cc = await createCostCenter({ code: 'CC-DEAD', active: false })
+
+    const created = await createProductEnvironment(p.id, {
+      environmentId: env.id,
+      costCenterMode: 'overhead',
+      overheadCostCenterId: cc.id,
+    })
+    expect(created.ok).toBe(false)
+    if (!created.ok) expect(created.message).toMatch(/not active/i)
+  })
+
+  it('surfaces the overhead cost centre through the list and detail reads', async () => {
+    const { p, env } = await buildEnv()
+    const cc = await createCostCenter({ code: 'CC-OVERHEAD' })
+    await createProductEnvironment(p.id, {
+      environmentId: env.id,
+      costCenterMode: 'overhead',
+      overheadCostCenterId: cc.id,
+    })
+
+    const listRes = await listProductEnvironments(p.id)
+    expect(listRes.ok && listRes.data[0].overheadCostCenterId).toBe(cc.id)
+
+    const detailRes = await getProductAdmin(p.id)
+    expect(detailRes.ok && detailRes.data.environments[0].overheadCostCenterId).toBe(cc.id)
+  })
+
+  it('deleteProductEnvironment ignores live infrastructure in a different environment', async () => {
+    const { p, env } = await buildEnv()
+    const otherEnv = await createEnvironment((await createCiSource()).id)
+    await createProductEnvironment(p.id, { environmentId: env.id })
+    const user = await createUser({ role: 'admin' })
+    const project = await createProject(user.id)
+    const order = await seedOrder(project.id, p.id, otherEnv.id, user.id)
+    await createInfraElement(order.id, project.id, otherEnv.id, p.id, { status: 'active' })
+
+    const result = await deleteProductEnvironment(p.id, env.id)
+    expect(result.ok).toBe(true)
   })
 })
 

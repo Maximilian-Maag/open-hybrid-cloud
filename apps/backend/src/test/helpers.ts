@@ -62,7 +62,7 @@ export const createCiSource = async (overrides?: { name?: string; url?: string }
 
 let envSeq = 0
 
-export const createEnvironment = async (ciSourceId: number, webhookToken?: string) => {
+export const createEnvironment = async (ciSourceId: number, webhookToken?: string, name?: string) => {
   // Default to a per-call unique token: callback_secret mirrors it (see below)
   // and is UNIQUE since migration 0006, so a shared default would collide for
   // any test that seeds more than one environment.
@@ -70,7 +70,7 @@ export const createEnvironment = async (ciSourceId: number, webhookToken?: strin
   const [env] = await db
     .insert(schema.deploymentEnvironments)
     .values({
-      name: 'Test Env',
+      name: name ?? 'Test Env',
       ciSourceId,
       webhookUrl: 'https://gitlab.example.com/api/v4/projects/1/trigger/pipeline',
       webhookToken: token,
@@ -87,7 +87,15 @@ export const createEnvironment = async (ciSourceId: number, webhookToken?: strin
 export const linkProductEnvironment = async (
   productId: number,
   environmentId: number,
-  overrides?: { price?: string; currency?: string },
+  overrides?: {
+    price?: string
+    currency?: string
+    costCenterMode?: 'project' | 'select' | 'overhead'
+    forcedCostCenter?: boolean
+    overheadCostCenterId?: number | null
+    trialEnabled?: boolean
+    trialDurationMinutes?: number
+  },
 ) => {
   const [row] = await db
     .insert(schema.productEnvironments)
@@ -96,16 +104,21 @@ export const linkProductEnvironment = async (
       environmentId,
       price: overrides?.price ?? '0',
       currency: overrides?.currency ?? 'EUR',
+      ...(overrides?.costCenterMode ? { costCenterMode: overrides.costCenterMode } : {}),
+      ...(overrides?.forcedCostCenter !== undefined ? { forcedCostCenter: overrides.forcedCostCenter } : {}),
+      ...(overrides?.overheadCostCenterId !== undefined ? { overheadCostCenterId: overrides.overheadCostCenterId } : {}),
+      ...(overrides?.trialEnabled !== undefined ? { trialEnabled: overrides.trialEnabled } : {}),
+      ...(overrides?.trialDurationMinutes !== undefined ? { trialDurationMinutes: overrides.trialDurationMinutes } : {}),
     })
     .onConflictDoNothing()
     .returning()
   return row
 }
 
-export const createProject = async (ownerId: number) => {
+export const createProject = async (ownerId: number, name?: string) => {
   const [project] = await db
     .insert(schema.projects)
-    .values({ name: 'Test Project', ownerId })
+    .values({ name: name ?? 'Test Project', ownerId })
     .returning()
   return project
 }
@@ -115,7 +128,7 @@ export const createOrder = async (
   productId: number,
   environmentId: number,
   userId: number,
-  overrides?: { status?: string; pipelineId?: string[] },
+  overrides?: { status?: string; pipelineId?: string[]; isTrial?: boolean },
 ) => {
   const [order] = await db
     .insert(schema.orders)
@@ -126,6 +139,7 @@ export const createOrder = async (
       userId,
       status: (overrides?.status ?? 'pending') as schema.Order['status'],
       pipelineId: overrides?.pipelineId ?? [],
+      ...(overrides?.isTrial !== undefined ? { isTrial: overrides.isTrial } : {}),
     })
     .returning()
   return order
@@ -136,7 +150,13 @@ export const createInfraElement = async (
   projectId: number,
   environmentId: number,
   productId: number,
-  overrides?: { status?: string; pipelineId?: string[]; pipelineStatus?: Record<string, string> },
+  overrides?: {
+    status?: string
+    pipelineId?: string[]
+    pipelineStatus?: Record<string, string>
+    parameters?: Record<string, string>
+    deployedAt?: Date
+  },
 ) => {
   const [el] = await db
     .insert(schema.infrastructureElements)
@@ -148,6 +168,8 @@ export const createInfraElement = async (
       status: (overrides?.status ?? 'active') as schema.InfrastructureElement['status'],
       pipelineId: overrides?.pipelineId ?? [],
       pipelineStatus: overrides?.pipelineStatus ?? {},
+      ...(overrides?.parameters ? { parameters: overrides.parameters } : {}),
+      ...(overrides?.deployedAt ? { deployedAt: overrides.deployedAt } : {}),
     })
     .returning()
   return el
@@ -161,4 +183,18 @@ export const makeAuthHeader = async (user: schema.User): Promise<string> => {
     role: user.role as Role,
   })
   return `Bearer ${token}`
+}
+
+let ccSeq = 0
+
+export const createCostCenter = async (overrides?: { code?: string; name?: string; active?: boolean }) => {
+  const [cc] = await db
+    .insert(schema.costCenters)
+    .values({
+      code: overrides?.code ?? `CC-${++ccSeq}`,
+      name: overrides?.name ?? 'Test Cost Center',
+      active: overrides?.active ?? true,
+    })
+    .returning()
+  return cc
 }

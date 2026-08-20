@@ -1,14 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
-import type { Product, Category } from '@open-hybrid-cloud/types'
-import { get } from '@/lib/api'
+import type { Product, Category, FavoriteProduct } from '@open-hybrid-cloud/types'
+import { get, put, del } from '@/lib/api'
 import { t } from '@/lib/i18n'
 import { useLang } from '@/lib/useLang'
 import { SkeletonCard } from '@/components/ui/Skeleton'
+import { ProductCard } from './ProductCard'
 
 export default function CatalogPage() {
   const { data: session } = useSession()
@@ -22,6 +22,10 @@ export default function CatalogPage() {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  // Favourited product ids. Held as a Set so a card can answer "am I starred?"
+  // without scanning a list per render.
+  const [favorites, setFavorites] = useState<Set<number>>(new Set())
+  const [favoriteBusy, setFavoriteBusy] = useState<Set<number>>(new Set())
 
   // sync URL search param into local state
   useEffect(() => {
@@ -39,6 +43,11 @@ export default function CatalogPage() {
       ])
       setProducts(prods ?? [])
       setCategories(cats ?? [])
+      // Separately and non-fatally: a favourites outage should cost the stars,
+      // not the whole catalogue.
+      get<FavoriteProduct[]>(`/api/favorites?lang=${lang}`, token)
+        .then((favs) => setFavorites(new Set((favs ?? []).map((f) => f.productId))))
+        .catch(() => setFavorites(new Set()))
     } catch {
       // Surface a genuine fetch failure instead of showing an empty catalog,
       // which would look like "no products" during an outage.
@@ -49,6 +58,62 @@ export default function CatalogPage() {
   }, [token, lang])
 
   useEffect(() => { load() }, [load])
+
+  async function toggleFavorite(productId: number) {
+    if (!token || favoriteBusy.has(productId)) return
+    const wasFavorited = favorites.has(productId)
+
+    // Optimistic: the star is the whole feedback, so waiting a round trip to
+    // fill it in reads as a dead button.
+    setFavorites((prev) => {
+      const next = new Set(prev)
+      if (wasFavorited) next.delete(productId)
+      else next.add(productId)
+      return next
+    })
+    setFavoriteBusy((prev) => new Set(prev).add(productId))
+
+    try {
+      if (wasFavorited) await del(`/api/favorites/${productId}`, token)
+      else await put(`/api/favorites/${productId}`, {}, token)
+    } catch {
+      // Roll back rather than leave the star claiming something the server did
+      // not record.
+      setFavorites((prev) => {
+        const next = new Set(prev)
+        if (wasFavorited) next.add(productId)
+        else next.delete(productId)
+        return next
+      })
+    } finally {
+      setFavoriteBusy((prev) => {
+        const next = new Set(prev)
+        next.delete(productId)
+        return next
+      })
+    }
+  }
+
+  const categoryName = (categoryId: number) => categories.find((c) => c.id === categoryId)?.name
+
+  const renderCard = (product: Product) => (
+    <ProductCard
+      key={product.id}
+      id={product.id}
+      name={product.name}
+      description={product.description}
+      categoryName={categoryName(product.categoryId)}
+      favorited={favorites.has(product.id)}
+      busy={favoriteBusy.has(product.id)}
+      onToggleFavorite={() => toggleFavorite(product.id)}
+      lang={lang}
+    />
+  )
+
+  // Drawn from the loaded catalogue rather than from the /favorites payload, so a
+  // favourite card is the same object as its counterpart in the grid below and
+  // cannot drift out of sync with it.
+  const favoriteProducts = products.filter((p) => favorites.has(p.id))
 
   const filtered = products.filter((p) => {
     const q = search.toLowerCase()
@@ -68,7 +133,7 @@ export default function CatalogPage() {
               <button
                 onClick={() => setSelectedCategory(null)}
                 className="w-full text-left block px-3 py-1.5 rounded text-sm transition-colors font-semibold"
-                style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: '#fff' } : { color: '#475569' }}
+                style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { color: '#475569' }}
                 onMouseEnter={(e) => { if (selectedCategory !== null) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
                 onMouseLeave={(e) => { if (selectedCategory !== null) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
               >
@@ -80,7 +145,7 @@ export default function CatalogPage() {
                 <button
                   onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
                   className="w-full text-left block px-3 py-1.5 rounded text-sm transition-colors"
-                  style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: '#fff', fontWeight: 600 } : { color: '#475569' }}
+                  style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)', fontWeight: 600 } : { color: '#475569' }}
                   onMouseEnter={(e) => { if (selectedCategory !== cat.id) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
                   onMouseLeave={(e) => { if (selectedCategory !== cat.id) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
                 >
@@ -94,11 +159,25 @@ export default function CatalogPage() {
 
       {/* Main content */}
       <div className="flex-1 min-w-0">
+        {/* Favourites shortcut. Hidden entirely when empty rather than shown as
+            an empty shelf, and suppressed while searching or filtering so it
+            cannot contradict the result set below it. */}
+        {favoriteProducts.length > 0 && !search && selectedCategory === null && (
+          <section className="mb-6" aria-labelledby="favorites-heading">
+            <h2 id="favorites-heading" className="text-xl font-bold text-slate-800 mb-3">
+              {t('myFavorites', lang)}
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {favoriteProducts.map(renderCard)}
+            </div>
+          </section>
+        )}
+
         <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
           <div>
             {search ? (
               <h2 className="text-xl font-bold text-slate-800">
-                {t('resultsFor', lang)}: <span style={{ color: 'var(--bp)' }}>&ldquo;{search}&rdquo;</span>
+                {t('resultsFor', lang)}: <span style={{ color: 'var(--bp-text)' }}>&ldquo;{search}&rdquo;</span>
               </h2>
             ) : (
               <>
@@ -118,7 +197,7 @@ export default function CatalogPage() {
             <button
               onClick={() => setSelectedCategory(null)}
               className="rounded-full px-3 py-1 text-sm font-medium transition-colors"
-              style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: '#fff' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
+              style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
             >
               {t('all', lang)}
             </button>
@@ -127,7 +206,7 @@ export default function CatalogPage() {
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
                 className="rounded-full px-3 py-1 text-sm font-medium transition-colors"
-                style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: '#fff' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
+                style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
               >
                 {cat.name}
               </button>
@@ -145,7 +224,7 @@ export default function CatalogPage() {
             <button
               onClick={() => load()}
               className="text-sm mt-3 inline-block hover:underline"
-              style={{ color: 'var(--bp)' }}
+              style={{ color: 'var(--bp-text)' }}
             >
               {t('tryAgain', lang)}
             </button>
@@ -157,55 +236,14 @@ export default function CatalogPage() {
             </svg>
             <p className="font-semibold text-slate-500">{t('noProducts', lang)}</p>
             {search && (
-              <button onClick={() => setSearch('')} className="text-sm mt-2 inline-block hover:underline" style={{ color: 'var(--bp)' }}>
+              <button onClick={() => setSearch('')} className="text-sm mt-2 inline-block hover:underline" style={{ color: 'var(--bp-text)' }}>
                 ← {t('allProducts', lang)}
               </button>
             )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtered.map((product) => {
-              const catName = categories.find((c) => c.id === product.categoryId)?.name
-              return (
-                <div
-                  key={product.id}
-                  className="bg-white border border-slate-200 rounded-lg overflow-hidden flex flex-col hover:shadow-md transition-all"
-                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--bp)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
-                >
-                  <div
-                    className="h-40 flex items-center justify-center border-b border-slate-100"
-                    style={{ backgroundColor: 'color-mix(in srgb, var(--bp) 8%, white)' }}
-                  >
-                    <svg className="h-14 w-14 opacity-25" style={{ color: 'var(--bp)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
-                    </svg>
-                  </div>
-                  <div className="p-3 flex flex-col flex-1">
-                    {catName && (
-                      <span className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--bp)' }}>
-                        {catName}
-                      </span>
-                    )}
-                    <h3 className="font-semibold text-sm text-slate-800 leading-snug mb-1 line-clamp-2">
-                      {product.name}
-                    </h3>
-                    {product.description && (
-                      <p className="text-xs text-slate-500 leading-relaxed flex-1 mb-3 line-clamp-2">
-                        {product.description}
-                      </p>
-                    )}
-                    <Link
-                      href={`/catalog/${product.id}`}
-                      className="w-full py-2 px-3 rounded text-center text-sm font-semibold block text-gray-900 hover:brightness-95 transition-all"
-                      style={{ backgroundColor: 'var(--bs)' }}
-                    >
-                      {t('placeOrder', lang)}
-                    </Link>
-                  </div>
-                </div>
-              )
-            })}
+            {filtered.map(renderCard)}
           </div>
         )}
       </div>

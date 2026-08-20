@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { ExchangeRate } from '@open-hybrid-cloud/types'
 import { get, post } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
 import { Table } from '@/components/ui/Table'
 
@@ -51,7 +52,7 @@ export function ExchangeRatesTable({ token }: Props) {
       }
     >
       {error && (
-        <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
+        <Alert className="mb-4">{error}</Alert>
       )}
 
       {loading ? (

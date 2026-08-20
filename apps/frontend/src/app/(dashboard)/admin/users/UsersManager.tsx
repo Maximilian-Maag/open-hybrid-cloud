@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { User, Role, CreateUserRequest, UpdateUserRequest } from '@open-hybrid-cloud/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
@@ -131,14 +132,14 @@ export function UsersManager({ token }: Props) {
     <>
       <Card title="Users" action={<Button size="sm" onClick={openAdd}>Add User</Button>}>
         {deleteError && !deleteTarget && (
-          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>
+          <Alert className="mb-3">{deleteError}</Alert>
         )}
         {loading ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
           </div>
         ) : users.length === 0 ? (
-          <p className="text-center py-6 text-slate-400">No users yet.</p>
+          <p className="text-center py-6 text-slate-600">No users yet.</p>
         ) : (
           <div className="space-y-2">
             {users.map((user) => (
@@ -170,7 +171,7 @@ export function UsersManager({ token }: Props) {
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add User" size="md">
         <form onSubmit={handleAdd} className="space-y-4">
-          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <Alert>{formError}</Alert>}
           <Input label="Email" type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} required />
           <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
           <Select label="Role" value={formRole} onChange={(e) => setFormRole(e.target.value as Role)} options={ROLES} />
@@ -184,7 +185,7 @@ export function UsersManager({ token }: Props) {
 
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit User" size="md">
         <form onSubmit={handleEdit} className="space-y-4">
-          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <Alert>{formError}</Alert>}
           <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
           <Select label="Role" value={formRole} onChange={(e) => setFormRole(e.target.value as Role)} options={ROLES} />
           <div className="flex justify-end gap-3 pt-2">
@@ -195,7 +196,7 @@ export function UsersManager({ token }: Props) {
       </Modal>
 
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete User" size="sm">
-        {deleteError && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>}
+        {deleteError && <Alert className="mb-4">{deleteError}</Alert>}
         <p className="text-sm text-slate-600 mb-6">Delete user <strong>{deleteTarget?.name}</strong> ({deleteTarget?.email})?</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>

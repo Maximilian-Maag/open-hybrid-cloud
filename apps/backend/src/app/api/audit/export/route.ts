@@ -2,39 +2,13 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
 import { exportAuditLog, type AuditRow } from '@/lib/services/audit'
 import PDFDocument from 'pdfkit'
+import { toCsv } from '@/lib/csv'
 
 function buildCsv(rows: AuditRow[]): string {
-  const escape = (value: unknown): string => {
-    if (value === null || value === undefined) return ''
-    let str = String(value)
-    // Neutralize spreadsheet formula injection: a cell starting with = + - @
-    // (or a tab/CR) is evaluated as a formula by Excel/Sheets. Audit fields
-    // capture user-supplied names/inputs, so prefix such cells with a quote.
-    if (/^[=+\-@\t\r]/.test(str)) str = `'${str}`
-    // Quote on CR as well as LF/comma/quote — a bare \r can otherwise start a
-    // new CSV record whose first cell looks like a formula.
-    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-      return `"${str.replace(/"/g, '""')}"`
-    }
-    return str
-  }
-
-  const header = ['id', 'userId', 'userName', 'action', 'entityId', 'details', 'createdAt']
-  const lines = [
-    header.join(','),
-    ...rows.map((r) =>
-      [
-        escape(r.id),
-        escape(r.userId),
-        escape(r.userName),
-        escape(r.action),
-        escape(r.entityId),
-        escape(r.details),
-        escape(r.createdAt?.toISOString()),
-      ].join(','),
-    ),
-  ]
-  return lines.join('\n')
+  return toCsv(
+    ['id', 'userId', 'userName', 'action', 'entityId', 'details', 'createdAt'],
+    rows.map((r) => [r.id, r.userId, r.userName, r.action, r.entityId, r.details, r.createdAt?.toISOString()]),
+  )
 }
 
 async function buildPdf(rows: AuditRow[]): Promise<Buffer> {

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { Parameter, ParameterType, CreateParameterRequest, UpdateParameterRequest } from '@open-hybrid-cloud/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
@@ -122,12 +123,12 @@ export function ParametersManager({ token }: Props) {
     <>
       <Card title="Global Parameters" action={<Button size="sm" onClick={openAdd}>Add Parameter</Button>}>
         {deleteError && !deleteTarget && (
-          <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>
+          <Alert className="mb-3">{deleteError}</Alert>
         )}
         {loading ? (
           <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
         ) : params.length === 0 ? (
-          <p className="text-center py-6 text-slate-400">No global parameters yet.</p>
+          <p className="text-center py-6 text-slate-600">No global parameters yet.</p>
         ) : (
           <div className="space-y-2">
             {params.map((p) => (
@@ -139,7 +140,7 @@ export function ParametersManager({ token }: Props) {
                     {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-600">required</span>}
                     {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">sensitive</span>}
                   </div>
-                  <p className="text-xs font-mono text-slate-400">{p.name}</p>
+                  <p className="text-xs font-mono text-slate-600">{p.name}</p>
                   {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
                 </div>
                 <div className="flex gap-2">
@@ -154,7 +155,7 @@ export function ParametersManager({ token }: Props) {
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Parameter" size="md">
         <form onSubmit={handleAdd} className="space-y-4">
-          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <Alert>{formError}</Alert>}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Variable Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required hint="Sent as TF_VAR_name" />
             <Input label="Display Label" value={form.label} onChange={(e) => setField('label', e.target.value)} hint="Shown in order form" />
@@ -183,7 +184,7 @@ export function ParametersManager({ token }: Props) {
       </Modal>
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Parameter" size="md">
         <form onSubmit={handleEdit} className="space-y-4">
-          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <Alert>{formError}</Alert>}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Variable Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required hint="Sent as TF_VAR_name" />
             <Input label="Display Label" value={form.label} onChange={(e) => setField('label', e.target.value)} hint="Shown in order form" />
@@ -211,7 +212,7 @@ export function ParametersManager({ token }: Props) {
         </form>
       </Modal>
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Parameter" size="sm">
-        {deleteError && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{deleteError}</div>}
+        {deleteError && <Alert className="mb-4">{deleteError}</Alert>}
         <p className="text-sm text-slate-600 mb-6">Delete parameter <strong>{deleteTarget?.name}</strong>?</p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>

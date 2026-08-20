@@ -10,6 +10,7 @@ import type {
 } from '@open-hybrid-cloud/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
@@ -190,7 +191,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
         {loading ? (
           <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
         ) : envs.length === 0 ? (
-          <p className="text-center py-6 text-slate-400">No environments yet.</p>
+          <p className="text-center py-6 text-slate-600">No environments yet.</p>
         ) : (
           <div className="space-y-2">
             {envs.map((env) => (
@@ -211,7 +212,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Environment" size="md">
         <form onSubmit={handleAdd} className="space-y-4">
-          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <Alert>{formError}</Alert>}
           <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
           <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Select label="CI Source" required value={form.ciSourceId} onChange={(e) => setField('ciSourceId', e.target.value)}
@@ -226,7 +227,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
       </Modal>
       <Modal open={!!editTarget} onClose={closeEdit} title="Edit Environment" size="md">
         <form onSubmit={handleEdit} className="space-y-4">
-          {formError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formError && <Alert>{formError}</Alert>}
           <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
           <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Select label="CI Source" required value={form.ciSourceId} onChange={(e) => setField('ciSourceId', e.target.value)}
@@ -241,7 +242,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
               </div>
             </div>
             {secretError && (
-              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{secretError}</div>
+              <Alert>{secretError}</Alert>
             )}
             {callbackSecret ? (
               <div className="flex items-center gap-2">
@@ -268,7 +269,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
       <Modal open={!!deleteTarget} onClose={() => { setDeleteTarget(null); setDeleteError(null) }} title="Delete Environment" size="sm">
         <p className="text-sm text-slate-600 mb-4">Delete <strong>{deleteTarget?.name}</strong>?</p>
         {deleteError && (
-          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">{deleteError}</div>
+          <Alert className="mb-4">{deleteError}</Alert>
         )}
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => { setDeleteTarget(null); setDeleteError(null) }}>Cancel</Button>

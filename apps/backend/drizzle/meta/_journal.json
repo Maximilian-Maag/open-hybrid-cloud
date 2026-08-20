@@ -57,6 +57,55 @@
       "when": 1786665600000,
       "tag": "0007_add_infra_pipeline_status",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786752000000,
+      "tag": "0008_overhead_cost_center",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786838400000,
+      "tag": "0009_product_favorites",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786924800000,
+      "tag": "0010_scheduled_decommission",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787011200000,
+      "tag": "0011_trial_offerings",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787097600000,
+      "tag": "0012_order_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787184000000,
+      "tag": "0013_product_versioning",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787270400000,
+      "tag": "0014_cart_items",
+      "breakpoints": true
     }
   ]
 }

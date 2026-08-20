@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { SmtpConfig, UpdateSmtpRequest } from '@open-hybrid-cloud/types'
 import { put } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
@@ -46,7 +47,7 @@ export function SmtpForm({ initial, token }: Props) {
   return (
     <Card title="SMTP Settings">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {error && <Alert>{error}</Alert>}
 
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-2">

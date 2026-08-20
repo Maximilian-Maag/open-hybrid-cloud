@@ -7,5 +7,16 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
 overrides:
-  postcss: ">=8.5.10"
+  # Transitive dependencies pinned to their patched releases. Each closes an open
+  # Dependabot advisory that nothing in the tree requests a fixed range for yet:
+  #   postcss   >=8.5.23  CVE-2026-69153  arbitrary .map read via sourceMappingURL
+  #   undici    >=7.29.0  CVE-2026-15157 / -14643 / -16729 / -16728
+  #   @auth/core >=0.41.3 CVE-2026-73419  OAuth state/nonce/PKCE cookies not
+  #                                       bound to the provider that set them
+  postcss: ">=8.5.23"
+  # Constrained to the 7.x line: 7.29.0 is the patched release, and a major bump
+  # to 8.x on a transitive fetch dependency is not something a security patch
+  # should drag in.
+  undici: ">=7.29.0 <8"
+  "@auth/core": ">=0.41.3"
   esbuild: ">=0.25.0"

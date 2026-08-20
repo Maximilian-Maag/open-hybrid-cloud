@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { CostCenter, CreateProjectRequest } from '@open-hybrid-cloud/types'
 import { post, get } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
@@ -62,7 +63,7 @@ export function NewProjectButton({ token }: Props) {
       <Modal open={open} onClose={() => setOpen(false)} title={t('newProject', lang)} size="md">
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
+            <Alert>{error}</Alert>
           )}
           <Input label={t('name', lang)} value={name} onChange={(e) => setName(e.target.value)} required />
           <div className="flex flex-col gap-1">

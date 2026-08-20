@@ -12,6 +12,7 @@ import type {
 } from '@open-hybrid-cloud/types'
 import { post, get } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
 import { Select } from '@/components/ui/Select'
 import { ParameterFields } from './ParameterFields'
 import { t } from '@/lib/i18n'
@@ -25,13 +26,31 @@ interface OrderFormProps {
   lang?: string
   exchangeRates?: Record<string, number>
   localeCurrency?: string
+  /**
+   * Quick reorder (issue #39): the infrastructure element to copy parameters
+   * from, plus its project. The project has to come along — the template list is
+   * loaded per project, so without it there is nothing to match the id against.
+   */
+  fromInfraId?: string
+  initialProjectId?: string
 }
 
-export function OrderForm({ product, projects, costCenters, token, lang = 'en', exchangeRates = {}, localeCurrency = 'EUR' }: OrderFormProps) {
+export function OrderForm({
+  product,
+  projects,
+  costCenters,
+  token,
+  lang = 'en',
+  exchangeRates = {},
+  localeCurrency = 'EUR',
+  fromInfraId,
+  initialProjectId,
+}: OrderFormProps) {
   const router = useRouter()
   const [envId, setEnvId] = useState<string>('')
-  const [projectId, setProjectId] = useState<string>('')
+  const [projectId, setProjectId] = useState<string>(initialProjectId ?? '')
   const [costCenterId, setCostCenterId] = useState<string>('')
+  const [trial, setTrial] = useState(false)
   const [paramValues, setParamValues] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,6 +58,9 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
 
   const [templates, setTemplates] = useState<InfrastructureElement[]>([])
   const [templateId, setTemplateId] = useState<string>('')
+  // Applied at most once, so re-picking "start fresh" after arriving via a
+  // reorder link is not immediately undone by this effect.
+  const [reorderApplied, setReorderApplied] = useState(false)
 
   // Parameter definitions for the selected environment. The page loads the
   // product without an environment (it is picked here), so the server can only
@@ -53,14 +75,23 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
     if (!envId) { setResolvedParameters(product.parameters); return }
     let stale = false
     get<ProductDetail>(`/api/catalog/${product.id}?lang=${lang}&environmentId=${envId}`, token)
-      .then((detail) => { if (!stale && detail) setResolvedParameters(detail.parameters) })
+      // Guard on `parameters`, not just on `detail`: a truthy-but-shapeless
+      // response (an error envelope, an empty array) would otherwise store
+      // undefined and crash the next render on `.filter`.
+      .then((detail) => { if (!stale && detail?.parameters) setResolvedParameters(detail.parameters) })
       .catch(() => { /* keep the unresolved list — submit still validates server-side */ })
     return () => { stale = true }
   }, [envId, product.id, product.parameters, lang, token])
 
   const selectedEnv = product.environments.find((e) => String(e.environmentId) === envId)
-  const needsCostCenter =
-    selectedEnv?.costCenterMode === 'select' || selectedEnv?.costCenterMode === 'overhead'
+  // `overhead` used to be lumped in with `select` and rendered a picker, which
+  // made a fixed shared account indistinguishable from a free choice. The
+  // account is now stored on the offering, so the user is shown it, not asked.
+  const isOverhead = selectedEnv?.costCenterMode === 'overhead'
+  const needsCostCenter = selectedEnv?.costCenterMode === 'select'
+  // Trials are opt-in per offering (issue #1), so the toggle only exists where one
+  // is actually offered. The server re-checks — a hidden control is not a control.
+  const trialAvailable = selectedEnv?.trialEnabled === true
   const envParameters = resolvedParameters.filter(
     (p) => p.environmentId === null || String(p.environmentId) === envId,
   )
@@ -76,7 +107,29 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
       .catch(() => { setTemplates([]) })
   }, [projectId, product.id, token])
 
+  // Quick reorder: once the project's elements have loaded, adopt the one the
+  // link named. Routed through applyTemplate rather than duplicating its logic,
+  // so a reorder fills the form exactly the way picking the template by hand
+  // does — same parameters, same environment.
+  useEffect(() => {
+    if (!fromInfraId || reorderApplied || templates.length === 0) return
+    const match = templates.find((tpl) => String(tpl.id) === fromInfraId)
+    if (!match) return
+    setReorderApplied(true)
+    setTemplateId(fromInfraId)
+    setParamValues(match.parameters ?? {})
+    setEnvId(String(match.environmentId))
+  }, [fromInfraId, reorderApplied, templates])
+
   function applyTemplate(id: string) {
+    if (id === '') {
+      // Start fresh: drop the copied parameters but leave the chosen environment
+      // alone — clearing that too would undo a deliberate selection the user
+      // may have made before reaching for this control.
+      setTemplateId('')
+      setParamValues({})
+      return
+    }
     const tpl = templates.find((tpl) => String(tpl.id) === id)
     if (!tpl) return
     setTemplateId(id)
@@ -107,6 +160,9 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
         projectId: Number(projectId),
         parameters: parametersWithDefaults,
         ...(needsCostCenter && costCenterId ? { costCenterId: Number(costCenterId) } : {}),
+        // Only sent when the selected environment offers a trial: switching
+        // environments after ticking the box must not smuggle the flag through.
+        ...(trialAvailable && trial ? { trial: true } : {}),
       }
       await post<Order>('/api/orders', body, token)
       setSuccess(true)
@@ -129,18 +185,18 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
 
   if (success) {
     return (
-      <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+      <Alert tone="success">
         {t('orderSuccess', lang)}
-      </div>
+      </Alert>
     )
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        <Alert>
           {error}
-        </div>
+        </Alert>
       )}
 
       <Select
@@ -177,22 +233,60 @@ export function OrderForm({ product, projects, costCenters, token, lang = 'en', 
         />
       )}
 
+      {isOverhead && (
+        <div>
+          <p className="text-sm font-medium text-slate-700">{t('overheadCostCenter', lang)}</p>
+          <p className="mt-1 text-sm text-slate-900" data-testid="overhead-cost-center">
+            {selectedEnv?.overheadCostCenterName ?? '—'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">{t('overheadCostCenterHint', lang)}</p>
+        </div>
+      )}
+
+      {trialAvailable && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="order-trial"
+              checked={trial}
+              onChange={(e) => setTrial(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="order-trial" className="text-sm font-medium text-slate-800">
+              {t('tryItOut', lang)}
+              {' — '}
+              {selectedEnv?.trialDurationMinutes ?? 30} {t('trialMinutes', lang)}
+            </label>
+          </div>
+          <p className="mt-1 ml-6 text-xs text-slate-600">{t('trialHint', lang)}</p>
+        </div>
+      )}
+
       {projectId && templates.length > 0 && (
         <div>
           <Select
             label={t('loadFromExisting', lang)}
             value={templateId}
             onChange={(e) => applyTemplate(e.target.value)}
-            placeholder={t('startFresh', lang)}
-            options={templates.map((tpl) => ({
-              value: tpl.id,
-              label: `#${tpl.id} · ${tpl.environmentName ?? `Env ${tpl.environmentId}`} · ${tpl.deployedAt ? new Date(tpl.deployedAt).toLocaleDateString() : 'n/a'}`,
-            }))}
+            // A real option rather than Select's `placeholder`, which renders
+            // DISABLED: once a template had been picked — and a quick-reorder
+            // link picks one on arrival — "start fresh" would be unreachable.
+            options={[
+              { value: '', label: t('startFresh', lang) },
+              ...templates.map((tpl) => ({
+                value: tpl.id,
+                label: `#${tpl.id} · ${tpl.environmentName ?? `Env ${tpl.environmentId}`} · ${tpl.deployedAt ? new Date(tpl.deployedAt).toLocaleDateString() : 'n/a'}`,
+              })),
+            ]}
           />
           {templateId && (
             <p className="mt-1 text-xs text-slate-500">
               {t('paramsPrefilled', lang)}{templateId}. Edit as needed before submitting.
             </p>
+          )}
+          {fromInfraId && templateId === fromInfraId && (
+            <p className="mt-1 text-xs text-slate-500" role="status">{t('reorderHint', lang)}</p>
           )}
         </div>
       )}

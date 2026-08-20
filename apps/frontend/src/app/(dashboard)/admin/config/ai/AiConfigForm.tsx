@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { AiConfig, UpdateAiConfigRequest, AiProviderType } from '@open-hybrid-cloud/types'
 import { put } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
@@ -59,7 +60,7 @@ export function AiConfigForm({ initial, token }: Props) {
   return (
     <Card title="AI Provider Settings">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {error && <Alert>{error}</Alert>}
 
         <Select label="Provider" value={provider} onChange={(e) => setProvider(e.target.value as AiProviderType)} options={PROVIDERS} />
 

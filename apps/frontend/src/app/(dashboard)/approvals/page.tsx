@@ -33,7 +33,7 @@ export default async function ApprovalsPage() {
       />
 
       {orders.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">{t('noPendingOrders', lang)}</div>
+        <div className="text-center py-12 text-slate-600">{t('noPendingOrders', lang)}</div>
       ) : (
         <div className="space-y-3">
           {orders.map((order) => (

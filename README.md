@@ -72,6 +72,7 @@ On approval/creation the backend fires two sets of CI triggers in parallel:
 | `SMTP_USER` | No | SMTP authentication username |
 | `SMTP_PASS` | No | SMTP authentication password |
 | `SMTP_TLS` | No | Enable TLS (`true`/`false`, default: `true`) |
+| `DECOMMISSION_SWEEP_SECRET` | No | Shared secret for the scheduled-decommission sweep. Blank leaves `POST /api/internal/decommission-sweep` disabled (503) — see [Scheduled decommissioning](#scheduled-decommissioning) |
 
 ### Frontend (`apps/frontend/.env`)
 
@@ -358,6 +359,32 @@ See `infra/helm/` for the Helm chart. The images are published to Docker Hub:
 
 - `maximilianmaag/open-hybrid-cloud-backend`
 - `maximilianmaag/open-hybrid-cloud-frontend`
+
+### Scheduled decommissioning
+
+Users can set a future time at which an infrastructure element is torn down
+automatically, so temporary environments (test, demo, PoC) stop accruing cost when
+they are forgotten. Setting the time works out of the box; **acting on it needs a
+scheduler**, because the backend has no worker process and is horizontally scaled
+— an in-process timer would run once per replica.
+
+Point any scheduler at `POST /api/internal/decommission-sweep`, authenticated with
+`DECOMMISSION_SWEEP_SECRET` in an `X-Sweep-Secret` header. While that variable is
+unset the endpoint returns 503, so it can never be called anonymously.
+
+The sweep is idempotent — its `active → decommissioning` claim is atomic, so
+overlapping or replayed runs cannot tear anything down twice — and the schedule
+interval is the granularity of the feature: an element is torn down at the first
+sweep at or after its time, not to the second.
+
+| Deployment | How |
+|------------|-----|
+| Kubernetes | Set `decommissionSweep.enabled=true` and `decommissionSweep.secret` (Helm renders a `CronJob`; `decommissionSweep.schedule` defaults to every 15 minutes) |
+| Docker host / bare metal | A cron entry — see the `DECOMMISSION_SWEEP_SECRET` block in `.env.example` for a ready-made line |
+
+Response codes: `200` all due elements torn down, `207` some could not be started
+(the body's `failed[]` says which — a product whose destroy triggers are broken),
+`401` bad secret, `503` feature not configured.
 
 ## CI/CD
 

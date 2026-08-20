@@ -14,13 +14,22 @@ import { getLang } from '@/lib/getLang'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { ProductEditForm } from './ProductEditForm'
+import { ProductImageUpload } from '../ProductImageUpload'
+import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 
 interface Props {
   params: Promise<{ id: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }
 
-export default async function AdminProductDetailPage({ params }: Props) {
+export default async function AdminProductDetailPage({ params, searchParams }: Props) {
   const { id } = await params
+  // Set by the create form when the product was created but its image was not:
+  // the product must not be lost over a failed upload, so the failure is carried
+  // here instead of aborting creation.
+  const imageErrorRaw = (await searchParams).imageError
+  const imageError = Array.isArray(imageErrorRaw) ? imageErrorRaw[0] : imageErrorRaw
   const session = await auth()
   if (!session) redirect('/login')
   const role = (session.user as unknown as { role: Role }).role
@@ -56,6 +65,17 @@ export default async function AdminProductDetailPage({ params }: Props) {
           </Link>
         }
       />
+      {/* Its own card, above the details form: the picture is uploaded on its own
+          request (multipart to /image), not saved with the rest of the fields. */}
+      <Card title="Product Image">
+        {imageError && (
+          <div className="mb-3">
+            <Alert>The product was created, but {imageError}. Try uploading it again below.</Alert>
+          </div>
+        )}
+        <ProductImageUpload productId={product.id} token={token} />
+      </Card>
+
       <ProductEditForm
         product={product}
         categories={categories}

@@ -7114,7 +7114,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     outputs: 'izhodi',
     output: 'izhod',
     notDeployed: 'Ni nameščeno',
-    deployedAt: 'Namešceno',
+    deployedAt: 'Nameščeno',
     noOutputs: 'Ni zabeleženih izhodov.',
     outputsTitle: 'Izhodi',
     noParameters: 'Ni parametrov.',

@@ -83,6 +83,58 @@ describe('parseTofuOutputs', () => {
     expect(parsed.ready).toBe('true')
   })
 
+  it('keeps a heredoc value whole, and does not lose the outputs after it', () => {
+    // The heredoc body is arbitrary text: it contains an '=' , a bracket and a
+    // blank line, none of which may be read as parser syntax.
+    const trace = [
+      'Outputs:',
+      '',
+      'kubeconfig = <<EOT',
+      'apiVersion: v1',
+      'clusters:',
+      '  - cluster: { server: https://k8s.example.com }',
+      '',
+      'users: []',
+      'EOT',
+      'name = "cluster"',
+    ].join('\n')
+    const parsed = parseTofuOutputs(trace)
+    expect(parsed.kubeconfig).toContain('apiVersion: v1')
+    expect(parsed.kubeconfig).toContain('users: []')
+    // Line structure survives — a kubeconfig on one line is not a kubeconfig.
+    expect(parsed.kubeconfig.split('\n').length).toBeGreaterThan(3)
+    expect(parsed.name).toBe('cluster')
+  })
+
+  it('accepts the indented heredoc form too', () => {
+    const trace = ['Outputs:', '', 'note = <<-EOF', '  hello', 'EOF', 'ok = true'].join('\n')
+    expect(parseTofuOutputs(trace)).toEqual({ note: 'hello', ok: 'true' })
+  })
+
+  it('does not mistake a bracket inside a quoted string for a structured value', () => {
+    // 'prefix = "a [ b"' is a finished scalar. Counting that bracket would swallow
+    // every following output into it.
+    const trace = [
+      'Outputs:',
+      '',
+      'prefix = "vm-[01]"',
+      'expr = "${count.index} { }"',
+      'name = "cluster"',
+    ].join('\n')
+    expect(parseTofuOutputs(trace)).toEqual({
+      prefix: 'vm-[01]',
+      expr: '${count.index} { }',
+      name: 'cluster',
+    })
+  })
+
+  it('closes a list whose elements contain brackets in strings', () => {
+    const trace = ['Outputs:', '', 'names = [', '  "a[0]",', '  "b{1}",', ']', 'ok = true'].join('\n')
+    const parsed = parseTofuOutputs(trace)
+    expect(parsed.names).toBe('[ "a[0]", "b{1}", ]')
+    expect(parsed.ok).toBe('true')
+  })
+
   it('does not treat a blank line as the end of the block', () => {
     // Terraform prints one after the header, and the old parser only survived that
     // by accident.

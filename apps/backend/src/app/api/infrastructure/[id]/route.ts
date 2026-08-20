@@ -18,8 +18,13 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const elementId = parseInt(id, 10)
-  if (!Number.isInteger(elementId) || elementId <= 0) {
+  // Digits only: parseInt would read '1abc' and '1.5' as 1 and quietly serve a
+  // different element than the one that was asked for.
+  if (!/^\d+$/.test(id)) {
+    return NextResponse.json({ error: 'Invalid infrastructure id' }, { status: 400 })
+  }
+  const elementId = Number(id)
+  if (!Number.isSafeInteger(elementId) || elementId <= 0) {
     return NextResponse.json({ error: 'Invalid infrastructure id' }, { status: 400 })
   }
 

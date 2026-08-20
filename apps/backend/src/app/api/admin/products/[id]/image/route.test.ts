@@ -123,6 +123,20 @@ describe('PUT /api/admin/products/[id]/image', () => {
     expect((await storedImage(product.id)).image).toBeNull()
   })
 
+  it('refuses an oversized image whose declared length is a lie', async () => {
+    // The Content-Length pre-check is a cheap first pass over a header the client
+    // controls. The size of the uploaded part is the fact, so understating the
+    // header must not buy a client a stored image over the limit.
+    const { auth, product } = await seedProduct()
+    const tooBig = Buffer.concat([png(), Buffer.alloc(11 * 1024 * 1024, 7)])
+    const req = makeReq(String(product.id), auth, tooBig)
+    req.headers.set('content-length', '128')
+
+    const res = await PUT(req, params(String(product.id)))
+    expect(res.status).toBe(413)
+    expect((await storedImage(product.id)).image).toBeNull()
+  })
+
   it('refuses an empty file', async () => {
     const { auth, product } = await seedProduct()
     const res = await PUT(makeReq(String(product.id), auth, Buffer.alloc(0)), params(String(product.id)))

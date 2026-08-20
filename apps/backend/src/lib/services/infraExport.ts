@@ -1,5 +1,4 @@
 import type { SessionUser } from '@open-hybrid-cloud/types'
-import { db } from '@/lib/db/client'
 import {
   REDACTED,
   loadSensitiveParameterNames,

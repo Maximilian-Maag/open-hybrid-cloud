@@ -356,31 +356,34 @@ output "hostname" {
 }
 ```
 
-**The parser only accepts quoted strings.** It reads `name = "value"` lines out of
-the job trace, so anything OpenTofu prints unquoted is dropped without a trace —
-that includes plain **numbers** and booleans, not just maps and lists. A template
-that wants to surface a numeric value has to emit it as one:
+**What the parser reads back.** Outputs are recovered from the job trace, not from
+a machine-readable file, because the trace is all the webhook has. Since #97 the
+parser keeps every value type OpenTofu prints:
 
-```hcl
-output "port" {
-  description = "Port to connect to"
-  value       = tostring(module.database.port)   # 5432 alone would be lost
-}
-```
+| OpenTofu prints | Stored as |
+|---|---|
+| `name = "value"` | `value` — quotes stripped |
+| `port = 5432`, `ready = true` | `5432`, `true` — unquoted scalars are kept |
+| `secret = <sensitive>` | `<sensitive>` — the key is kept, so the UI can say a value exists |
+| a multi-line list or map | the printed text, whitespace collapsed onto one line |
+| a `<<EOT` / `<<-EOT` heredoc | the body, keeping its own line breaks |
 
-`linode/virtual-machine` still loses its `firewall_id` to exactly this.
+So `tostring()` is no longer needed to make a number survive, and a list no longer
+has to be flattened just to be *recorded*. Values are stored as **strings** either
+way — nothing downstream parses them back into structure.
+
+Flattening is still the convention where a value is meant to be *consumed*: every
+product parameter arrives as a string, so `aws/network` emits its subnet ids as a
+comma-separated `subnet_ids`, which is the shape `aws/database-postgres` takes back
+in as `subnet_ids_csv` (likewise `inbound_ports_csv`, `backends_csv`,
+`dns_servers_csv`). A raw map is fine to display and awkward to feed into the next
+template.
 
 **Never output a credential.** Whatever a template prints is stored on the
 infrastructure element, shown in the UI and included in the CSV export. That is why
 `linode/kubernetes-cluster` does not output the kubeconfig and
 `linode/object-storage` does not output an access key, even though both are
 available inside the module.
-
-Lists have to be flattened to be usable at all — `aws/network` emits its subnet ids
-as a comma-separated `subnet_ids`, which is also the shape `aws/database-postgres`
-takes back in as `subnet_ids_csv`. Every product parameter arrives as a string, so
-comma-separated values are the convention throughout (`inbound_ports_csv`,
-`backends_csv`, `dns_servers_csv`).
 
 ---
 

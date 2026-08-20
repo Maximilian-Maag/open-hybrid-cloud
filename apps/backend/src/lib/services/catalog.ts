@@ -92,6 +92,8 @@ export interface CatalogItem {
   categoryId: number
   baseLanguage: string
   createdAt: Date
+  /** Required alongside an image (#105); null on a product that has none. */
+  imageAlt: string | null
   name: string
   description: string
 }

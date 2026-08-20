@@ -96,7 +96,8 @@ export const fetchJobTrace = (
  * `<sensitive>` markers all vanished without trace. Issue #97.
  *
  * What is deliberately NOT parsed into structure: complex values are kept as the
- * text Terraform printed, joined on one line. The consumer is a key/value display
+ * text Terraform printed — structured values joined on one line, heredocs keeping
+ * their own lines. The consumer is a key/value display
  * and a CSV column, and inventing a JSON shape here would be a guess about what a
  * template meant.
  */
@@ -107,28 +108,48 @@ export const parseTofuOutputs = (trace: string): Record<string, string> => {
   const outputs: Record<string, string> = {}
 
   let inOutputs = false
-  /** Set while a value spans several lines (a list, a map, a heredoc). */
-  let pending: { name: string; parts: string[]; depth: number } | null = null
+  /** Set while a value spans several lines: a list, a map, or a heredoc. */
+  let pending: { name: string; parts: string[]; depth: number; heredoc: string | null } | null = null
 
   const finish = () => {
     if (!pending) return
-    // Collapse the whitespace Terraform uses for indentation; the value is shown
-    // in a table cell, not in a code block.
-    outputs[pending.name] = pending.parts.join(' ').replace(/\s+/g, ' ').trim()
+    // A heredoc keeps its line structure — it is a document, and joining it on one
+    // line would destroy the thing it was written as. Everything else is collapsed:
+    // Terraform indents structured values, and this is shown in a table cell.
+    outputs[pending.name] =
+      pending.heredoc !== null
+        ? pending.parts.join('\n').trim()
+        : pending.parts.join(' ').replace(/\s+/g, ' ').trim()
     pending = null
   }
 
   const unquote = (value: string): string =>
     value.startsWith('"') && value.endsWith('"') && value.length >= 2 ? value.slice(1, -1) : value
 
+  /**
+   * Net bracket depth, ignoring brackets inside quoted strings.
+   *
+   * `name = "a [ b"` is a complete scalar, not the start of a list — counting the
+   * bracket inside the quotes would swallow every following output into it.
+   */
   const depthOf = (text: string): number => {
     let depth = 0
+    let inString = false
+    let escaped = false
     for (const char of text) {
+      if (escaped) { escaped = false; continue }
+      if (char === '\\') { escaped = true; continue }
+      if (char === '"') { inString = !inString; continue }
+      if (inString) continue
       if (char === '[' || char === '{' || char === '(') depth++
       if (char === ']' || char === '}' || char === ')') depth--
     }
     return depth
   }
+
+  /** `<<EOT` / `<<-EOT` opens a heredoc that runs until a line holding EOT. */
+  const heredocTag = (value: string): string | null =>
+    value.match(/^<<-?\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/)?.[1] ?? null
 
   for (const line of lines) {
     const trimmed = line.trim()
@@ -139,6 +160,13 @@ export const parseTofuOutputs = (trace: string): Record<string, string> => {
     }
 
     if (pending) {
+      // A heredoc ends at its terminator line and nowhere else — its content is
+      // arbitrary text that may contain brackets, quotes and blank lines.
+      if (pending.heredoc !== null) {
+        if (trimmed === pending.heredoc) finish()
+        else pending.parts.push(line)
+        continue
+      }
       pending.parts.push(trimmed)
       pending.depth += depthOf(trimmed)
       if (pending.depth <= 0) finish()
@@ -158,9 +186,15 @@ export const parseTofuOutputs = (trace: string): Record<string, string> => {
     const [, name, rawValue] = match
     const value = rawValue.trim()
 
+    const tag = heredocTag(value)
+    if (tag !== null) {
+      pending = { name, parts: [], depth: 0, heredoc: tag }
+      continue
+    }
+
     // An opening bracket that is not closed on this line starts a multi-line value.
     if (depthOf(value) > 0) {
-      pending = { name, parts: [value], depth: depthOf(value) }
+      pending = { name, parts: [value], depth: depthOf(value), heredoc: null }
       continue
     }
 

@@ -39,6 +39,16 @@ export async function PUT(
     return NextResponse.json({ error: 'No image file provided' }, { status: 400 })
   }
 
+  // The declared length above is a hint a client can lie about; this is the real
+  // size, and checking it here refuses an oversized upload before a second copy
+  // of it is materialised as a Buffer.
+  if (file.size > MAX_IMAGE_BYTES) {
+    return NextResponse.json(
+      { error: `Image is larger than ${MAX_IMAGE_BYTES / (1024 * 1024)} MB` },
+      { status: 413 },
+    )
+  }
+
   const buffer = Buffer.from(await file.arrayBuffer())
   // Uploaded together with the file, because an image without a description is
   // exactly what this endpoint must stop producing.

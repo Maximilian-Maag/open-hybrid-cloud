@@ -119,189 +119,195 @@ const CATALOGUE: DemoProduct[] = [
 ]
 
 export const seedDemoData = async (): Promise<{ created: boolean }> => {
-  const existing = await db
-    .select({ id: categories.id })
-    .from(categories)
-    .where(eq(categories.name, MARKER_CATEGORY))
-    .limit(1)
+  // One transaction around the marker lookup AND every write. Without it a
+  // failure halfway through left the marker category behind, so the next run
+  // found it, reported "already present" and skipped a dataset that had never
+  // been finished — the failure mode is a half-seeded database that looks done.
+  return db.transaction(async (tx) => {
+    const existing = await tx
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.name, MARKER_CATEGORY))
+      .limit(1)
 
-  if (existing.length > 0) {
-    console.warn('[demo] Demo data already present — nothing to do.')
-    return { created: false }
-  }
+    if (existing.length > 0) {
+      console.warn('[demo] Demo data already present — nothing to do.')
+      return { created: false }
+    }
 
-  const [root] = await db.select({ id: users.id }).from(users).where(eq(users.role, 'root')).limit(1)
-  if (!root) {
-    console.error('[demo] No root user yet. Run `make db-seed` first.')
-    return { created: false }
-  }
+    const [root] = await tx.select({ id: users.id }).from(users).where(eq(users.role, 'root')).limit(1)
+    if (!root) {
+      console.error('[demo] No root user yet. Run `make db-seed` first.')
+      return { created: false }
+    }
 
-  const [category] = await db.insert(categories).values({ name: MARKER_CATEGORY }).returning()
-  const [ci] = await db
-    .insert(ciSources)
-    .values({ name: 'Demo GitLab', url: 'https://gitlab.example.invalid', accessToken: 'demo-token', provider: 'gitlab' })
-    .returning()
+    const [category] = await tx.insert(categories).values({ name: MARKER_CATEGORY }).returning()
+    const [ci] = await tx
+      .insert(ciSources)
+      .values({ name: 'Demo GitLab', url: 'https://gitlab.example.invalid', accessToken: 'demo-token', provider: 'gitlab' })
+      .returning()
 
-  const [frankfurt] = await db
-    .insert(deploymentEnvironments)
-    .values({
-      name: 'AWS Frankfurt',
-      description: 'Public cloud, eu-central-1',
-      ciSourceId: ci.id,
-      webhookUrl: 'https://gitlab.example.invalid/api/v4/projects/1/trigger/pipeline',
-      webhookToken: 'demo-trigger-1',
-      callbackSecret: 'demo-callback-1',
-    })
-    .returning()
-
-  const [onPrem] = await db
-    .insert(deploymentEnvironments)
-    .values({
-      name: 'On-Premise Vienna',
-      description: 'vSphere cluster in the Vienna datacentre',
-      ciSourceId: ci.id,
-      webhookUrl: 'https://gitlab.example.invalid/api/v4/projects/2/trigger/pipeline',
-      webhookToken: 'demo-trigger-2',
-      callbackSecret: 'demo-callback-2',
-    })
-    .returning()
-
-  const [platformCc] = await db
-    .insert(costCenters)
-    .values({ code: 'CC-100', name: 'Platform Operations' })
-    .returning()
-  await db.insert(costCenters).values({ code: 'CC-200', name: 'Data Services' })
-
-  const [webshop] = await db
-    .insert(projects)
-    .values({ name: 'Webshop Platform', description: 'Customer-facing shop', ownerId: root.id, costCenterId: platformCc.id })
-    .returning()
-
-  const created: { id: number; name: string }[] = []
-  for (const item of CATALOGUE) {
-    const [product] = await db
-      .insert(products)
+    const [frankfurt] = await tx
+      .insert(deploymentEnvironments)
       .values({
-        categoryId: category.id,
-        baseLanguage: 'en',
-        image: gradientPng(item.image),
-        imageMime: 'image/png',
-        imageAlt: item.imageAlt,
+        name: 'AWS Frankfurt',
+        description: 'Public cloud, eu-central-1',
+        ciSourceId: ci.id,
+        webhookUrl: 'https://gitlab.example.invalid/api/v4/projects/1/trigger/pipeline',
+        webhookToken: 'demo-trigger-1',
+        callbackSecret: 'demo-callback-1',
       })
       .returning()
 
-    await db.insert(productTranslations).values([
-      { productId: product.id, languageCode: 'en', name: item.name, description: item.description },
-      { productId: product.id, languageCode: 'de', name: item.germanName, description: item.germanDescription },
-    ])
+    const [onPrem] = await tx
+      .insert(deploymentEnvironments)
+      .values({
+        name: 'On-Premise Vienna',
+        description: 'vSphere cluster in the Vienna datacentre',
+        ciSourceId: ci.id,
+        webhookUrl: 'https://gitlab.example.invalid/api/v4/projects/2/trigger/pipeline',
+        webhookToken: 'demo-trigger-2',
+        callbackSecret: 'demo-callback-2',
+      })
+      .returning()
 
-    // Two environments at different prices, so the cheapest-offer logic on the
-    // product page and the per-environment breakdown in the cost report have
-    // something to show.
-    await db.insert(productEnvironments).values([
-      { productId: product.id, environmentId: frankfurt.id, price: item.price, currency: 'EUR' },
+    const [platformCc] = await tx
+      .insert(costCenters)
+      .values({ code: 'CC-100', name: 'Platform Operations' })
+      .returning()
+    await tx.insert(costCenters).values({ code: 'CC-200', name: 'Data Services' })
+
+    const [webshop] = await tx
+      .insert(projects)
+      .values({ name: 'Webshop Platform', description: 'Customer-facing shop', ownerId: root.id, costCenterId: platformCc.id })
+      .returning()
+
+    const created: { id: number; name: string }[] = []
+    for (const item of CATALOGUE) {
+      const [product] = await tx
+        .insert(products)
+        .values({
+          categoryId: category.id,
+          baseLanguage: 'en',
+          image: gradientPng(item.image),
+          imageMime: 'image/png',
+          imageAlt: item.imageAlt,
+        })
+        .returning()
+
+      await tx.insert(productTranslations).values([
+        { productId: product.id, languageCode: 'en', name: item.name, description: item.description },
+        { productId: product.id, languageCode: 'de', name: item.germanName, description: item.germanDescription },
+      ])
+
+      // Two environments at different prices, so the cheapest-offer logic on the
+      // product page and the per-environment breakdown in the cost report have
+      // something to show.
+      await tx.insert(productEnvironments).values([
+        { productId: product.id, environmentId: frankfurt.id, price: item.price, currency: 'EUR' },
+        {
+          productId: product.id,
+          environmentId: onPrem.id,
+          price: (Number(item.price) * 1.4).toFixed(2),
+          currency: 'EUR',
+        },
+      ])
+
+      created.push({ id: product.id, name: item.name })
+    }
+
+    // One sensitive parameter, because redaction in the export and on the detail
+    // page is only exercised when one exists.
+    await tx.insert(parameters).values([
       {
-        productId: product.id,
-        environmentId: onPrem.id,
-        price: (Number(item.price) * 1.4).toFixed(2),
-        currency: 'EUR',
+        scope: 'product',
+        scopeId: created[0].id,
+        name: 'hostname',
+        label: 'Hostname',
+        type: 'string',
+        description: 'DNS name for the gateway',
+        required: true,
+      },
+      {
+        scope: 'product',
+        scopeId: created[0].id,
+        name: 'admin_password',
+        label: 'Admin password',
+        type: 'string',
+        description: 'Initial administrator password',
+        required: true,
+        sensitive: true,
       },
     ])
 
-    created.push({ id: product.id, name: item.name })
-  }
+    // Orders across the states the UI renders differently: a completed one with
+    // infrastructure, one still waiting for approval, and a failed deployment —
+    // which is an ACTIVE element whose order failed, the case #29's Retry keys off.
+    const [completed] = await tx
+      .insert(orders)
+      .values({
+        projectId: webshop.id,
+        productId: created[0].id,
+        environmentId: frankfurt.id,
+        userId: root.id,
+        status: 'completed',
+        costCenterId: platformCc.id,
+        parameters: { hostname: 'gateway-01', admin_password: 'demo-only' },
+      })
+      .returning()
 
-  // One sensitive parameter, because redaction in the export and on the detail
-  // page is only exercised when one exists.
-  await db.insert(parameters).values([
-    {
-      scope: 'product',
-      scopeId: created[0].id,
-      name: 'hostname',
-      label: 'Hostname',
-      type: 'string',
-      description: 'DNS name for the gateway',
-      required: true,
-    },
-    {
-      scope: 'product',
-      scopeId: created[0].id,
-      name: 'admin_password',
-      label: 'Admin password',
-      type: 'string',
-      description: 'Initial administrator password',
-      required: true,
-      sensitive: true,
-    },
-  ])
-
-  // Orders across the states the UI renders differently: a completed one with
-  // infrastructure, one still waiting for approval, and a failed deployment —
-  // which is an ACTIVE element whose order failed, the case #29's Retry keys off.
-  const [completed] = await db
-    .insert(orders)
-    .values({
+    await tx.insert(orders).values({
       projectId: webshop.id,
-      productId: created[0].id,
-      environmentId: frankfurt.id,
+      productId: created[1].id,
+      environmentId: onPrem.id,
       userId: root.id,
-      status: 'completed',
-      costCenterId: platformCc.id,
-      parameters: { hostname: 'gateway-01', admin_password: 'demo-only' },
-    })
-    .returning()
-
-  await db.insert(orders).values({
-    projectId: webshop.id,
-    productId: created[1].id,
-    environmentId: onPrem.id,
-    userId: root.id,
-    status: 'pending',
-    costCenterId: platformCc.id,
-    parameters: {},
-  })
-
-  const [failed] = await db
-    .insert(orders)
-    .values({
-      projectId: webshop.id,
-      productId: created[2].id,
-      environmentId: frankfurt.id,
-      userId: root.id,
-      status: 'failed',
+      status: 'pending',
       costCenterId: platformCc.id,
       parameters: {},
     })
-    .returning()
 
-  await db.insert(infrastructureElements).values([
-    {
-      orderId: completed.id,
-      projectId: webshop.id,
-      environmentId: frankfurt.id,
-      productId: created[0].id,
-      status: 'active',
-      parameters: { hostname: 'gateway-01', admin_password: 'demo-only' },
-      outputs: { ip_address: '203.0.113.10', hostname: 'gateway-01' },
-      deployedAt: new Date(),
-    },
-    {
-      orderId: failed.id,
-      projectId: webshop.id,
-      environmentId: frankfurt.id,
-      productId: created[2].id,
-      status: 'active',
-      // Parameters even though the deployment failed: reprovisioning is exactly
-      // when the original values matter, and an element without any cannot show
-      // the quick-reorder prefill at all.
-      parameters: { hostname: 'k8s-prod-01' },
-      outputs: {},
-      deployedAt: new Date(),
-    },
-  ])
+    const [failed] = await tx
+      .insert(orders)
+      .values({
+        projectId: webshop.id,
+        productId: created[2].id,
+        environmentId: frankfurt.id,
+        userId: root.id,
+        status: 'failed',
+        costCenterId: platformCc.id,
+        parameters: {},
+      })
+      .returning()
 
-  console.warn(
-    `[demo] Created ${created.length} products, 2 environments, 1 project, 2 cost centres, 3 orders and 2 infrastructure elements.`,
-  )
-  return { created: true }
+    await tx.insert(infrastructureElements).values([
+      {
+        orderId: completed.id,
+        projectId: webshop.id,
+        environmentId: frankfurt.id,
+        productId: created[0].id,
+        status: 'active',
+        parameters: { hostname: 'gateway-01', admin_password: 'demo-only' },
+        outputs: { ip_address: '203.0.113.10', hostname: 'gateway-01' },
+        deployedAt: new Date(),
+      },
+      {
+        orderId: failed.id,
+        projectId: webshop.id,
+        environmentId: frankfurt.id,
+        productId: created[2].id,
+        status: 'active',
+        // Parameters even though the deployment failed: reprovisioning is exactly
+        // when the original values matter, and an element without any cannot show
+        // the quick-reorder prefill at all.
+        parameters: { hostname: 'k8s-prod-01' },
+        outputs: {},
+        deployedAt: new Date(),
+      },
+    ])
+
+    console.warn(
+      `[demo] Created ${created.length} products, 2 environments, 1 project, 2 cost centres, 3 orders and 2 infrastructure elements.`,
+    )
+    return { created: true }
+  })
 }

@@ -58,6 +58,16 @@ describe('GET /api/infrastructure/[id]', () => {
     expect(res.status).toBe(400)
   })
 
+  it('returns 400 for a partially numeric id rather than reading the leading digits', async () => {
+    // parseInt('1abc') is 1, so this used to serve element 1 for a URL that asked
+    // for something else — a silently different answer, not an error.
+    const { root } = await scenario()
+    for (const id of ['1abc', '1.5', ' 1', '+1', '0x1', '1e3']) {
+      const res = await GET(makeReq(id, await makeAuthHeader(root)), params(id))
+      expect(res.status, `id ${id}`).toBe(400)
+    }
+  })
+
   it('returns 404 for an element that does not exist', async () => {
     const { root } = await scenario()
     const res = await GET(makeReq('999999', await makeAuthHeader(root)), params('999999'))

@@ -5,7 +5,6 @@ import { redirect, notFound } from 'next/navigation'
 import type { InfrastructureDetail, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from '../InfraActions'
 import { getLang } from '@/lib/getLang'
@@ -55,8 +54,14 @@ export default async function InfrastructureDetailPage({ params }: Props) {
         subtitle={[element.environmentName, element.projectName].filter(Boolean).join(' · ')}
         actions={
           <div className="flex items-center gap-3">
-            <Link href="/infrastructure">
-              <Button variant="secondary" size="sm">{t('infrastructureTitle', lang)}</Button>
+            {/* A styled Link, not a Button inside a Link: an <a> wrapping a
+                <button> is nested interactive content, which the axe gate in
+                e2e/a11y.spec.ts rejects and screen readers announce twice. */}
+            <Link
+              href="/infrastructure"
+              className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            >
+              {t('infrastructureTitle', lang)}
             </Link>
           </div>
         }

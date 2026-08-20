@@ -74,12 +74,13 @@ test-db:
 # Drops the per-directory databases the backend suite created. They are cheap to
 # recreate (the schema is pushed on first run) and easy to forget about.
 test-db-prune:
-	@docker exec ohc-postgres psql -U postgres -tAc \
-	  "SELECT datname FROM pg_database WHERE datname LIKE 'open_hybrid_cloud_test\_%'" \
-	  | while read -r db; do \
-	      [ -n "$$db" ] || continue; \
-	      docker exec ohc-postgres dropdb -U postgres --if-exists "$$db" && echo "  dropped $$db"; \
-	    done
+	@dbs="$$(docker exec ohc-postgres psql -U postgres -tAc \
+	  "SELECT datname FROM pg_database WHERE datname LIKE 'open_hybrid_cloud_test\_%'")" \
+	  || { echo "  could not list databases — is the compose stack up?" >&2; exit 1; }; \
+	for db in $$dbs; do \
+	  [ -n "$$db" ] || continue; \
+	  docker exec ohc-postgres dropdb -U postgres --if-exists "$$db" && echo "  dropped $$db"; \
+	done
 
 test:
 	$(PNPM) --filter backend test

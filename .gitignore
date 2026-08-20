@@ -8,6 +8,13 @@ apps/*/.next/
 apps/*/out/
 .next/
 
+# Mutation-testing sandboxes (Stryker copies the source tree per run) and the
+# HTML reports the runs write to apps/<app>/reports/mutation/
+.stryker-tmp/
+apps/*/.stryker-tmp/
+reports/mutation/
+apps/*/reports/mutation/
+
 # TypeScript incremental build cache
 *.tsbuildinfo
 

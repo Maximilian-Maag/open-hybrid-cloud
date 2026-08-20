@@ -6,6 +6,7 @@ import {
   projects,
   orders,
   productEnvironments,
+  costCenters,
 } from '@/lib/db/schema'
 import { eq, and, sql, gte, lte } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
@@ -13,6 +14,12 @@ import { fireDestroyTriggers } from '@/lib/services/teardown'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { ok, err, type Result } from '@/lib/services/result'
 import { trialVariables, trialExpiry } from '@/lib/services/trial'
+import {
+  loadSensitiveParameterNames,
+  loadSnapshotSensitiveNames,
+  redactParameters,
+  union,
+} from '@/lib/services/parameterRedaction'
 
 export interface InfraRow {
   id: number
@@ -650,4 +657,117 @@ const claimAndDestroy = async (
   )
 
   return ok({ pipelineIds: outcome.pipelineIds })
+}
+
+/**
+ * One infrastructure element, with everything the detail page needs (issue #96).
+ *
+ * A separate query rather than filtering the list: the list deliberately does not
+ * carry the cost centre or the pipeline status map, and a detail view that reused it
+ * would either grow the list payload for every row or show less than it could.
+ *
+ * Sensitive parameter values are redacted with exactly the rules the CSV export
+ * uses — the live catalogue unioned with the order's own snapshot — so the same
+ * value cannot be hidden in one place and shown in the other.
+ */
+export interface InfraDetail extends InfraRow {
+  /**
+   * Status per pipeline id in `pipelineId`, taken from the run those ids belong
+   * to — see `pipelinePhase`.
+   */
+  pipelineStatus: Record<string, string>
+  /**
+   * Which run `pipelineId` describes.
+   *
+   * The element's `pipelineId` is rewritten by a teardown (services/teardown),
+   * so it holds provisioning ids while the element is active and destroy ids
+   * once decommissioning has started. The two runs record their status in
+   * different places, so the caller has to be told which one it is looking at.
+   */
+  pipelinePhase: 'provisioning' | 'teardown'
+  costCenter: string | null
+  orderCreatedAt: Date | null
+  isTrial: boolean
+  /** Names whose values were replaced with the redaction marker. */
+  redactedParameters: string[]
+}
+
+export const getInfrastructureElement = async (
+  session: SessionUser,
+  id: number,
+): Promise<Result<InfraDetail>> => {
+  const isAdmin = session.role === 'admin' || session.role === 'root'
+
+  const rows = await db
+    .select({
+      id: infrastructureElements.id,
+      orderId: infrastructureElements.orderId,
+      projectId: infrastructureElements.projectId,
+      environmentId: infrastructureElements.environmentId,
+      productId: infrastructureElements.productId,
+      status: infrastructureElements.status,
+      parameters: infrastructureElements.parameters,
+      pipelineId: infrastructureElements.pipelineId,
+      pipelineStatus: infrastructureElements.pipelineStatus,
+      orderPipelineStatus: orders.pipelineStatus,
+      outputs: infrastructureElements.outputs,
+      deployedAt: infrastructureElements.deployedAt,
+      scheduledDecommissionAt: infrastructureElements.scheduledDecommissionAt,
+      productName: productNameSql,
+      environmentName: deploymentEnvironments.name,
+      projectName: projects.name,
+      orderStatus: orders.status,
+      orderCreatedAt: orders.createdAt,
+      isTrial: orders.isTrial,
+      projectOwnerId: projects.ownerId,
+      costCenter: sql<string | null>`${costCenters.code} || ' — ' || ${costCenters.name}`,
+    })
+    .from(infrastructureElements)
+    .leftJoin(
+      deploymentEnvironments,
+      eq(infrastructureElements.environmentId, deploymentEnvironments.id),
+    )
+    .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
+    .leftJoin(orders, eq(infrastructureElements.orderId, orders.id))
+    // The order carries the cost centre for 'select' and 'overhead' mode; in
+    // 'project' mode it has none and the project's applies (see services/costs).
+    .leftJoin(costCenters, eq(sql`COALESCE(${orders.costCenterId}, ${projects.costCenterId})`, costCenters.id))
+    .where(eq(infrastructureElements.id, id))
+    .limit(1)
+
+  if (rows.length === 0) return err(404, 'Infrastructure element not found')
+  const row = rows[0]
+
+  // 404, not 403: telling a project manager that an element they may not see
+  // exists is itself information about another project.
+  if (!isAdmin && row.projectOwnerId !== session.id) {
+    return err(404, 'Infrastructure element not found')
+  }
+
+  const sensitive = union(
+    await loadSensitiveParameterNames(),
+    (await loadSnapshotSensitiveNames([row.orderId])).get(row.orderId),
+  )
+  const parameters = row.parameters as Record<string, string>
+  const redactedParameters = Object.keys(parameters ?? {}).filter((name) => sensitive.has(name))
+
+  // The status of a PROVISIONING pipeline lives on the order: the webhook handler
+  // merges success and failure into orders.pipeline_status, and only a teardown
+  // writes the element's own map (see webhook/handler.ts and services/teardown).
+  // Pairing the element's provisioning ids with the element's map — which is what
+  // this endpoint used to do — reported every finished deployment as pending.
+  const pipelinePhase = row.status === 'active' ? 'provisioning' : 'teardown'
+  const pipelineStatus =
+    pipelinePhase === 'teardown'
+      ? (row.pipelineStatus ?? {})
+      : (row.orderPipelineStatus ?? {})
+
+  const { projectOwnerId: _ownerId, orderPipelineStatus: _orderStatus, ...rest } = row
+  return ok({
+    ...rest,
+    pipelineStatus,
+    pipelinePhase,
+    parameters: redactParameters(parameters, sensitive),
+    redactedParameters,
+  } as InfraDetail)
 }

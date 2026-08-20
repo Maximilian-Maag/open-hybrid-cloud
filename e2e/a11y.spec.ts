@@ -328,3 +328,45 @@ test.describe('Accessibility — things axe cannot check', () => {
     expect(parseFloat(normal), `expected a real animation without the preference, got ${normal}`).toBeGreaterThan(0.05)
   })
 })
+
+/**
+ * Detail pages, which AUTHED_PAGES cannot cover because their URLs contain an id.
+ *
+ * This gap is why an anchor wrapping a button reached the infrastructure detail
+ * page unnoticed: every list page was scanned, and none of the pages you reach
+ * FROM them was. Each test walks in from the list and skips when the database has
+ * nothing to walk to, so an empty environment reports "skipped" rather than a pass
+ * over a page that never rendered.
+ */
+test.describe('Accessibility — detail pages', () => {
+  const DETAIL_PAGES = [
+    { from: '/infrastructure', link: 'a[href^="/infrastructure/"]', name: 'an infrastructure element' },
+    { from: '/orders', link: 'a[href^="/orders/"]', name: 'an order' },
+    { from: '/catalog', link: 'a[href^="/catalog/"]', name: 'a product' },
+    { from: '/projects', link: 'a[href^="/projects/"]', name: 'a project' },
+  ]
+
+  for (const { from, link, name } of DETAIL_PAGES) {
+    test(`${name} has no WCAG A/AA violations`, async ({ page }) => {
+      await page.goto(from)
+      const first = page.locator(`main ${link}`).first()
+      // Wait before concluding there is nothing to open: the catalogue fetches its
+      // products after hydration, so counting immediately after goto() skipped a
+      // page that was about to render.
+      await first.waitFor({ state: 'attached', timeout: 15000 }).catch(() => {})
+      if (await first.count() === 0) {
+        test.skip(true, `nothing on ${from} to open — seed the demo data (make db-seed-demo)`)
+        return
+      }
+
+      await first.click()
+      await expect(page).toHaveURL(new RegExp(`${from}/`), { timeout: 30000 })
+      // Wait for the page's own content, not just the URL: scanning a shell that
+      // is still streaming in would pass for the wrong reason.
+      await expect(page.locator('main h1')).toBeVisible({ timeout: 30000 })
+
+      const { violations } = await scan(page)
+      expect(violations, `\n${format(violations)}`).toEqual([])
+    })
+  }
+})

@@ -309,11 +309,108 @@ export const deleteProduct = async (id: number): Promise<Result<void>> => {
   return ok(undefined)
 }
 
+/**
+ * Image types a product picture may have.
+ *
+ * SVG is deliberately absent: it is a document that can carry script, and this
+ * file is served back to browsers from the product page. PNG, JPEG and WebP cover
+ * what an operator would upload.
+ */
+export const ALLOWED_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const
+
+/** 10 MB — the limit the admin guide has always claimed and nothing enforced. */
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+/**
+ * Magic bytes per accepted type.
+ *
+ * The declared Content-Type of an upload is attacker-controlled, so it decides
+ * nothing on its own: what gets stored is the type the bytes actually are.
+ */
+const MAGIC: { mime: (typeof ALLOWED_IMAGE_MIMES)[number]; test: (b: Buffer) => boolean }[] = [
+  { mime: 'image/png', test: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
+  { mime: 'image/jpeg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  {
+    mime: 'image/webp',
+    test: (b) => b.subarray(0, 4).toString('ascii') === 'RIFF' && b.subarray(8, 12).toString('ascii') === 'WEBP',
+  },
+]
+
+/** The type these bytes really are, or null if it is not one we accept. */
+export const detectImageMime = (buffer: Buffer): string | null =>
+  MAGIC.find((candidate) => buffer.length >= 12 && candidate.test(buffer))?.mime ?? null
+
+/** Longest useful alt text; beyond this it is a description, not a label. */
+export const MAX_IMAGE_ALT_LENGTH = 300
+
 export const updateProductImage = async (
   id: number,
   buffer: Buffer,
-): Promise<Result<void>> => {
-  await db.update(products).set({ image: buffer }).where(eq(products.id, id))
+  alt: string,
+): Promise<Result<{ mime: string }>> => {
+  // Required, not optional: an empty alt is a claim that the picture carries no
+  // information, and only the person uploading it can make that claim. Every
+  // component that renders it used to decide for itself — the catalogue tile and
+  // the cart thumbnail passed "", the product page passed the product name.
+  const description = alt.trim()
+  if (description === '') return err(400, 'An image description is required')
+  if (description.length > MAX_IMAGE_ALT_LENGTH) {
+    return err(400, `The image description must be at most ${MAX_IMAGE_ALT_LENGTH} characters`)
+  }
+
+  if (buffer.length === 0) return err(400, 'The uploaded file is empty')
+  if (buffer.length > MAX_IMAGE_BYTES) {
+    return err(413, `Image is larger than ${MAX_IMAGE_BYTES / (1024 * 1024)} MB`)
+  }
+
+  const mime = detectImageMime(buffer)
+  if (mime === null) {
+    return err(415, `Unsupported image type — allowed: ${ALLOWED_IMAGE_MIMES.join(', ')}`)
+  }
+
+  const updated = await db
+    .update(products)
+    .set({ image: buffer, imageMime: mime, imageAlt: description })
+    .where(eq(products.id, id))
+    .returning({ id: products.id })
+
+  // Previously this silently reported success for a product id that does not
+  // exist, because an UPDATE matching no rows is not an error.
+  if (updated.length === 0) return err(404, 'Product not found')
+
+  return ok({ mime })
+}
+
+export const updateProductImageAlt = async (id: number, alt: string): Promise<Result<void>> => {
+  const description = alt.trim()
+  if (description === '') return err(400, 'An image description is required')
+  if (description.length > MAX_IMAGE_ALT_LENGTH) {
+    return err(400, `The image description must be at most ${MAX_IMAGE_ALT_LENGTH} characters`)
+  }
+
+  const [row] = await db
+    .select({ hasImage: products.image })
+    .from(products)
+    .where(eq(products.id, id))
+    .limit(1)
+
+  if (!row) return err(404, 'Product not found')
+  // Describing a picture that is not there would leave a description behind for
+  // whatever is uploaded next.
+  if (!row.hasImage) return err(409, 'This product has no image to describe')
+
+  await db.update(products).set({ imageAlt: description }).where(eq(products.id, id))
+  return ok(undefined)
+}
+
+export const deleteProductImage = async (id: number): Promise<Result<void>> => {
+  const updated = await db
+    .update(products)
+    .set({ image: null, imageMime: null, imageAlt: null })
+    .where(eq(products.id, id))
+    .returning({ id: products.id })
+
+  if (updated.length === 0) return err(404, 'Product not found')
   return ok(undefined)
 }
 

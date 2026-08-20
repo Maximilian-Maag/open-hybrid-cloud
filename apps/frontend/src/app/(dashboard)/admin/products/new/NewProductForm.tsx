@@ -22,8 +22,14 @@ interface Props {
   token: string
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
+const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp'
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
 export function NewProductForm({ categories, token }: Props) {
   const router = useRouter()
+  const [image, setImage] = useState<File | null>(null)
+  const [imageAlt, setImageAlt] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [categoryId, setCategoryId] = useState('')
@@ -34,6 +40,12 @@ export function NewProductForm({ categories, token }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!categoryId) { setError('Select a category.'); return }
+    // Enforced here as well as on the server: an image without a description is
+    // what makes every component downstream have to invent one.
+    if (image && imageAlt.trim() === '') {
+      setError('Describe what the image shows, or remove it.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -44,7 +56,30 @@ export function NewProductForm({ categories, token }: Props) {
         baseLanguage,
       }
       const created = await post<Product>('/api/admin/products', body, token)
-      router.push(`/admin/products/${created.id}`)
+
+      // The image needs a product to belong to, so it goes up right after
+      // creation rather than as part of it. A failure here must not lose the
+      // product that was just created — say so and continue to the edit page,
+      // where the upload can be retried.
+      let imageError: string | null = null
+      if (image) {
+        const upload = new FormData()
+        upload.append('image', image)
+        upload.append('alt', imageAlt.trim())
+        const res = await fetch(`${API_URL}/api/admin/products/${created.id}/image`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${token}` },
+          body: upload,
+          cache: 'no-store',
+        }).catch(() => null)
+
+        if (!res || !res.ok) {
+          const payload = res ? await res.json().catch(() => null) : null
+          imageError = payload?.error ?? 'the image could not be uploaded'
+        }
+      }
+
+      router.push(`/admin/products/${created.id}${imageError ? `?imageError=${encodeURIComponent(imageError)}` : ''}`)
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create product.')
@@ -85,6 +120,39 @@ export function NewProductForm({ categories, token }: Props) {
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="new-product-image" className="text-sm font-medium text-slate-700">Image</label>
+          <input
+            id="new-product-image"
+            type="file"
+            accept={IMAGE_ACCEPT}
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null
+              // Refused here as well as on the server, so a 40 MB file is not
+              // uploaded just to be rejected.
+              if (file && file.size > MAX_IMAGE_BYTES) {
+                setError(`That image is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is 10 MB.`)
+                setImage(null)
+                e.target.value = ''
+                return
+              }
+              setError(null)
+              setImage(file)
+            }}
+            className="block text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
+          />
+          <p className="text-xs text-slate-500">Optional. PNG, JPEG or WebP, up to 10 MB — can also be added later.</p>
+        </div>
+        {image && (
+          <Input
+            label="Image description"
+            required
+            value={imageAlt}
+            maxLength={300}
+            onChange={(e) => setImageAlt(e.target.value)}
+            hint="Read aloud instead of the picture, and shown if it fails to load."
+          />
+        )}
         <div className="flex justify-end">
           <Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create Product'}</Button>
         </div>

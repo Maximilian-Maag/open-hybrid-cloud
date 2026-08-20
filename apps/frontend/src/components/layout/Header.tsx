@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
@@ -28,6 +28,39 @@ export function Header({
   const router = useRouter()
   const lang = useLang(initialLang)
   const [query, setQuery] = useState('')
+  // A native <details> has no dismissal behaviour: Escape does nothing and a click
+  // elsewhere leaves the panel open, so it only closed by clicking the summary
+  // again — unlike every other overlay in the app, which is a <dialog> via Modal.
+  const accountRef = useRef<HTMLDetailsElement>(null)
+
+  useEffect(() => {
+    const close = () => {
+      const el = accountRef.current
+      if (el?.open) el.open = false
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const el = accountRef.current
+      if (!el?.open) return
+      close()
+      // Focus goes back to the control that opened it, or the panel's closing
+      // leaves the user's place in the page undefined.
+      el.querySelector('summary')?.focus()
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      const el = accountRef.current
+      if (el?.open && e.target instanceof Node && !el.contains(e.target)) close()
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [])
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
@@ -78,13 +111,16 @@ export function Header({
           <LanguageSwitcher lang={lang} />
 
           {/* User dropdown */}
-          <details className="relative group">
+          <details ref={accountRef} className="relative group">
             <summary className="list-none cursor-pointer select-none flex flex-col items-end leading-tight rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
               style={{ color: 'var(--bp-ink)' }}>
               {userName && <span className="text-xs">{userName}</span>}
               <span className="text-sm font-semibold">{t('myAccount', lang)}</span>
             </summary>
-            <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1">
+            <div
+              className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1"
+              onClick={() => { if (accountRef.current) accountRef.current.open = false }}
+            >
               <Link href="/orders" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('orders', lang)}</Link>
               <Link href="/projects" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('projects', lang)}</Link>
               <hr className="my-1 border-slate-100" />

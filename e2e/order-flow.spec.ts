@@ -2,12 +2,12 @@ import { test, expect } from '@playwright/test'
 import { loginAsRoot } from './helpers'
 
 test.describe('Product Detail Page', () => {
-  test('product detail page loads from catalog Place Order link', async ({ page }) => {
+  test('product detail page loads from a catalogue tile', async ({ page }) => {
     await loginAsRoot(page)
     await page.goto('/catalog')
 
     // Wait for catalog to finish loading (client component)
-    const placeOrderLinks = page.getByRole('link', { name: /place order/i })
+    const placeOrderLinks = page.getByRole('link', { name: /^details$/i })
     const noProducts = page.getByText(/no products found/i)
     await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
 
@@ -26,7 +26,7 @@ test.describe('Product Detail Page', () => {
     await loginAsRoot(page)
     await page.goto('/catalog')
 
-    const placeOrderLinks = page.getByRole('link', { name: /place order/i })
+    const placeOrderLinks = page.getByRole('link', { name: /^details$/i })
     const noProducts = page.getByText(/no products found/i)
     await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
@@ -43,7 +43,7 @@ test.describe('Product Detail Page', () => {
     await loginAsRoot(page)
     await page.goto('/catalog')
 
-    const placeOrderLinks = page.getByRole('link', { name: /place order/i })
+    const placeOrderLinks = page.getByRole('link', { name: /^details$/i })
     const noProducts = page.getByText(/no products found/i)
     await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
@@ -62,7 +62,7 @@ test.describe('Order Placement Flow', () => {
     await page.goto('/catalog')
 
     // Wait for catalog to load
-    const placeOrderLinks = page.getByRole('link', { name: /place order/i })
+    const placeOrderLinks = page.getByRole('link', { name: /^details$/i })
     const noProducts = page.getByText(/no products found/i)
     await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
@@ -128,7 +128,11 @@ test.describe('Order Placement Flow', () => {
     if (count === 0) { test.skip(); return }
 
     await orderLinks.first().click()
-    await expect(page).toHaveURL(/\/orders\/\d+/)
+    // 30s, like auth.setup.ts: the suite runs against `next dev`, which compiles
+    // /orders/[id] on first request, and under parallel workers that outlasts the
+    // 5s default. (These two tests only started running once the database had
+    // orders in it — see issue #89.)
+    await expect(page).toHaveURL(/\/orders\/\d+/, { timeout: 30_000 })
     await expect(page.locator('body')).not.toContainText('500')
 
     // Order detail always shows these sections
@@ -146,7 +150,11 @@ test.describe('Order Placement Flow', () => {
     if (await orderLinks.count() === 0) { test.skip(); return }
 
     await orderLinks.first().click()
-    await expect(page).toHaveURL(/\/orders\/\d+/)
+    // 30s, like auth.setup.ts: the suite runs against `next dev`, which compiles
+    // /orders/[id] on first request, and under parallel workers that outlasts the
+    // 5s default. (These two tests only started running once the database had
+    // orders in it — see issue #89.)
+    await expect(page).toHaveURL(/\/orders\/\d+/, { timeout: 30_000 })
 
     await page.getByRole('link', { name: /back to orders/i }).click()
     await expect(page).toHaveURL(/\/orders$/)
@@ -160,7 +168,7 @@ test.describe('Catalog - Category Filter', () => {
 
     // Wait for catalog to finish loading
     await expect(
-      page.getByRole('link', { name: /place order/i }).or(page.getByText(/no products found/i)).first()
+      page.getByRole('link', { name: /^details$/i }).or(page.getByText(/no products found/i)).first()
     ).toBeVisible({ timeout: 10000 })
 
     // Check if there are category filter buttons (sidebar for md+, pills for mobile)
@@ -174,13 +182,13 @@ test.describe('Catalog - Category Filter', () => {
     // After clicking, page still shows either products or empty state (no 500 error)
     await expect(page.locator('body')).not.toContainText('500')
     await expect(
-      page.getByRole('link', { name: /place order/i }).or(page.getByText(/no products found/i)).first()
+      page.getByRole('link', { name: /^details$/i }).or(page.getByText(/no products found/i)).first()
     ).toBeVisible({ timeout: 5000 })
 
     // Click "All products" to reset
     await page.getByRole('button', { name: /all products/i }).click()
     await expect(
-      page.getByRole('link', { name: /place order/i }).or(page.getByText(/no products found/i)).first()
+      page.getByRole('link', { name: /^details$/i }).or(page.getByText(/no products found/i)).first()
     ).toBeVisible({ timeout: 5000 })
   })
 })

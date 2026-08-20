@@ -11,7 +11,28 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
  * has none: that is a load error the browser reports, not something the server
  * render can know without fetching the bytes it would then throw away.
  */
-export function ProductImage({ productId, name }: { productId: number; name: string }) {
+export function ProductImage({
+  productId,
+  alt,
+  version,
+}: {
+  productId: number
+  /**
+   * The image's description, from `product.imageAlt`.
+   *
+   * Empty string means decorative — appropriate only where the same information is
+   * already in text next to it (a cart row names the product it belongs to).
+   * Anything else is a description its uploader wrote; components no longer invent
+   * one.
+   */
+  alt: string
+  /**
+   * Bump to force a refetch after the image changed. The endpoint sets
+   * `max-age=3600`, so without a different URL the browser keeps showing the old
+   * picture — remounting the element is not enough.
+   */
+  version?: number
+}) {
   const [failed, setFailed] = useState(false)
   const imgRef = useRef<HTMLImageElement>(null)
 
@@ -20,9 +41,13 @@ export function ProductImage({ productId, name }: { productId: number; name: str
   // event with no handler attached and the broken-image icon stays. A finished
   // load with no intrinsic width is that same failure, observed after the fact.
   useEffect(() => {
+    setFailed(false)
+  }, [productId, version])
+
+  useEffect(() => {
     const img = imgRef.current
     if (img?.complete && img.naturalWidth === 0) setFailed(true)
-  }, [])
+  }, [productId, version])
 
   if (failed) {
     return (
@@ -48,8 +73,8 @@ export function ProductImage({ productId, name }: { productId: number; name: str
     // eslint-disable-next-line @next/next/no-img-element
     <img
       ref={imgRef}
-      src={`${API_URL}/api/catalog/${productId}/image`}
-      alt={name}
+      src={`${API_URL}/api/catalog/${productId}/image${version ? `?v=${version}` : ''}`}
+      alt={alt}
       className="h-full w-full rounded-lg object-contain"
       onError={() => setFailed(true)}
     />

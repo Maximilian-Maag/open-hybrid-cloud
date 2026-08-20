@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginAs } from './helpers'
+import { loginAs, rootEmail, rootPassword } from './helpers'
 
 const protectedRoutes = [
   '/',
@@ -46,8 +46,8 @@ test.describe('Role-based access control', () => {
 
     // Create PM user via the admin panel (logged in as root)
     await page.goto('/login')
-    await page.getByLabel(/email address/i).fill(process.env.E2E_ADMIN_EMAIL ?? 'root@local.dev')
-    await page.getByLabel(/password/i).fill(process.env.E2E_ADMIN_PASSWORD ?? 'root1234')
+    await page.getByLabel(/email address/i).fill(rootEmail)
+    await page.getByLabel(/password/i).fill(rootPassword)
     await page.getByRole('button', { name: /sign in/i }).click()
     await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 8000 })
 
@@ -75,8 +75,8 @@ test.describe('Role-based access control', () => {
 
     // Clean up: log back in as root and delete the PM user
     await page.goto('/login')
-    await page.getByLabel(/email address/i).fill(process.env.E2E_ADMIN_EMAIL ?? 'root@local.dev')
-    await page.getByLabel(/password/i).fill(process.env.E2E_ADMIN_PASSWORD ?? 'root1234')
+    await page.getByLabel(/email address/i).fill(rootEmail)
+    await page.getByLabel(/password/i).fill(rootPassword)
     await page.getByRole('button', { name: /sign in/i }).click()
     await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 8000 })
     await page.goto('/admin/users')

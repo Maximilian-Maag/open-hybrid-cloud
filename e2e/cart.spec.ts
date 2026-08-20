@@ -12,7 +12,7 @@ test.describe('Shopping cart', () => {
   /** Add the first catalogue product to the cart. Returns false if none exists. */
   const addFirstProduct = async (page: import('@playwright/test').Page) => {
     await page.goto('/catalog')
-    const order = page.getByRole('link', { name: /place order/i }).first()
+    const order = page.getByRole('link', { name: /^details$/i }).first()
     const noProducts = page.getByText(/no products/i)
     await expect(order.or(noProducts)).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) return false
@@ -52,7 +52,7 @@ test.describe('Shopping cart', () => {
 
   test('the product page offers Add to cart alongside the order form', async ({ page }) => {
     await page.goto('/catalog')
-    const order = page.getByRole('link', { name: /place order/i }).first()
+    const order = page.getByRole('link', { name: /^details$/i }).first()
     const noProducts = page.getByText(/no products/i)
     await expect(order.or(noProducts)).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }

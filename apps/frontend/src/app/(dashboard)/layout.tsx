@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
+import { LangProvider } from '@/components/layout/LangProvider'
 import { TopNav } from '@/components/layout/TopNav'
 import type { Branding } from '@open-hybrid-cloud/types'
 import { getLang } from '@/lib/getLang'
@@ -119,7 +120,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <TopNav role={role} lang={lang} />
       <main id="main" tabIndex={-1} className="flex-1">
         <div className="max-w-screen-2xl mx-auto px-4 py-6 animate-page-in">
-          {children}
+          {/* So a client component inside a page renders in the same language the
+              page around it was rendered in. */}
+          <LangProvider lang={lang}>{children}</LangProvider>
         </div>
       </main>
       {imprintText && (

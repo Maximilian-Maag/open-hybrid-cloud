@@ -215,10 +215,14 @@ test.describe('Infrastructure quick reorder', () => {
     if (await emptyState.isVisible()) { test.skip(); return }
 
     await reorder.click()
-    await expect(page).toHaveURL(/\/catalog\/\d+\?fromInfra=\d+/)
+    // Generous, for the same reason auth.setup.ts waits 30s: the suite runs against
+    // `next dev`, which compiles the destination route on first request, and under
+    // parallel workers that takes well over the 5s default.
+    await expect(page).toHaveURL(/\/catalog\/\d+\?fromInfra=\d+/, { timeout: 30_000 })
     await expect(page.getByText(/parameters were pre-filled from this element/i)).toBeVisible({ timeout: 10000 })
-    // The environment came from the element rather than being left unset.
-    await expect(page.getByLabel(/environment/i)).not.toHaveValue('')
+    // Scoped to the order form: the buy box has an environment select of its own,
+    // and it starts empty by design.
+    await expect(page.locator('#order').getByLabel(/environment/i)).not.toHaveValue('')
   })
 
   test('the pre-fill can be cleared with "start fresh"', async ({ page }) => {
@@ -229,7 +233,7 @@ test.describe('Infrastructure quick reorder', () => {
 
     await reorder.click()
     const templates = page.getByLabel(/load parameters from existing/i)
-    await expect(templates).toBeVisible({ timeout: 10000 })
+    await expect(templates).toBeVisible({ timeout: 30_000 })
     // Selectable, not a disabled placeholder — otherwise arriving via a reorder
     // link would leave the user with no way back to an empty form.
     await templates.selectOption('')
@@ -287,6 +291,12 @@ test.describe('Infrastructure retry', () => {
 // external sweep (see README → Scheduled decommissioning), so what is asserted
 // here is the storing, the badge and the clearing.
 test.describe('Infrastructure scheduled decommissioning', () => {
+  // Serial: both tests below act on the FIRST active element, and one of them sets
+  // a schedule the other expects to be absent. Locally the suite is fullyParallel,
+  // so without this they race each other — CI already runs with workers: 1, which
+  // is why this only ever showed up once the database had data to act on.
+  test.describe.configure({ mode: 'serial' })
+
   test.beforeEach(async ({ page }) => {
     await loginAsRoot(page)
     await page.goto('/infrastructure')
@@ -302,7 +312,10 @@ test.describe('Infrastructure scheduled decommissioning', () => {
     const dialog = page.locator('dialog[open]')
     await expect(dialog.getByRole('heading', { name: /schedule decommissioning/i })).toBeVisible()
     await expect(dialog.getByLabel(/scheduled for/i)).toBeVisible()
-    // Confirm is inert until a time is chosen.
+    // Confirm is inert until a time is chosen. The field is cleared first so this
+    // holds whatever the element already had — the dialog pre-fills an existing
+    // schedule, and a previous run that failed mid-way can leave one behind.
+    await dialog.getByLabel(/scheduled for/i).fill('')
     await expect(dialog.getByRole('button', { name: /confirm/i })).toBeDisabled()
     await dialog.getByRole('button', { name: /cancel/i }).click()
     await expect(dialog).not.toBeVisible()
@@ -319,15 +332,18 @@ test.describe('Infrastructure scheduled decommissioning', () => {
     await dialog.getByLabel(/scheduled for/i).fill('2099-06-01T14:30')
     await dialog.getByRole('button', { name: /confirm/i }).click()
 
-    // Badge appears on the row, so a pending teardown is visible at a glance.
-    await expect(page.getByText(/scheduled for/i).first()).toBeVisible({ timeout: 8000 })
+    // The badge on the row, not the dialog's field label: every row renders a
+    // closed <dialog> whose label is also "Scheduled for", and it comes first in
+    // the DOM — so `.first()` matched a hidden element and could never be visible.
+    const badge = page.locator('span').filter({ hasText: /^scheduled for /i })
+    await expect(badge.first()).toBeVisible({ timeout: 30_000 })
 
     // Clean up so the run is repeatable — and prove Clear works.
     await page.getByRole('button', { name: /automatic decommissioning/i }).first().click()
     dialog = page.locator('dialog[open]')
     await expect(dialog.getByLabel(/scheduled for/i)).toHaveValue('2099-06-01T14:30')
     await dialog.getByRole('button', { name: /clear schedule/i }).click()
-    await expect(page.getByText(/scheduled for/i)).toHaveCount(0, { timeout: 8000 })
+    await expect(badge).toHaveCount(0, { timeout: 30_000 })
   })
 
   test('a past time is refused by the server', async ({ page }) => {
@@ -344,5 +360,63 @@ test.describe('Infrastructure scheduled decommissioning', () => {
 
     await expect(dialog.getByRole('alert')).toContainText(/future/i, { timeout: 8000 })
     await expect(dialog).toBeVisible()
+  })
+})
+
+
+// Issue #96. The list is a list; the outputs, the parameters and the pipeline runs
+// live on the element's own page. What is asserted here holds whether or not the
+// stack has infrastructure: the way in, and what the page is made of.
+test.describe('Infrastructure detail', () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAsRoot(page)
+    await page.goto('/infrastructure')
+  })
+
+  test('the row heading opens the element', async ({ page }) => {
+    const emptyState = page.getByText(/no infrastructure elements yet/i)
+    const firstRow = page.getByRole('link', { name: /^reorder$/i }).first()
+    await expect(firstRow.or(emptyState)).toBeVisible({ timeout: 10000 })
+    if (await emptyState.isVisible()) { test.skip(); return }
+
+    // The product name in the row, not the Reorder link beside it.
+    await page.locator('a[href^="/infrastructure/"]').first().click()
+    await expect(page).toHaveURL(/\/infrastructure\/\d+$/)
+  })
+
+  test('shows the outputs, the parameters and the pipelines', async ({ page }) => {
+    const emptyState = page.getByText(/no infrastructure elements yet/i)
+    const link = page.locator('a[href^="/infrastructure/"]').first()
+    await expect(link.or(emptyState)).toBeVisible({ timeout: 10000 })
+    if (await emptyState.isVisible()) { test.skip(); return }
+
+    await link.click()
+    await expect(page.getByRole('heading', { name: /^outputs$/i })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole('heading', { name: /^parameters$/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^pipelines$/i })).toBeVisible()
+    // The originating order is reachable — the element used to be a dead end.
+    await expect(page.getByRole('link', { name: /^#\d+$/ })).toBeVisible()
+  })
+
+  test('never shows a sensitive parameter value', async ({ page }) => {
+    const emptyState = page.getByText(/no infrastructure elements yet/i)
+    const link = page.locator('a[href^="/infrastructure/"]').first()
+    await expect(link.or(emptyState)).toBeVisible({ timeout: 10000 })
+    if (await emptyState.isVisible()) { test.skip(); return }
+
+    await link.click()
+    await expect(page.getByRole('heading', { name: /^parameters$/i })).toBeVisible({ timeout: 10000 })
+
+    // Whatever the demo data holds, a redacted value must never be the real one.
+    const body = page.locator('body')
+    if (await page.getByText(/hidden sensitive values/i).isVisible()) {
+      await expect(body).toContainText('[redacted]')
+    }
+    await expect(body).not.toContainText('sup3rs3cret')
+  })
+
+  test('an unknown element is a 404, not a broken page', async ({ page }) => {
+    await page.goto('/infrastructure/999999')
+    await expect(page.locator('body')).not.toContainText('500')
   })
 })

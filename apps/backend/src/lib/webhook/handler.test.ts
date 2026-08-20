@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { handlePipelineEvent } from './handler'
+import { fetchJobTrace, parseTofuOutputs, supportsJobTrace } from '@/lib/ci'
 import { db } from '@/lib/db/client'
 import { orders, infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -19,6 +20,9 @@ import {
 vi.mock('@/lib/ci', () => ({
   fetchJobTrace: vi.fn().mockResolvedValue(''),
   parseTofuOutputs: vi.fn().mockReturnValue({}),
+  // Must be mocked too: without it the handler calls undefined, the surrounding
+  // try/catch swallows the TypeError, and outputs silently stop being recorded.
+  supportsJobTrace: vi.fn().mockReturnValue(true),
   triggerPipeline: vi.fn(),
 }))
 
@@ -368,5 +372,77 @@ describe('handlePipelineEvent — no-ops', () => {
     await expect(
       handlePipelineEvent({ provider: 'gitlab', pipelineId: 'nonexistent', status: 'success' }, 999_999),
     ).resolves.toBeUndefined()
+  })
+})
+
+
+// Issue #97. The apply log is the only channel by which a deployment reports its
+// Terraform outputs, so where they land — and whether anything says why they did
+// not — is worth pinning down.
+describe('handlePipelineEvent — Terraform outputs', () => {
+  // The mocks are module-level, so call counts accumulate across tests in this
+  // file unless they are cleared per test.
+  beforeEach(() => {
+    vi.mocked(fetchJobTrace).mockClear().mockResolvedValue('')
+    vi.mocked(parseTofuOutputs).mockClear().mockReturnValue({})
+    vi.mocked(supportsJobTrace).mockClear().mockReturnValue(true)
+  })
+
+  const outputsOf = async (id: number) =>
+    (await db.select({ outputs: infrastructureElements.outputs }).from(infrastructureElements).where(eq(infrastructureElements.id, id)))[0]
+      .outputs
+
+  const seedOrderWithElements = async (count: number) => {
+    const pm = await createUser({ role: 'project_manager', email: `out-pm-${Math.random()}@test.dev` })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Gateway')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id)
+    const project = await createProject(pm.id)
+    const order = await createOrder(project.id, product.id, env.id, pm.id, {
+      status: 'provisioning',
+      pipelineId: ['pipe-1'],
+    })
+    const elements = []
+    for (let i = 0; i < count; i++) {
+      elements.push(await createInfraElement(order.id, project.id, env.id, product.id, { pipelineId: ['pipe-1'] }))
+    }
+    return { order, elements }
+  }
+
+  it('records the outputs on every element of the order, not just the first', async () => {
+    // An order that provisioned several elements used to leave all but one empty,
+    // for no reason a user could see.
+    const { order, elements } = await seedOrderWithElements(2)
+    vi.mocked(fetchJobTrace).mockResolvedValueOnce('Outputs:\n\nip = "203.0.113.7"')
+    vi.mocked(parseTofuOutputs).mockReturnValueOnce({ ip: '203.0.113.7' })
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-1', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(await outputsOf(elements[0].id)).toEqual({ ip: '203.0.113.7' })
+    expect(await outputsOf(elements[1].id)).toEqual({ ip: '203.0.113.7' })
+    expect(order.id).toBeGreaterThan(0)
+  })
+
+  it('says why there are no outputs when the provider cannot be read', async () => {
+    // GitHub and Bitbucket have no trace endpoint implemented, and silence made it
+    // look like the template had declared no outputs.
+    const { elements } = await seedOrderWithElements(1)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(supportsJobTrace).mockReturnValueOnce(false)
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-1', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('not implemented'))
+    expect(await outputsOf(elements[0].id)).toEqual({})
+    expect(fetchJobTrace).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 })

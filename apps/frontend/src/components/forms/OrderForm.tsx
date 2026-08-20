@@ -99,12 +99,29 @@ export function OrderForm({
   // Load existing deployments for the selected project+product so the user can copy parameters
   useEffect(() => {
     if (!projectId) { setTemplates([]); setTemplateId(''); return }
+    // Switching project before this resolves must not let the old project's
+    // elements land in the list — they belong to a project the user left, and
+    // the selection would then be validated against the wrong set.
+    let stale = false
     get<InfrastructureElement[]>(
       `/api/infrastructure?productId=${product.id}&projectId=${projectId}`,
       token,
     )
-      .then((rows) => { setTemplates(rows ?? []); setTemplateId('') })
-      .catch(() => { setTemplates([]) })
+      .then((rows) => {
+        if (stale) return
+        setTemplates(rows ?? [])
+        // Keep the current selection if it is still in the list. Clearing
+        // unconditionally discarded a quick-reorder prefill whenever this effect
+        // ran a second time (projectId settles after the projects load), and the
+        // reorder effect below will not re-apply because it has already fired —
+        // so the form kept the environment and parameters but lost the template,
+        // and with it the "pre-filled from this element" confirmation.
+        setTemplateId((current) =>
+          current !== '' && (rows ?? []).some((row) => String(row.id) === current) ? current : '',
+        )
+      })
+      .catch(() => { if (!stale) setTemplates([]) })
+    return () => { stale = true }
   }, [projectId, product.id, token])
 
   // Quick reorder: once the project's elements have loaded, adopt the one the

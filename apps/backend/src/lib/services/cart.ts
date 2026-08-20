@@ -19,6 +19,7 @@ export interface CartRow {
   parameters: Record<string, string>
   createdAt: Date
   productName: string | null
+  imageAlt: string | null
   environmentName: string | null
   price: string | null
   currency: string | null
@@ -48,11 +49,16 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
       parameters: cartItems.parameters,
       createdAt: cartItems.createdAt,
       productName: productTranslations.name,
+      imageAlt: products.imageAlt,
       environmentName: deploymentEnvironments.name,
       price: productEnvironments.price,
       currency: productEnvironments.currency,
     })
     .from(cartItems)
+    // The image description lives on the product row, so that table has to be in
+    // the join chain — selecting a column from it without joining produces a
+    // cross join, which is how adding imageAlt broke every cart test at once.
+    .leftJoin(products, eq(cartItems.productId, products.id))
     .leftJoin(
       productTranslations,
       and(
@@ -128,6 +134,7 @@ export const addToCart = async (
     enriched ?? {
       ...item,
       productName: null,
+      imageAlt: null,
       environmentName: null,
       price: null,
       currency: null,

@@ -1,7 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { POST } from './route'
-import { verifyToken } from '@/lib/auth/jwt'
+import type * as jwt from '@/lib/auth/jwt'
+import { verifyToken, signToken } from '@/lib/auth/jwt'
+
+vi.mock('@/lib/auth/jwt', async (importOriginal) => {
+  const actual = (await importOriginal()) as typeof jwt
+  return { ...actual, signToken: vi.fn(actual.signToken) }
+})
 import { createUser } from '@/test/helpers'
 
 const makeRequest = (body: unknown) =>
@@ -10,6 +16,11 @@ const makeRequest = (body: unknown) =>
     body: JSON.stringify(body),
     headers: { 'content-type': 'application/json' },
   })
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
 
 describe('POST /api/auth/login', () => {
   it('returns a JWT token for valid credentials', async () => {
@@ -25,6 +36,28 @@ describe('POST /api/auth/login', () => {
 
     const session = await verifyToken(body.token)
     expect(session?.email).toBe('login@test.dev')
+  })
+
+  it('reports a misconfigured signing secret as a server error, not as bad credentials', async () => {
+    // The credentials are correct here. Before, signToken threw, the route 500'd
+    // with no body, and NextAuth surfaced CredentialsSignin — so a deployment
+    // whose JWT_SECRET was too short looked exactly like a wrong password, and
+    // that is what got debugged.
+    //
+    // The failure is injected rather than provoked with a short JWT_SECRET,
+    // because jwt.ts caches the encoded secret on first use: by the time this
+    // test runs, a valid one is already cached and stubbing the env does nothing.
+    await createUser({ email: 'misconfig@test.dev', password: 'correct-pass' })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(signToken).mockRejectedValueOnce(
+      new Error('JWT_SECRET must be set and at least 32 characters long'),
+    )
+
+    const res = await POST(makeRequest({ email: 'misconfig@test.dev', password: 'correct-pass' }))
+
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toMatch(/misconfigured/i)
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('[auth]'), expect.anything())
   })
 
   it('returns 401 for wrong password', async () => {

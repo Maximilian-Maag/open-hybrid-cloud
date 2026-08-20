@@ -55,6 +55,21 @@ export const triggerPipeline = (
   }
 }
 
+/**
+ * Can this provider's job log be read back?
+ *
+ * Only GitLab, today. That matters more than it looks: the apply log is the only
+ * channel by which a deployment reports its Terraform outputs, so on GitHub and
+ * Bitbucket an element never gets any — and nothing anywhere said so, which made it
+ * look like the templates were at fault. Issue #97.
+ *
+ * Implementing the other two is real work rather than a missing case: GitHub serves
+ * run logs as a redirect to a ZIP archive (needs an unzip dependency), and Bitbucket
+ * needs the pipeline's steps enumerated before each step's log can be fetched.
+ */
+export const supportsJobTrace = (provider: CiSourceInfo['provider']): boolean =>
+  provider === 'gitlab'
+
 export const fetchJobTrace = (
   source: CiSourceInfo,
   pipelineId: string,
@@ -63,14 +78,29 @@ export const fetchJobTrace = (
     case 'gitlab':
       return getGitLabJobTrace(source.url, source.accessToken, pipelineId)
     case 'github':
-      // GitHub does not have a direct trace endpoint analogous to GitLab
-      return Promise.resolve('')
     case 'bitbucket':
+      // See supportsJobTrace: callers should check first and say why, rather than
+      // treating an empty trace as "this deployment produced no outputs".
       return Promise.resolve('')
   }
 }
 
-// Strip ANSI escape codes and parse OpenTofu/Terraform "Outputs:" section
+/**
+ * Parse the `Outputs:` block of an OpenTofu/Terraform apply log.
+ *
+ * The platform stores whatever this returns on the infrastructure element, and it
+ * is the only channel by which a deployment can tell the portal anything — an
+ * endpoint, a generated name, a connection string. So dropping a value silently is
+ * the worst thing this function can do, and it used to drop a lot: it accepted only
+ * `name = "quoted string"`, which meant numbers, booleans, lists, maps and
+ * `<sensitive>` markers all vanished without trace. Issue #97.
+ *
+ * What is deliberately NOT parsed into structure: complex values are kept as the
+ * text Terraform printed — structured values joined on one line, heredocs keeping
+ * their own lines. The consumer is a key/value display
+ * and a CSV column, and inventing a JSON shape here would be a guess about what a
+ * template meant.
+ */
 export const parseTofuOutputs = (trace: string): Record<string, string> => {
   // eslint-disable-next-line no-control-regex
   const stripped = trace.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
@@ -78,21 +108,103 @@ export const parseTofuOutputs = (trace: string): Record<string, string> => {
   const outputs: Record<string, string> = {}
 
   let inOutputs = false
+  /** Set while a value spans several lines: a list, a map, or a heredoc. */
+  let pending: { name: string; parts: string[]; depth: number; heredoc: string | null } | null = null
+
+  const finish = () => {
+    if (!pending) return
+    // A heredoc keeps its line structure — it is a document, and joining it on one
+    // line would destroy the thing it was written as. Everything else is collapsed:
+    // Terraform indents structured values, and this is shown in a table cell.
+    outputs[pending.name] =
+      pending.heredoc !== null
+        ? pending.parts.join('\n').trim()
+        : pending.parts.join(' ').replace(/\s+/g, ' ').trim()
+    pending = null
+  }
+
+  const unquote = (value: string): string =>
+    value.startsWith('"') && value.endsWith('"') && value.length >= 2 ? value.slice(1, -1) : value
+
+  /**
+   * Net bracket depth, ignoring brackets inside quoted strings.
+   *
+   * `name = "a [ b"` is a complete scalar, not the start of a list — counting the
+   * bracket inside the quotes would swallow every following output into it.
+   */
+  const depthOf = (text: string): number => {
+    let depth = 0
+    let inString = false
+    let escaped = false
+    for (const char of text) {
+      if (escaped) { escaped = false; continue }
+      if (char === '\\') { escaped = true; continue }
+      if (char === '"') { inString = !inString; continue }
+      if (inString) continue
+      if (char === '[' || char === '{' || char === '(') depth++
+      if (char === ']' || char === '}' || char === ')') depth--
+    }
+    return depth
+  }
+
+  /** `<<EOT` / `<<-EOT` opens a heredoc that runs until a line holding EOT. */
+  const heredocTag = (value: string): string | null =>
+    value.match(/^<<-?\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/)?.[1] ?? null
+
   for (const line of lines) {
-    if (/^Outputs:/.test(line.trim())) {
-      inOutputs = true
+    const trimmed = line.trim()
+
+    if (!inOutputs) {
+      if (/^Outputs:/.test(trimmed)) inOutputs = true
       continue
     }
-    if (inOutputs) {
-      const match = line.match(/^([A-Za-z0-9_]+)\s*=\s*"(.*)"$/)
-      if (match) {
-        outputs[match[1]] = match[2]
-      } else if (line.trim() === '' || /^[A-Z]/.test(line.trim())) {
-        // empty line or new section header ends outputs block
-        if (line.trim() !== '') inOutputs = false
+
+    if (pending) {
+      // A heredoc ends at its terminator line and nowhere else — its content is
+      // arbitrary text that may contain brackets, quotes and blank lines.
+      if (pending.heredoc !== null) {
+        if (trimmed === pending.heredoc) finish()
+        else pending.parts.push(line)
+        continue
       }
+      pending.parts.push(trimmed)
+      pending.depth += depthOf(trimmed)
+      if (pending.depth <= 0) finish()
+      continue
     }
+
+    // A blank line inside the block is just spacing after the header.
+    if (trimmed === '') continue
+
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/)
+    if (!match) {
+      // Not an assignment and not blank: the outputs block has ended (a warning,
+      // a summary line, the next section).
+      break
+    }
+
+    const [, name, rawValue] = match
+    const value = rawValue.trim()
+
+    const tag = heredocTag(value)
+    if (tag !== null) {
+      pending = { name, parts: [], depth: 0, heredoc: tag }
+      continue
+    }
+
+    // An opening bracket that is not closed on this line starts a multi-line value.
+    if (depthOf(value) > 0) {
+      pending = { name, parts: [value], depth: depthOf(value), heredoc: null }
+      continue
+    }
+
+    // `<sensitive>` is recorded rather than dropped: "there is a value here and it
+    // is not being shown" is information, and a missing key looks like a template
+    // that forgot to declare the output.
+    outputs[name] = unquote(value)
   }
+
+  finish()
   return outputs
 }
 

@@ -92,6 +92,8 @@ export interface CatalogItem {
   categoryId: number
   baseLanguage: string
   createdAt: Date
+  /** Required alongside an image (#105); null on a product that has none. */
+  imageAlt: string | null
   name: string
   description: string
 }
@@ -112,6 +114,9 @@ export const listCatalog = async (
       categoryId: products.categoryId,
       baseLanguage: products.baseLanguage,
       createdAt: products.createdAt,
+      // Carried with the product so every component that renders the picture uses
+      // the description its uploader wrote, instead of inventing one.
+      imageAlt: products.imageAlt,
       name: sql<string>`COALESCE(
         (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
         (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
@@ -150,6 +155,9 @@ export const getProduct = async (
       categoryId: products.categoryId,
       baseLanguage: products.baseLanguage,
       createdAt: products.createdAt,
+      // Carried with the product so every component that renders the picture uses
+      // the description its uploader wrote, instead of inventing one.
+      imageAlt: products.imageAlt,
       name: sql<string>`COALESCE(
         (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
         (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
@@ -219,9 +227,9 @@ export const getProduct = async (
 
 export const getProductImage = async (
   productId: number,
-): Promise<Result<{ data: Buffer; mime: string } | null>> => {
+): Promise<Result<{ data: Buffer; mime: string; alt: string | null } | null>> => {
   const rows = await db
-    .select({ image: products.image })
+    .select({ image: products.image, imageMime: products.imageMime, imageAlt: products.imageAlt })
     .from(products)
     .where(eq(products.id, productId))
     .limit(1)
@@ -229,5 +237,11 @@ export const getProductImage = async (
   if (!rows.length) return err(404, 'Product not found')
   if (!rows[0].image) return ok(null)
 
-  return ok({ data: rows[0].image, mime: 'image/png' })
+  // Rows written before the mime type was recorded fall back to PNG, which is
+  // what this route claimed for every image regardless of what it was.
+  return ok({
+    data: rows[0].image,
+    mime: rows[0].imageMime ?? 'image/png',
+    alt: rows[0].imageAlt,
+  })
 }

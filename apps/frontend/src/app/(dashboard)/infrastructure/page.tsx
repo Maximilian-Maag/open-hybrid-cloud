@@ -10,6 +10,7 @@ import { InfraActions } from './InfraActions'
 import { InfraFilters } from './InfraFilters'
 import { InfraExport } from './InfraExport'
 import { t, isValidLang } from '@/lib/i18n'
+import Link from 'next/link'
 
 // Filters live in the URL (see InfraFilters), so every distinct filter
 // combination is its own render — nothing here may be cached across them.
@@ -159,9 +160,14 @@ function InfraRow({
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-1">
-            <span className="font-medium text-slate-900">
+            {/* The row's own heading is the way in: the outputs, parameters and
+                pipeline runs are on the detail page, not in this list. */}
+            <Link
+              href={`/infrastructure/${item.id}`}
+              className="font-medium text-slate-900 hover:underline"
+            >
               {item.productName ?? `Product #${item.productId}`}
-            </span>
+            </Link>
             <StatusBadge status={deploymentFailed ? 'failed' : item.status} lang={lang} />
             {deploymentFailed && (
               <span className="text-xs text-slate-500">

@@ -84,6 +84,14 @@ export interface Product {
   createdAt: string
   name: string
   description: string
+  /**
+   * What the product picture shows, for its `alt` attribute.
+   *
+   * Null when the product has no image. Required whenever one is uploaded, so a
+   * component never has to invent a description or decide the picture is
+   * decorative — which is what every one of them used to do differently.
+   */
+  imageAlt?: string | null
 }
 
 export interface ProductDetail extends Product {
@@ -436,6 +444,8 @@ export interface CartItem {
   environmentName: string | null
   price: string | null
   currency: string | null
+  /** Description of the product picture, for its `alt` attribute. */
+  imageAlt?: string | null
   /** False when the product is no longer offered in that environment. */
   stillOffered: boolean
 }
@@ -605,6 +615,27 @@ export interface InfrastructureElement {
    * `status: 'active'` with `orderStatus: 'failed'`.
    */
   orderStatus?: OrderStatus | null
+}
+
+/**
+ * One infrastructure element in full (GET /infrastructure/{id}).
+ *
+ * Everything the list carries, plus what only a detail view needs: the pipeline
+ * status map, the cost centre the order is billed to, and which parameter values
+ * were redacted — the names stay visible, the values do not.
+ */
+export interface InfrastructureDetail extends InfrastructureElement {
+  /** Status per id in `pipelineId`, from the run named by `pipelinePhase`. */
+  pipelineStatus: Record<string, string>
+  /**
+   * Which run `pipelineId` describes: provisioning while the element is active,
+   * teardown once decommissioning started (a teardown rewrites the id list).
+   */
+  pipelinePhase: 'provisioning' | 'teardown'
+  costCenter: string | null
+  orderCreatedAt: string | null
+  isTrial: boolean
+  redactedParameters: string[]
 }
 
 /** Option lists for the infrastructure list filters (GET /infrastructure/facets). */

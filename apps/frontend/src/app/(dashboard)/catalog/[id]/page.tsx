@@ -6,7 +6,7 @@ import type { ProductDetail, Project, CostCenter, ExchangeRate, Category } from 
 import { Card } from '@/components/ui/Card'
 import { OrderForm } from '@/components/forms/OrderForm'
 import { AddToCart } from './AddToCart'
-import { ProductImage } from './ProductImage'
+import { ProductImage } from '@/components/ui/ProductImage'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 import { localeToCurrency, convertPrice } from '@/lib/locale'
@@ -78,7 +78,11 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
   return (
     <div className="max-w-screen-xl mx-auto">
       <nav aria-label={t('catalog', lang)} className="mb-3 text-xs text-slate-500">
-        <Link href="/catalog" className="hover:underline" style={{ color: 'var(--bp-text)' }}>
+        {/* Underlined at rest, not only on hover: this link sits INSIDE a line of
+            text, so colour alone is the only thing that distinguished it — WCAG
+            1.4.1, and the branding colour makes it worse (1.03:1 against the
+            surrounding slate on the default palette). */}
+        <Link href="/catalog" className="underline" style={{ color: 'var(--bp-text)' }}>
           {t('catalog', lang)}
         </Link>
         {categoryName && <> <span aria-hidden="true">›</span> {categoryName}</>}
@@ -88,7 +92,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
         {/* Picture */}
         <div className="lg:col-span-4">
           <div className="h-72 rounded-lg border border-slate-200 bg-white p-4 lg:sticky lg:top-28">
-            <ProductImage productId={product.id} name={product.name} />
+            <ProductImage productId={product.id} alt={product.imageAlt ?? product.name} />
           </div>
         </div>
 

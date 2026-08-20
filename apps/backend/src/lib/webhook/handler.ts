@@ -1,14 +1,14 @@
 import type { PipelineEvent } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
 import { orders, infrastructureElements } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { eq, sql, inArray } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import {
   sendProvisioningCompleted,
   sendProvisioningFailed,
   sendDecommissioned,
 } from '@/lib/notification'
-import { fetchJobTrace, parseTofuOutputs } from '@/lib/ci'
+import { fetchJobTrace, parseTofuOutputs, supportsJobTrace } from '@/lib/ci'
 import { findProductName, findUserEmail, findCiSourceForEnv, findAdminEmails } from '@/lib/db/queries'
 
 export const handlePipelineEvent = async (
@@ -93,11 +93,13 @@ export const handlePipelineEvent = async (
 
       await logAudit(null, 'order.completed', order.id, `Pipeline ${event.pipelineId} succeeded`)
 
+      // Every element of the order, not one of them: the outputs below are written
+      // to all of them, and a `.limit(1)` here meant an order that provisioned
+      // several had its outputs land on whichever row Postgres returned first.
       const infraElements = await db
         .select({ id: infrastructureElements.id })
         .from(infrastructureElements)
         .where(eq(infrastructureElements.orderId, order.id))
-        .limit(1)
 
       const productName = await findProductName(order.productId)
       const infraId = infraElements[0]?.id ?? order.id
@@ -110,14 +112,33 @@ export const handlePipelineEvent = async (
       if (infraElements.length > 0) {
         try {
           const ciSource = await findCiSourceForEnv(order.environmentId)
-          if (ciSource) {
+          if (!ciSource) {
+            console.warn(`[webhook] No CI source for environment ${order.environmentId}; no outputs recorded.`)
+          } else if (!supportsJobTrace(ciSource.provider)) {
+            // Said out loud rather than silently producing an element with no
+            // outputs, which looked like a template that declared none.
+            console.warn(
+              `[webhook] Reading job logs is not implemented for ${ciSource.provider}; ` +
+                `order ${order.id} will have no Terraform outputs. See lib/ci/index.ts supportsJobTrace.`,
+            )
+          } else {
             const trace = await fetchJobTrace(ciSource, event.pipelineId)
             const outputs = parseTofuOutputs(trace)
             if (Object.keys(outputs).length > 0) {
+              // Every element of the order, not just the first: an order that
+              // provisioned several left the rest empty for no reason a user could
+              // see. One statement, so a concurrent event cannot half-apply it.
               await db
                 .update(infrastructureElements)
                 .set({ outputs })
-                .where(eq(infrastructureElements.id, infraElements[0].id))
+                .where(
+                  inArray(
+                    infrastructureElements.id,
+                    infraElements.map((el) => el.id),
+                  ),
+                )
+            } else {
+              console.warn(`[webhook] Job log for order ${order.id} contained no Outputs block.`)
             }
           }
         } catch (err) {

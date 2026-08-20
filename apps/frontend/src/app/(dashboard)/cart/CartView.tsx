@@ -20,7 +20,7 @@ import { ParameterFields } from '@/components/forms/ParameterFields'
 import { publishCartCount } from '@/components/layout/CartLink'
 import { t } from '@/lib/i18n'
 import { convertPrice } from '@/lib/locale'
-import { ProductImage } from '../catalog/[id]/ProductImage'
+import { ProductImage } from '@/components/ui/ProductImage'
 
 interface Props {
   initialItems: CartItem[]
@@ -357,7 +357,7 @@ function CartItemRow({
           not a second link to the product: the name beside it already is one, and
           an aria-hidden link that still takes focus is its own a11y problem. */}
       <div className="h-24 w-24 shrink-0 rounded border border-slate-200 p-1">
-        <ProductImage productId={item.productId} name="" />
+        <ProductImage productId={item.productId} alt={item.imageAlt ?? ''} />
       </div>
 
       <div className="min-w-0 flex-1 space-y-2">

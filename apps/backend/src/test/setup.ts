@@ -3,9 +3,17 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from '@/lib/db/schema'
 import { sql } from 'drizzle-orm'
+import { acquireTestDatabase } from './database'
 
-// Module-level client for setup/teardown — tests use the app's db singleton
-const client = postgres(process.env.DATABASE_URL ?? '')
+// Claimed at MODULE scope, before any test file is imported: the app's db
+// singleton reads process.env.DATABASE_URL when its module first loads, so a URL
+// decided later in beforeAll would arrive too late to matter.
+const acquired = await acquireTestDatabase(process.env.DATABASE_URL ?? '')
+process.env.DATABASE_URL = acquired.url
+console.warn(`[test] database: ${acquired.name}`)
+
+// Module-level client for setup/teardown — tests use the app's db singleton.
+const client = postgres(acquired.url)
 export const testDb = drizzle(client, { schema })
 
 // Tables in dependency order so truncation respects FKs
@@ -57,6 +65,8 @@ beforeAll(async () => {
       image BYTEA,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS image_mime TEXT;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS image_alt TEXT;
     CREATE TABLE IF NOT EXISTS product_translations (
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       language_code TEXT NOT NULL,
@@ -287,4 +297,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await client.end()
+  // Releases the advisory lock on this run's database, freeing the name for the
+  // next run in this directory.
+  await acquired.release()
 })

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import type { Product, Category, FavoriteProduct } from '@open-hybrid-cloud/types'
@@ -26,6 +26,11 @@ export default function CatalogPage() {
   // without scanning a list per render.
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
   const [favoriteBusy, setFavoriteBusy] = useState<Set<number>>(new Set())
+  // Bumped on every toggle AND every load. The favourites request below is not
+  // awaited, so a star clicked while it is in flight is NEWER than the answer
+  // coming back — applying that answer would silently revert what the user just
+  // did. Starring a product immediately after the page appeared did exactly that.
+  const favoritesGeneration = useRef(0)
 
   // sync URL search param into local state
   useEffect(() => {
@@ -45,9 +50,18 @@ export default function CatalogPage() {
       setCategories(cats ?? [])
       // Separately and non-fatally: a favourites outage should cost the stars,
       // not the whole catalogue.
+      // Claim a generation for THIS load as well, not just for toggles: two loads
+      // can overlap (a language change re-runs it), and the older one's answer
+      // must not land on top of the newer one's.
+      const generation = ++favoritesGeneration.current
       get<FavoriteProduct[]>(`/api/favorites?lang=${lang}`, token)
-        .then((favs) => setFavorites(new Set((favs ?? []).map((f) => f.productId))))
-        .catch(() => setFavorites(new Set()))
+        .then((favs) => {
+          if (favoritesGeneration.current !== generation) return
+          setFavorites(new Set((favs ?? []).map((f) => f.productId)))
+        })
+        .catch(() => {
+          if (favoritesGeneration.current === generation) setFavorites(new Set())
+        })
     } catch {
       // Surface a genuine fetch failure instead of showing an empty catalog,
       // which would look like "no products" during an outage.
@@ -61,6 +75,7 @@ export default function CatalogPage() {
 
   async function toggleFavorite(productId: number) {
     if (!token || favoriteBusy.has(productId)) return
+    favoritesGeneration.current += 1
     const wasFavorited = favorites.has(productId)
 
     // Optimistic: the star is the whole feedback, so waiting a round trip to
@@ -102,6 +117,7 @@ export default function CatalogPage() {
       id={product.id}
       name={product.name}
       description={product.description}
+      imageAlt={product.imageAlt}
       categoryName={categoryName(product.categoryId)}
       favorited={favorites.has(product.id)}
       busy={favoriteBusy.has(product.id)}

@@ -103,7 +103,18 @@ export function OrderForm({
       `/api/infrastructure?productId=${product.id}&projectId=${projectId}`,
       token,
     )
-      .then((rows) => { setTemplates(rows ?? []); setTemplateId('') })
+      .then((rows) => {
+        setTemplates(rows ?? [])
+        // Keep the current selection if it is still in the list. Clearing
+        // unconditionally discarded a quick-reorder prefill whenever this effect
+        // ran a second time (projectId settles after the projects load), and the
+        // reorder effect below will not re-apply because it has already fired —
+        // so the form kept the environment and parameters but lost the template,
+        // and with it the "pre-filled from this element" confirmation.
+        setTemplateId((current) =>
+          current !== '' && (rows ?? []).some((row) => String(row.id) === current) ? current : '',
+        )
+      })
       .catch(() => { setTemplates([]) })
   }, [projectId, product.id, token])
 

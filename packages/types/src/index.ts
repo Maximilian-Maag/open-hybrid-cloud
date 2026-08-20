@@ -617,6 +617,21 @@ export interface InfrastructureElement {
   orderStatus?: OrderStatus | null
 }
 
+/**
+ * One infrastructure element in full (GET /infrastructure/{id}).
+ *
+ * Everything the list carries, plus what only a detail view needs: the pipeline
+ * status map, the cost centre the order is billed to, and which parameter values
+ * were redacted — the names stay visible, the values do not.
+ */
+export interface InfrastructureDetail extends InfrastructureElement {
+  pipelineStatus: Record<string, string>
+  costCenter: string | null
+  orderCreatedAt: string | null
+  isTrial: boolean
+  redactedParameters: string[]
+}
+
 /** Option lists for the infrastructure list filters (GET /infrastructure/facets). */
 export interface InfraFacets {
   environments: { id: number; name: string }[]

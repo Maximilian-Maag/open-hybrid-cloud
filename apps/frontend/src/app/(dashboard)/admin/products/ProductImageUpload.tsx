@@ -171,7 +171,7 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
 
       <div className="flex items-start gap-4">
         <div className="h-32 w-32 shrink-0 rounded border border-slate-200 p-1">
-          <ProductImage productId={productId} name="" version={version} />
+          <ProductImage productId={productId} alt="" version={version} />
         </div>
 
         <div className="space-y-2">

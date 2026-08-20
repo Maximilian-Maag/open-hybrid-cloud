@@ -13,7 +13,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
  */
 export function ProductImage({
   productId,
-  name,
+  alt,
   version,
 }: {
   productId: number
@@ -25,7 +25,7 @@ export function ProductImage({
    * Anything else is a description its uploader wrote; components no longer invent
    * one.
    */
-  name: string
+  alt: string
   /**
    * Bump to force a refetch after the image changed. The endpoint sets
    * `max-age=3600`, so without a different URL the browser keeps showing the old
@@ -74,7 +74,7 @@ export function ProductImage({
     <img
       ref={imgRef}
       src={`${API_URL}/api/catalog/${productId}/image${version ? `?v=${version}` : ''}`}
-      alt={name}
+      alt={alt}
       className="h-full w-full rounded-lg object-contain"
       onError={() => setFailed(true)}
     />

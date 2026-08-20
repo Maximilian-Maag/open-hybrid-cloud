@@ -92,7 +92,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
         {/* Picture */}
         <div className="lg:col-span-4">
           <div className="h-72 rounded-lg border border-slate-200 bg-white p-4 lg:sticky lg:top-28">
-            <ProductImage productId={product.id} name={product.imageAlt ?? product.name} />
+            <ProductImage productId={product.id} alt={product.imageAlt ?? product.name} />
           </div>
         </div>
 

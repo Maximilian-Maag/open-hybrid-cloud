@@ -357,7 +357,7 @@ function CartItemRow({
           not a second link to the product: the name beside it already is one, and
           an aria-hidden link that still takes focus is its own a11y problem. */}
       <div className="h-24 w-24 shrink-0 rounded border border-slate-200 p-1">
-        <ProductImage productId={item.productId} name={item.imageAlt ?? ''} />
+        <ProductImage productId={item.productId} alt={item.imageAlt ?? ''} />
       </div>
 
       <div className="min-w-0 flex-1 space-y-2">

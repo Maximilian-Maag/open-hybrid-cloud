@@ -55,7 +55,7 @@ export function ProductCard({
           aria-label={name}
           className="block h-full w-full p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
         >
-          <ProductImage productId={id} name={imageAlt ?? name} />
+          <ProductImage productId={id} alt={imageAlt ?? name} />
         </Link>
         {/* A SIBLING of the link, not a child: a button inside a link is
             nested-interactive, which the axe gate in e2e/a11y.spec.ts rejects. */}

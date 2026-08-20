@@ -561,17 +561,43 @@ describe('product webhooks', () => {
 })
 
 describe('updateProductImage', () => {
-  it('stores the image buffer in the DB', async () => {
+  // A truncated signature is no longer enough: the type is now determined from
+  // the bytes, so a fixture has to be a plausible file rather than four bytes.
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.alloc(32, 1),
+  ])
+
+  it('stores the image buffer and the type it detected', async () => {
     const cat = await createCategory()
     const p = await seedProduct(cat.id, 'Img')
-    const buf = Buffer.from([0x89, 0x50, 0x4e, 0x47])
 
-    const result = await updateProductImage(p.id, buf)
+    const result = await updateProductImage(p.id, png)
     expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.mime).toBe('image/png')
 
-    const [row] = await db.select({ image: products.image }).from(products).where(eq(products.id, p.id))
+    const [row] = await db
+      .select({ image: products.image, mime: products.imageMime })
+      .from(products)
+      .where(eq(products.id, p.id))
     expect(row.image).not.toBeNull()
-    if (row.image) expect(Buffer.from(row.image).equals(buf)).toBe(true)
+    if (row.image) expect(Buffer.from(row.image).equals(png)).toBe(true)
+    expect(row.mime).toBe('image/png')
+  })
+
+  it('rejects bytes that are not an accepted image type', async () => {
+    const cat = await createCategory()
+    const p = await seedProduct(cat.id, 'Img2')
+
+    const result = await updateProductImage(p.id, Buffer.from('not an image but long enough'))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(415)
+  })
+
+  it('reports an unknown product instead of silently succeeding', async () => {
+    const result = await updateProductImage(999_999, png)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
   })
 })
 

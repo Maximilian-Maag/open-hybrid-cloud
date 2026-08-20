@@ -221,7 +221,7 @@ export const getProductImage = async (
   productId: number,
 ): Promise<Result<{ data: Buffer; mime: string } | null>> => {
   const rows = await db
-    .select({ image: products.image })
+    .select({ image: products.image, imageMime: products.imageMime })
     .from(products)
     .where(eq(products.id, productId))
     .limit(1)
@@ -229,5 +229,7 @@ export const getProductImage = async (
   if (!rows.length) return err(404, 'Product not found')
   if (!rows[0].image) return ok(null)
 
-  return ok({ data: rows[0].image, mime: 'image/png' })
+  // Rows written before the mime type was recorded fall back to PNG, which is
+  // what this route claimed for every image regardless of what it was.
+  return ok({ data: rows[0].image, mime: rows[0].imageMime ?? 'image/png' })
 }

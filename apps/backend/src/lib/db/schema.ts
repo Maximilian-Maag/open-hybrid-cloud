@@ -40,6 +40,8 @@ export const products = pgTable('products', {
   categoryId: bigint('category_id', { mode: 'number' }).notNull().references(() => categories.id, { onDelete: 'cascade' }),
   baseLanguage: text('base_language').notNull().default('de'),
   image: bytea('image'),
+  /** MIME type of `image`. Null on rows written before it was recorded. */
+  imageMime: text('image_mime'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

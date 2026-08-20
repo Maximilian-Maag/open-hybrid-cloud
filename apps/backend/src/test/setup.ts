@@ -57,6 +57,7 @@ beforeAll(async () => {
       image BYTEA,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS image_mime TEXT;
     CREATE TABLE IF NOT EXISTS product_translations (
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       language_code TEXT NOT NULL,

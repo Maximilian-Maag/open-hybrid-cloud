@@ -291,7 +291,10 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
       environmentId: frankfurt.id,
       productId: created[2].id,
       status: 'active',
-      parameters: {},
+      // Parameters even though the deployment failed: reprovisioning is exactly
+      // when the original values matter, and an element without any cannot show
+      // the quick-reorder prefill at all.
+      parameters: { hostname: 'k8s-prod-01' },
       outputs: {},
       deployedAt: new Date(),
     },

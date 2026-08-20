@@ -128,7 +128,11 @@ test.describe('Order Placement Flow', () => {
     if (count === 0) { test.skip(); return }
 
     await orderLinks.first().click()
-    await expect(page).toHaveURL(/\/orders\/\d+/)
+    // 30s, like auth.setup.ts: the suite runs against `next dev`, which compiles
+    // /orders/[id] on first request, and under parallel workers that outlasts the
+    // 5s default. (These two tests only started running once the database had
+    // orders in it — see issue #89.)
+    await expect(page).toHaveURL(/\/orders\/\d+/, { timeout: 30_000 })
     await expect(page.locator('body')).not.toContainText('500')
 
     // Order detail always shows these sections
@@ -146,7 +150,11 @@ test.describe('Order Placement Flow', () => {
     if (await orderLinks.count() === 0) { test.skip(); return }
 
     await orderLinks.first().click()
-    await expect(page).toHaveURL(/\/orders\/\d+/)
+    // 30s, like auth.setup.ts: the suite runs against `next dev`, which compiles
+    // /orders/[id] on first request, and under parallel workers that outlasts the
+    // 5s default. (These two tests only started running once the database had
+    // orders in it — see issue #89.)
+    await expect(page).toHaveURL(/\/orders\/\d+/, { timeout: 30_000 })
 
     await page.getByRole('link', { name: /back to orders/i }).click()
     await expect(page).toHaveURL(/\/orders$/)

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { Category, CreateProductRequest, Product } from '@open-hybrid-cloud/types'
 import { post } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
+import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
@@ -56,7 +57,7 @@ export function NewProductForm({ categories, token }: Props) {
     <Card title="Product Details">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>
+          <Alert>{error}</Alert>
         )}
         <Select
           label="Category"

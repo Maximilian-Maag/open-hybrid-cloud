@@ -20,7 +20,7 @@ export default async function ImpressumPage() {
   if (!imprintText) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center text-slate-400">{t('noImprintConfigured', lang)}</div>
+        <div className="text-center text-slate-600">{t('noImprintConfigured', lang)}</div>
       </div>
     )
   }

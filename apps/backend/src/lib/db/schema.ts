@@ -12,6 +12,7 @@ import {
   customType,
 } from 'drizzle-orm/pg-core'
 import type { StackStep } from '@open-hybrid-cloud/types'
+import type { ProductSnapshot } from '@/lib/services/snapshot'
 
 const bytea = customType<{ data: Buffer }>({
   dataType() { return 'bytea' },
@@ -97,6 +98,19 @@ export const productEnvironments = pgTable('product_environments', {
   currency: text().notNull().default('EUR'),
   costCenterMode: text('cost_center_mode', { enum: ['project', 'select', 'overhead'] }).notNull().default('project'),
   forcedCostCenter: boolean('forced_cost_center').notNull().default(false),
+  // The fixed shared cost centre used by `overhead` mode (FA-10.4). Without it
+  // `overhead` had no cost centre to point at and fell through to the same
+  // behaviour as `select` — the user picked, which is the opposite of a fixed
+  // overhead account. Nullable because the other two modes never use it, and
+  // because an offering may be switched to `overhead` before one is chosen.
+  overheadCostCenterId: bigint('overhead_cost_center_id', { mode: 'number' }).references(() => costCenters.id, { onDelete: 'set null' }),
+  // Time-boxed trial of this offering (issue #1). Opt-in per offering rather than
+  // catalogue-wide: a trial provisions real infrastructure with elevated rights
+  // inside it, which is not something every product should hand out.
+  trialEnabled: boolean('trial_enabled').notNull().default(false),
+  // Configurable so a heavier app can get longer than the 30 minutes the issue
+  // names; 30 is the default, not a constant.
+  trialDurationMinutes: integer('trial_duration_minutes').notNull().default(30),
 }, (t) => [primaryKey({ columns: [t.productId, t.environmentId] })])
 
 export const productWebhooks = pgTable('product_webhooks', {
@@ -116,6 +130,37 @@ export const pipelineStacks = pgTable('pipeline_stacks', {
   name: text().notNull(),
   stateKeyParam: text('state_key_param').notNull().default('hostname'),
   steps: jsonb().$type<StackStep[]>().notNull().default([]),
+})
+
+// Per-user product bookmarks. Composite primary key rather than a surrogate id:
+// a user can favourite a product once, and the uniqueness that expresses is the
+// same thing the lookup needs — no separate index, no way to store a duplicate.
+export const productFavorites = pgTable('product_favorites', {
+  userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.userId, t.productId] })])
+
+// Timeline of catalogue changes to a product (issue #38). One row per change that
+// affects what a customer would be offered, so the history explains what an
+// existing order's snapshot differs FROM.
+export const productVersions = pgTable('product_versions', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
+  // Which offering the snapshot describes. Null for a change to the product itself
+  // (name, description, category) which is not specific to one environment.
+  environmentId: bigint('environment_id', { mode: 'number' }).references(() => deploymentEnvironments.id, { onDelete: 'set null' }),
+  // Optional free text from whoever made the change. The issue calls it optional;
+  // an empty string is the "no note" case rather than a null, so readers do not
+  // have to handle both.
+  changelog: text().notNull().default(''),
+  /** What changed, so the row is meaningful without diffing. */
+  summary: text().notNull().default(''),
+  snapshot: jsonb().$type<ProductSnapshot>(),
+  // No ON DELETE on the author: a version entry that loses its attribution stops
+  // being a history.
+  createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 export const costCenters = pgTable('cost_centers', {
@@ -143,6 +188,17 @@ export const orders = pgTable('orders', {
   status: text({ enum: ['pending', 'provisioning', 'completed', 'failed', 'rejected'] }).notNull().default('pending'),
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
   costCenterId: bigint('cost_center_id', { mode: 'number' }).references(() => costCenters.id),
+  // Ordered as a time-boxed trial (issue #1). Recorded on the ORDER rather than
+  // only acted on at creation time: a project manager's order is provisioned at
+  // approval, which is where the trial clock has to start and where the trial
+  // variables have to be passed to CI.
+  isTrial: boolean('is_trial').notNull().default(false),
+  // What the customer was actually offered when the order was placed (issue #38).
+  // Orders reference the product by id, so without this a later price change or a
+  // removed parameter silently rewrites history and the order detail page shows
+  // today's configuration as the one that was approved. Nullable: orders placed
+  // before this existed have no snapshot, and inventing one would be a lie.
+  productSnapshot: jsonb('product_snapshot').$type<ProductSnapshot>(),
   rejectionNote: text('rejection_note'),
   pipelineId: jsonb('pipeline_id').$type<string[]>().notNull().default([]),
   // Per-pipeline terminal status keyed by pipeline id, e.g.
@@ -151,6 +207,44 @@ export const orders = pgTable('orders', {
   // any one fails/cancels) instead of completing on the first success event.
   pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Items a user has collected but not yet ordered (issue #28).
+//
+// Not an order in a 'draft' state: a cart item has no project, no validated
+// parameters and no cost centre, so putting it in `orders` would mean every query
+// over orders had to exclude drafts, and a draft would appear in approval queues
+// and audit exports the moment someone forgot a WHERE clause.
+export const cartItems = pgTable('cart_items', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
+  environmentId: bigint('environment_id', { mode: 'number' }).notNull().references(() => deploymentEnvironments.id, { onDelete: 'cascade' }),
+  // Whatever the user had typed when they added the item. Deliberately NOT
+  // validated on the way in — a cart is a shopping list, and refusing to hold an
+  // incomplete item would defeat the point of collecting first and filling in at
+  // checkout. Validation happens at checkout, against the same rules a single
+  // order goes through.
+  parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Free-text discussion on an order (issue #34). The rejection note already proved
+// a note can be stored per order; this generalises it into a thread.
+export const orderComments = pgTable('order_comments', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  orderId: bigint('order_id', { mode: 'number' }).notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  // No ON DELETE: a comment must not lose its author. Deactivating a user is how
+  // they are retired, and the audit trail depends on attribution surviving.
+  userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id),
+  body: text().notNull(),
+  // Visible to admin/root only. The orderer must never see one, so every read
+  // path filters on this rather than relying on the UI to hide it.
+  internal: boolean().notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Distinct from createdAt so an edited comment can be shown as edited rather
+  // than silently rewritten under a reader who already replied to it.
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
@@ -170,6 +264,12 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   outputs: jsonb().$type<Record<string, string>>().notNull().default({}),
   deployedAt: timestamp('deployed_at', { withTimezone: true }).defaultNow(),
+  // When set, the element is torn down automatically at or after this instant
+  // (issue #30). Temporary environments — test, demo, PoC — are otherwise
+  // forgotten and keep accruing cost. NULL means "no schedule", which is the
+  // only way to express "never": a sentinel far-future date would eventually
+  // arrive.
+  scheduledDecommissionAt: timestamp('scheduled_decommission_at', { withTimezone: true }),
 })
 
 export const exchangeRates = pgTable('exchange_rates', {
@@ -223,9 +323,13 @@ export type DeploymentEnvironment = typeof deploymentEnvironments.$inferSelect
 export type ProductEnvironment = typeof productEnvironments.$inferSelect
 export type ProductWebhook = typeof productWebhooks.$inferSelect
 export type PipelineStack = typeof pipelineStacks.$inferSelect
+export type ProductFavorite = typeof productFavorites.$inferSelect
+export type ProductVersion = typeof productVersions.$inferSelect
 export type CostCenter = typeof costCenters.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type Order = typeof orders.$inferSelect
+export type CartItem = typeof cartItems.$inferSelect
+export type OrderComment = typeof orderComments.$inferSelect
 export type InfrastructureElement = typeof infrastructureElements.$inferSelect
 export type ExchangeRate = typeof exchangeRates.$inferSelect
 export type AuditEntry = typeof auditLog.$inferSelect

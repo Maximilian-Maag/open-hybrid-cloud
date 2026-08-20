@@ -11,10 +11,10 @@ import { t } from '@/lib/i18n'
 function StatCard({ label, value, href, linkLabel }: { label: string; value: number; href?: string; linkLabel?: string }) {
   const inner = (
     <div className="bg-white border border-slate-200 rounded-lg p-5 hover:shadow-sm transition-shadow">
-      <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">{label}</div>
+      <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">{label}</div>
       <div className="text-3xl font-bold text-slate-800"><CountUp value={value} /></div>
       {linkLabel && href && (
-        <span className="text-xs mt-2 inline-block" style={{ color: 'var(--bp)' }}>{linkLabel}</span>
+        <span className="text-xs mt-2 inline-block" style={{ color: 'var(--bp-text)' }}>{linkLabel}</span>
       )}
     </div>
   )
@@ -52,19 +52,19 @@ export default async function DashboardHome() {
   return (
     <div className="space-y-8">
       {/* Hero banner */}
-      <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--bp)' }}>
+      <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}>
         <div className="px-8 py-10 flex flex-col sm:flex-row items-center gap-6">
-          <div className="flex-1 text-white">
+          <div className="flex-1">
             <h2 className="text-2xl sm:text-3xl font-bold leading-tight mb-2">
               {t('welcomeBack', lang)}, {session.user?.name ?? 'User'}
             </h2>
-            <p className="text-white/75 text-sm sm:text-base mb-5">
+            <p className="text-sm sm:text-base mb-5">
               {t('heroSubtitle', lang)}
             </p>
             <Link
               href="/catalog"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded font-semibold text-sm text-gray-900 hover:brightness-95 transition-all"
-              style={{ backgroundColor: 'var(--bs)' }}
+              style={{ backgroundColor: 'var(--bs)', color: 'var(--bs-ink)' }}
             >
               {t('browseCatalog', lang)}
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -73,7 +73,7 @@ export default async function DashboardHome() {
             </Link>
           </div>
           <div className="hidden sm:flex items-center justify-center opacity-20 shrink-0">
-            <svg className="h-28 w-28 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-28 w-28 opacity-90" aria-hidden="true" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={0.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
             </svg>
           </div>
@@ -106,7 +106,7 @@ export default async function DashboardHome() {
             <Link
               href="/catalog"
               className="text-xs hover:underline flex items-center gap-1"
-              style={{ color: 'var(--bp)' }}
+              style={{ color: 'var(--bp-text)' }}
             >
               {t('allProducts', lang)}
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -125,7 +125,7 @@ export default async function DashboardHome() {
                   className="h-36 flex items-center justify-center border-b border-slate-100"
                   style={{ backgroundColor: 'color-mix(in srgb, var(--bp) 7%, white)' }}
                 >
-                  <svg className="h-12 w-12 opacity-25" style={{ color: 'var(--bp)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-12 w-12 opacity-25" style={{ color: 'var(--bp-text)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
                   </svg>
                 </div>
@@ -134,7 +134,7 @@ export default async function DashboardHome() {
                     {product.name}
                   </h4>
                   <p className="text-xs text-slate-500 line-clamp-2 flex-1">{product.description}</p>
-                  <span className="text-xs font-medium mt-2" style={{ color: 'var(--bp)' }}>{t('orderNow', lang)}</span>
+                  <span className="text-xs font-medium mt-2" style={{ color: 'var(--bp-text)' }}>{t('orderNow', lang)}</span>
                 </div>
               </Link>
             ))}
@@ -147,7 +147,7 @@ export default async function DashboardHome() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-base font-bold text-slate-800">{t('recentOrders', lang)}</h3>
-            <Link href="/orders" className="text-xs hover:underline" style={{ color: 'var(--bp)' }}>
+            <Link href="/orders" className="text-xs hover:underline" style={{ color: 'var(--bp-text)' }}>
               {t('viewAll', lang)}
             </Link>
           </div>

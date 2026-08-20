@@ -103,6 +103,8 @@ export interface UpdateProductRequest {
   baseLanguage?: string
   name?: string
   description?: string
+  /** Optional free text describing the change, recorded in the history (issue #38). */
+  changelog?: string
 }
 
 export interface ProductTranslation {
@@ -211,7 +213,23 @@ export interface ProductEnvironment {
   currency: string
   costCenterMode: CostCenterMode
   forcedCostCenter: boolean
+  /**
+   * The fixed shared cost centre used by `overhead` mode (FA-10.4). null for
+   * the other two modes, and for an `overhead` offering that has not had an
+   * account chosen yet.
+   */
+  overheadCostCenterId: number | null
+  /**
+   * Whether this offering can be ordered as a time-boxed trial (issue #1).
+   * Opt-in per offering: a trial provisions real infrastructure and asks the
+   * pipeline to grant elevated rights inside it.
+   */
+  trialEnabled: boolean
+  /** How long a trial of this offering lives. Defaults to 30 minutes. */
+  trialDurationMinutes: number
   environmentName?: string
+  /** Resolved name of `overheadCostCenterId`, for display in the order form. */
+  overheadCostCenterName?: string | null
 }
 
 export interface UpsertProductEnvironmentRequest {
@@ -219,6 +237,11 @@ export interface UpsertProductEnvironmentRequest {
   currency: string
   costCenterMode: CostCenterMode
   forcedCostCenter: boolean
+  overheadCostCenterId?: number | null
+  trialEnabled?: boolean
+  trialDurationMinutes?: number
+  /** Optional free text describing the change, recorded in the history (issue #38). */
+  changelog?: string
 }
 
 // Product Webhooks
@@ -342,6 +365,14 @@ export interface Order {
   pipelineId: string[]
   createdAt: string
   updatedAt: string
+  /** Ordered as a time-boxed trial (issue #1). */
+  isTrial?: boolean
+  /**
+   * What the customer was offered when the order was placed (issue #38). Null for
+   * orders placed before snapshots existed — the order detail page falls back to
+   * the live product for those, and says so.
+   */
+  productSnapshot?: ProductSnapshot | null
   productName?: string
   environmentName?: string
   projectName?: string
@@ -354,6 +385,193 @@ export interface CreateOrderRequest {
   environmentId: number
   costCenterId?: number
   parameters: Record<string, string>
+  /**
+   * Order as a time-boxed trial (issue #1). Only accepted for an offering with
+   * `trialEnabled`; it does NOT bypass approval — a project manager's trial still
+   * needs an admin to approve it.
+   */
+  trial?: boolean
+}
+
+// ─── Costs (issue #32) ────────────────────────────────────────────────────────
+
+export type CostRange = 'currentMonth' | 'last3Months' | 'last12Months' | 'all' | 'custom'
+
+export interface CostBucket {
+  id: number | null
+  label: string
+  /** EUR, the exchange-rate base. Convert client-side for display. */
+  totalEur: number
+  orderCount: number
+}
+
+export interface CostReport {
+  totalEur: number
+  orderCount: number
+  /**
+   * Orders whose price came from the live offering because they predate snapshots.
+   * Non-zero means the total is partly inferred rather than exact.
+   */
+  estimatedOrders: number
+  byProject: CostBucket[]
+  byCostCenter: CostBucket[]
+  byProduct: CostBucket[]
+  byEnvironment: CostBucket[]
+  /** Amounts with no stored exchange rate, reported rather than silently dropped. */
+  unconverted: { currency: string; amount: number }[]
+  /** True when the caller sees every project's spend. */
+  global: boolean
+}
+
+// ─── Cart (issue #28) ─────────────────────────────────────────────────────────
+
+export interface CartItem {
+  id: number
+  productId: number
+  environmentId: number
+  /** Prefill only — validated at checkout, not when added. */
+  parameters: Record<string, string>
+  createdAt: string
+  productName: string | null
+  environmentName: string | null
+  price: string | null
+  currency: string | null
+  /** False when the product is no longer offered in that environment. */
+  stillOffered: boolean
+}
+
+export interface AddToCartRequest {
+  productId: number
+  environmentId: number
+  parameters?: Record<string, string>
+}
+
+export interface CheckoutItem {
+  cartItemId: number
+  parameters: Record<string, string>
+  costCenterId?: number
+  trial?: boolean
+}
+
+export interface CheckoutRequest {
+  projectId: number
+  items: CheckoutItem[]
+}
+
+export interface CheckoutResponse {
+  orderIds: number[]
+  /**
+   * Items whose orders could not be created after validation passed. These stay in
+   * the cart — a fired pipeline cannot be recalled, so partial failure is reported
+   * rather than hidden.
+   */
+  failed: { cartItemId: number; message: string }[]
+}
+
+// ─── Product versioning (issue #38) ───────────────────────────────────────────
+
+/** One parameter definition as it stood when a snapshot was taken. */
+export interface ParameterSnapshot {
+  name: string
+  label: string
+  type: string
+  description: string
+  /** '[redacted]' when the parameter is flagged sensitive. */
+  defaultValue: string
+  required: boolean
+  sensitive: boolean
+}
+
+/**
+ * Point-in-time capture of what a customer was offered.
+ *
+ * Stored on the order so a later price change or removed parameter cannot rewrite
+ * what the order detail page reports as approved.
+ */
+export interface ProductSnapshot {
+  version: 1
+  capturedAt: string
+  productName: string
+  productDescription: string
+  environmentName: string
+  price: string
+  currency: string
+  costCenterMode: CostCenterMode
+  forcedCostCenter: boolean
+  /**
+   * The overhead account the offering bills to, as a label (issue #22).
+   *
+   * Optional: snapshots taken before it was captured do not carry it, so absent
+   * means "unknown" rather than "none" — a diff must not report every older
+   * version as a change.
+   */
+  overheadCostCenter?: string | null
+  trialEnabled: boolean
+  trialDurationMinutes: number
+  parameters: ParameterSnapshot[]
+}
+
+/** One entry in a product's change history. */
+export interface ProductVersion {
+  id: number
+  productId: number
+  /** Null for a change to the product itself rather than to one offering. */
+  environmentId: number | null
+  changelog: string
+  summary: string
+  snapshot: ProductSnapshot | null
+  createdBy: number | null
+  createdAt: string
+  authorName: string | null
+  environmentName: string | null
+}
+
+export interface SnapshotFieldChange {
+  field: string
+  from: string
+  to: string
+}
+
+export type SnapshotParameterChange =
+  | { kind: 'added'; name: string; to: ParameterSnapshot }
+  | { kind: 'removed'; name: string; from: ParameterSnapshot }
+  | { kind: 'changed'; name: string; fields: SnapshotFieldChange[] }
+
+export interface ProductVersionDiff {
+  fields: SnapshotFieldChange[]
+  parameters: SnapshotParameterChange[]
+  identical: boolean
+  fromVersionId: number
+  toVersionId: number
+}
+
+/**
+ * A comment on an order (issue #34).
+ *
+ * An `internal` comment is only ever returned to admin/root — the API filters
+ * them out for other callers rather than relying on the client to hide them.
+ */
+export interface OrderComment {
+  id: number
+  orderId: number
+  userId: number
+  body: string
+  internal: boolean
+  createdAt: string
+  updatedAt: string
+  userName: string | null
+  /** True when the comment was edited after posting. */
+  edited: boolean
+}
+
+export interface CreateOrderCommentRequest {
+  body: string
+  /** Admin/root only; rejected with 403 otherwise. */
+  internal?: boolean
+}
+
+export interface UpdateOrderCommentRequest {
+  body: string
 }
 
 export interface RejectOrderRequest {
@@ -372,9 +590,39 @@ export interface InfrastructureElement {
   pipelineId: string[]
   outputs: Record<string, string>
   deployedAt: string | null
+  /**
+   * When set, the element is torn down automatically at or after this instant
+   * (issue #30). null = no schedule.
+   */
+  scheduledDecommissionAt?: string | null
   productName?: string
   environmentName?: string
   projectName?: string
+  /**
+   * Status of the order this element came from. The element's own status cannot
+   * express a failed deployment — it is created `active` when provisioning starts
+   * and stays there if the pipeline fails — so a failed deployment is
+   * `status: 'active'` with `orderStatus: 'failed'`.
+   */
+  orderStatus?: OrderStatus | null
+}
+
+/** Option lists for the infrastructure list filters (GET /infrastructure/facets). */
+export interface InfraFacets {
+  environments: { id: number; name: string }[]
+  projects: { id: number; name: string }[]
+  products: { id: number; name: string }[]
+}
+
+export type InfraSortField = 'date' | 'name' | 'status'
+
+/** A product the current user has favourited (GET /favorites). */
+export interface FavoriteProduct {
+  productId: number
+  categoryId: number
+  name: string
+  description: string
+  createdAt: string
 }
 
 // Exchange Rates

@@ -171,3 +171,31 @@ export const sendDecommissioned = async (
     `Resource Decommissioned — ${headerSafe(productName)}`,
     `<p>The infrastructure element <strong>${infraId}</strong> (<strong>${escapeHtml(productName)}</strong>) has been decommissioned successfully.</p>`,
   )
+
+/**
+ * A public comment was added to an order (issue #34).
+ *
+ * Sent to the orderer and the admins, never to the author. Internal notes send
+ * nothing at all — telling the orderer that a note they cannot read exists would
+ * leak exactly what the flag is for.
+ *
+ * The body is included so the recipient can judge whether to act without logging
+ * in, and truncated so a pasted stack trace does not become the email.
+ */
+export const sendOrderComment = async (
+  to: string,
+  productName: string,
+  orderId: number,
+  authorName: string,
+  body: string,
+): Promise<void> => {
+  const excerpt = body.length > 500 ? `${body.slice(0, 500)}…` : body
+  return send(
+    to,
+    `New comment on order #${orderId} — ${headerSafe(productName)}`,
+    `<p><strong>${escapeHtml(authorName)}</strong> commented on order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong>:</p>` +
+      // white-space: pre-wrap so a multi-line comment survives; escaped first, so
+      // the pre-wrap cannot be used to smuggle markup.
+      `<blockquote style="white-space: pre-wrap; border-left: 3px solid #ccc; margin: 0; padding-left: 12px;">${escapeHtml(excerpt)}</blockquote>`,
+  )
+}

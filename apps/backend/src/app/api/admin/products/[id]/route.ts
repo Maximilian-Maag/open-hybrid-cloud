@@ -9,6 +9,8 @@ const UpdateProductSchema = z.object({
   baseLanguage: z.string().optional(),
   name: z.string().min(1).optional(),
   description: z.string().optional(),
+  // Optional free text describing the change (issue #38).
+  changelog: z.string().max(2000).optional(),
 })
 
 export async function GET(
@@ -36,7 +38,9 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateProduct(parseInt(id, 10), parsed.data))
+  // The author comes from the session, never the body — a history entry that could
+  // be attributed to somebody else is not a history.
+  return toResponse(await updateProduct(parseInt(id, 10), { ...parsed.data, userId: session.id }))
 }
 
 export async function DELETE(

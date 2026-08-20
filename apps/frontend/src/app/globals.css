@@ -3,6 +3,15 @@
 :root {
   --bp: #131921;
   --bs: #febd69;
+  /* Foreground for content painted on the branding colours. Overridden per
+     subtree with the value derived from the operator's actual colours (see
+     lib/contrast.ts); these defaults match the shipped --bp/--bs. */
+  --bp-ink: #ffffff;
+  --bs-ink: #101827;
+  /* Brand colour used as text on a light surface, AA-adjusted. */
+  --bp-text: #131921;
+  /* Overlay for states on the branding colour — opposite pole of --bp-ink. */
+  --bp-tint: #000000;
 }
 
 /* ── Modal backdrop: blur + fade ─────────────────────────────────────────── */
@@ -58,3 +67,30 @@ dialog::backdrop {
   --animate-toast-in:   toast-in   0.25s cubic-bezier(0.16, 1, 0.3, 1);
   --animate-flash-row:  flash-row  1.4s ease-out forwards;
 }
+
+/* ── Reduced motion ──────────────────────────────────────────────────────────
+   Everything above is decorative: modal/backdrop entrances, page and toast
+   transitions, the row-flash highlight and StatusBadge's indefinite pulse on
+   provisioning/decommissioning. None of it carries information, so for users who
+   ask for less motion we drop it entirely rather than merely shortening it.
+   The pulse in particular runs forever, which is what WCAG 2.2.2 is about. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  dialog::backdrop { animation: none; }
+}
+
+/* ── States on the branding colour ───────────────────────────────────────────
+   Hover and active tints for the header, nav and footer. They deliberately use
+   --bp-tint rather than currentColor: currentColor IS the text, so tinting with
+   it pulls the background toward the text and destroys the contrast --bp-ink
+   guarantees. --bp-tint is the opposite pole, so these only ever help. */
+.brand-state       { transition: background-color .15s ease; }
+.brand-state:hover { background-color: color-mix(in srgb, var(--bp-tint) 14%, transparent); }
+.brand-state-active { background-color: color-mix(in srgb, var(--bp-tint) 22%, transparent); }

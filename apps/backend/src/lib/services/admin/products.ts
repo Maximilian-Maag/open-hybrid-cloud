@@ -6,6 +6,7 @@ import {
   productWebhooks,
   deploymentEnvironments,
   categories,
+  costCenters,
   infrastructureElements,
   parameters,
   type Product,
@@ -14,10 +15,11 @@ import {
   type ProductWebhook,
   type Parameter,
 } from '@/lib/db/schema'
-import { eq, sql, and } from 'drizzle-orm'
+import { eq, sql, and, inArray } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
 import { fireDestroyTriggers } from '@/lib/services/teardown'
+import { recordProductVersion } from '@/lib/services/versions'
 
 export interface ProductAdminRow {
   id: number
@@ -41,21 +43,36 @@ export interface UpdateProductInput {
   baseLanguage?: string
   name?: string
   description?: string
+  /** Optional free text describing the change (issue #38). */
+  changelog?: string
+  /** Recorded as the version's author. */
+  userId?: number | null
 }
 
 export interface CreateProductEnvironmentInput {
   environmentId: number
+  /** Optional free text describing the change (issue #38). */
+  changelog?: string
+  userId?: number | null
   price?: string
   currency?: string
   costCenterMode?: 'project' | 'select' | 'overhead'
   forcedCostCenter?: boolean
+  overheadCostCenterId?: number | null
+  trialEnabled?: boolean
+  trialDurationMinutes?: number
 }
 
 export interface UpdateProductEnvironmentInput {
+  changelog?: string
+  userId?: number | null
   price?: string
   currency?: string
   costCenterMode?: 'project' | 'select' | 'overhead'
   forcedCostCenter?: boolean
+  overheadCostCenterId?: number | null
+  trialEnabled?: boolean
+  trialDurationMinutes?: number
 }
 
 export interface CreateWebhookInput {
@@ -147,6 +164,9 @@ export const getProductAdmin = async (id: number): Promise<Result<ProductAdminRo
       currency: productEnvironments.currency,
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
+      overheadCostCenterId: productEnvironments.overheadCostCenterId,
+      trialEnabled: productEnvironments.trialEnabled,
+      trialDurationMinutes: productEnvironments.trialDurationMinutes,
     })
     .from(productEnvironments)
     .where(eq(productEnvironments.productId, id))
@@ -163,7 +183,7 @@ export const updateProduct = async (
   id: number,
   input: UpdateProductInput,
 ): Promise<Result<Product>> => {
-  const { name, description, ...productFields } = input
+  const { name, description, changelog, userId, ...productFields } = input
 
   const existing = await db
     .select({ id: products.id, baseLanguage: products.baseLanguage })
@@ -214,7 +234,26 @@ export const updateProduct = async (
     .where(eq(products.id, id))
     .limit(1)
 
+  // A product-level change is not specific to one environment, so it carries no
+  // offering snapshot — there is no single one to take.
+  await recordProductVersion({
+    productId: id,
+    environmentId: null,
+    summary: describeProductChange(input),
+    changelog,
+    userId: userId ?? null,
+  })
+
   return ok(updated[0])
+}
+
+const describeProductChange = (input: UpdateProductInput): string => {
+  const changed: string[] = []
+  if (input.name !== undefined) changed.push('name')
+  if (input.description !== undefined) changed.push('description')
+  if (input.categoryId !== undefined) changed.push('category')
+  if (input.baseLanguage !== undefined) changed.push('base language')
+  return changed.length > 0 ? `Product updated: ${changed.join(', ')}` : 'Product updated'
 }
 
 export const deleteProduct = async (id: number): Promise<Result<void>> => {
@@ -358,6 +397,9 @@ export const listProductEnvironments = async (
       currency: productEnvironments.currency,
       costCenterMode: productEnvironments.costCenterMode,
       forcedCostCenter: productEnvironments.forcedCostCenter,
+      overheadCostCenterId: productEnvironments.overheadCostCenterId,
+      trialEnabled: productEnvironments.trialEnabled,
+      trialDurationMinutes: productEnvironments.trialDurationMinutes,
       environmentName: deploymentEnvironments.name,
     })
     .from(productEnvironments)
@@ -370,22 +412,108 @@ export const listProductEnvironments = async (
   return ok(rows as (ProductEnvironment & { environmentName: string | null })[])
 }
 
+/**
+ * Reject an overhead account that does not exist or has been deactivated.
+ *
+ * Ordering already refuses an inactive cost centre, so accepting one here would
+ * only defer the failure to the next order placed against the offering — at
+ * which point the operator who misconfigured it is long gone.
+ */
+const validateOverheadCostCenter = async (
+  overheadCostCenterId: number | null | undefined,
+): Promise<Result<void>> => {
+  if (overheadCostCenterId === undefined || overheadCostCenterId === null) return ok(undefined)
+
+  const [cc] = await db
+    .select({ active: costCenters.active })
+    .from(costCenters)
+    .where(eq(costCenters.id, overheadCostCenterId))
+    .limit(1)
+
+  if (!cc) return err(400, 'Overhead cost center not found')
+  if (!cc.active) return err(400, 'Overhead cost center is not active')
+  return ok(undefined)
+}
+
 export const createProductEnvironment = async (
   id: number,
   input: CreateProductEnvironmentInput,
 ): Promise<Result<ProductEnvironment>> => {
-  const { environmentId, price = '0', currency = 'EUR', costCenterMode = 'project', forcedCostCenter = false } = input
+  const {
+    environmentId,
+    price = '0',
+    currency = 'EUR',
+    costCenterMode = 'project',
+    forcedCostCenter = false,
+    overheadCostCenterId = null,
+    trialEnabled = false,
+    trialDurationMinutes = 30,
+  } = input
+
+  const validated = await validateOverheadCostCenter(overheadCostCenterId)
+  if (!validated.ok) return validated
+
+  // A non-positive duration would schedule the teardown at or before the moment of
+  // provisioning, so the trial would be swept away before it came up.
+  if (trialEnabled && trialDurationMinutes <= 0) {
+    return err(400, 'The trial duration must be at least one minute')
+  }
+
+  const values = {
+    price, currency, costCenterMode, forcedCostCenter, overheadCostCenterId,
+    trialEnabled, trialDurationMinutes,
+  }
+
+  // Read before the write so the version entry can say what actually changed
+  // rather than just "saved".
+  const [previous] = await db
+    .select()
+    .from(productEnvironments)
+    .where(
+      and(
+        eq(productEnvironments.productId, id),
+        eq(productEnvironments.environmentId, environmentId),
+      ),
+    )
+    .limit(1)
 
   const [row] = await db
     .insert(productEnvironments)
-    .values({ productId: id, environmentId, price, currency, costCenterMode, forcedCostCenter })
+    .values({ productId: id, environmentId, ...values })
     .onConflictDoUpdate({
       target: [productEnvironments.productId, productEnvironments.environmentId],
-      set: { price, currency, costCenterMode, forcedCostCenter },
+      set: values,
     })
     .returning()
 
+  await recordProductVersion({
+    productId: id,
+    environmentId,
+    summary: previous ? describeOfferingChange(previous, row) : 'Environment offered',
+    changelog: input.changelog,
+    userId: input.userId ?? null,
+  })
+
   return ok(row)
+}
+
+/**
+ * Name the fields that changed, for the history row's summary.
+ *
+ * A summary derived from the actual before/after rather than from which fields the
+ * request happened to include: the admin form submits every field on every save, so
+ * "what was sent" would report a change on every row every time.
+ */
+const describeOfferingChange = (
+  before: ProductEnvironment,
+  after: ProductEnvironment,
+): string => {
+  const fields: (keyof ProductEnvironment)[] = [
+    'price', 'currency', 'costCenterMode', 'forcedCostCenter',
+    'overheadCostCenterId', 'trialEnabled', 'trialDurationMinutes',
+  ]
+  const changed = fields.filter((f) => String(before[f] ?? '') !== String(after[f] ?? ''))
+  return changed.length > 0 ? `Offering updated: ${changed.join(', ')}` : 'Offering saved (no change)'
 }
 
 export const updateProductEnvironment = async (
@@ -393,9 +521,28 @@ export const updateProductEnvironment = async (
   envId: number,
   input: UpdateProductEnvironmentInput,
 ): Promise<Result<ProductEnvironment>> => {
+  const validated = await validateOverheadCostCenter(input.overheadCostCenterId)
+  if (!validated.ok) return validated
+
+  if (input.trialDurationMinutes !== undefined && input.trialDurationMinutes <= 0) {
+    return err(400, 'The trial duration must be at least one minute')
+  }
+
+  const [previous] = await db
+    .select()
+    .from(productEnvironments)
+    .where(
+      and(
+        eq(productEnvironments.productId, id),
+        eq(productEnvironments.environmentId, envId),
+      ),
+    )
+    .limit(1)
+
+  const { changelog, userId, ...columns } = input
   const [updated] = await db
     .update(productEnvironments)
-    .set(input)
+    .set(columns)
     .where(
       and(
         eq(productEnvironments.productId, id),
@@ -405,6 +552,15 @@ export const updateProductEnvironment = async (
     .returning()
 
   if (!updated) return err(404, 'Not found')
+
+  await recordProductVersion({
+    productId: id,
+    environmentId: envId,
+    summary: previous ? describeOfferingChange(previous, updated) : 'Offering updated',
+    changelog,
+    userId: userId ?? null,
+  })
+
   return ok(updated)
 }
 
@@ -412,6 +568,27 @@ export const deleteProductEnvironment = async (
   id: number,
   envId: number,
 ): Promise<Result<void>> => {
+  // Refuse while infrastructure is still live in this environment. Unlike
+  // deleteProduct there is no cascade to follow here — infrastructure_elements
+  // references products/deployment_environments directly — so removing the
+  // offering would silently strand running infra without the price, currency
+  // and cost-centre config that its order was placed under. Decommission first.
+  const liveInfra = await db
+    .select({ id: infrastructureElements.id })
+    .from(infrastructureElements)
+    .where(
+      and(
+        eq(infrastructureElements.productId, id),
+        eq(infrastructureElements.environmentId, envId),
+        inArray(infrastructureElements.status, ['active', 'decommissioning']),
+      ),
+    )
+    .limit(1)
+
+  if (liveInfra.length) {
+    return err(409, 'Infrastructure is still deployed in this environment — decommission it first')
+  }
+
   const deleted = await db
     .delete(productEnvironments)
     .where(
@@ -423,6 +600,16 @@ export const deleteProductEnvironment = async (
     .returning({ productId: productEnvironments.productId })
 
   if (!deleted.length) return err(404, 'Not found')
+
+  // Recorded without a snapshot: there is no offering left to capture, and the
+  // withdrawal is exactly what a reader of the history needs to see.
+  await recordProductVersion({
+    productId: id,
+    environmentId: null,
+    summary: `Environment #${envId} withdrawn`,
+    userId: null,
+  })
+
   return ok(undefined)
 }
 

@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation'
 import type { Order } from '@open-hybrid-cloud/types'
 import { post } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { TrialBadge } from '@/components/ui/TrialBadge'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
@@ -59,11 +61,12 @@ export function ApprovalRow({ order, token }: Props) {
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-1">
-            <span className="font-mono text-xs text-slate-400">#{order.id}</span>
+            <span className="font-mono text-xs text-slate-600">#{order.id}</span>
             <span className="font-semibold text-slate-900">
               {order.productName ?? `Product #${order.productId}`}
             </span>
             <StatusBadge status={order.status} lang={lang} />
+            {order.isTrial && <TrialBadge lang={lang} />}
           </div>
           <p className="text-sm text-slate-500">
             {order.environmentName} · {order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`} on{' '}
@@ -94,9 +97,9 @@ export function ApprovalRow({ order, token }: Props) {
       </div>
 
       {error && (
-        <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        <Alert className="mt-3">
           {error}
-        </div>
+        </Alert>
       )}
 
       {rejecting && (

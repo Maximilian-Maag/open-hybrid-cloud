@@ -10,6 +10,14 @@ const UpsertProductEnvironmentSchema = z.object({
   currency: z.string().default('EUR'),
   costCenterMode: z.enum(['project', 'select', 'overhead']).default('project'),
   forcedCostCenter: z.boolean().default(false),
+  // Nullable so the admin form can clear the overhead account again; the
+  // service rejects an id that is unknown or deactivated.
+  overheadCostCenterId: z.number().int().positive().nullable().default(null),
+  // Time-boxed trials are opt-in per offering (issue #1): a trial provisions real
+  // infrastructure with elevated rights inside it.
+  trialEnabled: z.boolean().default(false),
+  trialDurationMinutes: z.number().int().positive().default(30),
+  changelog: z.string().max(2000).optional(),
 })
 
 export async function GET(
@@ -37,5 +45,8 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await createProductEnvironment(parseInt(id, 10), parsed.data), 201)
+  return toResponse(
+    await createProductEnvironment(parseInt(id, 10), { ...parsed.data, userId: session.id }),
+    201,
+  )
 }

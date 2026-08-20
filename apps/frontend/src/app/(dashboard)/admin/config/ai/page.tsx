@@ -4,6 +4,8 @@ import type { Role, AiConfig } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { AiConfigForm } from './AiConfigForm'
+import { t } from '@/lib/i18n'
+import { getLang } from '@/lib/getLang'
 
 export default async function AiConfigPage() {
   const session = await auth()
@@ -17,9 +19,11 @@ export default async function AiConfigPage() {
     config = await get<AiConfig>('/api/admin/config/ai', token)
   } catch { /* use null */ }
 
+  const lang = await getLang()
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <PageHeader title="AI Configuration" subtitle="Configure AI provider for automatic translations." />
+      <PageHeader title={t('aiConfiguration', lang)} subtitle={t('aiSubtitle', lang)} />
       <AiConfigForm initial={config} token={token} />
     </div>
   )

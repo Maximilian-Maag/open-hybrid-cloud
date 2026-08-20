@@ -1,5 +1,25 @@
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
 
+/**
+ * Which colour each variant paints, and when to reach for it.
+ *
+ * The names are a known trap: this component's `primary` uses the branding's
+ * **secondary** colour (`--bs`), while the branding's *primary* (`--bp`) is what
+ * the header and nav are painted in. That is deliberate — with the shipped palette
+ * (#131921 navy + #febd69 amber) the amber secondary is the call-to-action colour,
+ * exactly as a shop would use it — but reading either name the other way sends you
+ * looking in the wrong place.
+ *
+ * | Variant | Paints | Use for |
+ * |---|---|---|
+ * | `primary` | `--bs` fill, `--bs-edge` border, `--bs-ink` text | the one action the screen is for |
+ * | `secondary` | white fill, slate border | everything alongside it |
+ * | `danger` | white fill, red border, red text | destructive actions |
+ * | `ghost` | no fill, underlined | a quiet action where a bordered button would crowd the layout |
+ *
+ * Every variant carries a visible boundary or an underline: `danger` and `ghost`
+ * used to be bare text, indistinguishable from a label until hovered.
+ */
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

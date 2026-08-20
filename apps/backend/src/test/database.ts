@@ -40,19 +40,10 @@ export const testDatabaseUrl = (env: Env = process.env, cwd = process.cwd()): st
   return url.toString()
 }
 
-/**
- * Create the run's database if it is not there yet.
- *
- * Connects to the `postgres` maintenance database, because a database cannot be
- * created from inside itself. Concurrent runners can race here, so "already
- * exists" (42P04) is a success, not an error.
- */
-export const ensureTestDatabase = async (databaseUrl: string): Promise<void> => {
-  const url = new URL(databaseUrl)
-  const name = url.pathname.replace(/^\//, '')
-  url.pathname = '/postgres'
+/** How many alternatives to try when the preferred database is already in use. */
+const MAX_CANDIDATES = 8
 
-  const admin = postgres(url.toString(), { max: 1 })
+const createIfMissing = async (admin: postgres.Sql, name: string): Promise<void> => {
   try {
     const existing = await admin`SELECT 1 FROM pg_database WHERE datname = ${name}`
     if (existing.length === 0) {
@@ -60,8 +51,54 @@ export const ensureTestDatabase = async (databaseUrl: string): Promise<void> => 
       await admin.unsafe(`CREATE DATABASE "${name}"`)
     }
   } catch (e) {
+    // Two runners can reach this at the same moment; "already exists" is success.
     if ((e as { code?: string })?.code !== '42P04') throw e
-  } finally {
-    await admin.end({ timeout: 5 })
   }
+}
+
+/**
+ * Claim a database for this run, and create it if it is not there yet.
+ *
+ * A name derived from the working directory separates the runs that usually
+ * collide, but not two runs started from the SAME directory — a background full
+ * suite while a single file is being iterated on, which is common enough that it
+ * happened within minutes of the directory scheme landing.
+ *
+ * So the name is also *claimed*: a session-level advisory lock is taken on the
+ * maintenance connection, and if it is already held the next candidate is tried.
+ * The lock is released when `release()` closes that connection, or by Postgres
+ * itself if the process dies — no stale state to clean up.
+ */
+export const acquireTestDatabase = async (
+  databaseUrl: string,
+): Promise<{ url: string; name: string; release: () => Promise<void> }> => {
+  const url = new URL(databaseUrl)
+  const preferred = url.pathname.replace(/^\//, '')
+  const adminUrl = new URL(databaseUrl)
+  adminUrl.pathname = '/postgres'
+
+  const admin = postgres(adminUrl.toString(), { max: 1 })
+
+  for (let i = 0; i < MAX_CANDIDATES; i++) {
+    const name = i === 0 ? preferred : `${preferred}_${i + 1}`
+    const [{ locked }] = await admin<{ locked: boolean }[]>`
+      SELECT pg_try_advisory_lock(hashtext(${name})) AS locked
+    `
+    if (!locked) continue
+
+    await createIfMissing(admin, name)
+    const claimed = new URL(databaseUrl)
+    claimed.pathname = `/${name}`
+    return {
+      url: claimed.toString(),
+      name,
+      release: () => admin.end({ timeout: 5 }),
+    }
+  }
+
+  await admin.end({ timeout: 5 })
+  throw new Error(
+    `All ${MAX_CANDIDATES} candidate test databases for "${preferred}" are in use. ` +
+      'Set TEST_DB_SUFFIX to pick your own, or wait for the other runs to finish.',
+  )
 }

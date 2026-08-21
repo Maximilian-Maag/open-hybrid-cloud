@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface Props {
   product: Product
@@ -16,6 +18,7 @@ interface Props {
 }
 
 export function ProductRowActions({ product, token }: Props) {
+  const lang = useLang()
   const router = useRouter()
   const { toast } = useToast()
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -28,10 +31,10 @@ export function ProductRowActions({ product, token }: Props) {
     try {
       await del(`/api/admin/products/${product.id}`, token)
       setConfirmOpen(false)
-      toast(`Product “${product.name}” deleted.`, 'info')
+      toast(`${t('product', lang)} “${product.name}” ${t('deleted', lang)}.`, 'info')
       router.refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete product.')
+      setError(e instanceof Error ? e.message : t('failedToDeleteProduct', lang))
     } finally {
       setDeleting(false)
     }
@@ -40,26 +43,25 @@ export function ProductRowActions({ product, token }: Props) {
   return (
     <div className="flex gap-2 justify-end">
       <Link href={`/admin/products/${product.id}`}>
-        <Button size="sm" variant="secondary">Edit</Button>
+        <Button size="sm" variant="secondary">{t('edit', lang)}</Button>
       </Link>
-      <Button size="sm" variant="danger" onClick={() => setConfirmOpen(true)}>Delete</Button>
+      <Button size="sm" variant="danger" onClick={() => setConfirmOpen(true)}>{t('delete', lang)}</Button>
 
-      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Delete product" size="sm">
+      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={t('deleteProductPrompt', lang)} size="sm">
         <p className="text-sm text-slate-700 mb-3">
-          Delete product <strong>{product.name}</strong>? This cannot be undone.
+          {t('deleteProductPrompt', lang)} <strong>{product.name}</strong>? {t('cannotBeUndone', lang)}
         </p>
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
-          Any <strong>active</strong> infrastructure element provisioned from this product will be
-          automatically decommissioned (the GitLab destroy webhook is triggered before the product is
-          removed). Translations, parameters, and environment assignments are dropped via cascading deletes.
+          {t('any', lang)} <strong>{t('productDeleteWarningActive', lang)}</strong> {t('productDeleteWarningBody', lang)}{' '}
+          {t('productDeleteWarningCascade', lang)}
         </p>
         {error && (
           <Alert className="mb-4">{error}</Alert>
         )}
         <div className="flex justify-end gap-3">
-          <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={deleting}>Cancel</Button>
+          <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={deleting}>{t('cancel', lang)}</Button>
           <Button variant="danger" onClick={handleDelete} disabled={deleting}>
-            {deleting ? 'Deleting…' : 'Delete'}
+            {deleting ? t('deleting', lang) : t('delete', lang)}
           </Button>
         </div>
       </Modal>

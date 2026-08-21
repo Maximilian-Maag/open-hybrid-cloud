@@ -49,38 +49,103 @@ describe('i18n', () => {
     'profileSettingsSubtitle', 'globalParametersSubtitle',
   ]
 
-  it('has a real translation for every chrome/admin key in every language', () => {
+  // The admin area (issue #100) went through the same trap: 16 components never
+  // imported `t` at all, so every string there was a literal. These keys get the
+  // same per-language guard as CHROME_KEYS, just with a higher wholesale
+  // threshold — there are nearly seven times as many keys, and technical loan
+  // words ("URL", "Port", "Root", cognates like "Model"/"Logo") scale with it.
+  const ADMIN_KEYS: (keyof Translations)[] = [
+    'save', 'copy', 'copied', 'regenerate', 'regenerating', 'working', 'activate',
+    'deactivate', 'required', 'sensitive', 'requiredBadge', 'sensitiveBadge',
+    'genericFailed', 'failedToCreateGeneric', 'failedToUpdateGeneric',
+    'failedToDeleteGeneric', 'deleted', 'role', 'type', 'typeString', 'typeNumber',
+    'typeBoolean', 'typeDropdown', 'roleProjectManager', 'roleAdmin', 'roleRoot',
+    'addEnvironment', 'noEnvironmentsYet', 'ciSourceLabel', 'selectCiSourcePlaceholder',
+    'webhookUrl', 'webhookToken', 'editEnvironment', 'webhookUrlKeepHint',
+    'webhookTokenOutbound', 'webhookTokenOutboundHint', 'callbackSecretLabel',
+    'callbackSecretHint', 'revealCurrent', 'deleteEnvironmentTitle',
+    'regenerateSecretTitle', 'regenerateSecretConfirm', 'failedToLoadSecret',
+    'failedToRegenerateSecret', 'failedToCopyClipboard', 'failedToDeleteEnvironment',
+    'refreshRates', 'refreshing', 'currency', 'rateToEur', 'lastUpdated',
+    'noExchangeRates', 'failedToLoadExchangeRates', 'failedToRefreshRates',
+    'addParameter', 'noGlobalParametersYet', 'variableName', 'variableNameHint',
+    'displayLabel', 'displayLabelHint', 'defaultValue', 'commaSeparatedOptions',
+    'editParameter', 'deleteParameterTitle', 'deleteParameterPrompt',
+    'failedToLoadParameters', 'addCostCenter', 'noCostCentersYet', 'code',
+    'codePlaceholder', 'editCostCenter', 'deleteCostCenterTitle',
+    'deleteCostCenterPrompt', 'failedToLoadCostCenters', 'addCategory',
+    'noCategoriesYet', 'displayOrder', 'editCategory', 'deleteCategoryTitle',
+    'deleteCategoryPrompt', 'categoryCreatedToast', 'categoryUpdatedToast',
+    'categoryDeletedToast', 'failedToLoadCategories', 'manageCatalogProducts',
+    'newProduct', 'category', 'language', 'noProductsYet', 'backToProducts',
+    'productsTitle', 'productDetails', 'selectCategoryPlaceholder',
+    'selectCategoryError', 'baseLanguage', 'languageEnglish', 'languageGerman',
+    'languageFrench', 'languageSpanish', 'image', 'imageHintOptional',
+    'imageTooLargePrefix', 'mbLimitSuffix', 'imageDescriptionLabel',
+    'imageDescriptionHint', 'describeImageOrRemove', 'createProductButton',
+    'failedToCreateProduct', 'imageCouldNotBeUploaded', 'editProductDetailsSubtitle',
+    'deleteProductPrompt', 'productDeleteWarningActive', 'productDeleteWarningBody',
+    'productDeleteWarningCascade', 'failedToDeleteProduct', 'productImage',
+    'productCreatedPrefix', 'tryUploadingAgain', 'requiredForEveryImage',
+    'saveDescription', 'imageFileLabel', 'imageFormatHintPlain', 'removeImage',
+    'placeholderImageAltExample', 'describeBeforeUpload',
+    'imageDescriptionRequiredError', 'uploadFailed', 'couldNotSaveDescription',
+    'couldNotRemoveImage', 'imageUploaded', 'descriptionSaved', 'imageRemoved',
+    'fileTooLargePrefix', 'addCiSource', 'noCiSourcesYet', 'url', 'provider',
+    'accessToken', 'accessTokenKeepLabel', 'editCiSource', 'deleteCiSourceTitle',
+    'failedToLoadCiSources', 'addUser', 'noUsersYet', 'createButton', 'editUser',
+    'deleteUserTitle', 'deleteUserPrompt', 'failedToLoadUsers', 'userCreatedToast',
+    'userUpdatedToast', 'userDeletedToast', 'brandingSettingsTitle', 'shopName',
+    'subtitleLabel', 'primaryColor', 'primaryColorHint', 'secondaryColor',
+    'secondaryColorHint', 'logo', 'logoPreviewAlt', 'logoHint', 'imprintTextLabel',
+    'saveBranding', 'failedToSaveBranding', 'brandingSavedToast', 'colorPickerSuffix',
+    'hexValueSuffix', 'invalidHexColor', 'contrastMeetsAA', 'contrastFailsAA',
+    'contrastAaRequires', 'smtpSettingsTitle', 'host', 'port', 'fromAddress',
+    'username', 'passwordKeepHint', 'useTls', 'saveConfiguration', 'failedToSaveSmtp',
+    'smtpConfigSavedToast', 'aiProviderSettingsTitle', 'apiEndpoint',
+    'apiEndpointHint', 'apiKey', 'apiKeyKeepHint', 'model', 'failedToSaveAi',
+    'aiConfigSavedToast',
+  ]
+
+  // Shared by both key sets: collect the keys where a language's value is
+  // byte-for-byte identical to English, then fail only if there are enough of
+  // them to look like the fallback kicking in wholesale rather than a
+  // sprinkling of genuine loan words and technical cognates.
+  function expectRealTranslations(keys: (keyof Translations)[], maxWholesale: number) {
     const untranslated: string[] = []
     for (const { code } of SUPPORTED_LANGUAGES) {
       if (code === 'en') continue
-      for (const key of CHROME_KEYS) {
+      for (const key of keys) {
         const value = t(key, code)
         expect(value, `${code}.${key} does not resolve`).toBeTruthy()
-        // Identical to English means the key is absent and the fallback kicked
-        // in. A handful of terms legitimately match ("Branding", "SMTP"), so
-        // collect rather than fail per key and check the count below.
         if (value === t(key, 'en')) untranslated.push(`${code}.${key}`)
       }
     }
-    // Loan words and proper nouns are the only acceptable matches. Anything more
-    // than a sprinkling means a language is falling back wholesale.
     const perLanguage = new Map<string, number>()
     for (const entry of untranslated) {
       const code = entry.split('.')[0]
       perLanguage.set(code, (perLanguage.get(code) ?? 0) + 1)
     }
-    const wholesale = [...perLanguage.entries()].filter(([, n]) => n > 4)
+    const wholesale = [...perLanguage.entries()].filter(([, n]) => n > maxWholesale)
     expect(
       wholesale,
       `these languages look like they are falling back to English: ${wholesale
-        .map(([c, n]) => `${c} (${n}/${CHROME_KEYS.length})`)
+        .map(([c, n]) => `${c} (${n}/${keys.length})`)
         .join(', ')}`,
     ).toEqual([])
+  }
+
+  it('has a real translation for every chrome/admin key in every language', () => {
+    expectRealTranslations(CHROME_KEYS, 4)
+  })
+
+  it('has a real translation for every admin-area key in every language (#100)', () => {
+    expectRealTranslations(ADMIN_KEYS, 10)
   })
 
   it('never yields the string "undefined" for a known key', () => {
     for (const { code } of SUPPORTED_LANGUAGES) {
-      for (const key of CHROME_KEYS) {
+      for (const key of [...CHROME_KEYS, ...ADMIN_KEYS]) {
         expect(String(t(key, code))).not.toBe('undefined')
       }
     }

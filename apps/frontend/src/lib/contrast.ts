@@ -76,6 +76,23 @@ export const AA_LARGE = 3
 export const AA_NON_TEXT = 3
 
 /**
+ * AAA thresholds (1.4.6 Contrast (Enhanced)): 7:1 body, 4.5:1 large text.
+ *
+ * These only apply to the HALF of the branding problem we can actually move.
+ * `readableAccent` derives a new colour, so it can always reach 7:1 — it just
+ * darkens further. `readableInk` cannot: it picks between two fixed inks against
+ * a background the operator owns, and for a wide band of mid-tones neither ink
+ * gets there (#ca8a04 tops out at 6.05:1, #16a34a at 5.39:1). That is why 1.4.6
+ * is recorded as out of scope for the branded chrome in docs/guides/accessibility.md
+ * rather than enforced in the page gate.
+ *
+ * There is no enhanced equivalent of 1.4.11, so non-text boundaries stay at
+ * AA_NON_TEXT.
+ */
+export const AAA_BODY = 7
+export const AAA_LARGE = 4.5
+
+/**
  * The reference surface for accent colours used AS text or as a filled control.
  *
  * NOT white. The dashboard body is `bg-slate-50` (#f8fafc) and several chips sit on
@@ -96,6 +113,15 @@ export const meetsAaBody = (background: string): boolean =>
   readableInk(background).ratio >= AA_BODY
 
 /**
+ * The same question at the AAA threshold. Not a gate — nothing rejects a colour
+ * for failing this — but the branding form says so, because the operator is the
+ * only person who can trade their brand for 7:1 and they should know the trade
+ * exists.
+ */
+export const meetsAaaBody = (background: string): boolean =>
+  readableInk(background).ratio >= AAA_BODY
+
+/**
  * Adjust `colour` until it reaches `target` contrast against `background`,
  * keeping its hue.
  *
@@ -110,11 +136,18 @@ export const meetsAaBody = (background: string): boolean =>
  * keeps the colour recognisably the same hue while moving its luminance, which
  * is what the ratio actually depends on. Binary search converges in ~20 steps
  * and is deterministic, so the result is stable across renders.
+ *
+ * The default target is AAA, not AA. That is not ambition: because this function
+ * DERIVES a colour rather than choosing between two, 7:1 is always reachable, and
+ * the AA derivation had already given up on the brand swatch anyway — #febd69
+ * comes out of it as #8e693b, a brown. Going the rest of the way to #694e2c costs
+ * no recognisability that AA had not already spent. Callers that need less say so:
+ * AA_NON_TEXT for a control boundary, AA_LARGE for a focus ring.
  */
 export const readableAccent = (
   colour: string,
   background = SURFACE,
-  target = AA_BODY,
+  target = AAA_BODY,
 ): string => {
   const rgb = parseHex(colour)
   const bg = parseHex(background)

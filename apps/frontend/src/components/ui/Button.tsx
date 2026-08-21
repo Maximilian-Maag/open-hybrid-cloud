@@ -28,6 +28,20 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: 'sm' | 'md' | 'lg'
 }
 
+/**
+ * `size` is now about type and horizontal weight, not height.
+ *
+ * WCAG 2.5.5 wants 44x44 CSS px, and these were 28 / 36 / 44 — only `lg` cleared
+ * it. The floor lives in `base` as `min-h-11 min-w-11` rather than here, so no
+ * size can drop below it and a caller passing `className` cannot shrink it back.
+ *
+ * The alternative — keep the small box and stretch the hit area with an absolutely
+ * positioned 44px pseudo-element — was rejected on purpose. Table rows and card
+ * headers put these buttons 8px apart, so invisible 44px targets would overlap
+ * each other, and a target you cannot see the edges of that steals its
+ * neighbour's clicks is worse for motor-impaired users than a small one. Rows get
+ * taller instead.
+ */
 const sizeClass = {
   sm: 'px-3 py-1.5 text-xs',
   md: 'px-4 py-2 text-sm',
@@ -39,8 +53,12 @@ const sizeClass = {
 // button has no visible focus indicator at all (WCAG 2.4.7) — which is what this
 // component shipped with until the a11y gate caught it. ring-offset-white keeps
 // the ring readable where a button sits on a tinted card.
+//
+// min-h-11/min-w-11 is 44px: the WCAG 2.5.5 target size. It is a MINIMUM, so a
+// wide button keeps its width and an icon-only one gets squared off — which is
+// where the old sizes hurt most (a 20px close icon in a 28px box).
 const base =
-  'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
+  'inline-flex items-center justify-center gap-2 min-h-11 min-w-11 rounded-md font-medium transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
 
 export function Button({
   variant = 'primary',

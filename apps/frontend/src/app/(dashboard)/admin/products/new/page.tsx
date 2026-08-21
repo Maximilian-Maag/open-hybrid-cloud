@@ -5,6 +5,7 @@ import { get } from '@/lib/api'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { NewProductForm } from './NewProductForm'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
@@ -24,6 +25,14 @@ export default async function NewProductPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      <Breadcrumbs
+        label={t('breadcrumb', lang)}
+        items={[
+          { label: t('admin', lang), href: '/admin' },
+          { label: 'Products', href: '/admin/products' },
+          { label: 'New Product' },
+        ]}
+      />
       <PageHeader
         title={t('newProduct', lang)}
         actions={

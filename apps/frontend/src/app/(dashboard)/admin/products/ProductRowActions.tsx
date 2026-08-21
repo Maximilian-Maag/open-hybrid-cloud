@@ -43,7 +43,10 @@ export function ProductRowActions({ product, token }: Props) {
   return (
     <div className="flex gap-2 justify-end">
       <Link href={`/admin/products/${product.id}`}>
-        <Button size="sm" variant="secondary">{t('edit', lang)}</Button>
+        {/* Same-named links to different products (WCAG 2.4.9): the row says which
+            product, the link did not, and a screen reader's link list is just
+            "Edit, Edit, Edit". */}
+        <Button size="sm" variant="secondary">{t('edit', lang)}<span className="sr-only"> {product.name}</span></Button>
       </Link>
       <Button size="sm" variant="danger" onClick={() => setConfirmOpen(true)}>{t('delete', lang)}</Button>
 

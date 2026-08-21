@@ -88,10 +88,17 @@ export default async function DashboardHome() {
         <StatCard label={t('activeInfrastructure', lang)} value={activeInfra} href="/infrastructure" linkLabel={t('overview', lang)} />
         {isAdminOrRoot && (
           pendingOrders > 0 ? (
+            /* amber-700, not amber-600: the two 12px lines here are body text, and
+               amber-600 (#e17100) on amber-50 (#fffbeb) measures 3.08:1 against the
+               4.5:1 AA needs. amber-700 (#bb4d00) on the same ground is 4.85:1, and
+               it is already the pairing the rest of the app uses on amber-50. This
+               has nothing to do with the operator's brand colour — it is a fixed
+               palette pair, which is why it failed the gate on the default branding
+               and on the hostile one alike. */
             <Link href="/approvals" className="block bg-amber-50 border border-amber-200 rounded-lg p-5 hover:shadow-sm transition-shadow">
-              <div className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-1">{t('pendingApproval', lang)}</div>
-              <div className="text-3xl font-bold text-amber-600"><CountUp value={pendingOrders} /></div>
-              <span className="text-xs text-amber-600 mt-2 inline-block font-medium">{t('checkNow', lang)}</span>
+              <div className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">{t('pendingApproval', lang)}</div>
+              <div className="text-3xl font-bold text-amber-700"><CountUp value={pendingOrders} /></div>
+              <span className="text-xs text-amber-700 mt-2 inline-block font-medium">{t('checkNow', lang)}</span>
             </Link>
           ) : (
             <StatCard label={t('pendingApprovals', lang)} value={0} />
@@ -163,6 +170,11 @@ export default async function DashboardHome() {
                 <div>
                   <p className="text-sm font-medium text-slate-900">
                     {order.productName ?? `Product #${order.productId}`}
+                    {/* Two orders for the same product in the same project and
+                        environment on the same day render the same accessible name
+                        against different hrefs (WCAG 2.4.9). The order number is what
+                        tells them apart, and it is already in the URL. */}
+                    <span className="sr-only"> #{order.id}</span>
                   </p>
                   <p className="text-xs text-slate-500">
                     {order.environmentName} · {order.projectName} · {new Date(order.createdAt).toLocaleDateString(lang)}

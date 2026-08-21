@@ -167,6 +167,10 @@ function InfraRow({
               className="font-medium text-slate-900 hover:underline"
             >
               {item.productName ?? `Product #${item.productId}`}
+              {/* Two elements provisioned from the same product give two links with
+                  the same name and different destinations (WCAG 2.4.9). The element
+                  id is what distinguishes them, and it is already in the URL. */}
+              <span className="sr-only"> #{item.id}</span>
             </Link>
             <StatusBadge status={deploymentFailed ? 'failed' : item.status} lang={lang} />
             {deploymentFailed && (
@@ -195,7 +199,7 @@ function InfraRow({
           </p>
           {outputs.length > 0 && (
             <details className="mt-2">
-              <summary className="cursor-pointer text-xs text-blue-600 hover:text-blue-700 select-none">
+              <summary className="inline-flex min-h-11 items-center cursor-pointer text-xs text-blue-600 hover:text-blue-700 select-none">
                 {outputs.length} {outputLabel}
               </summary>
               <div className="mt-2 rounded bg-slate-50 p-2 space-y-1">

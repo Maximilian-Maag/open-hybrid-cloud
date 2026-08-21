@@ -39,7 +39,7 @@ describe('i18n', () => {
   // they were present only for en + de and every other language quietly rendered
   // English. Assert per key per language so a new string cannot ship that way.
   const CHROME_KEYS: (keyof Translations)[] = [
-    'mainNavigation', 'dismiss', 'close', 'search', 'skipToContent',
+    'mainNavigation', 'dismiss', 'close', 'search', 'skipToContent', 'breadcrumb',
     'ciSources', 'environments', 'costCenters', 'users', 'branding',
     'smtpConfiguration', 'aiConfiguration', 'exchangeRates', 'adminDashboard',
     'profileSettings', 'globalParameters',
@@ -103,8 +103,8 @@ describe('i18n', () => {
     'subtitleLabel', 'primaryColor', 'primaryColorHint', 'secondaryColor',
     'secondaryColorHint', 'logo', 'logoPreviewAlt', 'logoHint', 'imprintTextLabel',
     'saveBranding', 'failedToSaveBranding', 'brandingSavedToast', 'colorPickerSuffix',
-    'hexValueSuffix', 'invalidHexColor', 'contrastMeetsAA', 'contrastFailsAA',
-    'contrastAaRequires', 'smtpSettingsTitle', 'host', 'port', 'fromAddress',
+    'hexValueSuffix', 'invalidHexColor', 'contrastMeetsAA', 'contrastMeetsAAA',
+    'contrastFailsAA', 'contrastAaRequires', 'contrastAaaRequires', 'smtpSettingsTitle', 'host', 'port', 'fromAddress',
     'username', 'passwordKeepHint', 'useTls', 'saveConfiguration', 'failedToSaveSmtp',
     'smtpConfigSavedToast', 'aiProviderSettingsTitle', 'apiEndpoint',
     'apiEndpointHint', 'apiKey', 'apiKeyKeepHint', 'model', 'failedToSaveAi',

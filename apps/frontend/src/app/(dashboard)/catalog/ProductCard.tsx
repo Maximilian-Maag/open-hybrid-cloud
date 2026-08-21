@@ -78,10 +78,16 @@ export function ProductCard({
             and delivering a form is a broken promise. */}
         <Link
           href={`/catalog/${id}`}
-          className="w-full py-2 px-3 rounded text-center text-sm font-semibold block text-gray-900 hover:brightness-95 transition-all mt-auto"
+          className="w-full py-2 px-3 min-h-11 rounded text-center text-sm font-semibold flex items-center justify-center text-gray-900 hover:brightness-95 transition-all mt-auto"
           style={{ backgroundColor: 'var(--bs)' }}
         >
           {t('details', lang)}
+          {/* A grid of twenty links all called "Details" is WCAG 2.4.9: read out of
+              context, none of them says what it opens. The product name goes in the
+              accessible name only — visibly repeating it under its own heading would
+              be noise, and keeping "Details" as the visible label keeps the
+              accessible name a superset of it (2.5.3 Label in Name). */}
+          <span className="sr-only">: {name}</span>
         </Link>
       </div>
     </div>

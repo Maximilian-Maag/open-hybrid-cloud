@@ -79,7 +79,11 @@ function ToastBubble({ item, onDismiss }: { item: ToastItem; onDismiss: () => vo
       <span className="flex-1">{item.message}</span>
       <button
         onClick={onDismiss}
-        className="shrink-0 opacity-80 hover:opacity-100 transition-opacity rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+        // 44px (WCAG 2.5.5) inside a toast whose text line is 20px tall, so the
+        // negative margin lets the target reach into the container's py-3 instead
+        // of adding 24px of height to every toast. It still fits: 44px of button
+        // in a 52px box.
+        className="flex h-11 w-11 -my-2 shrink-0 items-center justify-center opacity-80 hover:opacity-100 transition-opacity rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
         aria-label={t('dismiss', lang)}
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

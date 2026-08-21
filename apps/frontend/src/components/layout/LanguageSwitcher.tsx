@@ -43,7 +43,7 @@ export function LanguageSwitcher({ lang }: Props) {
       <button
         ref={toggleRef}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 text-xs font-medium border border-current/40 rounded-md px-2 py-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current active:scale-95"
+        className="flex items-center justify-center gap-1 min-h-11 min-w-11 text-xs font-medium border border-current/40 rounded-md px-2 py-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current active:scale-95"
         style={{ color: 'var(--bp-ink)' }}
         aria-label={`Language: ${currentName}`}
         aria-expanded={open}
@@ -63,7 +63,9 @@ export function LanguageSwitcher({ lang }: Props) {
                 <button
                   key={l.code}
                   onClick={() => selectLang(l.code)}
-                  className="w-full flex flex-col items-center rounded-lg px-1 py-2 transition-colors text-center active:scale-95"
+                  // 25 of these in a 3-column grid, so the floor matters: two lines
+                  // of 10-12px type landed within a pixel of 44 by accident.
+                  className="w-full flex flex-col items-center justify-center min-h-11 rounded-lg px-1 py-2 transition-colors text-center active:scale-95"
                   style={l.code === current
                     ? { backgroundColor: 'var(--bs)', color: 'var(--bs-ink)' }
                     : { color: '#475569' }

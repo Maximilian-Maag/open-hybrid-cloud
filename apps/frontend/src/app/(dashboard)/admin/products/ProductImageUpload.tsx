@@ -160,7 +160,7 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
           maxLength={MAX_ALT}
           onChange={(e) => { setAlt(e.target.value); setSaved(null); setError(null) }}
           placeholder={t('placeholderImageAltExample', lang)}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="min-h-11 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <p className="text-xs text-slate-500">
           {t('imageDescriptionHint', lang)} {t('requiredForEveryImage', lang)}

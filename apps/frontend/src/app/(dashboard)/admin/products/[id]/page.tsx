@@ -13,6 +13,7 @@ import { get } from '@/lib/api'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Button } from '@/components/ui/Button'
 import { ProductEditForm } from './ProductEditForm'
 import { ProductImageUpload } from '../ProductImageUpload'
@@ -57,6 +58,17 @@ export default async function AdminProductDetailPage({ params, searchParams }: P
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      {/* Two levels deep, so this is the page 2.4.8 is really about: reached from
+          /admin/products, which is itself reached from /admin. Labels stay English
+          like the rest of the admin area. */}
+      <Breadcrumbs
+        label={t('breadcrumb', lang)}
+        items={[
+          { label: t('admin', lang), href: '/admin' },
+          { label: 'Products', href: '/admin/products' },
+          { label: product.name },
+        ]}
+      />
       <PageHeader
         title={product.name}
         subtitle={t('editProductDetailsSubtitle', lang)}

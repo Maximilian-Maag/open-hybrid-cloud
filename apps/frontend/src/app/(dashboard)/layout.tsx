@@ -102,9 +102,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
         // legible while the operator happened to pick something dark.
         '--bp-ink': readableInk(primaryColor).ink,
         '--bs-ink': readableInk(secondaryColor).ink,
-        // The brand colour used AS text on a card — darkened until it clears AA
-        // against the app's own surfaces (see contrast.SURFACE; tuning against pure
-        // white left 12px links at 4.3:1 on the slate-50 body).
+        // The brand colour used AS text on a card — darkened until it clears
+        // readableAccent's default target (now 7:1, AAA) against the app's own
+        // surfaces (see contrast.SURFACE; tuning against pure white left 12px
+        // links at 4.3:1 on the slate-50 body).
         '--bp-text': readableAccent(primaryColor),
         // Boundary for filled controls painted in the secondary colour. A near-white
         // secondary is otherwise invisible against the page — a button that reads as

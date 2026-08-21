@@ -71,7 +71,7 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
                 value={value}
                 onChange={(e) => update(param.name, e.target.value)}
                 required={param.required}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="min-h-11 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select…</option>
                 {options.map((opt) => (

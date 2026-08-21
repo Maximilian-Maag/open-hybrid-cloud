@@ -3,6 +3,7 @@ import { get } from '@/lib/api'
 import { redirect, notFound } from 'next/navigation'
 import type { Project, Order, CostCenter } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Table } from '@/components/ui/Table'
@@ -41,6 +42,13 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      <Breadcrumbs
+        label={t('breadcrumb', lang)}
+        items={[
+          { label: t('projects', lang), href: '/projects' },
+          { label: project.name },
+        ]}
+      />
       <PageHeader
         title={project.name}
         actions={

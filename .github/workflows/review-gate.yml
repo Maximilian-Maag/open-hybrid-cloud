@@ -24,46 +24,58 @@ jobs:
   review-happened:
     name: An automated review actually ran
     runs-on: ubuntu-latest
-    # Long enough for a reviewer to answer, short enough not to hold a merge for
-    # an afternoon. A reviewer that has not spoken in fifteen minutes has either
-    # skipped the diff or is not coming.
-    timeout-minutes: 25
+    # The job polls and exits as soon as a review lands, so it normally finishes
+    # in a minute or two. The ceiling only matters when nothing ever answers.
+    timeout-minutes: 20
     steps:
-      - name: Wait for the reviewers to answer
-        run: sleep 900
-
-      - name: Check that something reviewed the diff
+      - name: Wait for a review, then judge it
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
+          # How long a reviewer gets before silence counts as an answer. A
+          # reviewer that has not spoken in fifteen minutes has either skipped the
+          # diff or is not coming.
+          DEADLINE_SECONDS: 900
+          POLL_SECONDS: 30
         run: |
           set -euo pipefail
 
-          # Reviews and top-level comments both count: CodeRabbit posts its
-          # summary as a review, Copilot as a review, and the "skipped" notice as
-          # either. Inline comments are counted too — a review with findings but
-          # no summary body is still a review.
-          reviews=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
-            --jq '[.[] | select(.user.type == "Bot" or (.user.login | test("coderabbit|copilot"; "i"))) | {login: .user.login, body: (.body // "")}]')
-          inline=$(gh api "repos/$REPO/pulls/$PR/comments" --paginate --jq 'length')
+          deadline=$(( SECONDS + DEADLINE_SECONDS ))
+          skipped=0
 
-          echo "bot reviews: $(echo "$reviews" | jq 'length'), inline comments: $inline"
-          echo "$reviews" | jq -r '.[] | "  \(.login): \(.body[0:120] | gsub("\n"; " "))"'
+          while :; do
+            # Reviews and inline comments both count. CodeRabbit posts its summary
+            # as a review, Copilot likewise, and a review with findings but no
+            # summary body is still a review.
+            reviews=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+              --jq '[.[] | select(.user.type == "Bot" or (.user.login | test("coderabbit|copilot"; "i"))) | {login: .user.login, body: (.body // "")}]' || echo '[]')
+            inline=$(gh api "repos/$REPO/pulls/$PR/comments" --paginate --jq 'length' || echo 0)
 
-          # The three ways a reviewer says "I did not look at this".
-          skipped=$(echo "$reviews" | jq '[.[] | select(.body | test("review skipped|rate limited|exceed the limit of"; "i"))] | length')
-          substantive=$(echo "$reviews" | jq '[.[] | select((.body | test("review skipped|rate limited|exceed the limit of"; "i")) | not) | select(.body | length > 200)] | length')
+            substantive=$(echo "$reviews" | jq '[.[] | select((.body | test("review skipped|rate limited|exceed the limit of"; "i")) | not) | select(.body | length > 200)] | length')
+            skipped=$(echo "$reviews" | jq '[.[] | select(.body | test("review skipped|rate limited|exceed the limit of"; "i"))] | length')
 
-          if [ "$substantive" -gt 0 ] || [ "$inline" -gt 0 ]; then
-            echo "::notice::An automated review ran on this diff."
-            exit 0
-          fi
+            if [ "$substantive" -gt 0 ] || [ "$inline" -gt 0 ]; then
+              echo "$reviews" | jq -r '.[] | "  \(.login): \(.body[0:100] | gsub("\n"; " "))"'
+              echo "::notice::An automated review ran on this diff ($substantive review(s), $inline inline comment(s))."
+              exit 0
+            fi
 
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              break
+            fi
+
+            echo "no review yet (skipped notices: $skipped) — waiting ${POLL_SECONDS}s, $(( (deadline - SECONDS) / 60 ))m left"
+            sleep "$POLL_SECONDS"
+          done
+
+          # Deadline reached with nothing substantive. Which of the two failures it
+          # is changes what the author should do about it.
           if [ "$skipped" -gt 0 ]; then
-            echo "::error::A reviewer explicitly skipped this diff (rate limit or file cap). Nothing has read these changes — split the PR, wait for the quota, or review it by hand and say so."
+            echo "$reviews" | jq -r '.[] | "  \(.login): \(.body[0:200] | gsub("\n"; " "))"'
+            echo "::error::A reviewer explicitly skipped this diff (rate limit or file cap) and nothing else reviewed it. Split the PR, wait for the quota, or review it by hand and say so in a comment."
             exit 1
           fi
 
-          echo "::error::No automated review appeared within 15 minutes. Do not read the other green checks as 'reviewed'."
+          echo "::error::No automated review appeared within $(( DEADLINE_SECONDS / 60 )) minutes. Do not read the other green checks as \"reviewed\"."
           exit 1

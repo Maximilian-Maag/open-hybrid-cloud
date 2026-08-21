@@ -38,20 +38,39 @@ const products = [
   { id: 11, categoryId: 2, baseLanguage: 'en', createdAt: '', name: 'Nginx Gateway', description: 'A proxy', imageAlt: null },
 ] as unknown as Product[]
 
+/** The endpoint pages now: one window of rows plus the total behind it (#91). */
+const catalogPage = (items: Product[], total = items.length, offset = 0) => ({
+  items,
+  total,
+  limit: 24,
+  offset,
+})
+
+/**
+ * A favourite as the API returns it — derived from the product so the shelf's
+ * card is the same tile as the grid's, which is the property the page used to get
+ * by filtering the fully-loaded catalogue.
+ */
+const favoriteOf = (productId: number): FavoriteProduct => {
+  const product = products.find((p) => p.id === productId)
+  return {
+    productId,
+    categoryId: product?.categoryId ?? 1,
+    name: product?.name ?? 'x',
+    description: product?.description ?? '',
+    imageAlt: product?.imageAlt ?? null,
+    createdAt: '',
+  }
+}
+
 /** Wire the three GETs the page fires, with a configurable favourites payload. */
 const mockApi = (favorites: number[], opts: { favoritesFail?: boolean } = {}) => {
   mockedGet.mockImplementation((async (path: string) => {
-    if (path.startsWith('/api/catalog')) return products
+    if (path.startsWith('/api/catalog')) return catalogPage(products)
     if (path.startsWith('/api/admin/categories')) return categories
     if (path.startsWith('/api/favorites')) {
       if (opts.favoritesFail) throw new Error('favorites down')
-      return favorites.map((productId) => ({
-        productId,
-        categoryId: 1,
-        name: 'x',
-        description: '',
-        createdAt: '',
-      })) as FavoriteProduct[]
+      return favorites.map(favoriteOf)
     }
     return []
   }) as never)
@@ -130,7 +149,7 @@ describe('CatalogPage favorites', () => {
     const pending = new Promise<FavoriteProduct[]>((resolve) => { releaseFavorites = resolve })
 
     mockedGet.mockImplementation((async (path: string) => {
-      if (path.startsWith('/api/catalog')) return products
+      if (path.startsWith('/api/catalog')) return catalogPage(products)
       if (path.startsWith('/api/admin/categories')) return categories
       if (path.startsWith('/api/favorites')) return pending
       return []
@@ -235,5 +254,105 @@ describe('CatalogPage favorites', () => {
     render(<CatalogPage />)
 
     await waitFor(() => expect(mockedGet).toHaveBeenCalledWith('/api/favorites?lang=en', 'test-token'))
+  })
+})
+
+// Issue #91: search, category and paging happen in the database now. The page
+// used to fetch the whole catalogue and filter it in the browser.
+describe('CatalogPage server-side filtering and paging', () => {
+  const catalogCalls = () =>
+    mockedGet.mock.calls.map((call) => String(call[0])).filter((path) => path.startsWith('/api/catalog'))
+
+  it('asks the endpoint for a page, not for everything', async () => {
+    mockApi([])
+    render(<CatalogPage />)
+
+    await waitFor(() => expect(catalogCalls().length).toBeGreaterThan(0))
+    expect(catalogCalls()[0]).toContain('limit=24')
+    expect(catalogCalls()[0]).toContain('offset=0')
+  })
+
+  it('sends the search term to the database instead of filtering in the browser', async () => {
+    currentParams = new URLSearchParams('q=nginx')
+    mockApi([])
+    render(<CatalogPage />)
+
+    // Debounced, so this is the request that arrives a moment after the keystroke.
+    await waitFor(() => expect(catalogCalls().some((path) => path.includes('search=nginx'))).toBe(true))
+  })
+
+  it('sends the chosen category to the database', async () => {
+    const user = userEvent.setup()
+    mockApi([])
+    render(<CatalogPage />)
+
+    await waitFor(() => expect(screen.getByTestId('product-card-10')).toBeInTheDocument())
+    await user.click(screen.getAllByRole('button', { name: 'Networking' })[0])
+
+    await waitFor(() => expect(catalogCalls().some((path) => path.includes('categoryId=2'))).toBe(true))
+  })
+
+  it('offers more only when there is more, and appends the next page', async () => {
+    const third = { ...products[0], id: 12, name: 'Third Product' } as Product
+    mockedGet.mockImplementation((async (path: string) => {
+      if (path.startsWith('/api/catalog')) {
+        // Two of three on the first page, the rest on the second.
+        return path.includes('offset=0')
+          ? catalogPage(products, 3)
+          : catalogPage([third], 3, 2)
+      }
+      if (path.startsWith('/api/admin/categories')) return categories
+      if (path.startsWith('/api/favorites')) return []
+      return []
+    }) as never)
+
+    const user = userEvent.setup()
+    render(<CatalogPage />)
+
+    const more = await screen.findByRole('button', { name: /show more/i })
+    expect(screen.getByText('2 / 3 products')).toBeInTheDocument()
+
+    await user.click(more)
+
+    await waitFor(() => expect(screen.getByTestId('product-card-12')).toBeInTheDocument())
+    // The first page is still there — appended, not replaced.
+    expect(screen.getByTestId('product-card-10')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument()
+  })
+
+  it('shows no load-more button when the page holds everything', async () => {
+    mockApi([])
+    render(<CatalogPage />)
+
+    await waitFor(() => expect(screen.getByTestId('product-card-10')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a favourite that is not on the loaded page', async () => {
+    // The shelf used to be filtered out of the loaded catalogue, so paging would
+    // have hidden every favourite past the first page.
+    const offPage = 99
+    mockedGet.mockImplementation((async (path: string) => {
+      if (path.startsWith('/api/catalog')) return catalogPage(products, 40)
+      if (path.startsWith('/api/admin/categories')) return categories
+      if (path.startsWith('/api/favorites')) {
+        return [{
+          productId: offPage,
+          categoryId: 1,
+          name: 'Starred but unloaded',
+          description: 'On page three',
+          imageAlt: null,
+          createdAt: '',
+        }] as FavoriteProduct[]
+      }
+      return []
+    }) as never)
+
+    render(<CatalogPage />)
+
+    await waitFor(() => expect(favoritesSection()).toBeInTheDocument())
+    const section = favoritesSection()
+    if (!section) throw new Error('favourites section missing')
+    expect(within(section).getByTestId(`product-card-${offPage}`)).toBeInTheDocument()
   })
 })

@@ -128,7 +128,6 @@ export const fetchJobTraces = (
  * template meant.
  */
 export const parseTofuOutputs = (trace: string): Record<string, string> => {
-  // eslint-disable-next-line no-control-regex
   const stripped = trace.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
   const lines = stripped.split('\n')
   const outputs: Record<string, string> = {}

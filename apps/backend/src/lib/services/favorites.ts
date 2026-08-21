@@ -9,15 +9,19 @@ export interface FavoriteProduct {
   categoryId: number
   name: string
   description: string
+  /** Carried for the same reason the catalogue carries it: the card needs an alt text. */
+  imageAlt: string | null
   createdAt: Date
 }
 
 /**
  * The caller's favourited products, resolved to catalogue rows.
  *
- * Returns the same name/description shape as the catalogue list, translated with
- * the same COALESCE fallback chain, so the favourites section can render product
- * cards without a second round trip per product.
+ * Returns the same name/description/imageAlt shape as the catalogue list,
+ * translated with the same COALESCE fallback chain, so the favourites section can
+ * render product cards without a second round trip per product — and without
+ * needing the product to be on the catalogue page the browser happens to hold,
+ * which is what paging the catalogue (#91) took away.
  */
 export const listFavorites = async (
   session: SessionUser,
@@ -27,6 +31,7 @@ export const listFavorites = async (
     .select({
       productId: productFavorites.productId,
       categoryId: products.categoryId,
+      imageAlt: products.imageAlt,
       createdAt: productFavorites.createdAt,
       name: sql<string>`COALESCE(
         (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),

@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import type { LoginRequest, LoginResponse, Role } from '@open-hybrid-cloud/types'
+import { API_TOKEN_MAX_AGE_SECONDS, apiTokenExpiry } from '@/lib/session'
 
 const API_URL = process.env.API_URL ?? 'http://localhost:3001'
 
@@ -45,6 +46,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const u = user as { role: Role; apiToken: string }
         token.role = u.role
         token.apiToken = u.apiToken
+        // Carried so the middleware can end the session before making a request
+        // that is certain to come back 401 (#103).
+        token.apiTokenExp = apiTokenExpiry(u.apiToken)
       }
       return token
     },
@@ -57,9 +61,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.role = token.role as Role | undefined
       }
       session.apiToken = token.apiToken as string | undefined
+      session.apiTokenExp = (token.apiTokenExp as number | null | undefined) ?? undefined
       return session
     },
   },
+  // Both clocks, one lifetime. NextAuth defaults to 30 days while the backend
+  // signs its token for 24 h, and that gap was the bug in #103: a cookie that
+  // still says "signed in" wrapped around a token nothing accepts any more.
+  session: { maxAge: API_TOKEN_MAX_AGE_SECONDS },
   pages: { signIn: '/login' },
   secret: process.env.NEXTAUTH_SECRET,
 })

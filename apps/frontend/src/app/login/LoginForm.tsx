@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from 'react'
 import { signIn } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 import { Alert } from '@/components/ui/Alert'
@@ -16,9 +16,23 @@ interface Props {
   secondaryColor: string
 }
 
+/**
+ * Where to go after signing in.
+ *
+ * The middleware has always put a `callbackUrl` on its redirect and nothing ever
+ * read it, so an expired session dropped you on the dashboard root instead of the
+ * page you were on (#103). Only same-site paths are honoured: an absolute URL or
+ * a protocol-relative `//host` in a query parameter is an open redirect.
+ */
+const safeCallbackUrl = (value: string | null): string =>
+  value && value.startsWith('/') && !value.startsWith('//') ? value : '/'
+
 export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, secondaryColor }: Props) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const lang = useLang()
+  const sessionExpired = searchParams.get('expired') === '1'
+  const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +47,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
       if (result?.error) {
         setError(t('invalidCredentials', lang))
       } else {
-        router.push('/')
+        router.push(callbackUrl)
         router.refresh()
       }
     } catch {
@@ -74,6 +88,14 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
           {error && (
             <Alert className="mb-4">
               {error}
+            </Alert>
+          )}
+
+          {/* Why you are looking at this page. Suppressed once there is an error
+              from this attempt — that one is about what just happened. */}
+          {sessionExpired && !error && (
+            <Alert tone="info" className="mb-4">
+              {t('sessionExpired', lang)}
             </Alert>
           )}
 

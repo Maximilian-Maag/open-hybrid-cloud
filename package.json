@@ -11,6 +11,7 @@
     "db:push": "pnpm --filter backend db:push",
     "test": "pnpm --filter backend test && pnpm --filter frontend test",
     "test:coverage": "pnpm --filter backend test:coverage && pnpm --filter frontend test:coverage",
+    "test:mutation": "pnpm --filter backend test:mutation && pnpm --filter frontend test:mutation",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

@@ -3,12 +3,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
-import type { Product, Category, FavoriteProduct } from '@open-hybrid-cloud/types'
+import type { Product, Category, CatalogPage as CatalogPageData, FavoriteProduct } from '@open-hybrid-cloud/types'
 import { get, put, del } from '@/lib/api'
 import { t } from '@/lib/i18n'
 import { useLang } from '@/lib/useLang'
 import { SkeletonCard } from '@/components/ui/Skeleton'
 import { ProductCard } from './ProductCard'
+
+/** One screenful of cards. The endpoint caps what it will serve at 100. */
+const PAGE_SIZE = 24
+
+/** How long to wait after a keystroke before asking the database (#91). */
+const SEARCH_DEBOUNCE_MS = 300
 
 export default function CatalogPage() {
   const { data: session } = useSession()
@@ -17,14 +23,21 @@ export default function CatalogPage() {
   const lang = useLang()
 
   const [products, setProducts] = useState<Product[]>([])
+  // Matches for the current filters, which is more than the page in hand.
+  const [total, setTotal] = useState(0)
   const [categories, setCategories] = useState<Category[]>([])
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState(false)
   // Favourited product ids. Held as a Set so a card can answer "am I starred?"
   // without scanning a list per render.
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
+  // The favourites shelf renders from this, not from the loaded page: the
+  // catalogue is paged now, so a favourite can easily be a product this browser
+  // has not fetched (#91).
+  const [favoriteItems, setFavoriteItems] = useState<FavoriteProduct[]>([])
   const [favoriteBusy, setFavoriteBusy] = useState<Set<number>>(new Set())
   // Bumped on every toggle AND every load. The favourites request below is not
   // awaited, so a star clicked while it is in flight is NEWER than the answer
@@ -37,31 +50,64 @@ export default function CatalogPage() {
     setSearch(searchParams.get('q') ?? '')
   }, [searchParams])
 
+  // What has actually been asked of the database. Typing no longer filters a
+  // list held in the browser, so every keystroke would otherwise be a request.
+  const [appliedSearch, setAppliedSearch] = useState(search)
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedSearch(search), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  const pageUrl = useCallback(
+    (offset: number) => {
+      const params = new URLSearchParams({
+        lang,
+        limit: String(PAGE_SIZE),
+        offset: String(offset),
+      })
+      if (appliedSearch) params.set('search', appliedSearch)
+      if (selectedCategory !== null) params.set('categoryId', String(selectedCategory))
+      return `/api/catalog?${params.toString()}`
+    },
+    [lang, appliedSearch, selectedCategory],
+  )
+
+  const loadFavorites = useCallback(
+    (generation: number) => {
+      if (!token) return
+      get<FavoriteProduct[]>(`/api/favorites?lang=${lang}`, token)
+        .then((favs) => {
+          if (favoritesGeneration.current !== generation) return
+          setFavorites(new Set((favs ?? []).map((f) => f.productId)))
+          setFavoriteItems(favs ?? [])
+        })
+        .catch(() => {
+          if (favoritesGeneration.current !== generation) return
+          setFavorites(new Set())
+          setFavoriteItems([])
+        })
+    },
+    [token, lang],
+  )
+
   const load = useCallback(async () => {
     if (!token) return
     setLoading(true)
     setError(false)
     try {
-      const [prods, cats] = await Promise.all([
-        get<Product[]>(`/api/catalog?lang=${lang}`, token),
+      const [page, cats] = await Promise.all([
+        get<CatalogPageData>(pageUrl(0), token),
         get<Category[]>('/api/admin/categories', token),
       ])
-      setProducts(prods ?? [])
+      setProducts(page?.items ?? [])
+      setTotal(page?.total ?? 0)
       setCategories(cats ?? [])
       // Separately and non-fatally: a favourites outage should cost the stars,
       // not the whole catalogue.
       // Claim a generation for THIS load as well, not just for toggles: two loads
       // can overlap (a language change re-runs it), and the older one's answer
       // must not land on top of the newer one's.
-      const generation = ++favoritesGeneration.current
-      get<FavoriteProduct[]>(`/api/favorites?lang=${lang}`, token)
-        .then((favs) => {
-          if (favoritesGeneration.current !== generation) return
-          setFavorites(new Set((favs ?? []).map((f) => f.productId)))
-        })
-        .catch(() => {
-          if (favoritesGeneration.current === generation) setFavorites(new Set())
-        })
+      loadFavorites(++favoritesGeneration.current)
     } catch {
       // Surface a genuine fetch failure instead of showing an empty catalog,
       // which would look like "no products" during an outage.
@@ -69,9 +115,48 @@ export default function CatalogPage() {
     } finally {
       setLoading(false)
     }
-  }, [token, lang])
+  }, [token, pageUrl, loadFavorites])
 
   useEffect(() => { load() }, [load])
+
+  /**
+   * The next page, appended.
+   *
+   * Offset by what is already held rather than by a page number: the two agree
+   * while nothing changes underneath, and when something does, "carry on from
+   * what I have" is the more defensible of the two.
+   */
+  const loadMore = async () => {
+    if (!token || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const page = await get<CatalogPageData>(pageUrl(products.length), token)
+      setProducts((prev) => [...prev, ...(page?.items ?? [])])
+      setTotal(page?.total ?? 0)
+    } catch {
+      // Keep what is on screen; the button stays available for another go.
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
+  /** The shelf row for a product on the current page, appended if it is not already there. */
+  const addShelfRow = (rows: FavoriteProduct[], productId: number): FavoriteProduct[] => {
+    if (rows.some((f) => f.productId === productId)) return rows
+    const product = products.find((p) => p.id === productId)
+    if (!product) return rows
+    return [
+      {
+        productId,
+        categoryId: product.categoryId,
+        name: product.name,
+        description: product.description,
+        imageAlt: product.imageAlt,
+        createdAt: new Date().toISOString(),
+      },
+      ...rows,
+    ]
+  }
 
   async function toggleFavorite(productId: number) {
     if (!token || favoriteBusy.has(productId)) return
@@ -86,6 +171,11 @@ export default function CatalogPage() {
       else next.add(productId)
       return next
     })
+    // The shelf moves with the star. Its rows come from the server on load —
+    // which is what lets it show a favourite from a page this browser never
+    // fetched (#91) — but a click has to land on it immediately, so the row is
+    // synthesised from the grid card that was clicked.
+    setFavoriteItems((prev) => (wasFavorited ? prev.filter((f) => f.productId !== productId) : addShelfRow(prev, productId)))
     setFavoriteBusy((prev) => new Set(prev).add(productId))
 
     try {
@@ -100,6 +190,7 @@ export default function CatalogPage() {
         else next.delete(productId)
         return next
       })
+      setFavoriteItems((prev) => (wasFavorited ? addShelfRow(prev, productId) : prev.filter((f) => f.productId !== productId)))
     } finally {
       setFavoriteBusy((prev) => {
         const next = new Set(prev)
@@ -111,7 +202,13 @@ export default function CatalogPage() {
 
   const categoryName = (categoryId: number) => categories.find((c) => c.id === categoryId)?.name
 
-  const renderCard = (product: Product) => (
+  const renderCard = (product: {
+    id: number
+    categoryId: number
+    name: string
+    description: string
+    imageAlt?: string | null
+  }) => (
     <ProductCard
       key={product.id}
       id={product.id}
@@ -126,17 +223,17 @@ export default function CatalogPage() {
     />
   )
 
-  // Drawn from the loaded catalogue rather than from the /favorites payload, so a
-  // favourite card is the same object as its counterpart in the grid below and
-  // cannot drift out of sync with it.
-  const favoriteProducts = products.filter((p) => favorites.has(p.id))
-
-  const filtered = products.filter((p) => {
-    const q = search.toLowerCase()
-    const matchesSearch = !q || p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)
-    const matchesCat = selectedCategory === null || p.categoryId === selectedCategory
-    return matchesSearch && matchesCat
-  })
+  // From the favourites payload, which carries everything a card needs. It used
+  // to be drawn from the loaded catalogue — which worked only because the whole
+  // catalogue was loaded, and would silently hide any favourite past the first
+  // page now that it is not (#91).
+  const favoriteCards = favoriteItems.map((f) => ({
+    id: f.productId,
+    categoryId: f.categoryId,
+    name: f.name,
+    description: f.description,
+    imageAlt: f.imageAlt,
+  }))
 
   return (
     <div className="flex gap-6">
@@ -178,13 +275,13 @@ export default function CatalogPage() {
         {/* Favourites shortcut. Hidden entirely when empty rather than shown as
             an empty shelf, and suppressed while searching or filtering so it
             cannot contradict the result set below it. */}
-        {favoriteProducts.length > 0 && !search && selectedCategory === null && (
+        {favoriteCards.length > 0 && !search && selectedCategory === null && (
           <section className="mb-6" aria-labelledby="favorites-heading">
             <h2 id="favorites-heading" className="text-xl font-bold text-slate-800 mb-3">
               {t('myFavorites', lang)}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {favoriteProducts.map(renderCard)}
+              {favoriteCards.map(renderCard)}
             </div>
           </section>
         )}
@@ -202,8 +299,12 @@ export default function CatalogPage() {
               </>
             )}
           </div>
-          {filtered.length > 0 && (
-            <span className="text-sm text-slate-500">{filtered.length} {t('products', lang)}</span>
+          {total > 0 && (
+            <span className="text-sm text-slate-500">
+              {products.length < total
+                ? `${products.length} / ${total} ${t('products', lang)}`
+                : `${total} ${t('products', lang)}`}
+            </span>
           )}
         </div>
 
@@ -245,7 +346,7 @@ export default function CatalogPage() {
               {t('tryAgain', lang)}
             </button>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : products.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-lg border border-slate-200">
             <svg className="h-14 w-14 mx-auto mb-4 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -258,9 +359,26 @@ export default function CatalogPage() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtered.map(renderCard)}
-          </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {products.map(renderCard)}
+            </div>
+
+            {/* Only when there is genuinely more to fetch — a button that says
+                "load more" and then loads nothing is worse than no button. */}
+            {products.length < total && (
+              <div className="mt-6 text-center">
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="rounded-md px-5 py-2.5 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+                  style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
+                >
+                  {loadingMore ? t('loading', lang) : t('loadMore', lang)}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

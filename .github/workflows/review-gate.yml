@@ -1,0 +1,69 @@
+name: Automated review
+
+# A green check that means "did not look" is worse than a missing one, because it
+# reads as coverage (#92). CodeRabbit reported **pass** on #84 ("134 files exceed
+# the limit of 100"), on #85 ("Review rate limited") and again on #123 ("Review
+# rate limited") — three PRs where nothing reviewed the diff and nothing said so.
+#
+# This cannot be a step in the CI workflow: CI finishes in minutes and the review
+# arrives afterwards, so a check that ran with the build would always pass. It is
+# a separate workflow that waits, then asks what actually happened.
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review-happened:
+    name: An automated review actually ran
+    runs-on: ubuntu-latest
+    # Long enough for a reviewer to answer, short enough not to hold a merge for
+    # an afternoon. A reviewer that has not spoken in fifteen minutes has either
+    # skipped the diff or is not coming.
+    timeout-minutes: 25
+    steps:
+      - name: Wait for the reviewers to answer
+        run: sleep 900
+
+      - name: Check that something reviewed the diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Reviews and top-level comments both count: CodeRabbit posts its
+          # summary as a review, Copilot as a review, and the "skipped" notice as
+          # either. Inline comments are counted too — a review with findings but
+          # no summary body is still a review.
+          reviews=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+            --jq '[.[] | select(.user.type == "Bot" or (.user.login | test("coderabbit|copilot"; "i"))) | {login: .user.login, body: (.body // "")}]')
+          inline=$(gh api "repos/$REPO/pulls/$PR/comments" --paginate --jq 'length')
+
+          echo "bot reviews: $(echo "$reviews" | jq 'length'), inline comments: $inline"
+          echo "$reviews" | jq -r '.[] | "  \(.login): \(.body[0:120] | gsub("\n"; " "))"'
+
+          # The three ways a reviewer says "I did not look at this".
+          skipped=$(echo "$reviews" | jq '[.[] | select(.body | test("review skipped|rate limited|exceed the limit of"; "i"))] | length')
+          substantive=$(echo "$reviews" | jq '[.[] | select((.body | test("review skipped|rate limited|exceed the limit of"; "i")) | not) | select(.body | length > 200)] | length')
+
+          if [ "$substantive" -gt 0 ] || [ "$inline" -gt 0 ]; then
+            echo "::notice::An automated review ran on this diff."
+            exit 0
+          fi
+
+          if [ "$skipped" -gt 0 ]; then
+            echo "::error::A reviewer explicitly skipped this diff (rate limit or file cap). Nothing has read these changes — split the PR, wait for the quota, or review it by hand and say so."
+            exit 1
+          fi
+
+          echo "::error::No automated review appeared within 15 minutes. Do not read the other green checks as 'reviewed'."
+          exit 1

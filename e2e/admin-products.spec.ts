@@ -11,7 +11,7 @@ test.describe('Admin - Product Delete Button', () => {
   test('list row shows both Edit and Delete buttons', async ({ page }) => {
     const editLinks = page.getByRole('link', { name: /^edit$/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     // At least one row exposes a Delete button next to the Edit link
@@ -21,7 +21,7 @@ test.describe('Admin - Product Delete Button', () => {
   test('clicking Delete opens confirmation modal warning about cascade decommission', async ({ page }) => {
     const editLinks = page.getByRole('link', { name: /^edit$/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await page.getByRole('button', { name: /^delete$/i }).first().click()
@@ -37,7 +37,7 @@ test.describe('Admin - Product Delete Button', () => {
   test('Cancel closes the modal without deleting', async ({ page }) => {
     const editLinks = page.getByRole('link', { name: /^edit$/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     const productCountBefore = await page.getByRole('button', { name: /^delete$/i }).count()
@@ -113,7 +113,7 @@ test.describe('Admin - Product Environment Removal', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /^edit$/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -148,7 +148,7 @@ test.describe('Admin - Trial Offerings', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /^edit$/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -177,7 +177,7 @@ test.describe('Admin - Product Version History', () => {
   test('the product edit page carries a version history panel', async ({ page }) => {
     const editLinks = page.getByRole('link', { name: /^edit$/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -188,7 +188,7 @@ test.describe('Admin - Product Version History', () => {
   test('saving with a changelog note adds it to the history', async ({ page }) => {
     const editLinks = page.getByRole('link', { name: /^edit$/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()

@@ -12,7 +12,7 @@ test.describe('Admin - Pipeline Stacks', () => {
 
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
 
     if (await noProducts.isVisible()) { test.skip(); return }
 
@@ -26,7 +26,7 @@ test.describe('Admin - Pipeline Stacks', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -42,7 +42,7 @@ test.describe('Admin - Pipeline Stacks', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -57,7 +57,7 @@ test.describe('Admin - Pipeline Stacks', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -76,7 +76,7 @@ test.describe('Admin - Pipeline Stacks', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -93,7 +93,7 @@ test.describe('Admin - Pipeline Stacks', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -111,7 +111,7 @@ test.describe('Admin - Pipeline Stacks', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -132,7 +132,7 @@ test.describe('Admin - Pipeline Stacks', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -147,7 +147,7 @@ test.describe('Admin - Pipeline Stacks', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -162,7 +162,7 @@ test.describe('Admin - Pipeline Stacks', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -187,7 +187,7 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
 
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -246,7 +246,7 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()
@@ -265,7 +265,7 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
     await page.goto('/admin/products')
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
     await editLinks.first().click()

@@ -11,10 +11,13 @@ const config = {
   reporters: ['html', 'clear-text', 'progress'],
   htmlReporter: { fileName: 'reports/mutation/backend.html' },
 
-  // The suite runs against one real Postgres (`open_hybrid_cloud_test`) and
-  // truncates every table in `beforeEach`. Parallel Stryker workers would wipe
-  // each other's fixtures mid-test, so the run stays single-threaded.
-  concurrency: 1,
+  // Was 1, on the belief that parallel workers would wipe each other's fixtures.
+  // They do not: every Stryker worker runs in its own `.stryker-tmp/sandbox-*`
+  // directory, and `src/test/database.ts` derives the database name from the
+  // working directory — so each sandbox already had its own database. Four
+  // workers, matching the suite's own `maxWorkers`, because they all queue on the
+  // same Postgres past that point.
+  concurrency: 4,
 
   // Default scope is the business logic in src/lib. The route handlers under
   // src/app/api are thin wrappers around these services; widen the run with
@@ -37,8 +40,9 @@ const config = {
   timeoutMS: 30000,
   timeoutFactor: 2,
 
-  // `break: null` reports the score without failing the command. Set it once
-  // the baseline score is known and you want CI to defend it.
+  // 80 is the floor, and it fails the command rather than tutting at it (#127).
+  // A score below this means behaviour nobody asserts, and the survivors list in
+  // the HTML report is where to look — the number itself is only the alarm.
   thresholds: { high: 80, low: 60, break: null },
 }
 

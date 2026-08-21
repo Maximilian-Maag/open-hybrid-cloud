@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check test-db test-db-prune test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio db-seed db-seed-demo docs docs-clean clean
+.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check test-db test-db-prune test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio db-seed db-seed-demo handbook handbook-clean clean
 
 # pnpm is installed via standalone script — add its bin dir to PATH so make can find it
 PNPM_HOME ?= $(HOME)/.local/share/pnpm
@@ -28,8 +28,8 @@ help:
 	@echo "  db-studio             open Drizzle Studio"
 	@echo "  db-seed               seed the database with the initial admin user"
 	@echo "  db-seed-demo          add a small demo catalogue (products, orders, infrastructure)"
-	@echo "  docs                  compile technical handbook to PDF"
-	@echo "  docs-clean            remove LaTeX auxiliary files"
+	@echo "  handbook              compile technical handbook to PDF (not committed — see README)"
+	@echo "  handbook-clean        remove LaTeX auxiliary files"
 	@echo "  clean                 remove build artifacts"
 
 install:
@@ -109,18 +109,18 @@ db-seed-demo:
 db-seed:
 	cd apps/backend && ../../node_modules/.bin/tsx --env-file=.env --tsconfig tsconfig.json src/seed.ts
 
-docs:
+handbook:
 	@command -v pdflatex >/dev/null 2>&1 || \
 	  { echo "ERROR: pdflatex not found. Install TeX Live: sudo pacman -S texlive-most"; exit 1; }
 	@echo "Compiling handbook (pass 1/2)..."
 	cd docs && pdflatex -interaction=nonstopmode handbook.tex > /dev/null
 	@echo "Compiling handbook (pass 2/2 — ToC + references)..."
 	cd docs && pdflatex -interaction=nonstopmode handbook.tex > /dev/null
-	@echo "Done: docs/handbook.pdf"
+	@echo "Done: docs/handbook.pdf (gitignored — see README)"
 
-docs-clean:
+handbook-clean:
 	cd docs && rm -f handbook.aux handbook.log handbook.out handbook.toc \
-	               handbook.lof handbook.lot handbook.fls handbook.fdb_latexmk \
+	               handbook.lof handbook.lot handbook.lol handbook.fls handbook.fdb_latexmk \
 	               handbook.synctex.gz
 
 clean:

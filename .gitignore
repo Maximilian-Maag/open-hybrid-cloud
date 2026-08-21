@@ -47,7 +47,13 @@ e2e/.auth/
 docs/architecture/.structurizr/
 docs/architecture/workspace.json
 
-# LaTeX auxiliary files (docs/handbook.pdf is committed, aux files are not)
+# The compiled handbook is not committed — `make handbook` builds it locally,
+# CI compiles it on PRs that touch handbook.tex and uploads it as a build
+# artifact, and the release workflow attaches a freshly-built copy to each
+# GitHub Release. See README.md ("Technical Handbook").
+docs/handbook.pdf
+
+# LaTeX auxiliary files
 docs/handbook.aux
 docs/handbook.log
 docs/handbook.out

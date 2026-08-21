@@ -1,5 +1,6 @@
 # Docker host deployment — connects to real external systems via env vars.
-# Configure apps/backend/.env and apps/frontend/.env before starting.
+# Configure infra/docker-host/.env before starting — backend, frontend and
+# postgres all read it via env_file. (nginx takes no environment.)
 # Start with: docker compose -f infra/docker-compose.yml up -d
 
 services:

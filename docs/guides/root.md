@@ -4,7 +4,7 @@
 
 The Root account is responsible for:
 - Configuring and maintaining the product catalog
-- System configuration (GitLab integration, environments, currencies, AI providers, SMTP)
+- System configuration (CI sources, environments, exchange rates, AI providers, SMTP)
 - Managing local user accounts
 - Viewing and exporting the audit log
 
@@ -23,17 +23,19 @@ The Root account uses a **local account** (no SSO).
 
 ## 2. System Configuration
 
-### 2.1 Configuring GitLab Sources
+### 2.1 Configuring CI Sources
 
-Under **Administration → GitLab Sources**:
+Under **Administration → CI Sources**:
 
-1. Click **Add New Source**
+1. Click **Add CI Source**
 2. Fill in the fields:
-   - **Name**: Label for the GitLab instance (e.g. "Internal GitLab")
-   - **URL**: Base URL of the GitLab instance (e.g. `https://gitlab.example.com`)
-   - **Access Token**: Personal access token with `read_api` permission
-3. **Test connection** — verifies the instance is reachable
-4. Save
+   - **Name**: Label for the instance (e.g. "Internal GitLab")
+   - **URL**: Base URL of the instance (e.g. `https://gitlab.example.com`)
+   - **Provider**: **GitLab**, **GitHub**, or **Bitbucket** — determines which API the portal calls to trigger pipelines, browse repositories, and (GitLab only) fetch job traces to parse OpenTofu outputs
+   - **Access Token**: A token for that provider with permission to trigger pipelines and read repository contents (GitLab: personal access token with `read_api`; GitHub/Bitbucket: a token with the equivalent repo/workflow scopes)
+3. Save
+
+There is no connectivity check on this form — an unreachable URL or bad token only surfaces the first time something actually calls it (browsing repositories when configuring a product, or the first pipeline trigger).
 
 ### 2.2 Configuring Deployment Environments
 
@@ -43,9 +45,9 @@ Under **Administration → Deployment Environments**:
 2. Fill in the fields:
    - **Name**: Label (e.g. "AWS Frankfurt", "On-Premises Vienna")
    - **Description**: Optional
-   - **GitLab Source**: Select from configured sources
-   - **Webhook URL**: URL of the GitLab pipeline trigger endpoint for this environment (`https://<gitlab>/api/v4/projects/<id>/trigger/pipeline`)
-   - **Webhook Token**: The **pipeline trigger token** from GitLab (`Settings → CI/CD → Pipeline trigger tokens`). Used by the portal to POST the trigger to GitLab.
+   - **CI Source**: Select from the sources configured in 2.1 — any provider
+   - **Webhook URL**: URL of the pipeline trigger endpoint for this environment (for a GitLab source: `https://<gitlab>/api/v4/projects/<id>/trigger/pipeline`; see `docs/guides/gitlab-opentofu-workflow.md` for the GitLab setup and the outputs convention it depends on)
+   - **Webhook Token**: The **outbound pipeline trigger token** for that provider (for GitLab: `Settings → CI/CD → Pipeline trigger tokens`). Used by the portal to POST the trigger.
 3. Save
 4. Open the newly-created environment via **Edit** → the **Callback Secret** panel is now populated with a portal-generated random value:
    - Click **Reveal current** → **Copy**
@@ -54,39 +56,43 @@ Under **Administration → Deployment Environments**:
      - Secret token: **paste the callback secret**
      - Trigger: only **Pipeline events**
      - Save
-   - Any future pipeline event on that project now reaches the portal and updates the associated order/infrastructure status.
-5. If you ever need to rotate this secret, use **Regenerate** in the same panel — the new value is displayed once; paste it into the GitLab webhook to keep the callback flowing.
+   - Any future pipeline event on that project now reaches the portal (`POST /api/webhooks/gitlab/pipeline`) and updates the associated order/infrastructure status.
 
-> **Two separate tokens on the environment:** *Webhook Token* is what GitLab expects on the outbound pipeline-trigger POST; *Callback Secret* is what the portal expects on the inbound pipeline-event webhook. Since portal release ≥ v0004-migration they are stored in distinct columns and can be rotated independently.
+   For a GitHub or Bitbucket source, the same callback secret is used, but the portal checks it differently: GitLab compares it directly against the `X-Gitlab-Token` header, while GitHub (`/api/webhooks/github/workflow`) and Bitbucket (`/api/webhooks/bitbucket/pipeline`) instead use it as an HMAC key and verify `X-Hub-Signature-256` / `X-Hub-Signature`. Register the secret as that provider's webhook secret when adding the webhook on the GitHub/Bitbucket side.
+5. If you ever need to rotate this secret, use **Regenerate** in the same panel — the new value is displayed once; paste it into the CI provider's webhook configuration to keep the callback flowing.
+
+> **Two separate tokens on the environment:** *Webhook Token* is what the CI provider expects on the outbound pipeline-trigger POST; *Callback Secret* is what the portal expects on the inbound pipeline-event webhook. They are stored in distinct columns and can be rotated independently.
 
 ### 2.3 Configuring SMTP
 
 Under **Administration → Email**:
 
-1. Enter SMTP server details (host, port, sender address, credentials, TLS)
-2. Click **Send Test Email** — sends a test email to the admin address
-3. Save
+1. Enter SMTP server details: **Host**, **Port** (default `587`), **From Address**, **Username**, **Password**, and **Use TLS** (checkbox)
+2. Click **Save Configuration**
+
+There is no "send test email" button — the only way to confirm SMTP works is to trigger a real notification (e.g. place an order) and check whether it arrives.
 
 > **Persistence:** SMTP settings saved here are stored in the `app_config` database table and override the environment variable defaults at runtime. The configuration persists across container restarts. If the password field is left blank during an update, the existing stored password is preserved.
 
-### 2.4 Base Currency and Exchange Rates
+### 2.4 Exchange Rates
 
-Under **Administration → Currencies**:
+Under **Administration → Exchange Rates**:
 
-1. Select the **base currency** (default: EUR) — all product prices are stored in this currency
-2. Enter the **exchange rate API key** and URL
-3. Click **Update Rates** — fetches current exchange rates from the configured API
-4. Individual rates can be overridden manually
+A read-only table of the currently stored rates (currency, rate to EUR, last updated). Click **Refresh Rates** to re-fetch current rates from the exchange-rate API configured via the `EXCHANGE_RATE_API_URL` environment variable.
+
+The base currency is **fixed to EUR** — every stored rate is "to EUR", and there is no admin control to change it. There is also no way to enter an API key/URL in the UI or to override an individual rate by hand; both of those are configured, if at all, only through `EXCHANGE_RATE_API_URL`.
 
 ### 2.5 Configuring AI Translation (optional)
 
-Under **Administration → AI Translation**:
+Under **Administration → AI Configuration**:
 
-1. Select a **provider**: Claude, OpenAI, Azure OpenAI, Ollama, LocalAI
-2. Enter the **endpoint URL** and **API key** (for Ollama/LocalAI: local URL, no API key needed)
-3. Select or enter a **model**
-4. Click **Test Connection**
-5. Save — after saving, the translation feature will appear in product editing
+1. Select a **provider**: Anthropic Claude, OpenAI, Azure OpenAI, Ollama (Local), or LocalAI
+2. **API Endpoint** *(optional)* — leave blank to use the default endpoint for the selected provider
+3. **API Key** *(required by the hosted providers; not needed for a local Ollama/LocalAI endpoint)* — leave blank on an update to keep the existing key
+4. **Model** — required; the field is pre-filled with an example for the selected provider (e.g. `claude-opus-4-5`, `gpt-4o`, `llama3`)
+5. Click **Save Configuration**
+
+There is no connection test — an invalid endpoint, key or model only surfaces the next time a translation is actually requested from product editing.
 
 > **Persistence:** AI translation settings saved here are stored in the `app_config` database table and override the environment variable defaults at runtime. The configuration persists across container restarts. If the API key field is left blank during an update, the existing stored key is preserved.
 
@@ -100,7 +106,7 @@ Under **Administration → Categories**:
 - Each category can have a **category parameter set** (applies to all products in that category)
 - Display order in the catalog is configurable
 
-> **Important when deleting a category:** The webshop automatically fires the GitLab destroy webhook for every active infrastructure element belonging to any product in the category before the category record is removed. All products and their dependent data within the category are removed via cascading deletes afterward.
+> **Important when deleting a category:** The webshop automatically fires the CI destroy trigger(s) for every active infrastructure element belonging to any product in the category before the category record is removed. All products and their dependent data within the category are removed via cascading deletes afterward.
 
 ---
 
@@ -130,13 +136,23 @@ Under **Administration → Products → New**:
 
 Parameters are configured on the product edit page under the **Parameters** card. There are two ways to populate them:
 
-*Option A: Sync from template (recommended)*
+*Option A: Sync from template (recommended; in practice GitLab only)*
 1. First add a **Pipeline Stack** for this product (see section 4.6)
-2. Click **Sync from template** — the platform fetches the template's `variables.tf` from your CI source and creates parameters automatically
+2. Click **Sync from template** — the platform fetches the *first step's* template `variables.tf` from your CI source and creates parameters automatically
+
+   The gate here is the **shape of the environment's webhook URL**, not the CI
+   source's provider field: `sync-parameters/route.ts:51` pulls the project id
+   out of it with `/\/projects\/(\d+)\//`, then calls `getFileContent` with
+   whatever provider the source carries. Only GitLab webhook URLs carry that
+   `/projects/<id>/` path, so the feature is GitLab-only in effect — but a
+   GitHub or Bitbucket source whose webhook URL happened to match would be let
+   through and then fail further in.
 3. Each parameter is created with:
-   - **Variable Name**: exact Terraform variable name (e.g. `hostname`) — sent to GitLab CI as `TF_VAR_hostname`
+   - **Variable Name**: exact Terraform variable name (e.g. `hostname`) — sent to the CI pipeline as `TF_VAR_hostname`
    - **Display Label**: auto-generated human-readable name (e.g. `Hostname`) — shown to users in the order form. Edit this to be more descriptive if needed.
 4. Sensitive variables and internal CI variables are automatically excluded
+
+This only works today when the pipeline stack's environment uses a **GitLab** CI source: the endpoint recovers the GitLab numeric project id from the environment's Webhook URL (`/projects/<id>/trigger/pipeline`) to know where to fetch `variables.tf` from. On a GitHub or Bitbucket environment it fails with "Could not extract project ID…" — use Option B there.
 
 *Option B: Manual entry*
 - Click **Add Parameter**
@@ -154,13 +170,28 @@ Parameters are configured on the product edit page under the **Parameters** card
 
 **Step 6 – Cost Center Configuration**
 Per environment, set:
-- **Mode**: Project / Select / Overhead
-- **Force Default**: Yes → orderer cannot change the cost center; No → suggestion only
-- For "Overhead" mode: select the associated cost center
+- **Cost Center Mode**: **From Project** (the order's project supplies the cost center) / **User Selection** (the orderer picks one from the list) / **Overhead** (every order is billed to one fixed account)
+- **Forced CC**: checked → the orderer cannot pick a different cost center (for "User Selection", the picker is still shown but the choice is otherwise just a suggestion when unchecked); for "Overhead", checked makes the **Overhead Cost Center** field mandatory — orders are rejected until one is set
+- For "Overhead" mode: select the **Overhead Cost Center** from the list of active cost centers
+
+**Step 7 – Trial (optional)**
+
+Check **Offer as trial** to let orderers provision this offering as a self-expiring trial instead of (or alongside) a normal order:
+- **Trial duration (minutes)**: how long after provisioning the infrastructure is automatically decommissioned
+- The order form shows a **Try it out** checkbox to the orderer only for environments where this is enabled
+- Tearing a trial down on time still needs the [scheduled-decommission sweep](../../README.md#scheduled-decommissioning) configured — the duration is stored as a `scheduledDecommissionAt`, the same field a manual schedule uses, and nothing acts on it without the sweep running
+- A trial's pipeline is asked to grant elevated rights inside the provisioned infrastructure — offer this only for templates that actually implement that
 
 ### 4.2 Editing a Product
 
 Open the desired product under **Administration → Products**. All fields from creation can be edited. Translations can be regenerated via AI or edited manually at any time.
+
+**Product Image** — the image itself and its description (alt text) are edited separately:
+- **Image description**: required before an image can be uploaded, capped at 300 characters, and enforced on both sides — the browser refuses to upload without it, and the server refuses the request too. It is what a screen reader announces instead of the picture, and what displays if the image fails to load. Click **Save description** to update it without touching the file.
+- **Image file**: PNG, JPEG or WebP, up to 10 MB. The type is determined from the file's own bytes, not from what the browser declares, and SVG is refused (it can carry script and this file is served back to every visitor of the product page).
+- **Remove image** deletes the stored image and its description.
+
+**Version History** — every edit to a product or one of its environment offerings is recorded automatically (no separate save/publish step) as a version, with an auto-generated summary of what changed and an optional free-text changelog. The product edit page shows the full history and lets you pick any two versions to see a field-level diff (added/removed/changed parameters, changed offering fields). An order's own detail page shows the product exactly as it was at order time (a frozen snapshot), not the current live version.
 
 ### 4.3 Deleting a Product
 
@@ -168,7 +199,7 @@ Open the desired product under **Administration → Products**. All fields from 
 2. Click **Delete**
 3. Confirm in the dialog
 
-> **Important:** Before the product record is removed, the webshop automatically fires the GitLab destroy webhook for every active infrastructure element that was provisioned from this product. Infrastructure already in status *Decommissioning* or *Decommissioned* is skipped. Dependent database rows (translations, parameters, environment assignments) are removed automatically via cascading deletes.
+> **Important:** Before the product record is removed, the webshop automatically fires the CI destroy trigger(s) for every active infrastructure element that was provisioned from this product. Infrastructure already in status *Decommissioning* or *Decommissioned* is skipped. Dependent database rows (translations, parameters, environment assignments) are removed automatically via cascading deletes.
 
 ### 4.4 Global Parameter Sets
 
@@ -289,18 +320,26 @@ Under **Administration → Audit Log**:
 - Filterable by: user, action type, date range (from/to)
 - Export as **CSV** or **PDF** — format selectable before export
 
-Logged action types:
+Logged action types (this list has grown since the feature was first documented — check `logAudit(` call sites — they live under `apps/backend/src/lib/services/`, `apps/backend/src/lib/webhook/` and `apps/backend/src/app/api/audit/export/`):
 
 | Action | Trigger |
 |--------|---------|
 | `order.created` | A new order is placed |
+| `order.provisioning` | An Admin/Root places an order directly (no approval step) |
 | `order.approved` | An Admin approves a pending order |
 | `order.rejected` | An Admin rejects a pending order |
 | `order.completed` | A CI/CD pipeline completes successfully |
 | `order.failed` | A CI/CD pipeline fails |
-| `infra.decommissioned` | An infrastructure element is decommissioned |
+| `order.comment_added` / `order.comment_internal_added` | A comment is added to an order (the internal variant logs when it is marked internal) |
+| `order.comment_edited` / `order.comment_deleted` | A comment's author edits or deletes it |
+| `cart.checked_out` | A cart checkout completes (whether or not every item succeeded) |
+| `infra.decommissioning` | A decommission (immediate or scheduled) starts tearing an element down |
+| `infra.decommissioned` | An infrastructure element finishes decommissioning |
 | `infra.decommission_failed` | A decommission pipeline fails; element reverts to active |
-| `config.changed` | A system configuration value is updated |
+| `infra.decommission_partial` | A multi-trigger decommission only started tearing down some of its triggers |
+| `infra.decommission_scheduled` / `infra.decommission_schedule_cleared` | A future decommission time is set or cleared on an element |
+| `infra.retried` / `infra.retry_failed` | A failed deployment's triggers are retried, and whether that retry itself succeeded to start |
+| `product.version_recorded` | A product or one of its offerings is edited, recording a new version |
 
 ---
 
@@ -310,7 +349,7 @@ Under **Infrastructure**:
 
 - Complete overview of all deployed infrastructure elements, grouped by project and environment
 - As Root all projects are visible (including those of other users)
-- Decommissioning is available via the infrastructure overview (destroy webhook)
+- Decommissioning (immediate or scheduled), reordering and retrying a failed deployment all work the same way as for an Admin — see `docs/guides/admin.md` section 5 for the full detail-page walkthrough (Outputs/Parameters/Pipelines cards, action buttons)
 
 ---
 
@@ -320,20 +359,21 @@ Under **Administration → Shop Design** (or directly at `/admin/branding`):
 
 ### 9.1 Colors
 
-- **Primary color**: Used for the header, footer, and navigation bar. Default: `#1e40af` (blue).
-- **Secondary color**: Used for buttons and call-to-action elements. Default: `#3b82f6` (sky blue).
+- **Primary color**: Used for the header, footer, and navigation bar. Default: `#131921` (dark navy).
+- **Secondary color**: Used for buttons and call-to-action elements. Default: `#febd69` (amber). The text and border painted on it are derived, not fixed — `layout.tsx` sets `--bs-ink` from `readableInk(secondaryColor)` and `--bs-edge` from `readableAccent(secondaryColor, undefined, AA_NON_TEXT)` — so a light secondary stays AA-clean rather than needing to be replaced.
 - The live preview on the right updates in real time as you change the color values.
 
 ### 9.2 Logo
 
-- Upload a logo image (PNG or SVG recommended, max. 200 px height)
+- Upload a logo image — any image type the browser will pick (`accept="image/*"`); there is no format allowlist, size limit, or dimension check on either side, unlike the product image upload
+- The header renders it at a fixed small size (32px tall, capped at 120px wide, scaled to fit) regardless of the uploaded image's actual dimensions, so an oversized file just costs load time, not layout
 - The logo replaces the shop name text in the header
 - Leave empty to display the shop name as plain text
 
 ### 9.3 Shop Name and Subtitle
 
-- **Shop name**: Displayed in the header and browser title. Overrides the `APP_NAME` environment variable when set. Leave empty to use the env var.
-- **Subtitle / Tagline**: Short description shown in the footer. Overrides `APP_SUBTITLE`.
+- **Shop name**: Displayed in the header and browser title. Defaults to "Open Hybrid Cloud" — there is no `APP_NAME` environment variable; the name lives only in this database-backed setting.
+- **Subtitle / Tagline**: Short description shown in the footer. Defaults to empty — likewise, there is no `APP_SUBTITLE` environment variable.
 
 ### 9.4 Imprint (Legal Notice)
 

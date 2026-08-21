@@ -2324,7 +2324,7 @@ The frontend is available at \url{http://localhost:3000}, the backend API at
     \code{make docker-build} & Build both Docker images locally \\
     \code{make db-push}      & Push Drizzle schema to the database \\
     \code{make db-studio}    & Open Drizzle Studio \\
-    \code{make docs}         & Compile the LaTeX handbook to PDF \\
+    \code{make handbook}         & Compile the LaTeX handbook to PDF \\
     \code{make clean}        & Remove build artefacts \\
     \bottomrule
   \end{tabular}
@@ -2374,7 +2374,7 @@ open-hybrid-cloud/
 |   +-- architecture/
 |   |   +-- workspace.dsl         # Structurizr C4 architecture
 |   +-- handbook.tex
-|   +-- handbook.pdf              # compiled output
+|   +-- handbook.pdf              # compiled output, not committed (see .gitignore)
 +-- Makefile
 +-- package.json
 +-- pnpm-workspace.yaml
@@ -4024,7 +4024,7 @@ The handbook source is at \file{docs/handbook.tex}. Compile with:
 
 \begin{lstlisting}[style=bash]
 # From the repo root
-make docs
+make handbook
 
 # Or manually (run twice for ToC/references)
 cd docs

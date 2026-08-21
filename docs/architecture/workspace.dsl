@@ -5,7 +5,9 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         root = person "Root" "Manages catalog, system config and users via a local account." "Person"
         project_manager = person "Project Manager" "Places orders (Admin approval required), manages own projects and infrastructure." "Person"
 
-        gitlab = softwaresystem "GitLab" "CI provider executing OpenTofu workflows; pushes pipeline events back via webhook." "Existing System"
+        gitlab = softwaresystem "GitLab" "CI provider executing OpenTofu workflows; pushes pipeline events back via webhook. The only provider job traces are fetched from, so the only one OpenTofu outputs are parsed from." "Existing System"
+        github = softwaresystem "GitHub" "CI provider: triggers workflow_dispatch runs, browses repos/branches/files. Pushes workflow-run status back via webhook. No job-trace fetch (see gitlab), so orders provisioned here get no parsed OpenTofu outputs." "Existing System"
+        bitbucket = softwaresystem "Bitbucket" "CI provider: triggers pipelines, browses repos/branches/files. Pushes pipeline status back via webhook. No job-trace fetch (see gitlab), so orders provisioned here get no parsed OpenTofu outputs." "Existing System"
         oidc_provider = softwaresystem "Microsoft Entra ID" "SSO identity provider (OIDC) for admins and project managers." "Existing System"
         ai_translation = softwaresystem "AI Translation Service" "Optional AI provider for product content translation; supports cloud and on-premise models." "Existing System"
         smtp = softwaresystem "Mail Server" "SMTP server for transactional order and deployment notification emails." "Existing System"
@@ -55,8 +57,12 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         admin -> webshop "Orders IT infrastructure directly, approves orders, monitors all projects"
         root -> webshop "Manages product catalog, system configuration and users"
         project_manager -> webshop "Orders and manages own IT infrastructure"
-        webshop -> gitlab "Browses repositories, triggers pipelines" "JSON/HTTPS"
+        webshop -> gitlab "Browses repositories, triggers pipelines, fetches job traces to parse OpenTofu outputs" "JSON/HTTPS"
         gitlab -> webshop "Pushes pipeline status events via webhook" "JSON/HTTPS"
+        webshop -> github "Browses repositories, triggers workflow_dispatch runs" "JSON/HTTPS"
+        github -> webshop "Pushes workflow-run status events via webhook" "JSON/HTTPS"
+        webshop -> bitbucket "Browses repositories, triggers pipelines" "JSON/HTTPS"
+        bitbucket -> webshop "Pushes pipeline status events via webhook" "JSON/HTTPS"
         webshop -> oidc_provider "Authenticates admins and project leaders" "OIDC/HTTPS"
         webshop -> ai_translation "Translates product content (optional, configurable)" "JSON/HTTPS"
         webshop -> smtp "Sends transactional emails" "SMTP"
@@ -70,6 +76,10 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         backend -> database "Reads and writes all portal data" "SQL/TCP"
         backend -> gitlab "Triggers pipelines, browses repositories, fetches job traces" "JSON/HTTPS"
         gitlab -> backend "Pushes pipeline status events via webhook" "JSON/HTTPS"
+        backend -> github "Triggers workflow_dispatch runs, browses repositories" "JSON/HTTPS"
+        github -> backend "Pushes workflow-run status events via webhook" "JSON/HTTPS"
+        backend -> bitbucket "Triggers pipelines, browses repositories" "JSON/HTTPS"
+        bitbucket -> backend "Pushes pipeline status events via webhook" "JSON/HTTPS"
         backend -> oidc_provider "OIDC Authorization Code Flow" "OIDC/HTTPS"
         backend -> ai_translation "AI translation requests (optional)" "JSON/HTTPS"
         backend -> smtp "Sends transactional emails via Nodemailer" "SMTP"
@@ -134,6 +144,8 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
 
         # Webhook handler
         gitlab -> api_webhook "Pushes pipeline status events" "JSON/HTTPS"
+        github -> api_webhook "Pushes workflow-run status events" "JSON/HTTPS"
+        bitbucket -> api_webhook "Pushes pipeline status events" "JSON/HTTPS"
         api_webhook -> database "Writes status transitions and OpenTofu outputs" "SQL/TCP"
         api_webhook -> api_ci "Fetches job trace to parse OpenTofu outputs on success" "internal"
         api_webhook -> api_notification "Triggers completion or failure notification" "internal"
@@ -144,7 +156,9 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         api_ai -> ai_translation "Calls configured AI provider API" "JSON/HTTPS"
         api_exchange -> exchange_rate_api "Fetches current rates" "JSON/HTTPS"
         api_exchange -> database "Stores and reads cached rates" "SQL/TCP"
-        api_ci -> gitlab "CI provider API calls (GitLab v4, GitHub REST, Bitbucket 2.0)" "JSON/HTTPS"
+        api_ci -> gitlab "GitLab v4 API; the only provider job traces are fetched from" "JSON/HTTPS"
+        api_ci -> github "GitHub REST API; no job-trace fetch, so no parsed OpenTofu outputs" "JSON/HTTPS"
+        api_ci -> bitbucket "Bitbucket 2.0 API; no job-trace fetch, so no parsed OpenTofu outputs" "JSON/HTTPS"
 
         # DB access (all services and helpers)
         svc_auth -> database "Reads and writes users" "SQL/TCP"
@@ -174,6 +188,12 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
             }
             deploymentNode "GitLab (external)" "" "On-Premise / SaaS" {
                 softwareSystemInstance gitlab
+            }
+            deploymentNode "GitHub (external)" "" "SaaS" {
+                softwareSystemInstance github
+            }
+            deploymentNode "Bitbucket (external)" "" "SaaS" {
+                softwareSystemInstance bitbucket
             }
             deploymentNode "Mail Server (external)" "" "On-Premise / SaaS" {
                 softwareSystemInstance smtp
@@ -205,6 +225,12 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
             }
             deploymentNode "GitLab (external)" "" "On-Premise / SaaS" {
                 softwareSystemInstance gitlab
+            }
+            deploymentNode "GitHub (external)" "" "SaaS" {
+                softwareSystemInstance github
+            }
+            deploymentNode "Bitbucket (external)" "" "SaaS" {
+                softwareSystemInstance bitbucket
             }
             deploymentNode "Mail Server (external)" "" "On-Premise / SaaS" {
                 softwareSystemInstance smtp

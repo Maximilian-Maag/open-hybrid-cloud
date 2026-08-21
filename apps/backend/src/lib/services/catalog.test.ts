@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { listCatalog, getProduct, getProductImage } from './catalog'
+import { listCatalog, getProduct, getProductImage, CATALOG_MAX_LIMIT } from './catalog'
 import { db } from '@/lib/db/client'
 import {
   products,
@@ -29,7 +29,7 @@ describe('listCatalog', () => {
     const result = await listCatalog('de')
     expect(result.ok).toBe(true)
     if (result.ok) {
-      const row = result.data.find((r) => r.id === product.id)
+      const row = result.data.items.find((r) => r.id === product.id)
       expect(row?.name).toBe('Deutscher Name')
       expect(row?.description).toBe('Beschreibung')
     }
@@ -43,7 +43,7 @@ describe('listCatalog', () => {
     const result = await listCatalog('fr')
     expect(result.ok).toBe(true)
     if (result.ok) {
-      const row = result.data.find((r) => r.id === product.id)
+      const row = result.data.items.find((r) => r.id === product.id)
       expect(row?.name).toBe('English Name')
     }
   })
@@ -53,12 +53,47 @@ describe('listCatalog', () => {
     await createProduct(cat.id, 'Alpha Product')
     await createProduct(cat.id, 'Beta Service')
 
-    const result = await listCatalog('en', 'alpha')
+    const result = await listCatalog('en', { search: 'alpha' })
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(1)
-      expect(result.data[0].name).toBe('Alpha Product')
+      expect(result.data.items.length).toBe(1)
+      expect(result.data.items[0].name).toBe('Alpha Product')
+      expect(result.data.total).toBe(1)
     }
+  })
+
+  it('searches the description as well as the name', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Nondescript')
+    await db
+      .update(productTranslations)
+      .set({ description: 'Runs on a Kubernetes cluster' })
+      .where(eq(productTranslations.productId, product.id))
+    await createProduct(cat.id, 'Something Else')
+
+    const result = await listCatalog('en', { search: 'kubernetes' })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.items.map((r) => r.id)).toEqual([product.id])
+    }
+  })
+
+  it('treats % and _ in a search term as text, not wildcards', async () => {
+    // Issue #91: the term is the user's own text. Unescaped, a search for "50%"
+    // matched every product and one for "a_b" matched "axb".
+    const cat = await createCategory()
+    const discounted = await createProduct(cat.id, 'Reduced by 50% today')
+    await createProduct(cat.id, 'Full price')
+
+    const result = await listCatalog('en', { search: '50%' })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.items.map((r) => r.id)).toEqual([discounted.id])
+    }
+
+    const underscore = await listCatalog('en', { search: 'a_b' })
+    expect(underscore.ok).toBe(true)
+    if (underscore.ok) expect(underscore.data.items).toEqual([])
   })
 
   it('category filter restricts to that category', async () => {
@@ -67,12 +102,67 @@ describe('listCatalog', () => {
     await createProduct(cat1.id, 'P1')
     await createProduct(cat2.id, 'P2')
 
-    const result = await listCatalog('en', undefined, cat2.id)
+    const result = await listCatalog('en', { categoryId: cat2.id })
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(1)
-      expect(result.data[0].categoryId).toBe(cat2.id)
+      expect(result.data.items.length).toBe(1)
+      expect(result.data.items[0].categoryId).toBe(cat2.id)
+      expect(result.data.total).toBe(1)
     }
+  })
+
+  it('returns one page and the full total, so the UI can count what it has not got', async () => {
+    const cat = await createCategory()
+    for (let i = 0; i < 5; i++) await createProduct(cat.id, `Product ${i}`)
+
+    const first = await listCatalog('en', { limit: 2 })
+    expect(first.ok).toBe(true)
+    if (first.ok) {
+      expect(first.data.items.length).toBe(2)
+      expect(first.data.total).toBe(5)
+      expect(first.data.limit).toBe(2)
+      expect(first.data.offset).toBe(0)
+    }
+
+    const second = await listCatalog('en', { limit: 2, offset: 2 })
+    expect(second.ok).toBe(true)
+    if (second.ok) {
+      expect(second.data.items.length).toBe(2)
+      // A different page of the same ordering, not the same rows again.
+      if (first.ok) {
+        expect(second.data.items.map((r) => r.id)).not.toEqual(first.data.items.map((r) => r.id))
+      }
+    }
+  })
+
+  it('reports the total even on a page past the end of the results', async () => {
+    // Counted separately from the rows for exactly this: "no rows here" must not
+    // be reported as "nothing matched".
+    const cat = await createCategory()
+    await createProduct(cat.id, 'Only one')
+
+    const result = await listCatalog('en', { limit: 10, offset: 50 })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.items).toEqual([])
+      expect(result.data.total).toBe(1)
+    }
+  })
+
+  it('caps the page size rather than honouring an unbounded limit', async () => {
+    const result = await listCatalog('en', { limit: 100_000 })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.limit).toBe(CATALOG_MAX_LIMIT)
+  })
+
+  it('counts matches for the filters, not the whole table', async () => {
+    const cat = await createCategory()
+    await createProduct(cat.id, 'Match me')
+    await createProduct(cat.id, 'Not me')
+
+    const result = await listCatalog('en', { search: 'Match', limit: 1 })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.total).toBe(1)
   })
 })
 

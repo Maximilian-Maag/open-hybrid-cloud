@@ -77,6 +77,21 @@ export interface UpdateCategoryRequest {
 }
 
 // Products
+/**
+ * One page of the catalogue.
+ *
+ * `GET /api/catalog` returns this rather than a bare array: the endpoint filters
+ * and pages in the database now, so the caller needs to know how many matches
+ * there are beyond the page it was given (issue #91).
+ */
+export interface CatalogPage {
+  items: Product[]
+  /** Matches for the filters, ignoring the page window. */
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface Product {
   id: number
   categoryId: number
@@ -653,6 +668,8 @@ export interface FavoriteProduct {
   categoryId: number
   name: string
   description: string
+  /** Same meaning as on `Product` — carried so the favourites shelf can render a card. */
+  imageAlt?: string | null
   createdAt: string
 }
 

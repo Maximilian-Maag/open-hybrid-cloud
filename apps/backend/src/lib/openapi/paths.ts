@@ -753,6 +753,9 @@ registry.registerPath({
   method: 'get',
   path: '/catalog',
   summary: 'List catalog products',
+  description:
+    'Filtered and paged in the database. `search` matches the translated name and description that the ' +
+    'row displays, so a hit is always explicable. `total` counts every match, not the page.',
   tags: ['Catalog'],
   security: bearerAuth,
   request: {
@@ -760,13 +763,25 @@ registry.registerPath({
       lang: z.string().optional(),
       search: z.string().optional(),
       categoryId: z.string().optional(),
+      limit: z.string().optional(),
+      offset: z.string().optional(),
     }),
   },
   responses: {
     200: {
-      description: 'List of products',
-      content: { 'application/json': { schema: z.array(productSchema) } },
+      description: 'One page of products, with the total number of matches',
+      content: {
+        'application/json': {
+          schema: z.object({
+            items: z.array(productSchema),
+            total: z.number(),
+            limit: z.number(),
+            offset: z.number(),
+          }),
+        },
+      },
     },
+    400: { description: 'Invalid filter' },
     401: { description: 'Unauthorized' },
   },
 })

@@ -163,7 +163,9 @@ describe('apiRequest on 401', () => {
     const { apiRequest: request, ApiError: FreshApiError } = await import('./api')
     mockFetch.mockResolvedValueOnce(makeResponse({ error: 'Unauthorized' }, 401))
 
-    const err = await request('/orders').catch((e: unknown) => e as ApiError)
+    // `request` is generic with no argument here, so its rejection widens to
+    // unknown: assert the shape after narrowing, not through it.
+    const err = (await request('/orders').catch((e: unknown) => e)) as ApiError
     expect(err).toBeInstanceOf(FreshApiError)
     expect(err.status).toBe(401)
   })

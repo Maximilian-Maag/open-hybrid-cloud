@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import type { Order, InfrastructureElement, Project, Product, Role } from '@open-hybrid-cloud/types'
+import type { Order, InfrastructureElement, Project, CatalogPage, Role } from '@open-hybrid-cloud/types'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { CountUp } from '@/components/ui/CountUp'
 import { getLang } from '@/lib/getLang'
@@ -36,17 +36,19 @@ export default async function DashboardHome() {
     get<Order[]>('/api/orders', token),
     get<InfrastructureElement[]>('/api/infrastructure', token),
     get<Project[]>('/api/projects', token),
-    get<Product[]>('/api/catalog?lang=en', token),
+    // Eight cards, so ask for eight rows: this used to fetch the whole catalogue
+    // and slice it in the browser (#91).
+    get<CatalogPage>('/api/catalog?lang=en&limit=8', token),
   ])
 
   const orderList = orders.status === 'fulfilled' ? (orders.value ?? []) : []
   const infraList = infra.status === 'fulfilled' ? (infra.value ?? []) : []
   const projectList = projects.status === 'fulfilled' ? (projects.value ?? []) : []
-  const productList = products.status === 'fulfilled' ? (products.value ?? []) : []
+  const productList = products.status === 'fulfilled' ? (products.value?.items ?? []) : []
 
   const activeInfra = infraList.filter((i) => i.status === 'active').length
   const pendingOrders = orderList.filter((o) => o.status === 'pending').length
-  const featuredProducts = productList.slice(0, 8)
+  const featuredProducts = productList
   const isAdminOrRoot = role === 'admin' || role === 'root'
 
   return (

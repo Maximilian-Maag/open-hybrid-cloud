@@ -103,11 +103,84 @@ export interface ProductDetail extends CatalogItem {
   parameters: unknown[]
 }
 
+/** Page size when the caller does not ask for one — a full grid on the catalogue page. */
+export const CATALOG_DEFAULT_LIMIT = 24
+/** Ceiling on what one request may ask for, so `limit=100000` cannot be a denial of service. */
+export const CATALOG_MAX_LIMIT = 100
+
+export interface CatalogFilters {
+  /** Free text matched against the product's translated name and description. */
+  search?: string
+  categoryId?: number
+  limit?: number
+  offset?: number
+}
+
+export interface CatalogPage {
+  items: CatalogItem[]
+  /** Rows matching the filters, ignoring the page window — what the UI counts. */
+  total: number
+  limit: number
+  offset: number
+}
+
+/**
+ * Escape a search term for use inside a LIKE pattern.
+ *
+ * Without this, a user searching for `50%` matches everything and one for `a_b`
+ * matches `axb` — the wildcards are the user's own text, not their intent.
+ * Backslash is LIKE's default escape character, so escaping it first matters.
+ */
+const likePattern = (search: string): string => `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+
+/**
+ * The catalogue, filtered and paged in the database.
+ *
+ * It used to load every product and filter in JavaScript — in the service for
+ * `search`, and again in the browser, which passed neither parameter and filtered
+ * the whole list a third time. That was fine for a handful of products and got
+ * steadily worse: the entire catalogue crossed the wire on every visit, and the
+ * filter could not use anything the database knew (issue #91).
+ *
+ * `search` matches the same translated expressions the row displays, so a hit is
+ * always visibly explicable — the convention `listInfrastructure` follows for the
+ * same reason.
+ */
 export const listCatalog = async (
   lang: string,
-  search?: string,
-  categoryId?: number,
-): Promise<Result<CatalogItem[]>> => {
+  filters: CatalogFilters = {},
+): Promise<Result<CatalogPage>> => {
+  const limit = Math.min(filters.limit ?? CATALOG_DEFAULT_LIMIT, CATALOG_MAX_LIMIT)
+  const offset = filters.offset ?? 0
+
+  // Built once and used in both the SELECT and the WHERE: searching against a
+  // different expression than the one displayed is how a search result becomes
+  // inexplicable.
+  const nameSql = sql<string>`COALESCE(
+    (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
+    (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
+    (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
+    (SELECT name FROM product_translations WHERE product_id = ${products.id} LIMIT 1)
+  )`
+  const descriptionSql = sql<string>`COALESCE(
+    (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
+    (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
+    (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
+    ''
+  )`
+
+  const conditions: ReturnType<typeof sql>[] = []
+  if (filters.categoryId !== undefined) {
+    conditions.push(sql`${products.categoryId} = ${filters.categoryId}`)
+  }
+  if (filters.search) {
+    const pattern = likePattern(filters.search)
+    // ILIKE rather than lower(...) LIKE: it is the same case-insensitive match
+    // and it reads as what it is.
+    conditions.push(sql`(${nameSql} ILIKE ${pattern} OR ${descriptionSql} ILIKE ${pattern})`)
+  }
+  const where = conditions.length > 0 ? sql.join(conditions, sql` AND `) : undefined
+
   const rows = await db
     .select({
       id: products.id,
@@ -117,31 +190,29 @@ export const listCatalog = async (
       // Carried with the product so every component that renders the picture uses
       // the description its uploader wrote, instead of inventing one.
       imageAlt: products.imageAlt,
-      name: sql<string>`COALESCE(
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} LIMIT 1)
-      )`,
-      description: sql<string>`COALESCE(
-        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
-        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
-        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
-        ''
-      )`,
+      name: nameSql,
+      description: descriptionSql,
     })
     .from(products)
-    .where(categoryId !== undefined ? eq(products.categoryId, categoryId) : undefined)
+    .where(where)
     .orderBy(products.id)
+    .limit(limit)
+    .offset(offset)
 
-  const filtered = search
-    ? rows.filter((r) =>
-        r.name?.toLowerCase().includes(search.toLowerCase()) ||
-        r.description?.toLowerCase().includes(search.toLowerCase()),
-      )
-    : rows
+  // Counted separately rather than with a window function: a page past the end of
+  // the result set returns no rows, and "no rows" must not be reported as
+  // "nothing matched".
+  const [counted] = await db
+    .select({ total: sql<number>`COUNT(*)::int` })
+    .from(products)
+    .where(where)
 
-  return ok(filtered as CatalogItem[])
+  return ok({
+    items: rows as CatalogItem[],
+    total: counted?.total ?? 0,
+    limit,
+    offset,
+  })
 }
 
 export const getProduct = async (

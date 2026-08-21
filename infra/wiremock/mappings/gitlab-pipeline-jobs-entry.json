@@ -1,0 +1,15 @@
+{
+  "name": "GitLab pipeline jobs — the entry pipeline the portal triggers (42)",
+  "_comment": "Only the dispatch bridge lives here. The apply job runs in the child pipeline this starts (see gitlab-pipeline-bridges-entry.json), which is why the portal has to follow the bridges: /pipelines/:id/jobs never lists a child pipeline's jobs. Issue #121.",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/projects/[^/]+/pipelines/42/jobs"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": [
+      { "id": 100, "name": "trigger-linode-virtual-machine", "status": "success", "pipeline": { "id": 42 } }
+    ],
+    "headers": { "Content-Type": "application/json" }
+  }
+}

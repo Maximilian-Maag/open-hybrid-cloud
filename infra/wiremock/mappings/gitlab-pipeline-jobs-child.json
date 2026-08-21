@@ -1,0 +1,15 @@
+{
+  "name": "GitLab pipeline jobs — the template's child pipeline (43), where apply runs",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/projects/[^/]+/pipelines/43/jobs"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": [
+      { "id": 101, "name": "plan", "status": "success", "pipeline": { "id": 43 } },
+      { "id": 102, "name": "apply", "status": "success", "pipeline": { "id": 43 } }
+    ],
+    "headers": { "Content-Type": "application/json" }
+  }
+}

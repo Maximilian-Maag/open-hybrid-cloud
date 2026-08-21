@@ -379,6 +379,26 @@ in as `subnet_ids_csv` (likewise `inbound_ports_csv`, `backends_csv`,
 `dns_servers_csv`). A raw map is fine to display and awkward to feed into the next
 template.
 
+**Where the portal looks for it.** The trigger API returns the id of the *entry*
+pipeline, and that pipeline holds no `apply` job — only the `trigger-*` bridge of the
+dispatch stage. `GET /projects/:id/pipelines/:pipeline_id/jobs` does not list a child
+pipeline's jobs, so the portal follows the bridges (`.../bridges` →
+`downstream_pipeline`) down to the pipeline that actually applied, three levels at
+most — enough for `entry → template` and for `orchestrator → step → template`
+(Pattern 3). It reads every successful job whose name starts with `apply`, so a
+pipeline stack contributes one `Outputs:` block per step, and the merged map is
+stored on every element of the order. Two steps that declare the same output name
+are a collision: the pipeline the portal triggered first wins, and the backend logs
+a warning naming the key (#121).
+
+Two things in the setup have to be right for any of this to happen, and the backend
+log says which one is missing:
+
+| Requirement | Why |
+|---|---|
+| The environment's **Webhook URL** contains the project: `/api/v4/projects/<id>/trigger/pipeline` | Every GitLab pipeline and job endpoint is project-scoped, and this URL is the only place the portal learns which project to read. A URL of another shape means no outputs, and a `Cannot tell which GitLab project…` warning. |
+| The CI source's **access token** has `read_api` (or `api`) on that project | The trigger token can start a pipeline but not read a job log. Without the scope the read fails with 401/404 and the log says so. |
+
 **Never output a credential.** Whatever a template prints is stored on the
 infrastructure element, shown in the UI and included in the CSV export. That is why
 `linode/kubernetes-cluster` does not output the kubeconfig and
@@ -520,7 +540,8 @@ infra-templates GitLab project setup
   [ ] (Optional) Add scheduled pipeline for drift detection
 
 Portal setup
-  [ ] Create CI Source (Admin → CI Sources): GitLab URL + access token for repo browsing
+  [ ] Create CI Source (Admin → CI Sources): GitLab URL + access token for repo
+        browsing and for reading apply logs (scope: read_api on the project)
   [ ] Create Deployment Environment:
         Webhook URL:   https://gitlab.example.com/api/v4/projects/{infra-templates-ID}/trigger/pipeline
         Webhook Token: the trigger token from the step above

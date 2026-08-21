@@ -2,7 +2,7 @@
   "name": "GitLab job trace (OpenTofu outputs)",
   "request": {
     "method": "GET",
-    "urlPathPattern": "/api/v4/projects/[0-9]+/jobs/[0-9]+/trace"
+    "urlPathPattern": "/api/v4/projects/[^/]+/jobs/[0-9]+/trace"
   },
   "response": {
     "status": 200,

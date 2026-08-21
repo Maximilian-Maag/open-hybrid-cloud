@@ -1,6 +1,6 @@
 // @ts-check
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
-export default {
+const config = {
   testRunner: 'vitest',
   // Declared explicitly: Stryker's default plugin glob ('@stryker-mutator/*')
   // does not follow the symlinks pnpm puts in node_modules, so autodiscovery
@@ -41,3 +41,5 @@ export default {
   // the baseline score is known and you want CI to defend it.
   thresholds: { high: 80, low: 60, break: null },
 }
+
+export default config

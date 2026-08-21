@@ -38,6 +38,7 @@ const AUTHED_PAGES = [
   '/admin/ci-sources',
   '/admin/environments',
   '/admin/products',
+  '/admin/products/new',
   '/admin/parameters',
   '/admin/users',
   '/admin/cost-centers',
@@ -344,6 +345,15 @@ test.describe('Accessibility — detail pages', () => {
     { from: '/orders', link: 'a[href^="/orders/"]', name: 'an order' },
     { from: '/catalog', link: 'a[href^="/catalog/"]', name: 'a product' },
     { from: '/projects', link: 'a[href^="/projects/"]', name: 'a project' },
+    // The one detail page this list was missing, and the one with the most form
+    // controls on it (issue #102).
+    // Excluding /new, which is the first such link on the page and is covered as
+    // a static route in AUTHED_PAGES.
+    {
+      from: '/admin/products',
+      link: 'a[href^="/admin/products/"]:not([href$="/new"])',
+      name: 'a product in the admin area',
+    },
   ]
 
   for (const { from, link, name } of DETAIL_PAGES) {

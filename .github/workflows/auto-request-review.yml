@@ -1,0 +1,46 @@
+name: Auto-request review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  request-review:
+    if: github.event.pull_request.draft == false
+    name: Request review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request review from CODEOWNERS or default reviewers
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pull_number = context.payload.pull_request.number;
+            const author = context.payload.pull_request.user.login;
+
+            // Fetch repository collaborators with write+ access to pick as reviewers
+            const { data: collaborators } = await github.rest.repos.listCollaborators({
+              owner,
+              repo,
+              permission: 'push',
+            });
+
+            const reviewers = collaborators
+              .map(c => c.login)
+              .filter(login => login !== author);
+
+            if (reviewers.length === 0) {
+              core.info('No eligible reviewers found.');
+              return;
+            }
+
+            await github.rest.pulls.requestReviewers({
+              owner,
+              repo,
+              pull_number,
+              reviewers,
+            });
+            core.info(`Requested reviews from: ${reviewers.join(', ')}`);

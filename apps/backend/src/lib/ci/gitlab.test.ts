@@ -145,11 +145,15 @@ describe('gitlabProjectRefFromTriggerUrl', () => {
 describe('getGitLabApplyTraces', () => {
   const APPLY_LOG = 'Apply complete!\n\nOutputs:\n\nip = "203.0.113.7"\n'
 
-  /** Routes a fetch mock by URL, so each test only states the topology it needs. */
+  /**
+   * Routes a fetch mock by path, so each test only states the topology it needs.
+   * Matched on the pathname, not the whole URL: the paging helper appends `?page=`.
+   */
   const routeFetch = (routes: Record<string, unknown>) =>
     vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
       const url = String(input)
-      const match = Object.keys(routes).find((suffix) => url.endsWith(suffix))
+      const { pathname } = new URL(url)
+      const match = Object.keys(routes).find((suffix) => pathname.endsWith(suffix))
       if (match === undefined) return new Response('{"message":"404 Not Found"}', { status: 404 })
       const body = routes[match]
       return typeof body === 'string'
@@ -255,5 +259,71 @@ describe('getGitLabApplyTraces', () => {
 
     expect(await getGitLabApplyTraces('https://gitlab.example.com', 'tok', '8', '42')).toEqual([])
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('follows pagination: the apply job may be on page 2', async () => {
+    // GitLab pages /jobs at 20. A longer pipeline holding `apply` on the second
+    // page would look exactly like the bug this walk exists to fix.
+    const page = (body: unknown, next?: string) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json', ...(next ? { 'x-next-page': next } : {}) },
+      })
+    const fetchMock = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith('/pipelines/42/jobs')) {
+        return url.searchParams.get('page') === '1'
+          ? page([{ id: 100, name: 'plan', status: 'success' }], '2')
+          : page([{ id: 101, name: 'apply', status: 'success' }])
+      }
+      if (url.pathname.endsWith('/jobs/101/trace')) {
+        return new Response(APPLY_LOG, { status: 200, headers: { 'content-type': 'text/plain' } })
+      }
+      if (url.pathname.endsWith('/bridges')) return page([])
+      return new Response('{"message":"404 Not Found"}', { status: 404 })
+    })
+
+    expect(await getGitLabApplyTraces('https://gitlab.example.com', 'tok', '8', '42')).toEqual([APPLY_LOG])
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('page=2'))).toBe(true)
+  })
+
+  it('keeps the entry pipeline\'s traces when a child pipeline cannot be read', async () => {
+    // A multi-project trigger points at a project this token has no access to;
+    // one 401 must not discard what the readable pipelines reported.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    routeFetch({
+      '/api/v4/projects/8/pipelines/42/jobs': [{ id: 100, name: 'apply', status: 'success' }],
+      '/api/v4/projects/8/pipelines/42/bridges': [
+        { downstream_pipeline: { id: 43, project_id: 99 } },
+      ],
+      '/api/v4/projects/8/jobs/100/trace': APPLY_LOG,
+      // project 99 is unroutable: the mock answers 404
+    })
+
+    expect(await getGitLabApplyTraces('https://gitlab.example.com', 'tok', '8', '42')).toEqual([APPLY_LOG])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('child pipeline 43'), expect.anything())
+    warn.mockRestore()
+  })
+
+  it('stops descending at the depth cap rather than following a chain forever', async () => {
+    // Three levels covers entry -> template and orchestrator -> step -> template.
+    // A fourth is a template that dispatches once more than this supports, and it
+    // has to stop rather than walk an unbounded chain.
+    const routes: Record<string, unknown> = {}
+    for (const [from, to] of [[42, 43], [43, 44], [44, 45], [45, 46]]) {
+      routes[`/api/v4/projects/8/pipelines/${from}/jobs`] = []
+      routes[`/api/v4/projects/8/pipelines/${from}/bridges`] = [
+        { downstream_pipeline: { id: to, project_id: 8 } },
+      ]
+    }
+    // The apply job sits one level below the cap, so it must NOT be found.
+    routes['/api/v4/projects/8/pipelines/46/jobs'] = [{ id: 900, name: 'apply', status: 'success' }]
+    routes['/api/v4/projects/8/pipelines/46/bridges'] = []
+    routes['/api/v4/projects/8/jobs/900/trace'] = APPLY_LOG
+    const fetchMock = routeFetch(routes)
+
+    expect(await getGitLabApplyTraces('https://gitlab.example.com', 'tok', '8', '42')).toEqual([])
+    // Pipelines 42, 43, 44 list bridges; 45 is read but not descended from.
+    expect(fetchMock.mock.calls.map((call) => String(call[0])).some((url) => url.includes('/pipelines/46/'))).toBe(false)
   })
 })

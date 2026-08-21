@@ -107,12 +107,6 @@ const MAX_PIPELINE_DEPTH = 3
  */
 const isApplyJob = (name: string): boolean => /^apply\b/.test(name)
 
-const gitlabGetJson = async <T>(url: string, accessToken: string, errorLabel: string): Promise<T> => {
-  const res = await fetch(url, { headers: { 'PRIVATE-TOKEN': accessToken } })
-  if (!res.ok) throw new Error(`${errorLabel}: ${res.status}`)
-  return res.json() as Promise<T>
-}
-
 export const getGitLabJobTrace = async (
   apiUrl: string,
   accessToken: string,
@@ -155,7 +149,10 @@ export const getGitLabApplyTraces = async (
     if (seen.has(key)) return
     seen.add(key)
 
-    const jobs = await gitlabGetJson<GitLabJob[]>(
+    // Paged: GitLab returns 20 jobs per page, and a template with a longer
+    // pipeline would hold `apply` on page 2 — which would look exactly like the
+    // bug this walk exists to fix.
+    const jobs = await gitlabListAll<GitLabJob>(
       `${baseUrl}/api/v4/projects/${project}/pipelines/${pipeline}/jobs`,
       accessToken,
       'GitLab jobs fetch failed',
@@ -172,7 +169,7 @@ export const getGitLabApplyTraces = async (
 
     let bridges: GitLabBridge[]
     try {
-      bridges = await gitlabGetJson<GitLabBridge[]>(
+      bridges = await gitlabListAll<GitLabBridge>(
         `${baseUrl}/api/v4/projects/${project}/pipelines/${pipeline}/bridges`,
         accessToken,
         'GitLab bridges fetch failed',
@@ -188,13 +185,20 @@ export const getGitLabApplyTraces = async (
     for (const bridge of bridges) {
       const downstream = bridge.downstream_pipeline
       if (!downstream) continue
-      // A child pipeline is usually in the same project, but a multi-project
-      // trigger names its own.
-      await walk(
-        downstream.project_id === undefined ? project : String(downstream.project_id),
-        String(downstream.id),
-        depth + 1,
-      )
+      try {
+        // A child pipeline is usually in the same project, but a multi-project
+        // trigger names its own — and that one is often unreadable with this
+        // token. Same rule as the bridges list above: a child that cannot be read
+        // narrows the search, it does not fail it, or one 401 would discard the
+        // traces the readable pipelines already gave us.
+        await walk(
+          downstream.project_id === undefined ? project : String(downstream.project_id),
+          String(downstream.id),
+          depth + 1,
+        )
+      } catch (err) {
+        console.warn(`[ci] Could not read child pipeline ${downstream.id}:`, err)
+      }
     }
   }
 

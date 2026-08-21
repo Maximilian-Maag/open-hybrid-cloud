@@ -127,7 +127,7 @@ export function Header({
               <Link href="/settings" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('profile', lang)}</Link>
               <hr className="my-1 border-slate-100" />
               <button
-                onClick={() => signOut({ callbackUrl: '/login' })}
+                onClick={() => signOut({ redirectTo: '/login' })}
                 className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:text-red-600 transition-colors"
               >
                 {t('signOut', lang)}

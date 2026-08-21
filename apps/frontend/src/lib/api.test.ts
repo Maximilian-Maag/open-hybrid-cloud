@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ApiError, apiRequest, get, post, put, del } from './api'
 
+const signOut = vi.fn()
+vi.mock('next-auth/react', () => ({ signOut: (...args: unknown[]) => signOut(...args) }))
+
 const mockFetch = vi.fn()
 
 beforeEach(() => {
@@ -123,5 +126,75 @@ describe('convenience helpers', () => {
     mockFetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
     await del('/items/1', 'token')
     expect(mockFetch.mock.calls[0][1]).toMatchObject({ method: 'DELETE' })
+  })
+})
+
+// Issue #103. A 401 means the session is over, not that this one call was
+// unlucky; the caller-by-caller handling left people on a page that looked
+// logged in with no data on it.
+describe('apiRequest on 401', () => {
+  beforeEach(() => {
+    signOut.mockClear()
+    // The module keeps a "sign-out already under way" flag, so each test needs
+    // its own instance of it.
+    vi.resetModules()
+    window.history.pushState({}, '', '/orders/7')
+  })
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/')
+  })
+
+  it('signs out and comes back to the page you were on', async () => {
+    // Destructured from the same fresh module: `vi.resetModules()` gives the
+    // re-import its own ApiError class, so the statically imported one would not
+    // match it.
+    const { apiRequest: request, ApiError: FreshApiError } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ error: 'Unauthorized' }, 401))
+
+    await expect(request('/orders')).rejects.toThrow(FreshApiError)
+
+    expect(signOut).toHaveBeenCalledWith({
+      redirectTo: '/login?expired=1&callbackUrl=%2Forders%2F7',
+    })
+  })
+
+  it('still throws, so a caller mid-render is not left waiting', async () => {
+    const { apiRequest: request, ApiError: FreshApiError } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ error: 'Unauthorized' }, 401))
+
+    const err = await request('/orders').catch((e: unknown) => e as ApiError)
+    expect(err).toBeInstanceOf(FreshApiError)
+    expect(err.status).toBe(401)
+  })
+
+  it('signs out once when a page full of parallel requests all fail', async () => {
+    // A dead token fails everything in flight at once, and one redirect is the
+    // only sensible outcome.
+    const { apiRequest: request } = await import('./api')
+    mockFetch.mockResolvedValue(makeResponse({ error: 'Unauthorized' }, 401))
+
+    await Promise.allSettled([request('/a'), request('/b'), request('/c')])
+
+    expect(signOut).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not sign out on the login page itself', async () => {
+    window.history.pushState({}, '', '/login')
+    const { apiRequest: request, ApiError: FreshApiError } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ error: 'Unauthorized' }, 401))
+
+    await expect(request('/api/auth/whatever')).rejects.toThrow(FreshApiError)
+
+    expect(signOut).not.toHaveBeenCalled()
+  })
+
+  it('leaves other error statuses to the caller', async () => {
+    const { apiRequest: request, ApiError: FreshApiError } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ error: 'Forbidden' }, 403))
+
+    await expect(request('/orders')).rejects.toThrow(FreshApiError)
+
+    expect(signOut).not.toHaveBeenCalled()
   })
 })

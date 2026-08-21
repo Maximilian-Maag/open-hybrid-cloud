@@ -6,6 +6,7 @@ import { LangProvider } from '@/components/layout/LangProvider'
 import { TopNav } from '@/components/layout/TopNav'
 import type { Branding } from '@open-hybrid-cloud/types'
 import { getLang } from '@/lib/getLang'
+import { isApiTokenExpired, expiredLoginUrl } from '@/lib/session'
 import { t } from '@/lib/i18n'
 import { readableInk, readableAccent, AA_NON_TEXT } from '@/lib/contrast'
 
@@ -14,11 +15,17 @@ const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
 
-  // THIS IS THE CRITICAL FIX:
   // Validate the session and all its required properties safely.
   // If anything is missing, the session is invalid; redirect to login.
   if (!session || !session.user || !session.apiToken || !session.user.role) {
     redirect('/login')
+  }
+
+  // The middleware catches this first for any normal navigation; this is the
+  // render path's own guard, so a request that reached the layout with a dead
+  // backend token does not spend the page fetching 401s (#103).
+  if (isApiTokenExpired(session.apiTokenExp)) {
+    redirect(expiredLoginUrl('/'))
   }
 
   const token = session.apiToken

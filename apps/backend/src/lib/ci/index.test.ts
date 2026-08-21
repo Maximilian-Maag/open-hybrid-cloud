@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { parseTofuOutputs, fetchJobTrace, type CiSourceInfo } from './index'
+import { parseTofuOutputs, fetchJobTraces, type CiSourceInfo } from './index'
 
 
 describe('parseTofuOutputs', () => {
@@ -152,29 +152,30 @@ describe('parseTofuOutputs', () => {
   })
 })
 
-describe('triggerPipeline dispatch', () => {
-  it('calls the gitlab trigger for gitlab provider', async () => {
-    const mockTrigger = vi.fn().mockResolvedValue('pipeline-123')
-    vi.doMock('./gitlab', () => ({ triggerGitLabPipeline: mockTrigger }))
+describe('fetchJobTraces dispatch', () => {
+  it('returns no traces for github, rather than an empty log that reads as "no outputs"', async () => {
+    const source: CiSourceInfo = { url: '', accessToken: '', provider: 'github' }
+    expect(await fetchJobTraces(source, '1')).toEqual([])
+  })
 
+  it('returns no traces for bitbucket', async () => {
+    const source: CiSourceInfo = { url: '', accessToken: '', provider: 'bitbucket' }
+    expect(await fetchJobTraces(source, '1')).toEqual([])
+  })
+
+  it('rejects for gitlab without a projectRef instead of requesting an unscoped URL', async () => {
+    // Issue #121: the job endpoints are project-scoped, so a source that cannot say
+    // which project it triggers has to fail loudly — the caller reports which
+    // environment is misconfigured.
+    const fetchMock = vi.spyOn(global, 'fetch')
     const source: CiSourceInfo = {
       url: 'https://gitlab.example.com',
-      accessToken: 'token',
+      accessToken: 'tok',
       provider: 'gitlab',
     }
-    // triggerPipeline delegates to the provider; test the dispatch logic via the return value
-    // Since we can't easily mock the static import, test that github returns '' for fetchJobTrace
-    const result = await fetchJobTrace({ ...source, provider: 'github' }, '42')
-    expect(result).toBe('')
-  })
 
-  it('fetchJobTrace returns empty string for github', async () => {
-    const source: CiSourceInfo = { url: '', accessToken: '', provider: 'github' }
-    expect(await fetchJobTrace(source, '1')).toBe('')
-  })
-
-  it('fetchJobTrace returns empty string for bitbucket', async () => {
-    const source: CiSourceInfo = { url: '', accessToken: '', provider: 'bitbucket' }
-    expect(await fetchJobTrace(source, '1')).toBe('')
+    await expect(fetchJobTraces(source, '42')).rejects.toThrow(/project-scoped/)
+    expect(fetchMock).not.toHaveBeenCalled()
+    fetchMock.mockRestore()
   })
 })

@@ -1,7 +1,7 @@
 import type { CiProvider, CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
 import {
   triggerGitLabPipeline,
-  getGitLabJobTrace,
+  getGitLabApplyTraces,
   listGitLabProjects,
   listGitLabBranches,
   listGitLabFiles,
@@ -26,6 +26,13 @@ export type CiSourceInfo = {
   url: string
   accessToken: string
   provider: CiProvider
+  /**
+   * The GitLab project pipelines of this source run in — a numeric id or a
+   * URL-encoded path. Every pipeline/job read endpoint is project-scoped, and the
+   * project is not part of `url`; see `gitlabProjectRefFromTriggerUrl`. Absent for
+   * the browse/trigger paths, which do not need it.
+   */
+  projectRef?: string | null
 }
 
 export const triggerPipeline = (
@@ -66,22 +73,41 @@ export const triggerPipeline = (
  * Implementing the other two is real work rather than a missing case: GitHub serves
  * run logs as a redirect to a ZIP archive (needs an unzip dependency), and Bitbucket
  * needs the pipeline's steps enumerated before each step's log can be fetched.
+ *
+ * A `true` here is a statement about the provider only. GitLab additionally needs
+ * `projectRef` on the source — callers should say so separately, because "we cannot
+ * work out which project this ran in" is an operator's misconfiguration, not a
+ * missing feature.
  */
 export const supportsJobTrace = (provider: CiSourceInfo['provider']): boolean =>
   provider === 'gitlab'
 
-export const fetchJobTrace = (
+/**
+ * The stdout of every apply job that ran below `pipelineId`.
+ *
+ * A list, not one string: an order fans out over the product's webhooks and pipeline
+ * stacks, and a stack applies once per step — each apply printing its own `Outputs:`
+ * block, which `parseTofuOutputs` reads one at a time.
+ */
+export const fetchJobTraces = (
   source: CiSourceInfo,
   pipelineId: string,
-): Promise<string> => {
+): Promise<string[]> => {
   switch (source.provider) {
     case 'gitlab':
-      return getGitLabJobTrace(source.url, source.accessToken, pipelineId)
+      if (!source.projectRef) {
+        // Callers check this and say which environment is misconfigured; getting
+        // here means one did not.
+        return Promise.reject(
+          new Error('GitLab job logs are project-scoped, but this CI source has no projectRef'),
+        )
+      }
+      return getGitLabApplyTraces(source.url, source.accessToken, source.projectRef, pipelineId)
     case 'github':
     case 'bitbucket':
       // See supportsJobTrace: callers should check first and say why, rather than
       // treating an empty trace as "this deployment produced no outputs".
-      return Promise.resolve('')
+      return Promise.resolve([])
   }
 }
 

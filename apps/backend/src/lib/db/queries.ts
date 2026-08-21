@@ -1,11 +1,17 @@
 import { db } from '@/lib/db/client'
 import { users, productTranslations, ciSources, deploymentEnvironments } from '@/lib/db/schema'
 import { eq, sql } from 'drizzle-orm'
+import { gitlabProjectRefFromTriggerUrl } from '@/lib/ci/gitlab'
 
 export interface CiSource {
   url: string
   accessToken: string
   provider: 'gitlab' | 'github' | 'bitbucket'
+  /**
+   * The project the environment's pipelines run in, for the read endpoints that
+   * need it (job logs). Null when it cannot be derived — see below.
+   */
+  projectRef: string | null
 }
 
 export const findProductName = async (productId: number): Promise<string> => {
@@ -45,7 +51,7 @@ export const findAdminEmails = async (): Promise<string[]> => {
 
 export const findCiSourceForEnv = async (environmentId: number): Promise<CiSource | null> => {
   const envRows = await db
-    .select({ ciSourceId: deploymentEnvironments.ciSourceId })
+    .select({ ciSourceId: deploymentEnvironments.ciSourceId, webhookUrl: deploymentEnvironments.webhookUrl })
     .from(deploymentEnvironments)
     .where(eq(deploymentEnvironments.id, environmentId))
     .limit(1)
@@ -60,9 +66,17 @@ export const findCiSourceForEnv = async (environmentId: number): Promise<CiSourc
 
   if (!sourceRows[0]) return null
 
+  const provider = sourceRows[0].provider as 'gitlab' | 'github' | 'bitbucket'
+
   return {
     url: sourceRows[0].url,
     accessToken: sourceRows[0].accessToken,
-    provider: sourceRows[0].provider as 'gitlab' | 'github' | 'bitbucket',
+    provider,
+    // A CI source stores the host, not the project: `url` is what the browse
+    // endpoints append `/api/v4/projects` to. The project is named only in the
+    // environment's own trigger URL, so that is where the job-log endpoints have to
+    // get it from. Null when an operator entered a trigger URL of another shape —
+    // the caller reports that rather than silently recording no outputs (#121).
+    projectRef: provider === 'gitlab' ? gitlabProjectRefFromTriggerUrl(envRows[0].webhookUrl) : null,
   }
 }

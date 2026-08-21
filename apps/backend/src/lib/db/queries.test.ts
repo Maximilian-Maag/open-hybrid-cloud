@@ -14,7 +14,8 @@ import {
   createEnvironment,
 } from '@/test/helpers'
 import { db } from '@/lib/db/client'
-import { products } from '@/lib/db/schema'
+import { products, deploymentEnvironments } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 
 describe('findProductName', () => {
   it('returns the English translation when one exists', async () => {
@@ -87,5 +88,37 @@ describe('findCiSourceForEnv', () => {
 
   it('returns null for an unknown environment id', async () => {
     expect(await findCiSourceForEnv(987654)).toBeNull()
+  })
+
+  // Issue #121: GitLab's pipeline and job endpoints are all project-scoped, and the
+  // CI source stores only the host — the project is named once, in the environment's
+  // trigger URL, so this is where the job-log path has to get it from.
+  it('derives the project the environment triggers from its webhook URL', async () => {
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+
+    expect((await findCiSourceForEnv(env.id))?.projectRef).toBe('1')
+  })
+
+  it('keeps an encoded project path as GitLab wants it', async () => {
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await db
+      .update(deploymentEnvironments)
+      .set({ webhookUrl: 'https://gl.example.com/api/v4/projects/group%2Finfra/trigger/pipeline' })
+      .where(eq(deploymentEnvironments.id, env.id))
+
+    expect((await findCiSourceForEnv(env.id))?.projectRef).toBe('group%2Finfra')
+  })
+
+  it('reports no project rather than guessing when the webhook URL names none', async () => {
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await db
+      .update(deploymentEnvironments)
+      .set({ webhookUrl: 'https://gl.example.com/api/v4/trigger/pipeline' })
+      .where(eq(deploymentEnvironments.id, env.id))
+
+    expect((await findCiSourceForEnv(env.id))?.projectRef).toBeNull()
   })
 })

@@ -48,9 +48,14 @@ jobs:
             # Reviews and inline comments both count. CodeRabbit posts its summary
             # as a review, Copilot likewise, and a review with findings but no
             # summary body is still a review.
+            # `--paginate --jq` emits one value per page, so asking for an array
+            # yields several arrays and nothing downstream can parse it. Emit a
+            # stream of objects and slurp it into one array with `jq -s`.
             reviews=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
-              --jq '[.[] | select(.user.type == "Bot" or (.user.login | test("coderabbit|copilot"; "i"))) | {login: .user.login, body: (.body // "")}]' || echo '[]')
-            inline=$(gh api "repos/$REPO/pulls/$PR/comments" --paginate --jq 'length' || echo 0)
+              --jq '.[] | select(.user.type == "Bot" or (.user.login | test("coderabbit|copilot"; "i"))) | {login: .user.login, body: (.body // "")}' \
+              | jq -s '.' || echo '[]')
+            # Same reason: count the ids, do not sum per-page lengths.
+            inline=$(gh api "repos/$REPO/pulls/$PR/comments" --paginate --jq '.[].id' | wc -l || echo 0)
 
             substantive=$(echo "$reviews" | jq '[.[] | select((.body | test("review skipped|rate limited|exceed the limit of"; "i")) | not) | select(.body | length > 200)] | length')
             skipped=$(echo "$reviews" | jq '[.[] | select(.body | test("review skipped|rate limited|exceed the limit of"; "i"))] | length')

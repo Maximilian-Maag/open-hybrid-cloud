@@ -43,7 +43,7 @@ const config = {
   // 80 is the floor, and it fails the command rather than tutting at it (#127).
   // A score below this means behaviour nobody asserts, and the survivors list in
   // the HTML report is where to look — the number itself is only the alarm.
-  thresholds: { high: 80, low: 60, break: null },
+  thresholds: { high: 90, low: 80, break: 80 },
 }
 
 export default config

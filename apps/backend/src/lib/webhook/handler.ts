@@ -8,7 +8,7 @@ import {
   sendProvisioningFailed,
   sendDecommissioned,
 } from '@/lib/notification'
-import { fetchJobTrace, parseTofuOutputs, supportsJobTrace } from '@/lib/ci'
+import { fetchJobTraces, parseTofuOutputs, supportsJobTrace } from '@/lib/ci'
 import { findProductName, findUserEmail, findCiSourceForEnv, findAdminEmails } from '@/lib/db/queries'
 
 export const handlePipelineEvent = async (
@@ -121,9 +121,55 @@ export const handlePipelineEvent = async (
               `[webhook] Reading job logs is not implemented for ${ciSource.provider}; ` +
                 `order ${order.id} will have no Terraform outputs. See lib/ci/index.ts supportsJobTrace.`,
             )
+          } else if (!ciSource.projectRef) {
+            // GitLab's job endpoints are project-scoped and the project is only
+            // named in the environment's trigger URL, so a URL of another shape
+            // means the log cannot be located at all. An operator can fix this, but
+            // only if they are told.
+            console.warn(
+              `[webhook] Cannot tell which GitLab project environment ${order.environmentId} triggers ` +
+                `(its webhook URL has no /projects/<id>/ segment); order ${order.id} will have no ` +
+                `Terraform outputs.`,
+            )
           } else {
-            const trace = await fetchJobTrace(ciSource, event.pipelineId)
-            const outputs = parseTofuOutputs(trace)
+            // Every pipeline of the order, not only the one whose event completed
+            // it: an order fans out over the product's webhooks and pipeline stacks,
+            // and reading just `event.pipelineId` meant the other pipelines' outputs
+            // were dropped — with which set survived decided by CI timing (#121).
+            const outputs: Record<string, string> = {}
+            for (const pipelineId of merged[0].pipelineId) {
+              let traces: string[]
+              try {
+                traces = await fetchJobTraces(ciSource, pipelineId)
+              } catch (err) {
+                // One unreadable pipeline log must not cost the outputs of the
+                // pipelines that did report.
+                console.error(
+                  `[webhook] Could not read the job log of pipeline ${pipelineId} (order ${order.id}):`,
+                  err,
+                )
+                continue
+              }
+              for (const trace of traces) {
+                for (const [key, value] of Object.entries(parseTofuOutputs(trace))) {
+                  // First writer wins, iterating the pipeline ids in the order they
+                  // were triggered: two pipelines that both declare `ip_address` are
+                  // a naming collision in the templates, and picking by CI timing
+                  // would make the recorded value change from run to run.
+                  if (key in outputs) {
+                    if (outputs[key] !== value) {
+                      console.warn(
+                        `[webhook] Order ${order.id}: output "${key}" is reported by more than one ` +
+                          `pipeline with different values; keeping the first.`,
+                      )
+                    }
+                    continue
+                  }
+                  outputs[key] = value
+                }
+              }
+            }
+
             if (Object.keys(outputs).length > 0) {
               // Every element of the order, not just the first: an order that
               // provisioned several left the rest empty for no reason a user could
@@ -138,7 +184,7 @@ export const handlePipelineEvent = async (
                   ),
                 )
             } else {
-              console.warn(`[webhook] Job log for order ${order.id} contained no Outputs block.`)
+              console.warn(`[webhook] No job log of order ${order.id} contained an Outputs block.`)
             }
           }
         } catch (err) {

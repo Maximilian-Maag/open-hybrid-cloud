@@ -70,32 +70,140 @@ export const triggerGitLabPipeline = async (
   return String(json.id)
 }
 
+/**
+ * The project a pipeline ran in, taken from a deployment environment's trigger URL.
+ *
+ * Every read endpoint GitLab offers for pipelines and jobs is project-scoped, but a
+ * CI source stores only the host (`https://gitlab.example.com`) because the list
+ * endpoints append `/api/v4/projects` themselves. The project is named exactly once
+ * in the whole system — in the environment's webhook URL:
+ *
+ *   https://gitlab.example.com/api/v4/projects/42/trigger/pipeline
+ *   https://gitlab.example.com/api/v4/projects/group%2Frepo/trigger/pipeline
+ *
+ * The segment is returned exactly as it appears: GitLab wants the path form
+ * URL-encoded, so re-encoding it here would turn `%2F` into `%252F`.
+ */
+export const gitlabProjectRefFromTriggerUrl = (webhookUrl: string): string | null =>
+  /\/projects\/([^/?#]+)/.exec(webhookUrl)?.[1] ?? null
+
+type GitLabJob = { id: number; name: string; status?: string }
+type GitLabBridge = { downstream_pipeline?: { id: number; project_id?: number } | null }
+
+/**
+ * How far down the pipeline tree to look for an apply job.
+ *
+ * Two levels is what the documented patterns need (entry → template, and
+ * orchestrator → step), the third is slack for a template that dispatches once
+ * more. The `seen` set below is what actually guarantees termination; this only
+ * bounds the request count.
+ */
+const MAX_PIPELINE_DEPTH = 3
+
+/**
+ * `apply`, `apply: [dns]` (parallel matrix), `apply-dns` — all the ways a template
+ * can name the job whose stdout carries the `Outputs:` block. Deliberately not
+ * "any job": reading the wrong job's log would invent outputs from a plan.
+ */
+const isApplyJob = (name: string): boolean => /^apply\b/.test(name)
+
 export const getGitLabJobTrace = async (
   apiUrl: string,
   accessToken: string,
-  pipelineId: string,
+  projectRef: string,
+  jobId: string,
 ): Promise<string> => {
+  const res = await fetch(
+    `${validateWebUrl(apiUrl)}/api/v4/projects/${projectRef}/jobs/${jobId}/trace`,
+    { headers: { 'PRIVATE-TOKEN': accessToken } },
+  )
+  if (!res.ok) throw new Error(`GitLab job trace fetch failed: ${res.status}`)
+  return res.text()
+}
+
+/**
+ * The stdout of every apply job below the pipeline the portal triggered.
+ *
+ * Not just "the jobs of that pipeline": the entry pipeline the trigger API returns
+ * an id for holds nothing but `trigger-*` bridge jobs (`stage: dispatch`), and
+ * `validate → plan → apply` runs in the child pipeline they start — a pipeline whose
+ * jobs `/pipelines/:id/jobs` does not list, at all. Reading only the triggered
+ * pipeline is why no order ever recorded outputs (issue #121); the bridges are
+ * followed instead, down to whatever depth the templates dispatch to.
+ *
+ * All apply jobs rather than the first, because a pipeline stack is several steps
+ * that each apply and each print their own outputs.
+ */
+export const getGitLabApplyTraces = async (
+  apiUrl: string,
+  accessToken: string,
+  projectRef: string,
+  pipelineId: string,
+): Promise<string[]> => {
   const baseUrl = validateWebUrl(apiUrl)
-  const jobsRes = await fetch(
-    `${baseUrl}/api/v4/pipelines/${pipelineId}/jobs`,
-    { headers: { 'PRIVATE-TOKEN': accessToken } },
-  )
+  const traces: string[] = []
+  const seen = new Set<string>()
 
-  if (!jobsRes.ok) throw new Error(`GitLab jobs fetch failed: ${jobsRes.status}`)
+  const walk = async (project: string, pipeline: string, depth: number): Promise<void> => {
+    const key = `${project}/${pipeline}`
+    if (seen.has(key)) return
+    seen.add(key)
 
-  const jobs = await jobsRes.json() as Array<{ id: number; name: string }>
-  const applyJob = jobs.find((j) => j.name === 'apply') ?? jobs[0]
+    // Paged: GitLab returns 20 jobs per page, and a template with a longer
+    // pipeline would hold `apply` on page 2 — which would look exactly like the
+    // bug this walk exists to fix.
+    const jobs = await gitlabListAll<GitLabJob>(
+      `${baseUrl}/api/v4/projects/${project}/pipelines/${pipeline}/jobs`,
+      accessToken,
+      'GitLab jobs fetch failed',
+    )
 
-  if (!applyJob) return ''
+    for (const job of jobs) {
+      // A failed or skipped apply has no outputs to report, and its log would be
+      // read as "this deployment declared none".
+      if (!isApplyJob(job.name) || (job.status !== undefined && job.status !== 'success')) continue
+      traces.push(await getGitLabJobTrace(baseUrl, accessToken, project, String(job.id)))
+    }
 
-  const traceRes = await fetch(
-    `${baseUrl}/api/v4/jobs/${applyJob.id}/trace`,
-    { headers: { 'PRIVATE-TOKEN': accessToken } },
-  )
+    if (depth >= MAX_PIPELINE_DEPTH) return
 
-  if (!traceRes.ok) throw new Error(`GitLab job trace fetch failed: ${traceRes.status}`)
+    let bridges: GitLabBridge[]
+    try {
+      bridges = await gitlabListAll<GitLabBridge>(
+        `${baseUrl}/api/v4/projects/${project}/pipelines/${pipeline}/bridges`,
+        accessToken,
+        'GitLab bridges fetch failed',
+      )
+    } catch (err) {
+      // Whatever the jobs of this pipeline already yielded is worth more than
+      // nothing, so a bridges endpoint that cannot be read (an old GitLab, a token
+      // without the scope) narrows the search instead of failing it.
+      console.warn(`[ci] Could not list the child pipelines of pipeline ${pipeline}:`, err)
+      return
+    }
 
-  return traceRes.text()
+    for (const bridge of bridges) {
+      const downstream = bridge.downstream_pipeline
+      if (!downstream) continue
+      try {
+        // A child pipeline is usually in the same project, but a multi-project
+        // trigger names its own — and that one is often unreadable with this
+        // token. Same rule as the bridges list above: a child that cannot be read
+        // narrows the search, it does not fail it, or one 401 would discard the
+        // traces the readable pipelines already gave us.
+        await walk(
+          downstream.project_id === undefined ? project : String(downstream.project_id),
+          String(downstream.id),
+          depth + 1,
+        )
+      } catch (err) {
+        console.warn(`[ci] Could not read child pipeline ${downstream.id}:`, err)
+      }
+    }
+  }
+
+  await walk(projectRef, pipelineId, 0)
+  return traces
 }
 
 export const listGitLabProjects = async (

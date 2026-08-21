@@ -27,8 +27,22 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/test/**', 'src/**/*.test.ts'],
     },
-    // Run test files sequentially so DB mutations don't conflict across files
-    fileParallelism: false,
+    // Files in parallel, each on its own database.
+    //
+    // `src/test/setup.ts` claims a database at module scope, and Vitest evaluates
+    // the setup file once per test file — so concurrent files claim different
+    // names through the advisory-lock fall-through in `src/test/database.ts`
+    // (`..._2`, `..._3`, …). Nothing is shared between them, which is what makes
+    // this safe; before, one shared database made it impossible.
+    //
+    // Capped rather than left to the default (CPUs - 1): every worker holds a
+    // database and a connection pool, and the Postgres they all talk to is the
+    // same one, so past a point the workers only queue on it. MAX_CANDIDATES in
+    // database.ts is the hard ceiling on this number.
+    maxWorkers: 4,
+    // Tests WITHIN a file stay sequential: they share the fixtures that the
+    // `beforeEach` truncation sets up, so making them concurrent would break them
+    // for real rather than merely slowly.
     sequence: { concurrent: false },
   },
   resolve: {

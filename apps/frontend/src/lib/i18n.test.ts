@@ -105,6 +105,10 @@ describe('i18n', () => {
     'smtpConfigSavedToast', 'aiProviderSettingsTitle', 'apiEndpoint',
     'apiEndpointHint', 'apiKey', 'apiKeyKeepHint', 'model', 'failedToSaveAi',
     'aiConfigSavedToast',
+    // Shared keys the admin screens depend on. They are not new here — most
+    // predate this file — but the admin area is now the thing that breaks if one
+    // of them is missing in a language, so the guard has to cover them too.
+    'any', 'cancel', 'cannotBeUndone', 'categories', 'changelog', 'changelogHint', 'changes', 'compare', 'created', 'creating', 'date', 'delete', 'deleting', 'description', 'edit', 'email', 'environment', 'fromDate', 'loading', 'name', 'noChanges', 'noVersionHistory', 'password', 'product', 'saving', 'statusActive', 'system', 'toDate', 'user', 'versionHistory',
   ]
 
   // Shared by both key sets: collect the keys where a language's value is

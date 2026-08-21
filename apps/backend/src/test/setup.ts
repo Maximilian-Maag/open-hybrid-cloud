@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from '@/lib/db/schema'
-import { sql } from 'drizzle-orm'
+import { getTableName, sql } from 'drizzle-orm'
 import { acquireTestDatabase } from './database'
 
 // Claimed at MODULE scope, before any test file is imported: the app's db
@@ -16,7 +16,9 @@ console.warn(`[test] database: ${acquired.name}`)
 const client = postgres(acquired.url)
 export const testDb = drizzle(client, { schema })
 
-// Tables in dependency order so truncation respects FKs
+// Every table the suite writes to. Order no longer matters for truncation (see
+// TRUNCATE_ALL below), but it is kept dependency-ordered because it reads as the
+// schema's shape and new tables get added in the right place by habit.
 const TABLES = [
   schema.auditLog,
   schema.productFavorites,
@@ -288,11 +290,20 @@ beforeAll(async () => {
   `)
 })
 
+/**
+ * One statement for all twenty tables, not twenty statements.
+ *
+ * This runs before every one of ~1300 tests, and each `TRUNCATE` is its own
+ * transaction waiting on its own commit — so the loop it replaces spent the suite
+ * doing 26,000 round trips to Postgres. `TRUNCATE a, b, c` truncates them
+ * together, in one transaction, and `CASCADE` no longer has anything to reach for
+ * because every referencing table is already in the list. FK order stops
+ * mattering for the same reason.
+ */
+const TRUNCATE_ALL = `TRUNCATE TABLE ${TABLES.map((table) => `"${getTableName(table)}"`).join(', ')} RESTART IDENTITY CASCADE`
+
 beforeEach(async () => {
-  // Truncate all tables in safe order before each test
-  for (const table of TABLES) {
-    await testDb.execute(sql`TRUNCATE TABLE ${table} RESTART IDENTITY CASCADE`)
-  }
+  await testDb.execute(sql.raw(TRUNCATE_ALL))
 })
 
 afterAll(async () => {

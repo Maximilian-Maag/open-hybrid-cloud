@@ -40,8 +40,15 @@ export const testDatabaseUrl = (env: Env = process.env, cwd = process.cwd()): st
   return url.toString()
 }
 
-/** How many alternatives to try when the preferred database is already in use. */
-const MAX_CANDIDATES = 8
+/**
+ * How many alternatives to try when the preferred database is already in use.
+ *
+ * This is the ceiling on test concurrency, not just on parallel runs: with
+ * `fileParallelism` on, every Vitest worker claims one of these. Keep it
+ * comfortably above `maxWorkers` in vitest.config.ts so a second run started by
+ * hand still finds a free name.
+ */
+const MAX_CANDIDATES = 16
 
 const createIfMissing = async (admin: postgres.Sql, name: string): Promise<void> => {
   try {
@@ -99,6 +106,8 @@ export const acquireTestDatabase = async (
   await admin.end({ timeout: 5 })
   throw new Error(
     `All ${MAX_CANDIDATES} candidate test databases for "${preferred}" are in use. ` +
-      'Set TEST_DB_SUFFIX to pick your own, or wait for the other runs to finish.',
+      'Each Vitest worker claims one, so this usually means maxWorkers (vitest.config.ts) ' +
+      `is above MAX_CANDIDATES (${MAX_CANDIDATES}); otherwise another run is holding them — ` +
+      'set TEST_DB_SUFFIX to pick your own, or wait for it to finish.',
   )
 }

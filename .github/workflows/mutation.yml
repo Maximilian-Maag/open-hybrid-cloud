@@ -70,15 +70,23 @@ jobs:
         env:
           # Only the backend leg uses it; harmless for the frontend.
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          # Through the environment, never interpolated into the script: a
+          # workflow_dispatch input spliced into a `run:` block is shell injection
+          # by whoever can press the button.
+          SCOPE: ${{ inputs.scope }}
         run: |
           # pipefail: without it, `| tee` masks Stryker's exit code and a run that
           # breaks the 80% threshold reports success.
           set -o pipefail
+          args=()
+          if [ -n "${SCOPE:-}" ]; then
+            args+=(--mutate "$SCOPE")
+          fi
           pnpm exec stryker run \
             --incremental \
             --incrementalFile reports/mutation/incremental.json \
             --reporters clear-text,html,progress \
-            ${{ inputs.scope && format('--mutate {0}', inputs.scope) || '' }} \
+            "${args[@]}" \
             | tee stryker.log
 
       # The score lives in the clear-text table's "All files" row. Parsed rather

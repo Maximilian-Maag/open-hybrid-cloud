@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { loginAsRoot, expectNoServerError } from './helpers'
 
 async function goToCatalog(page: Page) {
   await loginAsRoot(page)
@@ -10,7 +10,7 @@ test.describe('Product Catalog', () => {
   test('catalog page loads without error', async ({ page }) => {
     await goToCatalog(page)
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('shows catalog page title', async ({ page }) => {

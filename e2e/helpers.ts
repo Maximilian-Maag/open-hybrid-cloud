@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { type Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 
 /**
  * Read a value from the backend's .env.
@@ -44,4 +44,25 @@ export async function loginAsRoot(page: Page): Promise<void> {
   await page.getByLabel(/password/i).fill(rootPassword)
   await page.getByRole('button', { name: /sign in/i }).click()
   await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 10000 })
+}
+
+/**
+ * Assert the page is not a server error, without the false positives.
+ *
+ * Every spec used to assert `expect(page.locator('body')).not.toContainText('500')`,
+ * which reads as "no server error" and means "the digits 500 appear nowhere on the
+ * page". It failed a green build the first time a fixture was named with a
+ * timestamp ending in 500 (`E2E Env CB 1787319807500`), and it would equally fail
+ * on a price, a port, a disk size or a product called "500GB SSD".
+ *
+ * What actually distinguishes an error page: Next.js renders its own shell with no
+ * <main> landmark and one of a small set of headings. So assert the application
+ * frame rendered, and that the error text is absent — neither of which any amount
+ * of ordinary content can trip.
+ */
+export async function expectNoServerError(page: Page): Promise<void> {
+  await expect(page.locator('main')).toBeVisible()
+  await expect(page.locator('body')).not.toContainText('Internal Server Error')
+  await expect(page.locator('body')).not.toContainText('Application error')
+  await expect(page.locator('body')).not.toContainText('This page could not be found')
 }

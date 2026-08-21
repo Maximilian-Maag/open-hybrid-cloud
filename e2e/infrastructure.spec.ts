@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Infrastructure', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,7 +9,7 @@ test.describe('Infrastructure', () => {
 
   test('infrastructure page loads without error', async ({ page }) => {
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('shows page title "Infrastructure"', async ({ page }) => {
@@ -28,7 +28,7 @@ test.describe('Infrastructure', () => {
       await expect(emptyState).toBeVisible()
     } else {
       // Infrastructure elements exist — verify no 500 error
-      await expect(page.locator('body')).not.toContainText('500')
+      await expectNoServerError(page)
     }
   })
 
@@ -44,7 +44,7 @@ test.describe('Infrastructure', () => {
       return // No infrastructure to test
     }
     // If there are elements, check that status information is rendered
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 })
 
@@ -90,7 +90,7 @@ test.describe('Infrastructure filtering', () => {
     // ask for it, or "Active" quietly includes rows the badge calls failed.
     await page.getByLabel(/^status$/i).selectOption('failed')
     await expect(page).toHaveURL(/[?&]status=failed/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('the "all" option is selectable, so a filter can be undone in place', async ({ page }) => {
@@ -417,6 +417,6 @@ test.describe('Infrastructure detail', () => {
 
   test('an unknown element is a 404, not a broken page', async ({ page }) => {
     await page.goto('/infrastructure/999999')
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 })

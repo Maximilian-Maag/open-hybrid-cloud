@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Admin - Pipeline Stacks', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,7 +8,7 @@ test.describe('Admin - Pipeline Stacks', () => {
 
   test('pipeline stacks card is visible on product edit page', async ({ page }) => {
     await page.goto('/admin/products')
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
 
     const editLinks = page.getByRole('link', { name: /edit/i })
     const noProducts = page.getByText(/no products/i)

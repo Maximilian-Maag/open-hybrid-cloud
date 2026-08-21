@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { loginAsRoot, expectNoServerError } from './helpers'
 
 // Issue #32. What the report contains depends on what the stack has provisioned,
 // so the contracts pinned here are the ones that hold either way: the page renders,
@@ -13,7 +13,7 @@ test.describe('Cost dashboard', () => {
 
   test('the costs page loads without error', async ({ page }) => {
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('shows the title, subtitle and total', async ({ page }) => {

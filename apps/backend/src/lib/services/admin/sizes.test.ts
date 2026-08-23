@@ -50,6 +50,31 @@ describe('upsertSize', () => {
     expect(versions[0].summary).toContain('XL')
   })
 
+  it("does not call '10' -> '10.00' a re-price", async () => {
+    // NUMERIC(12,2) normalises on the way in, so a save that merely spells the
+    // same amount differently used to be recorded as a price change. In a version
+    // history a spurious entry is worse than a missing one: it is the record
+    // someone reads to find out what actually happened.
+    const { root, product, env } = await setup()
+    await upsertSize(product.id, env.id, { code: 'M', price: '10', userId: root.id })
+
+    const result = await upsertSize(product.id, env.id, {
+      code: 'M',
+      label: 'Medium',
+      price: '10',
+      userId: root.id,
+    })
+    expect(result.ok).toBe(true)
+
+    const versions = await db
+      .select()
+      .from(productVersions)
+      .where(eq(productVersions.productId, product.id))
+    expect(versions).toHaveLength(2)
+    expect(versions[1].summary).not.toContain('re-priced')
+    expect(versions[1].summary).toContain('updated')
+  })
+
   it('upserts on the code rather than creating a duplicate, and says what changed', async () => {
     const { root, product, env } = await setup()
     await upsertSize(product.id, env.id, { code: 'XL', price: '400.00', userId: root.id })

@@ -109,7 +109,11 @@ export const upsertSize = async (
   }
 
   const [existing] = await db
-    .select({ id: productEnvironmentSizes.id, price: productEnvironmentSizes.price })
+    .select({
+      id: productEnvironmentSizes.id,
+      price: productEnvironmentSizes.price,
+      currency: productEnvironmentSizes.currency,
+    })
     .from(productEnvironmentSizes)
     .where(
       and(
@@ -138,11 +142,15 @@ export const upsertSize = async (
     environmentId,
     // Says what changed, not just that something did — a price move is the one
     // change a reader of the history is looking for.
+    // Compared against the PERSISTED value, not the request's. The column is
+    // NUMERIC(12,2), so '10' comes back '10.00' — comparing the raw input would
+    // report a re-price on every save that merely spelled the same amount
+    // differently, in the one record whose worth is that its entries are true.
     summary: existing
-      ? existing.price === price
+      ? existing.price === row.price && existing.currency === row.currency
         ? `Size ${code} updated`
-        : `Size ${code} re-priced ${existing.price} → ${price} ${currency}`
-      : `Size ${code} added at ${price} ${currency}`,
+        : `Size ${code} re-priced ${existing.price} ${existing.currency} → ${row.price} ${row.currency}`
+      : `Size ${code} added at ${row.price} ${row.currency}`,
     changelog: input.changelog,
     userId: input.userId ?? null,
   })

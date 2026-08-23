@@ -259,4 +259,79 @@ describe('TF_STATE_NAME per element (issue #104)', () => {
     // '-2' is not a state name; empty is the existing signal for "unidentified".
     expect(stateNameOf()).toBe('')
   })
+
+  // Issue #183. The stateKeyParam value is typed by whoever places the order, so
+  // before these the state key was too.
+  it('namespaces the stateKeyParam value with the order id', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacks(product.id, env.id, {
+      hostname: 'web-01',
+      ORDER_ID: '42',
+      ELEMENT_SEQUENCE: '1',
+      TF_STATE_NAMESPACE: '42',
+    })
+
+    expect(stateNameOf()).toBe('web-01-42')
+  })
+
+  it('gives two orders that typed the same hostname different states', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacks(product.id, env.id, {
+      hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: '42',
+    })
+    const first = stateNameOf()
+
+    mockedTriggerPipeline.mockClear()
+    // A different user, same product, same value typed into the same field. This
+    // pipeline used to point at the state the first one created — and destroying
+    // this element then destroyed the first user's infrastructure.
+    await triggerPipelineStacks(product.id, env.id, {
+      hostname: 'web-01', ORDER_ID: '43', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: '43',
+    })
+
+    expect(stateNameOf()).not.toBe(first)
+    expect(stateNameOf()).toBe('web-01-43')
+  })
+
+  it('strips what a state key may not contain from the typed value', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacks(product.id, env.id, {
+      hostname: '../../other/state',
+      ORDER_ID: '42',
+      ELEMENT_SEQUENCE: '1',
+      TF_STATE_NAMESPACE: '42',
+    })
+
+    // The orchestrator treats the name as a path, so the separators go and the
+    // leading dots with them.
+    expect(stateNameOf()).toBe('other-state-42')
+  })
+
+  it('still suffixes a namespaced key per element', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacks(product.id, env.id, {
+      hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '3', TF_STATE_NAMESPACE: '42',
+    })
+
+    expect(stateNameOf()).toBe('web-01-42-3')
+  })
+
+  it('leaves the key of an element provisioned before the namespace exactly as it was', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    // No TF_STATE_NAMESPACE: the element predates #183, and its Terraform state
+    // exists under the raw value. Re-deriving it would point the teardown at a
+    // state that was never created.
+    await triggerPipelineStacks(product.id, env.id, {
+      hostname: 'web-01',
+      ORDER_ID: '42',
+      ELEMENT_SEQUENCE: '2',
+    })
+
+    expect(stateNameOf()).toBe('web-01-2')
+  })
 })

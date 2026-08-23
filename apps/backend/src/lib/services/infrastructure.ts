@@ -14,7 +14,8 @@ import { fireDestroyTriggers, destroyVariables } from '@/lib/services/teardown'
 import { TRIGGERING_KEY, TRIGGERING_VALUE } from '@/lib/webhook/settle'
 import { recordOrderPipelineId, finishOrderTriggerRun } from '@/lib/services/pipelineTracking'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
-import { ELEMENT_SEQUENCE_VAR } from '@/lib/ci/stateKey'
+import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR } from '@/lib/ci/stateKey'
+import { withoutReservedCiVariables } from '@/lib/ci/reserved'
 import { ok, err, type Result } from '@/lib/services/result'
 import { trialVariables, trialExpiry } from '@/lib/services/trial'
 import {
@@ -350,7 +351,10 @@ export const retryProvisioning = async (
 
   for (const element of elements) {
     const variables = {
-      ...(element.parameters as Record<string, string>),
+      // Same filter the provisioning and teardown paths apply: a stored parameter
+      // named after a server-owned variable (issue #183) is not the retry's to
+      // honour, and REF in particular would decide which git ref this rerun uses.
+      ...withoutReservedCiVariables(element.parameters as Record<string, string>),
       // Pipeline stacks derive TF_STATE_NAME from stateKeyParam ?? ORDER_ID, and
       // the stored parameters do not carry the server-generated order id. Reusing
       // the ORIGINAL order id is the point: the retry has to target the same
@@ -359,6 +363,12 @@ export const retryProvisioning = async (
       // And the element's own sequence, for the same reason: it is what suffixes
       // the state key, so element 3 retries element 3's state and not element 1's.
       [ELEMENT_SEQUENCE_VAR]: String(element.sequence),
+      // And the element's own state-key namespace, unchanged: a retry works on the
+      // state the failed attempt was working on, so an element provisioned before
+      // #183 (namespace NULL) has to keep deriving its key from the raw parameter.
+      ...(element.stateKeyNamespace !== null
+        ? { [STATE_KEY_NAMESPACE_VAR]: element.stateKeyNamespace }
+        : {}),
       ...(element.sizeCode !== null ? { SIZE: element.sizeCode } : {}),
       ...(order.isTrial ? trialVariables(trialDurationMinutes) : {}),
     }

@@ -5,6 +5,23 @@ import { ok, err, type Result } from '@/lib/services/result'
 import { recordProductVersion } from '@/lib/services/versions'
 import { logAudit, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
+import { isReservedCiVariable } from '@/lib/ci/reserved'
+
+/**
+ * A parameter's name becomes a CI trigger variable verbatim, so a definition
+ * named after one the server decides hands the ordering user that decision —
+ * REF chose the git ref the provisioning pipeline ran, TF_ACTION turned a
+ * provisioning order into a destroy (issue #183).
+ *
+ * Braces, not belt: the trigger layer strips these names from every parameter map
+ * regardless, because this check cannot reach the rows that already exist. What it
+ * buys is that an admin finds out at the point of naming rather than by watching a
+ * field silently do nothing.
+ */
+const reservedNameError = (name: string | undefined): Result<never> | null =>
+  name !== undefined && isReservedCiVariable(name)
+    ? err(400, `Parameter name "${name}" is reserved for a CI variable the server sets`)
+    : null
 
 export interface ParameterFilters {
   scope?: 'global' | 'category' | 'product'
@@ -53,6 +70,9 @@ export const createParameter = async (
   input: CreateParameterInput,
   userId?: number,
 ): Promise<Result<Parameter>> => {
+  const reserved = reservedNameError(input.name)
+  if (reserved) return reserved
+
   const [param] = await db
     .insert(parameters)
     .values({
@@ -87,6 +107,10 @@ export const updateParameter = async (
   userId?: number,
 ): Promise<Result<Parameter>> => {
   if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
+
+  // Renames too, or the check would only cost an attacker one extra request.
+  const reserved = reservedNameError(input.name)
+  if (reserved) return reserved
 
   // Read the row first: an edit that MOVES the parameter to another environment
   // changes two sets of offerings, and the old one is only knowable from before.

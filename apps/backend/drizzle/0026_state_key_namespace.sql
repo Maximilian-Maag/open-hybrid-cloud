@@ -1,0 +1,39 @@
+-- One user could target another user's Terraform state (issue #183).
+--
+-- A pipeline stack names a parameter — `pipeline_stacks.state_key_param`, default
+-- `hostname` — whose VALUE became the whole state key. The value is typed by
+-- whoever places the order and was never namespaced, so user B ordering the same
+-- product and typing the hostname user A had used got a pipeline pointed at A's
+-- state; decommissioning B's own element then ran destroy against A's
+-- infrastructure with every portal-side ownership check passing.
+--
+-- ── Why a column, and why it is nullable ─────────────────────────────────────
+-- The fix appends the server-generated order id to the key. Applying that to
+-- elements that ALREADY exist would point their teardown at a state their apply
+-- never created — infrastructure left running with nothing left to destroy it,
+-- which is worse than the bug. So the scheme is recorded per element instead of
+-- being recomputed: NULL means "provisioned before #183, derive the key the old
+-- way", which is precisely what every existing row is. No backfill, for exactly
+-- that reason — a backfilled value would claim a state name that does not exist.
+--
+-- This mirrors how 0020 handled `sequence`: the value every legacy row implicitly
+-- had is the default, so their state names stay byte-identical.
+ALTER TABLE "infrastructure_elements" ADD COLUMN IF NOT EXISTS "state_key_namespace" text;
+
+-- ── Parameter definitions named after a server-owned variable ────────────────
+-- The other half of #183 is that a parameter DEFINITION named REF, TF_ACTION or
+-- TF_STATE_NAME let the ordering user choose the git ref the pipeline ran, or
+-- turn a provisioning order into a destroy. Nothing is deleted here on purpose:
+-- such a row may carry a label, a default and a description an admin wrote, and
+-- dropping it would silently remove a field from an order form. The runtime guard
+-- is what closes the hole — `withoutReservedCiVariables` strips these names from
+-- every parameter map on its way into a trigger, so an existing row (and every
+-- order that already stored a value for it) is inert. Creating or renaming one is
+-- refused from here on. The query that finds them, for an operator who wants to
+-- clean up:
+--
+--   SELECT id, scope, scope_id, name FROM parameters
+--    WHERE upper(name) IN ('REF','BRANCH','WORKFLOW','TF_ACTION','TF_STATE_NAME',
+--                          'TF_STATE_NAMESPACE','TEMPLATE','PIPELINE_STACK',
+--                          'ORDER_ID','ELEMENT_SEQUENCE','INFRA_ID','SIZE',
+--                          'TRIAL','TRIAL_DURATION_MINUTES');

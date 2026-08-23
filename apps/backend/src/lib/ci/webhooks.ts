@@ -3,7 +3,7 @@ import { productWebhooks, pipelineStacks, deploymentEnvironments } from '@/lib/d
 import { sql, eq, and } from 'drizzle-orm'
 import { findCiSourceForEnv } from '@/lib/db/queries'
 import { triggerPipeline } from './index'
-import { ELEMENT_SEQUENCE_VAR, elementStateSuffix } from './stateKey'
+import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR, elementStateSuffix, stateKeyBase } from './stateKey'
 
 /**
  * Result of fanning a trigger out over every configured webhook/stack.
@@ -87,10 +87,17 @@ export const triggerPipelineStacksTracked = async (
   const suffix = elementStateSuffix(variables[ELEMENT_SEQUENCE_VAR])
   for (const stack of stacks) {
     if (!stack.steps || (stack.steps as unknown[]).length === 0) continue
-    const stateKeyBase = variables[stack.stateKeyParam] ?? variables['ORDER_ID'] ?? ''
+    const base = stateKeyBase({
+      param: variables[stack.stateKeyParam],
+      orderId: variables['ORDER_ID'],
+      // Server-owned and per element, so a stack's stateKeyParam value can no
+      // longer name another order's state — see `stateKeyBase` for why an element
+      // without one keeps deriving its key the old way.
+      namespace: variables[STATE_KEY_NAMESPACE_VAR],
+    })
     // Never suffix an empty base: `-2` on its own is not a state name, and an
     // empty TF_STATE_NAME is the existing signal that nothing identified a state.
-    const tfStateName = stateKeyBase === '' ? '' : `${stateKeyBase}${suffix}`
+    const tfStateName = base === '' ? '' : `${base}${suffix}`
     try {
       const pid = await triggerPipeline(ciSource, env.webhookUrl, env.webhookToken, {
         ...variables,

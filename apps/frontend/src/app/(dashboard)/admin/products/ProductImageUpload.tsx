@@ -64,16 +64,19 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
         cache: 'no-store',
       })
       if (!res.ok) {
-        setError('Could not load the gallery.')
+        setError(t('couldNotLoadGallery', lang))
         return
       }
       setImages(await res.json())
+      // Cleared on success, not just set on failure: a transient error otherwise
+      // leaves its alert standing over a gallery that has since loaded.
+      setError(null)
     } catch {
-      setError('Could not load the gallery.')
+      setError(t('couldNotLoadGallery', lang))
     }
     // authHeader is derived from `token`, which is what actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId, token])
+  }, [productId, token, lang])
 
   useEffect(() => {
     void load()
@@ -205,12 +208,12 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
       })
       if (!res.ok && res.status !== 204) {
         const payload = await res.json().catch(() => null)
-        setError(payload?.error ?? 'Could not reorder the gallery.')
+        setError(payload?.error ?? t('couldNotReorderGallery', lang))
         return
       }
-      await afterChange('Order saved.')
+      await afterChange(t('imageOrderSaved', lang))
     } catch {
-      setError('Could not reorder the gallery.')
+      setError(t('couldNotReorderGallery', lang))
     } finally {
       setBusy(false)
     }
@@ -223,7 +226,7 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
 
       {/* The gallery, in the order the product page shows it. */}
       {images.length === 0 ? (
-        <p className="text-sm text-slate-600">No pictures yet. The product page shows a placeholder.</p>
+        <p className="text-sm text-slate-600">{t('noPicturesYet', lang)}</p>
       ) : (
         <ol className="space-y-3">
           {images.map((image, index) => (
@@ -242,7 +245,7 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
                   htmlFor={`product-image-alt-${image.id}`}
                   className="block text-sm font-medium text-slate-700"
                 >
-                  {index === 0 ? 'Image description (leading picture)' : 'Image description'}{' '}
+                  {index === 0 ? t('imageDescriptionLeading', lang) : t('imageDescriptionLabel', lang)}{' '}
                   <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -253,7 +256,7 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
                   onBlur={(e) => {
                     if (e.target.value.trim() !== image.alt) void saveAlt(image, e.target.value)
                   }}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full min-h-11 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -261,27 +264,27 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
                     variant="secondary"
                     onClick={() => move(index, -1)}
                     disabled={busy || index === 0}
-                    aria-label={`Move "${image.alt}" earlier`}
+                    aria-label={`${t('moveUp', lang)}: ${image.alt}`}
                   >
-                    Move up
+                    {t('moveUp', lang)}
                   </Button>
                   <Button
                     size="sm"
                     variant="secondary"
                     onClick={() => move(index, 1)}
                     disabled={busy || index === images.length - 1}
-                    aria-label={`Move "${image.alt}" later`}
+                    aria-label={`${t('moveDown', lang)}: ${image.alt}`}
                   >
-                    Move down
+                    {t('moveDown', lang)}
                   </Button>
                   <Button
                     size="sm"
                     variant="danger"
                     onClick={() => remove(image)}
                     disabled={busy}
-                    aria-label={`Remove "${image.alt}"`}
+                    aria-label={`${t('remove', lang)}: ${image.alt}`}
                   >
-                    Remove
+                    {t('remove', lang)}
                   </Button>
                 </div>
               </div>
@@ -304,7 +307,7 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
             maxLength={MAX_ALT}
             onChange={(e) => { setAlt(e.target.value); setSaved(null); setError(null) }}
             placeholder={t('placeholderImageAltExample', lang)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="min-h-11 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <p className="text-xs text-slate-500">
             {t('imageDescriptionHint', lang)} {t('requiredForEveryImage', lang)}
@@ -330,8 +333,8 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
             className="block text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
           />
           <p className="text-xs text-slate-500">
-            {t('imageFormatHintPlain', lang)} Up to {MAX_IMAGES} pictures per product
-            {images.length >= MAX_IMAGES ? ' — remove one to add another.' : '.'}
+            {t('imageFormatHintPlain', lang)} {t('maxPicturesPerProduct', lang)}: {MAX_IMAGES}.
+            {images.length >= MAX_IMAGES && ` ${t('removeOneToAddAnother', lang)}`}
           </p>
         </div>
       </div>

@@ -223,7 +223,7 @@ describe('ProductImageUpload — an existing gallery', () => {
     const user = userEvent.setup()
     render(<ProductImageUpload productId={12} token="t" />)
 
-    await user.click(await screen.findByRole('button', { name: /remove "the back of it"/i }))
+    await user.click(await screen.findByRole('button', { name: /remove: the back of it/i }))
 
     await waitFor(() => expect(writes()).not.toHaveLength(0))
     const [url, init] = lastWrite()
@@ -238,7 +238,7 @@ describe('ProductImageUpload — an existing gallery', () => {
     const user = userEvent.setup()
     render(<ProductImageUpload productId={4} token="t" />)
 
-    await user.click(await screen.findByRole('button', { name: /move "the front of it" later/i }))
+    await user.click(await screen.findByRole('button', { name: /move down: the front of it/i }))
 
     await waitFor(() => expect(writes()).not.toHaveLength(0))
     const [url, init] = lastWrite()
@@ -251,8 +251,8 @@ describe('ProductImageUpload — an existing gallery', () => {
     stubFetch(two)
     render(<ProductImageUpload productId={4} token="t" />)
 
-    expect(await screen.findByRole('button', { name: /move "the front of it" earlier/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /move "the back of it" later/i })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: /move up: the front of it/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /move down: the back of it/i })).toBeDisabled()
   })
 
   it('says so, rather than showing an empty list, when the gallery cannot be loaded', async () => {

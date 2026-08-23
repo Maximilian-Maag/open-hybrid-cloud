@@ -4,10 +4,11 @@ vi.mock('@/lib/ci', () => ({
   triggerPipeline: vi.fn(),
 }))
 
-import { triggerProductWebhooks, triggerProductWebhooksTracked } from './webhooks'
+import { triggerProductWebhooks, triggerProductWebhooksTracked, triggerPipelineStacks } from './webhooks'
+import { elementStateSuffix } from './stateKey'
 import { triggerPipeline } from './index'
 import { db } from '@/lib/db/client'
-import { productWebhooks } from '@/lib/db/schema'
+import { productWebhooks, pipelineStacks } from '@/lib/db/schema'
 import {
   createCategory,
   createProduct,
@@ -187,5 +188,75 @@ describe('triggerProductWebhooksTracked', () => {
 
     const outcome = await triggerProductWebhooksTracked(product.id, env.id, {})
     expect(outcome).toEqual({ pipelineIds: ['pipe-1'], failures: [] })
+  })
+})
+
+describe('elementStateSuffix', () => {
+  it('leaves element 1 unsuffixed and suffixes the rest', () => {
+    // Element 1 has to be byte-identical to the pre-quantity behaviour, or the
+    // teardown of every element provisioned before this change would target a
+    // state file that does not exist.
+    expect(elementStateSuffix('1')).toBe('')
+    expect(elementStateSuffix(1)).toBe('')
+    expect(elementStateSuffix(undefined)).toBe('')
+    expect(elementStateSuffix('not a number')).toBe('')
+    expect(elementStateSuffix('2')).toBe('-2')
+    expect(elementStateSuffix(20)).toBe('-20')
+  })
+})
+
+describe('TF_STATE_NAME per element (issue #104)', () => {
+  const seedStack = async (stateKeyParam: string) => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await db.insert(pipelineStacks).values({
+      productId: product.id,
+      environmentId: env.id,
+      name: 'stack',
+      stateKeyParam,
+      steps: [{ template: 'vm', suffix: 'vm' }] as never,
+    })
+    return { product, env }
+  }
+
+  const stateNameOf = () =>
+    (mockedTriggerPipeline.mock.calls[0][3] as Record<string, string>).TF_STATE_NAME
+
+  it('derives the state key from ORDER_ID and suffixes it per element', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacks(product.id, env.id, { ORDER_ID: '42', ELEMENT_SEQUENCE: '1' })
+    expect(stateNameOf()).toBe('42')
+
+    mockedTriggerPipeline.mockClear()
+    await triggerPipelineStacks(product.id, env.id, { ORDER_ID: '42', ELEMENT_SEQUENCE: '3' })
+    // Element three of order 42 gets its own state, so it cannot apply on top of
+    // element one's.
+    expect(stateNameOf()).toBe('42-3')
+  })
+
+  it("suffixes the stack's own stateKeyParam too", async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacks(product.id, env.id, {
+      hostname: 'web-01',
+      ORDER_ID: '42',
+      ELEMENT_SEQUENCE: '2',
+    })
+
+    // The parameter is the same for every element of one line — it is what the
+    // customer typed — so without the suffix all twenty would share a state file.
+    expect(stateNameOf()).toBe('web-01-2')
+  })
+
+  it('never produces a bare suffix when nothing identifies the state', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacks(product.id, env.id, { ELEMENT_SEQUENCE: '2' })
+
+    // '-2' is not a state name; empty is the existing signal for "unidentified".
+    expect(stateNameOf()).toBe('')
   })
 })

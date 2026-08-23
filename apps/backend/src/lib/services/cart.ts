@@ -11,6 +11,14 @@ import { and, eq, sql, inArray } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 import { prepareOrder, createPreparedOrder, type PreparedOrder } from '@/lib/services/orders'
+import {
+  resolveOfferingPrice,
+  validateQuantity,
+  linePriceSql,
+  lineCurrencySql,
+  lineSizeLabelSql,
+  lineSizeStillOfferedSql,
+} from '@/lib/services/sizes'
 
 export interface CartRow {
   id: number
@@ -21,17 +29,43 @@ export interface CartRow {
   productName: string | null
   imageAlt: string | null
   environmentName: string | null
+  /**
+   * The chosen size (issue #98), null when the offering has none, and the label it
+   * reads as today. The label is resolved for display only — the code is what the
+   * line stores and what checkout is validated against.
+   */
+  sizeCode: string | null
+  sizeLabel: string | null
+  /** How many elements this line will provision (issue #104). */
+  quantity: number
+  /**
+   * UNIT price — the chosen size's, or the offering's when the line has no size.
+   * The line total is this times `quantity`, computed where it is displayed so the
+   * conversion to the viewer's currency happens once.
+   */
   price: string | null
   currency: string | null
   /**
-   * False when the product is no longer offered in that environment. The item
-   * stays in the cart and says so, rather than vanishing without explanation.
+   * False when the product is no longer offered in that environment, OR when the
+   * size the line chose has been retired. The item stays in the cart and says so,
+   * rather than vanishing without explanation or failing at checkout.
    */
   stillOffered: boolean
 }
 
 /** A cart of unbounded size is a way to fire unbounded pipelines in one request. */
 export const MAX_CART_ITEMS = 25
+
+/**
+ * Ceiling on the ELEMENTS one checkout may provision.
+ *
+ * MAX_CART_ITEMS alone stopped bounding the work once a line could ask for twenty
+ * elements: 25 lines × 20 is 500 pipeline runs from one request. The cap is on the
+ * sum rather than on the lines, because that is the number that actually reaches
+ * CI. A cart that exceeds it is checked out in two goes, which is a far better
+ * answer than a request that fires 500 pipelines.
+ */
+export const MAX_CHECKOUT_ELEMENTS = 100
 
 /**
  * The caller's cart, oldest first.
@@ -51,8 +85,19 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
       productName: productTranslations.name,
       imageAlt: products.imageAlt,
       environmentName: deploymentEnvironments.name,
-      price: productEnvironments.price,
-      currency: productEnvironments.currency,
+      sizeCode: cartItems.sizeCode,
+      quantity: cartItems.quantity,
+      // The chosen size's price, falling back to the offering's for a line with no
+      // size. Shared SQL rather than a local copy — see `linePriceSql` for why
+      // there is exactly one definition of "which price applies".
+      price: linePriceSql(cartItems.productId, cartItems.environmentId, cartItems.sizeCode),
+      currency: lineCurrencySql(cartItems.productId, cartItems.environmentId, cartItems.sizeCode),
+      sizeLabel: lineSizeLabelSql(cartItems.productId, cartItems.environmentId, cartItems.sizeCode),
+      sizeStillOffered: lineSizeStillOfferedSql(
+        cartItems.productId,
+        cartItems.environmentId,
+        cartItems.sizeCode,
+      ),
     })
     .from(cartItems)
     // The image description lives on the product row, so that table has to be in
@@ -79,7 +124,15 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
     .where(eq(cartItems.userId, session.id))
     .orderBy(cartItems.createdAt, cartItems.id)
 
-  return ok(rows.map((row) => ({ ...row, stillOffered: row.price !== null })))
+  return ok(
+    rows.map(({ sizeStillOffered, ...row }) => ({
+      ...row,
+      // Two ways a line can have become unorderable, and both have to say so here
+      // rather than at checkout: the offering was withdrawn (no price resolves at
+      // all) or the size it names was retired.
+      stillOffered: row.price !== null && sizeStillOffered,
+    })),
+  )
 }
 
 /**
@@ -92,7 +145,13 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
  */
 export const addToCart = async (
   session: SessionUser,
-  input: { productId: number; environmentId: number; parameters?: Record<string, string> },
+  input: {
+    productId: number
+    environmentId: number
+    parameters?: Record<string, string>
+    sizeCode?: string | null
+    quantity?: number
+  },
 ): Promise<Result<CartRow>> => {
   const [offering] = await db
     .select({ productId: productEnvironments.productId })
@@ -106,6 +165,15 @@ export const addToCart = async (
     .limit(1)
 
   if (!offering) return err(400, 'Product is not offered in the selected environment')
+
+  // The size and quantity ARE validated on the way in, unlike the parameters: they
+  // are not something the user fills in later at checkout, they are what the line
+  // IS. A line naming a size that does not exist is not an incomplete shopping
+  // list entry, it is a line that can never be ordered.
+  const priced = await resolveOfferingPrice(input.productId, input.environmentId, input.sizeCode)
+  if (!priced.ok) return priced
+  const quantity = validateQuantity(input.quantity)
+  if (!quantity.ok) return quantity
 
   const [{ count }] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
@@ -125,6 +193,8 @@ export const addToCart = async (
       productId: input.productId,
       environmentId: input.environmentId,
       parameters: input.parameters ?? {},
+      sizeCode: priced.data.sizeCode,
+      quantity: quantity.data,
     })
     .returning()
 
@@ -136,27 +206,78 @@ export const addToCart = async (
       productName: null,
       imageAlt: null,
       environmentName: null,
-      price: null,
-      currency: null,
+      sizeLabel: priced.data.sizeLabel,
+      price: priced.data.price,
+      currency: priced.data.currency,
       stillOffered: true,
     },
   )
 }
 
 /**
- * Update one item's parameter prefill.
+ * Update one line: its parameter prefill, its size, or how many it asks for.
  *
  * Lets the checkout form save progress without re-adding the item, and keeps the
- * cart the single source of what the user has typed.
+ * cart the single source of what the user has typed. Quantity is editable HERE
+ * because that is where a shopper changes it (issue #104) — the alternative,
+ * removing the line and adding it again, loses the parameters they had typed.
+ *
+ * A patch, not a replacement: sending only `quantity` must not wipe the
+ * parameters, so an absent field means "leave it alone".
  */
 export const updateCartItem = async (
   session: SessionUser,
   itemId: number,
-  parameters: Record<string, string>,
+  patch: {
+    parameters?: Record<string, string>
+    sizeCode?: string | null
+    quantity?: number
+  },
 ): Promise<Result<void>> => {
+  // Read first: changing the size has to be validated against THIS line's
+  // offering, which only the stored row knows.
+  const [existing] = await db
+    .select({
+      productId: cartItems.productId,
+      environmentId: cartItems.environmentId,
+      sizeCode: cartItems.sizeCode,
+    })
+    .from(cartItems)
+    .where(and(eq(cartItems.id, itemId), eq(cartItems.userId, session.id)))
+    .limit(1)
+
+  if (!existing) return err(404, 'Cart item not found')
+
+  const values: {
+    parameters?: Record<string, string>
+    sizeCode?: string | null
+    quantity?: number
+  } = {}
+
+  if (patch.parameters !== undefined) values.parameters = patch.parameters
+
+  if (patch.sizeCode !== undefined) {
+    const priced = await resolveOfferingPrice(
+      existing.productId,
+      existing.environmentId,
+      patch.sizeCode,
+    )
+    if (!priced.ok) return priced
+    values.sizeCode = priced.data.sizeCode
+  }
+
+  if (patch.quantity !== undefined) {
+    const quantity = validateQuantity(patch.quantity)
+    if (!quantity.ok) return quantity
+    values.quantity = quantity.data
+  }
+
+  // Nothing to change is not an error — the caller's intent is already the state.
+  if (Object.keys(values).length === 0) return ok(undefined)
+
   const updated = await db
     .update(cartItems)
-    .set({ parameters })
+    .set(values)
     // Scoped by user id, so an item id from another user's cart cannot be touched.
     .where(and(eq(cartItems.id, itemId), eq(cartItems.userId, session.id)))
     .returning({ id: cartItems.id })
@@ -230,9 +351,25 @@ export const checkoutCart = async (
   }
 
   const owned = await db
-    .select({ id: cartItems.id, productId: cartItems.productId, environmentId: cartItems.environmentId })
+    .select({
+      id: cartItems.id,
+      productId: cartItems.productId,
+      environmentId: cartItems.environmentId,
+      sizeCode: cartItems.sizeCode,
+      quantity: cartItems.quantity,
+    })
     .from(cartItems)
     .where(and(eq(cartItems.userId, session.id), inArray(cartItems.id, ids)))
+
+  // Counted over the ELEMENTS, not the lines: with quantity, the number of lines
+  // no longer bounds the number of pipeline runs this request will start.
+  const totalElements = owned.reduce((sum, item) => sum + Math.max(item.quantity, 1), 0)
+  if (totalElements > MAX_CHECKOUT_ELEMENTS) {
+    return err(
+      400,
+      `A checkout can provision at most ${MAX_CHECKOUT_ELEMENTS} elements; this one asks for ${totalElements}`,
+    )
+  }
 
   if (owned.length !== input.items.length) {
     // Either an id belongs to somebody else's cart or the cart changed in another
@@ -255,6 +392,11 @@ export const checkoutCart = async (
       parameters: item.parameters,
       costCenterId: item.costCenterId,
       trial: item.trial,
+      // From the stored line, never from the request: the size and the quantity
+      // are what the user put in the cart, and accepting them again here would let
+      // a checkout re-price or multiply a line the cart never showed.
+      sizeCode: cartItem.sizeCode,
+      quantity: cartItem.quantity,
     })
     if (result.ok) prepared.push({ cartItemId: item.cartItemId, order: result.data })
     else invalid.push({ cartItemId: item.cartItemId, message: result.message })

@@ -80,7 +80,15 @@ export function ApprovalRow({ order, token, currentUserId }: Props) {
             {order.isTrial && <TrialBadge lang={lang} />}
           </div>
           <p className="text-sm text-slate-500">
-            {order.environmentName} · {order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`} on{' '}
+            {order.environmentName}
+            {/* Size and quantity change what the approver is agreeing to: one
+                decision covers all N elements (issues #98/#104), so "20 × XL" must
+                not be something they have to open the order to discover. */}
+            {order.sizeCode && <> · {t('size', lang)}: {order.sizeCode}</>}
+            {order.quantity !== undefined && order.quantity > 1 && (
+              <> · {t('quantity', lang)}: {order.quantity}</>
+            )}
+            {' · '}{order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`} on{' '}
             {new Date(order.createdAt).toLocaleDateString(lang)}
           </p>
         </div>

@@ -3,12 +3,21 @@ import { z } from 'zod'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
 import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { updateCartItem, removeFromCart } from '@/lib/services/cart'
+import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
-const UpdateCartItemSchema = z.object({
-  parameters: z.record(z.string()),
-})
+// Every field optional: this is a patch, so sending only `quantity` — which is
+// what the cart's quantity control does — must not wipe the parameter prefill.
+const UpdateCartItemSchema = z
+  .object({
+    parameters: z.record(z.string()).optional(),
+    sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional(),
+    quantity: z.number().int().positive().optional(),
+  })
+  .refine((body) => Object.keys(body).length !== 0, {
+    message: 'Nothing to update',
+  })
 
-/** Save the checkout form's progress on one item. */
+/** Update one cart line: its parameter prefill, its size or its quantity. */
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ itemId: string }> },
@@ -24,7 +33,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateCartItem(session, itemId, parsed.data.parameters))
+  return toResponse(await updateCartItem(session, itemId, parsed.data))
 }
 
 export async function DELETE(

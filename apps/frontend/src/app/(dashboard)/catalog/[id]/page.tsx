@@ -9,7 +9,7 @@ import { ProductImage } from '@/components/ui/ProductImage'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
-import { localeToCurrency, convertPrice } from '@/lib/locale'
+import { localeToCurrency, convertPrice, sortByValue } from '@/lib/locale'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -60,20 +60,59 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
       ? Object.fromEntries((ratesRes.value ?? []).map((r) => [r.currencyCode, parseFloat(r.rate)]))
       : {}
 
-  /** An offering's price in the viewer's currency, with the original alongside. */
-  const priceOf = (env: { price: string; currency: string }) => {
-    const converted = convertPrice(env.price, env.currency, localeCurrency, ratesMap, lang)
+  /** One amount in the viewer's currency, with the original alongside. */
+  const priceOf = (amount: { price: string; currency: string }) => {
+    const converted = convertPrice(amount.price, amount.currency, localeCurrency, ratesMap, lang)
     return {
       display: `${converted.amount} ${converted.currency}`,
-      original: converted.currency !== env.currency ? `${env.price} ${env.currency}` : null,
+      original: converted.currency !== amount.currency ? `${amount.price} ${amount.currency}` : null,
     }
   }
 
-  // The buy box leads with the cheapest offering, because that is the number a
-  // shopper reads as "the price" — the full list is right below it.
-  const cheapest = [...product.environments].sort(
-    (a, b) => Number(a.price) - Number(b.price),
-  )[0]
+  /**
+   * What an offering can cost — one amount per size, or its own single price when
+   * it has no sizes (issue #98).
+   *
+   * Price moved to the size, so "the price of an environment" is no longer one
+   * number. `product_environments.price` is still the answer for an offering that
+   * defines no sizes, which is every offering that predates sizing.
+   */
+  type Offering = ProductDetail['environments'][number]
+  const amountsOf = (env: Offering) =>
+    env.sizes && env.sizes.length > 0
+      ? env.sizes.map((size) => ({ price: size.price, currency: size.currency }))
+      : [{ price: env.price, currency: env.currency }]
+
+  // Compared in EUR rather than by the digits: each size carries its own
+  // currency, so the smallest number is not the cheapest offer.
+  const cheapestOf = (env: Offering) => sortByValue(amountsOf(env), ratesMap)[0]
+
+  /**
+   * An offering's price as a shopper reads it: one figure, or a range across its
+   * sizes.
+   *
+   * A range rather than "from X": it is a dash between two prices, which needs no
+   * word and therefore no twenty-fifth translation of one.
+   */
+  const rangeOf = (env: Offering): { display: string; original: string | null } => {
+    const sorted = sortByValue(amountsOf(env), ratesMap)
+    const cheapest = sorted[0]
+    const dearest = sorted[sorted.length - 1]
+    const low = priceOf(cheapest)
+    // Currency as well as price: two sizes at "10" in different currencies are
+    // two different prices, and collapsing them to one figure hides that.
+    if (cheapest.price === dearest.price && cheapest.currency === dearest.currency) return low
+    const high = priceOf(dearest)
+    return { display: `${low.display} – ${high.display}`, original: null }
+  }
+
+  // The buy box leads with the cheapest thing the product can be bought for,
+  // because that is the number a shopper reads as "the price" — the full list is
+  // right below it.
+  const cheapest = sortByValue(
+    product.environments.map((env) => ({ ...cheapestOf(env), env })),
+    ratesMap,
+  )[0]?.env
 
   return (
     <div className="max-w-screen-xl mx-auto">
@@ -118,7 +157,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
               </h2>
               <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
                 {product.environments.map((env) => {
-                  const price = priceOf(env)
+                  const price = rangeOf(env)
                   return (
                     <li key={env.environmentId} className="flex items-baseline justify-between gap-3 px-4 py-2">
                       <span className="text-sm text-slate-700">
@@ -143,7 +182,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
         {cheapest && (
           <div className="lg:col-span-3">
             <div className="rounded-lg border border-slate-200 bg-white p-4 lg:sticky lg:top-28">
-              <p className="text-2xl font-bold text-slate-900">{priceOf(cheapest).display}</p>
+              <p className="text-2xl font-bold text-slate-900">{priceOf(cheapestOf(cheapest)).display}</p>
               {product.environments.length > 1 && (
                 <p className="mt-1 text-xs text-slate-500">
                   {cheapest.environmentName ?? `Env ${cheapest.environmentId}`}

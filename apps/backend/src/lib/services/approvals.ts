@@ -2,7 +2,6 @@ import type { SessionUser } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
 import {
   orders,
-  infrastructureElements,
   deploymentEnvironments,
   users,
   projects,
@@ -11,12 +10,11 @@ import {
 import { eq, and, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { sendOrderApproved, sendOrderRejected } from '@/lib/notification'
-import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { findProductName, findUserEmail } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
-import { trialVariables, trialExpiry } from '@/lib/services/trial'
 import { redactParametersForOrders } from '@/lib/services/parameterRedaction'
 import { activeDelegationsHeldBy, type DelegationRow } from '@/lib/services/delegations'
+import { provisionOrderElements } from '@/lib/services/orders'
 
 export interface ApprovalRow {
   id: number
@@ -37,6 +35,13 @@ export interface ApprovalRow {
    * after it comes up, and asks the pipeline for elevated rights inside it.
    */
   isTrial: boolean
+  /**
+   * The chosen size and how many elements the order asks for (issues #98/#104).
+   * Both are shown in the queue because they change what the approver is agreeing
+   * to: "20 x XL" is a different decision from "1 x XS".
+   */
+  sizeCode: string | null
+  quantity: number
   productName: string
   environmentName: string | null
   userName: string | null
@@ -59,6 +64,8 @@ export const listApprovals = async (): Promise<Result<ApprovalRow[]>> => {
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
       isTrial: orders.isTrial,
+      sizeCode: orders.sizeCode,
+      quantity: orders.quantity,
       productName: sql<string>`(
         SELECT name FROM product_translations
         WHERE product_id = ${orders.productId}
@@ -153,7 +160,7 @@ const assertNotOwnOrder = async (
 export const approveOrder = async (
   session: SessionUser,
   orderId: number,
-): Promise<Result<{ success: true; infraId: number; pipelineIds: string[] }>> => {
+): Promise<Result<{ success: true; infraId: number; infraIds: number[]; pipelineIds: string[] }>> => {
   const separation = await assertNotOwnOrder(session, orderId)
   if (!separation.ok) return separation
 
@@ -207,18 +214,27 @@ export const approveOrder = async (
     trialDurationMinutes = offering && offering.trialDurationMinutes > 0 ? offering.trialDurationMinutes : 30
   }
 
-  const triggerVars = {
-    ...(order.parameters as Record<string, string>),
-    ORDER_ID: String(order.id),
-    ...(order.isTrial ? trialVariables(trialDurationMinutes) : {}),
-  }
-  let pipelineIds: string[]
+  // One decision, N elements: approving an order of twenty approves all twenty
+  // (the owner's decision on #104). The fan-out is the same code the admin's
+  // direct order runs, so the two cannot derive different Terraform state keys.
+  let provisioned: Awaited<ReturnType<typeof provisionOrderElements>>
   try {
-    const webhookIds = await triggerProductWebhooks(order.productId, order.environmentId, triggerVars)
-    const stackIds = await triggerPipelineStacks(order.productId, order.environmentId, triggerVars)
-    pipelineIds = [...webhookIds, ...stackIds]
+    provisioned = await provisionOrderElements({
+      orderId: order.id,
+      projectId: order.projectId,
+      productId: order.productId,
+      environmentId: order.environmentId,
+      sizeCode: order.sizeCode,
+      // Defensive: a row written before the column existed reads as 1 through the
+      // schema default, but a hand-edited 0 would silently provision nothing.
+      quantity: order.quantity >= 1 ? order.quantity : 1,
+      parameters: order.parameters as Record<string, string>,
+      isTrial: order.isTrial,
+      trialDurationMinutes,
+    })
   } catch (e) {
-    // Provisioning could not be started — release the claim so it can be retried.
+    // Not one element could be started, so nothing is provisioned — release the
+    // claim and let the approval be retried.
     await db
       .update(orders)
       .set({ status: 'pending', updatedAt: new Date() })
@@ -226,32 +242,12 @@ export const approveOrder = async (
     throw e
   }
 
-  await db
-    .update(orders)
-    .set({ pipelineId: pipelineIds, updatedAt: new Date() })
-    .where(eq(orders.id, orderId))
-
-  const [infra] = await db
-    .insert(infrastructureElements)
-    .values({
-      orderId: order.id,
-      projectId: order.projectId,
-      environmentId: order.environmentId,
-      productId: order.productId,
-      status: 'active',
-      parameters: order.parameters as Record<string, string>,
-      pipelineId: pipelineIds,
-      // The scheduled-decommission sweep (issue #30) tears the trial down, so a
-      // trial needs no expiry mechanism of its own.
-      ...(order.isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
-    })
-    .returning()
-
   await logAudit(
     session.id,
     'order.approved',
     order.id,
-    `Order approved by ${session.email}${authoritySuffix(held)}`,
+    `Order approved by ${session.email}${authoritySuffix(held)}` +
+      (provisioned.elementIds.length > 1 ? ` (${provisioned.elementIds.length} elements)` : ''),
   )
   await logDelegatedUse(session, held, 'approved', order.id)
 
@@ -261,7 +257,13 @@ export const approveOrder = async (
     await sendOrderApproved(email, productName, order.id)
   }
 
-  return ok({ success: true as const, infraId: infra.id, pipelineIds })
+  return ok({
+    success: true as const,
+    // The first element, for the callers written when an order had exactly one.
+    infraId: provisioned.elementIds[0],
+    infraIds: provisioned.elementIds,
+    pipelineIds: provisioned.pipelineIds,
+  })
 }
 
 /**

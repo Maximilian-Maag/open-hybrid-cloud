@@ -2,6 +2,37 @@ import { db } from '@/lib/db/client'
 import { infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
+import { ELEMENT_SEQUENCE_VAR } from '@/lib/ci/stateKey'
+
+/**
+ * The CI variables a teardown is fired with.
+ *
+ * One definition, because there are four callers — the Decommission button, the
+ * scheduled sweep, product deletion and project deletion — and a teardown that
+ * derives a different Terraform state key than its provisioning did destroys
+ * nothing while reporting success. `sequence` is the part that makes that a real
+ * risk now that one order has N elements (issue #104): it suffixes the state key,
+ * so element 3 must be torn down with `3` and not with whatever its sibling used.
+ */
+export const destroyVariables = (infra: {
+  id: number
+  orderId: number
+  sequence?: number
+  sizeCode?: string | null
+  parameters: Record<string, string> | unknown
+}): Record<string, string> => ({
+  ...(infra.parameters as Record<string, string>),
+  TF_ACTION: 'destroy',
+  INFRA_ID: String(infra.id),
+  // Pipeline stacks derive TF_STATE_NAME from stateKeyParam ?? ORDER_ID, and the
+  // stored parameters do not carry the server-generated order id — so a stack
+  // whose stateKeyParam is absent would otherwise destroy an empty/wrong state.
+  ORDER_ID: String(infra.orderId),
+  // Defaults to 1 for a row read through a projection that did not select it,
+  // which is the same value every element provisioned before quantity existed has.
+  [ELEMENT_SEQUENCE_VAR]: String(infra.sequence ?? 1),
+  ...(infra.sizeCode ? { SIZE: infra.sizeCode } : {}),
+})
 
 export interface DestroyOutcome {
   /** Destroy pipelines that were actually started. */

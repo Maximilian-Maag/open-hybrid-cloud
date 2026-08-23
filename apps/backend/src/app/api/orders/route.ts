@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
 import { toResponse } from '@/lib/http'
 import { listOrders, createOrder } from '@/lib/services/orders'
+import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
 const CreateOrderSchema = z.object({
   projectId: z.number().int().positive(),
@@ -14,6 +15,12 @@ const CreateOrderSchema = z.object({
   // checks that rather than trusting the client, since the toggle is simply
   // hidden for products that do not offer one.
   trial: z.boolean().optional(),
+  // The chosen size (issue #98). Mandatory for an offering that defines sizes and
+  // refused for one that does not — the service decides, because the picker is
+  // simply absent in the browser for an offering with none.
+  sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional(),
+  // One order, N infrastructure elements (issue #104). Capped by the service.
+  quantity: z.number().int().positive().optional(),
 })
 
 export async function GET(req: NextRequest) {

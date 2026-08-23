@@ -165,11 +165,20 @@ export const sendProvisioningCompleted = async (
   to: string,
   productName: string,
   infraId: number,
+  /**
+   * How many elements the order provisioned (issue #104). Defaults to 1, which is
+   * what every order was before quantity existed and keeps the single-element mail
+   * word for word what it was.
+   */
+  elementCount = 1,
 ): Promise<void> =>
   send(
     to,
     `Provisioning Completed — ${headerSafe(productName)}`,
-    `<p>Provisioning of <strong>${escapeHtml(productName)}</strong> has completed successfully. Infrastructure element ID: <strong>${infraId}</strong>.</p>`,
+    `<p>Provisioning of <strong>${escapeHtml(productName)}</strong> has completed successfully. ` +
+      (elementCount > 1
+        ? `<strong>${elementCount}</strong> infrastructure elements were created, starting with ID <strong>${infraId}</strong>.</p>`
+        : `Infrastructure element ID: <strong>${infraId}</strong>.</p>`),
   )
 
 export const sendProvisioningFailed = async (

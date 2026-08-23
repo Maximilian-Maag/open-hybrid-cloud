@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi'
 import { registry } from './registry'
+import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
 extendZodWithOpenApi(z)
 
@@ -32,6 +33,14 @@ const orderSchema = z.object({
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
   isTrial: z.boolean().openapi({ description: 'Ordered as a time-boxed trial (issue #1).' }),
+  sizeCode: z.string().nullable().openapi({
+    description: 'The size that was ordered (issue #98). Null when the offering has none.',
+  }),
+  quantity: z.number().openapi({
+    description:
+      'How many infrastructure elements the order provisioned (issue #104). One order, N elements, one ' +
+      'approval; teardown stays per element.',
+  }),
   productSnapshot: z.unknown().nullable().openapi({
     description:
       'What the customer was offered when the order was placed (issue #38): product name and description, ' +
@@ -197,6 +206,16 @@ const webhookSchema = z.object({
   execOrder: z.number(),
 })
 
+const offeringSizeSchema = z.object({
+  id: z.number(),
+  code: z.string().openapi({ description: 'Passed to CI as SIZE and stored on the order line.' }),
+  label: z.string(),
+  price: z.string(),
+  currency: z.string(),
+  sortOrder: z.number(),
+  active: z.boolean(),
+})
+
 const productEnvironmentSchema = z.object({
   productId: z.number(),
   environmentId: z.number(),
@@ -213,6 +232,13 @@ const productEnvironmentSchema = z.object({
   trialDurationMinutes: z.number().openapi({ description: 'How long a trial lives. Default 30.' }),
   environmentName: z.string().nullable(),
   overheadCostCenterName: z.string().nullable().optional(),
+  sizes: z.array(offeringSizeSchema).optional().openapi({
+    description:
+      'The sizes this offering can be ordered in (issue #98), in the order an admin arranged them. Empty ' +
+      "for an offering that defines none, in which case the offering-level price applies and an order " +
+      'must name no size. When it is non-empty an order MUST name one of these codes, and what it is ' +
+      "charged is the size's price, not the offering's.",
+  }),
 })
 
 const exchangeRateSchema = z.object({
@@ -437,12 +463,20 @@ const cartItemSchema = z.object({
   createdAt: z.string().nullable(),
   productName: z.string().nullable(),
   environmentName: z.string().nullable(),
-  price: z.string().nullable(),
+  sizeCode: z.string().nullable(),
+  sizeLabel: z.string().nullable(),
+  quantity: z.number().openapi({ description: 'Elements this line will provision (issue #104).' }),
+  price: z.string().nullable().openapi({
+    description:
+      "UNIT price — the chosen size's, or the offering's for a line with no size. The line total is this " +
+      'times quantity.',
+  }),
   currency: z.string().nullable(),
   stillOffered: z.boolean().openapi({
     description:
-      'False when the product is no longer offered in that environment. The item stays in the cart and ' +
-      'says so, rather than vanishing without explanation.',
+      'False when the product is no longer offered in that environment, or when the size the line chose ' +
+      'has been retired. The item stays in the cart and says so, rather than vanishing without ' +
+      'explanation.',
   }),
 })
 
@@ -477,6 +511,15 @@ registry.registerPath({
             productId: z.number().int().positive(),
             environmentId: z.number().int().positive(),
             parameters: z.record(z.string()).optional(),
+            sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional().openapi({
+              description:
+                'Required when the offering defines sizes, refused when it does not (issue #98). Unlike ' +
+                'the parameters this IS validated here: it is what the line is, not something filled in ' +
+                'later at checkout.',
+            }),
+            quantity: z.number().int().positive().optional().openapi({
+              description: 'Defaults to 1. Capped at 20 per line (issue #104).',
+            }),
           }),
         },
       },
@@ -501,12 +544,25 @@ registry.registerPath({
 registry.registerPath({
   method: 'put',
   path: '/cart/{itemId}',
-  summary: "Save a cart item's parameter prefill",
+  summary: 'Update one cart line: parameter prefill, size or quantity',
+  description:
+    'A patch in all but name: an omitted field is left alone, so the quantity control in the cart does ' +
+    'not have to resend the parameters it never touched.',
   tags: ['Cart'],
   security: bearerAuth,
   request: {
     params: z.object({ itemId: z.string() }),
-    body: { content: { 'application/json': { schema: z.object({ parameters: z.record(z.string()) }) } } },
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            parameters: z.record(z.string()).optional(),
+            sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional(),
+            quantity: z.number().int().positive().optional(),
+          }),
+        },
+      },
+    },
   },
   responses: {
     200: { description: 'Prefill saved' },
@@ -1030,6 +1086,18 @@ registry.registerPath({
             environmentId: z.number().int().positive(),
             costCenterId: z.number().int().positive().optional(),
             parameters: z.record(z.string()),
+            sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional().openapi({
+              description:
+                'The size to order (issue #98). Mandatory when the offering defines sizes and refused ' +
+                "when it does not — what is charged is the size's price, and the order snapshot records it.",
+            }),
+            quantity: z.number().int().positive().optional().openapi({
+              description:
+                'How many infrastructure elements to provision (issue #104). Defaults to 1, capped at 20. ' +
+                'One order with N elements: one approval covers all of them, the pipeline trigger fans out ' +
+                'per element (each with its own ELEMENT_SEQUENCE and therefore its own Terraform state), ' +
+                'and teardown stays per element.',
+            }),
             trial: z.boolean().optional().openapi({
               description:
                 'Order as a time-boxed trial (issue #1). Rejected unless the offering has trialEnabled. ' +
@@ -2321,6 +2389,97 @@ registry.registerPath({
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },
     409: { description: 'Infrastructure is still deployed in this environment' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/products/{id}/environments/{envId}/sizes',
+  summary: '[root] List the sizes of one offering',
+  description:
+    'Every size, retired ones included — this is the admin view (issue #98). The catalogue endpoint ' +
+    'returns only the active ones.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string(), envId: z.string() }) },
+  responses: {
+    200: {
+      description: 'Sizes of the offering',
+      content: { 'application/json': { schema: z.array(offeringSizeSchema) } },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'The product is not offered in that environment' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/products/{id}/environments/{envId}/sizes',
+  summary: '[root] Add or update one size of an offering',
+  description:
+    'Upserts on the CODE, not on an id: the code is the natural key an admin edits by, so re-posting XL ' +
+    'corrects XL instead of creating a second one. Price moves from the offering to the size (issue #98), ' +
+    'so this is where a price change happens — and it is recorded in the product history (issue #38), ' +
+    'because it changes what customers are offered. Existing orders are unaffected: they carry the price ' +
+    'they were charged in their own snapshot.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string(), envId: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            code: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).openapi({
+              description: 'Letters, digits, dot, dash and underscore only — it reaches CI as SIZE.',
+            }),
+            label: z.string().max(120).optional(),
+            price: z.string().max(20).optional().openapi({
+              description: 'Non-negative, at most two decimals.',
+            }),
+            currency: z.string().length(3).optional(),
+            sortOrder: z.number().int().min(0).max(10000).optional(),
+            active: z.boolean().optional().openapi({
+              description:
+                'Retire a size by setting this false rather than deleting it: existing orders reference ' +
+                'the code, and a retired size stops being orderable while staying readable.',
+            }),
+            changelog: z.string().max(2000).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Size created or updated',
+      content: { 'application/json': { schema: offeringSizeSchema } },
+    },
+    400: { description: 'Invalid code, price or currency' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'The product is not offered in that environment' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/admin/products/{id}/environments/{envId}/sizes/{sizeId}',
+  summary: '[root] Remove one size of an offering',
+  description:
+    'Existing orders are unaffected — they store the code as text and their own price. A cart line naming ' +
+    'the deleted size reports itself unavailable instead of failing at checkout. Prefer active: false.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string(), envId: z.string(), sizeId: z.string() }) },
+  responses: {
+    200: { description: 'Size removed' },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Size not found' },
   },
 })
 

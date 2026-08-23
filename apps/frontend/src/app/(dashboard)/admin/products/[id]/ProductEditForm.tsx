@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type {
   ProductDetail,
@@ -21,6 +21,7 @@ import type {
   CreateParameterRequest,
   UpdateParameterRequest,
   CostCenter,
+  OfferingSize,
 } from '@open-hybrid-cloud/types'
 import { put, post, del, get } from '@/lib/api'
 import { generatePipelineYaml } from '@/lib/pipelineStackPreview'
@@ -564,6 +565,8 @@ export function ProductEditForm({ product, categories, environments, translation
                   env={env}
                   existing={existing}
                   costCenters={costCenters}
+                  productId={product.id}
+                  token={token}
                   onSave={(data) => handleSaveEnv(env.id, data)}
                   onDelete={() => handleDeleteEnv(env.id)}
                 />
@@ -846,6 +849,8 @@ function EnvironmentRow({
   env,
   existing,
   costCenters,
+  productId,
+  token,
   onSave,
   onDelete,
 }: {
@@ -860,6 +865,8 @@ function EnvironmentRow({
     trialDurationMinutes: number
   }
   costCenters: CostCenter[]
+  productId: number
+  token: string
   onSave: (data: UpsertProductEnvironmentRequest) => Promise<void>
   onDelete: () => Promise<void>
 }) {
@@ -938,7 +945,8 @@ function EnvironmentRow({
         )}
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Input label="Price" value={price} onChange={(e) => setPrice(e.target.value)} required placeholder="0.00" />
+        <Input label="Price" value={price} onChange={(e) => setPrice(e.target.value)} required placeholder="0.00"
+          hint="Used only while this offering has no sizes — a size's own price wins." />
         <Input label="Currency" value={currency} onChange={(e) => setCurrency(e.target.value)} required placeholder="EUR" />
         <Select label="Cost Center Mode" value={costCenterMode}
           onChange={(e) => setCostCenterMode(e.target.value as CostCenterMode)} options={COST_CENTER_MODES} />
@@ -1000,6 +1008,8 @@ function EnvironmentRow({
             .map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}${cc.active ? '' : ' (inactive)'}` }))}
         />
       )}
+      {existing && <SizesEditor productId={productId} envId={env.id} token={token} />}
+
       <div className="flex items-center gap-3">
         <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
         {saved && <span className="text-xs text-green-600">Saved!</span>}
@@ -1023,5 +1033,137 @@ function EnvironmentRow({
         </div>
       </Modal>
     </form>
+  )
+}
+
+
+/**
+ * Per-offering size list (issue #98).
+ *
+ * Lives inside the offering row because a size belongs to a (product,
+ * environment) pair: the same product legitimately costs different amounts at the
+ * same size in two environments, which is half the point of the feature.
+ *
+ * Deliberately not a nested <form> — the offering row is already one, and nested
+ * forms are invalid HTML — so every control here is a type="button".
+ */
+function SizesEditor({
+  productId,
+  envId,
+  token,
+}: {
+  productId: number
+  envId: number
+  token: string
+}) {
+  const [sizes, setSizes] = useState<OfferingSize[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [code, setCode] = useState('')
+  const [label, setLabel] = useState('')
+  const [price, setPrice] = useState('')
+  const [currency, setCurrency] = useState('EUR')
+  const path = `/api/admin/products/${productId}/environments/${envId}/sizes`
+
+  const load = useCallback(async () => {
+    try {
+      setSizes((await get<OfferingSize[]>(path, token)) ?? [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load sizes.')
+      setSizes([])
+    }
+  }, [path, token])
+
+  useEffect(() => { void load() }, [load])
+
+  async function handleAdd() {
+    setBusy(true)
+    setError(null)
+    try {
+      await post(path, {
+        code: code.trim(),
+        label: label.trim(),
+        price: price.trim() || '0',
+        currency: currency.trim().toUpperCase(),
+        // Appended at the end of the list; an admin reorders by editing the value
+        // on the row, which upserts on the same code.
+        sortOrder: (sizes?.length ?? 0) + 1,
+      }, token)
+      setCode(''); setLabel(''); setPrice('')
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save the size.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Retire rather than delete: existing orders reference the code. */
+  async function handleToggleActive(size: OfferingSize) {
+    setBusy(true)
+    setError(null)
+    try {
+      await post(path, { code: size.code, label: size.label, price: size.price,
+        currency: size.currency, sortOrder: size.sortOrder, active: !size.active }, token)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save the size.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDelete(size: OfferingSize) {
+    setBusy(true)
+    setError(null)
+    try {
+      await del(`${path}/${size.id}`, token)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to remove the size.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
+      <p className="text-sm font-medium text-slate-700">Sizes</p>
+      <p className="text-xs text-slate-500">
+        Each size carries its own price, and a customer must pick one. Leave the list empty to keep pricing
+        the offering as a whole. The size code reaches the pipeline as <code>SIZE</code>.
+      </p>
+      {error && <Alert>{error}</Alert>}
+      {sizes !== null && sizes.length === 0 && (
+        <p className="text-xs text-slate-600">No sizes — this offering is priced by its own price above.</p>
+      )}
+      {sizes?.map((size) => (
+        <div key={size.id} className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2">
+          <span className="font-mono text-xs text-slate-600">{size.code}</span>
+          <span className="text-sm text-slate-900">{size.label}</span>
+          <span className="text-sm font-medium text-slate-900">{size.price} {size.currency}</span>
+          {!size.active && (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">retired</span>
+          )}
+          <span className="ml-auto flex gap-2">
+            <Button type="button" size="sm" variant="secondary" disabled={busy}
+              onClick={() => handleToggleActive(size)}>
+              {size.active ? 'Retire' : 'Restore'}
+            </Button>
+            <Button type="button" size="sm" variant="danger" disabled={busy}
+              onClick={() => handleDelete(size)}>Delete</Button>
+          </span>
+        </div>
+      ))}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Input label="Code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="XL" />
+        <Input label="Label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Extra large" />
+        <Input label="Price" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" />
+        <Input label="Currency" value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder="EUR" />
+      </div>
+      <Button type="button" size="sm" disabled={busy || code.trim() === ''} onClick={handleAdd}>
+        {busy ? 'Saving…' : 'Add / update size'}
+      </Button>
+    </div>
   )
 }

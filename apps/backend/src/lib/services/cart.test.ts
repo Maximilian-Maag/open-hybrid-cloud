@@ -163,7 +163,7 @@ describe('updateCartItem / removeFromCart / clearCart', () => {
     const added = await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
     if (!added.ok) throw new Error('setup failed')
 
-    const result = await updateCartItem(makeSession(pm), added.data.id, { HOST: 'web-01' })
+    const result = await updateCartItem(makeSession(pm), added.data.id, { parameters: { HOST: 'web-01' } })
     expect(result.ok).toBe(true)
     const [row] = await db.select().from(cartItems)
     expect(row.parameters).toEqual({ HOST: 'web-01' })
@@ -174,7 +174,7 @@ describe('updateCartItem / removeFromCart / clearCart', () => {
     const added = await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
     if (!added.ok) throw new Error('setup failed')
 
-    const updated = await updateCartItem(makeSession(other), added.data.id, { HOST: 'stolen' })
+    const updated = await updateCartItem(makeSession(other), added.data.id, { parameters: { HOST: 'stolen' } })
     expect(updated.ok).toBe(false)
     if (!updated.ok) expect(updated.status).toBe(404)
 

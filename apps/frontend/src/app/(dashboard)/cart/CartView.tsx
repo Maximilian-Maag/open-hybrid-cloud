@@ -12,15 +12,19 @@ import type {
   CheckoutResponse,
   ProductDetail,
 } from '@open-hybrid-cloud/types'
-import { get, post, del } from '@/lib/api'
+import { get, post, del, put } from '@/lib/api'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
+import { Input } from '@/components/ui/Input'
 import { ParameterFields } from '@/components/forms/ParameterFields'
 import { publishCartCount } from '@/components/layout/CartLink'
 import { t } from '@/lib/i18n'
 import { convertPrice } from '@/lib/locale'
 import { ProductImage } from '@/components/ui/ProductImage'
+
+/** Mirrors MAX_ORDER_QUANTITY in the backend, which re-checks it. */
+const MAX_QUANTITY = 20
 
 interface Props {
   initialItems: CartItem[]
@@ -76,6 +80,30 @@ export function CartView({
       if (detail?.parameters) setDefs((prev) => ({ ...prev, [item.id]: detail.parameters }))
     } catch {
       setDefs((prev) => ({ ...prev, [item.id]: [] }))
+    }
+  }
+
+  /**
+   * Change how many elements one line asks for (issue #104).
+   *
+   * Persisted immediately rather than collected and sent at checkout: the line
+   * total and the subtotal are computed from it, and a number on screen that the
+   * server does not have yet is a price the shopper cannot rely on. The PUT is a
+   * patch, so the parameters typed into the row are untouched.
+   */
+  async function handleQuantity(itemId: number, next: number) {
+    setError(null)
+    // Optimistic: the control has to feel like a control. A rejected change is
+    // put back by the reload below.
+    setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, quantity: next } : i)))
+    try {
+      await put(`/api/cart/${itemId}`, { quantity: next }, token)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to change the quantity.')
+      try {
+        const fresh = await get<CartItem[]>('/api/cart', token)
+        if (fresh) setItems(fresh)
+      } catch { /* the error above already says the change did not stick */ }
     }
   }
 
@@ -182,8 +210,9 @@ export function CartView({
                     costCenterId={costCentres[item.id] ?? ''}
                     costCenters={costCenters}
                     lang={lang}
-                    price={itemPrice(item, exchangeRates, localeCurrency, lang)}
+                    price={linePrice(item, exchangeRates, localeCurrency, lang)}
                     onMount={() => loadDefs(item)}
+                    onQuantity={(next) => handleQuantity(item.id, next)}
                     onValues={(next) => setValues((prev) => ({ ...prev, [item.id]: next }))}
                     onCostCenter={(id) => setCostCentres((prev) => ({ ...prev, [item.id]: id }))}
                     onRemove={() => handleRemove(item.id)}
@@ -205,7 +234,11 @@ export function CartView({
         <div className="lg:col-span-4">
           <div className="rounded-lg border border-slate-200 bg-white p-4 lg:sticky lg:top-28 space-y-3">
             <p className="text-lg text-slate-900">
-              {t('subtotal', lang)} ({items.length} {t('items', lang)}):{' '}
+              {/* Elements, not lines: a cart of two lines of ten is ten of one
+                  thing and ten of another, and "2 items" is not what the shopper is
+                  buying. */}
+              {t('subtotal', lang)} ({items.reduce((sum, i) => sum + unitsOf(i), 0)}{' '}
+              {t('items', lang)}):{' '}
               <span className="font-bold">{totals.display}</span>
             </p>
             {totals.unconverted.length > 0 && (
@@ -241,16 +274,34 @@ export function CartView({
   )
 }
 
-/** One item's price in the viewer's currency, or null when it has none stored. */
-const itemPrice = (
+/** How many elements one line asks for. Absent means the pre-quantity default. */
+const unitsOf = (item: CartItem): number =>
+  item.quantity !== undefined && item.quantity >= 1 ? item.quantity : 1
+
+/**
+ * One line's total in the viewer's currency — unit price times quantity — with the
+ * unit price alongside when there is more than one.
+ *
+ * Null when the line has no price stored, which is a withdrawn offering or a
+ * retired size; the row says so separately rather than showing 0.
+ */
+const linePrice = (
   item: CartItem,
   rates: Record<string, number>,
   displayCurrency: string,
   lang: string,
-): string | null => {
+): { total: string; unit: string | null } | null => {
   if (item.price === null || item.currency === null) return null
-  const converted = convertPrice(item.price, item.currency, displayCurrency, rates, lang)
-  return `${converted.amount} ${converted.currency}`
+  const units = unitsOf(item)
+  const unit = convertPrice(item.price, item.currency, displayCurrency, rates, lang)
+  const amount = Number(item.price)
+  if (!Number.isFinite(amount)) return { total: `${unit.amount} ${unit.currency}`, unit: null }
+  const total = convertPrice((amount * units).toFixed(2), item.currency, displayCurrency, rates, lang)
+  return {
+    total: `${total.amount} ${total.currency}`,
+    // Only worth saying when it differs from the total.
+    unit: units > 1 ? `${units} × ${unit.amount} ${unit.currency}` : null,
+  }
 }
 
 /**
@@ -275,8 +326,11 @@ const subtotal = (
 
   for (const item of items) {
     if (item.price === null || item.currency === null) continue
-    const amount = Number(item.price)
-    if (!Number.isFinite(amount)) continue
+    const unit = Number(item.price)
+    if (!Number.isFinite(unit)) continue
+    // The LINE total: `price` is the unit price, so a subtotal that ignored the
+    // quantity would understate a cart of twenty by a factor of twenty.
+    const amount = unit * unitsOf(item)
     const source = rateOf(item.currency)
     if (source === null || target === null) {
       unconverted.set(item.currency, (unconverted.get(item.currency) ?? 0) + amount)
@@ -323,6 +377,7 @@ function CartItemRow({
   onMount,
   onValues,
   onCostCenter,
+  onQuantity,
   onRemove,
 }: {
   item: CartItem
@@ -331,9 +386,13 @@ function CartItemRow({
   costCenterId: string
   costCenters: CostCenter[]
   lang: string
-  /** Already converted for display, or null when the offering stores no price. */
-  price: string | null
+  /**
+   * The line total, already converted for display, with the unit price alongside
+   * when the quantity is more than one. Null when the offering stores no price.
+   */
+  price: { total: string; unit: string | null } | null
   onMount: () => void
+  onQuantity: (next: number) => void
   onValues: (next: Record<string, string>) => void
   onCostCenter: (id: string) => void
   onRemove: () => void
@@ -371,12 +430,42 @@ function CartItemRow({
             </Link>
             <p className="text-xs text-slate-500">
               {item.environmentName ?? `Environment #${item.environmentId}`}
+              {/* The size is what the line is priced on (issue #98), so it belongs
+                  next to the environment rather than hidden in the parameters. */}
+              {item.sizeCode && (
+                <> · {t('size', lang)}: {item.sizeLabel || item.sizeCode}</>
+              )}
             </p>
             {!item.stillOffered && (
               <p className="mt-1 text-xs font-medium text-red-600">{t('itemUnavailable', lang)}</p>
             )}
           </div>
-          {price && <p className="whitespace-nowrap font-bold text-slate-900">{price}</p>}
+          {price && (
+            <div className="text-right">
+              <p className="whitespace-nowrap font-bold text-slate-900">{price.total}</p>
+              {price.unit && (
+                <p className="whitespace-nowrap text-xs font-normal text-slate-500">{price.unit}</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Editable here, because this is where a shopper changes their mind about
+            how many they want. Removing the line and adding it again would lose the
+            parameters they have already typed into it. */}
+        <div className="w-28">
+          <Input
+            label={t('quantity', lang)}
+            type="number"
+            min={1}
+            max={MAX_QUANTITY}
+            step={1}
+            value={String(unitsOf(item))}
+            onChange={(e) => {
+              const next = Number(e.target.value)
+              if (Number.isInteger(next) && next >= 1 && next <= MAX_QUANTITY) onQuantity(next)
+            }}
+          />
         </div>
 
         {/* Padding zeroed through style, not a class: an important-prefixed

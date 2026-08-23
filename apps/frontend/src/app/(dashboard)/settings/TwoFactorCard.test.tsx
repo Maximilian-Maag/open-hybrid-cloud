@@ -38,7 +38,7 @@ describe('TwoFactorCard — not yet set up', () => {
     render(<TwoFactorCard token="tok" />)
 
     expect(await screen.findByText('Not set up')).toBeInTheDocument()
-    expect(screen.getByLabelText(/current password/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/confirm with your password/i)).toBeInTheDocument()
     // No current code is asked for: there is no factor to prove yet.
     expect(screen.queryByLabelText(/authentication code/i)).toBeNull()
   })
@@ -49,7 +49,7 @@ describe('TwoFactorCard — not yet set up', () => {
     render(<TwoFactorCard token="tok" />)
 
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText(/current password/i), 'pw')
+    await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
     await user.click(screen.getByRole('button', { name: /set up/i }))
 
     expect(await screen.findByText(OFFER.secretFormatted)).toBeInTheDocument()
@@ -65,11 +65,11 @@ describe('TwoFactorCard — not yet set up', () => {
     render(<TwoFactorCard token="tok" />)
 
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText(/current password/i), 'nope')
+    await user.type(await screen.findByLabelText(/confirm with your password/i), 'nope')
     await user.click(screen.getByRole('button', { name: /set up/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/password is incorrect/i)
-    expect(screen.getByLabelText(/current password/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/confirm with your password/i)).toBeInTheDocument()
   })
 
   it('shows the recovery codes once, and never asks for them again', async () => {
@@ -79,7 +79,7 @@ describe('TwoFactorCard — not yet set up', () => {
     render(<TwoFactorCard token="tok" />)
 
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText(/current password/i), 'pw')
+    await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
     await user.click(screen.getByRole('button', { name: /set up/i }))
 
     await user.type(await screen.findByLabelText(/authentication code/i), '123456')
@@ -99,12 +99,12 @@ describe('TwoFactorCard — not yet set up', () => {
     render(<TwoFactorCard token="tok" />)
 
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText(/current password/i), 'pw')
+    await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
     await user.click(screen.getByRole('button', { name: /set up/i }))
     await user.click(await screen.findByRole('button', { name: /cancel/i }))
 
     expect(screen.queryByText(OFFER.secretFormatted)).toBeNull()
-    expect(await screen.findByLabelText(/current password/i)).toBeInTheDocument()
+    expect(await screen.findByLabelText(/confirm with your password/i)).toBeInTheDocument()
   })
 })
 
@@ -135,7 +135,7 @@ describe('TwoFactorCard — already active', () => {
     render(<TwoFactorCard token="tok" />)
 
     const user = userEvent.setup()
-    await user.type(await screen.findByLabelText(/current password/i), 'pw')
+    await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
     await user.type(screen.getByLabelText(/authentication code/i), '123456')
     await user.click(screen.getByRole('button', { name: /replace authenticator/i }))
 
@@ -154,7 +154,7 @@ describe('TwoFactorCard — already active', () => {
     render(<TwoFactorCard token="tok" />)
     // The card still renders its intro and the set-up form; it does not take the
     // whole settings page down with it.
-    expect(await screen.findByLabelText(/current password/i)).toBeInTheDocument()
+    expect(await screen.findByLabelText(/confirm with your password/i)).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
   })
 })

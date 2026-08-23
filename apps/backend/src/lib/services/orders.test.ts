@@ -376,7 +376,8 @@ describe('createOrder — validation & ownership', () => {
     // The form is never shown this value, so it can only send back the sentinel
     // or nothing. Checking `required` before applying the default made such a
     // product impossible to order: the server had the value and refused to use it.
-    for (const submitted of [{}, { API_KEY: '[redacted]' }]) {
+    const submissions: Record<string, string>[] = [{}, { API_KEY: '[redacted]' }]
+    for (const submitted of submissions) {
       const result = await createOrder(makeSession(admin), {
         projectId: project.id,
         productId: product.id,

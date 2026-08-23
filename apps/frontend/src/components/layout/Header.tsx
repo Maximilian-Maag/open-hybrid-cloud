@@ -70,19 +70,35 @@ export function Header({
 
   return (
     <header className="sticky top-0 z-50" style={{ backgroundColor: 'var(--bp)' }}>
-      <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center gap-4">
+      {/* `relative` is what the dropdown panels below anchor to on a phone. A
+          panel anchored to its own 44px control has nowhere to go when that
+          control sits near the right edge and the panel is 288px wide; anchored
+          to this row it always lands on screen. See LanguageSwitcher.
+          The row wraps below `md`, which is what gives the search field its own
+          full-width line — the alternative was a 226px input competing with the
+          brand and three controls inside 288px. */}
+      <div className="relative max-w-screen-2xl mx-auto px-4 py-2 md:py-0 md:h-14 flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 sm:gap-x-4">
         {/* Brand */}
-        <Link href="/" className="flex items-center gap-2 shrink-0 mr-2">
+        <Link href="/" className="order-1 flex items-center gap-2 min-w-0 shrink">
           {logoDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoDataUrl} alt={shopName} className="h-8 max-w-[120px] object-contain" />
           ) : (
-            <span className="font-bold text-lg tracking-tight whitespace-nowrap" style={{ color: 'var(--bp-ink)' }}>{shopName}</span>
+            // `truncate`, not `whitespace-nowrap`: nowrap on a shrink-0 flex child
+            // gives the row a min-content width it can never go below, and this one
+            // pinned 162px of the 669px the header refused to shrink past (#167).
+            <span className="font-bold text-lg tracking-tight truncate" style={{ color: 'var(--bp-ink)' }}>{shopName}</span>
           )}
         </Link>
 
-        {/* Search */}
-        <form onSubmit={handleSearch} className="flex-1 max-w-xl">
+        {/* Search.
+            `basis-full` below `md` moves it to its own row rather than hiding it —
+            search is the way into a catalogue, and 1.4.10 is about not losing
+            functionality at 320px, not just about not scrolling sideways.
+            `min-w-0` on both the form and the input is the other half of #167:
+            `flex-1` leaves `min-width: auto`, so the input's default `size=20`
+            (226px) plus the 48px button gave the form a 274px floor. */}
+        <form onSubmit={handleSearch} className="order-3 md:order-2 grow basis-full md:basis-0 min-w-0 md:max-w-xl">
           <div className="flex items-center bg-white rounded-md overflow-hidden">
             <input
               type="text"
@@ -93,12 +109,12 @@ export function Header({
               // min-h-11 sizes the whole search control: the submit button is
               // self-stretch, so the field is what decides whether either of them
               // clears the 44px WCAG 2.5.5 target. It was 36px.
-              className="min-h-11 flex-1 bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+              className="min-w-0 min-h-11 flex-1 bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
             />
             <button
               type="submit"
               aria-label={t('search', lang)}
-              className="px-4 py-2 min-w-11 justify-center hover:brightness-95 transition-all flex items-center self-stretch"
+              className="px-4 py-2 min-w-11 shrink-0 justify-center hover:brightness-95 transition-all flex items-center self-stretch"
               style={{ backgroundColor: 'var(--bs)', color: 'var(--bs-ink)' }}
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -110,17 +126,28 @@ export function Header({
 
         {/* Right controls, ending in the cart — the one control a shop is built
             around belongs at the far right, not among the section links below. */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="order-2 md:order-3 ml-auto flex items-center gap-2 sm:gap-3">
           <LanguageSwitcher lang={lang} />
 
           {/* User dropdown */}
           <details ref={accountRef} className="relative group">
             {/* min-h-11: a <summary> is a pointer target, and two lines of small
                 text came to 36px. */}
-            <summary className="list-none cursor-pointer select-none flex flex-col items-end justify-center min-h-11 leading-tight rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
+            <summary className="list-none cursor-pointer select-none flex items-center justify-center min-h-11 min-w-11 rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
               style={{ color: 'var(--bp-ink)' }}>
-              {userName && <span className="text-xs">{userName}</span>}
-              <span className="text-sm font-semibold">{t('myAccount', lang)}</span>
+              {/* Below `sm` two lines of name do not fit beside the brand, so the
+                  control becomes an icon. The label is hidden with `sr-only`
+                  rather than swapped for an `aria-label`, so the accessible name
+                  is the same string at every width — an aria-label that replaced
+                  visible text would put the announced name and the visible one out
+                  of step (2.5.3 Label in Name). */}
+              <svg aria-hidden="true" className="h-6 w-6 sm:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span className="sr-only sm:not-sr-only sm:flex sm:flex-col sm:items-end sm:leading-tight">
+                {userName && <span className="text-xs">{userName}</span>}
+                <span className="text-sm font-semibold">{t('myAccount', lang)}</span>
+              </span>
             </summary>
             <div
               className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1"

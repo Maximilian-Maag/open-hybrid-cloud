@@ -31,7 +31,14 @@ export function Table<T extends { id?: number | string }>({
   emptyMessage = 'No data found.',
 }: TableProps<T>) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200">
+    // `relative` is not decoration: `sr-only` is `position: absolute`, and with no
+    // positioned ancestor its containing block is the initial one — so a screen-
+    // reader-only span inside a cell 455px into a scrolled table is laid out at
+    // x=455 relative to the PAGE and extends the document's scroll area, right
+    // through a scroller that clips everything visible. /admin/products still
+    // scrolled 136px sideways at 320px after the shell was fixed, and this was
+    // the whole of it (#168).
+    <div className="relative overflow-x-auto rounded-xl border border-slate-200">
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50">
           <tr>

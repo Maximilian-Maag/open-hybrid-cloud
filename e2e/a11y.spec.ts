@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import type { Result } from 'axe-core'
+import { PUBLIC_PAGES, AUTHED_PAGES } from './pages'
 
 /**
  * Accessibility gate.
@@ -26,33 +27,18 @@ import type { Result } from 'axe-core'
  *     docs/guides/accessibility.md. Read that before adding or removing a tag.
  */
 
-const PUBLIC_PAGES = ['/login', '/impressum']
-
-const AUTHED_PAGES = [
-  '/',
-  '/catalog',
-  '/cart',
-  '/orders',
-  '/projects',
-  '/infrastructure',
-  '/costs',
-  '/approvals',
-  '/audit',
-  '/settings',
-  '/admin',
-  '/admin/categories',
-  '/admin/ci-sources',
-  '/admin/environments',
-  '/admin/products',
-  '/admin/products/new',
-  '/admin/parameters',
-  '/admin/users',
-  '/admin/cost-centers',
-  '/admin/branding',
-  '/admin/config/smtp',
-  '/admin/config/ai',
-  '/admin/exchange-rates',
-]
+/**
+ * What this gate cannot see, so nobody has to rediscover it.
+ *
+ * WCAG 2.1 SC 1.4.10 Reflow is a AA criterion — content usable at 320 CSS px
+ * without scrolling in two directions — and it is in the tag list above, but no
+ * axe rule implements it: reflow is a property of the rendered layout at a given
+ * width, not of the DOM. This suite also runs at 1280px, where the failure does
+ * not exist. So an AA gate was structurally incapable of catching a 349px
+ * overflow on every authenticated page (#167, #169).
+ *
+ * 1.4.10 is measured in e2e/reflow.spec.ts instead, over the same page list.
+ */
 
 /**
  * The tags requested from axe.

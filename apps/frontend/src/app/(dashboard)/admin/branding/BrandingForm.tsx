@@ -75,12 +75,12 @@ export function BrandingForm({ initial, token }: Props) {
       <form onSubmit={handleSubmit} className="space-y-5">
         {error && <Alert>{error}</Alert>}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input label={t('shopName', lang)} value={shopName} onChange={(e) => setShopName(e.target.value)} required />
           <Input label={t('subtitleLabel', lang)} value={shopSubtitle} onChange={(e) => setShopSubtitle(e.target.value)} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <ColorField
             label={t('primaryColor', lang)}
             hint={t('primaryColorHint', lang)}
@@ -165,7 +165,7 @@ function ColorField({
           onChange={(e) => onChange(e.target.value)}
           aria-label={`${label} — ${t('colorPickerSuffix', lang)}`}
           aria-describedby={hintId}
-          className="h-11 w-14 rounded border border-slate-300 cursor-pointer p-0.5"
+          className="h-11 w-14 shrink-0 rounded border border-slate-300 cursor-pointer p-0.5"
         />
         <input
           type="text"
@@ -174,7 +174,7 @@ function ColorField({
           aria-label={`${label} — ${t('hexValueSuffix', lang)}`}
           aria-describedby={hintId}
           aria-invalid={parsed === null ? true : undefined}
-          className="min-h-11 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="min-w-0 min-h-11 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
       </div>
       <p id={hintId} className="text-xs text-slate-600">{hint}</p>

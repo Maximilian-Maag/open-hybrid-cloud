@@ -40,6 +40,31 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         storageState: 'e2e/.auth/root.json',
       },
+      // The reflow gate is the mobile project's job. Running it here too would
+      // measure 1280x720 — the one width at which the bug it exists for does not
+      // reproduce — and report a pass for it.
+      testIgnore: /reflow\.spec\.ts/,
+      dependencies: ['setup'],
+    },
+    // The suite ran at exactly one viewport until #169, which is how a 349px
+    // horizontal overflow on every authenticated page reached users (#167):
+    // `devices[` appeared exactly once in the whole repo, on the line above.
+    //
+    // A real device descriptor rather than `viewport: { width: 375, … }`: it also
+    // brings the mobile user agent, hasTouch and deviceScaleFactor, so a layout
+    // that only holds together with a hover-capable pointer fails here. Pixel 7 is
+    // 412x915; reflow.spec.ts resizes down to 320 (the WCAG 1.4.10 number) itself.
+    //
+    // Only reflow.spec.ts runs here. The rest of the suite asserts behaviour, not
+    // layout, and running all of it twice would double a serial CI run to buy
+    // nothing.
+    {
+      name: 'mobile',
+      testMatch: /reflow\.spec\.ts/,
+      use: {
+        ...devices['Pixel 7'],
+        storageState: 'e2e/.auth/root.json',
+      },
       dependencies: ['setup'],
     },
   ],

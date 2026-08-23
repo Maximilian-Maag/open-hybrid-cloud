@@ -39,7 +39,11 @@ export function LanguageSwitcher({ lang }: Props) {
   const currentName = SUPPORTED_LANGUAGES.find((l) => l.code === current)?.name ?? current.toUpperCase()
 
   return (
-    <div className="relative">
+    // `static` below `md` so the panel below anchors to the header row instead of
+    // to this 44px button: `right-0` on a 288px panel whose button sits ~120px
+    // from the right edge puts 168px of it off the left of a 320px screen, which
+    // is where 2 of the 3 language columns went (#167).
+    <div className="static md:relative">
       <button
         ref={toggleRef}
         onClick={() => setOpen((o) => !o)}
@@ -57,7 +61,7 @@ export function LanguageSwitcher({ lang }: Props) {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 z-50 bg-white rounded-xl shadow-xl border border-slate-200 p-3 w-72 animate-slide-down">
+          <div className="absolute left-4 right-4 md:left-auto md:right-0 top-full mt-2 z-50 bg-white rounded-xl shadow-xl border border-slate-200 p-3 md:w-72 animate-slide-down">
             <div className="grid grid-cols-3 gap-1 max-h-64 overflow-y-auto pr-1">
               {SUPPORTED_LANGUAGES.map((l) => (
                 <button

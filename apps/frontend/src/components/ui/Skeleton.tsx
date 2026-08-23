@@ -26,7 +26,10 @@ export function SkeletonRow({ cols = 4 }: { cols?: number }) {
 
 export function SkeletonListItem() {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3 animate-pulse">
+    // Wraps for the same reason the rows it stands in for do: the placeholder is
+    // 276px of content, which is wider than a 320px screen once the card padding
+    // is taken off, and a loading state that overflows is still an overflow.
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 px-4 py-3 animate-pulse">
       <div className="flex items-center gap-3">
         <div className="h-2 w-2 rounded-full bg-slate-200" />
         <div className="space-y-1.5">

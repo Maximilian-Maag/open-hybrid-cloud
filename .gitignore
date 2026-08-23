@@ -15,6 +15,10 @@ apps/*/.stryker-tmp/
 reports/mutation/
 apps/*/reports/mutation/
 
+# Agent worktrees (an isolated checkout per background agent). Deliberately narrow:
+# a project's own .claude/settings.json is worth committing, a scratch checkout is not.
+.claude/worktrees/
+
 # TypeScript incremental build cache
 *.tsbuildinfo
 

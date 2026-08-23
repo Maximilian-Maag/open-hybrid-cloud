@@ -53,8 +53,19 @@ const setup = async () => {
   const mine = await createProject(pm.id, 'Webshop')
   const theirs = await createProject(otherPm.id, 'Hidden Project')
 
-  const mineOrder = await seedOrder(mine.id, product.id, env.id, pm.id, { status: 'completed' })
-  await db.update(orders).set({ productSnapshot: snapshot() }).where(eq(orders.id, mineOrder.id))
+  // A quantity above one and a real size, deliberately: the export's line total is
+  // unit price × quantity (issues #98/#104), and a fixture that ordered one of an
+  // unsized offering multiplies out correctly even when the multiplication is
+  // missing.
+  const mineOrder = await seedOrder(mine.id, product.id, env.id, pm.id, {
+    status: 'completed',
+    sizeCode: 'L',
+    quantity: 3,
+  })
+  await db
+    .update(orders)
+    .set({ productSnapshot: snapshot({ sizeCode: 'L', sizeLabel: 'Large' }) })
+    .where(eq(orders.id, mineOrder.id))
 
   const theirOrder = await seedOrder(theirs.id, product.id, env.id, otherPm.id, { status: 'completed' })
   await db
@@ -128,15 +139,36 @@ describe('GET /api/costs/export', () => {
     expect(res.headers.get('content-disposition')).toContain('costs.csv')
 
     const text = await res.text()
+    // Pinned exactly, including order: this file is fed to whatever the finance
+    // side points at it, and a renamed or shuffled column breaks that silently.
     expect(text.split('\n')[0]).toBe(
-      'orderId,createdAt,project,costCenter,product,environment,status,price,currency,priceEur,estimated',
+      'orderId,createdAt,project,costCenter,product,environment,size,quantity,status,price,currency,priceEur,lineTotalEur,estimated',
     )
+
+    const header = text.split('\n')[0].split(',')
     const row = dataRows(text).find((line) => line.startsWith(`${mineOrder.id},`))
     expect(row).toBeDefined()
-    expect(row).toContain('Webshop')
-    expect(row).toContain('Nginx Gateway')
-    expect(row).toContain('AWS Frankfurt')
-    expect(row).toContain('completed')
+    // No cell in this fixture needs quoting, so positional split is exact.
+    const cells = (row ?? '').split(',')
+    const col = (name: string) => cells[header.indexOf(name)]
+
+    expect(col('project')).toBe('Webshop')
+    expect(col('product')).toBe('Nginx Gateway')
+    expect(col('environment')).toBe('AWS Frankfurt')
+    expect(col('status')).toBe('completed')
+    expect(col('size')).toBe('Large')
+    expect(col('quantity')).toBe('3')
+
+    // The property the row exists for: `price`/`priceEur` are the UNIT price and
+    // `lineTotalEur` is what the order actually cost. They have to multiply out,
+    // or the CSV and the cost report disagree about the same order.
+    expect(col('price')).toBe('10.00')
+    expect(col('currency')).toBe('EUR')
+    expect(col('priceEur')).toBe('10')
+    expect(col('lineTotalEur')).toBe('30')
+    expect(Number(col('lineTotalEur'))).toBeCloseTo(
+      Number(col('priceEur')) * Number(col('quantity')),
+    )
   })
 
   it('counts only orders that reached provisioning', async () => {

@@ -1080,7 +1080,7 @@ const delegationSchema = z.object({
     description: 'Calendar date, inclusive — the last day the delegation is in force.',
     example: '2026-09-14',
   }),
-  createdAt: z.string().nullable(),
+  createdAt: z.string(),
   revokedAt: z.string().nullable(),
   active: z.boolean().openapi({
     description:

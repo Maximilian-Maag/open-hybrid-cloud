@@ -428,6 +428,34 @@ export interface CostBucket {
   orderCount: number
 }
 
+/**
+ * One calendar month of the report's window (issue #106).
+ *
+ * Monthly rather than weekly because every range preset is month-aligned, so those
+ * are the only buckets that line up with the window the user picked — and "this
+ * month vs last" is the question the comparison answers.
+ */
+export interface CostPeriod {
+  /** Calendar month in UTC, `YYYY-MM`. */
+  period: string
+  totalEur: number
+  orderCount: number
+  /** Orders in this month priced from the live offering rather than a snapshot. */
+  estimatedOrders: number
+  /** The month is not over, so the figure will still grow. Charts must say so. */
+  partial: boolean
+}
+
+/** The last two months of the series, so the client does no date arithmetic. */
+export interface CostComparison {
+  current: CostPeriod
+  previous: CostPeriod
+  /** current − previous, EUR. */
+  changeEur: number
+  /** Percentage change, or null when the previous month was zero. */
+  changePct: number | null
+}
+
 export interface CostReport {
   totalEur: number
   orderCount: number
@@ -436,6 +464,13 @@ export interface CostReport {
    * Non-zero means the total is partly inferred rather than exact.
    */
   estimatedOrders: number
+  /**
+   * Spend per calendar month, oldest first, empty months in between filled in.
+   * Sums to `totalEur`, so a trend and a total cannot disagree.
+   */
+  series: CostPeriod[]
+  /** Null when the window covers fewer than two months. */
+  comparison: CostComparison | null
   byProject: CostBucket[]
   byCostCenter: CostBucket[]
   byProduct: CostBucket[]

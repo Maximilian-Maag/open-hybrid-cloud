@@ -117,6 +117,27 @@ describe('GET /api/costs', () => {
     // 'project' cost-centre mode stores none, so the bucket is labelled explicitly.
     expect(body.byCostCenter).toMatchObject([{ label: 'No cost centre' }])
   })
+
+  it('serves the monthly series alongside the totals (issue #106)', async () => {
+    // Alongside rather than from its own endpoint: the trend and the total have
+    // to be over the same rows, and a second endpoint could disagree.
+    const { adminAuth } = await setup()
+    const body = await (await GET(req('', adminAuth))).json()
+    expect(Array.isArray(body.series)).toBe(true)
+    expect(body.series).toHaveLength(1)
+    expect(body.series[0]).toMatchObject({
+      period: expect.stringMatching(/^\d{4}-\d{2}$/),
+      totalEur: 10,
+      orderCount: 1,
+      estimatedOrders: 0,
+      // The seeded order is created now, so its month is the unfinished one.
+      partial: true,
+    })
+    const summed = (body.series as { totalEur: number }[]).reduce((s, p) => s + p.totalEur, 0)
+    expect(Math.round(summed * 100) / 100).toBe(body.totalEur)
+    // One month in the window, so there is nothing honest to compare against.
+    expect(body.comparison).toBeNull()
+  })
 })
 
 describe('GET /api/costs/export', () => {

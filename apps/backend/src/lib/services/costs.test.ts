@@ -348,6 +348,226 @@ describe('getCostReport — time range', () => {
   })
 })
 
+describe('getCostReport — monthly series (issue #106)', () => {
+  // Pinned so "which month has not finished" does not depend on the day the
+  // suite happens to run.
+  const NOW = new Date('2026-08-18T12:00:00.000Z')
+
+  it('buckets spend by calendar month, oldest first', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2026-06-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '5.00', createdAt: new Date('2026-06-28T23:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.postgres.id, price: '20.00', createdAt: new Date('2026-08-01T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.series.map((p) => [p.period, p.totalEur])).toEqual([
+      ['2026-06', 15],
+      ['2026-07', 0],
+      ['2026-08', 20],
+    ])
+    expect(result.data.series.map((p) => p.orderCount)).toEqual([2, 0, 1])
+  })
+
+  it('fills the empty months between the first and last rather than omitting them', async () => {
+    // A chart that drops a zero month draws two adjacent columns for months a
+    // year apart, which reads as continuous spend.
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2025-11-10T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2026-02-10T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    // Crosses the year boundary without inventing a month 13.
+    expect(result.ok && result.data.series.map((p) => p.period)).toEqual([
+      '2025-11', '2025-12', '2026-01', '2026-02',
+    ])
+    expect(result.ok && result.data.series.map((p) => p.totalEur)).toEqual([10, 0, 0, 10])
+  })
+
+  it('pads nothing before the first order, however wide the window', async () => {
+    // The filter may have no lower bound at all, and leading zeros back to the
+    // epoch would make every chart unreadable.
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2026-08-05T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    expect(result.ok && result.data.series).toHaveLength(1)
+    expect(result.ok && result.data.series[0].period).toBe('2026-08')
+  })
+
+  it('sums to the same total as the report, so a trend cannot disagree with it', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.55', createdAt: new Date('2026-06-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.postgres.id, price: '3.33', createdAt: new Date('2026-07-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.theirs.id, productId: ctx.nginx.id, price: '7.10', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    if (!result.ok) throw new Error('expected a report')
+    const summed = result.data.series.reduce((sum, p) => sum + p.totalEur, 0)
+    expect(Math.round(summed * 100) / 100).toBe(result.data.totalEur)
+  })
+
+  it('marks only the month that has not finished as partial', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2026-07-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '4.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    expect(result.ok && result.data.series.map((p) => p.partial)).toEqual([false, true])
+  })
+
+  it('marks a filled-in current month as partial too', async () => {
+    // A current month with no spend is still unfinished, and a chart that says
+    // otherwise presents a zero as final.
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2026-06-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '1.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    expect(result.ok && result.data.series.find((p) => p.period === '2026-07')?.partial).toBe(false)
+    expect(result.ok && result.data.series.find((p) => p.period === '2026-08')?.partial).toBe(true)
+  })
+
+  it('counts pre-snapshot orders per month, so a caveat can be attached to a column', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: 'ignored', noSnapshot: true, createdAt: new Date('2026-07-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '4.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    if (!result.ok) throw new Error('expected a report')
+    expect(result.data.series.map((p) => [p.period, p.estimatedOrders])).toEqual([
+      ['2026-07', 1],
+      ['2026-08', 0],
+    ])
+    // The live price (10.00) stood in for the missing snapshot.
+    expect(result.data.series[0].totalEur).toBe(10)
+  })
+
+  it('counts an unconvertible amount at zero in its month, as the breakdowns do', async () => {
+    // Reported in unconverted[] rather than guessed at a rate that does not
+    // exist — but the order still happened, so the month must not lose its count.
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '100.00', currency: 'JPY', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    if (!result.ok) throw new Error('expected a report')
+    expect(result.data.series).toEqual([
+      { period: '2026-08', totalEur: 0, orderCount: 1, estimatedOrders: 0, partial: true },
+    ])
+    expect(result.data.unconverted).toEqual([{ currency: 'JPY', amount: 100 }])
+  })
+
+  it('counts an order once in the series even with several infrastructure rows', async () => {
+    const ctx = await setup()
+    const order = await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+    await createInfraElement(order.id, ctx.mine.id, ctx.env.id, ctx.nginx.id)
+    await createInfraElement(order.id, ctx.mine.id, ctx.env.id, ctx.nginx.id)
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    expect(result.ok && result.data.series).toEqual([
+      { period: '2026-08', totalEur: 10, orderCount: 1, estimatedOrders: 0, partial: true },
+    ])
+  })
+
+  it('respects the range filter, so the series covers the same rows as the total', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2026-01-15T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '20.00', createdAt: new Date('2026-08-15T00:00:00.000Z') })
+
+    const result = await getCostReport(
+      makeSession(ctx.admin),
+      { from: new Date('2026-08-01T00:00:00.000Z') },
+      NOW,
+    )
+    expect(result.ok && result.data.series.map((p) => p.period)).toEqual(['2026-08'])
+  })
+
+  it('scopes the series to the caller the way the total is scoped', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.theirs.id, productId: ctx.nginx.id, price: '99.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.pm), {}, NOW)
+    expect(result.ok && result.data.series[0].totalEur).toBe(10)
+  })
+
+  it('returns an empty series rather than a fabricated month when nothing matches', async () => {
+    const ctx = await setup()
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    expect(result.ok && result.data.series).toEqual([])
+    expect(result.ok && result.data.comparison).toBeNull()
+  })
+})
+
+describe('getCostReport — period comparison (issue #106)', () => {
+  const NOW = new Date('2026-08-18T12:00:00.000Z')
+
+  it('compares the last two months of the series', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '40.00', createdAt: new Date('2026-07-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '50.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    if (!result.ok) throw new Error('expected a report')
+    expect(result.data.comparison).toMatchObject({
+      previous: { period: '2026-07', totalEur: 40 },
+      current: { period: '2026-08', totalEur: 50 },
+      changeEur: 10,
+      changePct: 25,
+    })
+  })
+
+  it('reports a fall as a negative change', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '40.00', createdAt: new Date('2026-07-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    expect(result.ok && result.data.comparison?.changeEur).toBe(-30)
+    expect(result.ok && result.data.comparison?.changePct).toBe(-75)
+  })
+
+  it('leaves the percentage null when the previous month was zero', async () => {
+    // There is no honest percentage from a zero base; Infinity and 100 % are both
+    // lies, so the UI shows the absolute change instead.
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00', createdAt: new Date('2026-06-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '30.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    expect(result.ok && result.data.comparison?.previous.period).toBe('2026-07')
+    expect(result.ok && result.data.comparison?.changePct).toBeNull()
+    expect(result.ok && result.data.comparison?.changeEur).toBe(30)
+  })
+
+  it('is null for a one-month window rather than comparing against an excluded month', async () => {
+    // Comparing against a month the filter excluded would report zero for it and
+    // read as "spend doubled".
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '40.00', createdAt: new Date('2026-07-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '50.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(
+      makeSession(ctx.admin),
+      { from: new Date('2026-08-01T00:00:00.000Z') },
+      NOW,
+    )
+    expect(result.ok && result.data.series).toHaveLength(1)
+    expect(result.ok && result.data.comparison).toBeNull()
+  })
+
+  it('carries the partial flag through, so the comparison can say the month is unfinished', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '40.00', createdAt: new Date('2026-07-02T00:00:00.000Z') })
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '5.00', createdAt: new Date('2026-08-02T00:00:00.000Z') })
+
+    const result = await getCostReport(makeSession(ctx.admin), {}, NOW)
+    expect(result.ok && result.data.comparison?.current.partial).toBe(true)
+    expect(result.ok && result.data.comparison?.previous.partial).toBe(false)
+  })
+})
+
 describe('getCostRows', () => {
   it('returns one reconcilable row per counted order, newest first', async () => {
     const ctx = await setup()

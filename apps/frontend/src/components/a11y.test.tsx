@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { axe } from 'vitest-axe'
 import type { AxeResults } from 'axe-core'
 import { Alert } from './ui/Alert'
@@ -10,6 +10,11 @@ import { Modal } from './ui/Modal'
 import { Select } from './ui/Select'
 import { StatusBadge } from './ui/StatusBadge'
 import { Table } from './ui/Table'
+// Not primitives, but the same argument applies: a chart is drawn markup, and the
+// page-level gate only catches it in whatever state that page happens to render.
+import { CostTrend } from '@/app/(dashboard)/costs/CostTrend'
+import { CostDistribution } from '@/app/(dashboard)/costs/CostDistribution'
+import { CostComparison } from '@/app/(dashboard)/costs/CostComparison'
 
 /**
  * Component-level accessibility checks (issue #102).
@@ -197,6 +202,156 @@ describe('Table', () => {
   it('is accessible when empty', async () => {
     expect(
       await check(<Table columns={columns} data={[]} emptyMessage="Nothing yet" />),
+    ).toHaveNoViolations()
+  })
+})
+
+/**
+ * The cost charts (issue #106).
+ *
+ * An SVG is the easiest thing in this app to render inaccessibly: a picture with no
+ * name, encoding everything by colour, with the numbers nowhere but the shapes. The
+ * checks below are the three that would catch that — the chart has a name, the data
+ * is present as text, and axe finds nothing structural — and they run against the
+ * empty, single-period and folded-tail states, because those take different paths.
+ *
+ * Contrast is not checked here (jsdom has no layout, and the fills come from CSS
+ * variables the dashboard layout sets). The ramp's 3:1 floor is asserted directly in
+ * lib/contrast.test.ts, and the painted result in the e2e axe gate.
+ */
+const money = (eur: number) => `${eur.toFixed(2)} EUR`
+const period = (p: string, totalEur: number, partial = false) => ({
+  period: p,
+  totalEur,
+  orderCount: 1,
+  estimatedOrders: 0,
+  partial,
+})
+const bucket = (id: number, label: string, totalEur: number) => ({
+  id,
+  label,
+  totalEur,
+  orderCount: 1,
+})
+
+describe('CostTrend', () => {
+  const series = [period('2026-06', 120), period('2026-07', 0), period('2026-08', 90, true)]
+
+  it('is accessible with a series', async () => {
+    expect(
+      await check(
+        <CostTrend series={series} money={money} lang="en" estimatedOrders={0} unconverted={[]} />,
+      ),
+    ).toHaveNoViolations()
+  })
+
+  it('is accessible with the caveats attached and an empty series', async () => {
+    expect(
+      await check(
+        <CostTrend
+          series={[]}
+          money={money}
+          lang="en"
+          estimatedOrders={3}
+          unconverted={[{ currency: 'JPY', amount: 100 }]}
+        />,
+      ),
+    ).toHaveNoViolations()
+  })
+
+  it('gives the picture an accessible name', async () => {
+    // Without one the chart is an unlabelled graphic — the svg-img-alt failure.
+    render(<CostTrend series={series} money={money} lang="en" estimatedOrders={0} unconverted={[]} />)
+    expect(screen.getByRole('img', { name: /spend over time/i })).toBeTruthy()
+  })
+})
+
+describe('CostDistribution', () => {
+  const buckets = [bucket(1, 'Webshop', 60), bucket(2, 'Intranet', 40)]
+
+  it('is accessible with a share bar and legend', async () => {
+    expect(
+      await check(
+        <CostDistribution
+          chartId="a11y-share"
+          dimension="Per project"
+          buckets={buckets}
+          money={money}
+          lang="en"
+          estimatedOrders={0}
+          unconverted={[]}
+        />,
+      ),
+    ).toHaveNoViolations()
+  })
+
+  it('is accessible when the tail is folded into Other', async () => {
+    const many = Array.from({ length: 12 }, (_, i) => bucket(i + 1, `Project ${i + 1}`, 12 - i))
+    expect(
+      await check(
+        <CostDistribution
+          chartId="a11y-share-many"
+          dimension="Per project"
+          buckets={many}
+          money={money}
+          lang="en"
+          estimatedOrders={1}
+          unconverted={[]}
+        />,
+      ),
+    ).toHaveNoViolations()
+  })
+
+  it('is accessible with nothing to show', async () => {
+    expect(
+      await check(
+        <CostDistribution
+          chartId="a11y-share-empty"
+          dimension="Per project"
+          buckets={[]}
+          money={money}
+          lang="en"
+          estimatedOrders={0}
+          unconverted={[]}
+        />,
+      ),
+    ).toHaveNoViolations()
+  })
+})
+
+describe('CostComparison', () => {
+  const comparison = {
+    previous: period('2026-07', 40),
+    current: period('2026-08', 50, true),
+    changeEur: 10,
+    changePct: 25,
+  }
+
+  it('is accessible with a comparison', async () => {
+    expect(
+      await check(
+        <CostComparison
+          comparison={comparison}
+          money={money}
+          lang="en"
+          estimatedOrders={0}
+          unconverted={[]}
+        />,
+      ),
+    ).toHaveNoViolations()
+  })
+
+  it('is accessible when the window is too short to compare', async () => {
+    expect(
+      await check(
+        <CostComparison
+          comparison={null}
+          money={money}
+          lang="en"
+          estimatedOrders={0}
+          unconverted={[]}
+        />,
+      ),
     ).toHaveNoViolations()
   })
 })

@@ -64,11 +64,64 @@ export interface CostBucket {
   orderCount: number
 }
 
+/**
+ * One calendar month of the filtered window (issue #106).
+ *
+ * ── Why months and not weeks ──────────────────────────────────────────────────
+ * Every range preset is already month-aligned — `resolveRange` snaps `from` to the
+ * first of a month — so a monthly grain is the only one whose buckets line up with
+ * the window the user picked. A weekly grain would straddle both edges of every
+ * preset (the first and last bucket would be partial for a reason the user cannot
+ * see) and would turn `last12Months` into 52 columns nobody can read. It is also
+ * the grain the question is asked in: "this month vs last".
+ */
+export interface CostPeriod {
+  /** Calendar month in UTC, `YYYY-MM`. UTC because the boundaries the filters use are. */
+  period: string
+  totalEur: number
+  orderCount: number
+  /** Orders in this month priced from the live offering because they predate snapshots. */
+  estimatedOrders: number
+  /**
+   * True when the month has not finished yet, so its figure will still grow.
+   * Without it a trend chart shows the current month as a cliff and a
+   * month-on-month comparison reads a half-finished month as a fall in spend.
+   */
+  partial: boolean
+}
+
+/** Two adjacent months of the series, so "this month vs last" needs no client arithmetic. */
+export interface CostComparison {
+  current: CostPeriod
+  previous: CostPeriod
+  /** current − previous, EUR. */
+  changeEur: number
+  /**
+   * Percentage change, or null when the previous month was zero — there is no
+   * honest percentage from a zero base, and 100 % or Infinity would both be lies.
+   */
+  changePct: number | null
+}
+
 export interface CostReport {
   totalEur: number
   orderCount: number
   /** Orders whose price came from the live offering because they predate snapshots. */
   estimatedOrders: number
+  /**
+   * Spend per calendar month over the filtered window, oldest first, with the
+   * empty months in between filled in — a trend that silently omits a zero month
+   * draws a straight line through a gap and misstates the slope. Sums exactly to
+   * `totalEur`, because it is computed from the same de-duplicated rows as the
+   * breakdowns rather than by a second query that could disagree.
+   */
+  series: CostPeriod[]
+  /**
+   * The last two months of `series`, or null when the window covers fewer than
+   * two — a comparison against a month the filter excluded would compare against
+   * zero and read as "spend doubled".
+   */
+  comparison: CostComparison | null
   byProject: CostBucket[]
   byCostCenter: CostBucket[]
   byProduct: CostBucket[]
@@ -91,6 +144,8 @@ const SPENDING_STATUSES = ['provisioning', 'completed'] as const
 
 interface CostRow {
   orderId: number
+  /** Bucketed into a calendar month for the series. */
+  createdAt: Date | null
   projectId: number
   projectName: string | null
   costCenterId: number | null
@@ -112,6 +167,8 @@ interface CostRow {
 export const getCostReport = async (
   session: SessionUser,
   filters: CostFilters = {},
+  /** Injected so a test can pin which month counts as unfinished. */
+  now: Date = new Date(),
 ): Promise<Result<CostReport>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
 
@@ -129,6 +186,7 @@ export const getCostReport = async (
   const rows = (await db
     .select({
       orderId: orders.id,
+      createdAt: orders.createdAt,
       projectId: orders.projectId,
       projectName: projects.name,
       costCenterId: orders.costCenterId,
@@ -183,6 +241,8 @@ export const getCostReport = async (
     product: new Map(),
     environment: new Map(),
   }
+  /** Keyed by `YYYY-MM`; filled in the same pass so the series cannot drift from the total. */
+  const months = new Map<string, CostPeriod>()
 
   // One order can join to several infrastructure rows; count each order once.
   const seen = new Set<number>()
@@ -201,6 +261,7 @@ export const getCostReport = async (
     // would poison every total it touched.
     if (!Number.isFinite(amount) || amount === 0) {
       addTo(buckets, row, 0)
+      bumpMonth(months, row, 0, usingSnapshot, now)
       continue
     }
 
@@ -208,17 +269,25 @@ export const getCostReport = async (
     if (eur === null) {
       unconverted.set(currency, (unconverted.get(currency) ?? 0) + amount)
       addTo(buckets, row, 0)
+      // Counted at zero, exactly as the breakdowns do: the amount is reported in
+      // unconverted[] instead of being guessed at a rate that does not exist.
+      bumpMonth(months, row, 0, usingSnapshot, now)
       continue
     }
 
     totalEur += eur
     addTo(buckets, row, eur)
+    bumpMonth(months, row, eur, usingSnapshot, now)
   }
+
+  const series = fillMonths(months, now)
 
   return ok({
     totalEur: round(totalEur),
     orderCount: seen.size,
     estimatedOrders,
+    series,
+    comparison: compare(series),
     byProject: finalise(buckets.project),
     byCostCenter: finalise(buckets.costCenter),
     byProduct: finalise(buckets.product),
@@ -265,6 +334,103 @@ const bump = (
     return
   }
   bucket.set(key, { id, label, totalEur: eur, orderCount: 1 })
+}
+
+/** `YYYY-MM` in UTC. */
+const monthKey = (date: Date): string =>
+  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+
+/**
+ * Accumulate one counted order into its calendar month.
+ *
+ * An order with no `created_at` cannot be placed on a timeline, so it is left out
+ * of the series rather than dropped into an arbitrary month — it still counts in
+ * `totalEur`, which is why the series is documented as summing to the total only
+ * over the orders that have a date. The column is NOT NULL, so this is defensive.
+ */
+const bumpMonth = (
+  months: Map<string, CostPeriod>,
+  row: CostRow,
+  eur: number,
+  usingSnapshot: boolean,
+  now: Date,
+): void => {
+  if (!row.createdAt) return
+  const period = monthKey(row.createdAt)
+  const existing = months.get(period)
+  if (existing) {
+    existing.totalEur += eur
+    existing.orderCount += 1
+    if (!usingSnapshot) existing.estimatedOrders += 1
+    return
+  }
+  months.set(period, {
+    period,
+    totalEur: eur,
+    orderCount: 1,
+    estimatedOrders: usingSnapshot ? 0 : 1,
+    partial: period === monthKey(now),
+  })
+}
+
+/**
+ * Oldest first, with the empty months between the first and last filled in.
+ *
+ * Without the fill a chart draws two adjacent columns for months that are a year
+ * apart, which reads as continuous spend. The range is bounded by the data rather
+ * than by the filter: the filter may have no lower bound at all (`range=all`), and
+ * inventing months before the first order would pad every chart with leading zeros.
+ */
+const fillMonths = (months: Map<string, CostPeriod>, now: Date): CostPeriod[] => {
+  const present = [...months.values()].sort((a, b) => a.period.localeCompare(b.period))
+  if (present.length === 0) return []
+
+  const parse = (period: string): { year: number; month: number } => {
+    const [year, month] = period.split('-').map(Number)
+    return { year, month }
+  }
+  const first = parse(present[0].period)
+  const last = parse(present[present.length - 1].period)
+  const currentPeriod = monthKey(now)
+
+  const out: CostPeriod[] = []
+  for (
+    let cursor = Date.UTC(first.year, first.month - 1, 1);
+    cursor <= Date.UTC(last.year, last.month - 1, 1);
+    cursor = Date.UTC(new Date(cursor).getUTCFullYear(), new Date(cursor).getUTCMonth() + 1, 1)
+  ) {
+    const period = monthKey(new Date(cursor))
+    const found = months.get(period)
+    out.push(
+      found
+        ? { ...found, totalEur: round(found.totalEur) }
+        : { period, totalEur: 0, orderCount: 0, estimatedOrders: 0, partial: period === currentPeriod },
+    )
+  }
+  return out
+}
+
+/**
+ * The last two months of the series.
+ *
+ * Deliberately taken from the series and not from a second, wider query: comparing
+ * against a month the filter excluded would compare against zero and read as
+ * "spend doubled this month". A window of one month yields null, and the UI says
+ * the window is too short rather than drawing a comparison against nothing.
+ */
+const compare = (series: CostPeriod[]): CostComparison | null => {
+  if (series.length < 2) return null
+  const previous = series[series.length - 2]
+  const current = series[series.length - 1]
+  return {
+    current,
+    previous,
+    changeEur: round(current.totalEur - previous.totalEur),
+    changePct:
+      previous.totalEur === 0
+        ? null
+        : Math.round(((current.totalEur - previous.totalEur) / previous.totalEur) * 1000) / 10,
+  }
 }
 
 /** Largest spend first — the point of the page is to see where the money goes. */

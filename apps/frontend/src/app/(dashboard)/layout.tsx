@@ -8,7 +8,8 @@ import type { Branding } from '@open-hybrid-cloud/types'
 import { getLang } from '@/lib/getLang'
 import { isApiTokenExpired, expiredLoginUrl } from '@/lib/session'
 import { t } from '@/lib/i18n'
-import { readableInk, readableAccent, AA_NON_TEXT } from '@/lib/contrast'
+import { readableInk, readableAccent, accentRamp, AA_NON_TEXT } from '@/lib/contrast'
+import { CHART_STEPS } from '@/lib/chartTokens'
 
 const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
 
@@ -84,12 +85,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
     imprintText = '',
   } = branding
 
+  // Chart fills, derived here for the same reason --bp-text is: a page that painted
+  // its own segments would have to refetch the branding, and a ramp mixed in CSS
+  // could not guarantee the 3:1 (1.4.11) floor on an operator's pale colour.
+  const chartRamp = accentRamp(primaryColor, CHART_STEPS)
+
   return (
     <div
       className="min-h-screen flex flex-col bg-slate-50 text-slate-900 antialiased"
       style={{
         '--bp': primaryColor,
         '--bs': secondaryColor,
+        ...Object.fromEntries(chartRamp.map((tone, i) => [`--chart-${i + 1}`, tone])),
         // Foreground for anything painted ON the branding colours. Derived from
         // each colour's luminance instead of hardcoded white, which only stayed
         // legible while the operator happened to pick something dark.

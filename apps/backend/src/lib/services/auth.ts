@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs'
+import { randomUUID } from 'node:crypto'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -142,7 +143,12 @@ const isUniqueViolation = (e: unknown): boolean => {
  * take over any local account, root included; deliberate linking is an operator's
  * decision (set `sso_sub` on the account), not something a login should do on its
  * own. The reason lands in the server log, because that is where the operator who
- * has to make that decision will be looking.
+ * has to make that decision will be looking — but WITHOUT the subject or the email,
+ * which are the two values that name the person. Application logs are shipped,
+ * aggregated and retained on their own schedule, well outside anything the deletion
+ * request for that account can reach, so a failed login must not be what writes an
+ * address into them. The correlation id is what is left to tie an operator's log
+ * line to the sign-in a user is reporting.
  */
 export const upsertSsoUser = async (
   sub: string,
@@ -176,8 +182,9 @@ export const upsertSsoUser = async (
   } catch (e) {
     if (!isUniqueViolation(e)) throw e
     console.error(
-      `[auth] Refused the SSO login for sub ${sub}: the email ${email} already belongs to another account. ` +
-        'Link it deliberately by setting that account\'s sso_sub, or change one of the two addresses.',
+      `[auth] Refused an SSO login (ref ${randomUUID()}): the identity's email address already belongs ` +
+        'to another account. Link the two deliberately by setting that account\'s sso_sub, or change one ' +
+        'of the two addresses.',
     )
     return null
   }

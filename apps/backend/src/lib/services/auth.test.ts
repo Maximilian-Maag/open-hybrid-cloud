@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import bcrypt from 'bcryptjs'
 import {
   loginWithCredentials,
@@ -141,5 +141,76 @@ describe('upsertSsoUser', () => {
 
     const rows = await db.select().from(users).where(eq(users.ssoSub, 'oidc|same'))
     expect(rows.length).toBe(1)
+  })
+
+  describe('email collision with a local account', () => {
+    const SUB = 'oidc|colliding-subject'
+    const EMAIL = 'taken@test.dev'
+
+    const seedLocalAccount = async () => {
+      await db.insert(users).values({
+        email: EMAIL,
+        name: 'Local Owner',
+        passwordHash: 'x',
+        role: 'project_manager',
+        active: true,
+      })
+    }
+
+    it('refuses rather than adopting the account, and does not create a second one', async () => {
+      await seedLocalAccount()
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const result = await upsertSsoUser(SUB, EMAIL, 'SSO Claimant')
+      expect(result).toBeNull()
+
+      // The local account is untouched — no sso_sub written onto it.
+      const rows = await db.select().from(users).where(eq(users.email, EMAIL))
+      expect(rows.length).toBe(1)
+      expect(rows[0].ssoSub).toBeNull()
+
+      errorSpy.mockRestore()
+    })
+
+    /*
+     * Application logs are shipped, aggregated and retained on their own schedule,
+     * outside the reach of a deletion request for the account. A failed login must
+     * not be what writes an address into them.
+     */
+    it('logs neither the subject nor the email address, only a correlation id', async () => {
+      await seedLocalAccount()
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await upsertSsoUser(SUB, EMAIL, 'SSO Claimant')
+
+      expect(errorSpy).toHaveBeenCalledTimes(1)
+      const logged = errorSpy.mock.calls[0].join(' ')
+      expect(logged).not.toContain(EMAIL)
+      expect(logged).not.toContain(SUB)
+      // Not even the local part or the domain on their own.
+      expect(logged).not.toContain('taken')
+      expect(logged).not.toContain('test.dev')
+      // A correlation id in its place, so an operator can tie the line to a report.
+      expect(logged).toMatch(/ref [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/)
+      // Still says what to do about it.
+      expect(logged).toContain('sso_sub')
+
+      errorSpy.mockRestore()
+    })
+
+    it('gives every occurrence its own correlation id', async () => {
+      await seedLocalAccount()
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await upsertSsoUser(SUB, EMAIL, 'SSO Claimant')
+      await upsertSsoUser('oidc|another', EMAIL, 'SSO Claimant')
+
+      const refs = errorSpy.mock.calls.map((c) => /ref ([0-9a-f-]{36})/.exec(c.join(' '))?.[1])
+      expect(refs.length).toBe(2)
+      expect(refs[0]).toBeTruthy()
+      expect(refs[0]).not.toBe(refs[1])
+
+      errorSpy.mockRestore()
+    })
   })
 })

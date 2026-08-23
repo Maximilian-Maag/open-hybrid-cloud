@@ -69,4 +69,48 @@ describe('AuditTable', () => {
     })
     expect(mockGet).toHaveBeenCalledTimes(2)
   })
+
+  /*
+   * The export refuses anything over the server's row cap with a 413 that names the
+   * cap and says how to narrow the query. Showing the generic "Export failed" in its
+   * place leaves the admin to retry the identical request — and, before the cap
+   * refused at all, to file a silently truncated CSV as a complete export.
+   */
+  it('shows the server’s reason when an export is refused', async () => {
+    const reason =
+      'This export matches more than 50,000 entries, which is more than one export can carry. Narrow it with the from/to filters.'
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: reason }), {
+        status: 413,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    render(<AuditTable token="tok" />)
+    await waitFor(() => expect(mockGet).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: /csv/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/50,000 entries/)
+    expect(alert).toHaveTextContent(/from\/to/)
+
+    fetchSpy.mockRestore()
+  })
+
+  it('falls back to the generic message when the failure carries no reason', async () => {
+    const fetchSpy = vi
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response('nope', { status: 500 }))
+
+    render(<AuditTable token="tok" />)
+    await waitFor(() => expect(mockGet).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: /csv/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/export failed/i)
+
+    fetchSpy.mockRestore()
+  })
 })

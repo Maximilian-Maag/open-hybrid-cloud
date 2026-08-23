@@ -305,3 +305,47 @@ describe('ProductEditForm trial configuration', () => {
     expect(mockedPut.mock.calls[0][1]).toMatchObject({ trialDurationMinutes: 30 })
   })
 })
+
+describe('ProductEditForm order callbacks', () => {
+  const webhook = {
+    id: 1,
+    productId: 7,
+    environmentId: LINKED_ENV,
+    name: 'Ticketing webhook',
+    webhookUrl: 'https://example.com/hook',
+    execOrder: 0,
+  }
+
+  it('loads the existing callbacks on mount, same as the pipeline stacks list', async () => {
+    // Before the fix, `webhooks` was only ever written by add/delete — the
+    // GET this endpoint exists for was never called, so a reload made every
+    // existing callback invisible and its Delete button unreachable (#145).
+    mockedGet.mockReset().mockImplementation((async (path: string) => {
+      if (path === '/api/admin/products/7/webhooks') return [webhook]
+      return [] // pipeline-stacks
+    }) as never)
+
+    renderForm()
+
+    expect(await screen.findByText('Ticketing webhook')).toBeInTheDocument()
+    expect(screen.getByText('https://example.com/hook')).toBeInTheDocument()
+    expect(screen.queryByText('No callbacks configured.')).not.toBeInTheDocument()
+    expect(mockedGet).toHaveBeenCalledWith('/api/admin/products/7/webhooks', 'test-token')
+  })
+
+  it('makes the loaded callback deletable', async () => {
+    mockedGet.mockReset().mockImplementation((async (path: string) => {
+      if (path === '/api/admin/products/7/webhooks') return [webhook]
+      return []
+    }) as never)
+    const user = userEvent.setup()
+    renderForm()
+
+    const card = (await screen.findByText('Ticketing webhook')).closest('div')?.parentElement
+    if (!card) throw new Error('webhook row not found')
+    await user.click(within(card).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/admin/products/7/webhooks/1', 'test-token'))
+    await waitFor(() => expect(screen.queryByText('Ticketing webhook')).not.toBeInTheDocument())
+  })
+})

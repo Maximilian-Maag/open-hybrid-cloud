@@ -44,6 +44,11 @@ export default function CatalogPage() {
   // coming back — applying that answer would silently revert what the user just
   // did. Starring a product immediately after the page appeared did exactly that.
   const favoritesGeneration = useRef(0)
+  // Same idea, for the catalogue fetch itself. `load()` refires on every
+  // category click and every debounced search change, and those requests are
+  // not serialised — a slow broad category clicked just before a fast one
+  // must not have its answer land on top of the fast one's (#138).
+  const loadGeneration = useRef(0)
 
   // sync URL search param into local state
   useEffect(() => {
@@ -92,6 +97,9 @@ export default function CatalogPage() {
 
   const load = useCallback(async () => {
     if (!token) return
+    // Claimed before the request goes out, so a response can tell whether it
+    // is still the newest one asked for by the time it comes back.
+    const generation = ++loadGeneration.current
     setLoading(true)
     setError(false)
     try {
@@ -99,6 +107,11 @@ export default function CatalogPage() {
         get<CatalogPageData>(pageUrl(0), token),
         get<Category[]>('/api/admin/categories', token),
       ])
+      // A newer load has started since this one went out (another category
+      // click, or the debounced search firing) — its answer belongs to a
+      // filter that is no longer selected, so it must not overwrite what the
+      // newer request will (or already did) produce (#138).
+      if (loadGeneration.current !== generation) return
       setProducts(page?.items ?? [])
       setTotal(page?.total ?? 0)
       setCategories(cats ?? [])
@@ -109,11 +122,12 @@ export default function CatalogPage() {
       // must not land on top of the newer one's.
       loadFavorites(++favoritesGeneration.current)
     } catch {
+      if (loadGeneration.current !== generation) return
       // Surface a genuine fetch failure instead of showing an empty catalog,
       // which would look like "no products" during an outage.
       setError(true)
     } finally {
-      setLoading(false)
+      if (loadGeneration.current === generation) setLoading(false)
     }
   }, [token, pageUrl, loadFavorites])
 
@@ -162,6 +176,13 @@ export default function CatalogPage() {
     if (!token || favoriteBusy.has(productId)) return
     favoritesGeneration.current += 1
     const wasFavorited = favorites.has(productId)
+    // Captured before the optimistic update below removes it. A rollback
+    // needs to restore the exact row the shelf was showing, not re-derive it
+    // via `addShelfRow` — that reads from `products`, which does not have a
+    // favourite the browser never fetched a page containing, and un-starring
+    // one of those while the API is down would otherwise lose the card for
+    // good (#138).
+    const previousRow = favoriteItems.find((f) => f.productId === productId)
 
     // Optimistic: the star is the whole feedback, so waiting a round trip to
     // fill it in reads as a dead button.
@@ -190,7 +211,14 @@ export default function CatalogPage() {
         else next.delete(productId)
         return next
       })
-      setFavoriteItems((prev) => (wasFavorited ? addShelfRow(prev, productId) : prev.filter((f) => f.productId !== productId)))
+      setFavoriteItems((prev) => {
+        if (!wasFavorited) return prev.filter((f) => f.productId !== productId)
+        if (prev.some((f) => f.productId === productId)) return prev
+        // Restore the captured row rather than calling `addShelfRow`: this is
+        // the un-favourite path, so the product may not be on the loaded
+        // page, and `addShelfRow`'s `products.find` would silently drop it.
+        return previousRow ? [previousRow, ...prev] : prev
+      })
     } finally {
       setFavoriteBusy((prev) => {
         const next = new Set(prev)

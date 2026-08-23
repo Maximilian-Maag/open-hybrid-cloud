@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AuditEntry, PaginatedResponse } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/api'
 import { Table } from '@/components/ui/Table'
@@ -33,6 +33,15 @@ export function AuditTable({ token }: Props) {
 
   const pageSize = 20
 
+  // Bumped on every load, so a response can tell whether it is still the
+  // newest one asked for by the time it comes back. Pagination and filters
+  // both refire `load()` without waiting for the previous request, and
+  // clicking Next twice quickly (or a filter change while a page fetch is in
+  // flight) must not let the older answer land on top of the newer one — the
+  // stale `total` it carries also drives the Next/Previous disabled state
+  // (#138).
+  const loadGeneration = useRef(0)
+
   useEffect(() => {
     const id = setTimeout(() => {
       setDebouncedUser(userFilter)
@@ -42,6 +51,7 @@ export function AuditTable({ token }: Props) {
   }, [userFilter, actionFilter])
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -56,6 +66,9 @@ export function AuditTable({ token }: Props) {
         `/api/audit?${params.toString()}`,
         token,
       )
+      // A newer request (another page or filter change) has since gone out —
+      // its answer, not this one, must decide what is on screen.
+      if (loadGeneration.current !== generation) return
       if (Array.isArray(result)) {
         setEntries(result)
         setTotal(result.length)
@@ -66,7 +79,7 @@ export function AuditTable({ token }: Props) {
     } catch {
       /* empty */
     } finally {
-      setLoading(false)
+      if (loadGeneration.current === generation) setLoading(false)
     }
   }, [token, page, debouncedUser, debouncedAction, fromFilter, toFilter])
 

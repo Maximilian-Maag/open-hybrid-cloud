@@ -1,13 +1,19 @@
 import { db } from '@/lib/db/client'
 import {
+  orders,
+  products,
   productTranslations,
   productEnvironments,
   productEnvironmentSizes,
   deploymentEnvironments,
   costCenters,
 } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
+import type { logAuditWith } from '@/lib/audit'
+
+/** `db`, or the handle a `db.transaction` callback receives. */
+type Executor = Parameters<typeof logAuditWith>[0]
 
 /**
  * Point-in-time capture of what a customer was actually offered (issue #38).
@@ -76,6 +82,18 @@ export interface ProductSnapshot {
   trialEnabled: boolean
   trialDurationMinutes: number
   parameters: ParameterSnapshot[]
+  /**
+   * Present and true when this snapshot was written by `backfillOrderSnapshots`
+   * long after the order, from the offering as it stood at withdrawal (issue #189).
+   *
+   * It exists so the cost report can go on calling the order ESTIMATED. Everything
+   * else here is a point-in-time record of what the customer was offered; this one
+   * is a record of what the catalogue said years later, which happens to be the
+   * same figure the report was already showing for the order — the difference is
+   * that now it survives the offering being deleted. Absent on every snapshot taken
+   * at order time, which is the only other way one gets written.
+   */
+  backfilled?: boolean
 }
 
 /** Stand-in for a sensitive parameter's default value. */
@@ -103,8 +121,15 @@ export const captureProductSnapshot = async (
    * the offering has none.
    */
   sizeCode?: string | null,
+  /**
+   * Pass a transaction when the capture has to see — and stand or fall with —
+   * writes that transaction has not committed yet. `backfillOrderSnapshots` reads
+   * offerings it is about to delete; on the pool it would read them through a
+   * different connection and could race its own deletion.
+   */
+  executor: Executor = db,
 ): Promise<ProductSnapshot | null> => {
-  const [offering] = await db
+  const [offering] = await executor
     .select({
       price: productEnvironments.price,
       currency: productEnvironments.currency,
@@ -136,7 +161,7 @@ export const captureProductSnapshot = async (
   // price rather than losing the snapshot altogether.
   const size = sizeCode
     ? (
-        await db
+        await executor
           .select({
             label: productEnvironmentSizes.label,
             price: productEnvironmentSizes.price,
@@ -154,7 +179,7 @@ export const captureProductSnapshot = async (
       )[0]
     : undefined
 
-  const [translation] = await db
+  const [translation] = await executor
     .select({ name: productTranslations.name, description: productTranslations.description })
     .from(productTranslations)
     .where(
@@ -169,7 +194,7 @@ export const captureProductSnapshot = async (
   // against, so the snapshot records the definitions that actually applied rather
   // than every row that happened to match.
   const defs = resolveParameterDefs(
-    await loadApplicableParameters(productId, categoryId, environmentId),
+    await loadApplicableParameters(productId, categoryId, environmentId, executor),
   )
 
   return {
@@ -212,4 +237,106 @@ export const captureProductSnapshot = async (
       // Stable order so two snapshots of the same configuration diff as identical.
       .sort((a, b) => a.name.localeCompare(b.name)),
   }
+}
+
+/**
+ * Give every snapshot-less order of these products a snapshot, before the
+ * offering it would otherwise be priced from is deleted (issue #189).
+ *
+ * ## What went wrong without it
+ *
+ * Retiring a product deletes its `product_environments` rows, because that is what
+ * actually makes it unorderable. An order placed before migration 0013 has no
+ * snapshot, so the cost report prices it through a leftJoin to exactly those rows;
+ * with the row gone the join yields nothing, the price is NULL, and `Number(null ??
+ * '0')` makes the order contribute **zero**. A product with thirty pre-snapshot
+ * orders at €80 lost €2,400 of recorded spend the moment an admin retired it — the
+ * orders stayed in `orderCount`, so the total simply came out lower, and nothing
+ * flagged it: `unconverted[]` catches a missing RATE, not a missing price.
+ *
+ * ## Why backfill, and not the other two options
+ *
+ * Marking the offering withdrawn instead of deleting it is the tidier data model
+ * and was rejected on blast radius: "there is a `product_environments` row" is what
+ * a dozen reads spread over the cart, order creation, sizing, trials and the
+ * catalogue currently take to mean "orderable", and a withdrawn flag missed at any
+ * one of them re-opens a retired product for ordering. That is a worse failure than
+ * the one being fixed.
+ *
+ * Counting a NULL fallback as *unpriced* rather than zero is worth doing on its own
+ * merits, but it only makes the loss visible — the €2,400 is still gone from the
+ * total, and the report already knew the number a moment earlier.
+ *
+ * Backfilling keeps the money, and it keeps the SAME money: the snapshot records
+ * the price the report was already using for that order, taken from the live
+ * offering, one moment before that offering disappears. It is deliberately not a
+ * claim to be exact — `backfilled: true` is why the report goes on counting these
+ * orders as estimated.
+ *
+ * Runs on the caller's executor and must be called inside the same transaction as
+ * the delete, so a rollback takes the snapshots with it.
+ *
+ * Returns how many orders were given one.
+ */
+export const backfillOrderSnapshots = async (
+  executor: Executor,
+  productIds: number[],
+  /** Narrow to one offering, for a withdrawal that removes only that pairing. */
+  environmentId?: number,
+): Promise<number> => {
+  if (productIds.length === 0) return 0
+
+  // Grouped, not one row per order: a product with 200 orders has a handful of
+  // distinct (environment, size) pairings between them, and each pairing needs
+  // exactly one capture — which is several queries and a parameter resolution.
+  const pending = await executor
+    .select({
+      productId: orders.productId,
+      categoryId: products.categoryId,
+      environmentId: orders.environmentId,
+      sizeCode: orders.sizeCode,
+    })
+    .from(orders)
+    .innerJoin(products, eq(orders.productId, products.id))
+    .where(
+      and(
+        inArray(orders.productId, productIds),
+        isNull(orders.productSnapshot),
+        environmentId === undefined ? undefined : eq(orders.environmentId, environmentId),
+      ),
+    )
+    .groupBy(orders.productId, products.categoryId, orders.environmentId, orders.sizeCode)
+
+  let written = 0
+  for (const line of pending) {
+    const snapshot = await captureProductSnapshot(
+      line.productId,
+      line.categoryId,
+      line.environmentId,
+      // Null, not undefined: these are ORDERS, and null is how the snapshot spells
+      // "this order named no size" as against "this record predates sizing".
+      line.sizeCode,
+      executor,
+    )
+    // Null means the offering is already gone — a pairing withdrawn earlier, whose
+    // orders this cannot rescue. Skipped rather than written as a stub: a snapshot
+    // with a made-up price would turn a visible zero into an invisible wrong number.
+    if (!snapshot) continue
+
+    const updated = await executor
+      .update(orders)
+      .set({ productSnapshot: { ...snapshot, backfilled: true } })
+      .where(
+        and(
+          eq(orders.productId, line.productId),
+          eq(orders.environmentId, line.environmentId),
+          line.sizeCode === null ? isNull(orders.sizeCode) : eq(orders.sizeCode, line.sizeCode),
+          isNull(orders.productSnapshot),
+        ),
+      )
+      .returning({ id: orders.id })
+    written += updated.length
+  }
+
+  return written
 }

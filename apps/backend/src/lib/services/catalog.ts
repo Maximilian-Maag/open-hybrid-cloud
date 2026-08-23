@@ -5,6 +5,7 @@ import { ok, err, type Result } from '@/lib/services/result'
 import { withoutSensitiveDefaults } from '@/lib/services/parameterRedaction'
 import { safeImageContentType } from '@/lib/services/imageUpload'
 import { listActiveSizesForProduct } from '@/lib/services/sizes'
+import type { logAuditWith } from '@/lib/audit'
 
 /**
  * Load the parameter definitions that apply to a product in a given
@@ -20,6 +21,8 @@ export const loadApplicableParameters = async (
   productId: number,
   categoryId: number,
   environmentId?: number,
+  /** Pass a transaction to read on its connection; see `captureProductSnapshot`. */
+  executor: Parameters<typeof logAuditWith>[0] = db,
 ): Promise<Parameter[]> => {
   const scopeWhere = or(
     eq(parameters.scope, 'global'),
@@ -35,7 +38,7 @@ export const loadApplicableParameters = async (
         )
       : scopeWhere
 
-  return db.select().from(parameters).where(paramWhere)
+  return executor.select().from(parameters).where(paramWhere)
 }
 
 /**

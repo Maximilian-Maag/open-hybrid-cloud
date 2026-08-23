@@ -130,6 +130,48 @@ export const revokeAllSessionsOf = async (
 }
 
 /**
+ * The same, but sparing one session — the one that asked for it.
+ *
+ * A sibling of `revokeAllSessionsOf` rather than of `revokeOtherSessions` below,
+ * which does the same SQL for a different caller: that one answers an HTTP
+ * request, so it authorizes a caller, returns a `Result` and runs on the pool.
+ * This one is called by a write that FORCES the revoke — a password change — from
+ * inside that write's transaction, where there is nobody to authorize and a
+ * failure has to take the write down with it.
+ *
+ * Sparing the caller's own session is a deliberate exception to "a password
+ * change ends every session". Someone who has just re-entered their current
+ * password has re-authenticated in this tab a second ago; signing them out of it
+ * teaches them that the safe action costs them their place, which is how people
+ * learn not to take it.
+ */
+export const revokeOtherSessionsOf = async (
+  actorId: number | null,
+  userId: number,
+  keepSessionId: number,
+  reason: string,
+  executor: Parameters<typeof logAuditWith>[0] = db,
+): Promise<number> => {
+  const revoked = await executor
+    .update(sessions)
+    .set({ revokedAt: new Date() })
+    .where(and(liveSessionsOf(userId), ne(sessions.id, keepSessionId)))
+    .returning({ id: sessions.id })
+
+  if (revoked.length === 0) return 0
+
+  await logAuditWith(
+    executor,
+    actorId,
+    'session.revoked_others',
+    userId,
+    `${reason}: signed out ${revoked.length} other session(s) of user ${userId}, kept ${keepSessionId}`,
+  )
+
+  return revoked.length
+}
+
+/**
  * End one session.
  *
  * Idempotent in the sense that matters: revoking an already-revoked session is

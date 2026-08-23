@@ -143,6 +143,22 @@ describe('updateUser', () => {
     expect(rows.filter((r) => r.revokedAt === null)).toHaveLength(1)
   })
 
+  it('ends every session when an admin resets the password', async () => {
+    // The remediation an operator reaches for after a compromise report (issue
+    // #184). Nothing reads `password_hash` after login, so without this branch the
+    // reset changed only what the NEXT sign-in needs and left the stolen token
+    // working for the rest of its 30 days.
+    const u = await createUser({ password: 'before' })
+    await createSession({ user: makeSession(u), rememberMe: true })
+
+    const live = () => db.select().from(sessions).where(eq(sessions.userId, u.id))
+    expect((await live()).filter((r) => r.revokedAt === null)).toHaveLength(1)
+
+    const result = await updateUser(u.id, { password: 'after-pw' })
+    expect(result.ok).toBe(true)
+    expect((await live()).filter((r) => r.revokedAt === null)).toHaveLength(0)
+  })
+
   it('hashes the new password when provided', async () => {
     const u = await createUser({ password: 'before' })
     const result = await updateUser(u.id, { password: 'after-pw' })

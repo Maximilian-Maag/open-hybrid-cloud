@@ -18,7 +18,14 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const result = await changePassword(session.id, parsed.data.currentPassword, parsed.data.newPassword)
+  const result = await changePassword(
+    session.id,
+    parsed.data.currentPassword,
+    parsed.data.newPassword,
+    // The tab the user is standing in. Every other session of this account is
+    // ended by the change; this one just proved it knows the old password.
+    session.sessionId,
+  )
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
 
   return NextResponse.json({ success: true })

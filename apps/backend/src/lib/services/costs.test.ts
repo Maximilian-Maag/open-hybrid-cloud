@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { getCostReport, getCostRows, assertMaySeeProject } from './costs'
+import { deleteProduct, deleteProductEnvironment } from './admin/products'
 import { db } from '@/lib/db/client'
 import { orders, exchangeRates, productEnvironments, projects } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -64,10 +65,12 @@ const spend = async (
     createdAt?: Date
     costCenterId?: number
     noSnapshot?: boolean
+    quantity?: number
   },
 ) => {
   const order = await seedOrder(opts.projectId, opts.productId, ctx.env.id, ctx.pm.id, {
     status: opts.status ?? 'completed',
+    ...(opts.quantity !== undefined ? { quantity: opts.quantity } : {}),
   })
   const patch = {
     ...(opts.noSnapshot ? {} : { productSnapshot: snapshot(opts.price, opts.currency) }),
@@ -153,6 +156,68 @@ describe('getCostReport — which price', () => {
     const result = await getCostReport(makeSession(ctx.admin))
     expect(result.ok && result.data.totalEur).toBe(10)
     expect(result.ok && result.data.orderCount).toBe(1)
+  })
+
+  it('keeps a pre-snapshot order\'s spend when the product is retired', async () => {
+    // The retire branch deletes `product_environments`, which is the very row the
+    // pre-snapshot fallback price is read from — so €80 of recorded history became
+    // €0 while the order stayed in `orderCount`, and nothing flagged it (issue
+    // #189). `unconverted[]` catches a missing RATE, not a missing price.
+    const ctx = await setup()
+    await db
+      .update(productEnvironments)
+      .set({ price: '80.00' })
+      .where(eq(productEnvironments.productId, ctx.nginx.id))
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: 'x', noSnapshot: true })
+
+    const before = await getCostReport(makeSession(ctx.admin))
+    expect(before.ok && before.data.totalEur).toBe(80)
+
+    expect((await deleteProduct(ctx.nginx.id)).ok).toBe(true)
+
+    const after = await getCostReport(makeSession(ctx.admin))
+    expect(after.ok).toBe(true)
+    if (!after.ok) return
+    expect(after.data.totalEur).toBe(80)
+    expect(after.data.orderCount).toBe(1)
+    // Still an estimate: the backfilled snapshot records what the catalogue said at
+    // withdrawal, not what was recorded when the order was placed.
+    expect(after.data.estimatedOrders).toBe(1)
+    expect(after.data.byProduct[0]).toMatchObject({ id: ctx.nginx.id, totalEur: 80 })
+  })
+
+  it('keeps a pre-snapshot order\'s spend when one offering is withdrawn', async () => {
+    // Same loss through the other door: withdrawing a single product/environment
+    // pairing deletes the same row.
+    const ctx = await setup()
+    await db
+      .update(productEnvironments)
+      .set({ price: '80.00' })
+      .where(eq(productEnvironments.productId, ctx.nginx.id))
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: 'x', noSnapshot: true })
+
+    expect((await deleteProductEnvironment(ctx.nginx.id, ctx.env.id)).ok).toBe(true)
+
+    const after = await getCostReport(makeSession(ctx.admin))
+    expect(after.ok && after.data.totalEur).toBe(80)
+    expect(after.ok && after.data.estimatedOrders).toBe(1)
+  })
+
+  it('does not restate a snapshotted order when the product is retired', async () => {
+    // The backfill only fills gaps: an order that already carries a snapshot keeps
+    // the price it was charged, whatever the catalogue says at withdrawal.
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00' })
+    await db
+      .update(productEnvironments)
+      .set({ price: '999.00' })
+      .where(eq(productEnvironments.productId, ctx.nginx.id))
+
+    expect((await deleteProduct(ctx.nginx.id)).ok).toBe(true)
+
+    const after = await getCostReport(makeSession(ctx.admin))
+    expect(after.ok && after.data.totalEur).toBe(10)
+    expect(after.ok && after.data.estimatedOrders).toBe(0)
   })
 
   it('treats an unparseable price as zero rather than NaN', async () => {
@@ -594,6 +659,33 @@ describe('getCostRows', () => {
 
     const result = await getCostRows(makeSession(ctx.admin))
     expect(result.ok && result.data[0].estimated).toBe(true)
+  })
+
+  it('reconciles lineTotalEur with the report to the cent', async () => {
+    // The field is documented as the figure that reconciles with the report, and
+    // this is a case where converting the unit and multiplying does not (issue
+    // #189): 1.17 USD x 3 at rate 1.04 is 3.375 to the penny, but (1.17/1.04)*3
+    // lands a hair above the halfway point in doubles and (1.17*3)/1.04 a hair
+    // below — 3.38 against the report's 3.37.
+    const ctx = await setup()
+    await db.insert(exchangeRates).values({ currencyCode: 'USD', rate: '1.04' })
+    await spend(ctx, {
+      projectId: ctx.mine.id,
+      productId: ctx.nginx.id,
+      price: '1.17',
+      currency: 'USD',
+      quantity: 3,
+    })
+
+    const report = await getCostReport(makeSession(ctx.admin))
+    const rows = await getCostRows(makeSession(ctx.admin))
+    expect(report.ok && rows.ok).toBe(true)
+    if (!report.ok || !rows.ok) return
+    expect(report.data.totalEur).toBe(3.37)
+    expect(rows.data[0].lineTotalEur).toBe(report.data.totalEur)
+    // The unit price is untouched, so an existing consumer of the CSV is not
+    // handed a different number under the same name.
+    expect(rows.data[0].priceEur).toBe(1.13)
   })
 
   it('leaves priceEur null when the currency has no rate', async () => {

@@ -5,6 +5,7 @@ import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { createSession } from '@/lib/auth/sessions'
+import { revokeOtherSessionsOf } from '@/lib/services/sessions'
 import { peekMfaChallengeUserId, signMfaChallenge, verifyMfaChallenge } from '@/lib/auth/mfaChallenge'
 import { requiresSecondFactor, verifySecondFactor } from '@/lib/services/twoFactor'
 import { logAudit } from '@/lib/audit'
@@ -252,10 +253,29 @@ export const updateMe = async (
   return ok(updated as UserProfile)
 }
 
+/**
+ * Change a password, and end the sessions the old one could still be holding open.
+ *
+ * The revoke is the point of the operation, not a courtesy attached to it (issue
+ * #184). "Change your password" is the one remediation every user and every
+ * helpdesk reaches for after a suspected compromise, and without this a token
+ * lifted from that account keeps working for the rest of its life — up to 30 days
+ * with "remember me".
+ *
+ * `currentSessionId` is required rather than optional: an optional one defaults to
+ * "spare nothing" or "spare everything", and both are wrong quietly. A caller that
+ * has authenticated has it (`AuthenticatedUser.sessionId`), and one that has not
+ * cannot be changing a password.
+ *
+ * One transaction, for the reason `updateUser` gives: revoking after the UPDATE
+ * commits means a failure there leaves the password changed and the stolen
+ * sessions alive — the state this exists to prevent, reached by the error path.
+ */
 export const changePassword = async (
   userId: number,
   currentPassword: string,
   newPassword: string,
+  currentSessionId: number,
 ): Promise<Result<void>> => {
   const rows = await db
     .select({ passwordHash: users.passwordHash })
@@ -272,7 +292,10 @@ export const changePassword = async (
   if (!valid) return err(400, 'Current password is incorrect')
 
   const newHash = await bcrypt.hash(newPassword, 12)
-  await db.update(users).set({ passwordHash: newHash }).where(eq(users.id, userId))
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({ passwordHash: newHash }).where(eq(users.id, userId))
+    await revokeOtherSessionsOf(userId, userId, currentSessionId, 'Password changed', tx)
+  })
 
   return ok(undefined)
 }

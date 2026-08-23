@@ -150,8 +150,26 @@ export const updateUser = async (
 
     if (!row) return null
 
-    if (input.active === false || (input.role !== undefined && input.role !== before?.role)) {
-      const reason = input.active === false ? 'Account deactivated' : 'Role changed'
+    // A password reset revokes ALL of them, including whatever the account is
+    // signed in on right now, and unlike `changePassword` it spares nothing
+    // (issue #184). An admin resetting somebody's password is remediating a
+    // compromise, not helping them tidy up: the person at the keyboard of the
+    // live session may well be who they are remediating against.
+    //
+    // No `before` comparison for it, unlike the role: a re-sent password is not a
+    // no-op the way a re-sent role is — the caller cannot know whether it matches,
+    // and the hash written above changes on every call regardless.
+    if (
+      input.active === false ||
+      input.password !== undefined ||
+      (input.role !== undefined && input.role !== before?.role)
+    ) {
+      const reason =
+        input.active === false
+          ? 'Account deactivated'
+          : input.password !== undefined
+            ? 'Password reset by an administrator'
+            : 'Role changed'
       await revokeAllSessionsOf(actorId, id, reason, tx)
     }
 
@@ -176,6 +194,12 @@ export const updateUser = async (
   // admin keeps admin until their token expires. That was already true with a 24 h
   // ceiling; "remember me" raises it to 30 days, which turns a small window into a
   // month. Revoking makes them sign in again and pick up the role they now have.
+  //
+  // A PASSWORD RESET ends them because that is what the operator doing it believes
+  // it already does (issue #184). Sessions do not read `password_hash` after login
+  // either, so before this branch the reset changed only what the next sign-in
+  // needs — a token already in an attacker's hands went on working for the rest of
+  // its 30 days.
   return ok(updated as SafeUser)
 }
 

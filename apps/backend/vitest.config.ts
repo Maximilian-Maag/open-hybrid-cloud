@@ -20,6 +20,12 @@ export default defineConfig({
       JWT_SECRET: 'test-jwt-secret-32-chars-minimum!!',
       ADMIN_EMAIL: 'root@test.dev',
       ADMIN_PASSWORD: 'testpassword123',
+      // 64 hex characters, so the integration registry (issue #111) is enabled
+      // for the suite. Tests that need the UNCONFIGURED behaviour delete this
+      // from process.env for the duration of the test — see
+      // lib/crypto/secrets.test.ts, and note that the key cache in that module
+      // is keyed on the raw value precisely so that works.
+      SECRET_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     },
     coverage: {
       provider: 'v8',

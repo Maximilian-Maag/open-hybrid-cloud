@@ -120,6 +120,13 @@
       "when": 1787443200000,
       "tag": "0016_product_image_alt",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787616000000,
+      "tag": "0023_integration_registry",
+      "breakpoints": true
     }
   ]
 }

@@ -10,7 +10,10 @@ import {
   jsonb,
   primaryKey,
   customType,
+  uniqueIndex,
+  index,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import type { StackStep } from '@open-hybrid-cloud/types'
 import type { ProductSnapshot } from '@/lib/services/snapshot'
 
@@ -81,6 +84,121 @@ export const ciSources = pgTable('ci_sources', {
   accessToken: text('access_token').notNull(),
   provider: text({ enum: ['gitlab', 'github', 'bitbucket'] }).notNull().default('gitlab'),
 })
+
+/** Every external system the registry below can hold. */
+export const INTEGRATION_KINDS = ['foreman', 'ansible', 'nexus', 'pulp', 'loki', 'grafana'] as const
+
+/** How the portal authenticates to an integration. */
+export const INTEGRATION_AUTH_TYPES = ['none', 'bearer', 'basic', 'token_header'] as const
+
+/** What a failed call to an integration means for the operation that made it. */
+export const INTEGRATION_FAILURE_MODES = ['blocking', 'best_effort'] as const
+
+/**
+ * Registry of external systems the portal talks to that are NOT CI providers
+ * (issue #111): Foreman (#112), Ansible/AWX (#113), Nexus and Pulp (#114),
+ * Loki (#116) and Grafana (#117).
+ *
+ * DELIBERATELY BESIDE `ci_sources`, NOT THROUGH IT. None of the six is a CI
+ * provider, so widening the `provider` enum would leave a column that no longer
+ * means anything and six rows that half-fit. Migrating `ci_sources` onto this
+ * table is a decision that was TAKEN AND DEFERRED, not overlooked: `ci_sources`
+ * is referenced by `deployment_environments.ci_source_id`, read by the whole
+ * `lib/ci` client layer and exposed by the CI-browser endpoints, so folding it
+ * in is a migration with a blast radius, and it is out of scope for #111. What
+ * this table does establish is the substrate that migration would land on —
+ * encrypted credentials, health, failure semantics — so the eventual move is a
+ * data migration rather than a redesign.
+ */
+export const integrations = pgTable('integrations', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  kind: text({ enum: INTEGRATION_KINDS }).notNull(),
+  /** Operator-facing label. Shown in errors, so it should say which instance. */
+  name: text().notNull(),
+  baseUrl: text('base_url').notNull(),
+  authType: text('auth_type', { enum: INTEGRATION_AUTH_TYPES }).notNull().default('bearer'),
+  /**
+   * Username for `basic` auth. Plain text on purpose — it is not a secret, and
+   * keeping it readable means the admin UI can show *which* account is
+   * configured without a decrypt round trip.
+   */
+  username: text().notNull().default(''),
+  /**
+   * The token or password, AES-256-GCM encrypted (see lib/crypto/secrets.ts for
+   * the envelope). Never selected by the list/get paths and never returned by
+   * the API — the only reader is `resolveIntegration`, which hands it to the
+   * probe or to a future client.
+   *
+   * Nullable so `auth_type = 'none'` (an unauthenticated Loki, a public Grafana
+   * health endpoint) does not have to store an empty ciphertext, and so a row
+   * can outlive a credential that was revoked.
+   */
+  credential: text(),
+  /**
+   * Which deployment environment this instance serves. NULL means portal-wide —
+   * one Loki or one Grafana for the whole installation is the normal case, while
+   * Foreman and Nexus are usually per-environment.
+   *
+   * CASCADE: an integration bound to a deleted environment has nothing left to
+   * serve, and `deleteEnvironment` refuses on any non-cascading reference, so a
+   * plain FK here would make environments undeletable once one was configured.
+   */
+  environmentId: bigint('environment_id', { mode: 'number' }).references(() => deploymentEnvironments.id, { onDelete: 'cascade' }),
+  /**
+   * Off without being deleted. A misbehaving integration has to be switchable
+   * off in one field: deleting it loses the URL and the credential, and every
+   * consumer would then have to treat "absent" and "deliberately disabled" as
+   * the same thing — which is how a blocking integration silently becomes
+   * best-effort.
+   */
+  enabled: boolean().notNull().default(true),
+  /**
+   * Whether a failed call to this integration blocks the operation that made it
+   * (`blocking`) or is logged and carried on from (`best_effort`) — issue #111's
+   * fifth bullet, in the data model rather than re-decided at each call site.
+   *
+   * The DB default is `best_effort` because that is the only safe answer for a
+   * row written by a migration that cannot know the intent. The API does NOT
+   * default it: create requires the field, so nobody gets best-effort by not
+   * thinking about it, which is precisely how the trial and webhook paths ended
+   * up swallowing failures invisibly.
+   */
+  failureMode: text('failure_mode', { enum: INTEGRATION_FAILURE_MODES }).notNull().default('best_effort'),
+  /**
+   * Last time a probe reached this system. Only ever set on SUCCESS: "when did
+   * this last work" is the question an operator has, and overwriting it on a
+   * failed attempt would answer a different one. NULL = never contacted.
+   */
+  lastContactedAt: timestamp('last_contacted_at', { withTimezone: true }),
+  /**
+   * Why the most recent probe failed, cleared on the next success. Kept
+   * alongside `last_contacted_at` rather than replacing it so the pair reads as
+   * "worked at T, broken since" — an integration that is silently unreachable is
+   * worse than none.
+   */
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  // At most one integration of a kind per environment, and at most one
+  // portal-wide one per kind. Two partial indexes rather than one
+  // UNIQUE (kind, environment_id): Postgres treats NULLs as distinct, so the
+  // plain constraint would happily accept five portal-wide Foremans and leave
+  // "which Foreman does this environment reconcile against" (#112) unanswerable.
+  //
+  // The cost is real and deliberate: this forbids two Nexus instances in one
+  // environment. That is the trade for `resolveIntegration(kind, envId)` having
+  // exactly one answer instead of an arbitrary first row.
+  uniqueIndex('integrations_kind_env_key')
+    .on(t.kind, t.environmentId)
+    .where(sql`environment_id IS NOT NULL`),
+  uniqueIndex('integrations_kind_global_key')
+    .on(t.kind)
+    .where(sql`environment_id IS NULL`),
+  // Every read is a resolve: "the <kind> for this environment, else the global
+  // one, if enabled".
+  index('integrations_kind_enabled_idx').on(t.kind, t.enabled),
+])
 
 export const deploymentEnvironments = pgTable('deployment_environments', {
   id: bigserial({ mode: 'number' }).primaryKey(),
@@ -329,6 +447,11 @@ export type Product = typeof products.$inferSelect
 export type ProductTranslation = typeof productTranslations.$inferSelect
 export type Parameter = typeof parameters.$inferSelect
 export type CiSource = typeof ciSources.$inferSelect
+export type Integration = typeof integrations.$inferSelect
+export type NewIntegration = typeof integrations.$inferInsert
+export type IntegrationKind = (typeof INTEGRATION_KINDS)[number]
+export type IntegrationAuthType = (typeof INTEGRATION_AUTH_TYPES)[number]
+export type IntegrationFailureMode = (typeof INTEGRATION_FAILURE_MODES)[number]
 export type DeploymentEnvironment = typeof deploymentEnvironments.$inferSelect
 export type ProductEnvironment = typeof productEnvironments.$inferSelect
 export type ProductWebhook = typeof productWebhooks.$inferSelect

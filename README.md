@@ -78,6 +78,7 @@ Orders can also be placed one at a time (`POST /api/orders`) or collected in a *
 | `SMTP_TLS` | No | Enable TLS (`true`/`false`, default: `true`) |
 | `DECOMMISSION_SWEEP_SECRET` | No | Shared secret for the scheduled-decommission sweep. Blank leaves `POST /api/internal/decommission-sweep` disabled (503) — see [Scheduled decommissioning](#scheduled-decommissioning) |
 | `TRUST_PROXY` | No | Set to `1`/`true` when the backend sits behind a reverse proxy you trust to set `X-Forwarded-For` (nginx, an Ingress). Enables the **per-IP** half of the login rate limiter (`apps/backend/src/app/api/auth/login/route.ts`); the per-account half applies regardless. Leave unset when the backend is reachable directly, or the header becomes a spoofable bypass. |
+| `SECRET_ENCRYPTION_KEY` | No | 64 hex characters (`openssl rand -hex 32`) encrypting the credentials of external-system integrations (Foreman, Ansible, Nexus, Pulp, Loki, Grafana). Blank leaves that feature off — the endpoints refuse to store a credential (503) rather than storing it in plain text. Not rotatable once in use: a new key cannot decrypt what the old one wrote |
 
 Only `JWT_SECRET` and `DATABASE_URL` are enforced at startup (`apps/backend/src/lib/config/validate.ts`) — an invalid or missing one is reported on `GET /api/health` rather than crashing the process. `ADMIN_EMAIL`/`ADMIN_PASSWORD` are listed as required because a blank value produces a broken root account on first boot, not because anything currently refuses to start without them.
 

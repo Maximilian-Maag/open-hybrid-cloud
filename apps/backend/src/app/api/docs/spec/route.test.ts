@@ -22,4 +22,27 @@ describe('GET /api/docs/spec', () => {
     const body = await res.json()
     expect(body.openapi).toBeDefined()
   })
+
+  it('documents the integration registry endpoints', async () => {
+    // A route that is not in paths.ts is invisible to anyone reading the spec,
+    // which is the only description of the API the frontend and any operator get.
+    const auth = await makeAuthHeader(await createUser({ role: 'root' }))
+    const body = await (await GET(makeReq(auth))).json()
+
+    expect(Object.keys(body.paths['/admin/integrations'])).toEqual(
+      expect.arrayContaining(['get', 'post']),
+    )
+    expect(Object.keys(body.paths['/admin/integrations/{id}'])).toEqual(
+      expect.arrayContaining(['get', 'put', 'delete']),
+    )
+    expect(body.paths['/admin/integrations/{id}/probe'].post).toBeDefined()
+
+    // The credential must not appear as a response field anywhere in the spec's
+    // integration schema — hasCredential is what callers get.
+    const listSchema = body.paths['/admin/integrations'].get.responses['200'].content[
+      'application/json'
+    ].schema
+    expect(JSON.stringify(listSchema)).toContain('hasCredential')
+    expect(Object.keys(listSchema.items.properties)).not.toContain('credential')
+  })
 })

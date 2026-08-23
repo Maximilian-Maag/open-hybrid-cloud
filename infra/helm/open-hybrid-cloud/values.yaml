@@ -114,6 +114,14 @@ backend:
     databaseUrl: ""     # DATABASE_URL  postgresql://user:pass@host:5432/db
     jwtSecret: ""       # JWT_SECRET    32+ random bytes
     adminPassword: ""   # ADMIN_PASSWORD  initial admin account password
+    # SECRET_ENCRYPTION_KEY — 64 hex characters (`openssl rand -hex 32`). Encrypts
+    # the credentials in the integration registry (Foreman, Ansible, Nexus, Pulp,
+    # Loki, Grafana). Leave empty to leave that feature off; the endpoints then
+    # refuse to store a credential rather than storing it in plain text.
+    #
+    # Cannot currently be rotated: a new key cannot decrypt what the old one
+    # wrote, and every stored credential would have to be re-entered.
+    secretEncryptionKey: ""
 
 # ── Ingress ───────────────────────────────────────────────────────────────────
 ingress:

@@ -5,7 +5,7 @@ import { render, screen, act } from '@testing-library/react'
 import { axe } from 'vitest-axe'
 import type { AxeResults } from 'axe-core'
 import Link from 'next/link'
-import type { Parameter } from '@open-hybrid-cloud/types'
+import type { Parameter, SessionInfo } from '@open-hybrid-cloud/types'
 import { Alert } from './ui/Alert'
 import { Button, ButtonLink } from './ui/Button'
 import { Card } from './ui/Card'
@@ -29,7 +29,6 @@ import { ParameterFields } from './forms/ParameterFields'
 import { FavoriteButton } from '@/app/(dashboard)/catalog/FavoriteButton'
 import { DelegationPanel } from '@/app/(dashboard)/approvals/DelegationPanel'
 import { ActiveSessions } from './forms/ActiveSessions'
-import type { SessionInfo } from '@open-hybrid-cloud/types'
 
 /**
  * Component-level accessibility checks (issue #102).

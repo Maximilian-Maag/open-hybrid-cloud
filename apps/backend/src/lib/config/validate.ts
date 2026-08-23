@@ -71,7 +71,33 @@ export const configProblems = (env: ConfigEnv = process.env): ConfigProblem[] =>
     })
   }
 
+  // A wrong-length key is a hard problem: enrolled TOTP secrets become
+  // undecryptable and every 2FA login fails closed. An UNSET key is not reported
+  // here — it falls back to a key derived from JWT_SECRET, which works, and
+  // lib/auth/totpSecret.ts warns about the consequence (rotating JWT_SECRET then
+  // invalidates every enrolled authenticator). Reporting both would train
+  // operators to ignore this section.
+  const totpKey = (env.TOTP_ENCRYPTION_KEY ?? '').trim()
+  if (totpKey !== '' && !isValidTotpKey(totpKey)) {
+    problems.push({
+      variable: 'TOTP_ENCRYPTION_KEY',
+      message:
+        'is set but is not 32 bytes — two-factor logins will fail for everyone enrolled. ' +
+        'Generate one with `openssl rand -base64 32`.',
+    })
+  }
+
   return problems
+}
+
+/** 32 bytes, as 64 hex characters or as base64. */
+const isValidTotpKey = (value: string): boolean => {
+  if (/^[0-9a-fA-F]{64}$/.test(value)) return true
+  try {
+    return Buffer.from(value, 'base64').length === 32
+  } catch {
+    return false
+  }
 }
 
 /**

@@ -33,6 +33,43 @@ test.describe('Login page', () => {
     await expect(page).not.toHaveURL(/\/login/, { timeout: 5000 })
   })
 
+  /**
+   * The case that broke CI on #36 and blocked the whole suite.
+   *
+   * The two-step sign-in put a `POST /api/login-challenge` in front of every
+   * login, and the middleware matcher still protected it — so the form's own
+   * fetch was 307'd to /login, came back as HTML instead of JSON, and an account
+   * with NO second factor was told "Invalid email or password". `auth.setup.ts`
+   * failed on it, and with it all 243 authenticated tests.
+   *
+   * Asserting on the response, not just the destination: a login that lands on
+   * the dashboard for some other reason would not tell us the challenge hop
+   * still answers as itself.
+   */
+  test('an account with no second factor signs in in one step', async ({ page, context }) => {
+    // A genuinely signed-out browser — this project carries the shared root
+    // storageState, and the middleware only redirects the unauthenticated.
+    await context.clearCookies()
+    await page.goto('/login')
+
+    const challenge = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === '/api/login-challenge' && r.request().method() === 'POST',
+    )
+
+    await page.getByRole('textbox', { name: /email/i }).fill(rootEmail)
+    await page.getByRole('textbox', { name: /password/i }).fill(rootPassword)
+    await page.getByRole('button', { name: /sign in|log in/i }).click()
+
+    const res = await challenge
+    // A 307 here is the regression: the middleware swallowing the hop.
+    expect(res.status()).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, mfaRequired: false })
+
+    // One step: no code is ever asked for.
+    await expect(page.getByLabel(/authentication code/i)).toHaveCount(0)
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 })
+  })
+
   test('keeps the user on the login page after failed attempt', async ({ page }) => {
     await page.getByRole('textbox', { name: /email/i }).fill('bad@example.com')
     await page.getByRole('textbox', { name: /password/i }).fill('bad')

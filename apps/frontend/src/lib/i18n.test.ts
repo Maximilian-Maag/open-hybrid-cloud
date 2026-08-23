@@ -159,6 +159,44 @@ describe('i18n', () => {
     }
   })
 
+  // The two-factor keys (issue #36) went in as one block across all 25 tables,
+  // so they get the same per-key-per-language guard as the chrome keys above.
+  const TWO_FACTOR_KEYS: (keyof Translations)[] = [
+    'twoFactorAuth', 'twoFactorIntro', 'twoFactorOn', 'twoFactorOff',
+    'twoFactorSetUp', 'twoFactorReplace', 'twoFactorScanHint',
+    'twoFactorSetupKey', 'twoFactorCodeLabel', 'twoFactorCodeHint',
+    'twoFactorActivate', 'twoFactorRecoveryCodes', 'twoFactorRecoveryHint',
+    'twoFactorRecoveryLeft', 'twoFactorLoginHint', 'twoFactorVerifying',
+    'twoFactorCurrentPassword', 'twoFactorLockedOut',
+  ]
+
+  it('has a real translation for every two-factor key in every language', () => {
+    const untranslated: string[] = []
+    for (const { code } of SUPPORTED_LANGUAGES) {
+      if (code === 'en') continue
+      for (const key of TWO_FACTOR_KEYS) {
+        const value = t(key, code)
+        expect(value, `${code}.${key} does not resolve`).toBeTruthy()
+        // Identical to English means the key is absent and the fallback kicked
+        // in. A few short labels legitimately match ("Active", "Activate"), so
+        // collect rather than fail per key and check the count below.
+        if (value === t(key, 'en')) untranslated.push(`${code}.${key}`)
+      }
+    }
+    const perLanguage = new Map<string, number>()
+    for (const entry of untranslated) {
+      const code = entry.split('.')[0]
+      perLanguage.set(code, (perLanguage.get(code) ?? 0) + 1)
+    }
+    const wholesale = [...perLanguage.entries()].filter(([, n]) => n > 4)
+    expect(
+      wholesale,
+      `these languages look like they are falling back to English: ${wholesale
+        .map(([c, n]) => `${c} (${n}/${TWO_FACTOR_KEYS.length})`)
+        .join(', ')}`,
+    ).toEqual([])
+  })
+
   it('keeps subtitles as sentences and titles as labels', () => {
     for (const { code } of SUPPORTED_LANGUAGES) {
       // Titles are labels, so they should not be punctuated like prose.

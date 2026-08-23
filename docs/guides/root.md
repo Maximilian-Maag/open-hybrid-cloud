@@ -396,3 +396,102 @@ Under **Settings → Profile** (`/settings/profile`):
 4. Click **Save**
 
 If the current password is incorrect or the confirmation does not match, the change is rejected and an error message is shown.
+
+### 10.2 Two-Factor Authentication
+
+The Root account holds a local password and the highest privilege level in the
+system, so it can be protected with a second factor: a six-digit code from an
+authenticator app (Google Authenticator, Authy, Bitwarden, 1Password — anything
+that supports standard TOTP). It is available to the Root account **only** — the
+server refuses every two-factor endpoint for any other role, and the card is not
+shown to them. Admin and Project Manager accounts sign in through Microsoft
+Entra ID and are covered by its MFA instead.
+
+**Setting it up**
+
+1. Go to **Settings → Profile** and find the **Two-factor authentication** card
+2. Enter your **current password** and click **Set up two-factor authentication**
+3. Scan the QR code with your authenticator app. If the camera is not an option,
+   type the **setup key** in by hand instead — it is the same secret
+4. Enter the six-digit code the app now shows and click **Activate**
+5. **Write down the ten recovery codes.** This is the only time they are ever
+   shown: they are stored hashed, so nobody — not the server, not support — can
+   print them again
+
+From the next sign-in on, the password takes you to a second screen asking for a
+code. No session exists until that code is accepted.
+
+**Recovery codes**
+
+Each of the ten codes works exactly once, and either the authenticator or a
+recovery code will get you in. Use one when your phone is lost, replaced or wiped.
+The card under **Settings → Profile** shows how many are left; when the count gets
+low, replace the authenticator (below) to be issued a fresh set of ten.
+
+**Replacing the authenticator**
+
+New phone, or a lost one:
+
+1. Sign in — with the old authenticator if you still have it, or with a recovery
+   code if you do not
+2. Go to **Settings → Profile → Two-factor authentication** and click
+   **Replace authenticator**
+3. Enter your password **and** a current code or an unused recovery code
+4. Scan the new QR code and confirm as above
+
+The old authenticator and the old recovery codes stop working the moment the new
+one is confirmed, and a fresh set of ten codes is issued. Until you confirm, the
+old one keeps working — starting a replacement and walking away cannot lock you
+out.
+
+**It cannot be switched off**
+
+There is no "disable" button and no API endpoint that removes a confirmed second
+factor. This is deliberate: an attacker who reached a signed-in session or your
+password should not be able to strip the protection off the account. The only way
+out is to replace it, or the emergency reset below.
+
+**Emergency reset (operator, database access required)**
+
+If both the authenticator and all ten recovery codes are gone, the account cannot
+sign in and no amount of clicking will fix it. Someone with access to the
+PostgreSQL database has to clear the second factor. This is an operator
+procedure, not a Root one, and every use of it should be recorded in your own
+change log — it removes the protection the rest of this section exists to
+provide.
+
+Docker Compose:
+
+```sh
+docker exec -i ohc-postgres psql -U postgres -d open_hybrid_cloud <<'SQL'
+BEGIN;
+DELETE FROM user_recovery_codes
+  WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
+DELETE FROM user_totp
+  WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
+COMMIT;
+SQL
+```
+
+Kubernetes:
+
+```sh
+kubectl exec -n open-hybrid-cloud deploy/ohc-postgres --   psql -U postgres -d open_hybrid_cloud -c   "DELETE FROM user_recovery_codes WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');    DELETE FROM user_totp WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');"
+```
+
+Replace `root@example.com` with the account's own address. Deleting the
+`user_totp` row is what turns the second factor off; deleting the recovery codes
+alongside it makes sure no leftover code from the previous enrollment stays
+usable. The account then signs in with its password alone, and should enroll again
+immediately.
+
+The same procedure applies to an account that was Root when it enrolled and has
+since been demoted. Its second factor keeps being required at sign-in — dropping
+it silently would remove a protection the owner set up and still relies on — but
+it can no longer be replaced through the interface, because replacing it is a
+Root-only operation. Either promote the account back to Root, or clear the row as
+above.
+
+The same procedure is the way out if `TOTP_ENCRYPTION_KEY` is lost or rotated: the
+stored secrets become unreadable, every two-factor sign-in fails closed, and the
+enrollment has to be redone.

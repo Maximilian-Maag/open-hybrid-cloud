@@ -41,9 +41,12 @@ describe('loginWithCredentials', () => {
     const u = await createUser({ email: 'ok@test.dev', password: 'right-password' })
     const result = await loginWithCredentials(u.email, 'right-password')
     expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(typeof result.data).toBe('string')
-      expect(result.data.length).toBeGreaterThan(0)
+    if (result.ok && !result.data.mfaRequired) {
+      expect(typeof result.data.token).toBe('string')
+      expect(result.data.token.length).toBeGreaterThan(0)
+      expect(result.data.user).toMatchObject({ id: u.id, email: u.email })
+    } else {
+      expect.unreachable('an account without a second factor must get a session')
     }
   })
 })

@@ -294,7 +294,9 @@ registry.registerPath({
   summary: 'Login with email and password',
   description:
     'Opens a server-side session (issue #37) and returns a token naming it. The token is only ' +
-    'accepted while that session is live, so a revoked session stops working on the next request.',
+    'accepted while that session is live, so a revoked session stops working on the next request. ' +
+    'When the account has a second factor (issue #36) NOTHING is opened here: the response is a ' +
+    'challenge, and the session is created by POST /auth/login/mfa once a code has been verified.',
   tags: ['Auth'],
   security: [],
   request: {
@@ -305,7 +307,77 @@ registry.registerPath({
             email: z.string().email(),
             password: z.string().min(1),
             rememberMe: z.boolean().optional().openapi({
-              description: 'Extend the session from the 8 h default to 30 days.',
+              description:
+                'Extend the session from the 8 h default to 30 days. On a two-step login it is ' +
+                'sealed into the challenge, so it is answered once, here.',
+            }),
+            challengeOnly: z.boolean().optional().openapi({
+              description:
+                'Check the password and report whether a second factor is required, opening no ' +
+                'session and returning no token in either case. Answers {"mfaRequired":false} for ' +
+                'an account without one.',
+            }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        'Either a session (token + user) or, when the account has a second factor, an MFA ' +
+        'challenge with NO token — see POST /auth/login/mfa.',
+      content: {
+        'application/json': {
+          schema: z.union([
+            z.object({
+              token: z.string(),
+              user: z.object({
+                id: z.number(),
+                email: z.string(),
+                name: z.string().nullable(),
+                role: z.string(),
+              }),
+            }),
+            z.object({
+              mfaRequired: z.literal(true),
+              mfaToken: z.string(),
+              expiresIn: z.number(),
+            }),
+            z.object({ mfaRequired: z.literal(false) }).openapi({
+              description: 'challengeOnly, and no second factor is enrolled.',
+            }),
+          ]),
+        },
+      },
+    },
+    400: { description: 'Bad request' },
+    401: { description: 'Invalid credentials' },
+    429: { description: 'Too many login attempts' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/auth/login/mfa',
+  summary: 'Complete a two-step login by presenting the second factor',
+  description:
+    'Trades the challenge from POST /auth/login, plus a TOTP code or a one-time recovery code, for a ' +
+    'session token. This is where the session row is created for a two-step login, through the same ' +
+    'path as every other sign-in, so it is listed and revocable like any other (issue #37). The ' +
+    'session lifetime comes from the "remember me" choice sealed into the challenge, not from this ' +
+    'request. Failures are counted against the account and lock the factor for 15 minutes after ' +
+    '5 consecutive failures (429).',
+  tags: ['Auth'],
+  security: [],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            mfaToken: z.string().min(1),
+            code: z.string().min(1).max(64).openapi({
+              description: 'A 6-digit TOTP code or a one-time recovery code.',
             }),
           }),
         },
@@ -329,8 +401,9 @@ registry.registerPath({
         },
       },
     },
-    400: { description: 'Bad request' },
-    401: { description: 'Invalid credentials' },
+    400: { description: 'Invalid or already-used code' },
+    401: { description: 'Challenge expired, forged, or superseded by a password change' },
+    429: { description: 'Second factor locked after repeated failures' },
   },
 })
 
@@ -1743,6 +1816,127 @@ registry.registerPath({
     },
     400: { description: 'Bad request or wrong current password' },
     401: { description: 'Unauthorized' },
+  },
+})
+
+// ─── Two-factor authentication ────────────────────────────────────────────────
+
+registry.registerPath({
+  method: 'get',
+  path: '/users/me/2fa',
+  summary: 'Second-factor status for the signed-in user',
+  description:
+    'Root only — the feature is scoped to the root account, and every 2FA endpoint answers 403 for any ' +
+    'other role. ' +
+    'Status only — never the shared secret or the recovery codes. There is no endpoint that turns a ' +
+    'confirmed factor off: DELETE answers 405 by design, and the only exits are a re-enrollment or an ' +
+    'operator deleting the row (see the operator handbook).',
+  tags: ['Two-factor'],
+  security: bearerAuth,
+  responses: {
+    200: {
+      description: 'Current status',
+      content: {
+        'application/json': {
+          schema: z.object({
+            enabled: z.boolean(),
+            confirmedAt: z.string().nullable(),
+            pending: z.boolean(),
+            recoveryCodesRemaining: z.number(),
+            lockedUntil: z.string().nullable(),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the root account' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/users/me/2fa',
+  summary: 'Refused — two-factor authentication cannot be disabled once set up',
+  tags: ['Two-factor'],
+  security: bearerAuth,
+  responses: {
+    405: { description: 'Always. Enroll a new authenticator instead.' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/users/me/2fa/enroll',
+  summary: 'Start a TOTP enrollment and get the QR code',
+  description:
+    'Root only. Requires the current password. When a factor is already active it ALSO requires a current TOTP code ' +
+    'or a recovery code, so a stolen session plus a phished password cannot replace the factor. The new ' +
+    'secret is stored as pending, so the existing authenticator keeps working until it is confirmed.',
+  tags: ['Two-factor'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            password: z.string().min(1),
+            code: z.string().min(1).max(64).optional().openapi({
+              description: 'A current TOTP or recovery code. Required only when re-enrolling.',
+            }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The enrollment offer. Shown once; not retrievable afterwards.',
+      content: {
+        'application/json': {
+          schema: z.object({
+            secret: z.string().openapi({ description: 'base32, for manual entry' }),
+            secretFormatted: z.string(),
+            otpauthUrl: z.string(),
+            qrSvg: z.string().openapi({ description: 'A self-contained SVG of the QR code' }),
+          }),
+        },
+      },
+    },
+    400: { description: 'Bad request, or an SSO account with no local password' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the root account, wrong password, or a current second factor is required' },
+    429: { description: 'Second factor locked after repeated failures' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/users/me/2fa/confirm',
+  summary: 'Confirm a pending enrollment and receive the recovery codes',
+  description:
+    'Root only. A code from the new authenticator proves the secret actually arrived in an app. The recovery codes ' +
+    'are returned here and nowhere else: they are stored hashed, so this response is the only copy.',
+  tags: ['Two-factor'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': { schema: z.object({ code: z.string().min(1).max(64) }) },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The factor is now active. Recovery codes, shown once.',
+      content: {
+        'application/json': { schema: z.object({ recoveryCodes: z.array(z.string()) }) },
+      },
+    },
+    400: { description: 'No enrollment in progress, expired, or an invalid code' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the root account' },
+    409: { description: 'A newer enrollment has replaced the one being confirmed' },
+    429: { description: 'Second factor locked after repeated failures' },
   },
 })
 

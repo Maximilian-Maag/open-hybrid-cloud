@@ -22,8 +22,20 @@ export interface LoginRequest {
   /**
    * Extend the session to the "remember me" lifetime (30 days) instead of the
    * 8 h default. See the backend's `lib/auth/sessions.ts` (issue #37).
+   *
+   * On a two-step sign-in this is decided here, at the password step, and
+   * travels inside the MFA challenge — so the second step cannot change it and
+   * does not have to be told it again.
    */
   rememberMe?: boolean
+  /**
+   * Check the password and report whether a second factor is required, minting
+   * nothing at all: no token, and no `sessions` row. This is what the two-step
+   * sign-in asks first (issue #36); without it the password step of an account
+   * WITHOUT a second factor would open a session the browser then throws away,
+   * leaving a phantom row in the user's own session list (issue #37).
+   */
+  challengeOnly?: boolean
 }
 
 export interface LoginResponse {
@@ -55,6 +67,74 @@ export interface SessionInfo {
 /** Result of revoking one session or a batch of them. */
 export interface RevokeSessionsResponse {
   revoked: number
+}
+
+/**
+ * What `POST /api/auth/login` returns when the account has a second factor
+ * (issue #36): a challenge, and deliberately no session token. `token` is absent
+ * rather than null so a client that forgets to check `mfaRequired` finds nothing
+ * it could mistake for a session.
+ */
+export interface MfaChallengeResponse {
+  mfaRequired: true
+  mfaToken: string
+  /** Seconds until the challenge expires. */
+  expiresIn: number
+}
+
+export type LoginResult = LoginResponse | MfaChallengeResponse
+
+/**
+ * What `POST /api/auth/login` returns for `challengeOnly` when the account has
+ * no second factor: the password was right, and nothing else — no token, and
+ * (since #37) no `sessions` row either. The caller signs in normally afterwards.
+ */
+export interface PasswordAcceptedResponse {
+  mfaRequired: false
+}
+
+export type PasswordCheckResult = MfaChallengeResponse | PasswordAcceptedResponse
+
+export const isMfaChallenge = (
+  r: LoginResult | PasswordCheckResult,
+): r is MfaChallengeResponse => (r as MfaChallengeResponse).mfaRequired === true
+
+export interface MfaLoginRequest {
+  mfaToken: string
+  /** A TOTP code or a one-time recovery code. */
+  code: string
+}
+
+// Two-factor authentication (issue #36)
+export interface TwoFactorStatusResponse {
+  enabled: boolean
+  confirmedAt: string | null
+  pending: boolean
+  recoveryCodesRemaining: number
+  lockedUntil: string | null
+}
+
+export interface StartTotpEnrollmentRequest {
+  password: string
+  /** A current code or recovery code. Required only when re-enrolling. */
+  code?: string
+}
+
+export interface StartTotpEnrollmentResponse {
+  secret: string
+  secretFormatted: string
+  otpauthUrl: string
+  /** A self-contained SVG of the enrollment QR code. */
+  qrSvg: string
+}
+
+export interface ConfirmTotpEnrollmentRequest {
+  code: string
+}
+
+export interface ConfirmTotpEnrollmentResponse {
+  /** Shown exactly once — they are stored hashed and cannot be retrieved again. */
+  recoveryCodes: string[]
 }
 
 // Users

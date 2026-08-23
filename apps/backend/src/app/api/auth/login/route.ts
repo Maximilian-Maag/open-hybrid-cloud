@@ -1,17 +1,20 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { db } from '@/lib/db/client'
-import { users } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
-import { loginWithCredentials } from '@/lib/services/auth'
+import { checkLoginPassword, loginWithCredentials } from '@/lib/services/auth'
 import { clientIp, clientUserAgent } from '@/lib/auth/requestMeta'
+import { MFA_CHALLENGE_TTL_SECONDS } from '@/lib/auth/mfaChallenge'
 
 const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
   // Opt-in longer session (issue #37). Absent means the 8 h default; nothing here
-  // decides the actual length, only which of the two lifetimes applies.
+  // decides the actual length, only which of the two lifetimes applies. On a
+  // two-step sign-in it is sealed into the MFA challenge, so it is answered once,
+  // here, and not again at the second step.
   rememberMe: z.boolean().optional(),
+  // Check the password and report whether a second factor is needed, minting
+  // nothing (#36). See the branch below for why this exists.
+  challengeOnly: z.boolean().optional(),
 })
 
 const loginAttempts = new Map<string, { count: number; resetAt: number }>()
@@ -103,7 +106,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { email, password, rememberMe } = parsed.data
+  const { email, password, rememberMe, challengeOnly } = parsed.data
 
   // Two independent buckets protect different attacks:
   //   - per-account (accountRateLimitKey): a burst against one account never
@@ -128,6 +131,26 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // `challengeOnly` answers one question — is a second factor in the way? — and
+  // opens nothing: no `sessions` row, no token, on either branch. It is what the
+  // sign-in form's first hop asks, because NextAuth's `authorize` can only say
+  // yes or no and the form has to know whether to show a code field. Doing it
+  // with an ordinary login instead would open a session for every account
+  // WITHOUT a second factor that the browser then discards, leaving a phantom
+  // row in that user's own session list (#37).
+  if (challengeOnly) {
+    const check = await checkLoginPassword(email, password, rememberMe)
+    if (!check.ok) {
+      return NextResponse.json({ error: check.message }, { status: check.status })
+    }
+    resetRateLimit(accountKey)
+    return NextResponse.json(
+      check.data.mfaRequired
+        ? { mfaRequired: true, mfaToken: check.data.mfaToken, expiresIn: MFA_CHALLENGE_TTL_SECONDS }
+        : { mfaRequired: false },
+    )
+  }
+
   const result = await loginWithCredentials(email, password, {
     ip: clientIp(req),
     userAgent: clientUserAgent(req),
@@ -143,13 +166,18 @@ export async function POST(req: NextRequest) {
   // into an account they control.
   resetRateLimit(accountKey)
 
-  const rows = await db
-    .select({ id: users.id, email: users.email, name: users.name, role: users.role })
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1)
+  // The password was right but the account has a second factor, so this response
+  // carries NO session token — and no session row was written either. Only a
+  // challenge, which POST /api/auth/login/mfa will trade for a real session once
+  // a code proves the second factor. The `token` field is absent rather than
+  // null: a client that ignores `mfaRequired` finds nothing to use (#36).
+  if (result.data.mfaRequired) {
+    return NextResponse.json({
+      mfaRequired: true,
+      mfaToken: result.data.mfaToken,
+      expiresIn: MFA_CHALLENGE_TTL_SECONDS,
+    })
+  }
 
-  const sessionUser = rows[0]
-
-  return NextResponse.json({ token: result.data, user: sessionUser })
+  return NextResponse.json({ token: result.data.token, user: result.data.user })
 }

@@ -1,4 +1,5 @@
 import type { CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
+import { triggerFailure } from './triggerError'
 
 // See gitlab.ts — bound the number of pages followed.
 const MAX_LIST_PAGES = 10
@@ -63,10 +64,7 @@ export const triggerBitbucketPipeline = async (
     },
   )
 
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Bitbucket pipeline trigger failed: ${res.status} ${text}`)
-  }
+  if (!res.ok) throw await triggerFailure('Bitbucket pipeline trigger', res)
 
   const json = await res.json() as { uuid: string }
   return json.uuid

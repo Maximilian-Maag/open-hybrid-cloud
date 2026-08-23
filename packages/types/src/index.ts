@@ -203,6 +203,15 @@ export interface DeploymentEnvironment {
   name: string
   description: string
   ciSourceId: number
+  /**
+   * Whether an outbound pipeline-trigger token is configured — never the token.
+   *
+   * webhook_token lets its holder fire arbitrary pipelines in the CI project, so no
+   * read path returns it (issue #144); an operator replaces it by sending a new one
+   * to PUT /api/admin/environments/:id. Optional because responses predating the
+   * fix omit it.
+   */
+  webhookTokenSet?: boolean
 }
 
 // Response shape for GET/POST /api/admin/environments/:id/callback-secret.
@@ -275,6 +284,11 @@ export interface ProductWebhook {
   name: string
   webhookUrl: string
   execOrder: number
+  /**
+   * Whether a trigger token is configured — never the token itself (issue #144).
+   * Optional because responses predating the fix omit it.
+   */
+  webhookTokenSet?: boolean
 }
 
 export interface CreateProductWebhookRequest {

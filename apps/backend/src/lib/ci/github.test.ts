@@ -47,10 +47,40 @@ describe('github ci client', () => {
     })
 
     it('throws a descriptive error on non-2xx', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.spyOn(global, 'fetch').mockResolvedValue(new Response('{"message":"Not Found"}', { status: 404 }))
       await expect(
         triggerGitHubWorkflow('https://github.com/a/b', 't', 'w.yml', 'main', {}),
       ).rejects.toThrow(/404/)
+      errSpy.mockRestore()
+    })
+
+    // Issue #144, and the worst of the three: GitHub answers an invalid
+    // workflow_dispatch with a 422 that lists the offending INPUTS verbatim — the
+    // order's parameter values, sensitive ones included — and that body used to be
+    // spliced straight into a message that reaches a 502 body and logAudit.
+    it('keeps the provider response body out of the thrown message', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(global, 'fetch').mockResolvedValue(
+        new Response(
+          '{"message":"Unexpected inputs provided: [\\"ADMIN_PASSWORD: sup3rs3cret\\"]"}',
+          { status: 422 },
+        ),
+      )
+
+      await expect(
+        triggerGitHubWorkflow('https://github.com/a/b', 't', 'w.yml', 'main', {
+          ADMIN_PASSWORD: 'sup3rs3cret',
+        }),
+      ).rejects.toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining('sup3rs3cret') }),
+      )
+
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('422'),
+        expect.stringContaining('sup3rs3cret'),
+      )
+      errSpy.mockRestore()
     })
   })
 

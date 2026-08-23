@@ -1,4 +1,5 @@
 import type { CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
+import { triggerFailure } from './triggerError'
 
 // Cap on pages followed for any list endpoint. Guards against unbounded loops
 // (e.g. a broken/looping X-Next-Page header) while still covering large orgs:
@@ -61,10 +62,7 @@ export const triggerGitLabPipeline = async (
     body: body.toString(),
   })
 
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`GitLab pipeline trigger failed: ${res.status} ${text}`)
-  }
+  if (!res.ok) throw await triggerFailure('GitLab pipeline trigger', res)
 
   const json = await res.json() as { id: number }
   return String(json.id)

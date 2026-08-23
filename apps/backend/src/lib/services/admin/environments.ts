@@ -34,11 +34,14 @@ export interface UpdateEnvironmentInput {
   webhookToken?: string
 }
 
-// Public column projection for a deployment environment — everything EXCEPT
-// the inbound callback secret. The secret is revealed only through the
-// root-only getCallbackSecret/regenerateCallbackSecret endpoints, never leaked
-// from the general create/get/update/list paths.
-const publicEnvironmentColumns = {
+// Column projection for a deployment environment — everything EXCEPT the inbound
+// callback secret. That secret is revealed only through the root-only
+// getCallbackSecret/regenerateCallbackSecret endpoints, never leaked from the
+// general create/get/update/list paths.
+//
+// It still selects the OUTBOUND webhook_token, which `toPublic` strips before the
+// row leaves this module: see below for why the two are handled differently.
+const environmentColumns = {
   id: deploymentEnvironments.id,
   name: deploymentEnvironments.name,
   description: deploymentEnvironments.description,
@@ -47,28 +50,46 @@ const publicEnvironmentColumns = {
   webhookToken: deploymentEnvironments.webhookToken,
 }
 
-export type PublicEnvironment = Omit<DeploymentEnvironment, 'callbackSecret'>
+export type PublicEnvironment = Omit<DeploymentEnvironment, 'callbackSecret' | 'webhookToken'> & {
+  /**
+   * Whether an outbound trigger token is configured — NOT the token itself.
+   *
+   * webhook_token is the credential that lets its holder fire arbitrary pipelines
+   * in the CI project, and it used to come back in cleartext from every admin-level
+   * read while the inbound callback_secret was correctly root-gated: the more
+   * dangerous of the two, at the lower role (issue #144). An admin managing an
+   * environment needs to know a token is set, and can always replace it through
+   * updateEnvironment — neither needs the current value.
+   */
+  webhookTokenSet: boolean
+}
 
 export interface EnvironmentRow extends PublicEnvironment {
   ciSourceName: string | null
 }
 
+/**
+ * Drop the outbound trigger token, keeping the one fact a caller needs about it.
+ *
+ * Done in JS rather than as a SQL projection because the boolean is derived from
+ * the column — but the token never leaves this function either way, and every
+ * public return path in this module goes through it.
+ */
+const toPublic = <T extends { webhookToken: string }>(
+  row: T,
+): Omit<T, 'webhookToken'> & { webhookTokenSet: boolean } => {
+  const { webhookToken, ...rest } = row
+  return { ...rest, webhookTokenSet: webhookToken !== '' }
+}
+
 export const listEnvironments = async (): Promise<Result<EnvironmentRow[]>> => {
   const rows = await db
-    .select({
-      id: deploymentEnvironments.id,
-      name: deploymentEnvironments.name,
-      description: deploymentEnvironments.description,
-      ciSourceId: deploymentEnvironments.ciSourceId,
-      webhookUrl: deploymentEnvironments.webhookUrl,
-      webhookToken: deploymentEnvironments.webhookToken,
-      ciSourceName: ciSources.name,
-    })
+    .select({ ...environmentColumns, ciSourceName: ciSources.name })
     .from(deploymentEnvironments)
     .leftJoin(ciSources, eq(deploymentEnvironments.ciSourceId, ciSources.id))
     .orderBy(deploymentEnvironments.name)
 
-  return ok(rows as EnvironmentRow[])
+  return ok(rows.map(toPublic) as EnvironmentRow[])
 }
 
 export const createEnvironment = async (
@@ -88,9 +109,9 @@ export const createEnvironment = async (
     })
     // Never return callback_secret here — it is only revealed via the
     // dedicated root-only endpoints.
-    .returning(publicEnvironmentColumns)
+    .returning(environmentColumns)
 
-  return ok(env)
+  return ok(toPublic(env))
 }
 
 export const getCallbackSecret = async (id: number): Promise<Result<{ callbackSecret: string }>> => {
@@ -118,13 +139,13 @@ export const regenerateCallbackSecret = async (
 
 export const getEnvironmentById = async (id: number): Promise<Result<PublicEnvironment>> => {
   const rows = await db
-    .select(publicEnvironmentColumns)
+    .select(environmentColumns)
     .from(deploymentEnvironments)
     .where(eq(deploymentEnvironments.id, id))
     .limit(1)
 
   if (!rows.length) return err(404, 'Not found')
-  return ok(rows[0])
+  return ok(toPublic(rows[0]))
 }
 
 export const updateEnvironment = async (
@@ -135,10 +156,10 @@ export const updateEnvironment = async (
     .update(deploymentEnvironments)
     .set(input)
     .where(eq(deploymentEnvironments.id, id))
-    .returning(publicEnvironmentColumns)
+    .returning(environmentColumns)
 
   if (!updated) return err(404, 'Not found')
-  return ok(updated)
+  return ok(toPublic(updated))
 }
 
 export const deleteEnvironment = async (id: number): Promise<Result<void>> => {

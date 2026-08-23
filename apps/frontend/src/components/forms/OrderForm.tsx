@@ -125,6 +125,14 @@ export function OrderForm({
   }, [projectId, product.id, token])
 
   // Quick reorder: once the project's elements have loaded, adopt the one the
+  // Sensitive parameter values come back redacted (#131), so a template or a
+  // reorder hands us the sentinel rather than the real value. Dropping those keys
+  // leaves the field empty, which prompts the user, instead of showing a value
+  // that looks real and is not. The backend refuses the sentinel too — that is
+  // the authoritative guard; this is so the form does not lie about it.
+  const withoutRedacted = (params: Record<string, string>): Record<string, string> =>
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '[redacted]'))
+
   // link named. Routed through applyTemplate rather than duplicating its logic,
   // so a reorder fills the form exactly the way picking the template by hand
   // does — same parameters, same environment.
@@ -134,7 +142,7 @@ export function OrderForm({
     if (!match) return
     setReorderApplied(true)
     setTemplateId(fromInfraId)
-    setParamValues(match.parameters ?? {})
+    setParamValues(withoutRedacted(match.parameters ?? {}))
     setEnvId(String(match.environmentId))
   }, [fromInfraId, reorderApplied, templates])
 
@@ -150,7 +158,7 @@ export function OrderForm({
     const tpl = templates.find((tpl) => String(tpl.id) === id)
     if (!tpl) return
     setTemplateId(id)
-    setParamValues(tpl.parameters ?? {})
+    setParamValues(withoutRedacted(tpl.parameters ?? {}))
     if (String(tpl.environmentId) !== envId) setEnvId(String(tpl.environmentId))
   }
 

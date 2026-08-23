@@ -1,4 +1,5 @@
 import type { CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
+import { triggerFailure } from './triggerError'
 
 // See gitlab.ts — cap pages followed so a large org isn't truncated at 100 rows
 // while still bounding the number of requests.
@@ -69,10 +70,7 @@ export const triggerGitHubWorkflow = async (
     },
   )
 
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`GitHub workflow dispatch failed: ${res.status} ${text}`)
-  }
+  if (!res.ok) throw await triggerFailure('GitHub workflow dispatch', res)
 
   // GitHub workflow_dispatch returns 204 with no body; return a synthetic ID
   return `${owner}/${repo}/${workflow}@${branch}`

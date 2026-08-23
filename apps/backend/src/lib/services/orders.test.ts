@@ -361,6 +361,35 @@ describe('createOrder — validation & ownership', () => {
     expect(dbOrder.parameters).not.toHaveProperty('FOO')
   })
 
+  it('treats the redaction sentinel as "unchanged", not as the value (#131)', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'API_KEY',
+      type: 'string',
+      required: false,
+      sensitive: true,
+      defaultValue: 'the-real-secret',
+    })
+
+    // Reads are redacted, so the reorder and apply-template prefills hand the
+    // form '[redacted]' for every sensitive parameter. Posting that back must
+    // not overwrite the stored secret with the placeholder — and must not ship
+    // the placeholder to the pipeline as a trigger variable.
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: { API_KEY: '[redacted]' },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const [dbOrder] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(dbOrder.parameters).toEqual({ API_KEY: 'the-real-secret' })
+  })
+
   it('does not store submitted keys that have no parameter definition (CI-variable injection)', async () => {
     const { admin, product, env, project } = await buildBase()
     await db.insert(parameters).values({

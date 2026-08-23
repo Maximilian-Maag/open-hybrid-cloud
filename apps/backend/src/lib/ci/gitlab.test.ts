@@ -65,6 +65,34 @@ describe('triggerGitLabPipeline', () => {
       triggerGitLabPipeline('https://gitlab.example.com/api/v4/projects/8/trigger/pipeline', 't', {}),
     ).rejects.toThrow(/404/)
   })
+
+  // Issue #144. This message does not stay here: ci/webhooks.ts collects it into
+  // TriggerOutcome.failures, and services/infrastructure.ts puts that into a 502
+  // body a project manager can trigger AND into logAudit. The failing request
+  // carried the order's sensitive parameters as trigger variables, and a provider
+  // echoes input back on a validation error.
+  it('keeps the provider response body out of the thrown message', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response('{"message":"variables[ADMIN_PASSWORD]=sup3rs3cret is invalid"}', { status: 422 }),
+    )
+
+    await expect(
+      triggerGitLabPipeline('https://gitlab.example.com/api/v4/projects/8/trigger/pipeline', 't', {
+        ADMIN_PASSWORD: 'sup3rs3cret',
+      }),
+    ).rejects.toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining('sup3rs3cret') }),
+    )
+
+    // Not lost, though — an operator needs the body to debug, so it goes to the
+    // server log, which is not a place a caller or the audit trail can read.
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining('422'),
+      expect.stringContaining('sup3rs3cret'),
+    )
+    errSpy.mockRestore()
+  })
 })
 
 describe('GitLab list pagination (X-Next-Page)', () => {

@@ -68,3 +68,52 @@ export const redactParameters = (
   Object.fromEntries(
     Object.entries(values ?? {}).map(([key, value]) => [key, sensitive.has(key) ? REDACTED : value]),
   )
+
+/**
+ * The stored default of every sensitive definition, blanked.
+ *
+ * A sensitive parameter's default is a secret like any other stored value — often a
+ * placeholder credential an admin typed once — and `GET /api/catalog/{id}` is
+ * `requireAuth` only, so every authenticated user could read it (issue #131). The
+ * DEFINITION is what the order form needs (name, label, type, required, sensitive);
+ * the default is not, and `validateAndApplyParameters` fills the real one in
+ * server-side for any value the client leaves empty, so nothing downstream loses it.
+ *
+ * Blanked rather than replaced with `REDACTED`: this shape feeds a form control whose
+ * value is posted back at checkout, and a sentinel posted back would be *stored* as
+ * the parameter's value. `''` reads as "you type this one".
+ */
+export const withoutSensitiveDefaults = <T extends { sensitive: boolean; defaultValue: string }>(
+  defs: T[],
+): T[] => defs.map((def) => (def.sensitive ? { ...def, defaultValue: '' } : def))
+
+/**
+ * Redact the sensitive values in a batch of rows that each belong to an order.
+ *
+ * The list read paths — orders, approvals and infrastructure — all carry the stored
+ * parameter map of an order and all used to return it verbatim (issue #131). They
+ * need exactly the answer `getInfrastructureElement` already computes for a single
+ * row: the live catalogue's sensitive names unioned with the ones the order's own
+ * snapshot recorded, so a definition renamed or deleted since cannot un-flag the
+ * value it was placed with.
+ *
+ * Two queries for the whole batch rather than two per row — the catalogue answer is
+ * shared and the snapshots come back in one `IN (…)`.
+ */
+export const redactParametersForOrders = async <T extends { parameters: Record<string, string> }>(
+  rows: T[],
+  orderIdOf: (row: T) => number | null,
+): Promise<T[]> => {
+  if (rows.length === 0) return rows
+
+  const catalogue = await loadSensitiveParameterNames()
+  const perOrder = await loadSnapshotSensitiveNames(
+    rows.map(orderIdOf).filter((id): id is number => id !== null),
+  )
+
+  return rows.map((row) => {
+    const orderId = orderIdOf(row)
+    const sensitive = union(catalogue, orderId === null ? undefined : perOrder.get(orderId))
+    return { ...row, parameters: redactParameters(row.parameters, sensitive) }
+  })
+}

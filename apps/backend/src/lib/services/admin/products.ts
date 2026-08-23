@@ -678,6 +678,19 @@ export const reorderProductImages = async (
       .from(productImages)
       .where(eq(productImages.productId, productId))
 
+    // An empty gallery is ambiguous — an unknown product, or a real one with no
+    // pictures — and the two owe different answers. Without this, reordering a
+    // product that does not exist answered 204 for an empty list and 400 for a
+    // non-empty one, neither of which is 404.
+    if (rows.length === 0) {
+      const [product] = await tx
+        .select({ id: products.id })
+        .from(products)
+        .where(eq(products.id, productId))
+        .limit(1)
+      if (!product) return err(404, 'Product not found')
+    }
+
     const known = new Set(rows.map((row) => row.id))
     const requested = new Set(order)
 

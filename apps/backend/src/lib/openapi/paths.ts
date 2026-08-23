@@ -1143,6 +1143,7 @@ registry.registerPath({
       description: 'The image, served as the type it was stored as',
       content: { 'image/*': { schema: z.any() } },
     },
+    400: { description: 'The product id is not a positive integer' },
     404: { description: 'No such product, or it has no picture' },
   },
 })

@@ -919,6 +919,17 @@ describe('addProductImage', () => {
 })
 
 describe('reorderProductImages / deleteProductImage', () => {
+  it('answers 404 for a product that does not exist, whatever the order says', async () => {
+    // An empty gallery is ambiguous, and the two cases owe different answers: an
+    // empty list used to succeed (204) and a non-empty one used to be 400, so an
+    // unknown product never produced a 404 by either route.
+    for (const order of [[], [1, 2]]) {
+      const result = await reorderProductImages(999_999, order)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.status).toBe(404)
+    }
+  })
+
   const png = Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     Buffer.alloc(32, 1),

@@ -206,6 +206,12 @@ export const createInfraElement = async (
     deployedAt?: Date
     sizeCode?: string | null
     sequence?: number
+    /**
+     * Left unset by default, which is what every element provisioned before
+     * issue #183 has: the row then derives its Terraform state key from the raw
+     * parameter value, the way its apply did.
+     */
+    stateKeyNamespace?: string | null
   },
 ) => {
   const [el] = await db
@@ -220,6 +226,7 @@ export const createInfraElement = async (
       pipelineStatus: overrides?.pipelineStatus ?? {},
       ...(overrides?.sizeCode !== undefined ? { sizeCode: overrides.sizeCode } : {}),
       ...(overrides?.sequence !== undefined ? { sequence: overrides.sequence } : {}),
+      ...(overrides?.stateKeyNamespace !== undefined ? { stateKeyNamespace: overrides.stateKeyNamespace } : {}),
       ...(overrides?.parameters ? { parameters: overrides.parameters } : {}),
       ...(overrides?.deployedAt ? { deployedAt: overrides.deployedAt } : {}),
     })

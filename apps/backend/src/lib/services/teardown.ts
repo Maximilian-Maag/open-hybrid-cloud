@@ -2,7 +2,8 @@ import { db } from '@/lib/db/client'
 import { infrastructureElements } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
-import { ELEMENT_SEQUENCE_VAR } from '@/lib/ci/stateKey'
+import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR } from '@/lib/ci/stateKey'
+import { withoutReservedCiVariables } from '@/lib/ci/reserved'
 
 /**
  * The CI variables a teardown is fired with.
@@ -13,15 +14,27 @@ import { ELEMENT_SEQUENCE_VAR } from '@/lib/ci/stateKey'
  * nothing while reporting success. `sequence` is the part that makes that a real
  * risk now that one order has N elements (issue #104): it suffixes the state key,
  * so element 3 must be torn down with `3` and not with whatever its sibling used.
+ *
+ * `stateKeyNamespace` is required rather than optional for the same reason, and
+ * deliberately unlike `sequence`: it is read straight off the row and a projection
+ * that forgot to select it would silently read as NULL, which means "derive the
+ * pre-#183 key" — and destroying the wrong state name destroys nothing while
+ * reporting success. Required makes the compiler ask every caller.
  */
 export const destroyVariables = (infra: {
   id: number
   orderId: number
   sequence?: number
   sizeCode?: string | null
+  stateKeyNamespace: string | null
   parameters: Record<string, string> | unknown
 }): Record<string, string> => ({
-  ...(infra.parameters as Record<string, string>),
+  // Stored parameters can contain names the server owns — a definition named REF
+  // or TF_ACTION was creatable until #183, and every order placed against one
+  // persisted its value here. TF_ACTION below would override that one name; the
+  // filter is what handles the rest, including REF, which decides the git ref this
+  // destroy runs from.
+  ...withoutReservedCiVariables(infra.parameters as Record<string, string>),
   TF_ACTION: 'destroy',
   INFRA_ID: String(infra.id),
   // Pipeline stacks derive TF_STATE_NAME from stateKeyParam ?? ORDER_ID, and the
@@ -31,6 +44,11 @@ export const destroyVariables = (infra: {
   // Defaults to 1 for a row read through a projection that did not select it,
   // which is the same value every element provisioned before quantity existed has.
   [ELEMENT_SEQUENCE_VAR]: String(infra.sequence ?? 1),
+  // Absent for an element provisioned before #183, which is what keeps its
+  // destroy pointed at the state its own apply created.
+  ...(infra.stateKeyNamespace !== null
+    ? { [STATE_KEY_NAMESPACE_VAR]: infra.stateKeyNamespace }
+    : {}),
   ...(infra.sizeCode ? { SIZE: infra.sizeCode } : {}),
 })
 

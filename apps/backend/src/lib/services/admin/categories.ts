@@ -13,6 +13,7 @@ import {
 import { count, eq, asc, and, isNull, inArray } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { withoutReservedCiVariables } from '@/lib/ci/reserved'
 import { logAudit, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 
@@ -125,7 +126,10 @@ export const deleteCategory = async (id: number, actorId?: number): Promise<Resu
 
   for (const infra of activeInfra) {
     await db.update(infrastructureElements).set({ status: 'decommissioning' }).where(eq(infrastructureElements.id, infra.id))
-    triggerProductWebhooks(infra.productId, infra.environmentId, { ...infra.parameters, TF_ACTION: 'destroy' }).catch(console.error)
+    triggerProductWebhooks(infra.productId, infra.environmentId, {
+      ...withoutReservedCiVariables(infra.parameters as Record<string, string>),
+      TF_ACTION: 'destroy',
+    }).catch(console.error)
   }
 
   if (retire) {

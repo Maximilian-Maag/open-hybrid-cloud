@@ -662,6 +662,36 @@ describe('retryProvisioning', () => {
     )
   })
 
+  it('retries an element provisioned before #183 against the state key it already has', async () => {
+    // `failedDeployment` leaves state_key_namespace NULL, as every row written
+    // before the column existed is. Sending a namespace now would make the retry
+    // apply into a fresh state and leave the half-built infrastructure of the
+    // failed attempt orphaned.
+    const { admin, el } = await failedDeployment()
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const vars = mockedWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars).not.toHaveProperty('TF_STATE_NAMESPACE')
+  })
+
+  it("carries a namespaced element's own namespace into the retry (issue #183)", async () => {
+    const { admin, el } = await failedDeployment()
+    await db
+      .update(infrastructureElements)
+      .set({ stateKeyNamespace: '99', parameters: { hostname: 'web-01', REF: 'attacker/branch' } })
+      .where(eq(infrastructureElements.id, el.id))
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const vars = mockedWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars.TF_STATE_NAMESPACE).toBe('99')
+    // And a stored parameter still cannot choose which git ref the rerun uses.
+    expect(vars).not.toHaveProperty('REF')
+  })
+
   it('resets the order to provisioning and clears the previous attempt tracking', async () => {
     const { admin, el, order } = await failedDeployment()
     mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })

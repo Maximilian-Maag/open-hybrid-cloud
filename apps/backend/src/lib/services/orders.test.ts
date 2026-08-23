@@ -478,6 +478,42 @@ describe('createOrder — validation & ownership', () => {
     expect(vars).not.toHaveProperty('TF_ACTION')
   })
 
+  it('does not let a parameter DEFINITION named REF choose the git ref (issue #183)', async () => {
+    const { admin, product, env, project } = await buildBase()
+    // The definition exists — an admin created it, or `sync-parameters` imported
+    // it from a template's variables.tf. Dropping keys with no definition, which
+    // is what the previous test covers, protects nothing against this: the key
+    // has one.
+    await db.insert(parameters).values([
+      { scope: 'product', scopeId: product.id, name: 'REF', type: 'string', required: false },
+      { scope: 'product', scopeId: product.id, name: 'TF_ACTION', type: 'string', required: false },
+      { scope: 'product', scopeId: product.id, name: 'hostname', type: 'string', required: false },
+    ])
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: { REF: 'attacker/branch', TF_ACTION: 'destroy', hostname: 'web-01' },
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    // `triggerGitLabPipeline` reads variables['REF'] as the git ref it runs, so
+    // this is the difference between the pipeline running main and running
+    // whatever the orderer pushed, with the environment's trigger token.
+    const [, , vars] = mockedTriggerWebhooks.mock.calls[0]
+    expect(vars).not.toHaveProperty('REF')
+    expect(vars).not.toHaveProperty('TF_ACTION')
+    expect(vars).toMatchObject({ hostname: 'web-01' })
+
+    // And it is not persisted either, so approving a pending order months later
+    // cannot replay it.
+    const [dbOrder] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+    expect(dbOrder.parameters).toEqual({ hostname: 'web-01' })
+  })
+
   it('trims surrounding whitespace before validating and storing values', async () => {
     const { admin, product, env, project } = await buildBase()
     await db.insert(parameters).values([

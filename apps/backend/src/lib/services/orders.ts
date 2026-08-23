@@ -15,7 +15,8 @@ import { eq, and, sql, inArray } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
-import { ELEMENT_SEQUENCE_VAR } from '@/lib/ci/stateKey'
+import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR } from '@/lib/ci/stateKey'
+import { isReservedCiVariable, withoutReservedCiVariables } from '@/lib/ci/reserved'
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
@@ -198,8 +199,15 @@ export const getOrderById = async (
  * effective parameter map to persist/trigger with, or a 400 Result on the first
  * validation failure. Only keys that have a matching definition are kept —
  * submitted keys with no applicable definition are dropped so a client cannot
- * inject arbitrary CI trigger variables (e.g. REF, TF_ACTION). Server-only
- * trigger vars (ORDER_ID, TF_ACTION, …) are appended later in the trigger layer.
+ * inject arbitrary CI trigger variables. Server-only trigger vars (ORDER_ID,
+ * TF_ACTION, …) are appended later in the trigger layer.
+ *
+ * A definition whose NAME is one of those server-owned variables is dropped too.
+ * It used not to be, and that was the whole of issue #183: dropping undefined
+ * keys protects nothing once a definition legitimately carries the name, and
+ * `sync-parameters` creates definitions from a Terraform file without anyone
+ * typing one. Dropping it here keeps the value out of `orders.parameters`, so it
+ * is not there to be replayed when a pending order is approved months later.
  */
 const validateAndApplyParameters = (
   defs: Parameter[],
@@ -209,6 +217,10 @@ const validateAndApplyParameters = (
   const result: Record<string, string> = {}
 
   for (const def of resolved) {
+    // Silently, and including when the definition is `required`: the name is one
+    // the server decides, so there is nothing for the customer to supply and an
+    // error would only make such a product unorderable.
+    if (isReservedCiVariable(def.name)) continue
     const raw = submitted[def.name]
     // Normalize once, then validate and store the normalized value so a value
     // like `" true "` or `" 4 "` is accepted and persisted without whitespace
@@ -529,6 +541,7 @@ export const provisionOrderElements = async (
         status: 'active',
         sizeCode,
         sequence,
+        stateKeyNamespace: String(orderId),
         parameters,
         pipelineId: [],
         // The trial's clock starts here, at provisioning. The scheduled-decommission
@@ -609,6 +622,13 @@ export const provisionOrderElements = async (
  *
  * `parameters` first, server-owned variables after: a customer-supplied parameter
  * must never be able to overwrite ORDER_ID or the size the order was priced on.
+ *
+ * Re-asserting a name only protects the names that are re-asserted, which is how
+ * REF and TF_ACTION got through (issue #183). So the customer half is FILTERED
+ * rather than overwritten: every server-owned name is removed from it, whatever
+ * the parameter table happens to contain. That is what makes this safe for
+ * `orders.parameters` rows written before #183 — a pending order carrying REF
+ * still provisions on approval, just without choosing the git ref.
  */
 const elementTriggerVariables = (input: {
   parameters: Record<string, string>
@@ -618,8 +638,11 @@ const elementTriggerVariables = (input: {
   isTrial: boolean
   trialDurationMinutes: number
 }): Record<string, string> => ({
-  ...input.parameters,
+  ...withoutReservedCiVariables(input.parameters),
   ORDER_ID: String(input.orderId),
+  // Namespaces this element's Terraform state key, and is stored on the element
+  // row so its teardown derives the same one.
+  [STATE_KEY_NAMESPACE_VAR]: String(input.orderId),
   // The size has to reach the CI run (issue #98) — it is what decides how much
   // machine the template asks for. Absent, not empty, for an offering with no
   // sizes, so a template can tell "no sizing" from "a size called ''".

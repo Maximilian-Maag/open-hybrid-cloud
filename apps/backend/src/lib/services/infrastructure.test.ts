@@ -864,6 +864,94 @@ describe('retryProvisioning — trials (issue #1 × #29)', () => {
     const vars = mockedWebhooks.mock.calls[0][2] as Record<string, string>
     expect(vars.TRIAL).toBeUndefined()
   })
+
+  // Issue #188. The sibling query had no status filter and the write-back set every
+  // element to 'active' unconditionally, so a Retry reached the siblings an operator
+  // had already decommissioned.
+  it('leaves a sibling that is being decommissioned alone', async () => {
+    const admin = await createUser({ role: 'admin', email: 'retry-sib-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'retry-sib-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Multi Element')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'failed', quantity: 2 })
+    const first = await createInfraElement(order.id, project.id, env.id, product.id, { sequence: 1 })
+    const tornDown = await createInfraElement(order.id, project.id, env.id, product.id, {
+      sequence: 2,
+      status: 'decommissioning',
+      pipelineId: ['destroy-pipe'],
+    })
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['apply-pipe'], failures: [] })
+
+    const result = await retryProvisioning(makeSession(admin), first.id)
+    expect(result.ok).toBe(true)
+
+    // Only the active element gets an apply. The other one would have run an apply
+    // against the same TF_STATE_NAME its destroy is working on.
+    expect(mockedWebhooks).toHaveBeenCalledTimes(1)
+
+    // And its destroy is still trackable: written back to 'active' with the apply's
+    // pipeline ids, the teardown callback had no 'decommissioning' row left to
+    // match and the element could never be reconciled.
+    const [row] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, tornDown.id))
+    expect(row.status).toBe('decommissioning')
+    expect(row.pipelineId).toEqual(['destroy-pipe'])
+  })
+
+  it('does not resurrect an already-decommissioned sibling', async () => {
+    const admin = await createUser({ role: 'admin', email: 'retry-dead-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'retry-dead-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Multi Element')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'failed', quantity: 2 })
+    const first = await createInfraElement(order.id, project.id, env.id, product.id, { sequence: 1 })
+    const gone = await createInfraElement(order.id, project.id, env.id, product.id, {
+      sequence: 2,
+      status: 'decommissioned',
+    })
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['apply-pipe'], failures: [] })
+
+    expect((await retryProvisioning(makeSession(admin), first.id)).ok).toBe(true)
+
+    expect(mockedWebhooks).toHaveBeenCalledTimes(1)
+    const [row] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.id, gone.id))
+    // An apply fired at a destroyed state, and a row claiming infrastructure that
+    // is not there.
+    expect(row.status).toBe('decommissioned')
+  })
+
+  it('refuses to retry an element that is being decommissioned', async () => {
+    const admin = await createUser({ role: 'admin', email: 'retry-self-admin@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'retry-self-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'P')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'failed' })
+    const el = await createInfraElement(order.id, project.id, env.id, product.id, { status: 'decommissioning' })
+
+    const result = await retryProvisioning(makeSession(admin), el.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+
+    // Refused before the order was claimed, so the Retry button is still live for
+    // whichever element actually failed.
+    const [row] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(row.status).toBe('failed')
+    expect(mockedWebhooks).not.toHaveBeenCalled()
+  })
 })
 
 describe('scheduleDecommission', () => {

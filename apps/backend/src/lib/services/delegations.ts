@@ -3,7 +3,7 @@ import { db } from '@/lib/db/client'
 import { approvalDelegations, users } from '@/lib/db/schema'
 import { and, eq, isNull, sql, inArray } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
-import { logAudit } from '@/lib/audit'
+import { logAudit, logAuditWith } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 
 /**
@@ -331,7 +331,13 @@ export const createDelegation = async (
       .where(eq(users.id, input.toUserId))
       .limit(1)
 
-    await logAudit(
+    // On the transaction's connection (issue #188). Through the pool it was not
+    // only an entry that would survive a rollback: this transaction holds FOR
+    // UPDATE on `users` rows including `session.id`, and an audit_log insert takes
+    // a FOR KEY SHARE lock on the user it names — so on a second connection it
+    // waited on a transaction that was itself waiting on that write to return.
+    await logAuditWith(
+      tx,
       session.id,
       'approval_delegation.created',
       created.id,

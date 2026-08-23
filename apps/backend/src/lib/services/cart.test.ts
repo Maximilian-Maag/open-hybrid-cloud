@@ -26,7 +26,7 @@ import {
 } from './cart'
 import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { cartItems, orders, parameters, products, productEnvironments, auditLog } from '@/lib/db/schema'
+import { cartItems, orders, parameters, products, productEnvironments, auditLog, users } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import {
   createUser,
@@ -37,6 +37,9 @@ import {
   createProject,
   linkProductEnvironment,
   createCostCenter,
+  waitUntilBlocked,
+  warmPool,
+  latch,
 } from '@/test/helpers'
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
@@ -122,6 +125,36 @@ describe('addToCart', () => {
     const result = await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.message).toMatch(/at most/i)
+  })
+
+  it('holds the cap against a concurrent add', async () => {
+    // Issue #188: counted and inserted separately, two adds at 24 both saw 24, both
+    // passed, and the cart held 26. The holder stands in for the other add — it
+    // takes the same users-row lock the cap now depends on and does not commit
+    // until the contender is genuinely waiting behind it.
+    const { pm, nginx, env } = await setup()
+    for (let i = 0; i < MAX_CART_ITEMS - 1; i++) {
+      await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+    }
+    await warmPool()
+
+    const held = latch()
+    const holder = db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, pm.id)).for('update')
+      await tx.insert(cartItems).values({ userId: pm.id, productId: nginx.id, environmentId: env.id })
+      held.open()
+      await waitUntilBlocked('the second add never contended for the cart owner')
+    })
+    await held.opened
+
+    const [result] = await Promise.all([
+      addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id }),
+      holder,
+    ])
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toMatch(/at most/i)
+    expect(await db.select().from(cartItems)).toHaveLength(MAX_CART_ITEMS)
   })
 })
 
@@ -444,6 +477,40 @@ describe('checkoutCart', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(502)
     expect(await db.select().from(cartItems)).toHaveLength(1)
+  })
+
+  it('orders nothing when another checkout claimed the same cart first', async () => {
+    // Issue #188: items were read, orders created and the cart rows deleted LAST,
+    // with nothing claiming them in between — so a double-click or a second tab
+    // produced double the orders, double the pipelines and double the spend, and
+    // the second delete was a harmless no-op, which is why nothing surfaced it.
+    //
+    // The holder stands in for the checkout that got there first: it claims the
+    // rows and holds the claim open until the contender is genuinely blocked on
+    // them, which is what makes this deterministic rather than a coin flip.
+    const ctx = await stocked()
+    await warmPool()
+
+    const held = latch()
+    const winner = db.transaction(async (tx) => {
+      const claimed = await tx.delete(cartItems).where(eq(cartItems.userId, ctx.pm.id)).returning()
+      expect(claimed).toHaveLength(2)
+      held.open()
+      await waitUntilBlocked('the second checkout never claimed the cart rows')
+    })
+    await held.opened
+
+    const [loser] = await Promise.all([
+      checkoutCart(makeSession(ctx.pm), {
+        projectId: ctx.project.id,
+        items: [item(ctx.first.id), item(ctx.second.id)],
+      }),
+      winner,
+    ])
+
+    expect(loser.ok).toBe(false)
+    if (!loser.ok) expect(loser.message).toMatch(/cart changed/i)
+    expect(await db.select().from(orders)).toHaveLength(0)
   })
 
   it('audits the checkout', async () => {

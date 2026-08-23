@@ -286,6 +286,13 @@ export const retryProvisioning = async (
 
   if (!infra) return err(404, 'Infrastructure element not found')
 
+  // A retry fires an `apply`, and an element that is being torn down or already
+  // gone has no apply to fire (issue #188). Refused before the order is claimed so
+  // there is no claim to release.
+  if (infra.status !== 'active') {
+    return err(400, `Only an active element can be retried — this one is ${infra.status}`)
+  }
+
   const [order] = await db
     .select({ id: orders.id, status: orders.status, isTrial: orders.isTrial })
     .from(orders)
@@ -324,13 +331,29 @@ export const retryProvisioning = async (
   // waiting on that element alone and complete it while nineteen were still
   // broken. For the one-element orders that were the only kind before quantity
   // existed, this loop runs exactly once and does exactly what it always did.
+  //
+  // And the ACTIVE ones only. Without the filter (issue #188) a retry reached the
+  // siblings an operator had already decommissioned: each got an `apply` trigger
+  // and was written back to `active` below, overwriting the destroy pipeline ids.
+  // The in-flight teardown's callback then had no `decommissioning` row left to
+  // match (see `handler.ts`), so it could never finish, and an `apply` and a
+  // `destroy` ran at once against the same TF_STATE_NAME — both paths derive the
+  // suffix from the element's sequence, so it is genuinely the same state.
   const siblings = await db
     .select()
     .from(infrastructureElements)
-    .where(eq(infrastructureElements.orderId, infra.orderId))
+    .where(
+      and(
+        eq(infrastructureElements.orderId, infra.orderId),
+        eq(infrastructureElements.status, 'active'),
+      ),
+    )
     .orderBy(infrastructureElements.sequence, infrastructureElements.id)
 
-  const elements = siblings.length ? siblings : [infra]
+  // The clicked element is active and belongs to this order, so it is always among
+  // these. The `siblings.length ? siblings : [infra]` fallback that stood here
+  // could only fire while the query was unfiltered and came back empty.
+  const elements = siblings
 
   const outcome: { pipelineIds: string[]; failures: string[] } = { pipelineIds: [], failures: [] }
   const perElementPipelines = new Map<number, string[]>()

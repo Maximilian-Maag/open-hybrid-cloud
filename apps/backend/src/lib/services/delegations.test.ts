@@ -67,6 +67,24 @@ describe('createDelegation', () => {
     expect(entries[0].details).toContain('bob@test.dev')
   })
 
+  it('writes that entry on the transaction rather than through the pool', async () => {
+    // Issue #188. The transaction holds FOR UPDATE on both users, and an audit_log
+    // insert takes a FOR KEY SHARE lock on the user it names, so the entry could
+    // not be written on a second connection: the pool query waited for a lock the
+    // transaction held, and the transaction waited for that query to return. The
+    // explicit timeout is the assertion — a regression hangs rather than fails.
+    const { alice, bob } = await admins()
+    const result = await createDelegation(session(alice), {
+      toUserId: bob.id,
+      startsOn: day(1),
+      endsOn: day(2),
+    })
+    expect(result.ok).toBe(true)
+    expect(
+      await db.select().from(auditLog).where(eq(auditLog.action, 'approval_delegation.created')),
+    ).toHaveLength(1)
+  }, 8000)
+
   it('is active from the first day of the period', async () => {
     const { alice, bob } = await admins()
     const result = await createDelegation(session(alice), {

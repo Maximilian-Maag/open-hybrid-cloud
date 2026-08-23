@@ -823,39 +823,73 @@ export const deleteProductEnvironment = async (
   envId: number,
   actorId?: number,
 ): Promise<Result<void>> => {
-  // Refuse while infrastructure is still live in this environment. Unlike
-  // deleteProduct there is no cascade to follow here — infrastructure_elements
-  // references products/deployment_environments directly — so removing the
-  // offering would silently strand running infra without the price, currency
-  // and cost-centre config that its order was placed under. Decommission first.
-  const liveInfra = await db
-    .select({ id: infrastructureElements.id })
-    .from(infrastructureElements)
-    .where(
-      and(
-        eq(infrastructureElements.productId, id),
-        eq(infrastructureElements.environmentId, envId),
-        inArray(infrastructureElements.status, ['active', 'decommissioning']),
-      ),
-    )
-    .limit(1)
+  /*
+   * Refuse while infrastructure is still live in this environment. Unlike
+   * deleteProduct there is no cascade to follow here — infrastructure_elements
+   * references products/deployment_environments directly — so removing the
+   * offering would silently strand running infra without the price, currency
+   * and cost-centre config that its order was placed under. Decommission first.
+   *
+   * The check and the delete run in one transaction holding FOR UPDATE on the
+   * PRODUCT row, not on the offering (issue #188). The offering row is not what an
+   * element references, so locking it would not stop anything: an approval landing
+   * between a bare read and the delete inserted an element for an offering that was
+   * withdrawn a moment later, which is the exact 409 this exists to raise. The
+   * product row is what an infrastructure_elements insert takes a FOR KEY SHARE
+   * lock on, and that conflicts with FOR UPDATE — so a concurrent approval either
+   * committed before the lock and is seen, or waits behind it.
+   */
+  const withdrawn = await db.transaction(async (tx): Promise<Result<void>> => {
+    const locked = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, id))
+      .for('update')
+      .limit(1)
+    if (!locked.length) return err(404, 'Not found')
 
-  if (liveInfra.length) {
-    return err(409, 'Infrastructure is still deployed in this environment — decommission it first')
-  }
+    const liveInfra = await tx
+      .select({ id: infrastructureElements.id })
+      .from(infrastructureElements)
+      .where(
+        and(
+          eq(infrastructureElements.productId, id),
+          eq(infrastructureElements.environmentId, envId),
+          inArray(infrastructureElements.status, ['active', 'decommissioning']),
+        ),
+      )
+      .limit(1)
 
-  const deleted = await db
-    .delete(productEnvironments)
-    .where(
-      and(
-        eq(productEnvironments.productId, id),
-        eq(productEnvironments.environmentId, envId),
-      ),
-    )
-    .returning({ productId: productEnvironments.productId })
+    if (liveInfra.length) {
+      return err(409, 'Infrastructure is still deployed in this environment — decommission it first')
+    }
 
-  if (!deleted.length) return err(404, 'Not found')
+    const deleted = await tx
+      .delete(productEnvironments)
+      .where(
+        and(
+          eq(productEnvironments.productId, id),
+          eq(productEnvironments.environmentId, envId),
+        ),
+      )
+      .returning({ productId: productEnvironments.productId })
 
+    if (!deleted.length) return err(404, 'Not found')
+
+    // On the transaction's own connection, so it rolls back with the withdrawal.
+    await logAuditWith(tx, actorId ?? null, 'product.offering_withdrawn', id, `Environment #${envId} withdrawn`)
+
+    return ok(undefined)
+  })
+
+  if (!withdrawn.ok) return withdrawn
+
+  // AFTER the transaction, not inside it: recordProductVersion writes through the
+  // pool, and its insert into product_versions takes a FOR KEY SHARE lock on the
+  // very product row the transaction holds FOR UPDATE. On a second connection that
+  // is a wait nothing can break — the transaction would be blocked on a network
+  // read, so Postgres has no cycle to detect and the request hangs.
+  //
   // Recorded without a snapshot: there is no offering left to capture, and the
   // withdrawal is exactly what a reader of the history needs to see.
   await recordProductVersion({
@@ -864,8 +898,6 @@ export const deleteProductEnvironment = async (
     summary: `Environment #${envId} withdrawn`,
     userId: null,
   })
-
-  await logAudit(actorId ?? null, 'product.offering_withdrawn', id, `Environment #${envId} withdrawn`)
 
   return ok(undefined)
 }

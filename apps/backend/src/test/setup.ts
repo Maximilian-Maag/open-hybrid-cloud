@@ -348,6 +348,18 @@ beforeAll(async () => {
       details TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- The foreign key 0000_steep_blizzard.sql creates and this file used to omit.
+    -- It is not decoration: an audit_log insert takes a FOR KEY SHARE lock on the
+    -- user it names, so an entry written through the POOL from inside a transaction
+    -- that holds FOR UPDATE on that same user waits on a transaction that is itself
+    -- waiting for the write to return. No deadlock detector can break that — one
+    -- half is blocked on a socket, not on a lock. Without the constraint the test
+    -- database could not reproduce it, which is exactly how issue #188's
+    -- createDelegation shipped. There is no ADD CONSTRAINT IF NOT EXISTS.
+    DO $$ BEGIN
+      ALTER TABLE audit_log
+        ADD CONSTRAINT audit_log_user_id_users_id_fk FOREIGN KEY (user_id) REFERENCES users(id);
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     -- Migration 0022: out-of-office substitute approver (issue #35).
     CREATE TABLE IF NOT EXISTS approval_delegations (
       id BIGSERIAL PRIMARY KEY,

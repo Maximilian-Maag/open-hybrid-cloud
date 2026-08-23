@@ -56,6 +56,9 @@ import {
   createInfraElement,
   createCostCenter,
   linkProductEnvironment,
+  waitForBlockedStatement,
+  warmPool,
+  latch,
 } from '@/test/helpers'
 import type { ProductSnapshot } from '@/lib/services/snapshot'
 
@@ -639,6 +642,48 @@ describe('product environments', () => {
       expect(listRes.ok && listRes.data.length).toBe(1)
     },
   )
+
+  it('deleteProductEnvironment sees infrastructure that lands while it is deciding', async () => {
+    // Issue #188: liveInfra was read, the decision taken, and the offering deleted
+    // unconditionally — so an approval inserting an element in between withdrew the
+    // offering out from under running infrastructure, which is what the 409 exists
+    // to prevent.
+    //
+    // The holder stands in for that approval. It takes the product row FOR UPDATE
+    // first, which is the lock an infrastructure_elements insert needs and the one
+    // the withdrawal now has to wait behind, then inserts the element only once the
+    // withdrawal is genuinely stuck on it.
+    const { p, env } = await buildEnv()
+    await createProductEnvironment(p.id, { environmentId: env.id })
+    const user = await createUser({ role: 'admin' })
+    const project = await createProject(user.id)
+    const order = await seedOrder(project.id, p.id, env.id, user.id)
+    await warmPool()
+
+    const held = latch()
+    const approval = db.transaction(async (tx) => {
+      await tx.select({ id: products.id }).from(products).where(eq(products.id, p.id)).for('update')
+      held.open()
+      // Not waitUntilBlocked: a withdrawal that claims nothing never blocks, and
+      // the assertions below name the defect more clearly than a thrown timeout.
+      await waitForBlockedStatement()
+      await tx.insert(infrastructureElements).values({
+        orderId: order.id,
+        projectId: project.id,
+        environmentId: env.id,
+        productId: p.id,
+        status: 'active',
+      })
+    })
+    await held.opened
+
+    const [result] = await Promise.all([deleteProductEnvironment(p.id, env.id), approval])
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(409)
+    const listRes = await listProductEnvironments(p.id)
+    expect(listRes.ok && listRes.data.length).toBe(1)
+  })
 
   it('deleteProductEnvironment ignores decommissioned infrastructure', async () => {
     const { p, env } = await buildEnv()

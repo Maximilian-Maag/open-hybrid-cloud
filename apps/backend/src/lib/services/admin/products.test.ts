@@ -377,6 +377,64 @@ describe('deleteProduct preserves order history (issue #142)', () => {
     expect(rows[0].entityId).toBe(product.id)
   })
 
+  /*
+   * The window this closes: the order count used to be taken BEFORE the destroy
+   * triggers, which are per-element network calls taking seconds, and the product
+   * stayed orderable for all of them — its offerings are only withdrawn in the
+   * retire transaction at the very end. An order placed in there was not counted,
+   * so the product was hard-deleted and `orders.product_id ON DELETE CASCADE` took
+   * that order and its snapshot with it.
+   *
+   * The trigger mock is the window: it runs at exactly the moment a real destroy
+   * request is in flight. The infrastructure is attached to another product's order
+   * so that THIS product has no orders when the delete starts — infrastructure
+   * rows require an order (`order_id` is NOT NULL), and a product that already had
+   * one would be retired for that reason instead of this one.
+   */
+  it('counts an order placed while the destroy triggers are in flight', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'RacedByAnOrder')
+    const other = await seedProduct(cat.id, 'OwnsTheInfraOrder')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id, { price: '9.99' })
+    const project = await createProject(pm.id)
+    const unrelated = await seedOrder(project.id, other.id, env.id, pm.id)
+    await createInfraElement(unrelated.id, project.id, env.id, product.id)
+
+    let racedOrderId = 0
+    mockedWebhooks.mockImplementationOnce(async () => {
+      const [placed] = await db
+        .insert(orders)
+        .values({
+          projectId: project.id,
+          productId: product.id,
+          environmentId: env.id,
+          userId: pm.id,
+          status: 'pending',
+          pipelineId: [],
+          productSnapshot: { name: 'RacedByAnOrder', price: '9.99' } as unknown as ProductSnapshot,
+        })
+        .returning({ id: orders.id })
+      racedOrderId = placed.id
+      return { pipelineIds: ['pipe-destroy'], failures: [] }
+    })
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+
+    // The order that arrived mid-delete survives, snapshot and all.
+    const raced = await db.select().from(orders).where(eq(orders.id, racedOrderId))
+    expect(raced.length).toBe(1)
+    expect(raced[0].productSnapshot).toEqual({ name: 'RacedByAnOrder', price: '9.99' })
+
+    // ...because the product was retired rather than hard-deleted.
+    const rows = await db.select().from(products).where(eq(products.id, product.id))
+    expect(rows.length).toBe(1)
+    expect(rows[0].retiredAt).toBeInstanceOf(Date)
+  })
+
   it('still hard-deletes a product nobody ever ordered', async () => {
     const cat = await createCategory()
     const product = await seedProduct(cat.id, 'NeverOrdered')

@@ -24,7 +24,7 @@ import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
 import { fireDestroyTriggers } from '@/lib/services/teardown'
 import { recordProductVersion } from '@/lib/services/versions'
-import { logAudit, changedFields } from '@/lib/audit'
+import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 import {
   ALLOWED_IMAGE_MIMES,
@@ -327,12 +327,6 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
    * A product nobody ever ordered has no history to keep and is still deleted
    * outright, which keeps the table from filling up with tombstones.
    */
-  // Counted by Postgres rather than selected and measured: the figure is exact
-  // because the audit entry below quotes it, but a popular product has as many
-  // rows here as it has ever had orders and none of them are otherwise read.
-  const orderCount = await countWhere(db.select({ n: count() }).from(orders).where(eq(orders.productId, id)))
-  const retire = orderCount > 0
-
   const activeInfra = await db
     .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
     .from(infrastructureElements)
@@ -377,54 +371,85 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
     )
   }
 
-  if (retire) {
-    // Withdraw every offering in the same transaction as the retirement flag. Both
-    // cart-add and order creation require a matching product_environments row, so
-    // removing them is what actually makes a retired product unorderable — the flag
-    // only keeps it out of the catalogue's reads.
-    //
-    // The infrastructure_elements rows are left in place, unlike the old cascade:
-    // they are mid-decommission, and their pipelines report back to the callback
-    // that reconciles them. That is what the note above wished for.
-    const retired = await db.transaction(async (tx) => {
-      const updated = await tx
-        .update(products)
-        .set({ retiredAt: new Date() })
-        .where(eq(products.id, id))
-        .returning({ id: products.id })
-      if (!updated.length) return false
+  /*
+   * Retire-or-delete is decided HERE, not before the loop above.
+   *
+   * The order count used to be taken before the destroy triggers were fired. Those
+   * are network calls to the CI system, one per active element, and they take
+   * seconds — during which the product is still fully orderable: cart-add and order
+   * creation only need a matching `product_environments` row, and those rows are
+   * not withdrawn until the retire transaction at the end. An order placed in that
+   * window was not counted, so `retire` stayed false, the product was hard-deleted,
+   * and `orders.product_id ON DELETE CASCADE` took the order and its
+   * `product_snapshot` with it — the exact loss issue #142 exists to prevent.
+   *
+   * Counting inside the transaction that also performs the delete closes the window
+   * rather than narrowing it. `FOR UPDATE` on the product row is the part that makes
+   * it airtight: inserting a row that references `products.id` takes a FOR KEY SHARE
+   * lock on that row, which conflicts with FOR UPDATE, so a concurrent order insert
+   * either committed before the lock (and is counted) or waits behind it. If it
+   * waits and this ends in a hard delete, its foreign key fails and the order is
+   * refused — a rejected order, not a silently destroyed one.
+   *
+   * Withdrawing the offerings first and deciding afterwards was the other option.
+   * It was rejected because the 502 above returns without deleting anything: a call
+   * that refuses to proceed would have already stripped every offering — price,
+   * currency, cost-center mode — with nothing to restore them from.
+   */
+  return db.transaction(async (tx): Promise<Result<void>> => {
+    const locked = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.id, id), isNull(products.retiredAt)))
+      .for('update')
+      .limit(1)
+    if (!locked.length) return err(404, 'Not found')
 
+    // Counted by Postgres rather than selected and measured: the figure is exact
+    // because the audit entry below quotes it, but a popular product has as many
+    // rows here as it has ever had orders and none of them are otherwise read.
+    const orderCount = await countWhere(tx.select({ n: count() }).from(orders).where(eq(orders.productId, id)))
+
+    if (orderCount > 0) {
+      // Withdraw every offering in the same transaction as the retirement flag. Both
+      // cart-add and order creation require a matching product_environments row, so
+      // removing them is what actually makes a retired product unorderable — the flag
+      // only keeps it out of the catalogue's reads.
+      //
+      // The infrastructure_elements rows are left in place, unlike the old cascade:
+      // they are mid-decommission, and their pipelines report back to the callback
+      // that reconciles them. That is what the note above wished for.
+      await tx.update(products).set({ retiredAt: new Date() }).where(eq(products.id, id))
       await tx.delete(productEnvironments).where(eq(productEnvironments.productId, id))
       // Transient rows that would otherwise dangle against something nobody can
       // order any more. Both cascade on a hard delete today.
       await tx.delete(cartItems).where(eq(cartItems.productId, id))
       await tx.delete(productFavorites).where(eq(productFavorites.productId, id))
-      return true
-    })
 
-    if (!retired) return err(404, 'Not found')
+      // On the transaction's own connection, so it rolls back with the retirement.
+      await logAuditWith(
+        tx,
+        actorId ?? null,
+        'product.retired',
+        id,
+        `Retired product (${orderCount} order(s) keep their history), withdrew all offerings, decommissioning ${activeInfra.length} infrastructure element(s)`,
+      )
 
-    await logAudit(
+      return ok(undefined)
+    }
+
+    await tx.delete(products).where(eq(products.id, id))
+
+    await logAuditWith(
+      tx,
       actorId ?? null,
-      'product.retired',
+      'product.deleted',
       id,
-      `Retired product (${orderCount} order(s) keep their history), withdrew all offerings, decommissioning ${activeInfra.length} infrastructure element(s)`,
+      `Deleted product, decommissioning ${activeInfra.length} infrastructure element(s)`,
     )
 
     return ok(undefined)
-  }
-
-  const deleted = await db.delete(products).where(eq(products.id, id)).returning({ id: products.id })
-  if (!deleted.length) return err(404, 'Not found')
-
-  await logAudit(
-    actorId ?? null,
-    'product.deleted',
-    id,
-    `Deleted product, decommissioning ${activeInfra.length} infrastructure element(s)`,
-  )
-
-  return ok(undefined)
+  })
 }
 
 /** Longest useful alt text; beyond this it is a description, not a label. */

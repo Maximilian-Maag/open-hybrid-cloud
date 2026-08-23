@@ -19,7 +19,11 @@ import {
   getProductAdmin,
   updateProduct,
   deleteProduct,
-  updateProductImage,
+  addProductImage,
+  listProductImages,
+  reorderProductImages,
+  deleteProductImage,
+  MAX_IMAGES_PER_PRODUCT,
   translateProductById,
   listTranslations,
   upsertTranslation,
@@ -37,6 +41,7 @@ import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/l
 import { db } from '@/lib/db/client'
 import {
   products,
+  productImages,
   productTranslations,
   productEnvironments,
   infrastructureElements,
@@ -808,7 +813,7 @@ describe('product webhooks', () => {
   })
 })
 
-describe('updateProductImage', () => {
+describe('addProductImage', () => {
   // A truncated signature is no longer enough: the type is now determined from
   // the bytes, so a fixture has to be a plausible file rather than four bytes.
   const png = Buffer.concat([
@@ -816,36 +821,138 @@ describe('updateProductImage', () => {
     Buffer.alloc(32, 1),
   ])
 
+  const gallery = (productId: number) =>
+    db
+      .select({ data: productImages.data, mime: productImages.mime, position: productImages.position })
+      .from(productImages)
+      .where(eq(productImages.productId, productId))
+      .orderBy(productImages.position, productImages.id)
+
   it('stores the image buffer and the type it detected', async () => {
     const cat = await createCategory()
     const p = await seedProduct(cat.id, 'Img')
 
-    const result = await updateProductImage(p.id, png, 'A screenshot of the gateway dashboard')
+    const result = await addProductImage(p.id, png, 'A screenshot of the gateway dashboard')
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.mime).toBe('image/png')
 
-    const [row] = await db
-      .select({ image: products.image, mime: products.imageMime })
-      .from(products)
-      .where(eq(products.id, p.id))
-    expect(row.image).not.toBeNull()
-    if (row.image) expect(Buffer.from(row.image).equals(png)).toBe(true)
+    const [row] = await gallery(p.id)
+    expect(Buffer.from(row.data).equals(png)).toBe(true)
     expect(row.mime).toBe('image/png')
+    expect(row.position).toBe(0)
+  })
+
+  it('appends at the next position instead of overwriting', async () => {
+    const cat = await createCategory()
+    const p = await seedProduct(cat.id, 'Img-append')
+
+    await addProductImage(p.id, png, 'The first one')
+    const second = await addProductImage(p.id, png, 'The second one')
+    expect(second.ok).toBe(true)
+    if (second.ok) expect(second.data.position).toBe(1)
+    expect((await gallery(p.id)).map((row) => row.position)).toEqual([0, 1])
   })
 
   it('rejects bytes that are not an accepted image type', async () => {
     const cat = await createCategory()
     const p = await seedProduct(cat.id, 'Img2')
 
-    const result = await updateProductImage(p.id, Buffer.from('not an image but long enough'), 'Some description')
+    const result = await addProductImage(p.id, Buffer.from('not an image but long enough'), 'Some description')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(415)
   })
 
   it('reports an unknown product instead of silently succeeding', async () => {
-    const result = await updateProductImage(999_999, png, 'A description')
+    const result = await addProductImage(999_999, png, 'A description')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(404)
+  })
+
+  it('caps how many pictures one gallery holds', async () => {
+    const cat = await createCategory()
+    const p = await seedProduct(cat.id, 'Img-cap')
+
+    for (let i = 0; i < MAX_IMAGES_PER_PRODUCT; i += 1) {
+      expect((await addProductImage(p.id, png, `Picture ${i}`)).ok).toBe(true)
+    }
+
+    const overflow = await addProductImage(p.id, png, 'One too many')
+    expect(overflow.ok).toBe(false)
+    if (!overflow.ok) expect(overflow.status).toBe(409)
+  })
+})
+
+describe('reorderProductImages / deleteProductImage', () => {
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.alloc(32, 1),
+  ])
+
+  const seedGallery = async (label: string) => {
+    const cat = await createCategory()
+    const p = await seedProduct(cat.id, label)
+    for (const alt of ['First', 'Second', 'Third']) {
+      const added = await addProductImage(p.id, png, alt)
+      expect(added.ok).toBe(true)
+    }
+    const listed = await listProductImages(p.id)
+    expect(listed.ok).toBe(true)
+    return { product: p, images: listed.ok ? listed.data : [] }
+  }
+
+  it('assigns positions in the order given', async () => {
+    const { product, images } = await seedGallery('Reorder')
+
+    const result = await reorderProductImages(product.id, [images[2].id, images[0].id, images[1].id])
+    expect(result.ok).toBe(true)
+
+    const after = await listProductImages(product.id)
+    if (after.ok) {
+      expect(after.data.map((row) => row.alt)).toEqual(['Third', 'First', 'Second'])
+      expect(after.data.map((row) => row.position)).toEqual([0, 1, 2])
+    }
+  })
+
+  it('refuses an order that is not exactly this product\'s gallery', async () => {
+    const { product, images } = await seedGallery('Reorder-partial')
+    const other = await seedGallery('Reorder-other')
+
+    for (const order of [
+      [images[0].id, images[1].id],
+      [images[0].id, images[0].id, images[1].id],
+      [images[0].id, images[1].id, other.images[0].id],
+    ]) {
+      const result = await reorderProductImages(product.id, order)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.status).toBe(400)
+    }
+
+    const after = await listProductImages(product.id)
+    if (after.ok) expect(after.data.map((row) => row.alt)).toEqual(['First', 'Second', 'Third'])
+  })
+
+  it('closes the gap left by a deletion so positions stay dense', async () => {
+    const { product, images } = await seedGallery('Delete')
+
+    expect((await deleteProductImage(product.id, images[0].id)).ok).toBe(true)
+
+    const after = await listProductImages(product.id)
+    if (after.ok) {
+      expect(after.data.map((row) => row.alt)).toEqual(['Second', 'Third'])
+      expect(after.data.map((row) => row.position)).toEqual([0, 1])
+    }
+  })
+
+  it('will not delete a picture through the wrong product', async () => {
+    const mine = await seedGallery('Delete-mine')
+    const theirs = await seedGallery('Delete-theirs')
+
+    const result = await deleteProductImage(mine.product.id, theirs.images[0].id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+
+    const after = await listProductImages(theirs.product.id)
+    if (after.ok) expect(after.data).toHaveLength(3)
   })
 })
 

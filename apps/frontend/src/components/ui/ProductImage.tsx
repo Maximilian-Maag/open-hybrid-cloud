@@ -49,25 +49,7 @@ export function ProductImage({
     if (img?.complete && img.naturalWidth === 0) setFailed(true)
   }, [productId, version])
 
-  if (failed) {
-    return (
-      <div
-        className="flex h-full w-full items-center justify-center rounded-lg"
-        style={{ backgroundColor: 'color-mix(in srgb, var(--bp) 8%, white)' }}
-      >
-        <svg
-          className="h-24 w-24 opacity-25"
-          style={{ color: 'var(--bp-text)' }}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          aria-hidden="true"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
-        </svg>
-      </div>
-    )
-  }
+  if (failed) return <ProductImagePlaceholder />
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -78,5 +60,35 @@ export function ProductImage({
       className="h-full w-full rounded-lg object-contain"
       onError={() => setFailed(true)}
     />
+  )
+}
+
+/**
+ * What stands in for a picture that is missing or failed to load.
+ *
+ * Its own export because the gallery (issue #107) shows the same thing for a
+ * product with no images at all, and two drawings of "no picture" that drift apart
+ * is exactly the kind of difference nobody notices until it is on a screenshot.
+ *
+ * Decorative by construction: the surrounding page always names the product, and a
+ * placeholder has nothing of its own to describe.
+ */
+export function ProductImagePlaceholder() {
+  return (
+    <div
+      className="flex h-full w-full items-center justify-center rounded-lg"
+      style={{ backgroundColor: 'color-mix(in srgb, var(--bp) 8%, white)' }}
+    >
+      <svg
+        className="h-24 w-24 opacity-25"
+        style={{ color: 'var(--bp-text)' }}
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        aria-hidden="true"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
+      </svg>
+    </div>
   )
 }

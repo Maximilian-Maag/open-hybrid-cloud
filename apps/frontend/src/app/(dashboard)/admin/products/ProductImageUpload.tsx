@@ -1,9 +1,9 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
-import { ProductImage } from '@/components/ui/ProductImage'
+import { ProductImagePlaceholder } from '@/components/ui/ProductImage'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
@@ -13,37 +13,79 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 const ACCEPT = 'image/png,image/jpeg,image/webp'
 const MAX_BYTES = 10 * 1024 * 1024
 const MAX_ALT = 300
+/** Mirrors MAX_IMAGES_PER_PRODUCT in the backend service. */
+const MAX_IMAGES = 8
+
+interface GalleryImage {
+  id: number
+  alt: string
+  position: number
+  mime: string
+}
 
 interface Props {
   productId: number
   token: string
-  /** The description currently stored, if the product already has an image. */
-  initialAlt?: string | null
-  /** Bumped after a successful change so the <img> refetches instead of using cache. */
+  /** Called after any successful change, so the page can refetch what it shows. */
   onChanged?: () => void
 }
 
 /**
- * Upload, replace and remove a product's picture.
+ * Manage a product's gallery: upload pictures, describe them, reorder them,
+ * remove them.
  *
- * There was no way to do this in the UI at all: the endpoint existed and the admin
- * guide described the feature, but no form ever called it — so every product in the
- * catalogue showed the placeholder.
+ * This used to manage exactly one picture, because that was all a product could
+ * have. #107 made the gallery the data model, so the control follows: uploading
+ * appends instead of overwriting, and each picture carries its own description
+ * (#105 — required, always) and its own place in the order.
  *
- * The file goes up as multipart rather than as a base64 JSON field, because the
- * endpoint reads `formData()` and because a 10 MB image would grow by a third on
- * the way through JSON.
+ * Files go up as multipart rather than as a base64 JSON field, because the endpoint
+ * reads `formData()` and because a 10 MB image would grow by a third on the way
+ * through JSON.
  */
-export function ProductImageUpload({ productId, token, initialAlt, onChanged }: Props) {
+export function ProductImageUpload({ productId, token, onChanged }: Props) {
   const lang = useLang()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [alt, setAlt] = useState(initialAlt ?? '')
+  const [images, setImages] = useState<GalleryImage[]>([])
+  const [alt, setAlt] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Passed to ProductImage as a cache-buster: the endpoint sets max-age=3600, so
-  // a changed image needs a different URL to be shown at all.
+  // Bumped after a change so the thumbnails refetch: the image endpoints set
+  // max-age=3600, so a replaced picture at the same id needs a different URL.
   const [version, setVersion] = useState(0)
+
+  const authHeader = { Authorization: `Bearer ${token}` }
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images`, {
+        headers: authHeader,
+        cache: 'no-store',
+      })
+      if (!res.ok) {
+        setError('Could not load the gallery.')
+        return
+      }
+      setImages(await res.json())
+    } catch {
+      setError('Could not load the gallery.')
+    }
+    // authHeader is derived from `token`, which is what actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId, token])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  /** Re-read the gallery and tell the page, after a change succeeded. */
+  const afterChange = async (message: string) => {
+    setVersion((v) => v + 1)
+    setSaved(message)
+    await load()
+    onChanged?.()
+  }
 
   async function upload(file: File) {
     // Checked here as well as on the server: refusing a 40 MB file before it is
@@ -64,13 +106,14 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
 
     setBusy(true)
     setError(null)
+    setSaved(null)
     try {
       const body = new FormData()
       body.append('image', file)
       body.append('alt', alt.trim())
-      const res = await fetch(`${API_URL}/api/admin/products/${productId}/image`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images`, {
+        method: 'POST',
+        headers: authHeader,
         body,
         cache: 'no-store',
       })
@@ -79,9 +122,10 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
         setError(payload?.error ?? t('uploadFailed', lang))
         return
       }
-      setVersion((v) => v + 1)
-      setSaved(t('imageUploaded', lang))
-      onChanged?.()
+      // Cleared, because the next upload is a different picture and reusing this
+      // description is how a gallery ends up with three identical alt texts.
+      setAlt('')
+      await afterChange(t('imageUploaded', lang))
     } catch {
       setError(t('uploadFailed', lang))
     } finally {
@@ -91,8 +135,8 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
     }
   }
 
-  async function saveAlt() {
-    if (alt.trim() === '') {
+  async function saveAlt(image: GalleryImage, next: string) {
+    if (next.trim() === '') {
       setError(t('imageDescriptionRequiredError', lang))
       return
     }
@@ -100,10 +144,10 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
     setError(null)
     setSaved(null)
     try {
-      const res = await fetch(`${API_URL}/api/admin/products/${productId}/image`, {
+      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images/${image.id}`, {
         method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ alt: alt.trim() }),
+        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alt: next.trim() }),
         cache: 'no-store',
       })
       if (!res.ok && res.status !== 204) {
@@ -111,8 +155,7 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
         setError(payload?.error ?? t('couldNotSaveDescription', lang))
         return
       }
-      setSaved(t('descriptionSaved', lang))
-      onChanged?.()
+      await afterChange(t('descriptionSaved', lang))
     } catch {
       setError(t('couldNotSaveDescription', lang))
     } finally {
@@ -120,23 +163,21 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
     }
   }
 
-  async function remove() {
+  async function remove(image: GalleryImage) {
     setBusy(true)
     setError(null)
+    setSaved(null)
     try {
-      const res = await fetch(`${API_URL}/api/admin/products/${productId}/image`, {
+      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images/${image.id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: authHeader,
         cache: 'no-store',
       })
       if (!res.ok && res.status !== 204) {
         setError(t('couldNotRemoveImage', lang))
         return
       }
-      setVersion((v) => v + 1)
-      setAlt('')
-      setSaved(t('imageRemoved', lang))
-      onChanged?.()
+      await afterChange(t('imageRemoved', lang))
     } catch {
       setError(t('couldNotRemoveImage', lang))
     } finally {
@@ -144,40 +185,133 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
     }
   }
 
+  /** Move one picture one place up or down. The endpoint wants the whole order. */
+  async function move(index: number, delta: number) {
+    const target = index + delta
+    if (target < 0 || target >= images.length) return
+
+    const order = images.map((image) => image.id)
+    ;[order[index], order[target]] = [order[target], order[index]]
+
+    setBusy(true)
+    setError(null)
+    setSaved(null)
+    try {
+      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images`, {
+        method: 'PATCH',
+        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
+        cache: 'no-store',
+      })
+      if (!res.ok && res.status !== 204) {
+        const payload = await res.json().catch(() => null)
+        setError(payload?.error ?? 'Could not reorder the gallery.')
+        return
+      }
+      await afterChange('Order saved.')
+    } catch {
+      setError('Could not reorder the gallery.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {error && <Alert>{error}</Alert>}
       {saved && !error && <Alert tone="success">{saved}</Alert>}
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor={`product-image-alt-${productId}`} className="text-sm font-medium text-slate-700">
-          {t('imageDescriptionLabel', lang)} <span className="text-red-500">*</span>
-        </label>
-        <input
-          id={`product-image-alt-${productId}`}
-          type="text"
-          value={alt}
-          maxLength={MAX_ALT}
-          onChange={(e) => { setAlt(e.target.value); setSaved(null); setError(null) }}
-          placeholder={t('placeholderImageAltExample', lang)}
-          className="min-h-11 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <p className="text-xs text-slate-500">
-          {t('imageDescriptionHint', lang)} {t('requiredForEveryImage', lang)}
-        </p>
-        <div className="flex justify-end">
-          <Button size="sm" variant="secondary" onClick={saveAlt} disabled={busy}>
-            {t('saveDescription', lang)}
-          </Button>
-        </div>
-      </div>
+      {/* The gallery, in the order the product page shows it. */}
+      {images.length === 0 ? (
+        <p className="text-sm text-slate-600">No pictures yet. The product page shows a placeholder.</p>
+      ) : (
+        <ol className="space-y-3">
+          {images.map((image, index) => (
+            <li key={image.id} className="flex items-start gap-3 rounded-lg border border-slate-200 p-3">
+              <div className="h-20 w-20 shrink-0 rounded border border-slate-200 p-1">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`${API_URL}/api/catalog/${productId}/images/${image.id}?v=${version}`}
+                  alt=""
+                  className="h-full w-full rounded object-contain"
+                />
+              </div>
 
-      <div className="flex items-start gap-4">
-        <div className="h-32 w-32 shrink-0 rounded border border-slate-200 p-1">
-          <ProductImage productId={productId} alt="" version={version} />
+              <div className="min-w-0 flex-1 space-y-2">
+                <label
+                  htmlFor={`product-image-alt-${image.id}`}
+                  className="block text-sm font-medium text-slate-700"
+                >
+                  {index === 0 ? 'Image description (leading picture)' : 'Image description'}{' '}
+                  <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id={`product-image-alt-${image.id}`}
+                  type="text"
+                  defaultValue={image.alt}
+                  maxLength={MAX_ALT}
+                  onBlur={(e) => {
+                    if (e.target.value.trim() !== image.alt) void saveAlt(image, e.target.value)
+                  }}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => move(index, -1)}
+                    disabled={busy || index === 0}
+                    aria-label={`Move "${image.alt}" earlier`}
+                  >
+                    Move up
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => move(index, 1)}
+                    disabled={busy || index === images.length - 1}
+                    aria-label={`Move "${image.alt}" later`}
+                  >
+                    Move down
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => remove(image)}
+                    disabled={busy}
+                    aria-label={`Remove "${image.alt}"`}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {/* Adding one. The description comes first, because the upload starts the
+          moment a file is chosen and the server refuses one without it. */}
+      <div className="space-y-2 rounded-lg border border-dashed border-slate-300 p-3">
+        <div className="flex flex-col gap-1">
+          <label htmlFor={`product-image-alt-new-${productId}`} className="text-sm font-medium text-slate-700">
+            {t('imageDescriptionLabel', lang)} <span className="text-red-500">*</span>
+          </label>
+          <input
+            id={`product-image-alt-new-${productId}`}
+            type="text"
+            value={alt}
+            maxLength={MAX_ALT}
+            onChange={(e) => { setAlt(e.target.value); setSaved(null); setError(null) }}
+            placeholder={t('placeholderImageAltExample', lang)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p className="text-xs text-slate-500">
+            {t('imageDescriptionHint', lang)} {t('requiredForEveryImage', lang)}
+          </p>
         </div>
 
-        <div className="space-y-2">
+        <div className="flex flex-col gap-1">
           {/* A file input with no label is an unlabelled control — the browser's
               "Choose file" text is not a name. */}
           <label htmlFor={`product-image-${productId}`} className="block text-sm font-medium text-slate-700">
@@ -188,19 +322,27 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
             id={`product-image-${productId}`}
             type="file"
             accept={ACCEPT}
-            disabled={busy}
+            disabled={busy || images.length >= MAX_IMAGES}
             onChange={(e) => {
               const file = e.target.files?.[0]
               if (file) upload(file)
             }}
             className="block text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
           />
-          <p className="text-xs text-slate-500">{t('imageFormatHintPlain', lang)}</p>
-          <Button size="sm" variant="secondary" onClick={remove} disabled={busy}>
-            {busy ? t('working', lang) : t('removeImage', lang)}
-          </Button>
+          <p className="text-xs text-slate-500">
+            {t('imageFormatHintPlain', lang)} Up to {MAX_IMAGES} pictures per product
+            {images.length >= MAX_IMAGES ? ' — remove one to add another.' : '.'}
+          </p>
         </div>
       </div>
+
+      {/* Only here so a product with no pictures still shows what the page will
+          show; the real gallery is the list above. */}
+      {images.length === 0 && (
+        <div className="h-32 w-32">
+          <ProductImagePlaceholder />
+        </div>
+      )}
     </div>
   )
 }

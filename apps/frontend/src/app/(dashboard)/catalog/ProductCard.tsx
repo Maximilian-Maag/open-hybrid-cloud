@@ -57,8 +57,9 @@ export function ProductCard({
         >
           <ProductImage productId={id} alt={imageAlt ?? name} />
         </Link>
-        {/* A SIBLING of the link, not a child: a button inside a link is
-            nested-interactive, which the axe gate in e2e/a11y.spec.ts rejects. */}
+        {/* A SIBLING of the link, not a child: a button inside a link is invalid
+            HTML and splits one control in two. The axe gate does not reject it —
+            see ButtonLink — so keeping them siblings is on the author. */}
         <div className="absolute top-2 right-2">
           <FavoriteButton favorited={favorited} busy={busy} onToggle={onToggleFavorite} lang={lang} />
         </div>

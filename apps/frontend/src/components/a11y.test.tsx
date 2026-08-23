@@ -1,10 +1,13 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { render, screen, act } from '@testing-library/react'
 import { axe } from 'vitest-axe'
 import type { AxeResults } from 'axe-core'
+import Link from 'next/link'
 import type { Parameter } from '@open-hybrid-cloud/types'
 import { Alert } from './ui/Alert'
-import { Button } from './ui/Button'
+import { Button, ButtonLink } from './ui/Button'
 import { Card } from './ui/Card'
 import { Input } from './ui/Input'
 import { Modal } from './ui/Modal'
@@ -124,6 +127,82 @@ describe('Button', () => {
     expect(await check(<Button disabled>Saving…</Button>)).toHaveNoViolations()
   })
 })
+
+/**
+ * `ButtonLink`, and the shape it exists to replace (issue #102 review).
+ *
+ * `<Link><Button/></Link>` renders `<a><button>`. That is invalid HTML — an `<a>`
+ * may not contain interactive content — and it splits one control in two: the
+ * button takes the pointer while the link keeps the keyboard, so clicking and
+ * pressing Enter do different things.
+ *
+ * What it is NOT is an axe finding, which is the reason it kept coming back.
+ * `nested-interactive` only matches roles whose children are presentational, and
+ * `link` is not one of those (measured against axe-core 4.13.0 — the test below
+ * pins it), so neither this suite nor the e2e gate ever objected. It was fixed by
+ * hand on the infrastructure detail page, came back at six more call sites, and
+ * nothing failed. Hence the source scan at the bottom: it is the only check here
+ * that would have caught them.
+ */
+describe('ButtonLink', () => {
+  it('renders an <a> with the button paint, in every variant', async () => {
+    for (const variant of ['primary', 'secondary', 'danger', 'ghost'] as const) {
+      const { container, unmount } = render(
+        <ButtonLink href="/admin/products/1" variant={variant}>Edit</ButtonLink>,
+      )
+      expect(await axeOn(container), variant).toHaveNoViolations()
+      expect(screen.getByRole('link', { name: 'Edit' }).tagName).toBe('A')
+      // The whole point: one control, nothing interactive inside it.
+      expect(container.querySelector('a button')).toBeNull()
+      unmount()
+    }
+  })
+
+  it('is not something axe can catch, which is why the guard below exists', async () => {
+    // The measurement, not an assumption. If a future axe release starts
+    // reporting the wrap, this fails and the source scan can be reconsidered —
+    // and until then nobody should write "the axe gate rejects this" again.
+    const results = await check(
+      <Link href="/admin/products/1">
+        <Button size="sm" variant="secondary">Edit</Button>
+      </Link>,
+    )
+    expect(results.violations.map((v) => v.id)).not.toContain('nested-interactive')
+  })
+
+  it('is the only way the app styles a link as a button', () => {
+    expect(linkWrappedButtons()).toEqual([])
+  })
+})
+
+const SRC_DIR = join(process.cwd(), 'src')
+
+/**
+ * Every source file containing `<Link …>…<Button`, comments not counted.
+ *
+ * Crude on purpose: it is a text scan, so it cannot see through an alias or a
+ * component that wraps `Link` itself. It catches the shape people actually
+ * write, which is the one that recurred six times.
+ */
+function linkWrappedButtons(): string[] {
+  const found: string[] = []
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.name.endsWith('.tsx') && !entry.name.endsWith('.test.tsx')) {
+        // Table's doc comment names both components in one sentence, and the
+        // negative control above is a deliberate one — hence the two exclusions.
+        const source = readFileSync(full, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+        if (/<Link\b[^>]*>(?:(?!<\/Link>)[\s\S])*?<Button\b/.test(source)) {
+          found.push(relative(SRC_DIR, full))
+        }
+      }
+    }
+  }
+  walk(SRC_DIR)
+  return found
+}
 
 describe('Input', () => {
   it('is accessible with a label alone', async () => {

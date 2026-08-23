@@ -1,11 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { Product } from '@open-hybrid-cloud/types'
 import { del } from '@/lib/api'
-import { Button } from '@/components/ui/Button'
+import { Button, ButtonLink } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
@@ -42,12 +41,12 @@ export function ProductRowActions({ product, token }: Props) {
 
   return (
     <div className="flex gap-2 justify-end">
-      <Link href={`/admin/products/${product.id}`}>
-        {/* Same-named links to different products (WCAG 2.4.9): the row says which
-            product, the link did not, and a screen reader's link list is just
-            "Edit, Edit, Edit". */}
-        <Button size="sm" variant="secondary">{t('edit', lang)}<span className="sr-only"> {product.name}</span></Button>
-      </Link>
+      {/* Same-named links to different products (WCAG 2.4.9): the row says which
+          product, the link did not, and a screen reader's link list is just
+          "Edit, Edit, Edit". */}
+      <ButtonLink href={`/admin/products/${product.id}`} size="sm" variant="secondary">
+        {t('edit', lang)}<span className="sr-only"> {product.name}</span>
+      </ButtonLink>
       <Button size="sm" variant="danger" onClick={() => setConfirmOpen(true)}>{t('delete', lang)}</Button>
 
       <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={t('deleteProductPrompt', lang)} size="sm">

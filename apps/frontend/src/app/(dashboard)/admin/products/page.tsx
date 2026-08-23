@@ -5,7 +5,7 @@ import type { Role, Product, Category } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/api'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Table } from '@/components/ui/Table'
-import { Button } from '@/components/ui/Button'
+import { ButtonLink } from '@/components/ui/Button'
 import { ProductRowActions } from './ProductRowActions'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
@@ -34,9 +34,7 @@ export default async function AdminProductsPage() {
         title={t('productsTitle', lang)}
         subtitle={t('manageCatalogProducts', lang)}
         actions={
-          <Link href="/admin/products/new">
-            <Button>{t('newProduct', lang)}</Button>
-          </Link>
+          <ButtonLink href="/admin/products/new">{t('newProduct', lang)}</ButtonLink>
         }
       />
 

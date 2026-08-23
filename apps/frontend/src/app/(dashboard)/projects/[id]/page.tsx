@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Table } from '@/components/ui/Table'
 import { ProjectEditForm } from './ProjectEditForm'
 import Link from 'next/link'
-import { Button } from '@/components/ui/Button'
+import { ButtonLink } from '@/components/ui/Button'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 
@@ -52,9 +52,9 @@ export default async function ProjectDetailPage({ params }: Props) {
       <PageHeader
         title={project.name}
         actions={
-          <Link href="/projects">
-            <Button variant="secondary" size="sm">{t('backToProjects', lang)}</Button>
-          </Link>
+          <ButtonLink href="/projects" variant="secondary" size="sm">
+            {t('backToProjects', lang)}
+          </ButtonLink>
         }
       />
 

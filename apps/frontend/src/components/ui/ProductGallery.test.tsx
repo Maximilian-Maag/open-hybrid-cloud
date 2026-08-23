@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ProductGallery } from './ProductGallery'
 
@@ -108,6 +108,32 @@ describe('ProductGallery', () => {
     const zoomed = document.querySelector('dialog img') as HTMLImageElement | null
     expect(zoomed?.getAttribute('src')).toContain('/images/12')
     expect(zoomed?.getAttribute('alt')).toBe('The gateway dashboard')
+  })
+
+  it('falls back to the placeholder when the enlarged picture will not load', async () => {
+    // The modal used to render a bare <img>, so a picture the gallery had already
+    // replaced with the placeholder came back as the browser's broken-image icon
+    // the moment it was enlarged.
+    const user = userEvent.setup()
+    render(<ProductGallery productId={7} images={images} lang="en" />)
+
+    await user.click(screen.getByRole('button', { name: /enlarge image/i }))
+    const zoomed = document.querySelector('dialog img') as HTMLImageElement
+    fireEvent.error(zoomed)
+
+    expect(document.querySelector('dialog img')).toBeNull()
+    expect(document.querySelector('dialog svg.opacity-25')).not.toBeNull()
+  })
+
+  it('opens straight to the placeholder for a picture that already failed in the gallery', async () => {
+    const user = userEvent.setup()
+    render(<ProductGallery productId={7} images={images} lang="en" />)
+
+    fireEvent.error(shown() as HTMLImageElement)
+    await user.click(screen.getByRole('button', { name: /enlarge image/i }))
+
+    expect(document.querySelector('dialog img')).toBeNull()
+    expect(document.querySelector('dialog svg.opacity-25')).not.toBeNull()
   })
 
   it('has no thumbnails or stepper for a single picture', () => {

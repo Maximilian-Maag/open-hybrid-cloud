@@ -177,12 +177,21 @@ export function ProductGallery({ productId, images, lang }: Props) {
         lang={lang}
         size="xl"
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={src(productId, current.id)}
-          alt={current.alt}
-          className="mx-auto max-h-[70vh] w-full object-contain"
-        />
+        {/* The same `failed` set as the gallery behind it, so a picture that will
+            not load shows the placeholder here too rather than the browser's broken
+            image icon — and one that already failed in the gallery never flashes
+            broken on the way in. */}
+        {failed.includes(current.id) ? (
+          <ProductImagePlaceholder />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={src(productId, current.id)}
+            alt={current.alt}
+            className="mx-auto max-h-[70vh] w-full object-contain"
+            onError={() => setFailed((ids) => [...ids, current.id])}
+          />
+        )}
         <p className="mt-3 text-sm text-slate-600">{current.alt}</p>
       </Modal>
     </div>

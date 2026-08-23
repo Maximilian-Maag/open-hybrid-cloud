@@ -38,7 +38,9 @@ test.describe('Product Catalog', () => {
 
   test('every product tile links to its detail page', async ({ page }) => {
     await goToCatalog(page)
-    const placeOrderLinks = page.getByRole('link', { name: /^details$/i })
+    // `^details\b`, not `^details$`: every tile's Details link carries the product
+    // name in an sr-only span (WCAG 2.4.9), so its accessible name is "Details: <product>".
+    const placeOrderLinks = page.getByRole('link', { name: /^details\b/i })
     const noProducts = page.getByText(/no products found/i)
     // Wait for catalog to finish loading (client component fetches async)
     await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
@@ -123,7 +125,7 @@ test.describe('Catalog trial ordering', () => {
     await loginAsRoot(page)
     await page.goto('/catalog')
 
-    const firstOrder = page.getByRole('link', { name: /^details$/i }).first()
+    const firstOrder = page.getByRole('link', { name: /^details\b/i }).first()
     const noProducts = page.getByText(/no products/i)
     await expect(firstOrder.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }

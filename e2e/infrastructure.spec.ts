@@ -198,7 +198,11 @@ test.describe('Infrastructure quick reorder', () => {
 
   test('every element offers Reorder, including decommissioned ones', async ({ page }) => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
-    const reorder = page.getByRole('link', { name: /^reorder$/i }).first()
+    // `^reorder\b`, not `^reorder$`: the link carries the product name and the
+    // element id in an sr-only span, because two elements can be provisioned from
+    // the same product and the product name alone would not tell them apart
+    // (WCAG 2.4.9).
+    const reorder = page.getByRole('link', { name: /^reorder\b/i }).first()
     await expect(reorder.or(emptyState)).toBeVisible({ timeout: 10000 })
     if (await emptyState.isVisible()) { test.skip(); return }
 
@@ -210,7 +214,7 @@ test.describe('Infrastructure quick reorder', () => {
 
   test('Reorder lands on the product page with the form pre-filled', async ({ page }) => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
-    const reorder = page.getByRole('link', { name: /^reorder$/i }).first()
+    const reorder = page.getByRole('link', { name: /^reorder\b/i }).first()
     await expect(reorder.or(emptyState)).toBeVisible({ timeout: 10000 })
     if (await emptyState.isVisible()) { test.skip(); return }
 
@@ -227,7 +231,7 @@ test.describe('Infrastructure quick reorder', () => {
 
   test('the pre-fill can be cleared with "start fresh"', async ({ page }) => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
-    const reorder = page.getByRole('link', { name: /^reorder$/i }).first()
+    const reorder = page.getByRole('link', { name: /^reorder\b/i }).first()
     await expect(reorder.or(emptyState)).toBeVisible({ timeout: 10000 })
     if (await emptyState.isVisible()) { test.skip(); return }
 
@@ -252,7 +256,7 @@ test.describe('Infrastructure retry', () => {
 
   test('Retry is absent for deployments that did not fail', async ({ page }) => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
-    const anyRow = page.getByRole('link', { name: /^reorder$/i }).first()
+    const anyRow = page.getByRole('link', { name: /^reorder\b/i }).first()
     await expect(anyRow.or(emptyState)).toBeVisible({ timeout: 10000 })
     if (await emptyState.isVisible()) { test.skip(); return }
 
@@ -375,7 +379,7 @@ test.describe('Infrastructure detail', () => {
 
   test('the row heading opens the element', async ({ page }) => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
-    const firstRow = page.getByRole('link', { name: /^reorder$/i }).first()
+    const firstRow = page.getByRole('link', { name: /^reorder\b/i }).first()
     await expect(firstRow.or(emptyState)).toBeVisible({ timeout: 10000 })
     if (await emptyState.isVisible()) { test.skip(); return }
 

@@ -208,7 +208,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                   autoFocus
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm tracking-widest text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
+                  className="w-full min-h-11 rounded-md border border-slate-200 px-3 py-2 text-sm tracking-widest text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
                   style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
                   placeholder="123456"
                 />
@@ -216,7 +216,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                className="w-full min-h-11 rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                 style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
               >
                 {loading ? t('twoFactorVerifying', lang) : t('signIn', lang)}
@@ -232,7 +232,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                   setPassword('')
                   setError(null)
                 }}
-                className="w-full rounded-md px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 focus:outline-none focus-visible:ring-2"
+                className="w-full min-h-11 rounded-md px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 focus:outline-none focus-visible:ring-2"
                 style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
               >
                 {t('back', lang)}

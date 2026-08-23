@@ -12,6 +12,25 @@ import { post, del } from '@/lib/api'
 const mockedPost = vi.mocked(post)
 const mockedDel = vi.mocked(del)
 
+/**
+ * A calendar date offset from today, in the browser's local calendar — the same
+ * one the panel's own `today()` uses.
+ *
+ * The panel hides a delegation whose `endsOn` is before today, so fixtures pinned
+ * to fixed dates quietly stop testing what they claim to the day that period ends.
+ */
+const dayOffset = (days: number): string => {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate(),
+  ).padStart(2, '0')}`
+}
+
+/** A period that is always still ahead, so the panel always lists it. */
+const STARTS_ON = dayOffset(1)
+const ENDS_ON = dayOffset(14)
+
 const delegation = (over?: Partial<ApprovalDelegation>): ApprovalDelegation => ({
   id: 5,
   fromUserId: 1,
@@ -20,9 +39,9 @@ const delegation = (over?: Partial<ApprovalDelegation>): ApprovalDelegation => (
   toUserId: 2,
   toUserName: 'Bob Admin',
   toUserEmail: 'bob@test.dev',
-  startsOn: '2026-09-01',
-  endsOn: '2026-09-14',
-  createdAt: '2026-08-20T10:00:00.000Z',
+  startsOn: STARTS_ON,
+  endsOn: ENDS_ON,
+  createdAt: `${dayOffset(0)}T10:00:00.000Z`,
   revokedAt: null,
   active: true,
   ...over,
@@ -73,7 +92,7 @@ describe('DelegationPanel', () => {
   })
 
   it('hides a revoked delegation, which is kept only for the audit trail', () => {
-    renderPanel({ mine: [delegation({ revokedAt: '2026-08-21T10:00:00.000Z', active: false })] })
+    renderPanel({ mine: [delegation({ revokedAt: `${dayOffset(0)}T10:00:00.000Z`, active: false })] })
     expect(screen.queryByTestId('given-delegation-5')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /create delegation/i })).toBeInTheDocument()
   })
@@ -84,7 +103,11 @@ describe('DelegationPanel', () => {
     // as if it were still scheduled, and, because the form is hidden whenever
     // anything is listed, locking the admin out of ever delegating again. The
     // API allows a second one; only the panel did not.
-    renderPanel({ mine: [delegation({ startsOn: '2020-01-01', endsOn: '2020-01-14', active: false })] })
+    // Deliberately a period that has already ENDED — that is the whole point of
+    // this case, so both ends stay behind today however far today moves.
+    renderPanel({
+      mine: [delegation({ startsOn: dayOffset(-30), endsOn: dayOffset(-16), active: false })],
+    })
     expect(screen.getByRole('button', { name: /create delegation/i })).toBeInTheDocument()
   })
 
@@ -94,14 +117,14 @@ describe('DelegationPanel', () => {
 
     await user.selectOptions(screen.getByLabelText(/substitute/i), '2')
     await user.clear(screen.getByLabelText(/^From/))
-    await user.type(screen.getByLabelText(/^From/), '2026-09-01')
-    await user.type(screen.getByLabelText(/^To/), '2026-09-14')
+    await user.type(screen.getByLabelText(/^From/), STARTS_ON)
+    await user.type(screen.getByLabelText(/^To/), ENDS_ON)
     await user.click(screen.getByRole('button', { name: /create delegation/i }))
 
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
     expect(mockedPost).toHaveBeenCalledWith(
       '/api/approvals/delegations',
-      { toUserId: 2, startsOn: '2026-09-01', endsOn: '2026-09-14' },
+      { toUserId: 2, startsOn: STARTS_ON, endsOn: ENDS_ON },
       'test-token',
     )
   })
@@ -112,7 +135,7 @@ describe('DelegationPanel', () => {
     renderPanel()
 
     await user.selectOptions(screen.getByLabelText(/substitute/i), '2')
-    await user.type(screen.getByLabelText(/^To/), '2026-09-14')
+    await user.type(screen.getByLabelText(/^To/), ENDS_ON)
     await user.click(screen.getByRole('button', { name: /create delegation/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/already have a delegation/i)

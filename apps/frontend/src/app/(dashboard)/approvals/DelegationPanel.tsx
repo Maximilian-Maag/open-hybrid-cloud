@@ -16,8 +16,26 @@ interface Props {
   token: string
 }
 
-/** ISO date for today, in the browser's own calendar — the `min` for both inputs. */
-const today = (): string => new Date().toISOString().slice(0, 10)
+/**
+ * ISO date for today in the browser's own calendar — the `min` for both inputs
+ * and the cutoff that decides whether a given delegation is still worth showing.
+ *
+ * Built from the local getters rather than `toISOString()`, which is UTC and so
+ * named the wrong day for anyone east or west of it for part of every day.
+ *
+ * This still cannot be exact against the server: `createDelegation` compares the
+ * start date with Postgres's `CURRENT_DATE`, in the database's timezone. When the
+ * browser's calendar is a day behind the database's, `min` offers a date the API
+ * answers with 400 'A delegation cannot start in the past'. The alternative is a
+ * round trip before the form can render; the local date is right for the user
+ * almost always, and the server still refuses what it must.
+ */
+const today = (): string => {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
 
 const period = (d: ApprovalDelegation, lang: string): string =>
   `${new Date(`${d.startsOn}T00:00:00`).toLocaleDateString(lang)} – ${new Date(
@@ -65,7 +83,7 @@ export function DelegationPanel({ delegations, token }: Props) {
       setEndsOn('')
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('failedToCreate', lang))
+      setError(err instanceof Error ? err.message : t('unexpectedError', lang))
     } finally {
       setBusy(false)
     }
@@ -78,7 +96,7 @@ export function DelegationPanel({ delegations, token }: Props) {
       await del(`/api/approvals/delegations/${id}`, token)
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('failedToDelete', lang))
+      setError(err instanceof Error ? err.message : t('unexpectedError', lang))
     } finally {
       setBusy(false)
     }

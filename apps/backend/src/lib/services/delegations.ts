@@ -173,6 +173,13 @@ export const substitutionsByEmail = async (): Promise<Map<string, string[]>> => 
 
 /** The caller's own delegations, the ones granted to them, and who they may nominate. */
 export const listDelegations = async (session: SessionUser): Promise<Result<DelegationsView>> => {
+  // Root is refused here, not merely excluded from the candidate list. The route
+  // gates on requireRole('admin'), which admits root by rank — so without this,
+  // the one role that "does not participate" could still enumerate every active
+  // admin through this endpoint. Enforced in the service for the same reason
+  // createDelegation does it: the route's rank check is not the contract.
+  if (session.role === 'root') return err(403, 'Root does not participate in approval delegation')
+
   const [mine, grantedToMe, candidates] = await Promise.all([
     selectDelegations()
       .where(eq(approvalDelegations.fromUserId, session.id))
@@ -376,10 +383,18 @@ export const revokeDelegation = async (
   if (existing.revokedAt) return err(400, 'Delegation is already revoked')
 
   const revokedAt = new Date()
-  await db
+  // The UPDATE is the claim, and its row count is the answer. Between the SELECT
+  // above and this write another request can revoke the same delegation; the
+  // isNull guard already stops the second write, but without reading the result
+  // the loser still logged an audit entry and returned 200 for a revoke it did
+  // not perform. Same shape as spending a recovery code: claim and check.
+  const [revoked] = await db
     .update(approvalDelegations)
     .set({ revokedAt })
     .where(and(eq(approvalDelegations.id, delegationId), isNull(approvalDelegations.revokedAt)))
+    .returning({ id: approvalDelegations.id })
+
+  if (!revoked) return err(400, 'Delegation is already revoked')
 
   await logAudit(
     session.id,

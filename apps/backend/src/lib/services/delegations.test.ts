@@ -347,6 +347,16 @@ describe('substitutionsByEmail', () => {
 })
 
 describe('listDelegations', () => {
+  it('refuses root, which does not participate and must not enumerate admins', async () => {
+    // The route gates on requireRole('admin'), which admits root by rank, so the
+    // service is where this has to hold — otherwise the one role excluded from
+    // the workflow could still read the full candidate roster.
+    const root = await createUser({ role: 'root' })
+    const result = await listDelegations(session(root))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(403)
+  })
+
   it('separates authority given away from authority held', async () => {
     const { alice, bob, carol } = await admins()
     await seedDelegation(alice.id, bob.id, { startsInDays: 0, endsInDays: 3 })
@@ -389,6 +399,28 @@ describe('listDelegations', () => {
 })
 
 describe('revokeDelegation', () => {
+  it('revokes exactly once when two requests race, and audits once', async () => {
+    // The SELECT and the UPDATE are separate statements, so both callers can see
+    // an unrevoked row. The isNull guard already stopped the second WRITE — but
+    // without reading the row count the loser still logged a revoke it did not
+    // perform and answered 200 for it.
+    const { alice, bob } = await admins()
+    const seeded = await seedDelegation(alice.id, bob.id, { startsInDays: 0, endsInDays: 5 })
+
+    const [a, b] = await Promise.all([
+      revokeDelegation(session(alice), seeded.id),
+      revokeDelegation(session(alice), seeded.id),
+    ])
+
+    expect([a.ok, b.ok].filter(Boolean)).toHaveLength(1)
+
+    const entries = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, 'approval_delegation.revoked'))
+    expect(entries).toHaveLength(1)
+  })
+
   it('stamps the row instead of deleting it, and audits the revoke', async () => {
     const { alice, bob } = await admins()
     const seeded = await seedDelegation(alice.id, bob.id, { startsInDays: 0, endsInDays: 5 })

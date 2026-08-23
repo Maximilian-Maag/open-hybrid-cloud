@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/Toast'
 import { SkeletonListItem } from '@/components/ui/Skeleton'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
+import { ActiveSessions } from '@/components/forms/ActiveSessions'
 
 interface Props { token: string }
 
@@ -39,6 +40,11 @@ export function UsersManager({ token }: Props) {
   const [addOpen, setAddOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<User | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null)
+  // Root looking at somebody else's sessions (issue #37). The API is the same
+  // one the user's own settings page calls, scoped with ?userId= and refused for
+  // anyone who is not root — so there is no second authorisation path here that
+  // could drift from the first.
+  const [sessionsTarget, setSessionsTarget] = useState<User | null>(null)
   const [formEmail, setFormEmail] = useState('')
   const [formName, setFormName] = useState('')
   const [formRole, setFormRole] = useState<Role>('project_manager')
@@ -166,6 +172,17 @@ export function UsersManager({ token }: Props) {
                   <Button size="sm" variant="ghost" onClick={() => toggleActive(user)}>
                     {user.active ? t('deactivate', lang) : t('activate', lang)}
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    // One word on every row, so the accessible name has to name the
+                    // row — five identical "Sessions" buttons tell a screen-reader
+                    // user nothing.
+                    aria-label={`${t('activeSessions', lang)}: ${user.name} (${user.email})`}
+                    onClick={() => setSessionsTarget(user)}
+                  >
+                    {t('activeSessions', lang)}
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={() => openEdit(user)}>{t('edit', lang)}</Button>
                   <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(user) }}>{t('delete', lang)}</Button>
                 </div>
@@ -199,6 +216,21 @@ export function UsersManager({ token }: Props) {
             <Button type="submit" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!sessionsTarget}
+        onClose={() => setSessionsTarget(null)}
+        title={sessionsTarget ? `${t('activeSessions', lang)} — ${sessionsTarget.name}` : t('activeSessions', lang)}
+        size="xl"
+      >
+        {/* Keyed on the user so switching rows remounts it rather than showing the
+            previous user's list while the new one loads. No initialSessions: the
+            dialog was not open when the page rendered, so there is nothing to have
+            fetched ahead of time. */}
+        {sessionsTarget && (
+          <ActiveSessions key={sessionsTarget.id} token={token} userId={sessionsTarget.id} />
+        )}
       </Modal>
 
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title={t('deleteUserTitle', lang)} size="sm">

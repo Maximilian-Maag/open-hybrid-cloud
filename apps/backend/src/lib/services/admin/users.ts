@@ -14,6 +14,7 @@ import { count, eq, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
+import { revokeAllSessionsOf } from '@/lib/services/sessions'
 
 export interface SafeUser {
   id: number
@@ -109,7 +110,7 @@ export const getUserById = async (id: number): Promise<Result<SafeUser>> => {
 export const updateUser = async (
   id: number,
   input: UpdateUserInput,
-  actorId?: number,
+  actorId: number | null = null,
 ): Promise<Result<SafeUser>> => {
   if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
 
@@ -119,6 +120,15 @@ export const updateUser = async (
   if (password) {
     update.passwordHash = await bcrypt.hash(password, 12)
   }
+
+  // Read before writing, so "the role actually changed" can be answered without
+  // treating a no-op PUT that resends the same role as a change — which would
+  // sign the user out and write an audit entry for nothing.
+  const [before] = await db
+    .select({ role: users.role })
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1)
 
   const [updated] = await db
     .update(users)
@@ -133,6 +143,21 @@ export const updateUser = async (
   // change is spelled out because promotion to root is what an auditor looks for.
   const roleNote = input.role !== undefined ? ` (role now ${input.role})` : ''
   await logAudit(actorId ?? null, 'user.updated', id, `${changedFields(input)}${roleNote}`)
+
+  // Deactivating an account has to end its sessions (issue #37). `active` is only
+  // read at login, so before there were session rows to revoke a deactivated user
+  // simply stayed signed in until their token ran out — up to 8 h, or 30 days with
+  // "remember me". Clicking "Deactivate" is not a request to wait that long.
+  //
+  // A ROLE CHANGE ends them for the same reason, and this branch is why it has to.
+  // `role` is read from the token, not from the row (middleware.ts), so a demoted
+  // admin keeps admin until their token expires. That was already true with a 24 h
+  // ceiling; "remember me" raises it to 30 days, which turns a small window into a
+  // month. Revoking makes them sign in again and pick up the role they now have.
+  if (input.active === false || (input.role !== undefined && input.role !== before?.role)) {
+    const reason = input.active === false ? 'Account deactivated' : 'Role changed'
+    await revokeAllSessionsOf(actorId, id, reason)
+  }
 
   return ok(updated as SafeUser)
 }

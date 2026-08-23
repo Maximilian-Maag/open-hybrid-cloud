@@ -1,7 +1,7 @@
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import type { LoginRequest, LoginResponse, Role } from '@open-hybrid-cloud/types'
-import { API_TOKEN_MAX_AGE_SECONDS, apiTokenExpiry } from '@/lib/session'
+import { SESSION_COOKIE_MAX_AGE_SECONDS, apiTokenExpiry } from '@/lib/session'
 
 const API_URL = process.env.API_URL ?? 'http://localhost:3001'
 
@@ -12,6 +12,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       credentials: {
         email: { type: 'email' },
         password: { type: 'password' },
+        // Arrives as the string 'true' from signIn(), because credentials are
+        // form fields. Anything else means no.
+        rememberMe: { type: 'text' },
       },
       async authorize(credentials) {
         const res = await fetch(`${API_URL}/api/auth/login`, {
@@ -20,6 +23,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           body: JSON.stringify({
             email: String(credentials.email ?? ''),
             password: String(credentials.password ?? ''),
+            rememberMe: String(credentials.rememberMe ?? '') === 'true',
           } satisfies LoginRequest),
         })
 
@@ -65,10 +69,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return session
     },
   },
-  // Both clocks, one lifetime. NextAuth defaults to 30 days while the backend
-  // signs its token for 24 h, and that gap was the bug in #103: a cookie that
-  // still says "signed in" wrapped around a token nothing accepts any more.
-  session: { maxAge: API_TOKEN_MAX_AGE_SECONDS },
+  // Sized to the LONGEST session the backend will issue, not to a fixed one.
+  //
+  // #103's bug was a 30-day cookie wrapped around a 24 h token: "signed in" with
+  // nothing behind it. #37 makes the lifetime per-session (8 h, or 30 days with
+  // "remember me"), so a single number can no longer be the lifetime — it can
+  // only be the ceiling. What actually ends a session is the token's own `exp`,
+  // carried as `apiTokenExp` and checked by the middleware and the dashboard
+  // layout on every request, plus the 401 handling in lib/api.ts for a session
+  // that ends early because it was revoked. See lib/session.ts.
+  session: { maxAge: SESSION_COOKIE_MAX_AGE_SECONDS },
   pages: { signIn: '/login' },
   secret: process.env.NEXTAUTH_SECRET,
 })

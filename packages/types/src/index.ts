@@ -19,11 +19,42 @@ export interface SessionUser {
 export interface LoginRequest {
   email: string
   password: string
+  /**
+   * Extend the session to the "remember me" lifetime (30 days) instead of the
+   * 8 h default. See the backend's `lib/auth/sessions.ts` (issue #37).
+   */
+  rememberMe?: boolean
 }
 
 export interface LoginResponse {
   token: string
   user: SessionUser
+}
+
+/**
+ * One server-side session record (issue #37).
+ *
+ * The token is never part of this — only its hash is stored, and not even that
+ * leaves the backend. Dates are ISO strings, as everywhere else in this API.
+ */
+export interface SessionInfo {
+  id: number
+  userId: number
+  /** Null when no trusted proxy supplied one; see TRUST_PROXY. */
+  ip: string | null
+  /** Null when the client sent no User-Agent. Truncated to 400 characters. */
+  userAgent: string | null
+  createdAt: string
+  /** Advanced at most once every five minutes, not on every request. */
+  lastSeenAt: string
+  expiresAt: string
+  /** True for the session the request asking for this list came from. */
+  current: boolean
+}
+
+/** Result of revoking one session or a batch of them. */
+export interface RevokeSessionsResponse {
+  revoked: number
 }
 
 // Users

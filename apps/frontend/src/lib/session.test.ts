@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
-  API_TOKEN_MAX_AGE_SECONDS,
+  DEFAULT_SESSION_MAX_AGE_SECONDS,
+  REMEMBER_ME_SESSION_MAX_AGE_SECONDS,
+  SESSION_COOKIE_MAX_AGE_SECONDS,
   apiTokenExpiry,
   isApiTokenExpired,
   expiredLoginUrl,
@@ -69,10 +71,30 @@ describe('expiredLoginUrl', () => {
   })
 })
 
-describe('API_TOKEN_MAX_AGE_SECONDS', () => {
-  it('matches the 24h the backend signs its tokens for', () => {
-    // The whole point of #103: if these two lifetimes drift apart again, the
-    // cookie outlives the token and the "logged in with no data" state is back.
-    expect(API_TOKEN_MAX_AGE_SECONDS).toBe(86_400)
+describe('session lifetimes', () => {
+  it('mirrors the backend: 8 h by default, 30 days with remember me', () => {
+    // These are copies of DEFAULT_SESSION_TTL_SECONDS and
+    // REMEMBER_ME_SESSION_TTL_SECONDS in the backend's lib/auth/sessions.ts. The
+    // backend decides; this side quotes it, so the two must not drift.
+    expect(DEFAULT_SESSION_MAX_AGE_SECONDS).toBe(8 * 60 * 60)
+    expect(REMEMBER_ME_SESSION_MAX_AGE_SECONDS).toBe(30 * 24 * 60 * 60)
+  })
+
+  it('sizes the cookie to the longest session, never shorter', () => {
+    // #103 was a cookie that outlived its token. The reverse — a cookie that dies
+    // before its session — would sign a "remember me" user out after 8 h, which is
+    // the same bug pointing the other way. So the cookie takes the ceiling, and
+    // what actually ends a session is the token's own exp (checked below and in
+    // the middleware) plus the 401 path for a revoked one (#37).
+    expect(SESSION_COOKIE_MAX_AGE_SECONDS).toBe(REMEMBER_ME_SESSION_MAX_AGE_SECONDS)
+    expect(SESSION_COOKIE_MAX_AGE_SECONDS).toBeGreaterThanOrEqual(DEFAULT_SESSION_MAX_AGE_SECONDS)
+  })
+
+  it('still ends a short session on time even though the cookie is long', () => {
+    // The guarantee that replaced #103's shared constant: per-session and exact,
+    // read off the token the session is actually carrying.
+    const now = 1_700_000_000_000
+    const eightHourSessionIssuedNineHoursAgo = now / 1000 - 60 * 60
+    expect(isApiTokenExpired(eightHourSessionIssuedNineHoursAgo, now)).toBe(true)
   })
 })

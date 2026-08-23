@@ -22,6 +22,7 @@ export const testDb = drizzle(client, { schema })
 const TABLES = [
   schema.auditLog,
   schema.approvalDelegations,
+  schema.sessions,
   schema.productFavorites,
   schema.orderComments,
   schema.productVersions,
@@ -58,6 +59,20 @@ beforeAll(async () => {
       password_hash TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- Migration 0019: server-side sessions with revocation (issue #37).
+    CREATE TABLE IF NOT EXISTS sessions (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL,
+      ip TEXT,
+      user_agent TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      revoked_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS sessions_user_live_idx
+      ON sessions (user_id, last_seen_at DESC) WHERE revoked_at IS NULL;
     CREATE TABLE IF NOT EXISTS categories (
       id BIGSERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -338,7 +353,7 @@ beforeAll(async () => {
 })
 
 /**
- * One statement for all twenty tables, not twenty statements.
+ * One statement for every table, not one statement per table.
  *
  * This runs before every one of ~1300 tests, and each `TRUNCATE` is its own
  * transaction waiting on its own commit — so the loop it replaces spent the suite

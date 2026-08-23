@@ -33,6 +33,40 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// Server-side session records (issue #37).
+//
+// Sessions used to be nothing but a signed JWT: no way to see them, and no way to
+// end one short of rotating JWT_SECRET, which signs everybody out. A row per
+// session makes both possible - the JWT carries this row's id as its `sid` claim
+// and every authenticated request checks the row before it does anything else.
+//
+// The token itself is never stored, only its SHA-256. A leaked database dump must
+// not hand out working session tokens, and the hash is enough for what the check
+// needs: proving the presented token is the one this row was issued for.
+export const sessions = pgTable('sessions', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull(),
+  // Both nullable: without a trusted proxy there is no reliable client address
+  // (see TRUST_PROXY in lib/auth/requestMeta.ts), and a scripted client sends no
+  // User-Agent. NULL says "not recorded", which is honest; '-' would be a value
+  // every reader then has to special-case anyway.
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Advanced at most once per SESSION_TOUCH_INTERVAL_MS, not on every request -
+  // see lib/auth/sessions.ts. "Last active, to within five minutes" is what the
+  // session list needs; a write per request is not.
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  // Mirrors the JWT's own `exp`. Duplicated deliberately: the list has to show a
+  // lifetime without decoding a token it does not hold, and the request check
+  // must reject an expired row even when the signature still verifies.
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  // Set, never deleted: a revoked session is evidence, and the audit entry that
+  // records the revocation points at a row that has to still be there.
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+})
+
 export const categories = pgTable('categories', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   name: text().notNull(),
@@ -491,6 +525,8 @@ export const appConfig = pgTable('app_config', {
 
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
+export type Session = typeof sessions.$inferSelect
+export type NewSession = typeof sessions.$inferInsert
 export type Category = typeof categories.$inferSelect
 export type Product = typeof products.$inferSelect
 export type ProductTranslation = typeof productTranslations.$inferSelect

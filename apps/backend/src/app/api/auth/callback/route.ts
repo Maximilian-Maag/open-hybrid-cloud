@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { decodeJwt } from 'jose'
-import { signToken } from '@/lib/auth/jwt'
+import { createSession } from '@/lib/auth/sessions'
+import { clientIp, clientUserAgent } from '@/lib/auth/requestMeta'
 import { upsertSsoUser } from '@/lib/services/auth'
 import type { Role } from '@open-hybrid-cloud/types'
 
@@ -69,7 +70,16 @@ export async function GET(req: NextRequest) {
   }
 
   const sessionUser = { id: user.id, email: user.email, name: user.name, role: user.role as Role }
-  const jwt = await signToken(sessionUser)
+  // SSO gets a session row like any other login (issue #37). Without one the
+  // token would carry no `sid` and every request made with it would be refused —
+  // and an SSO session that cannot be listed or revoked would be a hole in the
+  // feature, not a shortcut. No "remember me" here: the identity provider owns
+  // how long it keeps a user signed in, so this side takes the default.
+  const { token: jwt } = await createSession({
+    user: sessionUser,
+    ip: clientIp(req),
+    userAgent: clientUserAgent(req),
+  })
 
   return NextResponse.redirect(`${frontendUrl}/?token=${jwt}`)
 }

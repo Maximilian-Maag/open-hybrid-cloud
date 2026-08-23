@@ -47,6 +47,10 @@ describe('i18n', () => {
     'costCentersSubtitle', 'usersSubtitle', 'brandingSubtitle', 'smtpSubtitle',
     'aiSubtitle', 'exchangeRatesSubtitle', 'adminDashboardSubtitle',
     'profileSettingsSubtitle', 'globalParametersSubtitle',
+    // Session management (#37). It lives on the settings page and every string
+    // in it is a security decision the user is being asked to make, so a language
+    // silently rendering English there is worse than most.
+    'activeSessions', 'activeSessionsSubtitle',
   ]
 
   // The admin area (issue #100) went through the same trap: 16 components never
@@ -160,8 +164,26 @@ describe('i18n', () => {
       // Titles are labels, so they should not be punctuated like prose.
       expect(t('adminDashboard', code), `${code} adminDashboard`).not.toMatch(/\.$/)
       expect(t('users', code), `${code} users`).not.toMatch(/\.$/)
+      expect(t('activeSessions', code), `${code} activeSessions`).not.toMatch(/\.$/)
       // Subtitles are sentences.
       expect(t('usersSubtitle', code), `${code} usersSubtitle`).toMatch(/[.!?]$/)
+      expect(t('activeSessionsSubtitle', code), `${code} activeSessionsSubtitle`).toMatch(/[.!?]$/)
+    }
+  })
+
+  // ── Session management (#37) ──────────────────────────────────────────────
+  // Column headers and the two actions. Not in CHROME_KEYS because several of
+  // these legitimately match English in some languages ("IP" is "IP" nearly
+  // everywhere), and the wholesale-fallback heuristic there would misread that.
+  it('has every session-management string in every language', () => {
+    const keys: (keyof Translations)[] = [
+      'currentSession', 'device', 'ipAddress', 'lastSeen', 'signOutOthers', 'rememberMe',
+    ]
+    for (const { code } of SUPPORTED_LANGUAGES) {
+      for (const key of keys) {
+        expect(t(key, code), `${code}.${key}`).toBeTruthy()
+        expect(String(t(key, code)), `${code}.${key}`).not.toBe('undefined')
+      }
     }
   })
 })

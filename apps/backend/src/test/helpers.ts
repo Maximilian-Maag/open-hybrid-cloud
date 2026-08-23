@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db/client'
 import * as schema from '@/lib/db/schema'
-import { signToken } from '@/lib/auth/jwt'
+import { createSession } from '@/lib/auth/sessions'
 import type { Role } from '@open-hybrid-cloud/types'
 
 export const createUser = async (overrides?: {
@@ -207,15 +207,43 @@ export const createDelegation = async (
   return row
 }
 
-export const makeAuthHeader = async (user: schema.User): Promise<string> => {
-  const token = await signToken({
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role as Role,
-  })
-  return `Bearer ${token}`
+interface SessionOverrides {
+  ip?: string | null
+  userAgent?: string | null
+  rememberMe?: boolean
 }
+
+/**
+ * A real session for this user: the row, the token, and the header.
+ *
+ * Since #37 a token without a live `sessions` row is refused by every
+ * authenticated request, so every authenticated test now goes through here —
+ * which is also what makes the suite an honest test of that check rather than a
+ * test of the signature alone.
+ */
+export const makeSession = async (
+  user: schema.User,
+  overrides?: SessionOverrides,
+): Promise<{ auth: string; token: string; sessionId: number; expiresAt: Date }> => {
+  const created = await createSession({
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role as Role,
+    },
+    ip: overrides?.ip ?? '203.0.113.7',
+    userAgent: overrides?.userAgent ?? 'vitest',
+    rememberMe: overrides?.rememberMe,
+  })
+  return { auth: `Bearer ${created.token}`, ...created }
+}
+
+/** Just the header, for the many tests that never look at the row. */
+export const makeAuthHeader = async (
+  user: schema.User,
+  overrides?: SessionOverrides,
+): Promise<string> => (await makeSession(user, overrides)).auth
 
 let ccSeq = 0
 

@@ -143,10 +143,15 @@ test.describe('Accessibility — dialogs', () => {
     ['/admin/cost-centers', /add cost center/i],
     ['/admin/parameters', /add parameter/i],
     ['/admin/users', /add user/i],
+    // Root's view of another user's sessions (#37). It is a dialog, so a static
+    // scan of /admin/users never opens it — the same reason the six above are
+    // listed. The name matched is the button's aria-label, which carries the
+    // user it belongs to.
+    ['/admin/users', /^Sessions:/],
   ]
 
   for (const [path, buttonName] of MODALS) {
-    test(`${path} dialog has no WCAG A/AA violations`, async ({ page }) => {
+    test(`${path} dialog (${buttonName.source}) has no WCAG A/AA violations`, async ({ page }) => {
       await page.goto(path)
       await page.getByRole('button', { name: buttonName }).first().click()
       await expect(page.locator('dialog[open]')).toBeVisible()

@@ -2,6 +2,7 @@ import { db } from '@/lib/db/client'
 import { parameters, orders } from '@/lib/db/schema'
 import { eq, inArray } from 'drizzle-orm'
 import type { ProductSnapshot } from '@/lib/services/snapshot'
+import { REDACTED_PARAMETER_VALUE } from '@open-hybrid-cloud/types'
 
 /**
  * Which stored parameter values must never be shown, and what to show instead.
@@ -11,7 +12,7 @@ import type { ProductSnapshot } from '@/lib/services/snapshot'
  * shown in the other is worse than either choice made consistently. (It also breaks
  * the import cycle that putting it in either consumer would create.)
  */
-export const REDACTED = '[redacted]'
+export const REDACTED: string = REDACTED_PARAMETER_VALUE
 
 /**
  * Names of parameters flagged sensitive anywhere in the catalogue.

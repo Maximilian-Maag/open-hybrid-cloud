@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import type {
-  ProductDetail,
-  Project,
-  CostCenter,
-  CreateOrderRequest,
-  Order,
-  InfrastructureElement,
+import {
+  REDACTED_PARAMETER_VALUE,
+  type ProductDetail,
+  type Project,
+  type CostCenter,
+  type CreateOrderRequest,
+  type Order,
+  type InfrastructureElement,
 } from '@open-hybrid-cloud/types'
 import { post, get } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
@@ -130,8 +131,11 @@ export function OrderForm({
   // leaves the field empty, which prompts the user, instead of showing a value
   // that looks real and is not. The backend refuses the sentinel too — that is
   // the authoritative guard; this is so the form does not lie about it.
+  //
+  // The constant is shared rather than written out on both sides: if the two ever
+  // disagreed, a reorder would store the placeholder as the secret again.
   const withoutRedacted = (params: Record<string, string>): Record<string, string> =>
-    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '[redacted]'))
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== REDACTED_PARAMETER_VALUE))
 
   // link named. Routed through applyTemplate rather than duplicating its logic,
   // so a reorder fills the form exactly the way picking the template by hand

@@ -253,6 +253,16 @@ export function ProductEditForm({ product, categories, environments, translation
       .catch(() => {})
   }, [product.id, token])
 
+  // Order Callbacks, same shape as the pipeline stacks fetch above. Without
+  // this, `webhooks` was only ever written by add/delete — reloading the page
+  // made every existing callback invisible and its Delete button unreachable
+  // (#145).
+  useEffect(() => {
+    get<ProductWebhook[]>(`/api/admin/products/${product.id}/webhooks`, token)
+      .then(setWebhooks)
+      .catch(() => {})
+  }, [product.id, token])
+
   function openStackModal() {
     setPsError(null)
     setEditStack(null)

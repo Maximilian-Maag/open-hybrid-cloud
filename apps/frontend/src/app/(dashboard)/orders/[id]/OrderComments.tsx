@@ -43,6 +43,11 @@ export function OrderComments({
   const [error, setError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editBody, setEditBody] = useState('')
+  // Ids currently mid-save or mid-delete. `handlePost` already guards with
+  // `posting`; edit and delete had no equivalent, so a double-click sent two
+  // DELETEs and reported "Failed to delete the comment" for one that was
+  // deleted (#146).
+  const [busyIds, setBusyIds] = useState<Set<number>>(new Set())
 
   async function handlePost(e: React.FormEvent) {
     e.preventDefault()
@@ -63,8 +68,9 @@ export function OrderComments({
   }
 
   async function handleSaveEdit(commentId: number) {
-    if (!editBody.trim()) return
+    if (!editBody.trim() || busyIds.has(commentId)) return
     setError(null)
+    setBusyIds((prev) => new Set(prev).add(commentId))
     try {
       const updated = await put<OrderComment>(
         `/api/orders/${orderId}/comments/${commentId}`,
@@ -75,16 +81,30 @@ export function OrderComments({
       setEditingId(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save the comment.')
+    } finally {
+      setBusyIds((prev) => {
+        const next = new Set(prev)
+        next.delete(commentId)
+        return next
+      })
     }
   }
 
   async function handleDelete(commentId: number) {
+    if (busyIds.has(commentId)) return
     setError(null)
+    setBusyIds((prev) => new Set(prev).add(commentId))
     try {
       await del(`/api/orders/${orderId}/comments/${commentId}`, token)
       setComments((prev) => prev.filter((c) => c.id !== commentId))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete the comment.')
+    } finally {
+      setBusyIds((prev) => {
+        const next = new Set(prev)
+        next.delete(commentId)
+        return next
+      })
     }
   }
 
@@ -127,11 +147,17 @@ export function OrderComments({
                     <Button
                       size="sm"
                       variant="ghost"
+                      disabled={busyIds.has(comment.id)}
                       onClick={() => { setEditingId(comment.id); setEditBody(comment.body) }}
                     >
                       {t('edit', lang)}
                     </Button>
-                    <Button size="sm" variant="danger" onClick={() => handleDelete(comment.id)}>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={busyIds.has(comment.id)}
+                      onClick={() => handleDelete(comment.id)}
+                    >
                       {t('delete', lang)}
                     </Button>
                   </div>
@@ -150,7 +176,11 @@ export function OrderComments({
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={() => handleSaveEdit(comment.id)} disabled={!editBody.trim()}>
+                    <Button
+                      size="sm"
+                      onClick={() => handleSaveEdit(comment.id)}
+                      disabled={!editBody.trim() || busyIds.has(comment.id)}
+                    >
                       {t('saveChanges', lang)}
                     </Button>
                     <Button size="sm" variant="secondary" onClick={() => setEditingId(null)}>

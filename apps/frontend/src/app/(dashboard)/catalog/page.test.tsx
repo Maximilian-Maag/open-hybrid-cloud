@@ -328,6 +328,45 @@ describe('CatalogPage server-side filtering and paging', () => {
     expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument()
   })
 
+  it('keeps an off-page favourite visible if un-starring it fails (#138)', async () => {
+    // `addShelfRow`, used to restore a rolled-back row, only knows how to
+    // rebuild it from `products` — which this favourite was never fetched
+    // into. The rollback has to restore the row it captured instead, or the
+    // card disappears for good with no way to retry.
+    const user = userEvent.setup()
+    const offPage = 99
+    const offPageFavorite: FavoriteProduct = {
+      productId: offPage,
+      categoryId: 1,
+      name: 'Starred but unloaded',
+      description: 'On page three',
+      imageAlt: null,
+      createdAt: '',
+    }
+    mockedGet.mockImplementation((async (path: string) => {
+      if (path.startsWith('/api/catalog')) return catalogPage(products, 40)
+      if (path.startsWith('/api/admin/categories')) return categories
+      if (path.startsWith('/api/favorites')) return [offPageFavorite]
+      return []
+    }) as never)
+    mockedDel.mockRejectedValue(new Error('offline'))
+
+    render(<CatalogPage />)
+    await waitFor(() => expect(favoritesSection()).toBeInTheDocument())
+    let section = favoritesSection()
+    if (!section) throw new Error('favourites section missing')
+    const card = within(section).getByTestId(`product-card-${offPage}`)
+    await user.click(within(card).getByRole('button', { name: /remove from favorites/i }))
+
+    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith(`/api/favorites/${offPage}`, 'test-token'))
+
+    // Rolled back: the card must still be on the shelf.
+    await waitFor(() => expect(favoritesSection()).toBeInTheDocument())
+    section = favoritesSection()
+    if (!section) throw new Error('favourites section missing')
+    expect(within(section).getByTestId(`product-card-${offPage}`)).toBeInTheDocument()
+  })
+
   it('shows a favourite that is not on the loaded page', async () => {
     // The shelf used to be filtered out of the loaded catalogue, so paging would
     // have hidden every favourite past the first page.
@@ -354,5 +393,45 @@ describe('CatalogPage server-side filtering and paging', () => {
     const section = favoritesSection()
     if (!section) throw new Error('favourites section missing')
     expect(within(section).getByTestId(`product-card-${offPage}`)).toBeInTheDocument()
+  })
+
+  it('keeps the response for the category clicked last, even if it answers first (#138)', async () => {
+    // Click a slow category, then a fast one, within the same tick a real
+    // double-click would land in. Without a generation guard, whichever
+    // response arrives LAST wins the race regardless of which category is
+    // still selected — here that would be the slow, no-longer-selected one.
+    const user = userEvent.setup()
+    let resolveSlow: (v: ReturnType<typeof catalogPage>) => void = () => {}
+    let resolveFast: (v: ReturnType<typeof catalogPage>) => void = () => {}
+    let catalogCallCount = 0
+
+    mockedGet.mockImplementation((async (path: string) => {
+      if (path.startsWith('/api/catalog')) {
+        catalogCallCount += 1
+        if (catalogCallCount === 1) return catalogPage(products) // initial, unfiltered load
+        if (path.includes('categoryId=1')) return new Promise((resolve) => { resolveSlow = resolve })
+        if (path.includes('categoryId=2')) return new Promise((resolve) => { resolveFast = resolve })
+        return catalogPage([])
+      }
+      if (path.startsWith('/api/admin/categories')) return categories
+      if (path.startsWith('/api/favorites')) return []
+      return []
+    }) as never)
+
+    render(<CatalogPage />)
+    await waitFor(() => expect(screen.getByTestId('product-card-10')).toBeInTheDocument())
+
+    await user.click(screen.getAllByRole('button', { name: 'Databases' })[0])
+    await user.click(screen.getAllByRole('button', { name: 'Networking' })[0])
+
+    // The category clicked last (Networking) answers first...
+    resolveFast(catalogPage([products[1]]))
+    await waitFor(() => expect(screen.getByTestId('product-card-11')).toBeInTheDocument())
+
+    // ...then the stale, no-longer-selected category's slow answer lands.
+    // It must not repaint the grid with Databases' result.
+    resolveSlow(catalogPage([products[0]]))
+    await waitFor(() => expect(screen.getByTestId('product-card-11')).toBeInTheDocument())
+    expect(screen.queryByTestId('product-card-10')).not.toBeInTheDocument()
   })
 })

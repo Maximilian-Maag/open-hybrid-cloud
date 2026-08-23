@@ -53,10 +53,19 @@ export function InfraFilters({ facets, lang, resultCount }: Props) {
     if (search === urlSearch) return
     const id = setTimeout(() => apply({ search }), 300)
     return () => clearTimeout(id)
-    // `apply` is stable enough for this: it only reads router/pathname/params,
-    // and re-running on a params change is exactly what the guard above stops.
+    // `apply` itself is deliberately left out of this list: it is a fresh
+    // closure every render, and including it would re-run this effect (and
+    // restart the timer) on every unrelated re-render. `searchParams` DOES
+    // have to be here even though it is only read inside `apply`, not this
+    // effect body: `apply` merges its argument into `searchParams`, so a
+    // filter picked while this timer is still pending must be reflected in
+    // the merge when the timer fires — otherwise it fires with the
+    // `searchParams` captured back when the timer was scheduled, and
+    // `router.replace`s the picked filter straight back out (#138). The
+    // `search === urlSearch` guard above is what stops this from looping on
+    // the navigation this effect's own `apply` call causes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, urlSearch])
+  }, [search, urlSearch, searchParams])
 
   function apply(changes: Record<string, string>) {
     const next = new URLSearchParams(searchParams.toString())

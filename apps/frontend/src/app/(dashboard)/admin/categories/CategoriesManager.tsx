@@ -13,6 +13,21 @@ import { SkeletonListItem } from '@/components/ui/Skeleton'
 
 interface Props { token: string }
 
+/**
+ * `Number('')` is `0`, not `NaN` — so clearing the Display Order field on a
+ * category ordered 40 would silently save it as 0 and jump it to the top of
+ * every catalogue sidebar (#146). Falls back to `fallback` (the category's
+ * own previous order when editing, `0` for a new one) for anything that is
+ * not a genuine number, the same way `ProductEditForm.tsx`'s trial duration
+ * field does for its analogous cleared-field case.
+ */
+function parseDisplayOrder(raw: string, fallback: number): number {
+  const trimmed = raw.trim()
+  if (trimmed === '') return fallback
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
 export function CategoriesManager({ token }: Props) {
   const { toast } = useToast()
   const [categories, setCategories] = useState<Category[]>([])
@@ -61,7 +76,7 @@ export function CategoriesManager({ token }: Props) {
     setSaving(true)
     setFormError(null)
     try {
-      const body: CreateCategoryRequest = { name: formName.trim(), displayOrder: Number(formOrder) }
+      const body: CreateCategoryRequest = { name: formName.trim(), displayOrder: parseDisplayOrder(formOrder, 0) }
       await post('/api/admin/categories', body, token)
       setAddOpen(false)
       toast('Category created.')
@@ -80,7 +95,10 @@ export function CategoriesManager({ token }: Props) {
     setSaving(true)
     setFormError(null)
     try {
-      const body: UpdateCategoryRequest = { name: formName.trim(), displayOrder: Number(formOrder) }
+      const body: UpdateCategoryRequest = {
+        name: formName.trim(),
+        displayOrder: parseDisplayOrder(formOrder, editTarget.displayOrder),
+      }
       await put(`/api/admin/categories/${id}`, body, token)
       setEditTarget(null)
       setFlashId(id)

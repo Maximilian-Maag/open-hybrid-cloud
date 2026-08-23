@@ -80,6 +80,16 @@ export function ProductEditForm({ product, categories, environments, translation
 
   // Translations
   const [translations, setTranslations] = useState<ProductTranslation[]>(initTranslations)
+  // `router.refresh()` re-renders the server component and hands this one a new
+  // `translations` prop, but `useState` keeps its first value forever — so after
+  // "AI Translate" the list still described the product as it was before the run.
+  // `loadTranslation` then found no entry for a language the AI had just written,
+  // opened the modal blank, and the save wrote that blank over the new prose. The
+  // prop is the server's answer, so state follows it; this only fires on an actual
+  // refresh, because a client re-render does not produce new props.
+  useEffect(() => {
+    setTranslations(initTranslations)
+  }, [initTranslations])
   const [translationLang, setTranslationLang] = useState('de')
   const [translationName, setTranslationName] = useState('')
   const [translationDesc, setTranslationDesc] = useState('')

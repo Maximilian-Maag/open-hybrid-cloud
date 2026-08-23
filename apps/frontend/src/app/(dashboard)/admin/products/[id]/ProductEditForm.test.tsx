@@ -360,17 +360,18 @@ describe('ProductEditForm translations', () => {
     longDescription: 'Die lange Fassung, von Hand geschrieben.',
   }
 
-  const renderWithTranslations = (translations = [german]) =>
-    render(
-      <ProductEditForm
-        product={product}
-        categories={[{ id: 1, name: 'Databases', displayOrder: 0 }] as Category[]}
-        environments={environments}
-        translations={translations}
-        costCenters={costCenters}
-        token="test-token"
-      />,
-    )
+  const formWith = (translations: typeof german[]) => (
+    <ProductEditForm
+      product={product}
+      categories={[{ id: 1, name: 'Databases', displayOrder: 0 }] as Category[]}
+      environments={environments}
+      translations={translations}
+      costCenters={costCenters}
+      token="test-token"
+    />
+  )
+
+  const renderWithTranslations = (translations = [german]) => render(formWith(translations))
 
   // Modal renders its children whether or not it is open, and "Name" and "Save"
   // label something in four other forms on this page — so every query here is
@@ -447,6 +448,26 @@ describe('ProductEditForm translations', () => {
 
     await user.selectOptions(within(dialog()).getByLabelText('Language'), 'de')
     expect(longDesc()).toHaveValue(german.longDescription)
+  })
+
+  it('follows the server list after an AI run rather than saving over it', async () => {
+    // handleAiTranslate calls router.refresh(), which hands this component new
+    // props but leaves useState holding the pre-run list. A re-render with a new
+    // prop stands in for that refresh here: the modal has to show what the AI
+    // wrote, because the form always sends longDescription and would otherwise
+    // save a blank over it.
+    const user = userEvent.setup()
+    const { rerender } = renderWithTranslations([])
+
+    rerender(formWith([german]))
+    await openModal(user)
+
+    expect(name()).toHaveValue(german.name)
+    expect(longDesc()).toHaveValue(german.longDescription)
+
+    await save(user)
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    expect(mockedPut.mock.calls[0][1]).toMatchObject({ longDescription: german.longDescription })
   })
 
   it('still sends an edited long description', async () => {

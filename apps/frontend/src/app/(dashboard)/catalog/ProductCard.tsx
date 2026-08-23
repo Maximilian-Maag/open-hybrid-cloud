@@ -79,8 +79,12 @@ export function ProductCard({
             and delivering a form is a broken promise. */}
         <Link
           href={`/catalog/${id}`}
-          className="w-full py-2 px-3 min-h-11 rounded text-center text-sm font-semibold flex items-center justify-center text-gray-900 hover:brightness-95 transition-all mt-auto"
-          style={{ backgroundColor: 'var(--bs)' }}
+          className="w-full py-2 px-3 min-h-11 rounded text-center text-sm font-semibold flex items-center justify-center hover:brightness-95 transition-all mt-auto"
+          // The ink is derived from the secondary, not fixed: `--bs` is whatever
+          // the operator saved, and a hard-coded dark foreground goes unreadable
+          // the moment they pick a dark one. `--bs-ink` is readableInk's answer
+          // for that exact colour, which is what every other `--bs` surface uses.
+          style={{ backgroundColor: 'var(--bs)', color: 'var(--bs-ink)' }}
         >
           {t('details', lang)}
           {/* A grid of twenty links all called "Details" is WCAG 2.4.9: read out of

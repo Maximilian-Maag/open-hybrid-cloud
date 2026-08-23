@@ -5,6 +5,11 @@ import { ok, err, type Result } from '@/lib/services/result'
 import { withoutSensitiveDefaults } from '@/lib/services/parameterRedaction'
 import { safeImageContentType } from '@/lib/services/imageUpload'
 import { listActiveSizesForProduct } from '@/lib/services/sizes'
+// The gallery payload is the shared API type, not a local twin of it. This module
+// declared its own identical `ProductImageMeta`, and admin/products.ts imported
+// that one while the frontend's ProductGallery imported the package's — two
+// definitions of one wire format, free to drift apart unnoticed.
+import type { ProductImageMeta } from '@open-hybrid-cloud/types'
 
 /**
  * Load the parameter definitions that apply to a product in a given
@@ -124,13 +129,6 @@ export interface CatalogItem {
   imageAlt: string | null
   name: string
   description: string
-}
-
-/** One picture of a product's gallery, without its bytes. */
-export interface ProductImageMeta {
-  id: number
-  /** Never blank: the column is NOT NULL and the service refuses an empty one. */
-  alt: string
 }
 
 export interface ProductDetail extends CatalogItem {

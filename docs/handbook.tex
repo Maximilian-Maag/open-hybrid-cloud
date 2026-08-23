@@ -2676,7 +2676,8 @@ The table below shows the current effective schema.
     \code{users}                    & User accounts (local + SSO) with role-based access \\
     \code{categories}               & Product catalogue categories \\
     \code{products}                 & Infrastructure products offered in the catalogue \\
-    \code{product\_translations}    & Multi-language name + description per product \\
+    \code{product\_translations}    & Multi-language name + short/long description per product \\
+    \code{product\_images}          & A product's pictures in gallery order, each with its own alt text \\
     \code{parameters}               & Configurable inputs for global/category/product scope \\
     \code{ci\_sources}              & CI provider credentials (GitLab / GitHub / Bitbucket) \\
     \code{deployment\_environments} & Named environments linked to a CI source \\
@@ -3572,9 +3573,32 @@ Under \textbf{Administration → Products → New}:
   \item Select the \textbf{Category}.
   \item Enter the product \textbf{Name} in the primary language.
   \item Enter a detailed \textbf{Description} in the primary language.
-  \item Upload a product \textbf{Image} (PNG or JPEG, max 10 MB).
   \item Click \textbf{Save \& Continue}.
 \end{enumerate}
+
+\subsection{Images}
+
+A product has a gallery rather than a single picture. The product page shows
+the first one large with the rest as thumbnails; the catalogue tile and the
+cart row show the first one only, so put the picture that best identifies the
+product at the top.
+
+\begin{enumerate}
+  \item Type an \textbf{Image description} --- what the picture shows, at most
+        300 characters. It is required: it is the \code{alt} text screen
+        readers announce and what browsers show when the picture fails to
+        load, and the upload is refused without it.
+  \item Choose a \textbf{file} (PNG, JPEG or WebP, max 10 MB) and upload. Each
+        upload appends to the gallery instead of replacing what is there.
+  \item Reorder with the \textbf{move earlier} / \textbf{move later} buttons on
+        each picture, and drop one with \textbf{remove}. Removing the first
+        picture promotes the next one to lead.
+\end{enumerate}
+
+\notebox{Up to 8 pictures per product. The format is decided by reading the
+file's leading bytes, not the extension or the browser's declared type, so a
+renamed file is rejected rather than stored under the wrong MIME type. SVG is
+not accepted --- it can carry script.}
 
 \subsection{Parameters}
 

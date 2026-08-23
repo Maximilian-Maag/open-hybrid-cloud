@@ -177,7 +177,8 @@ describe('i18n', () => {
   // everywhere), and the wholesale-fallback heuristic there would misread that.
   it('has every session-management string in every language', () => {
     const keys: (keyof Translations)[] = [
-      'currentSession', 'device', 'ipAddress', 'lastSeen', 'signOutOthers', 'revokeAllSessions', 'rememberMe',
+      'currentSession', 'device', 'ipAddress', 'lastSeen', 'signOutOthers', 'revokeAllSessions',
+      'noActiveSessions', 'rememberMe',
     ]
     for (const { code } of SUPPORTED_LANGUAGES) {
       for (const key of keys) {

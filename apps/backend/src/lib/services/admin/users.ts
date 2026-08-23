@@ -121,20 +121,27 @@ export const updateUser = async (
     update.passwordHash = await bcrypt.hash(password, 12)
   }
 
-  // Read before writing, so "the role actually changed" can be answered without
-  // treating a no-op PUT that resends the same role as a change — which would
-  // sign the user out and write an audit entry for nothing.
-  const [before] = await db
-    .select({ role: users.role })
-    .from(users)
-    .where(eq(users.id, id))
-    .limit(1)
-
   // One transaction: the row change and the revoke that follows from it have to
   // stand or fall together. Revoking after the UPDATE commits means a failure
   // there leaves the account deactivated (or demoted) and still signed in — the
   // exact state this revoke exists to prevent, reached by the error path.
   const updated = await db.transaction(async (tx) => {
+    // Read inside the transaction and FOR UPDATE, so "the role actually changed"
+    // is answered from the same snapshot the write uses. Read outside, a
+    // concurrent update between the two makes the decision stale in both
+    // directions: revoking for a change that did not happen, or leaving a real
+    // demotion's sessions alive.
+    //
+    // The read still exists at all so that a no-op PUT resending the current role
+    // is not treated as a change — which would sign the user out and write an
+    // audit entry for nothing.
+    const [before] = await tx
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1)
+      .for('update')
+
     const [row] = await tx
       .update(users)
       .set(update)

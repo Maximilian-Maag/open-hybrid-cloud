@@ -1,12 +1,12 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
-import Link from 'next/link'
 import { redirect, notFound } from 'next/navigation'
 import type { ProductDetail, Project, CostCenter, ExchangeRate, Category } from '@open-hybrid-cloud/types'
 import { Card } from '@/components/ui/Card'
 import { OrderForm } from '@/components/forms/OrderForm'
 import { AddToCart } from './AddToCart'
 import { ProductImage } from '@/components/ui/ProductImage'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 import { localeToCurrency, convertPrice } from '@/lib/locale'
@@ -77,16 +77,20 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
 
   return (
     <div className="max-w-screen-xl mx-auto">
-      <nav aria-label={t('catalog', lang)} className="mb-3 text-xs text-slate-500">
-        {/* Underlined at rest, not only on hover: this link sits INSIDE a line of
-            text, so colour alone is the only thing that distinguished it — WCAG
-            1.4.1, and the branding colour makes it worse (1.03:1 against the
-            surrounding slate on the default palette). */}
-        <Link href="/catalog" className="underline" style={{ color: 'var(--bp-text)' }}>
-          {t('catalog', lang)}
-        </Link>
-        {categoryName && <> <span aria-hidden="true">›</span> {categoryName}</>}
-      </nav>
+      {/* Was an ad-hoc <nav> named "Catalog" that stopped at the category and
+          never named the product — so it read as a second nav landmark rather
+          than a location. */}
+      <Breadcrumbs
+        label={t('breadcrumb', lang)}
+        items={[
+          { label: t('catalog', lang), href: '/catalog' },
+          // No href: the catalogue's category filter is client state, not a URL
+          // parameter, so there is nothing to link to. A crumb that is not a link
+          // is still a location.
+          ...(categoryName ? [{ label: categoryName }] : []),
+          { label: product.name },
+        ]}
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Picture */}
@@ -155,7 +159,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
                     to the form below. */}
                 <a
                   href="#order"
-                  className="block w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  className="flex min-h-11 w-full items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 >
                   {t('orderNow', lang)}
                 </a>

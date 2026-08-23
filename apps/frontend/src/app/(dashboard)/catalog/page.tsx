@@ -273,7 +273,7 @@ export default function CatalogPage() {
             <li>
               <button
                 onClick={() => setSelectedCategory(null)}
-                className="w-full text-left block px-3 py-1.5 rounded text-sm transition-colors font-semibold"
+                className="w-full text-left flex min-h-11 items-center px-3 py-1.5 rounded text-sm transition-colors font-semibold"
                 style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { color: '#475569' }}
                 onMouseEnter={(e) => { if (selectedCategory !== null) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
                 onMouseLeave={(e) => { if (selectedCategory !== null) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
@@ -285,7 +285,7 @@ export default function CatalogPage() {
               <li key={cat.id}>
                 <button
                   onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
-                  className="w-full text-left block px-3 py-1.5 rounded text-sm transition-colors"
+                  className="w-full text-left flex min-h-11 items-center px-3 py-1.5 rounded text-sm transition-colors"
                   style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)', fontWeight: 600 } : { color: '#475569' }}
                   onMouseEnter={(e) => { if (selectedCategory !== cat.id) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
                   onMouseLeave={(e) => { if (selectedCategory !== cat.id) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
@@ -341,7 +341,7 @@ export default function CatalogPage() {
           <div className="flex flex-wrap gap-2 mb-4 md:hidden">
             <button
               onClick={() => setSelectedCategory(null)}
-              className="rounded-full px-3 py-1 text-sm font-medium transition-colors"
+              className="inline-flex min-h-11 items-center rounded-full px-4 py-1 text-sm font-medium transition-colors"
               style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
             >
               {t('all', lang)}
@@ -350,7 +350,7 @@ export default function CatalogPage() {
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
-                className="rounded-full px-3 py-1 text-sm font-medium transition-colors"
+                className="inline-flex min-h-11 items-center rounded-full px-4 py-1 text-sm font-medium transition-colors"
                 style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
               >
                 {cat.name}
@@ -368,7 +368,7 @@ export default function CatalogPage() {
             <p className="font-semibold text-slate-700">{t('somethingWentWrong', lang)}</p>
             <button
               onClick={() => load()}
-              className="text-sm mt-3 inline-block hover:underline"
+              className="text-sm mt-3 inline-flex min-h-11 items-center hover:underline"
               style={{ color: 'var(--bp-text)' }}
             >
               {t('tryAgain', lang)}
@@ -381,7 +381,7 @@ export default function CatalogPage() {
             </svg>
             <p className="font-semibold text-slate-500">{t('noProducts', lang)}</p>
             {search && (
-              <button onClick={() => setSearch('')} className="text-sm mt-2 inline-block hover:underline" style={{ color: 'var(--bp-text)' }}>
+              <button onClick={() => setSearch('')} className="text-sm mt-2 inline-flex min-h-11 items-center hover:underline" style={{ color: 'var(--bp-text)' }}>
                 ← {t('allProducts', lang)}
               </button>
             )}
@@ -399,7 +399,7 @@ export default function CatalogPage() {
                 <button
                   onClick={loadMore}
                   disabled={loadingMore}
-                  className="rounded-md px-5 py-2.5 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+                  className="rounded-md min-h-11 px-5 py-2.5 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
                   style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
                 >
                   {loadingMore ? t('loading', lang) : t('loadMore', lang)}

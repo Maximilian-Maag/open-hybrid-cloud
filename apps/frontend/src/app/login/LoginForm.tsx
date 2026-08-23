@@ -74,7 +74,8 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         '--bp-ink': readableInk(primaryColor).ink,
         '--bs-ink': readableInk(secondaryColor).ink,
         // The brand colour used AS text on a white card — darkened until it
-        // clears AA, so a pale brand stays readable.
+        // clears readableAccent's default target (7:1), so a pale brand stays
+        // readable.
         '--bp-text': readableAccent(primaryColor),
         // Same boundary as the dashboard gives its filled controls.
         '--bs-edge': readableAccent(secondaryColor, undefined, AA_NON_TEXT),
@@ -120,7 +121,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                 autoFocus
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
+                className="w-full min-h-11 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
                 // Not var(--bs) directly: a pale secondary colour makes the focus ring
                 // invisible. --ring-accent is the AA-adjusted variant.
                 style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
@@ -139,7 +140,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
+                className="w-full min-h-11 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
                 // Not var(--bs) directly: a pale secondary colour makes the focus ring
                 // invisible. --ring-accent is the AA-adjusted variant.
                 style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
@@ -167,7 +168,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              className="w-full min-h-11 rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
               style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
             >
               {loading ? t('signingIn', lang) : t('signIn', lang)}

@@ -488,8 +488,8 @@ export function ProductEditForm({ product, categories, environments, translation
           </div>
           <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-slate-700">Description</label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
+            <label htmlFor="product-description" className="text-sm font-medium text-slate-700">Description</label>
+            <textarea id="product-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           {/* Optional, per the issue. Cleared after saving, since a note describes
@@ -599,7 +599,10 @@ export function ProductEditForm({ product, categories, environments, translation
                     <p className="font-medium text-slate-900">{p.label || p.name}</p>
                     <span className="font-mono text-xs text-slate-600">{p.name}</span>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{p.type}</span>
-                    {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-600">required</span>}
+                    {/* red-700, not red-600: this 12px badge sits on red-100 (#ffe2e2), where
+                        red-600 (#e7000b) measures 3.91:1 — below the 4.5:1 AA needs for text
+                        this size. red-700 (#c10007) on the same ground is 5.27:1. */}
+                    {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">required</span>}
                     {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">sensitive</span>}
                   </div>
                   {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
@@ -673,8 +676,8 @@ export function ProductEditForm({ product, categories, environments, translation
           <Select label="Language" value={translationLang} onChange={(e) => setTranslationLang(e.target.value)} options={LANGUAGES} />
           <Input label="Name" value={translationName} onChange={(e) => setTranslationName(e.target.value)} required />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-slate-700">Description</label>
-            <textarea value={translationDesc} onChange={(e) => setTranslationDesc(e.target.value)} rows={3}
+            <label htmlFor="translation-description" className="text-sm font-medium text-slate-700">Description</label>
+            <textarea id="translation-description" value={translationDesc} onChange={(e) => setTranslationDesc(e.target.value)} rows={3}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div className="flex justify-end gap-3">
@@ -745,9 +748,11 @@ export function ProductEditForm({ product, categories, environments, translation
                   ))}
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-sm font-medium text-slate-700">Fixed Parameters (optional)</label>
+                  {/* Indexed id: this block is rendered once per pipeline step, so a
+                      fixed one would tie every step's label to the first textarea. */}
+                  <label htmlFor={`step-fixed-params-${i}`} className="text-sm font-medium text-slate-700">Fixed Parameters (optional)</label>
                   <p className="text-xs text-slate-500">Override or hardcode order parameters for this step only — one KEY=value per line</p>
-                  <textarea value={step.fixedParams} onChange={(e) => updateStep(i, 'fixedParams', e.target.value)}
+                  <textarea id={`step-fixed-params-${i}`} value={step.fixedParams} onChange={(e) => updateStep(i, 'fixedParams', e.target.value)}
                     rows={2} placeholder="REGION=eu-central"
                     className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
@@ -938,9 +943,12 @@ function EnvironmentRow({
         <Select label="Cost Center Mode" value={costCenterMode}
           onChange={(e) => setCostCenterMode(e.target.value as CostCenterMode)} options={COST_CENTER_MODES} />
         <div className="flex flex-col gap-1 justify-end">
-          <label className="text-sm font-medium text-slate-700">Forced CC</label>
+          {/* Per-environment id, like `trial-${env.id}` below: this form is rendered
+              once per environment, so a fixed id would point every "Forced CC" label
+              at the first environment's checkbox. */}
+          <label htmlFor={`forced-cc-${env.id}`} className="text-sm font-medium text-slate-700">Forced CC</label>
           <div className="flex items-center h-9">
-            <input type="checkbox" checked={forcedCostCenter} onChange={(e) => setForcedCostCenter(e.target.checked)}
+            <input type="checkbox" id={`forced-cc-${env.id}`} checked={forcedCostCenter} onChange={(e) => setForcedCostCenter(e.target.checked)}
               className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
           </div>
         </div>

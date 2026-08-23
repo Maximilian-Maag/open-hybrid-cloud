@@ -27,7 +27,7 @@ export function FavoriteButton({ favorited, busy = false, onToggle, lang }: Prop
       aria-label={label}
       title={label}
       data-testid={`favorite-toggle-${favorited ? 'on' : 'off'}`}
-      className="rounded-full bg-white/90 p-1.5 shadow-sm transition-colors hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50"
+      className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 shadow-sm transition-colors hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50"
     >
       <svg
         className={`h-5 w-5 ${favorited ? 'text-yellow-500' : 'text-slate-400'}`}

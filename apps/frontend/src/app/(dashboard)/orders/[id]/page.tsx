@@ -1,13 +1,13 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { redirect, notFound } from 'next/navigation'
-import Link from 'next/link'
 import type { Order, OrderComment, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { Button } from '@/components/ui/Button'
+import { ButtonLink } from '@/components/ui/Button'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 import { OrderComments } from './OrderComments'
@@ -59,12 +59,19 @@ export default async function OrderDetailPage({ params }: Props) {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      <Breadcrumbs
+        label={t('breadcrumb', lang)}
+        items={[
+          { label: t('orders', lang), href: '/orders' },
+          { label: `${t('order', lang)} #${order.id}` },
+        ]}
+      />
       <PageHeader
         title={`${t('order', lang)} #${order.id}`}
         actions={
-          <Link href="/orders">
-            <Button variant="secondary" size="sm">{t('backToOrders', lang)}</Button>
-          </Link>
+          <ButtonLink href="/orders" variant="secondary" size="sm">
+            {t('backToOrders', lang)}
+          </ButtonLink>
         }
       />
 

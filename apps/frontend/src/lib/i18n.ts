@@ -363,6 +363,8 @@ export type Translations = {
   imprint: string
   back: string
   noImprintConfigured: string
+  /** Accessible name for the breadcrumb trail (WCAG 2.4.8). */
+  breadcrumb: string
   // Admin (#100): shared across the CRUD managers
   save: string
   copy: string
@@ -544,8 +546,10 @@ export type Translations = {
   hexValueSuffix: string
   invalidHexColor: string
   contrastMeetsAA: string
+  contrastMeetsAAA: string
   contrastFailsAA: string
   contrastAaRequires: string
+  contrastAaaRequires: string
   // Admin (#100): SMTP
   smtpSettingsTitle: string
   host: string
@@ -891,6 +895,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Импресум',
     back: 'Назад',
     noImprintConfigured: 'Няма конфигуриран импресум.',
+    breadcrumb: 'Навигационна пътека',
     // Admin (#100): shared across the CRUD managers
     save: 'Запази',
     copy: 'Копирай',
@@ -1072,8 +1077,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex стойност',
     invalidHexColor: 'Невалиден hex цвят. Използвайте #rgb или #rrggbb.',
     contrastMeetsAA: 'Текстът върху този цвят отговаря на WCAG AA.',
+    contrastMeetsAAA: 'Текстът върху този цвят отговаря на WCAG AA и AAA.',
     contrastFailsAA: 'Този цвят не отговаря на WCAG AA. Заглавната част и навигацията ще бъдат трудни за четене — изберете по-тъмен или по-светъл нюанс.',
     contrastAaRequires: 'AA изисква',
+    contrastAaaRequires: 'AAA изисква',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Настройки на SMTP',
     host: 'Хост',
@@ -1412,6 +1419,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Tiráž',
     back: 'Zpět',
     noImprintConfigured: 'Není nastavena žádná tiráž.',
+    breadcrumb: 'Drobečková navigace',
     // Admin (#100): shared across the CRUD managers
     save: 'Uložit',
     copy: 'Kopírovat',
@@ -1593,8 +1601,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex hodnota',
     invalidHexColor: 'Neplatná hex barva. Použijte #rgb nebo #rrggbb.',
     contrastMeetsAA: 'Text na této barvě splňuje WCAG AA.',
+    contrastMeetsAAA: 'Text na této barvě splňuje WCAG AA a AAA.',
     contrastFailsAA: 'Tato barva nesplňuje WCAG AA. Záhlaví a navigace budou obtížně čitelné — vyberte tmavší nebo světlejší odstín.',
     contrastAaRequires: 'AA požaduje',
+    contrastAaaRequires: 'AAA požaduje',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Nastavení SMTP',
     host: 'Server',
@@ -1933,6 +1943,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Kolofon',
     back: 'Tilbage',
     noImprintConfigured: 'Ingen kolofon konfigureret.',
+    breadcrumb: 'Brødkrummesti',
     // Admin (#100): shared across the CRUD managers
     save: 'Gem',
     copy: 'Kopiér',
@@ -2114,8 +2125,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex-værdi',
     invalidHexColor: 'Ikke en gyldig hex-farve. Brug #rgb eller #rrggbb.',
     contrastMeetsAA: 'Tekst på denne farve opfylder WCAG AA.',
+    contrastMeetsAAA: 'Tekst på denne farve opfylder WCAG AA og AAA.',
     contrastFailsAA: 'Denne farve opfylder ikke WCAG AA. Header og navigation bliver svære at læse — vælg en mørkere eller lysere nuance.',
     contrastAaRequires: 'AA kræver',
+    contrastAaaRequires: 'AAA kræver',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'SMTP-indstillinger',
     host: 'Vært',
@@ -2454,6 +2467,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Impressum',
     back: 'Zurück',
     noImprintConfigured: 'Kein Impressum konfiguriert.',
+    breadcrumb: 'Navigationspfad',
     // Admin (#100): shared across the CRUD managers
     save: 'Speichern',
     copy: 'Kopieren',
@@ -2635,8 +2649,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'Hex-Wert',
     invalidHexColor: 'Kein gültiger Hex-Farbwert. Verwenden Sie #rgb oder #rrggbb.',
     contrastMeetsAA: 'Text auf dieser Farbe erfüllt WCAG AA.',
+    contrastMeetsAAA: 'Text auf dieser Farbe erfüllt WCAG AA und AAA.',
     contrastFailsAA: 'Diese Farbe erfüllt WCAG AA nicht. Kopfzeile und Navigation werden schwer lesbar — wählen Sie einen dunkleren oder helleren Ton.',
     contrastAaRequires: 'AA erfordert',
+    contrastAaaRequires: 'AAA erfordert',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'SMTP-Einstellungen',
     host: 'Server',
@@ -2975,6 +2991,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Νομικές πληροφορίες',
     back: 'Πίσω',
     noImprintConfigured: 'Δεν έχουν ρυθμιστεί νομικές πληροφορίες.',
+    breadcrumb: 'Διαδρομή πλοήγησης',
     // Admin (#100): shared across the CRUD managers
     save: 'Αποθήκευση',
     copy: 'Αντιγραφή',
@@ -3156,8 +3173,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'τιμή hex',
     invalidHexColor: 'Μη έγκυρο χρώμα hex. Χρησιμοποιήστε #rgb ή #rrggbb.',
     contrastMeetsAA: 'Το κείμενο σε αυτό το χρώμα πληροί το WCAG AA.',
+    contrastMeetsAAA: 'Το κείμενο σε αυτό το χρώμα πληροί το WCAG AA και AAA.',
     contrastFailsAA: 'Αυτό το χρώμα δεν πληροί το WCAG AA. Η κεφαλίδα και η πλοήγηση θα είναι δυσανάγνωστες — επιλέξτε πιο σκούρη ή πιο ανοιχτή απόχρωση.',
     contrastAaRequires: 'Το AA απαιτεί',
+    contrastAaaRequires: 'Το AAA απαιτεί',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Ρυθμίσεις SMTP',
     host: 'Διακομιστής',
@@ -3496,6 +3515,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Imprint',
     back: 'Back',
     noImprintConfigured: 'No imprint configured.',
+    breadcrumb: 'Breadcrumb',
     // Admin (#100): shared across the CRUD managers
     save: 'Save',
     copy: 'Copy',
@@ -3677,8 +3697,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex value',
     invalidHexColor: 'Not a valid hex colour. Use #rgb or #rrggbb.',
     contrastMeetsAA: 'Text on this colour meets WCAG AA.',
+    contrastMeetsAAA: 'Text on this colour meets WCAG AA and AAA.',
     contrastFailsAA: 'This colour does not meet WCAG AA. The header and navigation will be hard to read — pick a darker or lighter shade.',
     contrastAaRequires: 'AA requires',
+    contrastAaaRequires: 'AAA requires',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'SMTP Settings',
     host: 'Host',
@@ -4017,6 +4039,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Aviso legal',
     back: 'Volver',
     noImprintConfigured: 'No se ha configurado ningún aviso legal.',
+    breadcrumb: 'Ruta de navegación',
     // Admin (#100): shared across the CRUD managers
     save: 'Guardar',
     copy: 'Copiar',
@@ -4198,8 +4221,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'valor hexadecimal',
     invalidHexColor: 'No es un color hexadecimal válido. Use #rgb o #rrggbb.',
     contrastMeetsAA: 'El texto sobre este color cumple con WCAG AA.',
+    contrastMeetsAAA: 'El texto sobre este color cumple con WCAG AA y AAA.',
     contrastFailsAA: 'Este color no cumple con WCAG AA. La cabecera y la navegación serán difíciles de leer — elija un tono más oscuro o más claro.',
     contrastAaRequires: 'AA requiere',
+    contrastAaaRequires: 'AAA requiere',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Configuración SMTP',
     host: 'Servidor',
@@ -4538,6 +4563,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Õiguslik teave',
     back: 'Tagasi',
     noImprintConfigured: 'Õiguslikku teavet pole seadistatud.',
+    breadcrumb: 'Navigeerimistee',
     // Admin (#100): shared across the CRUD managers
     save: 'Salvesta',
     copy: 'Kopeeri',
@@ -4719,8 +4745,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex-väärtus',
     invalidHexColor: 'Ei ole kehtiv hex-värv. Kasutage #rgb või #rrggbb.',
     contrastMeetsAA: 'Tekst sellel värvil vastab WCAG AA nõuetele.',
+    contrastMeetsAAA: 'Tekst sellel värvil vastab WCAG AA ja AAA nõuetele.',
     contrastFailsAA: 'See värv ei vasta WCAG AA nõuetele. Päis ja navigatsioon jäävad raskesti loetavaks — valige tumedam või heledam toon.',
     contrastAaRequires: 'AA nõuab',
+    contrastAaaRequires: 'AAA nõuab',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'SMTP seaded',
     host: 'Server',
@@ -5059,6 +5087,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Oikeudelliset tiedot',
     back: 'Takaisin',
     noImprintConfigured: 'Oikeudellisia tietoja ei ole määritetty.',
+    breadcrumb: 'Navigointipolku',
     // Admin (#100): shared across the CRUD managers
     save: 'Tallenna',
     copy: 'Kopioi',
@@ -5240,8 +5269,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex-arvo',
     invalidHexColor: 'Ei kelvollinen hex-väri. Käytä muotoa #rgb tai #rrggbb.',
     contrastMeetsAA: 'Teksti tällä värillä täyttää WCAG AA -vaatimuksen.',
+    contrastMeetsAAA: 'Teksti tällä värillä täyttää WCAG AA- ja AAA-vaatimukset.',
     contrastFailsAA: 'Tämä väri ei täytä WCAG AA -vaatimusta. Otsikkorivi ja navigaatio ovat vaikealukuisia — valitse tummempi tai vaaleampi sävy.',
     contrastAaRequires: 'AA vaatii',
+    contrastAaaRequires: 'AAA vaatii',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'SMTP-asetukset',
     host: 'Palvelin',
@@ -5580,6 +5611,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Mentions légales',
     back: 'Retour',
     noImprintConfigured: 'Aucune mention légale configurée.',
+    breadcrumb: 'Fil d’Ariane',
     // Admin (#100): shared across the CRUD managers
     save: 'Enregistrer',
     copy: 'Copier',
@@ -5761,8 +5793,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'valeur hexadécimale',
     invalidHexColor: 'Couleur hexadécimale non valide. Utilisez #rgb ou #rrggbb.',
     contrastMeetsAA: 'Le texte sur cette couleur respecte le niveau WCAG AA.',
+    contrastMeetsAAA: 'Le texte sur cette couleur respecte les niveaux WCAG AA et AAA.',
     contrastFailsAA: 'Cette couleur ne respecte pas le niveau WCAG AA. L’en-tête et la navigation seront difficiles à lire — choisissez une teinte plus sombre ou plus claire.',
     contrastAaRequires: 'AA exige',
+    contrastAaaRequires: 'AAA exige',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Paramètres SMTP',
     host: 'Hôte',
@@ -6101,6 +6135,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Fógra dlíthiúil',
     back: 'Ar ais',
     noImprintConfigured: 'Níl aon fhógra dlíthiúil cumraithe.',
+    breadcrumb: 'Slí nascleanúna',
     // Admin (#100): shared across the CRUD managers
     save: 'Sábháil',
     copy: 'Cóipeáil',
@@ -6282,8 +6317,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'luach heicseach',
     invalidHexColor: 'Ní dath heicseach bailí é. Bain úsáid as #rgb nó #rrggbb.',
     contrastMeetsAA: 'Comhlíonann an téacs ar an dath seo WCAG AA.',
+    contrastMeetsAAA: 'Comhlíonann an téacs ar an dath seo WCAG AA agus AAA.',
     contrastFailsAA: 'Ní chomhlíonann an dath seo WCAG AA. Beidh sé deacair an ceanntásc agus an nascleanúint a léamh — roghnaigh imir níos dorcha nó níos gile.',
     contrastAaRequires: 'Éilíonn AA',
+    contrastAaaRequires: 'Éilíonn AAA',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Socruithe SMTP',
     host: 'Óstach',
@@ -6622,6 +6659,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Impresum',
     back: 'Natrag',
     noImprintConfigured: 'Impresum nije konfiguriran.',
+    breadcrumb: 'Navigacijski trag',
     // Admin (#100): shared across the CRUD managers
     save: 'Spremi',
     copy: 'Kopiraj',
@@ -6803,8 +6841,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex vrijednost',
     invalidHexColor: 'Nevažeća hex boja. Koristite #rgb ili #rrggbb.',
     contrastMeetsAA: 'Tekst na ovoj boji zadovoljava WCAG AA.',
+    contrastMeetsAAA: 'Tekst na ovoj boji zadovoljava WCAG AA i AAA.',
     contrastFailsAA: 'Ova boja ne zadovoljava WCAG AA. Zaglavlje i navigacija bit će teško čitljivi — odaberite tamniju ili svjetliju nijansu.',
     contrastAaRequires: 'AA zahtijeva',
+    contrastAaaRequires: 'AAA zahtijeva',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Postavke SMTP-a',
     host: 'Poslužitelj',
@@ -7143,6 +7183,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Impresszum',
     back: 'Vissza',
     noImprintConfigured: 'Nincs impresszum beállítva.',
+    breadcrumb: 'Morzsamenü',
     // Admin (#100): shared across the CRUD managers
     save: 'Mentés',
     copy: 'Másolás',
@@ -7324,8 +7365,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex érték',
     invalidHexColor: 'Nem érvényes hex szín. Használja a #rgb vagy #rrggbb formátumot.',
     contrastMeetsAA: 'Az ezen a színen lévő szöveg megfelel a WCAG AA szintnek.',
+    contrastMeetsAAA: 'Az ezen a színen lévő szöveg megfelel a WCAG AA és AAA szintnek.',
     contrastFailsAA: 'Ez a szín nem felel meg a WCAG AA szintnek. A fejléc és a navigáció nehezen olvasható lesz — válasszon sötétebb vagy világosabb árnyalatot.',
     contrastAaRequires: 'Az AA szint megköveteli',
+    contrastAaaRequires: 'Az AAA szint megköveteli',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'SMTP-beállítások',
     host: 'Szerver',
@@ -7664,6 +7707,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Note legali',
     back: 'Indietro',
     noImprintConfigured: 'Nessuna nota legale configurata.',
+    breadcrumb: 'Percorso di navigazione',
     // Admin (#100): shared across the CRUD managers
     save: 'Salva',
     copy: 'Copia',
@@ -7845,8 +7889,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'valore esadecimale',
     invalidHexColor: 'Colore esadecimale non valido. Usa #rgb o #rrggbb.',
     contrastMeetsAA: 'Il testo su questo colore soddisfa il livello WCAG AA.',
+    contrastMeetsAAA: 'Il testo su questo colore soddisfa i livelli WCAG AA e AAA.',
     contrastFailsAA: 'Questo colore non soddisfa il livello WCAG AA. L’intestazione e la navigazione saranno difficili da leggere — scegli una tonalità più scura o più chiara.',
     contrastAaRequires: 'AA richiede',
+    contrastAaaRequires: 'AAA richiede',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Impostazioni SMTP',
     host: 'Server',
@@ -8185,6 +8231,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Teisinė informacija',
     back: 'Atgal',
     noImprintConfigured: 'Teisinė informacija nesukonfigūruota.',
+    breadcrumb: 'Naršymo kelias',
     // Admin (#100): shared across the CRUD managers
     save: 'Išsaugoti',
     copy: 'Kopijuoti',
@@ -8366,8 +8413,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex reikšmė',
     invalidHexColor: 'Netinkama hex spalva. Naudokite #rgb arba #rrggbb.',
     contrastMeetsAA: 'Tekstas šia spalva atitinka WCAG AA.',
+    contrastMeetsAAA: 'Tekstas šia spalva atitinka WCAG AA ir AAA.',
     contrastFailsAA: 'Šia spalva neatitinka WCAG AA. Antraštę ir navigaciją bus sunku perskaityti — pasirinkite tamsesnį arba šviesesnį atspalvį.',
     contrastAaRequires: 'AA reikalauja',
+    contrastAaaRequires: 'AAA reikalauja',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'SMTP nustatymai',
     host: 'Serveris',
@@ -8706,6 +8755,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Juridiskā informācija',
     back: 'Atpakaļ',
     noImprintConfigured: 'Juridiskā informācija nav konfigurēta.',
+    breadcrumb: 'Navigācijas ceļš',
     // Admin (#100): shared across the CRUD managers
     save: 'Saglabāt',
     copy: 'Kopēt',
@@ -8887,8 +8937,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex vērtība',
     invalidHexColor: 'Nav derīga hex krāsa. Izmantojiet #rgb vai #rrggbb.',
     contrastMeetsAA: 'Teksts uz šīs krāsas atbilst WCAG AA.',
+    contrastMeetsAAA: 'Teksts uz šīs krāsas atbilst WCAG AA un AAA.',
     contrastFailsAA: 'Šī krāsa neatbilst WCAG AA. Galveni un navigāciju būs grūti izlasīt — izvēlieties tumšāku vai gaišāku toni.',
     contrastAaRequires: 'AA prasa',
+    contrastAaaRequires: 'AAA prasa',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'SMTP iestatījumi',
     host: 'Serveris',
@@ -9227,6 +9279,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Avviż legali',
     back: 'Lura',
     noImprintConfigured: 'L-ebda avviż legali mhu kkonfigurat.',
+    breadcrumb: 'Passaġġ ta’ navigazzjoni',
     // Admin (#100): shared across the CRUD managers
     save: 'Salva',
     copy: 'Ikkopja',
@@ -9408,8 +9461,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'valur hex',
     invalidHexColor: 'Mhux kulur hex validu. Uża #rgb jew #rrggbb.',
     contrastMeetsAA: 'It-test fuq dan il-kulur jissodisfa WCAG AA.',
+    contrastMeetsAAA: 'It-test fuq dan il-kulur jissodisfa WCAG AA u AAA.',
     contrastFailsAA: 'Dan il-kulur ma jissodisfax WCAG AA. Il-header u n-navigazzjoni se jkunu diffiċli biex jinqraw — agħżel nuance eħxen jew iktar ċar.',
     contrastAaRequires: 'AA jeħtieġ',
+    contrastAaaRequires: 'AAA jeħtieġ',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Settings tal-SMTP',
     host: 'Server',
@@ -9748,6 +9803,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Colofon',
     back: 'Terug',
     noImprintConfigured: 'Geen colofon geconfigureerd.',
+    breadcrumb: 'Kruimelpad',
     // Admin (#100): shared across the CRUD managers
     save: 'Opslaan',
     copy: 'Kopiëren',
@@ -9929,8 +9985,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hexwaarde',
     invalidHexColor: 'Geen geldige hexkleur. Gebruik #rgb of #rrggbb.',
     contrastMeetsAA: 'Tekst op deze kleur voldoet aan WCAG AA.',
+    contrastMeetsAAA: 'Tekst op deze kleur voldoet aan WCAG AA en AAA.',
     contrastFailsAA: 'Deze kleur voldoet niet aan WCAG AA. De header en navigatie worden moeilijk leesbaar — kies een donkerdere of lichtere tint.',
     contrastAaRequires: 'AA vereist',
+    contrastAaaRequires: 'AAA vereist',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'SMTP-instellingen',
     host: 'Server',
@@ -10269,6 +10327,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Nota prawna',
     back: 'Wstecz',
     noImprintConfigured: 'Nie skonfigurowano noty prawnej.',
+    breadcrumb: 'Ścieżka nawigacyjna',
     // Admin (#100): shared across the CRUD managers
     save: 'Zapisz',
     copy: 'Kopiuj',
@@ -10450,8 +10509,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'wartość hex',
     invalidHexColor: 'Nieprawidłowy kolor hex. Użyj #rgb lub #rrggbb.',
     contrastMeetsAA: 'Tekst na tym kolorze spełnia WCAG AA.',
+    contrastMeetsAAA: 'Tekst na tym kolorze spełnia WCAG AA i AAA.',
     contrastFailsAA: 'Ten kolor nie spełnia WCAG AA. Nagłówek i nawigacja będą trudne do odczytania — wybierz ciemniejszy lub jaśniejszy odcień.',
     contrastAaRequires: 'AA wymaga',
+    contrastAaaRequires: 'AAA wymaga',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Ustawienia SMTP',
     host: 'Serwer',
@@ -10790,6 +10851,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Informações legais',
     back: 'Voltar',
     noImprintConfigured: 'Nenhuma informação legal configurada.',
+    breadcrumb: 'Caminho de navegação',
     // Admin (#100): shared across the CRUD managers
     save: 'Guardar',
     copy: 'Copiar',
@@ -10971,8 +11033,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'valor hexadecimal',
     invalidHexColor: 'Cor hexadecimal inválida. Use #rgb ou #rrggbb.',
     contrastMeetsAA: 'O texto sobre esta cor cumpre o nível WCAG AA.',
+    contrastMeetsAAA: 'O texto sobre esta cor cumpre os níveis WCAG AA e AAA.',
     contrastFailsAA: 'Esta cor não cumpre o nível WCAG AA. O cabeçalho e a navegação ficarão difíceis de ler — escolha um tom mais escuro ou mais claro.',
     contrastAaRequires: 'O AA exige',
+    contrastAaaRequires: 'O AAA exige',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Definições SMTP',
     host: 'Servidor',
@@ -11311,6 +11375,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Informații legale',
     back: 'Înapoi',
     noImprintConfigured: 'Nicio informație legală configurată.',
+    breadcrumb: 'Traseu de navigare',
     // Admin (#100): shared across the CRUD managers
     save: 'Salvați',
     copy: 'Copiați',
@@ -11492,8 +11557,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'valoare hexadecimală',
     invalidHexColor: 'Culoare hexadecimală nevalidă. Utilizați #rgb sau #rrggbb.',
     contrastMeetsAA: 'Textul pe această culoare respectă WCAG AA.',
+    contrastMeetsAAA: 'Textul pe această culoare respectă WCAG AA și AAA.',
     contrastFailsAA: 'Această culoare nu respectă WCAG AA. Antetul și navigarea vor fi dificil de citit — alegeți o nuanță mai întunecată sau mai clară.',
     contrastAaRequires: 'AA necesită',
+    contrastAaaRequires: 'AAA necesită',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Setări SMTP',
     host: 'Server',
@@ -11832,6 +11899,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Правовая информация',
     back: 'Назад',
     noImprintConfigured: 'Правовая информация не настроена.',
+    breadcrumb: 'Навигационная цепочка',
     // Admin (#100): shared across the CRUD managers
     save: 'Сохранить',
     copy: 'Копировать',
@@ -12013,8 +12081,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex-значение',
     invalidHexColor: 'Недопустимый hex-цвет. Используйте #rgb или #rrggbb.',
     contrastMeetsAA: 'Текст на этом цвете соответствует WCAG AA.',
+    contrastMeetsAAA: 'Текст на этом цвете соответствует WCAG AA и AAA.',
     contrastFailsAA: 'Этот цвет не соответствует WCAG AA. Заголовок и навигация будет трудно читать — выберите более тёмный или светлый оттенок.',
     contrastAaRequires: 'AA требует',
+    contrastAaaRequires: 'AAA требует',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Настройки SMTP',
     host: 'Хост',
@@ -12353,6 +12423,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Tiráž',
     back: 'Späť',
     noImprintConfigured: 'Nie je nastavená žiadna tiráž.',
+    breadcrumb: 'Navigačná cesta',
     // Admin (#100): shared across the CRUD managers
     save: 'Uložiť',
     copy: 'Kopírovať',
@@ -12534,8 +12605,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex hodnota',
     invalidHexColor: 'Neplatná hex farba. Použite #rgb alebo #rrggbb.',
     contrastMeetsAA: 'Text na tejto farbe spĺňa WCAG AA.',
+    contrastMeetsAAA: 'Text na tejto farbe spĺňa WCAG AA a AAA.',
     contrastFailsAA: 'Táto farba nespĺňa WCAG AA. Hlavička a navigácia budú ťažko čitateľné — vyberte tmavší alebo svetlejší odtieň.',
     contrastAaRequires: 'AA požaduje',
+    contrastAaaRequires: 'AAA požaduje',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Nastavenia SMTP',
     host: 'Server',
@@ -12874,6 +12947,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Pravne informacije',
     back: 'Nazaj',
     noImprintConfigured: 'Pravne informacije niso nastavljene.',
+    breadcrumb: 'Drobtinična navigacija',
     // Admin (#100): shared across the CRUD managers
     save: 'Shrani',
     copy: 'Kopiraj',
@@ -13055,8 +13129,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hex vrednost',
     invalidHexColor: 'Neveljavna hex barva. Uporabite #rgb ali #rrggbb.',
     contrastMeetsAA: 'Besedilo na tej barvi izpolnjuje WCAG AA.',
+    contrastMeetsAAA: 'Besedilo na tej barvi izpolnjuje WCAG AA in AAA.',
     contrastFailsAA: 'Ta barva ne izpolnjuje WCAG AA. Glava in navigacija bosta težko berljivi — izberite temnejši ali svetlejši odtenek.',
     contrastAaRequires: 'AA zahteva',
+    contrastAaaRequires: 'AAA zahteva',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'Nastavitve SMTP',
     host: 'Gostitelj',
@@ -13395,6 +13471,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     imprint: 'Juridisk information',
     back: 'Tillbaka',
     noImprintConfigured: 'Ingen juridisk information konfigurerad.',
+    breadcrumb: 'Synlig sökväg',
     // Admin (#100): shared across the CRUD managers
     save: 'Spara',
     copy: 'Kopiera',
@@ -13576,8 +13653,10 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     hexValueSuffix: 'hexvärde',
     invalidHexColor: 'Ingen giltig hexfärg. Använd #rgb eller #rrggbb.',
     contrastMeetsAA: 'Text på den här färgen uppfyller WCAG AA.',
+    contrastMeetsAAA: 'Text på den här färgen uppfyller WCAG AA och AAA.',
     contrastFailsAA: 'Den här färgen uppfyller inte WCAG AA. Sidhuvudet och navigeringen blir svåra att läsa — välj en mörkare eller ljusare nyans.',
     contrastAaRequires: 'AA kräver',
+    contrastAaaRequires: 'AAA kräver',
     // Admin (#100): SMTP
     smtpSettingsTitle: 'SMTP-inställningar',
     host: 'Värd',

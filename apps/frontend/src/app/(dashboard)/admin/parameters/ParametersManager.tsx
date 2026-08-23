@@ -143,7 +143,10 @@ export function ParametersManager({ token }: Props) {
                   <div className="flex items-center gap-2 mb-0.5">
                     <p className="font-medium text-slate-900">{p.label || p.name}</p>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{t(TYPE_KEYS[p.type], lang)}</span>
-                    {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-600">{t('requiredBadge', lang)}</span>}
+                    {/* red-700, not red-600: this 12px badge sits on red-100 (#ffe2e2), where
+                        red-600 (#e7000b) measures 3.91:1 — below the 4.5:1 AA needs for text
+                        this size. red-700 (#c10007) on the same ground is 5.27:1. */}
+                    {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">{t('requiredBadge', lang)}</span>}
                     {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">{t('sensitiveBadge', lang)}</span>}
                   </div>
                   <p className="text-xs font-mono text-slate-600">{p.name}</p>

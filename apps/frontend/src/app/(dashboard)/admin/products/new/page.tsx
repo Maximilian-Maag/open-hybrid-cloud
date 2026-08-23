@@ -5,9 +5,9 @@ import { get } from '@/lib/api'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { NewProductForm } from './NewProductForm'
-import Link from 'next/link'
-import { Button } from '@/components/ui/Button'
+import { ButtonLink } from '@/components/ui/Button'
 
 export default async function NewProductPage() {
   const session = await auth()
@@ -24,12 +24,20 @@ export default async function NewProductPage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      <Breadcrumbs
+        label={t('breadcrumb', lang)}
+        items={[
+          { label: t('admin', lang), href: '/admin' },
+          { label: t('productsTitle', lang), href: '/admin/products' },
+          { label: t('newProduct', lang) },
+        ]}
+      />
       <PageHeader
         title={t('newProduct', lang)}
         actions={
-          <Link href="/admin/products">
-            <Button variant="secondary" size="sm">{t('backToProducts', lang)}</Button>
-          </Link>
+          <ButtonLink href="/admin/products" variant="secondary" size="sm">
+            {t('backToProducts', lang)}
+          </ButtonLink>
         }
       />
       <NewProductForm categories={categories} token={token} />

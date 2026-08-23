@@ -1,6 +1,5 @@
 import { auth } from '@/lib/auth'
 import { redirect, notFound } from 'next/navigation'
-import Link from 'next/link'
 import type {
   Role,
   ProductDetail,
@@ -13,7 +12,8 @@ import { get } from '@/lib/api'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { Button } from '@/components/ui/Button'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
+import { ButtonLink } from '@/components/ui/Button'
 import { ProductEditForm } from './ProductEditForm'
 import { ProductImageUpload } from '../ProductImageUpload'
 import { Card } from '@/components/ui/Card'
@@ -57,13 +57,25 @@ export default async function AdminProductDetailPage({ params, searchParams }: P
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      {/* Two levels deep, so this is the page 2.4.8 is really about: reached from
+          /admin/products, which is itself reached from /admin. The product's own
+          name is not translated — it is the record's name, and the same string the
+          heading and the products table show. */}
+      <Breadcrumbs
+        label={t('breadcrumb', lang)}
+        items={[
+          { label: t('admin', lang), href: '/admin' },
+          { label: t('productsTitle', lang), href: '/admin/products' },
+          { label: product.name },
+        ]}
+      />
       <PageHeader
         title={product.name}
         subtitle={t('editProductDetailsSubtitle', lang)}
         actions={
-          <Link href="/admin/products">
-            <Button variant="secondary" size="sm">{t('backToProducts', lang)}</Button>
-          </Link>
+          <ButtonLink href="/admin/products" variant="secondary" size="sm">
+            {t('backToProducts', lang)}
+          </ButtonLink>
         }
       />
       {/* Its own card, above the details form: the picture is uploaded on its own

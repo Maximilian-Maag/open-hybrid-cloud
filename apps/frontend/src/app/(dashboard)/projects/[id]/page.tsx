@@ -3,12 +3,13 @@ import { get } from '@/lib/api'
 import { redirect, notFound } from 'next/navigation'
 import type { Project, Order, CostCenter } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Table } from '@/components/ui/Table'
 import { ProjectEditForm } from './ProjectEditForm'
 import Link from 'next/link'
-import { Button } from '@/components/ui/Button'
+import { ButtonLink } from '@/components/ui/Button'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 
@@ -41,12 +42,19 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      <Breadcrumbs
+        label={t('breadcrumb', lang)}
+        items={[
+          { label: t('projects', lang), href: '/projects' },
+          { label: project.name },
+        ]}
+      />
       <PageHeader
         title={project.name}
         actions={
-          <Link href="/projects">
-            <Button variant="secondary" size="sm">{t('backToProjects', lang)}</Button>
-          </Link>
+          <ButtonLink href="/projects" variant="secondary" size="sm">
+            {t('backToProjects', lang)}
+          </ButtonLink>
         }
       />
 

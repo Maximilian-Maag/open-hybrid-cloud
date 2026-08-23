@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { redirect, notFound } from 'next/navigation'
 import type { InfrastructureDetail, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from '../InfraActions'
@@ -56,6 +57,13 @@ export default async function InfrastructureDetailPage({ params }: Props) {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      <Breadcrumbs
+        label={t('breadcrumb', lang)}
+        items={[
+          { label: t('infrastructureTitle', lang), href: '/infrastructure' },
+          { label: element.productName ?? `Product #${element.productId}` },
+        ]}
+      />
       <PageHeader
         title={element.productName ?? `Product #${element.productId}`}
         subtitle={[element.environmentName, element.projectName].filter(Boolean).join(' · ')}
@@ -66,7 +74,7 @@ export default async function InfrastructureDetailPage({ params }: Props) {
                 e2e/a11y.spec.ts rejects and screen readers announce twice. */}
             <Link
               href="/infrastructure"
-              className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
             >
               {t('infrastructureTitle', lang)}
             </Link>

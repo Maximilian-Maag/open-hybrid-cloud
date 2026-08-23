@@ -249,7 +249,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
             )}
             {callbackSecret ? (
               <div className="flex items-center gap-2">
-                <input readOnly value={callbackSecret} className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs font-mono text-slate-700 bg-slate-50" />
+                <input readOnly value={callbackSecret} className="min-h-11 flex-1 rounded border border-slate-300 px-2 py-1 text-xs font-mono text-slate-700 bg-slate-50" />
                 <Button type="button" size="sm" variant="secondary" onClick={copyCallbackSecret}>{copied ? t('copied', lang) : t('copy', lang)}</Button>
               </div>
             ) : (

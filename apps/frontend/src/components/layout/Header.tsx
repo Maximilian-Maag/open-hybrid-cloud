@@ -90,12 +90,15 @@ export function Header({
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('searchProducts', lang)}
               aria-label={t('searchProducts', lang)}
-              className="flex-1 bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+              // min-h-11 sizes the whole search control: the submit button is
+              // self-stretch, so the field is what decides whether either of them
+              // clears the 44px WCAG 2.5.5 target. It was 36px.
+              className="min-h-11 flex-1 bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
             />
             <button
               type="submit"
               aria-label={t('search', lang)}
-              className="px-4 py-2 hover:brightness-95 transition-all flex items-center self-stretch"
+              className="px-4 py-2 min-w-11 justify-center hover:brightness-95 transition-all flex items-center self-stretch"
               style={{ backgroundColor: 'var(--bs)', color: 'var(--bs-ink)' }}
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -112,7 +115,9 @@ export function Header({
 
           {/* User dropdown */}
           <details ref={accountRef} className="relative group">
-            <summary className="list-none cursor-pointer select-none flex flex-col items-end leading-tight rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
+            {/* min-h-11: a <summary> is a pointer target, and two lines of small
+                text came to 36px. */}
+            <summary className="list-none cursor-pointer select-none flex flex-col items-end justify-center min-h-11 leading-tight rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
               style={{ color: 'var(--bp-ink)' }}>
               {userName && <span className="text-xs">{userName}</span>}
               <span className="text-sm font-semibold">{t('myAccount', lang)}</span>
@@ -121,14 +126,14 @@ export function Header({
               className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1"
               onClick={() => { if (accountRef.current) accountRef.current.open = false }}
             >
-              <Link href="/orders" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('orders', lang)}</Link>
-              <Link href="/projects" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('projects', lang)}</Link>
+              <Link href="/orders" className="flex min-h-11 items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('orders', lang)}</Link>
+              <Link href="/projects" className="flex min-h-11 items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('projects', lang)}</Link>
               <hr className="my-1 border-slate-100" />
-              <Link href="/settings" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('profile', lang)}</Link>
+              <Link href="/settings" className="flex min-h-11 items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('profile', lang)}</Link>
               <hr className="my-1 border-slate-100" />
               <button
                 onClick={() => signOut({ redirectTo: '/login' })}
-                className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:text-red-600 transition-colors"
+                className="w-full text-left flex min-h-11 items-center px-4 py-2 text-sm text-slate-700 hover:text-red-600 transition-colors"
               >
                 {t('signOut', lang)}
               </button>

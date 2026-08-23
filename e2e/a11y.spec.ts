@@ -5,19 +5,25 @@ import type { Result } from 'axe-core'
 /**
  * Accessibility gate.
  *
- * WCAG 2.1 A + AA across every page a user can reach, plus the dialog states —
- * this app puts most of its forms inside <dialog>, and a static scan never opens
- * them, which is how six admin modals went unchecked.
+ * WCAG 2.1 A + AA across every page a user can reach, plus the AAA criteria this
+ * app can actually honour, plus the dialog states — this app puts most of its
+ * forms inside <dialog>, and a static scan never opens them, which is how six
+ * admin modals went unchecked.
  *
- * Two things this suite deliberately does NOT rely on:
+ * Three things this suite deliberately does NOT rely on:
  *
  *  1. Default branding. The header, nav, hero and footer are painted on the
  *     operator's chosen colour. Hardcoded white text passed with the shipped
  *     dark default and collapsed to 1.88:1 on a mid-tone amber, so the contrast
  *     check runs against a deliberately hostile colour as well. See
  *     apps/frontend/src/lib/contrast.ts.
- *  2. axe alone. Focus visibility and accessible-name language are not things
- *     axe can test, so they get explicit assertions at the bottom.
+ *  2. axe alone. Focus visibility, target size and accessible-name language are
+ *     not things axe can test at the level this app claims, so they get explicit
+ *     assertions at the bottom.
+ *  3. "AAA" as a slogan. Full AAA is not reachable for an app whose brand colour
+ *     is chosen by the operator, so the AAA claim here is partial and the parts
+ *     that were refused are written down — with the arithmetic — in
+ *     docs/guides/accessibility.md. Read that before adding or removing a tag.
  */
 
 const PUBLIC_PAGES = ['/login', '/impressum']
@@ -48,7 +54,44 @@ const AUTHED_PAGES = [
   '/admin/exchange-rates',
 ]
 
-const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']
+/**
+ * The tags requested from axe.
+ *
+ * The AAA tags earn exactly three rules — axe has no others — and all three ship
+ * `enabled: false`. Naming a tag explicitly runs them anyway: axe's `matchTags`
+ * only consults `rule.enabled` when the include list is empty. wcag21aaa and
+ * wcag22aaa match nothing today; they are here so a future axe release that adds
+ * an AAA rule is picked up rather than silently skipped.
+ */
+const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag2aaa', 'wcag21aaa', 'wcag22aaa']
+
+/**
+ * The one AAA rule this app cannot satisfy, and why it is switched off rather
+ * than tolerated.
+ *
+ * 1.4.6 wants 7:1. The chrome is painted on the OPERATOR's colour, and the only
+ * two candidate inks are near-black and white — for a wide band of mid-tones
+ * neither reaches 7:1 (#ca8a04 tops out at 6.05, #16a34a at 5.39). There is no
+ * change the app can make: the background is the brand. Since the chrome is on
+ * every page, leaving the rule on would mean a gate that is red forever, which is
+ * a gate nobody reads. The half that IS reachable — the brand colour used as text
+ * on our own surfaces — was raised to 7:1 in readableAccent instead, and
+ * apps/frontend/src/lib/contrast.test.ts holds it there.
+ *
+ * Full reasoning, and the measured table: docs/guides/accessibility.md.
+ */
+const RULES_OUT_OF_SCOPE = ['color-contrast-enhanced']
+
+/**
+ * Rules whose "needs review" result is treated as a failure.
+ *
+ * `identical-links-same-purpose` (2.4.9) can never report a violation: when it
+ * finds two links with the same name pointing at different URLs it sets the
+ * result to undefined, which surfaces as `incomplete`. Asserting only on
+ * `violations` would mean the rule was requested and then ignored — which is how
+ * twenty "Details" links and one "Edit" per admin product row would have stayed.
+ */
+const REVIEW_IS_FAILURE = ['identical-links-same-purpose']
 
 /** Compact, greppable failure output — the default axe dump is unreadable in CI. */
 const format = (violations: Result[]): string =>
@@ -108,27 +151,80 @@ const focusProbe = () => {
   }
 }
 
-const scan = async (page: import('@playwright/test').Page) =>
-  await new AxeBuilder({ page }).withTags(WCAG).analyze()
+type Page = import('@playwright/test').Page
+
+const scan = async (page: Page) =>
+  await new AxeBuilder({ page }).withTags(WCAG).disableRules(RULES_OUT_OF_SCOPE).analyze()
+
+/** Scan and judge, including the review-only rules. `where` names the page. */
+const expectAccessible = async (page: Page, where: string) => {
+  const { violations, incomplete } = await scan(page)
+  expect(violations, `${where}\n${format(violations)}`).toEqual([])
+
+  const review = incomplete.filter((r) => REVIEW_IS_FAILURE.includes(r.id))
+  expect(review, `${where} — needs review, which this suite counts as failing\n${format(review)}`).toEqual([])
+}
+
+/** 44 CSS px: the WCAG 2.5.5 target size. */
+const TARGET_MIN = 44
+
+/**
+ * Controls on the page smaller than `min` in either dimension.
+ *
+ * axe has no rule for 2.5.5 — its `target-size` rule is the WCAG 2.2 AA criterion
+ * (2.5.8, 24px), which is a different and weaker claim — so this measures it.
+ *
+ * Scope is CONTROLS, not every clickable thing. Content links are excluded on
+ * purpose: they sit inside lines of text a few pixels apart, and the exclusion is
+ * argued in docs/guides/accessibility.md rather than hidden here. Checkboxes,
+ * radios and file inputs are excluded for the reasons recorded there too — the
+ * first two are a real gap, the third is 2.5.5's own user-agent exception.
+ *
+ * Zero-sized elements are skipped rather than failed: a control inside a closed
+ * <details> or a hidden panel measures 0x0, and it is not a target while it
+ * cannot be pointed at.
+ */
+const undersizedControls = (min: number) => {
+  const SELECTOR = [
+    'button',
+    'summary',
+    'select',
+    'textarea',
+    '[role="button"]',
+    'input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"])',
+  ].join(', ')
+
+  return Array.from(document.querySelectorAll<HTMLElement>(SELECTOR))
+    .map((el) => {
+      const r = el.getBoundingClientRect()
+      return { el, w: r.width, h: r.height }
+    })
+    .filter(({ w, h }) => w > 0 && h > 0)
+    // Sub-pixel layout: a 44px box can measure 43.99.
+    .filter(({ w, h }) => w < min - 0.5 || h < min - 0.5)
+    .map(({ el, w, h }) => {
+      const name = el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 40) ?? ''
+      return `${el.tagName.toLowerCase()}${el.getAttribute('type') ? `:${el.getAttribute('type')}` : ''} ` +
+        `"${name}" is ${w.toFixed(1)}x${h.toFixed(1)} — class="${el.className}"`
+    })
+}
 
 test.describe('Accessibility — public pages', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
   for (const path of PUBLIC_PAGES) {
-    test(`${path} has no WCAG A/AA violations`, async ({ page }) => {
+    test(`${path} is clean at A, AA and the AAA criteria in scope`, async ({ page }) => {
       await page.goto(path)
-      const { violations } = await scan(page)
-      expect(violations, `\n${format(violations)}`).toEqual([])
+      await expectAccessible(page, path)
     })
   }
 })
 
 test.describe('Accessibility — authenticated pages', () => {
   for (const path of AUTHED_PAGES) {
-    test(`${path} has no WCAG A/AA violations`, async ({ page }) => {
+    test(`${path} is clean at A, AA and the AAA criteria in scope`, async ({ page }) => {
       await page.goto(path)
-      const { violations } = await scan(page)
-      expect(violations, `\n${format(violations)}`).toEqual([])
+      await expectAccessible(page, path)
     })
   }
 })
@@ -154,13 +250,12 @@ test.describe('Accessibility — dialogs', () => {
   ]
 
   for (const [path, buttonName] of MODALS) {
-    test(`${path} dialog (${buttonName.source}) has no WCAG A/AA violations`, async ({ page }) => {
+    test(`${path} dialog (${buttonName.source}) is clean at A, AA and the AAA criteria in scope`, async ({ page }) => {
       await page.goto(path)
       await page.getByRole('button', { name: buttonName }).first().click()
       await expect(page.locator('dialog[open]')).toBeVisible()
 
-      const { violations } = await scan(page)
-      expect(violations, `\n${format(violations)}`).toEqual([])
+      await expectAccessible(page, `${path} dialog`)
 
       // A modal that traps focus and closes on Escape is the reason the native
       // <dialog> element was chosen; assert it so a hand-rolled overlay can't
@@ -354,6 +449,15 @@ test.describe('Accessibility — things axe cannot check', () => {
  * over a page that never rendered.
  */
 test.describe('Accessibility — detail pages', () => {
+  // t('breadcrumb', 'en'). The saved session carries no lang cookie, so these
+  // pages render in English.
+  // Located structurally, NOT by the English label. `getLang()` falls back to the
+  // Accept-Language header when no cookie is set, so a runner negotiating any
+  // other locale would translate the aria-label out from under a hard-coded
+  // selector — and the test would fail for a language setting rather than for an
+  // accessibility problem. Any labelled nav inside main is the trail; there is
+  // only one.
+
   const DETAIL_PAGES = [
     { from: '/infrastructure', link: 'a[href^="/infrastructure/"]', name: 'an infrastructure element' },
     { from: '/orders', link: 'a[href^="/orders/"]', name: 'an order' },
@@ -371,7 +475,7 @@ test.describe('Accessibility — detail pages', () => {
   ]
 
   for (const { from, link, name } of DETAIL_PAGES) {
-    test(`${name} has no WCAG A/AA violations`, async ({ page }) => {
+    test(`${name} is clean, and says where it is`, async ({ page }) => {
       await page.goto(from)
       const first = page.locator(`main ${link}`).first()
       // Wait before concluding there is nothing to open: the catalogue fetches its
@@ -389,8 +493,111 @@ test.describe('Accessibility — detail pages', () => {
       // is still streaming in would pass for the wrong reason.
       await expect(page.locator('main h1')).toBeVisible({ timeout: 30000 })
 
-      const { violations } = await scan(page)
-      expect(violations, `\n${format(violations)}`).toEqual([])
+      await expectAccessible(page, `${from} → detail`)
+
+      // 2.4.8 Location. Every one of these pages is reached FROM a list, and only
+      // the product page used to say so — with an ad-hoc <nav> named "Catalog",
+      // which reads as a second navigation landmark rather than a location. The
+      // last crumb is the assertion that matters: a trail whose final item is not
+      // marked as the current page states a path, not a position.
+      const trail = page.locator('main nav[aria-label] ol')
+      await expect(trail, 'expected a breadcrumb trail (WCAG 2.4.8)').toBeVisible()
+      await expect(trail.locator('li')).not.toHaveCount(0)
+      await expect(trail.locator('[aria-current="page"]')).toHaveCount(1)
     })
   }
+})
+
+/**
+ * WCAG 2.5.5 Target Size (AAA) — 44x44 CSS px.
+ *
+ * Its own block because axe cannot do it. axe ships `target-size`, but that rule
+ * is WCAG 2.2 AA (2.5.8) at 24px: passing it says nothing about 2.5.5. So this
+ * measures the rendered boxes, which also means it catches a control that a
+ * caller's `className` shrank after the primitive was fixed.
+ *
+ * Before this, `size="sm"` buttons were 28px, `md` 36px, text inputs 38px, the
+ * modal close 28px and the toast dismiss 16px. The floor now lives in the
+ * primitives (`Button`, `Input`, `Select`) so a new call site inherits it.
+ *
+ * What is NOT measured, and why, is in docs/guides/accessibility.md: content
+ * links, native checkboxes and native file inputs.
+ */
+test.describe('Accessibility — target size (2.5.5)', () => {
+  // A spread rather than every route: these six between them render the whole
+  // control vocabulary — the chrome, the catalogue's own filter buttons, a table
+  // with row actions, a dense admin form, and the colour pickers.
+  const PAGES = ['/', '/catalog', '/orders', '/infrastructure', '/admin/products', '/admin/branding']
+
+  for (const path of PAGES) {
+    test(`every control on ${path} is at least 44x44`, async ({ page }) => {
+      await page.goto(path)
+      await expect(page.locator('main h1, main h2').first()).toBeVisible({ timeout: 30000 })
+
+      const undersized = await page.evaluate(undersizedControls, TARGET_MIN)
+      expect(undersized, `${path}:\n  ${undersized.join('\n  ')}`).toEqual([])
+    })
+  }
+
+  test('the controls inside a dialog are targets too', async ({ page }) => {
+    // Most of this app's form controls only exist while a modal is open, so a
+    // closed-page sweep would miss the majority of them — the same blind spot the
+    // dialog scans above exist for.
+    await page.goto('/admin/categories')
+    await page.getByRole('button', { name: /add category/i }).first().click()
+    await expect(page.locator('dialog[open]')).toBeVisible()
+
+    // Wait for the entrance animation to land before measuring. `modal-in` runs
+    // scale(0.95) → scale(1) over 200ms (globals.css), and getBoundingClientRect
+    // reports the TRANSFORMED box — so a 44px control inside the dialog measures
+    // 42.7 while the animation is still in flight, and this test failed on the
+    // close button, both inputs, Cancel and Save for a reason that has nothing to
+    // do with their size. Awaiting the animations rather than sleeping a guessed
+    // number of milliseconds: the wait then cannot be too short on a loaded runner.
+    await page
+      .locator('dialog[open]')
+      .evaluate((d) => Promise.all(d.getAnimations({ subtree: true }).map((a) => a.finished)))
+
+    const undersized = await page.evaluate(undersizedControls, TARGET_MIN)
+    expect(undersized, `add-category dialog:\n  ${undersized.join('\n  ')}`).toEqual([])
+  })
+})
+
+/**
+ * The AAA criteria that are asserted rather than excluded, and that no rule covers.
+ *
+ * Each of these is one clause of a criterion this app does NOT claim in full — see
+ * docs/guides/accessibility.md for what the rest of 1.4.8 would need. Asserting
+ * the reachable clause is still worth it: it is the part that regresses silently.
+ */
+test.describe('Accessibility — AAA clauses with no axe rule', () => {
+  test('no block of text is justified (1.4.8)', async ({ page }) => {
+    // Justified text opens rivers of white space down a paragraph, which is the
+    // one part of 1.4.8 that is both free and easy to reintroduce with a stray
+    // `text-justify`.
+    await page.goto('/catalog')
+    const justified = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('main p, main li, main dd, main td'))
+        .filter((el) => getComputedStyle(el).textAlign === 'justify')
+        .map((el) => `${el.tagName.toLowerCase()}.${el.className}`),
+    )
+    expect(justified, `justified text found:\n  ${justified.join('\n  ')}`).toEqual([])
+  })
+
+  test('the breadcrumb trail is a list, and only its last item is the current page (2.4.8)', async ({ page }) => {
+    // /admin/products/new is the deepest static route, so it is the one that
+    // proves a multi-level trail rather than a two-item one — and unlike the
+    // detail pages it needs no seed data, so this clause is checked even in an
+    // empty environment.
+    await page.goto('/admin/products/new')
+    // Structural, not the English label — see the note on the other trail locator.
+    const trail = page.locator('main nav[aria-label] ol')
+    await expect(trail).toBeVisible()
+    await expect(trail.locator('> li')).toHaveCount(3)
+    await expect(trail.locator('[aria-current="page"]')).toHaveCount(1)
+    // The current page is not a link: there is nowhere to go.
+    await expect(trail.locator('a[aria-current="page"]')).toHaveCount(0)
+    // And the separators are not read out as words.
+    await expect(trail.locator('span[aria-hidden="true"]')).toHaveCount(2)
+  })
 })

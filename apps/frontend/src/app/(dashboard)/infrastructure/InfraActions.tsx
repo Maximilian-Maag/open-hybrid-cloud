@@ -1,11 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { InfrastructureElement } from '@open-hybrid-cloud/types'
 import { post } from '@/lib/api'
-import { Button } from '@/components/ui/Button'
+import { Button, ButtonLink } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Alert } from '@/components/ui/Alert'
 import { Modal } from '@/components/ui/Modal'
@@ -98,14 +97,20 @@ export function InfraActions({ item, token, lang = 'en', canRetry = false }: Pro
 
   return (
     <div className="flex items-center gap-2">
-      {/* Styled as a button rather than wrapping one: an <a> containing a
-          <button> is nested-interactive, which the axe gate flags on this page. */}
-      <Link
-        href={reorderHref}
-        className="inline-flex items-center justify-center gap-2 rounded-md font-medium transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white px-3 py-1.5 text-xs bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-      >
+      {/* An <a> painted like a button, not an <a> wrapping one — see ButtonLink
+          for why no gate catches that wrap. The classes were copied out of Button
+          by hand here until ButtonLink existed. */}
+      <ButtonLink href={reorderHref} variant="secondary" size="sm">
         {t('reorder', lang)}
-      </Link>
+        {/* Every row offers "Reorder" and every one of them points somewhere
+            different, so a screen reader's link list reads "Reorder, Reorder,
+            Reorder" (WCAG 2.4.9). The element id is the distinguisher, for the
+            same reason it is on the row heading: two elements can be provisioned
+            from the same product, so the product name alone is not unique. */}
+        <span className="sr-only">
+          {' '}{item.productName ?? `Product #${item.productId}`} #{item.id}
+        </span>
+      </ButtonLink>
       {canRetry && deploymentFailed && (
         <Button variant="secondary" size="sm" onClick={() => { setRetryError(null); setRetryOpen(true) }}>
           {t('retry', lang)}

@@ -9,7 +9,7 @@ import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
-import { readableInk, parseHex, toCanonicalHex, AA_BODY } from '@/lib/contrast'
+import { readableInk, parseHex, toCanonicalHex, AA_BODY, AAA_BODY } from '@/lib/contrast'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
@@ -165,7 +165,7 @@ function ColorField({
           onChange={(e) => onChange(e.target.value)}
           aria-label={`${label} — ${t('colorPickerSuffix', lang)}`}
           aria-describedby={hintId}
-          className="h-9 w-14 rounded border border-slate-300 cursor-pointer p-0.5"
+          className="h-11 w-14 rounded border border-slate-300 cursor-pointer p-0.5"
         />
         <input
           type="text"
@@ -174,7 +174,7 @@ function ColorField({
           aria-label={`${label} — ${t('hexValueSuffix', lang)}`}
           aria-describedby={hintId}
           aria-invalid={parsed === null ? true : undefined}
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="min-h-11 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
       </div>
       <p id={hintId} className="text-xs text-slate-600">{hint}</p>
@@ -185,7 +185,14 @@ function ColorField({
       ) : (
         <p className={`text-xs ${ok ? 'text-slate-600' : 'text-red-700'}`} role={ok ? undefined : 'alert'}>
           {ok
-            ? `${t('contrastMeetsAA', lang)} (${ratio.toFixed(1)}:1)`
+            ? ratio >= AAA_BODY
+              ? `${t('contrastMeetsAAA', lang)} (${ratio.toFixed(1)}:1)`
+              // Named rather than silent: the chrome is painted on this colour, so
+              // the operator is the only person who can trade brand for 1.4.6, and
+              // the app records the criterion as out of scope precisely because
+              // most brand colours cannot make the trade. Not an alert — AA is the
+              // level this app conforms to, and AAA is information, not a blocker.
+              : `${t('contrastMeetsAA', lang)} (${ratio.toFixed(1)}:1, ${t('contrastAaaRequires', lang)} ${AAA_BODY}:1)`
             : `${t('contrastFailsAA', lang)} (${ratio.toFixed(1)}:1, ${t('contrastAaRequires', lang)} ${AA_BODY}:1)`}
         </p>
       )}

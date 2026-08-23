@@ -22,7 +22,11 @@ function navLinkClass(current: string, href: string, exact = false): string {
   // dimming the resting state would give it back. The active item is
   // distinguished by background and weight, plus aria-current. The active item is additionally
   // marked with aria-current so it is not signalled by colour alone.
-  const base = 'px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap '
+  // inline-flex + min-h-11 makes each pill a 44px WCAG 2.5.5 target. This is the
+  // one place in the app where that costs visible layout — the nav strip grows
+  // from 36px to 52px — and it is worth it: these links are how the whole
+  // portal is navigated, and a 28px pill was the hardest thing here to hit.
+  const base = 'inline-flex items-center min-h-11 px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap '
   return active
     ? base + 'brand-state-active font-semibold'
     : base + 'brand-state'

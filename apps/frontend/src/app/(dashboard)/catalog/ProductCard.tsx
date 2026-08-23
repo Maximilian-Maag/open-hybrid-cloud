@@ -57,8 +57,9 @@ export function ProductCard({
         >
           <ProductImage productId={id} alt={imageAlt ?? name} />
         </Link>
-        {/* A SIBLING of the link, not a child: a button inside a link is
-            nested-interactive, which the axe gate in e2e/a11y.spec.ts rejects. */}
+        {/* A SIBLING of the link, not a child: a button inside a link is invalid
+            HTML and splits one control in two. The axe gate does not reject it —
+            see ButtonLink — so keeping them siblings is on the author. */}
         <div className="absolute top-2 right-2">
           <FavoriteButton favorited={favorited} busy={busy} onToggle={onToggleFavorite} lang={lang} />
         </div>
@@ -78,10 +79,20 @@ export function ProductCard({
             and delivering a form is a broken promise. */}
         <Link
           href={`/catalog/${id}`}
-          className="w-full py-2 px-3 rounded text-center text-sm font-semibold block text-gray-900 hover:brightness-95 transition-all mt-auto"
-          style={{ backgroundColor: 'var(--bs)' }}
+          className="w-full py-2 px-3 min-h-11 rounded text-center text-sm font-semibold flex items-center justify-center hover:brightness-95 transition-all mt-auto"
+          // The ink is derived from the secondary, not fixed: `--bs` is whatever
+          // the operator saved, and a hard-coded dark foreground goes unreadable
+          // the moment they pick a dark one. `--bs-ink` is readableInk's answer
+          // for that exact colour, which is what every other `--bs` surface uses.
+          style={{ backgroundColor: 'var(--bs)', color: 'var(--bs-ink)' }}
         >
           {t('details', lang)}
+          {/* A grid of twenty links all called "Details" is WCAG 2.4.9: read out of
+              context, none of them says what it opens. The product name goes in the
+              accessible name only — visibly repeating it under its own heading would
+              be noise, and keeping "Details" as the visible label keeps the
+              accessible name a superset of it (2.5.3 Label in Name). */}
+          <span className="sr-only">: {name}</span>
         </Link>
       </div>
     </div>

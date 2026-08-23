@@ -1,13 +1,19 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { describe, it, expect, vi, beforeAll } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
 import { axe } from 'vitest-axe'
 import type { AxeResults } from 'axe-core'
+import Link from 'next/link'
+import type { Parameter, SessionInfo } from '@open-hybrid-cloud/types'
 import { Alert } from './ui/Alert'
-import { Button } from './ui/Button'
+import { Button, ButtonLink } from './ui/Button'
 import { Card } from './ui/Card'
 import { Input } from './ui/Input'
 import { Modal } from './ui/Modal'
+import { ProductImage } from './ui/ProductImage'
 import { Select } from './ui/Select'
+import { SkeletonCard, SkeletonListItem, SkeletonRow } from './ui/Skeleton'
 import { StatusBadge } from './ui/StatusBadge'
 import { Table } from './ui/Table'
 // Not primitives, but the same argument applies: a chart is drawn markup, and the
@@ -15,9 +21,14 @@ import { Table } from './ui/Table'
 import { CostTrend } from '@/app/(dashboard)/costs/CostTrend'
 import { CostDistribution } from '@/app/(dashboard)/costs/CostDistribution'
 import { CostComparison } from '@/app/(dashboard)/costs/CostComparison'
+import { ToastProvider, useToast } from './ui/Toast'
+import { TrialBadge } from './ui/TrialBadge'
+import { Breadcrumbs } from './layout/Breadcrumbs'
+import { PageHeader } from './layout/PageHeader'
+import { ParameterFields } from './forms/ParameterFields'
+import { FavoriteButton } from '@/app/(dashboard)/catalog/FavoriteButton'
 import { DelegationPanel } from '@/app/(dashboard)/approvals/DelegationPanel'
 import { ActiveSessions } from './forms/ActiveSessions'
-import type { SessionInfo } from '@open-hybrid-cloud/types'
 
 /**
  * Component-level accessibility checks (issue #102).
@@ -57,20 +68,21 @@ beforeAll(() => {
  * them on would report the same non-finding for every component here and train
  * the reader to ignore the output.
  */
-const check = async (ui: React.ReactElement): Promise<AxeResults> => {
-  const { container } = render(ui)
-  return (await axe(container, {
-    rules: {
-      region: { enabled: false },
-      'landmark-one-main': { enabled: false },
-      'page-has-heading-one': { enabled: false },
-      // Needs real layout and a canvas, neither of which jsdom has — it would
-      // report "incomplete" and log a getContext warning per run. Contrast is
-      // enforced in the e2e gate, against a real browser and the real palette.
-      'color-contrast': { enabled: false },
-    },
-  })) as AxeResults
+const RULES = {
+  region: { enabled: false },
+  'landmark-one-main': { enabled: false },
+  'page-has-heading-one': { enabled: false },
+  // Needs real layout and a canvas, neither of which jsdom has — it would
+  // report "incomplete" and log a getContext warning per run. Contrast is
+  // enforced in the e2e gate, against a real browser and the real palette.
+  'color-contrast': { enabled: false },
 }
+
+/** Axe over an already-rendered container, for components that need a click first. */
+const axeOn = async (container: Element): Promise<AxeResults> =>
+  (await axe(container, { rules: RULES })) as AxeResults
+
+const check = async (ui: React.ReactElement): Promise<AxeResults> => axeOn(render(ui).container)
 
 describe('the check itself', () => {
   it('reports a violation when there is one', async () => {
@@ -114,6 +126,84 @@ describe('Button', () => {
     expect(await check(<Button disabled>Saving…</Button>)).toHaveNoViolations()
   })
 })
+
+/**
+ * `ButtonLink`, and the shape it exists to replace (issue #102 review).
+ *
+ * `<Link><Button/></Link>` renders `<a><button>`. That is invalid HTML — an `<a>`
+ * may not contain interactive content — and it splits one control in two: the
+ * button takes the pointer while the link keeps the keyboard, so clicking and
+ * pressing Enter do different things.
+ *
+ * What it is NOT is an axe finding, which is the reason it kept coming back.
+ * `nested-interactive` only matches roles whose children are presentational, and
+ * `link` is not one of those (measured against axe-core 4.13.0 — the test below
+ * pins it), so neither this suite nor the e2e gate ever objected. It was fixed by
+ * hand on the infrastructure detail page, came back at six more call sites, and
+ * nothing failed. Hence the source scan at the bottom: it is the only check here
+ * that would have caught them.
+ */
+describe('ButtonLink', () => {
+  it('renders an <a> with the button paint, in every variant', async () => {
+    for (const variant of ['primary', 'secondary', 'danger', 'ghost'] as const) {
+      const { container, unmount } = render(
+        <ButtonLink href="/admin/products/1" variant={variant}>Edit</ButtonLink>,
+      )
+      expect(await axeOn(container), variant).toHaveNoViolations()
+      expect(screen.getByRole('link', { name: 'Edit' }).tagName).toBe('A')
+      // The whole point: one control, nothing interactive inside it.
+      expect(container.querySelector('a button')).toBeNull()
+      unmount()
+    }
+  })
+
+  it('is not something axe can catch, which is why the guard below exists', async () => {
+    // The measurement, not an assumption. If a future axe release starts
+    // reporting the wrap, this fails and the source scan can be reconsidered —
+    // and until then nobody should write "the axe gate rejects this" again.
+    const results = await check(
+      <Link href="/admin/products/1">
+        <Button size="sm" variant="secondary">Edit</Button>
+      </Link>,
+    )
+    expect(results.violations.map((v) => v.id)).not.toContain('nested-interactive')
+  })
+
+  it('is the only way the app styles a link as a button', () => {
+    expect(linkWrappedButtons()).toEqual([])
+  })
+})
+
+const SRC_DIR = join(process.cwd(), 'src')
+
+/**
+ * Every source file containing `<Link …>…<Button`, comments not counted.
+ *
+ * Crude on purpose: it is a text scan, so it cannot see through an alias or a
+ * component that wraps `Link` itself. It catches the shape people actually
+ * write, which is the one that recurred six times.
+ */
+function linkWrappedButtons(): string[] {
+  const found: string[] = []
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) walk(full)
+      else if (entry.name.endsWith('.tsx') && !entry.name.endsWith('.test.tsx')) {
+        // Table's doc comment names both components in one sentence, and the
+        // negative control above is a deliberate one — hence the two exclusions.
+        const source = readFileSync(full, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '')
+        if (/<Link\b[^>]*>(?:(?!<\/Link>)[\s\S])*?<Button\b/.test(source)) {
+          found.push(relative(SRC_DIR, full))
+        }
+      }
+    }
+  }
+  walk(SRC_DIR)
+  return found
+}
 
 describe('Input', () => {
   it('is accessible with a label alone', async () => {
@@ -462,5 +552,174 @@ describe('ActiveSessions', () => {
         />,
       ),
     ).toHaveNoViolations()
+  })
+})
+
+/**
+ * Everything below was added with the AAA pass (issue #102).
+ *
+ * The first round covered the eight primitives the admin forms are built from.
+ * These are the rest of what a page renders: the live regions, the badges, the
+ * loading placeholders, the breadcrumb trail, and the two components that draw
+ * form controls without going through `Input`/`Select`. Each one is a place a
+ * regression would reach main, because none of them is exercised in the state
+ * that would fail by any page in the e2e list.
+ */
+
+function ToastTrigger({ type }: { type: 'success' | 'error' | 'info' }) {
+  const { toast } = useToast()
+  return <button onClick={() => toast('Product saved', type)}>fire</button>
+}
+
+describe('Toast', () => {
+  it('is accessible in every type, once actually raised', async () => {
+    // Rendered only after a click, which is the whole reason this was unchecked:
+    // no page in the e2e list has a toast on screen when it is scanned. The bubble
+    // carries its own role="alert"/"status" and an icon-only dismiss button.
+    for (const type of ['success', 'error', 'info'] as const) {
+      const { container, unmount } = render(
+        <ToastProvider>
+          <ToastTrigger type={type} />
+        </ToastProvider>,
+      )
+      act(() => { screen.getByText('fire').click() })
+      expect(await axeOn(container), type).toHaveNoViolations()
+      unmount()
+    }
+  })
+})
+
+describe('Breadcrumbs', () => {
+  it('is accessible as a two-level and a three-level trail', async () => {
+    expect(
+      await check(
+        <Breadcrumbs
+          label="Breadcrumb"
+          items={[{ label: 'Orders', href: '/orders' }, { label: 'Order #12' }]}
+        />,
+      ),
+    ).toHaveNoViolations()
+
+    expect(
+      await check(
+        <Breadcrumbs
+          label="Breadcrumb"
+          items={[
+            { label: 'Admin', href: '/admin' },
+            { label: 'Products', href: '/admin/products' },
+            { label: 'Managed Postgres' },
+          ]}
+        />,
+      ),
+    ).toHaveNoViolations()
+  })
+
+  it('is accessible with an unlinked crumb in the middle', async () => {
+    // The catalogue's category filter is client state, so that crumb has no href.
+    // A crumb that is not a link must not end up looking like the current page.
+    const { container } = render(
+      <Breadcrumbs
+        label="Breadcrumb"
+        items={[{ label: 'Catalog', href: '/catalog' }, { label: 'Databases' }, { label: 'Postgres' }]}
+      />,
+    )
+    expect(await axeOn(container)).toHaveNoViolations()
+    expect(container.querySelectorAll('[aria-current="page"]')).toHaveLength(1)
+  })
+})
+
+describe('PageHeader', () => {
+  it('is accessible with a subtitle and actions', async () => {
+    expect(
+      await check(
+        <PageHeader title="Infrastructure" subtitle="Everything provisioned for you" actions={<Button>New</Button>} />,
+      ),
+    ).toHaveNoViolations()
+  })
+})
+
+describe('TrialBadge', () => {
+  it('is accessible with and without a duration', async () => {
+    // The clock glyph is aria-hidden, so the badge must still carry its own text —
+    // an icon-only badge would be silent.
+    expect(await check(<TrialBadge />)).toHaveNoViolations()
+    expect(await check(<TrialBadge minutes={60} />)).toHaveNoViolations()
+  })
+})
+
+describe('Skeleton', () => {
+  it('is accessible in all three shapes', async () => {
+    // Pure decoration, and that is the point worth locking in: a placeholder must
+    // not announce itself as content or as an unlabelled control.
+    expect(await check(<SkeletonCard />)).toHaveNoViolations()
+    expect(await check(<SkeletonListItem />)).toHaveNoViolations()
+    expect(
+      await check(<table><tbody><SkeletonRow cols={3} /></tbody></table>),
+    ).toHaveNoViolations()
+  })
+})
+
+describe('ProductImage', () => {
+  it('is accessible with a description, and when marked decorative', async () => {
+    expect(await check(<ProductImage productId={1} alt="Traffic graph of the managed gateway" />)).toHaveNoViolations()
+    // alt="" is legitimate where the name is already in text beside it (a cart
+    // row). axe accepts an empty alt and rejects a missing one, which is exactly
+    // the distinction this component's API exists to preserve.
+    expect(await check(<ProductImage productId={1} alt="" />)).toHaveNoViolations()
+  })
+})
+
+describe('FavoriteButton', () => {
+  it('is accessible in both states', async () => {
+    // aria-pressed is the state, because the two look identical to anything that
+    // cannot compare a yellow star to a grey one.
+    expect(await check(<FavoriteButton favorited={false} onToggle={() => {}} lang="en" />)).toHaveNoViolations()
+    expect(await check(<FavoriteButton favorited onToggle={() => {}} lang="en" />)).toHaveNoViolations()
+    expect(await check(<FavoriteButton favorited busy onToggle={() => {}} lang="en" />)).toHaveNoViolations()
+  })
+})
+
+describe('ParameterFields', () => {
+  // The one component that renders form controls WITHOUT going through Input or
+  // Select — a bare checkbox and a bare <select> — so none of the labelling those
+  // primitives are tested for applies to it.
+  const param = (over: Partial<Parameter>): Parameter => ({
+    id: 1,
+    scope: 'product',
+    scopeId: 1,
+    environmentId: null,
+    name: 'hostname',
+    label: 'Hostname',
+    type: 'string',
+    description: '',
+    defaultValue: '',
+    required: false,
+    sensitive: false,
+    ...over,
+  })
+
+  it('is accessible for every parameter type it draws', async () => {
+    expect(
+      await check(
+        <ParameterFields
+          onChange={() => {}}
+          parameters={[
+            param({ id: 1, name: 'hostname', label: 'Hostname', type: 'string', required: true }),
+            param({ id: 2, name: 'replicas', label: 'Replicas', type: 'number', description: 'How many' }),
+            param({ id: 3, name: 'public', label: 'Publicly reachable', type: 'bool' }),
+            param({ id: 4, name: 'size', label: 'Size', type: 'dropdown', defaultValue: 'small, large' }),
+            param({ id: 5, name: 'token', label: 'API token', type: 'string', sensitive: true }),
+          ]}
+        />,
+      ),
+    ).toHaveNoViolations()
+  })
+
+  it('falls back to the variable name when no label is configured, rather than going unnamed', async () => {
+    const { container } = render(
+      <ParameterFields onChange={() => {}} parameters={[param({ label: '  ', name: 'tf_var_region' })]} />,
+    )
+    expect(await axeOn(container)).toHaveNoViolations()
+    expect(screen.getByLabelText('tf_var_region')).toBeInTheDocument()
   })
 })

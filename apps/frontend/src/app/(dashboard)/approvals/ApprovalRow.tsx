@@ -120,8 +120,10 @@ export function ApprovalRow({ order, token, currentUserId }: Props) {
       {rejecting && (
         <form onSubmit={handleReject} className="mt-4 space-y-3">
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-slate-700">{t('rejectionNote', lang)}</label>
+            {/* Per-order id: the approvals list renders one of these per row. */}
+            <label htmlFor={`rejection-note-${order.id}`} className="text-sm font-medium text-slate-700">{t('rejectionNote', lang)}</label>
             <textarea
+              id={`rejection-note-${order.id}`}
               value={rejectionNote}
               onChange={(e) => setRejectionNote(e.target.value)}
               rows={2}

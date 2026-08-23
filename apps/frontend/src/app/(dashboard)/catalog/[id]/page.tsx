@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { redirect, notFound } from 'next/navigation'
+import Link from 'next/link'
 import type {
   ProductDetail,
   Project,

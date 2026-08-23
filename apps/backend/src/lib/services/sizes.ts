@@ -29,6 +29,14 @@ import { ok, err, type Result } from '@/lib/services/result'
 /** Most elements one order line may ask for. "20 VMs" (issue #104) must fit. */
 export const MAX_ORDER_QUANTITY = 20
 
+/**
+ * Longest size code an admin can create, and therefore the longest one any
+ * request may name. Lives here rather than beside the admin-side character-set
+ * check so the cart, order and OpenAPI schemas bound the field at what can
+ * actually exist instead of at a second, looser number of their own.
+ */
+export const SIZE_CODE_MAX_LENGTH = 32
+
 /** The effective unit price of a line, resolved against its size. */
 export interface OfferingPrice {
   /** The code that was chosen, or null when the offering has no sizes. */
@@ -198,36 +206,46 @@ export const validateQuantity = (quantity: number | undefined | null): Result<nu
  * Written once and shared by the cart, the cost report and the cost export,
  * because three copies of "which price applies" are three chances to drift — and
  * the one that drifts is the one on the invoice. Requires `product_environments`
- * to be in the caller's FROM/JOIN chain, since that is the fallback. NULL when
- * neither a matching size nor an offering row exists, which callers report as "no
- * longer offered" rather than as free.
+ * to be in the caller's FROM/JOIN chain, since that is the fallback.
+ *
+ * The offering's price is the fallback for a line with NO size, and only for that:
+ * a CASE rather than a COALESCE over the lookup. A line naming a size that has
+ * since been deleted outright resolves to NULL, not to the offering's price —
+ * those are prices for two different things, and under COALESCE such a line was
+ * reported unavailable by `lineSizeStillOfferedSql` while still carrying a price
+ * the cart added into its subtotal.
+ *
+ * Deliberately blind to `s.active`: a RETIRED size still has the price its line
+ * was struck at, which is what the cost report needs for an order placed while it
+ * was active, and what the cart shows beside the "no longer offered" flag that
+ * stops the line being checked out.
  */
 export const linePriceSql = (
   productId: SQL | unknown,
   environmentId: SQL | unknown,
   sizeCode: SQL | unknown,
-): SQL<string | null> => sql<string | null>`COALESCE(
-  (SELECT s.price FROM product_environment_sizes s
+): SQL<string | null> => sql<string | null>`CASE WHEN ${sizeCode} IS NULL
+  THEN ${productEnvironments.price}
+  ELSE (SELECT s.price FROM product_environment_sizes s
     WHERE s.product_id = ${productId}
       AND s.environment_id = ${environmentId}
       AND s.code = ${sizeCode}
-    LIMIT 1),
-  ${productEnvironments.price}
-)`
+    LIMIT 1)
+END`
 
 /** Currency of the same line, resolved the same way. */
 export const lineCurrencySql = (
   productId: SQL | unknown,
   environmentId: SQL | unknown,
   sizeCode: SQL | unknown,
-): SQL<string | null> => sql<string | null>`COALESCE(
-  (SELECT s.currency FROM product_environment_sizes s
+): SQL<string | null> => sql<string | null>`CASE WHEN ${sizeCode} IS NULL
+  THEN ${productEnvironments.currency}
+  ELSE (SELECT s.currency FROM product_environment_sizes s
     WHERE s.product_id = ${productId}
       AND s.environment_id = ${environmentId}
       AND s.code = ${sizeCode}
-    LIMIT 1),
-  ${productEnvironments.currency}
-)`
+    LIMIT 1)
+END`
 
 /**
  * The label of the size a line names, for display. NULL for a line without one,

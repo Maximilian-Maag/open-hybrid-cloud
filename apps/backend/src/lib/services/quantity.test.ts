@@ -351,6 +351,64 @@ describe('sizing through the order flow (issue #98)', () => {
     expect(rows.data[0].size).toBe('Medium')
   })
 
+  it('keeps pricing a legacy order off a size that has since been RETIRED', async () => {
+    // `linePriceSql` deliberately does not filter on `active`. Retiring a size must
+    // not erase the spend of orders placed while it was live — and this is the path
+    // that reaches it, since a snapshot would otherwise answer first.
+    const { admin, product, env, project } = await setup()
+    await createSize(product.id, env.id, { code: 'XL', price: '400.00' })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: {},
+      sizeCode: 'XL',
+    })
+    if (!result.ok) throw new Error('order failed')
+
+    const { sql } = await import('drizzle-orm')
+    await db.execute(sql`UPDATE orders SET product_snapshot = NULL`)
+    await db.execute(sql`UPDATE product_environment_sizes SET active = FALSE`)
+
+    const report = await getCostReport(makeSession(admin))
+    if (!report.ok) throw new Error('report failed')
+    expect(report.data.totalEur).toBe(400)
+    expect(report.data.estimatedOrders).toBe(1)
+  })
+
+  it("does not reprice a legacy order onto the offering when its size was DELETED", async () => {
+    const { admin, product, env, project } = await setup()
+    await createSize(product.id, env.id, { code: 'XL', price: '400.00' })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: {},
+      sizeCode: 'XL',
+    })
+    if (!result.ok) throw new Error('order failed')
+
+    const { sql } = await import('drizzle-orm')
+    await db.execute(sql`UPDATE orders SET product_snapshot = NULL`)
+    await db.execute(sql`DELETE FROM product_environment_sizes`)
+
+    const report = await getCostReport(makeSession(admin))
+    if (!report.ok) throw new Error('report failed')
+    // Not the offering's 99: that is the price of an unsized line, and this order
+    // named a size. Nothing is a truer answer here than the wrong thing.
+    expect(report.data.totalEur).toBe(0)
+
+    // The export reports an unpriceable line as zero and flags it estimated — the
+    // same `?? '0'` an order whose offering was withdrawn entirely has always hit.
+    const rows = await getCostRows(makeSession(admin))
+    if (!rows.ok) throw new Error('rows failed')
+    expect(rows.data[0].price).toBe('0')
+    expect(rows.data[0].lineTotalEur).toBe(0)
+    expect(rows.data[0].estimated).toBe(true)
+  })
+
   it('prices a legacy order with no size off the offering, as it always did', async () => {
     const { admin, product, env, project } = await setup()
 
@@ -437,6 +495,50 @@ describe('the cart line: product × environment × size × quantity', () => {
     const listed = await listCart(makeSession(pm))
     if (!listed.ok) throw new Error('list failed')
     // Said on the line, so the shopper can act on it — not as a checkout error.
+    expect(listed.data[0].stillOffered).toBe(false)
+  })
+
+  it('leaves a line whose size was DELETED with no price, not the offering\'s', async () => {
+    const { pm, product, env } = await setup()
+    await createSize(product.id, env.id, { code: 'L', price: '50.00' })
+    const added = await addToCart(makeSession(pm), {
+      productId: product.id,
+      environmentId: env.id,
+      sizeCode: 'L',
+      quantity: 3,
+    })
+    if (!added.ok) throw new Error('add failed')
+
+    await db.execute((await import('drizzle-orm')).sql`DELETE FROM product_environment_sizes`)
+
+    const listed = await listCart(makeSession(pm))
+    if (!listed.ok) throw new Error('list failed')
+    // The offering's own 99.00 is the price of a line with NO size; this line has
+    // one. Returning it here put an unorderable line into the cart's subtotal.
+    expect(listed.data[0].price).toBe(null)
+    expect(listed.data[0].currency).toBe(null)
+    expect(listed.data[0].stillOffered).toBe(false)
+  })
+
+  it('keeps showing the price of a size that was merely RETIRED', async () => {
+    const { pm, product, env } = await setup()
+    await createSize(product.id, env.id, { code: 'L', price: '50.00' })
+    const added = await addToCart(makeSession(pm), {
+      productId: product.id,
+      environmentId: env.id,
+      sizeCode: 'L',
+    })
+    if (!added.ok) throw new Error('add failed')
+
+    await db.execute(
+      (await import('drizzle-orm')).sql`UPDATE product_environment_sizes SET active = FALSE`,
+    )
+
+    const listed = await listCart(makeSession(pm))
+    if (!listed.ok) throw new Error('list failed')
+    // The row is still there, so what the line was struck at is still knowable and
+    // worth showing beside the flag that stops it being checked out.
+    expect(listed.data[0].price).toBe('50.00')
     expect(listed.data[0].stillOffered).toBe(false)
   })
 

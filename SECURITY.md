@@ -21,8 +21,18 @@ Use GitHub's private vulnerability reporting for this repository ("Security" tab
 
 ### If private reporting is unavailable
 
-Open an issue with minimal details and clearly mark it as a security concern.  
-Do **not** post exploit code, tokens, credentials, or sensitive infrastructure data in public.
+**Do not open a public issue.** A public issue discloses that a vulnerability exists
+and which component it affects, which is enough to put deployments at risk even with
+no exploit code attached.
+
+Instead, ask for a private channel without describing the problem: contact the
+repository maintainer through the contact details on their GitHub profile, saying
+only that you have a security report and need somewhere private to send it. Withhold
+the description, the reproduction and any proof-of-concept until that channel exists.
+
+If you are unsure whether something is a security issue, treat it as one until a
+maintainer tells you otherwise — the cost of asking privately is nothing, and the
+cost of guessing wrong in public is not.
 
 ## What to Include
 

@@ -30,6 +30,6 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  await updateSmtpConfig(parsed.data)
+  await updateSmtpConfig(parsed.data, session.id)
   return NextResponse.json({ success: true })
 }

@@ -303,21 +303,25 @@ describe('order comment id parsing', () => {
     expect((await PUT(req(undefined, pmAuth), p('abc', 'abc'))).status).toBe(400)
   })
 
-  // Issue #143: both ids are parsed with `Number()` rather than `parseRouteId`
-  // from lib/http.ts, which is digits-only. Hex, exponent, signed and
-  // whitespace-padded spellings all resolve to real rows. Asserting the CURRENT
-  // behaviour.
+  // Issue #143 made digits-only the contract for a route id: `parseRouteId` in
+  // lib/http.ts refuses anything `/^\d+$/` does not match. Under the `Number()`
+  // parse this route used before, every spelling below resolved to real rows and
+  // the edit landed on someone's comment.
   it.each([
     ['hex', (id: number) => `0x${id.toString(16)}`],
     ['exponent', (id: number) => `${id}e0`],
     ['signed', (id: number) => `+${id}`],
     ['whitespace-padded', (id: number) => ` ${id} `],
-  ])('accepts a %s spelling of both real ids (#143)', async (_label, spell) => {
+  ])('refuses a %s spelling of both real ids (#143)', async (_label, spell) => {
     const { order, pm, pmAuth } = await setup()
     const existing = await comment(order.id, pm.id, 'Mine')
 
-    const res = await PUT(req({ body: 'Reached' }, pmAuth), p(spell(order.id), spell(existing.id)))
-    expect(res.status).toBe(200)
-    expect(await bodyOf(existing.id)).toBe('Reached')
+    expect(
+      (await PUT(req({ body: 'Reached' }, pmAuth), p(spell(order.id), spell(existing.id)))).status,
+    ).toBe(400)
+    expect(
+      (await DELETE(req(undefined, pmAuth, 'DELETE'), p(spell(order.id), spell(existing.id)))).status,
+    ).toBe(400)
+    expect(await bodyOf(existing.id)).toBe('Mine')
   })
 })

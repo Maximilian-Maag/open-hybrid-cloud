@@ -26,5 +26,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await createCategory(parsed.data), 201)
+  return toResponse(await createCategory(parsed.data, session.id), 201)
 }

@@ -3,6 +3,8 @@ import { parameters, products, productEnvironments, type Parameter } from '@/lib
 import { and, eq } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { recordProductVersion } from '@/lib/services/versions'
+import { logAudit, changedFields } from '@/lib/audit'
+import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 
 export interface ParameterFilters {
   scope?: 'global' | 'category' | 'product'
@@ -68,6 +70,14 @@ export const createParameter = async (
     .returning()
 
   await recordParameterChange(param, 'added', userId ?? null)
+  // `sensitive` is called out by name: it decides whether the value this parameter
+  // carries is redacted everywhere downstream, so flipping it is a security event.
+  await logAudit(
+    userId ?? null,
+    'parameter.created',
+    param.id,
+    `Created ${param.scope} parameter ${param.name}${param.sensitive ? ' (sensitive)' : ''}`,
+  )
   return ok(param)
 }
 
@@ -76,6 +86,8 @@ export const updateParameter = async (
   input: UpdateParameterInput,
   userId?: number,
 ): Promise<Result<Parameter>> => {
+  if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
+
   // Read the row first: an edit that MOVES the parameter to another environment
   // changes two sets of offerings, and the old one is only knowable from before.
   const [before] = await db.select().from(parameters).where(eq(parameters.id, id)).limit(1)
@@ -92,6 +104,19 @@ export const updateParameter = async (
   if (before && before.environmentId !== updated.environmentId) {
     await recordParameterChange(before, 'removed', userId ?? null)
   }
+
+  // Field names, plus the new state of `sensitive` when that is what moved: a
+  // parameter turned non-sensitive stops being redacted in every order, infra
+  // element and snapshot that renders it, and nothing else in the system says so.
+  const sensitiveNote =
+    input.sensitive !== undefined ? ` (sensitive now ${updated.sensitive})` : ''
+  await logAudit(
+    userId ?? null,
+    'parameter.updated',
+    id,
+    `${changedFields(input)}${sensitiveNote}`,
+  )
+
   return ok(updated)
 }
 
@@ -104,6 +129,12 @@ export const deleteParameter = async (id: number, userId?: number): Promise<Resu
   if (!deleted.length) return err(404, 'Not found')
 
   await recordParameterChange(deleted[0], 'removed', userId ?? null)
+  await logAudit(
+    userId ?? null,
+    'parameter.deleted',
+    id,
+    `Deleted ${deleted[0].scope} parameter ${deleted[0].name}`,
+  )
   return ok(undefined)
 }
 

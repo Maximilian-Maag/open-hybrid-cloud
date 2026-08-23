@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { getCategoryById, updateCategory, deleteCategory } from '@/lib/services/admin/categories'
 
 const UpdateCategorySchema = z.object({
@@ -17,7 +17,9 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await getCategoryById(parseInt(id, 10)))
+  const categoryId = parseRouteId(id)
+  if (categoryId === null) return invalidId('category id')
+  return toResponse(await getCategoryById(categoryId))
 }
 
 export async function PUT(
@@ -28,13 +30,15 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id } = await params
+  const categoryId = parseRouteId(id)
+  if (categoryId === null) return invalidId('category id')
   const body = await req.json().catch(() => null)
   const parsed = UpdateCategorySchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateCategory(parseInt(id, 10), parsed.data))
+  return toResponse(await updateCategory(categoryId, parsed.data, session.id))
 }
 
 export async function DELETE(
@@ -45,5 +49,7 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await deleteCategory(parseInt(id, 10)))
+  const categoryId = parseRouteId(id)
+  if (categoryId === null) return invalidId('category id')
+  return toResponse(await deleteCategory(categoryId, session.id))
 }

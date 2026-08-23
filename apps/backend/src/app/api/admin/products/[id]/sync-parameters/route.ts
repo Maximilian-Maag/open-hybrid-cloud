@@ -1,10 +1,12 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
+import { parseRouteId, invalidId } from '@/lib/http'
 import { db } from '@/lib/db/client'
 import { pipelineStacks, parameters, ciSources, deploymentEnvironments } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { getFileContent } from '@/lib/ci'
 import { parseTerraformVariables } from '@/lib/tfparser'
+import { logAudit } from '@/lib/audit'
 import type { CiProvider } from '@open-hybrid-cloud/types'
 
 const CI_INTERNAL_VARS = new Set(['ci_api_url', 'ci_project_id', 'ci_job_token', 'vm_state_name'])
@@ -17,7 +19,8 @@ export async function POST(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const productId = parseInt(id, 10)
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
 
   const stacks = await db
     .select()
@@ -124,6 +127,21 @@ export async function POST(
       sensitive: false,
     })
     created++
+  }
+
+  // This route inserts `parameters` rows directly rather than going through
+  // createParameter, so the service-layer audit sweep (#137) does not cover it.
+  // Creating a parameter here would otherwise be the one way to add one
+  // invisibly, while POST /api/admin/parameters is logged. Names only, never
+  // values — a synced default can be a connection string.
+  if (created > 0) {
+    const names = vars.filter((v) => !existingNames.has(v.name)).map((v) => v.name)
+    await logAudit(
+      session.id,
+      'product.parameters_synced',
+      productId,
+      `Synced ${created} parameter(s) from the template: ${names.join(', ')}`,
+    )
   }
 
   return NextResponse.json({ created, skipped: vars.length - created })

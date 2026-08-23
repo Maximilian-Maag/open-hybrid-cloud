@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { scheduleDecommission } from '@/lib/services/infrastructure'
 
 const ScheduleSchema = z.object({
@@ -17,10 +17,9 @@ export async function POST(
   const session = await requireAuth(req)
   if (!isAuth(session)) return session
 
-  const id = Number((await params).id)
-  if (!Number.isInteger(id) || id <= 0) {
-    return NextResponse.json({ error: 'Invalid infrastructure id' }, { status: 400 })
-  }
+  const { id } = await params
+  const elementId = parseRouteId(id)
+  if (elementId === null) return invalidId('infrastructure id')
 
   const body = await req.json().catch(() => null)
   const parsed = ScheduleSchema.safeParse(body)
@@ -32,5 +31,5 @@ export async function POST(
   }
 
   const scheduledAt = parsed.data.scheduledAt === null ? null : new Date(parsed.data.scheduledAt)
-  return toResponse(await scheduleDecommission(session, id, scheduledAt))
+  return toResponse(await scheduleDecommission(session, elementId, scheduledAt))
 }

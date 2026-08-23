@@ -53,7 +53,7 @@ export async function PUT(
   // Uploaded together with the file, because an image without a description is
   // exactly what this endpoint must stop producing.
   const alt = formData?.get('alt')
-  return toResponse(await updateProductImage(productId, buffer, typeof alt === 'string' ? alt : ''))
+  return toResponse(await updateProductImage(productId, buffer, typeof alt === 'string' ? alt : '', session.id))
 }
 
 /** Change the description without re-uploading the file. */
@@ -76,7 +76,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'An image description is required' }, { status: 400 })
   }
 
-  const result = await updateProductImageAlt(productId, alt)
+  const result = await updateProductImageAlt(productId, alt, session.id)
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
   return new NextResponse(null, { status: 204 })
 }
@@ -94,7 +94,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Invalid product id' }, { status: 400 })
   }
 
-  const result = await deleteProductImage(productId)
+  const result = await deleteProductImage(productId, session.id)
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
   return new NextResponse(null, { status: 204 })
 }

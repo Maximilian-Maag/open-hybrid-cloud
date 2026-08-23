@@ -63,6 +63,8 @@ beforeAll(async () => {
       name TEXT NOT NULL,
       display_order INT NOT NULL DEFAULT 0
     );
+    -- Migration 0017: a category holding an ordered product is retired, not deleted.
+    ALTER TABLE categories ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ;
     CREATE TABLE IF NOT EXISTS products (
       id BIGSERIAL PRIMARY KEY,
       category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
@@ -72,6 +74,8 @@ beforeAll(async () => {
     );
     ALTER TABLE products ADD COLUMN IF NOT EXISTS image_mime TEXT;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS image_alt TEXT;
+    -- Migration 0017: a product that has been ordered is retired, not deleted.
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ;
     CREATE TABLE IF NOT EXISTS product_translations (
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       language_code TEXT NOT NULL,

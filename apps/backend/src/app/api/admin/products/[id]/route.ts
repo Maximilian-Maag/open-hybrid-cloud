@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { getProductAdmin, updateProduct, deleteProduct } from '@/lib/services/admin/products'
 
 const UpdateProductSchema = z.object({
@@ -21,7 +21,9 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await getProductAdmin(parseInt(id, 10)))
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
+  return toResponse(await getProductAdmin(productId))
 }
 
 export async function PUT(
@@ -32,6 +34,8 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id } = await params
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
   const body = await req.json().catch(() => null)
   const parsed = UpdateProductSchema.safeParse(body)
   if (!parsed.success) {
@@ -40,7 +44,7 @@ export async function PUT(
 
   // The author comes from the session, never the body — a history entry that could
   // be attributed to somebody else is not a history.
-  return toResponse(await updateProduct(parseInt(id, 10), { ...parsed.data, userId: session.id }))
+  return toResponse(await updateProduct(productId, { ...parsed.data, userId: session.id }))
 }
 
 export async function DELETE(
@@ -51,5 +55,7 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await deleteProduct(parseInt(id, 10)))
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
+  return toResponse(await deleteProduct(productId, session.id))
 }

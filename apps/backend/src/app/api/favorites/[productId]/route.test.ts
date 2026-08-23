@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { PUT, DELETE } from './route'
 import { db } from '@/lib/db/client'
 import { productFavorites } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { createUser, makeAuthHeader, createCategory, createProduct } from '@/test/helpers'
 
 const req = (auth?: string, method = 'PUT') =>
@@ -132,27 +132,21 @@ describe('favorite product id parsing', () => {
     },
   )
 
-  // Issue #143: parsed with `Number()` rather than `parseRouteId` from lib/http.ts,
-  // which is digits-only. Hex, exponent, signed and whitespace-padded spellings all
-  // resolve to a real product id. Asserting the CURRENT behaviour.
+  // Issue #143 made digits-only the contract for a route id: `parseRouteId` in
+  // lib/http.ts refuses anything `/^\d+$/` does not match. Under the `Number()`
+  // parse this route used before, every spelling below resolved to a real product
+  // and starred it.
   it.each([
     ['hex', (id: number) => `0x${id.toString(16)}`],
     ['exponent', (id: number) => `${id}e0`],
     ['signed', (id: number) => `+${id}`],
     ['whitespace-padded', (id: number) => ` ${id} `],
-  ])('accepts a %s spelling of a real product id (#143)', async (_label, spell) => {
+  ])('refuses a %s spelling of a real product id (#143)', async (_label, spell) => {
     const { pm, product, auth } = await setup()
 
-    const res = await PUT(req(auth), p(spell(product.id)))
-    expect(res.status).toBe(200)
-    expect(await favoritesOf(pm.id)).toMatchObject([{ productId: product.id }])
+    expect((await PUT(req(auth), p(spell(product.id)))).status).toBe(400)
+    expect(await favoritesOf(pm.id)).toHaveLength(0)
 
-    expect((await DELETE(req(auth, 'DELETE'), p(spell(product.id)))).status).toBe(200)
-    expect(
-      await db
-        .select()
-        .from(productFavorites)
-        .where(and(eq(productFavorites.userId, pm.id), eq(productFavorites.productId, product.id))),
-    ).toHaveLength(0)
+    expect((await DELETE(req(auth, 'DELETE'), p(spell(product.id)))).status).toBe(400)
   })
 })

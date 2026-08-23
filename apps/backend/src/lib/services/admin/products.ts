@@ -1,4 +1,5 @@
 import { db } from '@/lib/db/client'
+import { countWhere } from '@/lib/db/queries'
 import {
   products,
   productTranslations,
@@ -9,17 +10,32 @@ import {
   costCenters,
   infrastructureElements,
   parameters,
+  orders,
+  cartItems,
+  productFavorites,
   type Product,
   type ProductTranslation,
   type ProductEnvironment,
   type ProductWebhook,
   type Parameter,
 } from '@/lib/db/schema'
-import { eq, sql, and, inArray } from 'drizzle-orm'
+import { count, eq, sql, and, inArray, isNull } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
 import { fireDestroyTriggers } from '@/lib/services/teardown'
 import { recordProductVersion } from '@/lib/services/versions'
+import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
+import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
+import {
+  ALLOWED_IMAGE_MIMES,
+  MAX_IMAGE_BYTES,
+  detectImageMime,
+} from '@/lib/services/imageUpload'
+
+// Re-exported from their new home in `imageUpload.ts`: the branding logo needs the
+// same sniffing and the same cap, and it should not have to import them through
+// the product service to get them.
+export { ALLOWED_IMAGE_MIMES, MAX_IMAGE_BYTES, detectImageMime }
 
 export interface ProductAdminRow {
   id: number
@@ -119,12 +135,18 @@ export const listProducts = async (): Promise<Result<ProductAdminRow[]>> => {
     .select(adminProductSelect)
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id))
+    // Retired products are gone as far as every catalogue and admin screen is
+    // concerned; the row only survives so its orders keep a referent (issue #142).
+    .where(isNull(products.retiredAt))
     .orderBy(products.id)
 
   return ok(rows as ProductAdminRow[])
 }
 
-export const createProduct = async (input: CreateProductInput): Promise<Result<ProductAdminRow>> => {
+export const createProduct = async (
+  input: CreateProductInput,
+  actorId?: number,
+): Promise<Result<ProductAdminRow>> => {
   const { categoryId, baseLanguage = 'de', name, description = '' } = input
 
   const [product] = await db
@@ -143,6 +165,13 @@ export const createProduct = async (input: CreateProductInput): Promise<Result<P
       .onConflictDoNothing()
   }
 
+  await logAudit(
+    actorId ?? null,
+    'product.created',
+    product.id,
+    `Created product ${name} in category #${categoryId}`,
+  )
+
   return ok({ ...product, name, description, categoryName: null } as ProductAdminRow)
 }
 
@@ -151,7 +180,7 @@ export const getProductAdmin = async (id: number): Promise<Result<ProductAdminRo
     .select(adminProductSelect)
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id))
-    .where(eq(products.id, id))
+    .where(and(eq(products.id, id), isNull(products.retiredAt)))
     .limit(1)
 
   if (!rows.length) return err(404, 'Not found')
@@ -184,6 +213,18 @@ export const updateProduct = async (
   input: UpdateProductInput,
 ): Promise<Result<Product>> => {
   const { name, description, changelog, userId, ...productFields } = input
+
+  // `userId` is injected by the route on every call, so isEmptyUpdate(input) would
+  // never fire — the emptiness that matters is "no field the caller asked to
+  // change", which is what this spells out.
+  if (
+    name === undefined &&
+    description === undefined &&
+    changelog === undefined &&
+    isEmptyUpdate(productFields)
+  ) {
+    return err(400, EMPTY_UPDATE_MESSAGE)
+  }
 
   const existing = await db
     .select({ id: products.id, baseLanguage: products.baseLanguage })
@@ -244,6 +285,8 @@ export const updateProduct = async (
     userId: userId ?? null,
   })
 
+  await logAudit(userId ?? null, 'product.updated', id, changedFields({ name, description, changelog, ...productFields }))
+
   return ok(updated[0])
 }
 
@@ -256,10 +299,34 @@ const describeProductChange = (input: UpdateProductInput): string => {
   return changed.length > 0 ? `Product updated: ${changed.join(', ')}` : 'Product updated'
 }
 
-export const deleteProduct = async (id: number): Promise<Result<void>> => {
-  const existing = await db.select({ id: products.id }).from(products).where(eq(products.id, id)).limit(1)
+export const deleteProduct = async (id: number, actorId?: number): Promise<Result<void>> => {
+  // An already-retired product is gone from every screen, so asking to delete it
+  // again is a 404 like any other missing product.
+  const existing = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(and(eq(products.id, id), isNull(products.retiredAt)))
+    .limit(1)
   if (!existing.length) return err(404, 'Not found')
 
+  /*
+   * Whether this delete has to preserve order history (issue #142).
+   *
+   * `orders.product_id` is ON DELETE CASCADE, so deleting a product deleted every
+   * order placed for it — and with them `orders.product_snapshot`, the column that
+   * exists precisely so a later catalogue change cannot rewrite what a customer
+   * was offered. The delete erased the record it was designed to protect.
+   *
+   * Refusing the delete outright was the other option the issue offers, and it does
+   * not work here: `infrastructure_elements.order_id` is NOT NULL, so every product
+   * that has ever been provisioned has an order, and refusing would make FA-09.6
+   * — cascade decommissioning on product delete, the behaviour the rest of this
+   * function implements — unreachable in exactly the case it exists for.
+   *
+   * So an ordered product is RETIRED instead of deleted (see `products.retiredAt`).
+   * A product nobody ever ordered has no history to keep and is still deleted
+   * outright, which keeps the table from filling up with tombstones.
+   */
   const activeInfra = await db
     .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
     .from(infrastructureElements)
@@ -304,41 +371,86 @@ export const deleteProduct = async (id: number): Promise<Result<void>> => {
     )
   }
 
-  const deleted = await db.delete(products).where(eq(products.id, id)).returning({ id: products.id })
-  if (!deleted.length) return err(404, 'Not found')
-  return ok(undefined)
+  /*
+   * Retire-or-delete is decided HERE, not before the loop above.
+   *
+   * The order count used to be taken before the destroy triggers were fired. Those
+   * are network calls to the CI system, one per active element, and they take
+   * seconds — during which the product is still fully orderable: cart-add and order
+   * creation only need a matching `product_environments` row, and those rows are
+   * not withdrawn until the retire transaction at the end. An order placed in that
+   * window was not counted, so `retire` stayed false, the product was hard-deleted,
+   * and `orders.product_id ON DELETE CASCADE` took the order and its
+   * `product_snapshot` with it — the exact loss issue #142 exists to prevent.
+   *
+   * Counting inside the transaction that also performs the delete closes the window
+   * rather than narrowing it. `FOR UPDATE` on the product row is the part that makes
+   * it airtight: inserting a row that references `products.id` takes a FOR KEY SHARE
+   * lock on that row, which conflicts with FOR UPDATE, so a concurrent order insert
+   * either committed before the lock (and is counted) or waits behind it. If it
+   * waits and this ends in a hard delete, its foreign key fails and the order is
+   * refused — a rejected order, not a silently destroyed one.
+   *
+   * Withdrawing the offerings first and deciding afterwards was the other option.
+   * It was rejected because the 502 above returns without deleting anything: a call
+   * that refuses to proceed would have already stripped every offering — price,
+   * currency, cost-center mode — with nothing to restore them from.
+   */
+  return db.transaction(async (tx): Promise<Result<void>> => {
+    const locked = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.id, id), isNull(products.retiredAt)))
+      .for('update')
+      .limit(1)
+    if (!locked.length) return err(404, 'Not found')
+
+    // Counted by Postgres rather than selected and measured: the figure is exact
+    // because the audit entry below quotes it, but a popular product has as many
+    // rows here as it has ever had orders and none of them are otherwise read.
+    const orderCount = await countWhere(tx.select({ n: count() }).from(orders).where(eq(orders.productId, id)))
+
+    if (orderCount > 0) {
+      // Withdraw every offering in the same transaction as the retirement flag. Both
+      // cart-add and order creation require a matching product_environments row, so
+      // removing them is what actually makes a retired product unorderable — the flag
+      // only keeps it out of the catalogue's reads.
+      //
+      // The infrastructure_elements rows are left in place, unlike the old cascade:
+      // they are mid-decommission, and their pipelines report back to the callback
+      // that reconciles them. That is what the note above wished for.
+      await tx.update(products).set({ retiredAt: new Date() }).where(eq(products.id, id))
+      await tx.delete(productEnvironments).where(eq(productEnvironments.productId, id))
+      // Transient rows that would otherwise dangle against something nobody can
+      // order any more. Both cascade on a hard delete today.
+      await tx.delete(cartItems).where(eq(cartItems.productId, id))
+      await tx.delete(productFavorites).where(eq(productFavorites.productId, id))
+
+      // On the transaction's own connection, so it rolls back with the retirement.
+      await logAuditWith(
+        tx,
+        actorId ?? null,
+        'product.retired',
+        id,
+        `Retired product (${orderCount} order(s) keep their history), withdrew all offerings, decommissioning ${activeInfra.length} infrastructure element(s)`,
+      )
+
+      return ok(undefined)
+    }
+
+    await tx.delete(products).where(eq(products.id, id))
+
+    await logAuditWith(
+      tx,
+      actorId ?? null,
+      'product.deleted',
+      id,
+      `Deleted product, decommissioning ${activeInfra.length} infrastructure element(s)`,
+    )
+
+    return ok(undefined)
+  })
 }
-
-/**
- * Image types a product picture may have.
- *
- * SVG is deliberately absent: it is a document that can carry script, and this
- * file is served back to browsers from the product page. PNG, JPEG and WebP cover
- * what an operator would upload.
- */
-export const ALLOWED_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const
-
-/** 10 MB — the limit the admin guide has always claimed and nothing enforced. */
-export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
-
-/**
- * Magic bytes per accepted type.
- *
- * The declared Content-Type of an upload is attacker-controlled, so it decides
- * nothing on its own: what gets stored is the type the bytes actually are.
- */
-const MAGIC: { mime: (typeof ALLOWED_IMAGE_MIMES)[number]; test: (b: Buffer) => boolean }[] = [
-  { mime: 'image/png', test: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
-  { mime: 'image/jpeg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
-  {
-    mime: 'image/webp',
-    test: (b) => b.subarray(0, 4).toString('ascii') === 'RIFF' && b.subarray(8, 12).toString('ascii') === 'WEBP',
-  },
-]
-
-/** The type these bytes really are, or null if it is not one we accept. */
-export const detectImageMime = (buffer: Buffer): string | null =>
-  MAGIC.find((candidate) => buffer.length >= 12 && candidate.test(buffer))?.mime ?? null
 
 /** Longest useful alt text; beyond this it is a description, not a label. */
 export const MAX_IMAGE_ALT_LENGTH = 300
@@ -347,6 +459,7 @@ export const updateProductImage = async (
   id: number,
   buffer: Buffer,
   alt: string,
+  actorId?: number,
 ): Promise<Result<{ mime: string }>> => {
   // Required, not optional: an empty alt is a claim that the picture carries no
   // information, and only the person uploading it can make that claim. Every
@@ -378,10 +491,16 @@ export const updateProductImage = async (
   // exist, because an UPDATE matching no rows is not an error.
   if (updated.length === 0) return err(404, 'Product not found')
 
+  await logAudit(actorId ?? null, 'product.image_updated', id, `Image replaced (${mime}, ${buffer.length} bytes)`)
+
   return ok({ mime })
 }
 
-export const updateProductImageAlt = async (id: number, alt: string): Promise<Result<void>> => {
+export const updateProductImageAlt = async (
+  id: number,
+  alt: string,
+  actorId?: number,
+): Promise<Result<void>> => {
   const description = alt.trim()
   if (description === '') return err(400, 'An image description is required')
   if (description.length > MAX_IMAGE_ALT_LENGTH) {
@@ -400,10 +519,13 @@ export const updateProductImageAlt = async (id: number, alt: string): Promise<Re
   if (!row.hasImage) return err(409, 'This product has no image to describe')
 
   await db.update(products).set({ imageAlt: description }).where(eq(products.id, id))
+
+  await logAudit(actorId ?? null, 'product.image_alt_updated', id, 'Image description changed')
+
   return ok(undefined)
 }
 
-export const deleteProductImage = async (id: number): Promise<Result<void>> => {
+export const deleteProductImage = async (id: number, actorId?: number): Promise<Result<void>> => {
   const updated = await db
     .update(products)
     .set({ image: null, imageMime: null, imageAlt: null })
@@ -411,11 +533,15 @@ export const deleteProductImage = async (id: number): Promise<Result<void>> => {
     .returning({ id: products.id })
 
   if (updated.length === 0) return err(404, 'Product not found')
+
+  await logAudit(actorId ?? null, 'product.image_deleted', id, 'Image removed')
+
   return ok(undefined)
 }
 
 export const translateProductById = async (
   id: number,
+  actorId?: number,
 ): Promise<Result<{ languages: string[] }>> => {
   const productRows = await db
     .select({ baseLanguage: products.baseLanguage })
@@ -448,6 +574,13 @@ export const translateProductById = async (
       })
   }
 
+  await logAudit(
+    actorId ?? null,
+    'product.translated',
+    id,
+    `Machine-translated into ${Object.keys(translations).join(', ') || 'no languages'}`,
+  )
+
   return ok({ languages: Object.keys(translations) })
 }
 
@@ -465,6 +598,7 @@ export const upsertTranslation = async (
   id: number,
   lang: string,
   input: UpsertTranslationInput,
+  actorId?: number,
 ): Promise<Result<ProductTranslation>> => {
   const [row] = await db
     .insert(productTranslations)
@@ -479,6 +613,8 @@ export const upsertTranslation = async (
       set: { name: input.name, description: input.description ?? '' },
     })
     .returning()
+
+  await logAudit(actorId ?? null, 'product.translation_updated', id, `Translation saved for ${lang}`)
 
   return ok(row)
 }
@@ -591,6 +727,13 @@ export const createProductEnvironment = async (
     userId: input.userId ?? null,
   })
 
+  await logAudit(
+    input.userId ?? null,
+    previous ? 'product.offering_updated' : 'product.offering_added',
+    id,
+    `Environment #${environmentId}: ${changedFields(values)}`,
+  )
+
   return ok(row)
 }
 
@@ -618,6 +761,13 @@ export const updateProductEnvironment = async (
   envId: number,
   input: UpdateProductEnvironmentInput,
 ): Promise<Result<ProductEnvironment>> => {
+  // `userId` is injected by the route, so the emptiness that matters is "no
+  // column and no changelog" — a bare `{}` reached `.set({})` and 500'd.
+  const { changelog: changelogOnly, userId: _actor, ...mutable } = input
+  if (changelogOnly === undefined && isEmptyUpdate(mutable)) {
+    return err(400, EMPTY_UPDATE_MESSAGE)
+  }
+
   const validated = await validateOverheadCostCenter(input.overheadCostCenterId)
   if (!validated.ok) return validated
 
@@ -658,12 +808,20 @@ export const updateProductEnvironment = async (
     userId: userId ?? null,
   })
 
+  await logAudit(
+    userId ?? null,
+    'product.offering_updated',
+    id,
+    `Environment #${envId}: ${changedFields(columns)}`,
+  )
+
   return ok(updated)
 }
 
 export const deleteProductEnvironment = async (
   id: number,
   envId: number,
+  actorId?: number,
 ): Promise<Result<void>> => {
   // Refuse while infrastructure is still live in this environment. Unlike
   // deleteProduct there is no cascade to follow here — infrastructure_elements
@@ -707,6 +865,8 @@ export const deleteProductEnvironment = async (
     userId: null,
   })
 
+  await logAudit(actorId ?? null, 'product.offering_withdrawn', id, `Environment #${envId} withdrawn`)
+
   return ok(undefined)
 }
 
@@ -747,11 +907,21 @@ export const listProductWebhooks = async (id: number): Promise<Result<PublicProd
 export const createProductWebhook = async (
   id: number,
   input: CreateWebhookInput,
+  actorId?: number,
 ): Promise<Result<PublicProductWebhook>> => {
   const [webhook] = await db
     .insert(productWebhooks)
     .values({ productId: id, ...input, execOrder: input.execOrder ?? 0 })
     .returning(publicWebhookColumns)
+
+  // URL but not token: the URL is what an operator needs to recognise the hook,
+  // the token is a credential.
+  await logAudit(
+    actorId ?? null,
+    'product.webhook_added',
+    id,
+    `Webhook ${input.name} for environment #${input.environmentId} → ${input.webhookUrl}`,
+  )
 
   return ok(webhook)
 }
@@ -760,7 +930,10 @@ export const updateProductWebhook = async (
   id: number,
   whId: number,
   input: UpdateWebhookInput,
+  actorId?: number,
 ): Promise<Result<PublicProductWebhook>> => {
+  if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
+
   const [updated] = await db
     .update(productWebhooks)
     .set(input)
@@ -768,15 +941,26 @@ export const updateProductWebhook = async (
     .returning(publicWebhookColumns)
 
   if (!updated) return err(404, 'Not found')
+
+  // Field names only — `webhookToken` is one of them.
+  await logAudit(actorId ?? null, 'product.webhook_updated', id, `Webhook #${whId}: ${changedFields(input)}`)
+
   return ok(updated)
 }
 
-export const deleteProductWebhook = async (id: number, whId: number): Promise<Result<void>> => {
+export const deleteProductWebhook = async (
+  id: number,
+  whId: number,
+  actorId?: number,
+): Promise<Result<void>> => {
   const deleted = await db
     .delete(productWebhooks)
     .where(and(eq(productWebhooks.id, whId), eq(productWebhooks.productId, id)))
     .returning({ id: productWebhooks.id })
 
   if (!deleted.length) return err(404, 'Not found')
+
+  await logAudit(actorId ?? null, 'product.webhook_deleted', id, `Webhook #${whId} deleted`)
+
   return ok(undefined)
 }

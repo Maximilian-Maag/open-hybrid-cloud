@@ -4,6 +4,7 @@ import { projects, users, costCenters, infrastructureElements, type Project } fr
 import { eq, sql, and } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { fireDestroyTriggers } from '@/lib/services/teardown'
+import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 
 export interface ProjectRow {
   id: number
@@ -114,6 +115,12 @@ export const updateProject = async (
   if (input.name !== undefined) update.name = input.name
   if (input.description !== undefined) update.description = input.description
   if (input.costCenterId !== undefined) update.costCenterId = input.costCenterId
+
+  // A well-formed `{}` used to reach `.set({})`, where Drizzle's mapUpdateSet
+  // throws "No values to set" — an unhandled 500 any project manager could hit on
+  // their own project (issue #143). Checked after the ownership check so it cannot
+  // be used to probe which projects exist.
+  if (isEmptyUpdate(update)) return err(400, EMPTY_UPDATE_MESSAGE)
 
   const [updated] = await db
     .update(projects)

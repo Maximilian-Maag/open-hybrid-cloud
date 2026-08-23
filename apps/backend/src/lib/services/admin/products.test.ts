@@ -35,8 +35,16 @@ import {
 import { translateProduct } from '@/lib/ai'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { products, productTranslations, infrastructureElements } from '@/lib/db/schema'
+import {
+  products,
+  productTranslations,
+  productEnvironments,
+  infrastructureElements,
+  orders,
+  auditLog,
+} from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { listCatalog, getProduct } from '@/lib/services/catalog'
 import {
   createUser,
   createCategory,
@@ -47,7 +55,9 @@ import {
   createOrder as seedOrder,
   createInfraElement,
   createCostCenter,
+  linkProductEnvironment,
 } from '@/test/helpers'
+import type { ProductSnapshot } from '@/lib/services/snapshot'
 
 const mockedTranslate = vi.mocked(translateProduct)
 const mockedWebhooks = vi.mocked(triggerProductWebhooksTracked)
@@ -181,9 +191,12 @@ describe('deleteProduct', () => {
       env.id,
       expect.objectContaining({ TF_ACTION: 'destroy' }),
     )
-    // Infra rows are gone via ON DELETE CASCADE on product_id
+    // The product was ordered, so it is retired rather than deleted (issue #142)
+    // and its infrastructure rows stay put, mid-decommission, for the callback that
+    // reconciles them. They used to vanish with the cascade.
     const rows = await db.select().from(infrastructureElements).where(eq(infrastructureElements.productId, product.id))
-    expect(rows.length).toBe(0)
+    expect(rows.length).toBe(2)
+    expect(rows.every((r) => r.status === 'decommissioning')).toBe(true)
   })
 
   // FA-09.8: skip already-in-flight elements
@@ -208,7 +221,7 @@ describe('deleteProduct', () => {
 
   // Cascade-delete race: the destroy trigger must complete BEFORE the product
   // (and its cascaded infra rows) are deleted.
-  it('awaits the destroy trigger before deleting the product', async () => {
+  it('awaits the destroy trigger before retiring the product', async () => {
     const pm = await createUser({ role: 'project_manager' })
     const cat = await createCategory()
     const product = await seedProduct(cat.id, 'AwaitDestroy')
@@ -234,8 +247,10 @@ describe('deleteProduct', () => {
     expect(productExistedAtTrigger).toBe(true)
     expect(infraExistedAtTrigger).toBe(true)
 
+    // It was ordered, so the row survives — retired, and out of every catalogue.
     const rows = await db.select().from(products).where(eq(products.id, product.id))
-    expect(rows.length).toBe(0)
+    expect(rows.length).toBe(1)
+    expect(rows[0].retiredAt).not.toBeNull()
   })
 
   it('refuses to delete the product when a destroy trigger could not be started', async () => {
@@ -266,6 +281,236 @@ describe('deleteProduct', () => {
       .from(infrastructureElements)
       .where(eq(infrastructureElements.productId, product.id))
     expect(infra.length).toBe(1)
+  })
+})
+
+describe('deleteProduct preserves order history (issue #142)', () => {
+  const seedOrderedProduct = async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'Ordered')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id, { price: '9.99' })
+    const project = await createProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
+    return { pm, product, env, order }
+  }
+
+  // orders.product_id is ON DELETE CASCADE, so the delete used to take the order
+  // and its product_snapshot — the column that exists to keep exactly this.
+  it('keeps the order and its snapshot, retiring the product instead of deleting it', async () => {
+    const { product, order } = await seedOrderedProduct()
+    // Only survival of the column is under test, so the snapshot is a stub rather
+    // than eleven fields of fiction.
+    await db
+      .update(orders)
+      .set({ productSnapshot: { name: 'Ordered', price: '9.99' } as unknown as ProductSnapshot })
+      .where(eq(orders.id, order.id))
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+
+    const orderRows = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(orderRows.length).toBe(1)
+    expect(orderRows[0].productSnapshot).toEqual({ name: 'Ordered', price: '9.99' })
+
+    const productRows = await db.select().from(products).where(eq(products.id, product.id))
+    expect(productRows.length).toBe(1)
+    expect(productRows[0].retiredAt).toBeInstanceOf(Date)
+  })
+
+  it('withdraws every offering, so nothing can be ordered from it again', async () => {
+    const { product } = await seedOrderedProduct()
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+
+    const offerings = await db
+      .select()
+      .from(productEnvironments)
+      .where(eq(productEnvironments.productId, product.id))
+    expect(offerings.length).toBe(0)
+  })
+
+  it('takes the retired product out of the catalogue and the admin list', async () => {
+    const { product } = await seedOrderedProduct()
+    await deleteProduct(product.id)
+
+    const admin = await listProducts()
+    expect(admin.ok).toBe(true)
+    if (admin.ok) expect(admin.data.map((p) => p.id)).not.toContain(product.id)
+
+    const shop = await listCatalog('en')
+    expect(shop.ok).toBe(true)
+    if (shop.ok) {
+      expect(shop.data.items.map((p) => p.id)).not.toContain(product.id)
+      // The count has to agree with the rows, or the pager lies about a page.
+      expect(shop.data.total).toBe(0)
+    }
+
+    const detail = await getProduct(product.id, 'en')
+    expect(detail.ok).toBe(false)
+    if (!detail.ok) expect(detail.status).toBe(404)
+
+    expect((await getProductAdmin(product.id)).ok).toBe(false)
+  })
+
+  it('returns 404 when the same product is deleted twice', async () => {
+    const { product } = await seedOrderedProduct()
+    expect((await deleteProduct(product.id)).ok).toBe(true)
+
+    const again = await deleteProduct(product.id)
+    expect(again.ok).toBe(false)
+    if (!again.ok) expect(again.status).toBe(404)
+  })
+
+  it('records the retirement in the audit log', async () => {
+    const { product } = await seedOrderedProduct()
+    const actor = await createUser({ role: 'root' })
+
+    await deleteProduct(product.id, actor.id)
+
+    const rows = await db.select().from(auditLog).where(eq(auditLog.action, 'product.retired'))
+    expect(rows.length).toBe(1)
+    expect(rows[0].userId).toBe(actor.id)
+    expect(rows[0].entityId).toBe(product.id)
+  })
+
+  /*
+   * The window this closes: the order count used to be taken BEFORE the destroy
+   * triggers, which are per-element network calls taking seconds, and the product
+   * stayed orderable for all of them — its offerings are only withdrawn in the
+   * retire transaction at the very end. An order placed in there was not counted,
+   * so the product was hard-deleted and `orders.product_id ON DELETE CASCADE` took
+   * that order and its snapshot with it.
+   *
+   * The trigger mock is the window: it runs at exactly the moment a real destroy
+   * request is in flight. The infrastructure is attached to another product's order
+   * so that THIS product has no orders when the delete starts — infrastructure
+   * rows require an order (`order_id` is NOT NULL), and a product that already had
+   * one would be retired for that reason instead of this one.
+   */
+  it('counts an order placed while the destroy triggers are in flight', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'RacedByAnOrder')
+    const other = await seedProduct(cat.id, 'OwnsTheInfraOrder')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id, { price: '9.99' })
+    const project = await createProject(pm.id)
+    const unrelated = await seedOrder(project.id, other.id, env.id, pm.id)
+    await createInfraElement(unrelated.id, project.id, env.id, product.id)
+
+    let racedOrderId = 0
+    mockedWebhooks.mockImplementationOnce(async () => {
+      const [placed] = await db
+        .insert(orders)
+        .values({
+          projectId: project.id,
+          productId: product.id,
+          environmentId: env.id,
+          userId: pm.id,
+          status: 'pending',
+          pipelineId: [],
+          productSnapshot: { name: 'RacedByAnOrder', price: '9.99' } as unknown as ProductSnapshot,
+        })
+        .returning({ id: orders.id })
+      racedOrderId = placed.id
+      return { pipelineIds: ['pipe-destroy'], failures: [] }
+    })
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+
+    // The order that arrived mid-delete survives, snapshot and all.
+    const raced = await db.select().from(orders).where(eq(orders.id, racedOrderId))
+    expect(raced.length).toBe(1)
+    expect(raced[0].productSnapshot).toEqual({ name: 'RacedByAnOrder', price: '9.99' })
+
+    // ...because the product was retired rather than hard-deleted.
+    const rows = await db.select().from(products).where(eq(products.id, product.id))
+    expect(rows.length).toBe(1)
+    expect(rows[0].retiredAt).toBeInstanceOf(Date)
+  })
+
+  it('still hard-deletes a product nobody ever ordered', async () => {
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'NeverOrdered')
+
+    const result = await deleteProduct(product.id)
+    expect(result.ok).toBe(true)
+    expect((await db.select().from(products).where(eq(products.id, product.id))).length).toBe(0)
+  })
+})
+
+describe('product update validation (issue #143)', () => {
+  it('rejects an empty offering update with a 400 instead of a 500', async () => {
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'P')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id)
+
+    // A well-formed `{}` from an all-optional schema, plus the userId the route
+    // always injects — which is why isEmptyUpdate(input) alone would not do.
+    const result = await updateProductEnvironment(product.id, env.id, { userId: 1 })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  it('rejects an empty product update with a 400 instead of a 500', async () => {
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'P')
+
+    const result = await updateProduct(product.id, { userId: 1 })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  it('rejects an empty webhook update with a 400 instead of a 500', async () => {
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'P')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const created = await createProductWebhook(product.id, {
+      environmentId: env.id,
+      name: 'wh',
+      webhookUrl: 'https://ci.example.com/hook',
+      webhookToken: 'tok',
+    })
+    if (!created.ok) throw new Error('seed failed')
+
+    const result = await updateProductWebhook(product.id, created.data.id, {})
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  it('records a webhook token rotation by field name, never by value', async () => {
+    const actor = await createUser({ role: 'root' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'P')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const created = await createProductWebhook(product.id, {
+      environmentId: env.id,
+      name: 'wh',
+      webhookUrl: 'https://ci.example.com/hook',
+      webhookToken: 'first-token',
+    }, actor.id)
+    if (!created.ok) throw new Error('seed failed')
+
+    await updateProductWebhook(product.id, created.data.id, { webhookToken: 'rotated-token-secret' }, actor.id)
+
+    const rows = await db.select().from(auditLog).where(eq(auditLog.action, 'product.webhook_updated'))
+    expect(rows.length).toBe(1)
+    expect(rows[0].details).toContain('webhookToken')
+    expect(rows[0].details).not.toContain('rotated-token-secret')
+    // The creation recorded the URL but not the token either.
+    const createdRows = await db.select().from(auditLog).where(eq(auditLog.action, 'product.webhook_added'))
+    expect(createdRows[0].details).toContain('https://ci.example.com/hook')
+    expect(createdRows[0].details).not.toContain('first-token')
   })
 })
 

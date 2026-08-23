@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { rejectOrder } from '@/lib/services/approvals'
 
 const RejectSchema = z.object({
@@ -16,6 +16,8 @@ export async function POST(
   if (!isAuth(session)) return session
 
   const { id } = await params
+  const orderId = parseRouteId(id)
+  if (orderId === null) return invalidId('order id')
 
   const body = await req.json().catch(() => null)
   const parsed = RejectSchema.safeParse(body)
@@ -23,5 +25,5 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await rejectOrder(session, parseInt(id, 10), parsed.data.rejectionNote))
+  return toResponse(await rejectOrder(session, orderId, parsed.data.rejectionNote))
 }

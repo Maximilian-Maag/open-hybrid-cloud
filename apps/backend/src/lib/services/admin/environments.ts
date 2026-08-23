@@ -11,6 +11,8 @@ import {
 import { eq } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { randomBytes } from 'node:crypto'
+import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
+import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 
 // Portal-generated shared secret sent as the X-Gitlab-Token header of the
 // pipeline event webhook. 32 bytes → 64 hex chars, matches Linode-style
@@ -94,6 +96,7 @@ export const listEnvironments = async (): Promise<Result<EnvironmentRow[]>> => {
 
 export const createEnvironment = async (
   input: CreateEnvironmentInput,
+  actorId?: number,
 ): Promise<Result<PublicEnvironment>> => {
   const [env] = await db
     .insert(deploymentEnvironments)
@@ -111,21 +114,40 @@ export const createEnvironment = async (
     // dedicated root-only endpoints.
     .returning(environmentColumns)
 
+  // The webhook token is part of `input` and is not recorded; the name and the CI
+  // source it points at are what an auditor needs.
+  await logAudit(
+    actorId ?? null,
+    'environment.created',
+    env.id,
+    `Created environment ${input.name} on CI source #${input.ciSourceId}`,
+  )
+
   return ok(toPublic(env))
 }
 
-export const getCallbackSecret = async (id: number): Promise<Result<{ callbackSecret: string }>> => {
+export const getCallbackSecret = async (
+  id: number,
+  actorId?: number,
+): Promise<Result<{ callbackSecret: string }>> => {
   const rows = await db
     .select({ callbackSecret: deploymentEnvironments.callbackSecret })
     .from(deploymentEnvironments)
     .where(eq(deploymentEnvironments.id, id))
     .limit(1)
   if (!rows.length) return err(404, 'Not found')
+
+  // A read, but audited: this is the one endpoint that hands out a live shared
+  // secret, so who revealed it and when is the whole point of the record. The
+  // secret itself obviously does not go in.
+  await logAudit(actorId ?? null, 'environment.callback_secret_revealed', id, 'Callback secret revealed')
+
   return ok({ callbackSecret: rows[0].callbackSecret })
 }
 
 export const regenerateCallbackSecret = async (
   id: number,
+  actorId?: number,
 ): Promise<Result<{ callbackSecret: string }>> => {
   const next = generateCallbackSecret()
   const [updated] = await db
@@ -134,6 +156,11 @@ export const regenerateCallbackSecret = async (
     .where(eq(deploymentEnvironments.id, id))
     .returning({ id: deploymentEnvironments.id, callbackSecret: deploymentEnvironments.callbackSecret })
   if (!updated) return err(404, 'Not found')
+
+  // Rotating it invalidates every CI job still configured with the old value, so
+  // the rotation has to be findable afterwards.
+  await logAudit(actorId ?? null, 'environment.callback_secret_rotated', id, 'Callback secret rotated')
+
   return ok({ callbackSecret: updated.callbackSecret })
 }
 
@@ -151,7 +178,10 @@ export const getEnvironmentById = async (id: number): Promise<Result<PublicEnvir
 export const updateEnvironment = async (
   id: number,
   input: UpdateEnvironmentInput,
+  actorId?: number,
 ): Promise<Result<PublicEnvironment>> => {
+  if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
+
   const [updated] = await db
     .update(deploymentEnvironments)
     .set(input)
@@ -159,17 +189,21 @@ export const updateEnvironment = async (
     .returning(environmentColumns)
 
   if (!updated) return err(404, 'Not found')
+
+  // Field names only — `webhookToken` is one of them.
+  await logAudit(actorId ?? null, 'environment.updated', id, changedFields(input))
+
   return ok(toPublic(updated))
 }
 
-export const deleteEnvironment = async (id: number): Promise<Result<void>> => {
+export const deleteEnvironment = async (id: number, actorId?: number): Promise<Result<void>> => {
   // Serialize the reference checks and the DELETE in one transaction, holding a
   // FOR UPDATE lock on the environment row. A concurrent insert of a referencing
   // row takes a FK KEY-SHARE lock on the same row, so it can't slip in between
   // the pre-check and the delete (which would resurrect the 500 this guards).
   return db.transaction(async (tx): Promise<Result<void>> => {
     const existing = await tx
-      .select({ id: deploymentEnvironments.id })
+      .select({ id: deploymentEnvironments.id, name: deploymentEnvironments.name })
       .from(deploymentEnvironments)
       .where(eq(deploymentEnvironments.id, id))
       .for('update')
@@ -205,6 +239,9 @@ export const deleteEnvironment = async (id: number): Promise<Result<void>> => {
       .returning({ id: deploymentEnvironments.id })
 
     if (!deleted.length) return err(404, 'Not found')
+
+    await logAuditWith(tx, actorId ?? null, 'environment.deleted', id, `Deleted environment ${existing[0].name}`)
+
     return ok(undefined)
   })
 }

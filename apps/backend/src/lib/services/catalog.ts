@@ -1,8 +1,9 @@
 import { db } from '@/lib/db/client'
 import { products, productEnvironments, deploymentEnvironments, costCenters, parameters, type Parameter } from '@/lib/db/schema'
-import { eq, or, and, sql } from 'drizzle-orm'
+import { eq, or, and, isNull, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { withoutSensitiveDefaults } from '@/lib/services/parameterRedaction'
+import { safeImageContentType } from '@/lib/services/imageUpload'
 
 /**
  * Load the parameter definitions that apply to a product in a given
@@ -170,7 +171,9 @@ export const listCatalog = async (
     ''
   )`
 
-  const conditions: ReturnType<typeof sql>[] = []
+  // Retired products stay in the table as the referent their orders need
+  // (products.retiredAt, issue #142) and must never appear in the catalogue.
+  const conditions: ReturnType<typeof sql>[] = [sql`${products.retiredAt} IS NULL`]
   if (filters.categoryId !== undefined) {
     conditions.push(sql`${products.categoryId} = ${filters.categoryId}`)
   }
@@ -244,7 +247,9 @@ export const getProduct = async (
       )`,
     })
     .from(products)
-    .where(eq(products.id, productId))
+    // A retired product is gone as far as the shop is concerned, even though the
+    // row survives for its orders (issue #142).
+    .where(and(eq(products.id, productId), isNull(products.retiredAt)))
     .limit(1)
 
   if (!productRows.length) return err(404, 'Product not found')
@@ -318,9 +323,14 @@ export const getProductImage = async (
 
   // Rows written before the mime type was recorded fall back to PNG, which is
   // what this route claimed for every image regardless of what it was.
+  //
+  // Then clamped to an allowed image type on the way out as well as on the way in:
+  // a row written before the upload path sniffed the bytes can still hold whatever
+  // type its uploader declared, and this blob is echoed straight back as a
+  // Content-Type. Anything unrecognised becomes an opaque download.
   return ok({
     data: rows[0].image,
-    mime: rows[0].imageMime ?? 'image/png',
+    mime: safeImageContentType(rows[0].imageMime ?? 'image/png'),
     alt: rows[0].imageAlt,
   })
 }

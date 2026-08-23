@@ -103,7 +103,15 @@ export function AuditTable({ token }: Props) {
         cache: 'no-store',
       })
       if (!res.ok) {
-        setExportError(t('exportFailed', lang))
+        // Prefer the server's own message. An export over the row cap comes back
+        // as a 413 that names the cap and says to narrow the range — advice the
+        // generic string would swallow, leaving the admin to retry the same query.
+        const detail = await res.json().catch(() => null)
+        setExportError(
+          typeof detail?.error === 'string' && detail.error !== ''
+            ? detail.error
+            : t('exportFailed', lang),
+        )
         return
       }
       const blob = await res.blob()

@@ -1,6 +1,6 @@
 import { type NextRequest } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { approveOrder } from '@/lib/services/approvals'
 
 export async function POST(
@@ -11,5 +11,7 @@ export async function POST(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await approveOrder(session, parseInt(id, 10)))
+  const orderId = parseRouteId(id)
+  if (orderId === null) return invalidId('order id')
+  return toResponse(await approveOrder(session, orderId))
 }

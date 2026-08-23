@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { auditLog, userRecoveryCodes, users, userTotp } from '@/lib/db/schema'
-import { createUser, currentTotpCode, enrollTotp } from '@/test/helpers'
+import { createUser, currentTotpCode, enrollTotp, waitUntilBlocked } from '@/test/helpers'
 import { base32Decode, generateTotpSecret, totp } from '@/lib/auth/totp'
 import { encryptTotpSecret, isEncryptedTotpSecret } from '@/lib/auth/totpSecret'
 import {
@@ -42,38 +42,6 @@ const auditDetails = async (userId: number, action: string): Promise<string[]> =
  */
 const createRoot = (overrides?: Parameters<typeof createUser>[0]) =>
   createUser({ role: 'root', ...overrides })
-
-/**
- * Rows this database is currently waiting on a lock for.
- *
- * The two race tests below need to know that the confirmation under test has
- * READ the row and is now stuck on its UPDATE — that is exactly the window a
- * stale request lives in, and it is the only moment at which the newer
- * enrollment can be made to land. Polling for the blocked lock is what makes
- * those tests deterministic instead of a coin flip on two concurrent promises.
- *
- * Scoped through pg_stat_activity rather than pg_locks.database: a statement
- * waiting for a row lock waits on the HOLDER'S transaction id, and for that lock
- * type the database column is NULL — so filtering on it finds nothing. The
- * backend's own datname is the honest way to keep the four workers apart.
- */
-const blockedLocks = async (): Promise<number> => {
-  const rows = (await db.execute(sql`
-    SELECT COUNT(*)::int AS n
-    FROM pg_locks l
-    JOIN pg_stat_activity a ON a.pid = l.pid
-    WHERE NOT l.granted AND a.datname = current_database()
-  `)) as unknown as { n: number }[]
-  return Number(rows[0]?.n ?? 0)
-}
-
-const waitUntilBlocked = async (): Promise<void> => {
-  for (let i = 0; i < 300; i++) {
-    if ((await blockedLocks()) > 0) return
-    await new Promise((r) => setTimeout(r, 10))
-  }
-  throw new Error('the confirmation never reached its UPDATE')
-}
 
 const row = async (userId: number) =>
   (await db.select().from(userTotp).where(eq(userTotp.userId, userId)).limit(1))[0]
@@ -323,7 +291,7 @@ describe('confirmEnrollment', () => {
     const newer = encryptTotpSecret(generateTotpSecret(), u.id)
     const holder = db.transaction(async (tx) => {
       await tx.select().from(userTotp).where(eq(userTotp.userId, u.id)).for('update')
-      await waitUntilBlocked()
+      await waitUntilBlocked('the confirmation never reached its UPDATE')
       await tx
         .update(userTotp)
         .set({ pendingSecret: newer, pendingCreatedAt: new Date() })
@@ -356,7 +324,7 @@ describe('confirmEnrollment', () => {
     const newer = encryptTotpSecret(generateTotpSecret(), u.id)
     const holder = db.transaction(async (tx) => {
       await tx.select().from(userTotp).where(eq(userTotp.userId, u.id)).for('update')
-      await waitUntilBlocked()
+      await waitUntilBlocked('the confirmation never reached its UPDATE')
       await tx
         .update(userTotp)
         .set({ pendingSecret: newer, pendingCreatedAt: new Date() })

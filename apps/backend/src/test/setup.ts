@@ -264,6 +264,8 @@ beforeAll(async () => {
       cost_center_id BIGINT REFERENCES cost_centers(id),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- Migration 0026: a project that has orders is retired, not deleted.
+    ALTER TABLE projects ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ;
     CREATE TABLE IF NOT EXISTS orders (
       id BIGSERIAL PRIMARY KEY,
       project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

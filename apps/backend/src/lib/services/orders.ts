@@ -354,16 +354,17 @@ export const prepareOrder = async (
   const { projectId, productId, environmentId, costCenterId } = input
   const isAdmin = session.role === 'admin' || session.role === 'root'
 
-  // Ownership: a project_manager may only order into a project they own.
-  if (!isAdmin) {
-    const [project] = await db
-      .select({ ownerId: projects.ownerId })
-      .from(projects)
-      .where(eq(projects.id, projectId))
-      .limit(1)
-    if (!project) return err(404, 'Project not found')
-    if (project.ownerId !== session.id) return err(403, 'Forbidden')
-  }
+  // Read for every role, not only for the project_manager ownership check below: a
+  // retired project (issue #187) is still a row, because its orders reference it,
+  // and ordering into one would book new spend against a project that has been
+  // deleted everywhere anybody can see it.
+  const [project] = await db
+    .select({ ownerId: projects.ownerId, retiredAt: projects.retiredAt })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1)
+  if (!project || project.retiredAt !== null) return err(404, 'Project not found')
+  if (!isAdmin && project.ownerId !== session.id) return err(403, 'Forbidden')
 
   // The product must be resolvable (needed for parameter scope) …
   const [product] = await db

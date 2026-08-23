@@ -5,6 +5,7 @@ import * as schema from '@/lib/db/schema'
 import { createSession } from '@/lib/auth/sessions'
 import { generateTotpSecret, totp } from '@/lib/auth/totp'
 import { encryptTotpSecret } from '@/lib/auth/totpSecret'
+import { sql } from 'drizzle-orm'
 import type { Role } from '@open-hybrid-cloud/types'
 
 export const createUser = async (overrides?: {
@@ -357,4 +358,70 @@ export const createCostCenter = async (overrides?: { code?: string; name?: strin
     })
     .returning()
   return cc
+}
+
+/**
+ * Resolves once some statement in this test's database is waiting on a lock, and
+ * reports whether one ever was.
+ *
+ * The race tests need to know that the contender has actually reached the write
+ * it is supposed to contend on — that is the only moment at which the holder can
+ * make the interleaving happen on purpose. Polling for the blocked lock is what
+ * makes them deterministic rather than a coin flip on two concurrent promises.
+ *
+ * Scoped through pg_stat_activity rather than pg_locks.database: a statement
+ * waiting for a row lock waits on the HOLDER'S transaction id, and for that lock
+ * type the database column is NULL, so filtering on it finds nothing. Each run has
+ * its own database (see test/database.ts), so datname is the honest scope.
+ */
+export const waitForBlockedStatement = async (timeoutMs = 3000): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const rows = (await db.execute(sql`
+      SELECT COUNT(*)::int AS n
+      FROM pg_locks l
+      JOIN pg_stat_activity a ON a.pid = l.pid
+      WHERE NOT l.granted AND a.datname = current_database()
+    `)) as unknown as { n: number }[]
+    if (Number(rows[0]?.n ?? 0) > 0) return true
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  return false
+}
+
+/**
+ * `waitForBlockedStatement`, for the tests where being blocked IS the assertion.
+ *
+ * `reason` names what was supposed to be waiting, so a failure says which claim is
+ * missing rather than "timed out".
+ */
+export const waitUntilBlocked = async (reason: string, timeoutMs = 3000): Promise<void> => {
+  if (!(await waitForBlockedStatement(timeoutMs))) throw new Error(reason)
+}
+
+/**
+ * Opens the connections a race needs before the race starts.
+ *
+ * postgres.js connects lazily, so without this the second caller spends its first
+ * statement on a TCP handshake and the two never overlap.
+ */
+export const warmPool = async (connections = 4): Promise<void> => {
+  await Promise.all(Array.from({ length: connections }, () => db.execute(sql`SELECT 1`)))
+}
+
+/**
+ * A promise the other half of a race can open.
+ *
+ * The holder transaction has to have taken its lock BEFORE the contender starts,
+ * or the contender wins by getting there first and the test proves nothing.
+ * Declaring the transaction first is not enough: postgres.js acquires the
+ * connection and sends BEGIN asynchronously, so the contender's first statement
+ * can overtake it.
+ */
+export const latch = (): { opened: Promise<void>; open: () => void } => {
+  let open!: () => void
+  const opened = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  return { opened, open }
 }

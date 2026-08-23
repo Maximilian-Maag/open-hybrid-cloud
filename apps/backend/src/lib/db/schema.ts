@@ -460,6 +460,11 @@ export const projects = pgTable('projects', {
   ownerId: bigint('owner_id', { mode: 'number' }).notNull().references(() => users.id),
   costCenterId: bigint('cost_center_id', { mode: 'number' }).references(() => costCenters.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Set when a project that has orders is deleted (issue #187). The row survives
+  // as the referent `orders.project_id` needs — deleting it cascades the orders,
+  // their comments and their `product_snapshot` away — while every read filters it
+  // out, so the project is gone everywhere a user can see it. NULL is "in use".
+  retiredAt: timestamp('retired_at', { withTimezone: true }),
 })
 
 export const orders = pgTable('orders', {

@@ -162,6 +162,13 @@
       "when": 1787702400000,
       "tag": "0024_product_retirement",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787702400000,
+      "tag": "0026_project_retirement",
+      "breakpoints": true
     }
   ]
 }

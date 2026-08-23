@@ -15,7 +15,7 @@ import { listOrders, getOrderById, createOrder } from './orders'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements, parameters, productEnvironments } from '@/lib/db/schema'
+import { orders, infrastructureElements, parameters, productEnvironments, projects } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -248,6 +248,27 @@ describe('createOrder (PM path)', () => {
 })
 
 describe('createOrder — validation & ownership', () => {
+  it('refuses an order into a retired project, for an admin too', async () => {
+    // A retired project (issue #187) is still a row, because its orders reference
+    // it. Ordering into one would book new spend against a project that has been
+    // deleted everywhere anybody can see it. The project read used to happen only
+    // on the project_manager ownership path, so an admin skipped it entirely.
+    const { admin, pm, product, env, project } = await buildBase()
+    await db.update(projects).set({ retiredAt: new Date() }).where(eq(projects.id, project.id))
+
+    for (const session of [admin, pm]) {
+      const result = await createOrder(makeSession(session), {
+        projectId: project.id,
+        productId: product.id,
+        environmentId: env.id,
+        parameters: {},
+      })
+      expect(result.ok, session.email).toBe(false)
+      if (!result.ok) expect(result.status).toBe(404)
+    }
+    expect(await db.select().from(orders)).toHaveLength(0)
+  })
+
   it('rejects a missing required parameter with 400', async () => {
     const { admin, cat, product, env, project } = await buildBase()
     await db.insert(parameters).values({

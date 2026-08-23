@@ -15,7 +15,13 @@ import { listApprovals, approveOrder, rejectOrder } from './approvals'
 import { sendOrderApproved, sendOrderRejected } from '@/lib/notification'
 import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements, productEnvironments, auditLog } from '@/lib/db/schema'
+import {
+  orders,
+  infrastructureElements,
+  productEnvironments,
+  auditLog,
+  approvalDelegations,
+} from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -396,6 +402,33 @@ describe('approveOrder — auditing a delegation in use', () => {
 
     expect((await approveOrder(makeSession(substitute), order.id)).ok).toBe(true)
     expect(await entriesFor('approval_delegation.used')).toHaveLength(2)
+  })
+
+  it('audits the authority in force at the CLAIM, not at logging time', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const substitute = await createUser({ role: 'admin', email: 'sub@test.dev', name: 'Sub' })
+    const delegation = await seedDelegation(admin.id, substitute.id, { startsInDays: 0, endsInDays: 5 })
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
+
+    // Provisioning is not instant, so the delegation can end — expire at midnight,
+    // or be revoked by the delegator — between the decision and the audit write.
+    // The authority that has to be recorded is the one the approval was taken
+    // under; re-reading it afterwards would record an approval as unauthorised.
+    mockedWebhooks.mockImplementation(async () => {
+      await db
+        .update(approvalDelegations)
+        .set({ revokedAt: new Date() })
+        .where(eq(approvalDelegations.id, delegation.id))
+      return ['pipe-42']
+    })
+
+    expect((await approveOrder(makeSession(substitute), order.id)).ok).toBe(true)
+
+    const approved = await entriesFor('order.approved')
+    expect(approved[0].details).toContain(`#${delegation.id}`)
+    const used = await entriesFor('approval_delegation.used')
+    expect(used).toHaveLength(1)
+    expect(used[0].entityId).toBe(delegation.id)
   })
 
   it('audits a rejection under delegation the same way', async () => {

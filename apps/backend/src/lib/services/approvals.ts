@@ -177,6 +177,12 @@ export const approveOrder = async (
 
   const order = claimed[0]
 
+  // Snapshotted at the moment of the claim, not at logging time: everything
+  // below — webhooks, pipeline stacks, the infrastructure insert — can take
+  // minutes, and a delegation that expires at midnight or is revoked mid-run
+  // would otherwise be audited as absent from a decision it actually authorised.
+  const held = await activeDelegationsHeldBy(session.id)
+
   // A trial's clock starts HERE, at provisioning, not when the order was placed:
   // the order may have waited for approval, and starting the clock then could
   // burn the whole trial — or expire it outright — before the infrastructure
@@ -241,9 +247,6 @@ export const approveOrder = async (
     })
     .returning()
 
-  // Read AFTER the decision, not before: the delegation that has to be recorded
-  // is the one that was in force when the order was claimed.
-  const held = await activeDelegationsHeldBy(session.id)
   await logAudit(
     session.id,
     'order.approved',

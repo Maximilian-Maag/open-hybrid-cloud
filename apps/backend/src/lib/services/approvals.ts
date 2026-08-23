@@ -16,6 +16,7 @@ import { findProductName, findUserEmail } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
 import { trialVariables, trialExpiry } from '@/lib/services/trial'
 import { redactParametersForOrders } from '@/lib/services/parameterRedaction'
+import { activeDelegationsHeldBy, type DelegationRow } from '@/lib/services/delegations'
 
 export interface ApprovalRow {
   id: number
@@ -81,10 +82,81 @@ export const listApprovals = async (): Promise<Result<ApprovalRow[]>> => {
   return ok(await redactParametersForOrders(rows as ApprovalRow[], (row) => row.id))
 }
 
+/**
+ * The delegated authority the actor holds at this moment, as an audit suffix.
+ *
+ * Empty when they hold none, which is the normal case. The wording is
+ * deliberately "while holding", not "as": the substitute acted as themselves and
+ * the `order.approved` entry already names them — this records the authority that
+ * was in force, not a different actor.
+ */
+const authoritySuffix = (held: DelegationRow[]): string =>
+  held.length === 0
+    ? ''
+    : ` while holding delegated approval authority ${held
+        .map((d) => `#${d.id} from ${d.fromUserEmail}`)
+        .join(', ')}`
+
+/**
+ * One audit entry per delegation that was in force, keyed on the DELEGATION.
+ *
+ * `order.approved` answers "who approved order 12"; these answer "what was done
+ * under delegation 7" — which is the question a delegation has to be auditable
+ * for, and the one an entry keyed on the order alone cannot be filtered for.
+ */
+const logDelegatedUse = async (
+  session: SessionUser,
+  held: DelegationRow[],
+  verb: 'approved' | 'rejected',
+  orderId: number,
+): Promise<void> => {
+  for (const d of held) {
+    await logAudit(
+      session.id,
+      'approval_delegation.used',
+      d.id,
+      `${session.email} ${verb} order #${orderId} under delegation #${d.id} from ${d.fromUserEmail} ` +
+        `(in force ${d.startsOn} to ${d.endsOn})`,
+    )
+  }
+}
+
+/**
+ * Nobody approves their own order — not even with a delegation in hand.
+ *
+ * Two ways an admin can end up as the orderer of a PENDING order: they placed it
+ * as a project manager and were promoted afterwards, or an admin's own order was
+ * left pending by an earlier code path. Either way, self-approval is the one
+ * separation of duties this workflow has, so it is checked BEFORE the order is
+ * claimed — a rejection after the claim would strand the order in 'provisioning'.
+ *
+ * A delegation cannot route around this because the check compares the ACTOR's id
+ * with the orderer's, and a delegation never changes who the actor is. Delegating
+ * to the orderer and having them approve "as" the delegator is precisely what
+ * an identity-swapping design would have allowed.
+ */
+const assertNotOwnOrder = async (
+  session: SessionUser,
+  orderId: number,
+): Promise<Result<void>> => {
+  const [existing] = await db
+    .select({ userId: orders.userId })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1)
+
+  if (!existing) return err(404, 'Order not found')
+  if (existing.userId === session.id) return err(403, 'You cannot approve your own order')
+  return ok(undefined)
+}
+
 export const approveOrder = async (
   session: SessionUser,
   orderId: number,
 ): Promise<Result<{ success: true; infraId: number; pipelineIds: string[] }>> => {
+  const separation = await assertNotOwnOrder(session, orderId)
+  if (!separation.ok) return separation
+
   // Atomically claim the order (pending → provisioning). Only one concurrent
   // caller can win this conditional update, which prevents a double-clicked or
   // concurrently-approved order from triggering provisioning twice.
@@ -169,7 +241,16 @@ export const approveOrder = async (
     })
     .returning()
 
-  await logAudit(session.id, 'order.approved', order.id, `Order approved by ${session.email}`)
+  // Read AFTER the decision, not before: the delegation that has to be recorded
+  // is the one that was in force when the order was claimed.
+  const held = await activeDelegationsHeldBy(session.id)
+  await logAudit(
+    session.id,
+    'order.approved',
+    order.id,
+    `Order approved by ${session.email}${authoritySuffix(held)}`,
+  )
+  await logDelegatedUse(session, held, 'approved', order.id)
 
   const email = await findUserEmail(order.userId)
   const productName = await findProductName(order.productId)
@@ -180,6 +261,14 @@ export const approveOrder = async (
   return ok({ success: true as const, infraId: infra.id, pipelineIds })
 }
 
+/**
+ * Reject a pending order.
+ *
+ * Deliberately NOT subject to the self-approval guard: an admin rejecting an
+ * order they placed themselves is withdrawing it, which grants nobody anything.
+ * The asymmetry is the point — separation of duties exists to stop a person
+ * granting themselves resources, not to stop them giving them up.
+ */
 export const rejectOrder = async (
   session: SessionUser,
   orderId: number,
@@ -204,7 +293,14 @@ export const rejectOrder = async (
 
   const order = rejected[0]
 
-  await logAudit(session.id, 'order.rejected', order.id, `Rejected: ${rejectionNote}`)
+  const held = await activeDelegationsHeldBy(session.id)
+  await logAudit(
+    session.id,
+    'order.rejected',
+    order.id,
+    `Rejected by ${session.email}${authoritySuffix(held)}: ${rejectionNote}`,
+  )
+  await logDelegatedUse(session, held, 'rejected', order.id)
 
   const email = await findUserEmail(order.userId)
   const productName = await findProductName(order.productId)

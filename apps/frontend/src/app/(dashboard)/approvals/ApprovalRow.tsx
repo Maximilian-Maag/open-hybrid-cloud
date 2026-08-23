@@ -14,9 +14,15 @@ import { t } from '@/lib/i18n'
 interface Props {
   order: Order
   token: string
+  /**
+   * The viewer. Needed because nobody approves their own order (issue #35) —
+   * the backend refuses it, and hiding the button is how the viewer finds that
+   * out before clicking rather than after.
+   */
+  currentUserId: number
 }
 
-export function ApprovalRow({ order, token }: Props) {
+export function ApprovalRow({ order, token, currentUserId }: Props) {
   const router = useRouter()
   const lang = useLang()
   const [rejecting, setRejecting] = useState(false)
@@ -29,7 +35,10 @@ export function ApprovalRow({ order, token }: Props) {
     setLoading(true)
     setError(null)
     try {
-      await post(`/api/orders/${order.id}/approve`, {}, token)
+      // /api/approvals, not /api/orders: the approve and reject endpoints live
+      // under the approvals resource, and this pointed at a path the backend has
+      // never served.
+      await post(`/api/approvals/${order.id}/approve`, {}, token)
       setDone(true)
       router.refresh()
     } catch (err) {
@@ -44,7 +53,7 @@ export function ApprovalRow({ order, token }: Props) {
     setLoading(true)
     setError(null)
     try {
-      await post(`/api/orders/${order.id}/reject`, { rejectionNote }, token)
+      await post(`/api/approvals/${order.id}/reject`, { rejectionNote }, token)
       setDone(true)
       router.refresh()
     } catch (err) {
@@ -55,6 +64,8 @@ export function ApprovalRow({ order, token }: Props) {
   }
 
   if (done) return null
+
+  const ownOrder = order.userId === currentUserId
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -76,14 +87,18 @@ export function ApprovalRow({ order, token }: Props) {
 
         {!rejecting && (
           <div className="flex items-center gap-2 shrink-0">
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={handleApprove}
-              disabled={loading}
-            >
-              {t('approve', lang)}
-            </Button>
+            {ownOrder ? (
+              <span className="text-sm text-slate-500">{t('cannotApproveOwnOrder', lang)}</span>
+            ) : (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={handleApprove}
+                disabled={loading}
+              >
+                {t('approve', lang)}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="danger"

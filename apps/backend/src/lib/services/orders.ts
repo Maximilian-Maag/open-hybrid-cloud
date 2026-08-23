@@ -21,6 +21,7 @@ import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/c
 import { redactParametersForOrders, REDACTED } from '@/lib/services/parameterRedaction'
 import { resolveTrial, trialVariables, trialExpiry } from '@/lib/services/trial'
 import { captureProductSnapshot, type ProductSnapshot } from '@/lib/services/snapshot'
+import { substitutionsByEmail } from '@/lib/services/delegations'
 
 export interface OrderRow {
   id: number
@@ -513,8 +514,18 @@ export const createPreparedOrder = async (
 
     const ordererName = await findUserName(session.id)
     const adminEmails = await findAdminEmails()
+    // Delegation is a CC, not a redirect (issue #35): every admin still gets the
+    // request, and a substitute's copy additionally says whose authority they are
+    // holding. See sendApprovalRequest for why redirecting was rejected.
+    const substitutions = await substitutionsByEmail()
     for (const adminEmail of adminEmails) {
-      await sendApprovalRequest(adminEmail, productName, order.id, ordererName)
+      await sendApprovalRequest(
+        adminEmail,
+        productName,
+        order.id,
+        ordererName,
+        substitutions.get(adminEmail) ?? [],
+      )
     }
 
     return ok(order as CreatedOrder)

@@ -1008,6 +1008,10 @@ registry.registerPath({
   method: 'post',
   path: '/approvals/{id}/approve',
   summary: '[admin] Approve an order and trigger provisioning',
+  description:
+    'Nobody approves their own order, delegation or not: the check compares the ACTOR with the ' +
+    'orderer, and a delegation never changes who the actor is. A delegation held at the time of ' +
+    'the decision is recorded in the audit log (`order.approved` and `approval_delegation.used`).',
   tags: ['Approvals'],
   security: bearerAuth,
   request: {
@@ -1058,6 +1062,122 @@ registry.registerPath({
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Order not found' },
+  },
+})
+
+// ─── Approval delegations ─────────────────────────────────────────────────────
+
+const delegationSchema = z.object({
+  id: z.number(),
+  fromUserId: z.number(),
+  fromUserName: z.string(),
+  fromUserEmail: z.string(),
+  toUserId: z.number(),
+  toUserName: z.string(),
+  toUserEmail: z.string(),
+  startsOn: z.string().openapi({ description: 'Calendar date, inclusive.', example: '2026-09-01' }),
+  endsOn: z.string().openapi({
+    description: 'Calendar date, inclusive — the last day the delegation is in force.',
+    example: '2026-09-14',
+  }),
+  createdAt: z.string().nullable(),
+  revokedAt: z.string().nullable(),
+  active: z.boolean().openapi({
+    description:
+      'Computed at read time by date comparison (starts_on <= today <= ends_on and not revoked). ' +
+      'Never stored, so a delegation cannot outlive its end date.',
+  }),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/approvals/delegations',
+  summary: "[admin] The caller's approval delegations, and who they may nominate",
+  description:
+    'Approval delegation (issue #35): an admin nominates a substitute approver for a period. ' +
+    'What is delegated is AUTHORITY, not identity — the substitute approves under their own name ' +
+    'and every decision taken while a delegation is in force is audited against it. ' +
+    '`mine` is the authority the caller has given away, `grantedToMe` the authority they hold. ' +
+    'Root does not participate in the approval workflow and is neither listed nor nominable.',
+  tags: ['Approvals'],
+  security: bearerAuth,
+  responses: {
+    200: {
+      description: 'Delegations and eligible substitutes',
+      content: {
+        'application/json': {
+          schema: z.object({
+            mine: z.array(delegationSchema),
+            grantedToMe: z.array(delegationSchema),
+            candidates: z.array(
+              z.object({ id: z.number(), name: z.string(), email: z.string() }),
+            ),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/approvals/delegations',
+  summary: '[admin] Nominate a substitute approver for a period',
+  description:
+    'One live delegation per delegator, and a user may not appear on both sides of overlapping ' +
+    'delegations — so A→B while B→C is refused and authority never travels more than one hop. ' +
+    'A delegation cannot start in the past. Root can be neither delegator nor substitute.',
+  tags: ['Approvals'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            toUserId: z.number(),
+            startsOn: z.string().openapi({ example: '2026-09-01' }),
+            endsOn: z.string().openapi({ example: '2026-09-14' }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Delegation created',
+      content: { 'application/json': { schema: delegationSchema } },
+    },
+    400: { description: 'Bad request — dates, or the substitute is not an active admin' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden — root does not participate in the approval workflow' },
+    404: { description: 'Substitute not found' },
+    409: { description: 'Overlaps an existing delegation, or would chain one' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/approvals/delegations/{delegationId}',
+  summary: '[admin] Revoke a delegation you granted',
+  description:
+    'Delegator only. The row is stamped rather than deleted, so the audit entries for decisions ' +
+    'taken while it was in force keep resolving.',
+  tags: ['Approvals'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ delegationId: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'Delegation revoked',
+      content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+    },
+    400: { description: 'Already revoked' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden — only the delegator may revoke' },
+    404: { description: 'Delegation not found' },
   },
 })
 

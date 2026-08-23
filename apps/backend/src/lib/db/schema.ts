@@ -8,6 +8,7 @@ import {
   timestamp,
   numeric,
   jsonb,
+  date,
   primaryKey,
   customType,
   uniqueIndex,
@@ -415,6 +416,32 @@ export const auditLog = pgTable('audit_log', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+/**
+ * An admin's approval authority, held by a substitute for a period (issue #35).
+ *
+ * What is delegated is AUTHORITY, not identity: the substitute approves as
+ * themselves and every decision they take while a delegation is in force is
+ * audited with the delegation that was in force. Nothing here lets one user act
+ * under another's name.
+ *
+ * Expiry is a date comparison at read time (`starts_on <= today <= ends_on`,
+ * both inclusive) — there is deliberately no job to run and no `active` column
+ * to fall out of sync with the calendar.
+ */
+export const approvalDelegations = pgTable('approval_delegations', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  fromUserId: bigint('from_user_id', { mode: 'number' }).notNull().references(() => users.id),
+  toUserId: bigint('to_user_id', { mode: 'number' }).notNull().references(() => users.id),
+  // `date` in mode 'string' so a period stays the calendar days the admin typed
+  // instead of being shifted by the server's timezone on the way in and out.
+  startsOn: date('starts_on', { mode: 'string' }).notNull(),
+  endsOn: date('ends_on', { mode: 'string' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Cancelled early. Kept rather than deleted so the audit entries that name this
+  // delegation keep resolving.
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+})
+
 export const branding = pgTable('branding', {
   id: integer().primaryKey().default(1),
   logoData: bytea('logo_data'),
@@ -466,5 +493,6 @@ export type OrderComment = typeof orderComments.$inferSelect
 export type InfrastructureElement = typeof infrastructureElements.$inferSelect
 export type ExchangeRate = typeof exchangeRates.$inferSelect
 export type AuditEntry = typeof auditLog.$inferSelect
+export type ApprovalDelegation = typeof approvalDelegations.$inferSelect
 export type Branding = typeof branding.$inferSelect
 export type AppConfig = typeof appConfig.$inferSelect

@@ -15,6 +15,7 @@ import { Table } from './ui/Table'
 import { CostTrend } from '@/app/(dashboard)/costs/CostTrend'
 import { CostDistribution } from '@/app/(dashboard)/costs/CostDistribution'
 import { CostComparison } from '@/app/(dashboard)/costs/CostComparison'
+import { DelegationPanel } from '@/app/(dashboard)/approvals/DelegationPanel'
 
 /**
  * Component-level accessibility checks (issue #102).
@@ -32,6 +33,9 @@ import { CostComparison } from '@/app/(dashboard)/costs/CostComparison'
  * is actually enforced. Everything structural — labelling, roles, name
  * computation, aria references — is exactly what this catches.
  */
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
+vi.mock('@/lib/api', () => ({ post: vi.fn(), del: vi.fn() }))
 
 // jsdom does not implement the native <dialog> methods.
 beforeAll(() => {
@@ -351,6 +355,62 @@ describe('CostComparison', () => {
           estimatedOrders={0}
           unconverted={[]}
         />,
+      ),
+    ).toHaveNoViolations()
+  })
+})
+
+/**
+ * Approval delegation (issue #35).
+ *
+ * Not a `ui/` primitive, but it is a form the e2e gate only ever sees in its
+ * empty state — the "you are approving on behalf of X" banner and the granted
+ * list only appear when there are delegations, and no seeded dev database has
+ * any. Both states are checked here instead.
+ */
+describe('DelegationPanel', () => {
+  const candidates = [{ id: 2, name: 'Bob Admin', email: 'bob@test.dev' }]
+  const delegation = {
+    id: 5,
+    fromUserId: 1,
+    fromUserName: 'Alice Admin',
+    fromUserEmail: 'alice@test.dev',
+    toUserId: 2,
+    toUserName: 'Bob Admin',
+    toUserEmail: 'bob@test.dev',
+    startsOn: '2026-09-01',
+    endsOn: '2026-09-14',
+    createdAt: '2026-08-20T10:00:00.000Z',
+    revokedAt: null,
+    active: true,
+  }
+
+  it('is accessible as the empty create form', async () => {
+    expect(
+      await check(
+        <DelegationPanel
+          delegations={{ mine: [], grantedToMe: [], candidates }}
+          token="t"
+        />,
+      ),
+    ).toHaveNoViolations()
+  })
+
+  it('is accessible while announcing a held authority and listing a granted one', async () => {
+    expect(
+      await check(
+        <DelegationPanel
+          delegations={{ mine: [delegation], grantedToMe: [delegation], candidates }}
+          token="t"
+        />,
+      ),
+    ).toHaveNoViolations()
+  })
+
+  it('is accessible when there is nobody to nominate', async () => {
+    expect(
+      await check(
+        <DelegationPanel delegations={{ mine: [], grantedToMe: [], candidates: [] }} token="t" />,
       ),
     ).toHaveNoViolations()
   })

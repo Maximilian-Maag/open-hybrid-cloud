@@ -27,6 +27,7 @@ import {
   linkProductEnvironment,
   createOrder as seedOrder,
   createCostCenter,
+  createDelegation as seedDelegation,
 } from '@/test/helpers'
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
@@ -931,5 +932,67 @@ describe('createOrder — product snapshot', () => {
 
     const listed = await listOrders(makeSession(ctx.admin))
     expect(listed.ok && listed.data[0].productSnapshot?.price).toBe('10.00')
+  })
+})
+
+// Issue #35. Delegation is reflected in the approval-request email as a CC, not a
+// redirect: nobody is removed from the recipient list, and the substitute's copy
+// gains the names of the admins they are covering for.
+describe('createOrder — delegation in the approval-request email', () => {
+  it('annotates the substitute’s copy and leaves the away admin on the list', async () => {
+    const { pm, product, env, project } = await buildBase()
+    const away = await createUser({ role: 'admin', email: 'away@test.dev', name: 'Away Admin' })
+    const sub = await createUser({ role: 'admin', email: 'sub@test.dev', name: 'Sub Admin' })
+    await seedDelegation(away.id, sub.id, { startsInDays: 0, endsInDays: 5 })
+
+    const result = await createOrder(makeSession(pm), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: {},
+    })
+    expect(result.ok).toBe(true)
+
+    const byRecipient = new Map(
+      mockedSendApprovalRequest.mock.calls.map((c) => [c[0] as string, c[4] as string[]]),
+    )
+    // The away admin is still notified — a redirect would have made approval
+    // traffic invisible to the admin who remains accountable for it.
+    expect(byRecipient.has('away@test.dev')).toBe(true)
+    expect(byRecipient.get('away@test.dev')).toEqual([])
+    expect(byRecipient.get('sub@test.dev')).toEqual(['Away Admin'])
+  })
+
+  it('annotates nobody when no delegation is in force', async () => {
+    const { pm, product, env, project } = await buildBase()
+    await createUser({ role: 'admin', email: 'other@test.dev', name: 'Other' })
+
+    await createOrder(makeSession(pm), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: {},
+    })
+
+    for (const call of mockedSendApprovalRequest.mock.calls) {
+      expect(call[4]).toEqual([])
+    }
+  })
+
+  it('ignores a delegation whose period has passed', async () => {
+    const { pm, product, env, project } = await buildBase()
+    const away = await createUser({ role: 'admin', email: 'away@test.dev', name: 'Away Admin' })
+    const sub = await createUser({ role: 'admin', email: 'sub@test.dev', name: 'Sub Admin' })
+    await seedDelegation(away.id, sub.id, { startsInDays: -9, endsInDays: -2 })
+
+    await createOrder(makeSession(pm), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: {},
+    })
+
+    const subCall = mockedSendApprovalRequest.mock.calls.find((c) => c[0] === 'sub@test.dev')
+    expect(subCall?.[4]).toEqual([])
   })
 })

@@ -158,6 +158,10 @@ describe('POST /api/orders', () => {
       expect.any(String),
       body.id,
       pm.name,
+      // The fifth argument is who this admin is substituting for. Empty here:
+      // no delegation is in play, and asserting it explicitly is what keeps a
+      // future delegation leaking into an ordinary approval mail visible.
+      [],
     )
   })
 

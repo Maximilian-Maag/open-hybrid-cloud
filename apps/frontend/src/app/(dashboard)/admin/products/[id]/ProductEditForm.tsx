@@ -251,7 +251,7 @@ export function ProductEditForm({ product, categories, environments, translation
   useEffect(() => {
     get<PipelineStack[]>(`/api/admin/products/${product.id}/pipeline-stacks`, token)
       .then(setStacks)
-      .catch(() => {})
+      .catch(() => { /* the section renders empty; the add form below still works */ })
   }, [product.id, token])
 
   // Order Callbacks, same shape as the pipeline stacks fetch above. Without
@@ -261,7 +261,7 @@ export function ProductEditForm({ product, categories, environments, translation
   useEffect(() => {
     get<ProductWebhook[]>(`/api/admin/products/${product.id}/webhooks`, token)
       .then(setWebhooks)
-      .catch(() => {})
+      .catch(() => { /* the section renders empty; the add form below still works */ })
   }, [product.id, token])
 
   function openStackModal() {

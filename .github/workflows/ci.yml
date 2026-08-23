@@ -80,6 +80,34 @@ jobs:
       - name: Lint frontend
         run: pnpm --filter frontend lint
 
+  # ── Policy ───────────────────────────────────────────────────────────────────
+  #
+  # Codebase invariants as Rego (issue #149). Every rule here is one that spans
+  # files — a route and its auth helper, a table and the test setup, a key and 25
+  # language tables — which is exactly the class ESLint cannot see, and the class
+  # every recurring defect in this repository has belonged to.
+  #
+  # No database and no build: `scripts/policy-facts.ts` reads the tree, so this
+  # job is the cheapest one here and can safely gate the expensive ones.
+  policy:
+    name: Policy (OPA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      # Pinned by version and by checksum, in scripts/opa.ts. Rule 6 of this very
+      # bundle says a third-party dependency is pinned to something immutable, and
+      # a gate that exempted itself would not be worth having.
+      - name: Install the pinned opa
+        run: make policy-install-opa
+
+      - name: Run the policy gate
+        run: make policy
+
   # ── Test ─────────────────────────────────────────────────────────────────────
   #
   # One leg per app, so the seven-minute backend suite and the twenty-second
@@ -217,7 +245,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-report
           path: playwright-report/

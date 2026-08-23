@@ -40,6 +40,13 @@ describe('GET /api/users/me/2fa', () => {
       'recoveryCodesRemaining',
     ])
   })
+
+  it('refuses a non-root session — #36 is 2FA for the root account', async () => {
+    const u = await createUser({ role: 'admin' })
+    const res = await GET(makeReq('/api/users/me/2fa', 'GET', undefined, await makeAuthHeader(u)))
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toMatch(/root account only/)
+  })
 })
 
 describe('DELETE /api/users/me/2fa', () => {
@@ -177,6 +184,17 @@ describe('POST /api/users/me/2fa/enroll', () => {
       expect((await ENROLL(makeReq('/x', 'POST', body, auth))).status, JSON.stringify(body)).toBe(400)
     }
   })
+
+  it('refuses a non-root account even with the right password', async () => {
+    for (const role of ['admin', 'project_manager'] as const) {
+      const u = await createUser({ password: 'right-one', role })
+      const res = await ENROLL(
+        makeReq('/x', 'POST', { password: 'right-one' }, await makeAuthHeader(u)),
+      )
+      expect(res.status, role).toBe(403)
+      expect((await res.json()).error).toMatch(/root account only/)
+    }
+  })
 })
 
 describe('POST /api/users/me/2fa/confirm', () => {
@@ -225,5 +243,16 @@ describe('POST /api/users/me/2fa/confirm', () => {
     for (const body of [{}, { code: '' }, { code: 'x'.repeat(65) }]) {
       expect((await CONFIRM(makeReq('/x', 'POST', body, auth))).status, JSON.stringify(body)).toBe(400)
     }
+  })
+
+  it('refuses a non-root account, without a role check of its own', async () => {
+    // The handler has no role branch: the gate is in the service, so this is
+    // what proves confirm cannot drift away from enroll.
+    const u = await createUser({ role: 'admin' })
+    const secret = await enrollTotp(u.id, { confirmed: false })
+    const res = await CONFIRM(
+      makeReq('/x', 'POST', { code: currentTotpCode(secret) }, await makeAuthHeader(u)),
+    )
+    expect(res.status).toBe(403)
   })
 })

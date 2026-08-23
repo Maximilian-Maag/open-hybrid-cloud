@@ -2075,8 +2075,10 @@ The Root account signs in with a local password and holds the highest privilege
 level in the system, so it is the one account no identity provider protects.
 It can be given a second factor: standard TOTP (RFC~6238, SHA-1, 30-second
 window, six digits), compatible with Google Authenticator, Authy, Bitwarden and
-1Password. Admin and Project Manager accounts authenticate through Microsoft
-Entra ID and are covered by its MFA instead.
+1Password. It is scoped to Root: every two-factor endpoint answers 403 for any
+other role, enforced in the service layer rather than per route. Admin and
+Project Manager accounts authenticate through Microsoft Entra ID and are covered
+by its MFA instead.
 
 Setup lives under \textbf{Settings → My Profile → Two-factor authentication};
 the end-user steps are in \file{docs/guides/root.md}. What matters at the

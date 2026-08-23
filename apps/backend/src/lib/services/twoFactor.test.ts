@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { auditLog, userRecoveryCodes, userTotp } from '@/lib/db/schema'
+import { auditLog, userRecoveryCodes, users, userTotp } from '@/lib/db/schema'
 import { createUser, currentTotpCode, enrollTotp } from '@/test/helpers'
-import { base32Decode, totp } from '@/lib/auth/totp'
-import { isEncryptedTotpSecret } from '@/lib/auth/totpSecret'
+import { base32Decode, generateTotpSecret, totp } from '@/lib/auth/totp'
+import { encryptTotpSecret, isEncryptedTotpSecret } from '@/lib/auth/totpSecret'
 import {
   confirmEnrollment,
   getTwoFactorStatus,
-  loadLocalAccount,
+  loadTwoFactorAccount,
   MFA_LOCKOUT_MS,
   MFA_MAX_FAILED_ATTEMPTS,
   normalizeRecoveryCode,
@@ -36,6 +36,45 @@ const auditDetails = async (userId: number, action: string): Promise<string[]> =
   return rows.filter((r) => r.action === action).map((r) => r.details)
 }
 
+/**
+ * Every 2FA path is root-only (#36), so the fixture user is root unless a test is
+ * specifically about some other role.
+ */
+const createRoot = (overrides?: Parameters<typeof createUser>[0]) =>
+  createUser({ role: 'root', ...overrides })
+
+/**
+ * Rows this database is currently waiting on a lock for.
+ *
+ * The two race tests below need to know that the confirmation under test has
+ * READ the row and is now stuck on its UPDATE — that is exactly the window a
+ * stale request lives in, and it is the only moment at which the newer
+ * enrollment can be made to land. Polling for the blocked lock is what makes
+ * those tests deterministic instead of a coin flip on two concurrent promises.
+ *
+ * Scoped through pg_stat_activity rather than pg_locks.database: a statement
+ * waiting for a row lock waits on the HOLDER'S transaction id, and for that lock
+ * type the database column is NULL — so filtering on it finds nothing. The
+ * backend's own datname is the honest way to keep the four workers apart.
+ */
+const blockedLocks = async (): Promise<number> => {
+  const rows = (await db.execute(sql`
+    SELECT COUNT(*)::int AS n
+    FROM pg_locks l
+    JOIN pg_stat_activity a ON a.pid = l.pid
+    WHERE NOT l.granted AND a.datname = current_database()
+  `)) as unknown as { n: number }[]
+  return Number(rows[0]?.n ?? 0)
+}
+
+const waitUntilBlocked = async (): Promise<void> => {
+  for (let i = 0; i < 300; i++) {
+    if ((await blockedLocks()) > 0) return
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  throw new Error('the confirmation never reached its UPDATE')
+}
+
 const row = async (userId: number) =>
   (await db.select().from(userTotp).where(eq(userTotp.userId, userId)).limit(1))[0]
 
@@ -53,18 +92,18 @@ const fullyEnroll = async (userId: number, email = 'root@test.dev') => {
 
 describe('requiresSecondFactor', () => {
   it('is false for a user with no row — the bootstrap case', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     expect(await requiresSecondFactor(u.id)).toBe(false)
   })
 
   it('is false while an enrollment is only pending', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await enrollTotp(u.id, { confirmed: false })
     expect(await requiresSecondFactor(u.id)).toBe(false)
   })
 
   it('is true once an enrollment is confirmed', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await enrollTotp(u.id)
     expect(await requiresSecondFactor(u.id)).toBe(true)
   })
@@ -72,7 +111,7 @@ describe('requiresSecondFactor', () => {
 
 describe('startEnrollment', () => {
   it('stores the secret encrypted, never in the clear', async () => {
-    const u = await createUser({ email: 'enc@test.dev' })
+    const u = await createRoot({ email: 'enc@test.dev' })
     const offer = await startEnrollment(u.id, u.email, 'Open Hybrid Cloud')
     expect(offer.ok).toBe(true)
     if (!offer.ok) return
@@ -86,7 +125,7 @@ describe('startEnrollment', () => {
   })
 
   it('offers a QR code, a key URI and a typable secret that all describe the same key', async () => {
-    const u = await createUser({ email: 'qr@test.dev' })
+    const u = await createRoot({ email: 'qr@test.dev' })
     const offer = await startEnrollment(u.id, u.email, 'Open Hybrid Cloud')
     if (!offer.ok) return expect.unreachable()
 
@@ -101,7 +140,7 @@ describe('startEnrollment', () => {
   })
 
   it('leaves a confirmed factor working while a re-enrollment is in flight', async () => {
-    const u = await createUser({ email: 'reenroll@test.dev' })
+    const u = await createRoot({ email: 'reenroll@test.dev' })
     const { secret } = await fullyEnroll(u.id, u.email)
 
     await startEnrollment(u.id, u.email, 'Open Hybrid Cloud')
@@ -119,7 +158,7 @@ describe('startEnrollment', () => {
   })
 
   it('replaces an earlier pending secret rather than accumulating them', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const first = await startEnrollment(u.id, u.email, 'OHC')
     const second = await startEnrollment(u.id, u.email, 'OHC')
     if (!first.ok || !second.ok) return expect.unreachable()
@@ -131,7 +170,7 @@ describe('startEnrollment', () => {
   })
 
   it('records the start in the audit log', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await startEnrollment(u.id, u.email, 'OHC')
     expect(await auditActions(u.id)).toContain('auth.2fa.enroll_started')
   })
@@ -139,14 +178,14 @@ describe('startEnrollment', () => {
 
 describe('confirmEnrollment', () => {
   it('refuses when nothing is pending', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const result = await confirmEnrollment(u.id, '000000')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(400)
   })
 
   it('promotes the pending secret and issues recovery codes on a valid code', async () => {
-    const u = await createUser({ email: 'confirm@test.dev' })
+    const u = await createRoot({ email: 'confirm@test.dev' })
     const { recoveryCodes } = await fullyEnroll(u.id, u.email)
 
     const stored = await row(u.id)
@@ -159,7 +198,7 @@ describe('confirmEnrollment', () => {
   })
 
   it('stores recovery codes hashed, and never the codes themselves', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const { recoveryCodes } = await fullyEnroll(u.id)
 
     const stored = await db.select().from(userRecoveryCodes).where(eq(userRecoveryCodes.userId, u.id))
@@ -175,7 +214,7 @@ describe('confirmEnrollment', () => {
   })
 
   it('issues 100 bits per recovery code, grouped so it can be read off paper', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const { recoveryCodes } = await fullyEnroll(u.id)
     for (const code of recoveryCodes) {
       expect(code).toMatch(/^[A-Z2-9]{5}-[A-Z2-9]{5}-[A-Z2-9]{5}-[A-Z2-9]{5}$/)
@@ -186,7 +225,7 @@ describe('confirmEnrollment', () => {
   })
 
   it('rejects a wrong code and does not activate the factor', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await startEnrollment(u.id, u.email, 'OHC')
     const result = await confirmEnrollment(u.id, '000000')
     expect(result.ok).toBe(false)
@@ -198,7 +237,7 @@ describe('confirmEnrollment', () => {
   })
 
   it('spends the confirming code, so it cannot be replayed at the next login', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const offer = await startEnrollment(u.id, u.email, 'OHC')
     if (!offer.ok) return expect.unreachable()
     const secret = base32Decode(offer.data.secret)
@@ -212,7 +251,7 @@ describe('confirmEnrollment', () => {
   })
 
   it('accepts a code exactly once even when two requests race (replay, concurrent)', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const offer = await startEnrollment(u.id, u.email, 'OHC')
     if (!offer.ok) return expect.unreachable()
     const secret = base32Decode(offer.data.secret)
@@ -234,7 +273,7 @@ describe('confirmEnrollment', () => {
   })
 
   it('drops recovery codes issued against a previous secret', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const first = await fullyEnroll(u.id)
 
     // Re-enroll from scratch.
@@ -251,7 +290,7 @@ describe('confirmEnrollment', () => {
   })
 
   it('refuses an enrollment that has gone stale', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const offer = await startEnrollment(u.id, u.email, 'OHC')
     if (!offer.ok) return expect.unreachable()
 
@@ -268,15 +307,78 @@ describe('confirmEnrollment', () => {
   })
 
   it('logs the activation', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await fullyEnroll(u.id)
     expect(await auditActions(u.id)).toContain('auth.2fa.enabled')
+  })
+
+  it('does not promote its own secret over an enrollment that replaced it', async () => {
+    const u = await createRoot()
+    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    if (!offer.ok) return expect.unreachable()
+    const code = currentTotpCode(base32Decode(offer.data.secret))
+
+    // Hold the row so the confirmation gets past its read and stops at its
+    // write: the exact window in which a second tab starts a new enrollment.
+    const newer = encryptTotpSecret(generateTotpSecret(), u.id)
+    const holder = db.transaction(async (tx) => {
+      await tx.select().from(userTotp).where(eq(userTotp.userId, u.id)).for('update')
+      await waitUntilBlocked()
+      await tx
+        .update(userTotp)
+        .set({ pendingSecret: newer, pendingCreatedAt: new Date() })
+        .where(eq(userTotp.userId, u.id))
+    })
+
+    const confirming = confirmEnrollment(u.id, code)
+    const [result] = await Promise.all([confirming, holder])
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(409)
+
+    // The newer enrollment is untouched, and nothing was activated against a
+    // secret the user had already walked away from.
+    const stored = await row(u.id)
+    expect(stored.pendingSecret).toBe(newer)
+    expect(stored.secret).toBeNull()
+    expect(stored.confirmedAt).toBeNull()
+  })
+
+  it('expiring a stale enrollment does not clear the one that replaced it', async () => {
+    const u = await createRoot()
+    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    if (!offer.ok) return expect.unreachable()
+    await db
+      .update(userTotp)
+      .set({ pendingCreatedAt: new Date(Date.now() - PENDING_ENROLLMENT_TTL_MS - 1000) })
+      .where(eq(userTotp.userId, u.id))
+
+    const newer = encryptTotpSecret(generateTotpSecret(), u.id)
+    const holder = db.transaction(async (tx) => {
+      await tx.select().from(userTotp).where(eq(userTotp.userId, u.id)).for('update')
+      await waitUntilBlocked()
+      await tx
+        .update(userTotp)
+        .set({ pendingSecret: newer, pendingCreatedAt: new Date() })
+        .where(eq(userTotp.userId, u.id))
+    })
+
+    const [result] = await Promise.all([
+      confirmEnrollment(u.id, currentTotpCode(base32Decode(offer.data.secret))),
+      holder,
+    ])
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toMatch(/expired/)
+    // The expiry clear is conditional, so it wiped nothing: an unconditional
+    // one would have thrown away a secret stored seconds ago.
+    expect((await row(u.id)).pendingSecret).toBe(newer)
   })
 })
 
 describe('verifySecondFactor — TOTP', () => {
   it('accepts a current code', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
     const result = await verifySecondFactor(u.id, currentTotpCode(secret))
     expect(result.ok).toBe(true)
@@ -285,7 +387,7 @@ describe('verifySecondFactor — TOTP', () => {
 
   it('accepts the adjacent window for clock skew', async () => {
     for (const offset of [-1, 1]) {
-      const u = await createUser()
+      const u = await createRoot()
       const secret = await enrollTotp(u.id)
       const result = await verifySecondFactor(u.id, currentTotpCode(secret, offset))
       expect(result.ok, `offset ${offset}`).toBe(true)
@@ -293,13 +395,13 @@ describe('verifySecondFactor — TOTP', () => {
   })
 
   it('rejects two steps out', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
     expect((await verifySecondFactor(u.id, currentTotpCode(secret, -2))).ok).toBe(false)
   })
 
   it('refuses a code that has already been used inside its window (replay)', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
     const code = currentTotpCode(secret)
 
@@ -310,7 +412,7 @@ describe('verifySecondFactor — TOTP', () => {
   })
 
   it('refuses an earlier code in the window after a later one was accepted', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
 
     expect((await verifySecondFactor(u.id, currentTotpCode(secret, 1))).ok).toBe(true)
@@ -321,21 +423,21 @@ describe('verifySecondFactor — TOTP', () => {
   })
 
   it('records the accepted step so the replay guard survives a restart', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
     await verifySecondFactor(u.id, currentTotpCode(secret))
     expect((await row(u.id)).lastUsedStep).toBe(Math.floor(Date.now() / 1000 / 30))
   })
 
   it('refuses when no factor is set up, instead of reporting a wrong code', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const result = await verifySecondFactor(u.id, '123456')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.message).toMatch(/No second factor/)
   })
 
   it('fails closed when the stored secret cannot be decrypted', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
     // Simulate a rotated key / tampered row.
     await db
@@ -350,7 +452,7 @@ describe('verifySecondFactor — TOTP', () => {
   })
 
   it('logs an accepted factor', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
     await verifySecondFactor(u.id, currentTotpCode(secret))
     expect(await auditActions(u.id)).toContain('auth.2fa.verified')
@@ -359,7 +461,7 @@ describe('verifySecondFactor — TOTP', () => {
 
 describe('verifySecondFactor — recovery codes', () => {
   it('accepts a recovery code and spends it', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const { recoveryCodes } = await fullyEnroll(u.id)
 
     const result = await verifySecondFactor(u.id, recoveryCodes[0])
@@ -371,7 +473,7 @@ describe('verifySecondFactor — recovery codes', () => {
   })
 
   it('accepts each code exactly once', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const { recoveryCodes } = await fullyEnroll(u.id)
 
     expect((await verifySecondFactor(u.id, recoveryCodes[3])).ok).toBe(true)
@@ -381,7 +483,7 @@ describe('verifySecondFactor — recovery codes', () => {
   })
 
   it('keeps the spent row so the audit trail can show it was used', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const { recoveryCodes } = await fullyEnroll(u.id)
     await verifySecondFactor(u.id, recoveryCodes[0])
 
@@ -391,7 +493,7 @@ describe('verifySecondFactor — recovery codes', () => {
   })
 
   it('accepts a code however the user pastes it back', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const { recoveryCodes } = await fullyEnroll(u.id)
     const raw = recoveryCodes[0]
 
@@ -401,8 +503,8 @@ describe('verifySecondFactor — recovery codes', () => {
   })
 
   it('does not accept one user’s recovery code for another user', async () => {
-    const a = await createUser()
-    const b = await createUser()
+    const a = await createRoot()
+    const b = await createRoot()
     const { recoveryCodes } = await fullyEnroll(a.id)
     await enrollTotp(b.id)
 
@@ -416,7 +518,7 @@ describe('verifySecondFactor — recovery codes', () => {
   })
 
   it('logs the use and how many are left', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const { recoveryCodes } = await fullyEnroll(u.id)
     await verifySecondFactor(u.id, recoveryCodes[0])
 
@@ -426,7 +528,7 @@ describe('verifySecondFactor — recovery codes', () => {
   })
 
   it('a wrong 20-character string is a failure, not a TOTP attempt', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await enrollTotp(u.id)
     const result = await verifySecondFactor(u.id, 'ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ')
     expect(result.ok).toBe(false)
@@ -436,7 +538,7 @@ describe('verifySecondFactor — recovery codes', () => {
 
 describe('rate limiting', () => {
   it('locks the factor after the allowed number of consecutive failures', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
 
     for (let i = 1; i < MFA_MAX_FAILED_ATTEMPTS; i++) {
@@ -459,7 +561,7 @@ describe('rate limiting', () => {
   })
 
   it('locks for the configured window', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await enrollTotp(u.id)
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS; i++) await verifySecondFactor(u.id, '000000')
 
@@ -472,7 +574,7 @@ describe('rate limiting', () => {
   })
 
   it('lets the user back in once the lock expires', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS; i++) await verifySecondFactor(u.id, '000000')
 
@@ -485,7 +587,7 @@ describe('rate limiting', () => {
   })
 
   it('counts CONSECUTIVE failures — a success clears the tally', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
 
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS - 1; i++) await verifySecondFactor(u.id, '000000')
@@ -497,7 +599,7 @@ describe('rate limiting', () => {
   })
 
   it('counts recovery-code failures towards the same limit', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await enrollTotp(u.id)
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS - 1; i++) {
       await verifySecondFactor(u.id, 'ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ')
@@ -508,7 +610,7 @@ describe('rate limiting', () => {
   })
 
   it('counts replay attempts, so a replay loop is not free', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
     const code = currentTotpCode(secret)
     await verifySecondFactor(u.id, code)
@@ -521,7 +623,7 @@ describe('rate limiting', () => {
   })
 
   it('names the attempt count and the lock in the audit entries', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await enrollTotp(u.id)
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS; i++) await verifySecondFactor(u.id, '000000')
 
@@ -539,7 +641,7 @@ describe('rate limiting', () => {
   })
 
   it('logs attempts made while already locked, so the log does not just go quiet', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await enrollTotp(u.id)
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS; i++) await verifySecondFactor(u.id, '000000')
 
@@ -549,7 +651,7 @@ describe('rate limiting', () => {
   })
 
   it('does not let a locked-out attacker keep the lock from ever expiring', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const secret = await enrollTotp(u.id)
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS; i++) await verifySecondFactor(u.id, '000000')
     const originalLock = (await row(u.id)).lockedUntil
@@ -563,7 +665,7 @@ describe('rate limiting', () => {
   })
 
   it('blocks a confirmation attempt while the factor is locked', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await enrollTotp(u.id)
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS; i++) await verifySecondFactor(u.id, '000000')
     await startEnrollment(u.id, u.email, 'OHC')
@@ -577,7 +679,7 @@ describe('rate limiting', () => {
 
 describe('getTwoFactorStatus', () => {
   it('reports nothing for a user who never enrolled', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const status = await getTwoFactorStatus(u.id)
     expect(status.ok).toBe(true)
     if (status.ok) {
@@ -592,7 +694,7 @@ describe('getTwoFactorStatus', () => {
   })
 
   it('reports a pending enrollment', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await startEnrollment(u.id, u.email, 'OHC')
     const status = await getTwoFactorStatus(u.id)
     if (!status.ok) return expect.unreachable()
@@ -601,7 +703,7 @@ describe('getTwoFactorStatus', () => {
   })
 
   it('does not report a stale pending enrollment as pending', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await startEnrollment(u.id, u.email, 'OHC')
     await db
       .update(userTotp)
@@ -614,7 +716,7 @@ describe('getTwoFactorStatus', () => {
   })
 
   it('reports the live state and never the secret', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     const { recoveryCodes } = await fullyEnroll(u.id)
     await verifySecondFactor(u.id, recoveryCodes[0])
 
@@ -627,7 +729,7 @@ describe('getTwoFactorStatus', () => {
   })
 
   it('does not report an expired lock as a lock', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await enrollTotp(u.id)
     await db
       .update(userTotp)
@@ -640,10 +742,10 @@ describe('getTwoFactorStatus', () => {
   })
 })
 
-describe('loadLocalAccount', () => {
+describe('loadTwoFactorAccount', () => {
   it('returns the account for a local password user', async () => {
-    const u = await createUser({ email: 'local@test.dev', role: 'root' })
-    const result = await loadLocalAccount(u.id)
+    const u = await createRoot({ email: 'local@test.dev', role: 'root' })
+    const result = await loadTwoFactorAccount(u.id)
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.email).toBe('local@test.dev')
   })
@@ -654,7 +756,7 @@ describe('loadLocalAccount', () => {
       .values({ email: 'sso@test.dev', name: 'SSO', role: 'admin', ssoSub: 'sub-1', active: true })
       .returning()
 
-    const result = await loadLocalAccount(u.id)
+    const result = await loadTwoFactorAccount(u.id)
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.status).toBe(400)
@@ -663,8 +765,8 @@ describe('loadLocalAccount', () => {
   })
 
   it('refuses a deactivated account', async () => {
-    const u = await createUser({ active: false })
-    const result = await loadLocalAccount(u.id)
+    const u = await createRoot({ active: false })
+    const result = await loadTwoFactorAccount(u.id)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(404)
   })
@@ -686,6 +788,67 @@ describe('totpIssuer', () => {
   })
 })
 
+describe('root only (#36)', () => {
+  const OTHER_ROLES = ['admin', 'project_manager'] as const
+
+  it('refuses to load a non-root account, whatever else is right about it', async () => {
+    for (const role of OTHER_ROLES) {
+      const u = await createUser({ role })
+      const result = await loadTwoFactorAccount(u.id)
+      expect(result.ok, role).toBe(false)
+      if (!result.ok) {
+        expect(result.status).toBe(403)
+        expect(result.message).toMatch(/root account only/)
+      }
+    }
+  })
+
+  it('refuses to start an enrollment for a non-root account', async () => {
+    for (const role of OTHER_ROLES) {
+      const u = await createUser({ role })
+      const result = await startEnrollment(u.id, u.email, 'OHC')
+      expect(result.ok, role).toBe(false)
+      if (!result.ok) expect(result.status).toBe(403)
+      // And nothing was written, so a role check added later cannot be walked
+      // around by an enrollment that was already half-started.
+      expect(await row(u.id)).toBeUndefined()
+    }
+  })
+
+  it('refuses to confirm for a non-root account even when a row is pending', async () => {
+    const u = await createUser({ role: 'admin' })
+    // Bypass the service to build the state a missing guard would have left.
+    const secret = await enrollTotp(u.id, { confirmed: false })
+
+    const result = await confirmEnrollment(u.id, currentTotpCode(secret))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(403)
+    expect((await row(u.id)).confirmedAt).toBeNull()
+    expect(await db.select().from(userRecoveryCodes).where(eq(userRecoveryCodes.userId, u.id))).toHaveLength(0)
+  })
+
+  it('refuses to report status for a non-root account', async () => {
+    const u = await createUser({ role: 'project_manager' })
+    const result = await getTwoFactorStatus(u.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(403)
+  })
+
+  it('still requires a confirmed factor at login for a demoted account', async () => {
+    // The documented decision: enrollment is root-only, so this row can only
+    // come from a root account that was demoted afterwards. That user holds the
+    // authenticator, so asking for the code is neither a silent downgrade nor a
+    // lockout — see the comment on requiresSecondFactor.
+    const u = await createRoot()
+    const secret = await enrollTotp(u.id)
+    await db.update(users).set({ role: 'admin' }).where(eq(users.id, u.id))
+
+    expect(await requiresSecondFactor(u.id)).toBe(true)
+    // And the factor still verifies, so the login can actually complete.
+    expect((await verifySecondFactor(u.id, currentTotpCode(secret))).ok).toBe(true)
+  })
+})
+
 describe('2FA cannot be disabled', () => {
   it('has no service function that clears a confirmed factor', async () => {
     const service = await import('./twoFactor')
@@ -695,7 +858,7 @@ describe('2FA cannot be disabled', () => {
   })
 
   it('leaves the factor enabled through every failure path', async () => {
-    const u = await createUser()
+    const u = await createRoot()
     await enrollTotp(u.id)
 
     // A pile of failures, a lock, and an abandoned re-enrollment.

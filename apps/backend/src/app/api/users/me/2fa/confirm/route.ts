@@ -6,6 +6,10 @@ import { confirmEnrollment } from '@/lib/services/twoFactor'
 /**
  * Finish an enrollment and receive the recovery codes (issue #36).
  *
+ * No role check here on purpose: `confirmEnrollment` goes through the same
+ * `loadTwoFactorAccount` gate as `enroll` and the status endpoint, so root-only
+ * is decided once instead of being restated in three handlers that can drift.
+ *
  * A code from the new authenticator is what proves the secret actually reached an
  * app — without it, a user who mis-scanned the QR would be locked out of their
  * own account on the next login with no way back in. Only once that is proven

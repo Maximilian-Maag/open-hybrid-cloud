@@ -21,6 +21,12 @@ import { qrSvgFor } from '@/lib/auth/qr'
  * The rules that matter, in one place so a reviewer can check them against the
  * issue without reading the routes:
  *
+ *   0. Only the root account may enroll or hold a factor — the issue says "TOTP
+ *      2FA for Root account". `loadTwoFactorAccount` is the single gate that
+ *      enforces it, and every entry point calls it. The one exception, spelled
+ *      out at `requiresSecondFactor`, is the login check: a confirmed row is
+ *      honoured whatever the role, so a demoted root is asked for a code rather
+ *      than quietly losing the protection or being locked out.
  *   1. A confirmed factor can never be switched off through the API. There is no
  *      `disable` function here, and nothing sets `secret` back to NULL. The only
  *      exits are a re-enrollment (which replaces it) and an operator deleting the
@@ -107,6 +113,20 @@ export interface EnrollmentOffer {
   qrSvg: string
 }
 
+/**
+ * The role that may hold a second factor.
+ *
+ * Issue #36 scopes TOTP to the root account. This constant and the predicate
+ * below are the only places that say so — every entry point goes through
+ * `loadTwoFactorAccount`, so widening the feature later is a change here and
+ * nowhere else.
+ */
+const TWO_FACTOR_ROLE = 'root'
+
+/** Whether an account with this role may enroll or hold a second factor. */
+export const canHoldSecondFactor = (role: string | null | undefined): boolean =>
+  role === TWO_FACTOR_ROLE
+
 /** The one place that decides what "2FA is on" means. */
 const isConfirmed = (row: { secret: string | null; confirmedAt: Date | null } | undefined): boolean =>
   Boolean(row?.secret && row.confirmedAt)
@@ -150,22 +170,45 @@ const countUnusedRecoveryCodes = async (userId: number): Promise<number> => {
 /**
  * Whether a login as this user has to pass a second factor.
  *
- * Called from the login path, so it is deliberately the cheapest possible query
- * and takes no view on anything else: a user with no row, or with a row that was
+ * Called from the login path, so it is one indexed lookup joined to the row it
+ * has to check the role against: a user with no row, or with a row that was
  * never confirmed, is not protected and logs in with a password alone. That is
  * the bootstrap case — the very first login after installation cannot require a
  * factor that has not been set up yet.
+ *
+ * A CONFIRMED row is honoured whatever the account's role is, and that is the
+ * deliberate answer to "what about a non-root account that somehow has one".
+ * Enrollment is root-only (`loadTwoFactorAccount`), so the only way such a row
+ * exists is a root account demoted afterwards — and that user still holds the
+ * authenticator and the recovery codes. Ignoring the row would silently drop a
+ * protection they set up and still rely on; refusing the login outright would be
+ * a lockout with no way back in. Asking for the code they already have is the
+ * only outcome that is neither, so the role gate deliberately does NOT apply
+ * here. The mismatch is logged so an operator can see it and clear the row on
+ * purpose — the emergency reset in docs/guides/root.md.
  */
 export const requiresSecondFactor = async (userId: number): Promise<boolean> => {
   const rows = await db
-    .select({ secret: userTotp.secret, confirmedAt: userTotp.confirmedAt })
+    .select({ secret: userTotp.secret, confirmedAt: userTotp.confirmedAt, role: users.role })
     .from(userTotp)
+    .innerJoin(users, eq(users.id, userTotp.userId))
     .where(eq(userTotp.userId, userId))
     .limit(1)
-  return isConfirmed(rows[0])
+
+  const row = rows[0]
+  if (!isConfirmed(row)) return false
+  if (!canHoldSecondFactor(row.role)) {
+    console.warn(
+      `[2fa] user ${userId} has role "${row.role}" but a confirmed second factor; still requiring it at login. See "Emergency 2FA reset" in docs/guides/root.md.`,
+    )
+  }
+  return true
 }
 
 export const getTwoFactorStatus = async (userId: number): Promise<Result<TwoFactorStatus>> => {
+  const account = await loadTwoFactorAccount(userId)
+  if (!account.ok) return account
+
   const row = await loadRow(userId)
   const pendingFresh =
     Boolean(row?.pendingSecret) &&
@@ -198,6 +241,11 @@ export const startEnrollment = async (
   accountEmail: string,
   issuer: string,
 ): Promise<Result<EnrollmentOffer>> => {
+  // The route has already loaded the account to check the password; this second
+  // primary-key lookup is what makes the gate hold for any other caller too.
+  const account = await loadTwoFactorAccount(userId)
+  if (!account.ok) return account
+
   const secret = generateTotpSecret()
   const envelope = encryptTotpSecret(secret, userId)
   const now = new Date()
@@ -234,16 +282,27 @@ export const confirmEnrollment = async (
   userId: number,
   code: string,
 ): Promise<Result<{ recoveryCodes: string[] }>> => {
+  const account = await loadTwoFactorAccount(userId)
+  if (!account.ok) return account
+
   const row = await loadRow(userId)
   if (!row?.pendingSecret || !row.pendingCreatedAt) {
     return err(400, 'No enrollment is in progress. Start again.')
   }
+  // Bound to a local: the WHERE clauses below identify the enrollment THIS
+  // request read, and one of them sits inside a closure where TypeScript would
+  // otherwise widen the property back to `string | null`.
+  const pendingEnvelope = row.pendingSecret
   if (Date.now() - row.pendingCreatedAt.getTime() >= PENDING_ENROLLMENT_TTL_MS) {
-    // Clear it rather than leaving an expired secret in the row.
+    // Clear it rather than leaving an expired secret in the row — but only the
+    // secret this request read. An unconditional clear here erases whatever is
+    // in the column at the time, which after a slow request is somebody else's
+    // freshly stored enrollment. Zero rows updated is a no-op, and the caller
+    // still hears that THEIR enrollment expired, which it did.
     await db
       .update(userTotp)
       .set({ pendingSecret: null, pendingCreatedAt: null, updatedAt: new Date() })
-      .where(eq(userTotp.userId, userId))
+      .where(and(eq(userTotp.userId, userId), eq(userTotp.pendingSecret, pendingEnvelope)))
     return err(400, 'This enrollment has expired. Start again.')
   }
 
@@ -282,11 +341,19 @@ export const confirmEnrollment = async (
   // One transaction: promoting the secret and replacing the recovery codes are a
   // single change. Half of it applied would leave a confirmed factor whose
   // recovery codes belong to the previous one.
+  //
+  // The UPDATE claims the exact envelope this request read, the same conditional
+  // shape verifyRecoveryCode and the replay guard use. Without it, a request that
+  // verified a code against an enrollment that has since been replaced would
+  // promote its own stale secret over the new one and reissue recovery codes
+  // against it. Every envelope carries its own random nonce, so equality on the
+  // column is equality on this enrollment; nothing else has to be compared.
+  let claimed = false
   await db.transaction(async (tx) => {
-    await tx
+    const [promoted] = await tx
       .update(userTotp)
       .set({
-        secret: row.pendingSecret,
+        secret: pendingEnvelope,
         pendingSecret: null,
         pendingCreatedAt: null,
         confirmedAt: now,
@@ -296,7 +363,13 @@ export const confirmEnrollment = async (
         lockedUntil: null,
         updatedAt: now,
       })
-      .where(eq(userTotp.userId, userId))
+      .where(and(eq(userTotp.userId, userId), eq(userTotp.pendingSecret, pendingEnvelope)))
+      .returning({ userId: userTotp.userId })
+
+    // Nothing claimed means the pending secret moved under us. Leave before the
+    // delete below, so the recovery codes of whatever is now current survive.
+    if (!promoted) return
+    claimed = true
 
     // Previous codes go, used or not: they were issued against the old secret
     // and leaving them live would mean an old backup code still bypasses the new
@@ -306,6 +379,16 @@ export const confirmEnrollment = async (
       .insert(userRecoveryCodes)
       .values(codes.map((c) => ({ userId, codeHash: hashRecoveryCode(c) })))
   })
+
+  if (!claimed) {
+    await logAudit(
+      userId,
+      'auth.2fa.enroll_superseded',
+      userId,
+      'Confirmation arrived for an enrollment that had already been replaced',
+    )
+    return err(409, 'This enrollment has been replaced by a newer one. Start again.')
+  }
 
   await logAudit(
     userId,
@@ -549,17 +632,38 @@ export const totpIssuer = (shopName: string | null | undefined): string => {
   return cleaned.length > 0 ? cleaned : 'Open Hybrid Cloud'
 }
 
+export interface TwoFactorAccount {
+  id: number
+  email: string
+  /** The hash the caller needs to re-check the password. */
+  passwordHash: string
+  role: string
+}
+
 /**
- * The user a 2FA operation applies to, with the password hash the caller needs
- * to re-check the password.
+ * The single gate every 2FA entry point passes through.
  *
- * Only local password accounts are eligible: an SSO user has no password to
- * re-authenticate with, and their MFA is Entra ID's job (see issue #36). Saying
- * so explicitly beats returning "wrong password" for an account that has none.
+ * Three rules live here rather than in the route handlers, because a rule
+ * repeated in four handlers is a rule the fifth one forgets:
+ *
+ *   1. The account exists and is active.
+ *   2. It signs in with a local password. An SSO user has no password to
+ *      re-authenticate with and their MFA is Entra ID's job (issue #36); saying
+ *      so beats returning "wrong password" for an account that has none.
+ *   3. It is the root account. Issue #36 scopes the feature to root. Without
+ *      this, any admin or project manager with a local password could enroll,
+ *      collect recovery codes, and then be sent through a two-step login built
+ *      for one account.
+ *
+ * Order only decides what a caller is told when more than one rule applies: an
+ * SSO admin hears about the SSO, which is the more useful of the two answers.
+ *
+ * 403 for the role, not 404: the caller is authenticated as this very account,
+ * so there is nothing to hide from them, and a 401 would sign them out.
  */
-export const loadLocalAccount = async (
+export const loadTwoFactorAccount = async (
   userId: number,
-): Promise<Result<{ id: number; email: string; passwordHash: string; role: string }>> => {
+): Promise<Result<TwoFactorAccount>> => {
   const rows = await db
     .select({
       id: users.id,
@@ -579,6 +683,9 @@ export const loadLocalAccount = async (
       400,
       'This account signs in through single sign-on; its second factor is managed by the identity provider.',
     )
+  }
+  if (!canHoldSecondFactor(user.role)) {
+    return err(403, 'Two-factor authentication is available to the root account only.')
   }
   return ok({ id: user.id, email: user.email, passwordHash: user.passwordHash, role: user.role })
 }

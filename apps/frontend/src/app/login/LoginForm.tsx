@@ -7,6 +7,7 @@ import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 import { Alert } from '@/components/ui/Alert'
 import { readableInk, readableAccent, AA_LARGE, AA_NON_TEXT } from '@/lib/contrast'
+import { MFA_LOCKED_OUT } from '@/lib/loginErrors'
 
 interface Props {
   shopName: string
@@ -49,7 +50,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
   const [mfaToken, setMfaToken] = useState<string | null>(null)
   const [code, setCode] = useState('')
 
-  const finishSignIn = async (result: { error?: string | null } | undefined) => {
+  const finishSignIn = async (result: { error?: string | null; code?: string } | undefined) => {
     if (result?.error) return false
     router.push(callbackUrl)
     router.refresh()
@@ -124,7 +125,14 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
     try {
       const result = await signIn('credentials', { email, mfaToken, code, redirect: false })
       if (!(await finishSignIn(result))) {
-        setError(t('invalidCredentials', lang))
+        // The lockout is the one failure worth distinguishing: it is the
+        // difference between "try again" and "stop trying and use a recovery
+        // code". Everything else stays generic on purpose.
+        setError(
+          result?.code === MFA_LOCKED_OUT
+            ? t('twoFactorLockedOut', lang)
+            : t('invalidCredentials', lang),
+        )
         setCode('')
       }
     } catch {

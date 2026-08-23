@@ -1826,6 +1826,8 @@ registry.registerPath({
   path: '/users/me/2fa',
   summary: 'Second-factor status for the signed-in user',
   description:
+    'Root only — the feature is scoped to the root account, and every 2FA endpoint answers 403 for any ' +
+    'other role. ' +
     'Status only — never the shared secret or the recovery codes. There is no endpoint that turns a ' +
     'confirmed factor off: DELETE answers 405 by design, and the only exits are a re-enrollment or an ' +
     'operator deleting the row (see the operator handbook).',
@@ -1847,6 +1849,7 @@ registry.registerPath({
       },
     },
     401: { description: 'Unauthorized' },
+    403: { description: 'Not the root account' },
   },
 })
 
@@ -1866,7 +1869,7 @@ registry.registerPath({
   path: '/users/me/2fa/enroll',
   summary: 'Start a TOTP enrollment and get the QR code',
   description:
-    'Requires the current password. When a factor is already active it ALSO requires a current TOTP code ' +
+    'Root only. Requires the current password. When a factor is already active it ALSO requires a current TOTP code ' +
     'or a recovery code, so a stolen session plus a phished password cannot replace the factor. The new ' +
     'secret is stored as pending, so the existing authenticator keeps working until it is confirmed.',
   tags: ['Two-factor'],
@@ -1901,7 +1904,7 @@ registry.registerPath({
     },
     400: { description: 'Bad request, or an SSO account with no local password' },
     401: { description: 'Unauthorized' },
-    403: { description: 'Wrong password, or a current second factor is required' },
+    403: { description: 'Not the root account, wrong password, or a current second factor is required' },
     429: { description: 'Second factor locked after repeated failures' },
   },
 })
@@ -1911,7 +1914,7 @@ registry.registerPath({
   path: '/users/me/2fa/confirm',
   summary: 'Confirm a pending enrollment and receive the recovery codes',
   description:
-    'A code from the new authenticator proves the secret actually arrived in an app. The recovery codes ' +
+    'Root only. A code from the new authenticator proves the secret actually arrived in an app. The recovery codes ' +
     'are returned here and nowhere else: they are stored hashed, so this response is the only copy.',
   tags: ['Two-factor'],
   security: bearerAuth,
@@ -1931,6 +1934,8 @@ registry.registerPath({
     },
     400: { description: 'No enrollment in progress, expired, or an invalid code' },
     401: { description: 'Unauthorized' },
+    403: { description: 'Not the root account' },
+    409: { description: 'A newer enrollment has replaced the one being confirmed' },
     429: { description: 'Second factor locked after repeated failures' },
   },
 })

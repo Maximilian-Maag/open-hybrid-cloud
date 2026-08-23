@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LoginForm } from './LoginForm'
+import { MFA_LOCKED_OUT } from '@/lib/loginErrors'
 
 const signIn = vi.fn()
 const push = vi.fn()
@@ -152,6 +153,22 @@ describe('LoginForm — second factor required', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(field).toHaveValue('')
     expect(push).not.toHaveBeenCalled()
+  })
+
+  it('says to wait or use a recovery code when the factor is locked out', async () => {
+    await enterMfa()
+    // What NextAuth gives the browser for a thrown CredentialsSignin: the same
+    // generic error as a wrong code, plus the code that tells them apart.
+    signIn.mockResolvedValue({ error: 'CredentialsSignin', code: MFA_LOCKED_OUT })
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(/authentication code/i), '000000')
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/locked/i)
+    expect(alert).toHaveTextContent(/recovery codes/i)
+    expect(alert).not.toHaveTextContent(/invalid/i)
   })
 
   it('discards the challenge when the user goes back', async () => {

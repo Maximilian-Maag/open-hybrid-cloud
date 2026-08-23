@@ -402,9 +402,10 @@ If the current password is incorrect or the confirmation does not match, the cha
 The Root account holds a local password and the highest privilege level in the
 system, so it can be protected with a second factor: a six-digit code from an
 authenticator app (Google Authenticator, Authy, Bitwarden, 1Password — anything
-that supports standard TOTP). Admin and Project Manager accounts sign in through
-Microsoft Entra ID and are covered by its MFA instead, so this section applies
-only to local accounts.
+that supports standard TOTP). It is available to the Root account **only** — the
+server refuses every two-factor endpoint for any other role, and the card is not
+shown to them. Admin and Project Manager accounts sign in through Microsoft
+Entra ID and are covered by its MFA instead.
 
 **Setting it up**
 
@@ -483,6 +484,13 @@ Replace `root@example.com` with the account's own address. Deleting the
 alongside it makes sure no leftover code from the previous enrollment stays
 usable. The account then signs in with its password alone, and should enroll again
 immediately.
+
+The same procedure applies to an account that was Root when it enrolled and has
+since been demoted. Its second factor keeps being required at sign-in — dropping
+it silently would remove a protection the owner set up and still relies on — but
+it can no longer be replaced through the interface, because replacing it is a
+Root-only operation. Either promote the account back to Root, or clear the row as
+above.
 
 The same procedure is the way out if `TOTP_ENCRYPTION_KEY` is lost or rotated: the
 stored secrets become unreadable, every two-factor sign-in fails closed, and the

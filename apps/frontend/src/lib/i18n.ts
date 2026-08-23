@@ -593,6 +593,8 @@ export type Translations = {
   twoFactorLoginHint: string
   twoFactorVerifying: string
   twoFactorCurrentPassword: string
+  /** The second-factor lockout, which the login form has to say instead of "invalid credentials". */
+  twoFactorLockedOut: string
 }
 
 // English is the complete reference table; every other language may omit keys
@@ -1144,6 +1146,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Въведете кода от приложението за удостоверяване или един от кодовете за възстановяване.',
     twoFactorVerifying: 'Проверка…',
     twoFactorCurrentPassword: 'Текуща парола',
+    twoFactorLockedOut: 'Твърде много неправилни кодове. Този акаунт е заключен за няколко минути — изчакайте и опитайте отново или влезте с един от кодовете си за възстановяване.',
   },
   cs: {
     noActiveSessions: 'Žádná aktivní přihlášení.',
@@ -1688,6 +1691,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Zadejte kód z autentizační aplikace nebo jeden ze svých záložních kódů.',
     twoFactorVerifying: 'Ověřování…',
     twoFactorCurrentPassword: 'Aktuální heslo',
+    twoFactorLockedOut: 'Příliš mnoho nesprávných kódů. Účet je na několik minut uzamčen — počkejte a zkuste to znovu, nebo se přihlaste jedním ze záložních kódů.',
   },
   da: {
     noActiveSessions: 'Ingen aktive sessioner.',
@@ -2232,6 +2236,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Indtast koden fra din godkendelsesapp, eller en af dine gendannelseskoder.',
     twoFactorVerifying: 'Bekræfter…',
     twoFactorCurrentPassword: 'Nuværende adgangskode',
+    twoFactorLockedOut: 'For mange forkerte koder. Kontoen er låst i et par minutter — vent og prøv igen, eller log ind med en af dine gendannelseskoder.',
   },
   de: {
     noActiveSessions: 'Keine aktiven Sitzungen.',
@@ -2776,6 +2781,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Geben Sie den Code aus Ihrer Authenticator-App oder einen Ihrer Wiederherstellungscodes ein.',
     twoFactorVerifying: 'Wird überprüft…',
     twoFactorCurrentPassword: 'Aktuelles Passwort',
+    twoFactorLockedOut: 'Zu viele falsche Codes. Dieses Konto ist für einige Minuten gesperrt — warten Sie und versuchen Sie es erneut oder melden Sie sich mit einem Ihrer Wiederherstellungscodes an.',
   },
   el: {
     noActiveSessions: 'Καμία ενεργή συνεδρία.',
@@ -3320,6 +3326,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Εισαγάγετε τον κωδικό από την εφαρμογή ελέγχου ταυτότητας ή έναν από τους κωδικούς ανάκτησης.',
     twoFactorVerifying: 'Επαλήθευση…',
     twoFactorCurrentPassword: 'Τρέχων κωδικός πρόσβασης',
+    twoFactorLockedOut: 'Πάρα πολλοί λανθασμένοι κωδικοί. Ο λογαριασμός είναι κλειδωμένος για μερικά λεπτά — περιμένετε και δοκιμάστε ξανά ή συνδεθείτε με έναν από τους κωδικούς ανάκτησης.',
   },
   en: {
     noActiveSessions: 'No active sessions.',
@@ -3864,6 +3871,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Enter the code from your authenticator app, or one of your recovery codes.',
     twoFactorVerifying: 'Verifying…',
     twoFactorCurrentPassword: 'Current password',
+    twoFactorLockedOut: 'Too many incorrect codes. This account is locked for a few minutes — wait and try again, or sign in with one of your recovery codes.',
   },
   es: {
     noActiveSessions: 'No hay sesiones activas.',
@@ -4408,6 +4416,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Introduzca el código de su aplicación de autenticación o uno de sus códigos de recuperación.',
     twoFactorVerifying: 'Verificando…',
     twoFactorCurrentPassword: 'Contraseña actual',
+    twoFactorLockedOut: 'Demasiados códigos incorrectos. Esta cuenta está bloqueada durante unos minutos: espere e inténtelo de nuevo, o inicie sesión con uno de sus códigos de recuperación.',
   },
   et: {
     noActiveSessions: 'Aktiivseid sessioone pole.',
@@ -4952,6 +4961,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Sisestage kood oma autentimisrakendusest või üks oma taastekoodidest.',
     twoFactorVerifying: 'Kontrollimine…',
     twoFactorCurrentPassword: 'Praegune parool',
+    twoFactorLockedOut: 'Liiga palju valesid koode. See konto on mõneks minutiks lukustatud — oodake ja proovige uuesti või logige sisse ühe taastekoodiga.',
   },
   fi: {
     noActiveSessions: 'Ei aktiivisia istuntoja.',
@@ -5496,6 +5506,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Syötä koodi todennussovelluksestasi tai yksi palautuskoodeistasi.',
     twoFactorVerifying: 'Vahvistetaan…',
     twoFactorCurrentPassword: 'Nykyinen salasana',
+    twoFactorLockedOut: 'Liian monta virheellistä koodia. Tili on lukittu muutamaksi minuutiksi — odota ja yritä uudelleen tai kirjaudu sisään palautuskoodilla.',
   },
   fr: {
     noActiveSessions: 'Aucune session active.',
@@ -6040,6 +6051,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Saisissez le code de votre application d\'authentification, ou l\'un de vos codes de récupération.',
     twoFactorVerifying: 'Vérification…',
     twoFactorCurrentPassword: 'Mot de passe actuel',
+    twoFactorLockedOut: 'Trop de codes incorrects. Ce compte est verrouillé pendant quelques minutes : patientez et réessayez, ou connectez-vous avec l’un de vos codes de récupération.',
   },
   ga: {
     noActiveSessions: 'Níl aon seisiún gníomhach.',
@@ -6584,6 +6596,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Cuir isteach an cód ó d\'aip fhíordheimhnithe, nó ceann de do chóid athshlánaithe.',
     twoFactorVerifying: 'Á fhíorú…',
     twoFactorCurrentPassword: 'Pasfhocal reatha',
+    twoFactorLockedOut: 'An iomarca cód mícheart. Tá an cuntas seo faoi ghlas ar feadh cúpla nóiméad — fan agus bain triail eile as, nó sínigh isteach le ceann de na cóid athshlánaithe.',
   },
   hr: {
     noActiveSessions: 'Nema aktivnih sesija.',
@@ -7128,6 +7141,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Unesite kod iz aplikacije za autentifikaciju ili jedan od svojih kodova za oporavak.',
     twoFactorVerifying: 'Provjera…',
     twoFactorCurrentPassword: 'Trenutna lozinka',
+    twoFactorLockedOut: 'Previše netočnih kodova. Ovaj je račun zaključan na nekoliko minuta — pričekajte i pokušajte ponovno ili se prijavite jednim od kodova za oporavak.',
   },
   hu: {
     noActiveSessions: 'Nincsenek aktív munkamenetek.',
@@ -7672,6 +7686,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Adja meg a hitelesítő alkalmazásból származó kódot, vagy az egyik helyreállítási kódot.',
     twoFactorVerifying: 'Ellenőrzés…',
     twoFactorCurrentPassword: 'Jelenlegi jelszó',
+    twoFactorLockedOut: 'Túl sok hibás kód. A fiók néhány percre zárolva van — várjon és próbálja újra, vagy jelentkezzen be az egyik helyreállítási kóddal.',
   },
   it: {
     noActiveSessions: 'Nessuna sessione attiva.',
@@ -8216,6 +8231,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Inserisci il codice della tua app di autenticazione oppure uno dei tuoi codici di recupero.',
     twoFactorVerifying: 'Verifica in corso…',
     twoFactorCurrentPassword: 'Password attuale',
+    twoFactorLockedOut: 'Troppi codici errati. Questo account è bloccato per alcuni minuti: attendi e riprova, oppure accedi con uno dei tuoi codici di ripristino.',
   },
   lt: {
     noActiveSessions: 'Nėra aktyvių seansų.',
@@ -8760,6 +8776,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Įveskite kodą iš autentifikavimo programėlės arba vieną iš atkūrimo kodų.',
     twoFactorVerifying: 'Tikrinama…',
     twoFactorCurrentPassword: 'Dabartinis slaptažodis',
+    twoFactorLockedOut: 'Per daug neteisingų kodų. Ši paskyra kelioms minutėms užrakinta — palaukite ir bandykite dar kartą arba prisijunkite vienu iš atkūrimo kodų.',
   },
   lv: {
     noActiveSessions: 'Nav aktīvu sesiju.',
@@ -9304,6 +9321,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Ievadiet kodu no autentifikācijas lietotnes vai vienu no atkopšanas kodiem.',
     twoFactorVerifying: 'Notiek pārbaude…',
     twoFactorCurrentPassword: 'Pašreizējā parole',
+    twoFactorLockedOut: 'Pārāk daudz nepareizu kodu. Šis konts uz dažām minūtēm ir bloķēts — uzgaidiet un mēģiniet vēlreiz vai piesakieties ar kādu no atkopšanas kodiem.',
   },
   mt: {
     noActiveSessions: 'Ebda sessjoni attiva.',
@@ -9848,6 +9866,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Daħħal il-kodiċi mill-app ta\' awtentikazzjoni tiegħek, jew wieħed mill-kodiċi ta\' rkupru.',
     twoFactorVerifying: 'Qed jiġi verifikat…',
     twoFactorCurrentPassword: 'Il-kelma ta\' sigurtà attwali',
+    twoFactorLockedOut: 'Wisq kodiċijiet ħżiena. Dan il-kont huwa msakkar għal ftit minuti — stenna u erġa’ pprova, jew idħol b’wieħed mill-kodiċijiet ta’ rkupru tiegħek.',
   },
   nl: {
     noActiveSessions: 'Geen actieve sessies.',
@@ -10392,6 +10411,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Voer de code uit je authenticator-app in, of een van je herstelcodes.',
     twoFactorVerifying: 'Verifiëren…',
     twoFactorCurrentPassword: 'Huidig wachtwoord',
+    twoFactorLockedOut: 'Te veel onjuiste codes. Dit account is enkele minuten vergrendeld — wacht en probeer het opnieuw, of meld u aan met een van uw herstelcodes.',
   },
   pl: {
     noActiveSessions: 'Brak aktywnych sesji.',
@@ -10936,6 +10956,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Wprowadź kod z aplikacji uwierzytelniającej lub jeden z kodów odzyskiwania.',
     twoFactorVerifying: 'Weryfikowanie…',
     twoFactorCurrentPassword: 'Aktualne hasło',
+    twoFactorLockedOut: 'Zbyt wiele błędnych kodów. To konto jest zablokowane na kilka minut — poczekaj i spróbuj ponownie lub zaloguj się jednym z kodów odzyskiwania.',
   },
   pt: {
     noActiveSessions: 'Nenhuma sessão ativa.',
@@ -11480,6 +11501,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Introduza o código da sua aplicação de autenticação ou um dos seus códigos de recuperação.',
     twoFactorVerifying: 'A verificar…',
     twoFactorCurrentPassword: 'Palavra-passe atual',
+    twoFactorLockedOut: 'Demasiados códigos incorretos. Esta conta está bloqueada durante alguns minutos — aguarde e tente novamente ou inicie sessão com um dos seus códigos de recuperação.',
   },
   ro: {
     noActiveSessions: 'Nicio sesiune activă.',
@@ -12024,6 +12046,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Introduceți codul din aplicația de autentificare sau unul dintre codurile de recuperare.',
     twoFactorVerifying: 'Se verifică…',
     twoFactorCurrentPassword: 'Parola actuală',
+    twoFactorLockedOut: 'Prea multe coduri incorecte. Acest cont este blocat pentru câteva minute — așteptați și încercați din nou sau conectați-vă cu unul dintre codurile de recuperare.',
   },
   ru: {
     noActiveSessions: 'Активных сеансов нет.',
@@ -12568,6 +12591,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Введите код из приложения-аутентификатора или один из кодов восстановления.',
     twoFactorVerifying: 'Проверка…',
     twoFactorCurrentPassword: 'Текущий пароль',
+    twoFactorLockedOut: 'Слишком много неверных кодов. Эта учётная запись заблокирована на несколько минут — подождите и повторите попытку или войдите с помощью одного из кодов восстановления.',
   },
   sk: {
     noActiveSessions: 'Žiadne aktívne sedenia.',
@@ -13112,6 +13136,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Zadajte kód z overovacej aplikácie alebo jeden zo svojich záložných kódov.',
     twoFactorVerifying: 'Overuje sa…',
     twoFactorCurrentPassword: 'Aktuálne heslo',
+    twoFactorLockedOut: 'Príliš veľa nesprávnych kódov. Tento účet je na niekoľko minút uzamknutý — počkajte a skúste to znova alebo sa prihláste jedným zo záložných kódov.',
   },
   sl: {
     noActiveSessions: 'Ni aktivnih sej.',
@@ -13656,6 +13681,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Vnesite kodo iz aplikacije za preverjanje pristnosti ali eno od svojih obnovitvenih kod.',
     twoFactorVerifying: 'Preverjanje…',
     twoFactorCurrentPassword: 'Trenutno geslo',
+    twoFactorLockedOut: 'Preveč napačnih kod. Ta račun je za nekaj minut zaklenjen — počakajte in poskusite znova ali se prijavite z eno od obnovitvenih kod.',
   },
   sv: {
     noActiveSessions: 'Inga aktiva sessioner.',
@@ -14200,6 +14226,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     twoFactorLoginHint: 'Ange koden från din autentiseringsapp, eller en av dina återställningskoder.',
     twoFactorVerifying: 'Verifierar…',
     twoFactorCurrentPassword: 'Nuvarande lösenord',
+    twoFactorLockedOut: 'För många felaktiga koder. Kontot är låst i några minuter — vänta och försök igen, eller logga in med en av dina återställningskoder.',
   },
 }
 

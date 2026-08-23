@@ -5,7 +5,7 @@ import { requireAuth, isAuth } from '@/lib/auth/middleware'
 import { logAudit } from '@/lib/audit'
 import { getBranding } from '@/lib/services/admin/branding'
 import {
-  loadLocalAccount,
+  loadTwoFactorAccount,
   requiresSecondFactor,
   startEnrollment,
   totpIssuer,
@@ -15,8 +15,12 @@ import {
 /**
  * Start an enrollment (issue #36).
  *
- * Two gates, and the second is the interesting one:
+ * Three gates, and the third is the interesting one:
  *
+ *   * The root account, enforced by `loadTwoFactorAccount` rather than by a role
+ *     check here. #36 is 2FA for the root account, and the check belongs in the
+ *     service so `confirm` and the status endpoint cannot end up with a
+ *     different answer to the same question.
  *   * The current password, always. A session cookie is not enough to change how
  *     the account authenticates.
  *   * A CURRENT second factor, whenever one is already confirmed. Password alone
@@ -49,7 +53,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const account = await loadLocalAccount(session.id)
+  const account = await loadTwoFactorAccount(session.id)
   if (!account.ok) {
     return NextResponse.json({ error: account.message }, { status: account.status })
   }

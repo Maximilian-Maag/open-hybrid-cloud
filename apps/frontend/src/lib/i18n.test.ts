@@ -167,7 +167,7 @@ describe('i18n', () => {
     'twoFactorSetupKey', 'twoFactorCodeLabel', 'twoFactorCodeHint',
     'twoFactorActivate', 'twoFactorRecoveryCodes', 'twoFactorRecoveryHint',
     'twoFactorRecoveryLeft', 'twoFactorLoginHint', 'twoFactorVerifying',
-    'twoFactorCurrentPassword',
+    'twoFactorCurrentPassword', 'twoFactorLockedOut',
   ]
 
   it('has a real translation for every two-factor key in every language', () => {

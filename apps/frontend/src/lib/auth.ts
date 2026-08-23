@@ -1,4 +1,4 @@
-import NextAuth from 'next-auth'
+import NextAuth, { CredentialsSignin } from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import {
   type LoginRequest,
@@ -9,6 +9,21 @@ import {
   isMfaChallenge,
 } from '@open-hybrid-cloud/types'
 import { SESSION_COOKIE_MAX_AGE_SECONDS, apiTokenExpiry } from '@/lib/session'
+import { MFA_LOCKED_OUT } from '@/lib/loginErrors'
+
+/**
+ * The second factor is locked after repeated failures, and the user has to wait
+ * or use a recovery code.
+ *
+ * Thrown rather than returned as `null`, because `null` is how every other
+ * failure leaves `authorize` and the form cannot tell them apart afterwards. The
+ * `code` is what reaches the browser; the backend's own "try again in N minutes"
+ * stays on the server, where it belongs — it is English-only and would land in a
+ * URL. See lib/loginErrors.ts.
+ */
+class SecondFactorLockedOut extends CredentialsSignin {
+  code = MFA_LOCKED_OUT
+}
 
 const API_URL = process.env.API_URL ?? 'http://localhost:3001'
 
@@ -56,6 +71,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mfaToken, code } satisfies MfaLoginRequest),
           })
+          // 429 is the account's second-factor lockout, not a wrong code: the
+          // user has to wait or reach for a recovery code, and being told
+          // "invalid credentials" would have them do neither.
+          if (res.status === 429) throw new SecondFactorLockedOut()
           if (!res.ok) return null
           return toAuthUser(await res.json())
         }

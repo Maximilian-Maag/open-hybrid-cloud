@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { UpdateProfileRequest, ChangePasswordRequest } from '@open-hybrid-cloud/types'
+import type { UpdateProfileRequest, ChangePasswordRequest, Role } from '@open-hybrid-cloud/types'
 import { put } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
@@ -15,9 +15,10 @@ interface Props {
   token: string
   initialName: string
   email: string
+  role: Role | undefined
 }
 
-export function SettingsForms({ token, initialName, email }: Props) {
+export function SettingsForms({ token, initialName, email, role }: Props) {
   const lang = useLang()
   const [name, setName] = useState(initialName)
   const [profileSaving, setProfileSaving] = useState(false)
@@ -127,10 +128,11 @@ export function SettingsForms({ token, initialName, email }: Props) {
         </form>
       </Card>
 
-      {/* Only local password accounts can enrol: an SSO user has no password to
-          re-authenticate with, and their MFA belongs to the identity provider
-          (issue #36). The card asks the backend, which refuses them by role. */}
-      <TwoFactorCard token={token} />
+      {/* Cosmetic only. The gate is `loadTwoFactorAccount` on the server, which
+          answers 403 to every 2FA endpoint for any other role; this just keeps a
+          card nobody can use off the page. An SSO root sees it and is told by the
+          backend that their MFA belongs to the identity provider (issue #36). */}
+      {role === 'root' && <TwoFactorCard token={token} />}
     </div>
   )
 }

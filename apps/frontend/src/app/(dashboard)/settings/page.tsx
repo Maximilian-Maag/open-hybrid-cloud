@@ -37,7 +37,7 @@ export default async function SettingsPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <PageHeader title={t('profileSettings', lang)} subtitle={t('profileSettingsSubtitle', lang)} />
-      <SettingsForms token={token} initialName={userName} email={userEmail} />
+      <SettingsForms token={token} initialName={userName} email={userEmail} role={session.user?.role} />
       <ActiveSessions token={token} initialSessions={sessions} />
     </div>
   )

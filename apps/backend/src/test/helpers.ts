@@ -175,6 +175,38 @@ export const createInfraElement = async (
   return el
 }
 
+/**
+ * Seed an approval delegation directly (issue #35).
+ *
+ * Dates are offsets in DAYS from today so a fixture reads as "in force now" or
+ * "already over" rather than as literal dates that would silently start failing
+ * the moment they went past. Bypasses `createDelegation` on purpose: the service
+ * refuses backdated and chained delegations, and a test for expiry needs exactly
+ * those.
+ */
+export const createDelegation = async (
+  fromUserId: number,
+  toUserId: number,
+  overrides?: { startsInDays?: number; endsInDays?: number; revokedAt?: Date },
+) => {
+  const day = (offset: number) => {
+    const d = new Date()
+    d.setUTCDate(d.getUTCDate() + offset)
+    return d.toISOString().slice(0, 10)
+  }
+  const [row] = await db
+    .insert(schema.approvalDelegations)
+    .values({
+      fromUserId,
+      toUserId,
+      startsOn: day(overrides?.startsInDays ?? 0),
+      endsOn: day(overrides?.endsInDays ?? 0),
+      ...(overrides?.revokedAt ? { revokedAt: overrides.revokedAt } : {}),
+    })
+    .returning()
+  return row
+}
+
 export const makeAuthHeader = async (user: schema.User): Promise<string> => {
   const token = await signToken({
     id: user.id,

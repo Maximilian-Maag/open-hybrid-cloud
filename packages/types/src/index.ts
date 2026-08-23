@@ -663,6 +663,49 @@ export interface RejectOrderRequest {
   rejectionNote: string
 }
 
+// Approval delegation (issue #35)
+//
+// An admin's approval AUTHORITY, held by a substitute for a period. The
+// substitute approves under their own name — nothing here impersonates the
+// delegator — and every decision taken while a delegation is in force is audited
+// against it.
+export interface ApprovalDelegation {
+  id: number
+  fromUserId: number
+  fromUserName: string
+  fromUserEmail: string
+  toUserId: number
+  toUserName: string
+  toUserEmail: string
+  /** Calendar date (YYYY-MM-DD), inclusive. */
+  startsOn: string
+  /** Calendar date (YYYY-MM-DD), inclusive — the last day it is in force. */
+  endsOn: string
+  createdAt: string
+  revokedAt: string | null
+  /**
+   * Computed by the server at read time from `starts_on <= today <= ends_on` and
+   * `revoked_at IS NULL`. Never stored, so a delegation cannot outlive its end
+   * date and no job has to expire it.
+   */
+  active: boolean
+}
+
+export interface ApprovalDelegationsResponse {
+  /** Authority the caller has given away. */
+  mine: ApprovalDelegation[]
+  /** Authority the caller holds on behalf of others. */
+  grantedToMe: ApprovalDelegation[]
+  /** Active admins the caller may nominate. Root is excluded. */
+  candidates: { id: number; name: string; email: string }[]
+}
+
+export interface CreateApprovalDelegationRequest {
+  toUserId: number
+  startsOn: string
+  endsOn: string
+}
+
 // Infrastructure
 export interface InfrastructureElement {
   id: number

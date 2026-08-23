@@ -76,6 +76,34 @@ describe('notification functions', () => {
     }
   })
 
+  it('sendApprovalRequest names the admins a substitute is covering for', async () => {
+    // Issue #35: delegation is reflected as a CC, so the substitute still gets
+    // the ordinary request — their copy just explains the extra standing.
+    await sendApprovalRequest('sub@test.dev', 'My Product', 42, 'Alice', ['Bob Admin', 'Carol Admin'])
+    const sendMail = getMockSendMail()
+    const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+    expect(options.to).toBe('sub@test.dev')
+    expect(options.html).toContain('substitute approver')
+    expect(options.html).toContain('Bob Admin')
+    expect(options.html).toContain('Carol Admin')
+    expect(options.html).toContain('your own name')
+  })
+
+  it('sendApprovalRequest says nothing about delegation when there is none', async () => {
+    await sendApprovalRequest('admin@test.dev', 'My Product', 42, 'Alice')
+    const sendMail = getMockSendMail()
+    const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+    expect(options.html).not.toContain('substitute approver')
+  })
+
+  it('sendApprovalRequest escapes a delegator name rather than trusting it', async () => {
+    await sendApprovalRequest('sub@test.dev', 'My Product', 42, 'Alice', ['<script>x</script>'])
+    const sendMail = getMockSendMail()
+    const [options] = sendMail.mock.calls[sendMail.mock.calls.length - 1]
+    expect(options.html).not.toContain('<script>')
+    expect(options.html).toContain('&lt;script&gt;')
+  })
+
   it('sendOrderCreated subject contains order id and product name', async () => {
     await sendOrderCreated('user@test.dev', 'Fancy Product', 7)
     const sendMail = getMockSendMail()

@@ -21,6 +21,7 @@ export const testDb = drizzle(client, { schema })
 // schema's shape and new tables get added in the right place by habit.
 const TABLES = [
   schema.auditLog,
+  schema.approvalDelegations,
   schema.productFavorites,
   schema.orderComments,
   schema.productVersions,
@@ -273,6 +274,22 @@ beforeAll(async () => {
       details TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- Migration 0022: out-of-office substitute approver (issue #35).
+    CREATE TABLE IF NOT EXISTS approval_delegations (
+      id BIGSERIAL PRIMARY KEY,
+      from_user_id BIGINT NOT NULL REFERENCES users(id),
+      to_user_id BIGINT NOT NULL REFERENCES users(id),
+      starts_on DATE NOT NULL,
+      ends_on DATE NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      revoked_at TIMESTAMPTZ,
+      CONSTRAINT approval_delegations_period_check CHECK (ends_on >= starts_on),
+      CONSTRAINT approval_delegations_not_self_check CHECK (from_user_id <> to_user_id)
+    );
+    CREATE INDEX IF NOT EXISTS approval_delegations_from_idx
+      ON approval_delegations (from_user_id, starts_on, ends_on);
+    CREATE INDEX IF NOT EXISTS approval_delegations_to_idx
+      ON approval_delegations (to_user_id, starts_on, ends_on);
     CREATE TABLE IF NOT EXISTS exchange_rates (
       currency_code TEXT PRIMARY KEY,
       rate NUMERIC(18,6) NOT NULL DEFAULT 1,

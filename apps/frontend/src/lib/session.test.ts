@@ -94,7 +94,11 @@ describe('session lifetimes', () => {
     // The guarantee that replaced #103's shared constant: per-session and exact,
     // read off the token the session is actually carrying.
     const now = 1_700_000_000_000
-    const eightHourSessionIssuedNineHoursAgo = now / 1000 - 60 * 60
-    expect(isApiTokenExpired(eightHourSessionIssuedNineHoursAgo, now)).toBe(true)
+    // Named for what it is: isApiTokenExpired takes an `exp` claim in seconds,
+    // not an issued-at. Derived from the issue time so the arithmetic is visible
+    // rather than a bare offset that reads like the wrong thing.
+    const issuedAt = now / 1000 - 9 * 60 * 60
+    const exp = issuedAt + 8 * 60 * 60
+    expect(isApiTokenExpired(exp, now)).toBe(true)
   })
 })

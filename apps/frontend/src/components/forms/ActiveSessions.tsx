@@ -165,7 +165,12 @@ export function ActiveSessions({ token, initialSessions, userId }: Props) {
             disabled={busy !== null}
             onClick={() => run('others', () => del<RevokeSessionsResponse>(`/api/sessions${query}`, token))}
           >
-            {busy === 'others' ? t('loading', lang) : t('signOutOthers', lang)}
+            {busy === 'others'
+              ? t('loading', lang)
+              : /* When root is looking at someone else's sessions the backend
+                   spares nothing — including the one they are using — so
+                   "everywhere else" would name the wrong action. */
+                t(userId === undefined ? 'signOutOthers' : 'revokeAllSessions', lang)}
           </Button>
         ) : undefined
       }

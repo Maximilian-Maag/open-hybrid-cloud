@@ -658,6 +658,19 @@ export const deleteProductImage = async (
   actorId?: number,
 ): Promise<Result<void>> => {
   return db.transaction(async (tx): Promise<Result<void>> => {
+    // The same product-row lock `addProductImage` takes, for the same reason: at
+    // READ COMMITTED a concurrent gallery mutation is invisible until it commits,
+    // so a re-pack computed from this snapshot can write positions that were
+    // already stale when it read them. Locking one row serialises every gallery
+    // mutation for that product and nothing else.
+    const [locked] = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, productId))
+      .for('update')
+      .limit(1)
+    if (!locked) return err(404, 'Product not found')
+
     const deleted = await tx
       .delete(productImages)
       .where(and(eq(productImages.id, imageId), eq(productImages.productId, productId)))
@@ -705,23 +718,25 @@ export const reorderProductImages = async (
   actorId?: number,
 ): Promise<Result<void>> => {
   return db.transaction(async (tx): Promise<Result<void>> => {
+    // The same product-row lock `addProductImage` takes, for the same reason: at
+    // READ COMMITTED a concurrent gallery mutation is invisible until it commits,
+    // so a re-pack computed from this snapshot can write positions that were
+    // already stale when it read them. Locking one row serialises every gallery
+    // mutation for that product and nothing else. It also answers the question an
+    // empty gallery cannot: no rows means either an unknown product or a real one
+    // with no pictures, and those owe different answers.
+    const [locked] = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, productId))
+      .for('update')
+      .limit(1)
+    if (!locked) return err(404, 'Product not found')
+
     const rows = await tx
       .select({ id: productImages.id })
       .from(productImages)
       .where(eq(productImages.productId, productId))
-
-    // An empty gallery is ambiguous — an unknown product, or a real one with no
-    // pictures — and the two owe different answers. Without this, reordering a
-    // product that does not exist answered 204 for an empty list and 400 for a
-    // non-empty one, neither of which is 404.
-    if (rows.length === 0) {
-      const [product] = await tx
-        .select({ id: products.id })
-        .from(products)
-        .where(eq(products.id, productId))
-        .limit(1)
-      if (!product) return err(404, 'Product not found')
-    }
 
     const known = new Set(rows.map((row) => row.id))
     const requested = new Set(order)

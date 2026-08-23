@@ -24,8 +24,17 @@ export const config = {
      * Protect all routes except:
      *   - /login and /impressum (public pages)
      *   - /api/auth/* (NextAuth internal endpoints)
+     *   - /api/login-challenge (step one of signing in — see below)
      *   - Next.js static files and images
+     *
+     * /api/login-challenge is reached by someone who is BY DEFINITION not signed
+     * in yet, so leaving it in the protected set made the middleware 307 the
+     * form's POST to /login. `fetch` followed that redirect, the form got the
+     * login page instead of JSON, and every sign-in — second factor or not —
+     * died as "Invalid email or password" without ever reaching the backend
+     * (#36). Anything added under /api here needs the same thought: an endpoint
+     * that is part of signing in cannot require being signed in.
      */
-    '/((?!login|impressum|api/auth|api/ping|_next/static|_next/image|favicon\\.ico).*)',
+    '/((?!login|impressum|api/auth|api/login-challenge|api/ping|_next/static|_next/image|favicon\\.ico).*)',
   ],
 }

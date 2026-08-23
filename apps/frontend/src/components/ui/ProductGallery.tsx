@@ -45,6 +45,13 @@ export function ProductGallery({ productId, images, lang }: Props) {
   // Per image, not per gallery: one broken row should not blank the others.
   const [failed, setFailed] = useState<number[]>([])
 
+  // The same id can arrive twice: the large picture and the zoom modal render the
+  // same image, so one dead URL fires `onError` from both elements. Returning the
+  // existing array on a repeat lets React bail out of that second render instead
+  // of re-rendering the whole gallery for a longer list that means the same thing.
+  const markFailed = (id: number) =>
+    setFailed((ids) => (ids.includes(id) ? ids : [...ids, id]))
+
   // A reordered or shortened gallery must not leave the selection pointing past
   // the end — the page re-renders with new props, the component does not remount.
   useEffect(() => {
@@ -88,7 +95,7 @@ export function ProductGallery({ productId, images, lang }: Props) {
             src={src(productId, current.id)}
             alt={current.alt}
             className="h-full w-full rounded-lg object-contain"
-            onError={() => setFailed((ids) => [...ids, current.id])}
+            onError={() => markFailed(current.id)}
           />
         )}
 
@@ -161,7 +168,7 @@ export function ProductGallery({ productId, images, lang }: Props) {
                     // thumbnail twice.
                     alt=""
                     className="h-full w-full object-cover"
-                    onError={() => setFailed((ids) => [...ids, image.id])}
+                    onError={() => markFailed(image.id)}
                   />
                 )}
               </button>
@@ -189,7 +196,7 @@ export function ProductGallery({ productId, images, lang }: Props) {
             src={src(productId, current.id)}
             alt={current.alt}
             className="mx-auto max-h-[70vh] w-full object-contain"
-            onError={() => setFailed((ids) => [...ids, current.id])}
+            onError={() => markFailed(current.id)}
           />
         )}
         <p className="mt-3 text-sm text-slate-600">{current.alt}</p>

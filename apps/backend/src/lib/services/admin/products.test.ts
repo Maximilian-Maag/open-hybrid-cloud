@@ -48,7 +48,7 @@ import {
   orders,
   auditLog,
 } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { listCatalog, getProduct } from '@/lib/services/catalog'
 import {
   createUser,
@@ -879,6 +879,42 @@ describe('addProductImage', () => {
     const overflow = await addProductImage(p.id, png, 'One too many')
     expect(overflow.ok).toBe(false)
     if (!overflow.ok) expect(overflow.status).toBe(409)
+  })
+
+  it('holds the cap and keeps positions dense when uploads race', async () => {
+    const cat = await createCategory()
+    const p = await seedProduct(cat.id, 'Img-race')
+
+    for (let i = 0; i < MAX_IMAGES_PER_PRODUCT - 1; i += 1) {
+      expect((await addProductImage(p.id, png, `Picture ${i}`)).ok).toBe(true)
+    }
+
+    // Warm the pool first. postgres.js connects lazily, so on a cold pool the
+    // later callers spend their first statement on a TCP handshake while the
+    // first caller finishes all three of its queries — they never overlap and
+    // the bug hides. Four warm racers rather than two: against the pre-fix code
+    // two reproduced in 4 runs out of 5, four in 8 out of 8.
+    const racers = 4
+    await Promise.all(Array.from({ length: racers }, () => db.execute(sql`SELECT 1`)))
+
+    // One free slot, four uploads. Before the FOR UPDATE lock every caller read
+    // the same COUNT and the same MAX(position) before any of them inserted, so
+    // all four were let through and all four took the same position — four over
+    // the cap, with four rows claiming one place in the order.
+    const results = await Promise.all(
+      Array.from({ length: racers }, (_, i) => addProductImage(p.id, png, `Racer ${i}`)),
+    )
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1)
+    for (const result of results.filter((r) => !r.ok)) {
+      if (!result.ok) expect(result.status).toBe(409)
+    }
+
+    const rows = await gallery(p.id)
+    expect(rows).toHaveLength(MAX_IMAGES_PER_PRODUCT)
+    expect(rows.map((row) => row.position)).toEqual(
+      Array.from({ length: MAX_IMAGES_PER_PRODUCT }, (_, i) => i),
+    )
   })
 })
 

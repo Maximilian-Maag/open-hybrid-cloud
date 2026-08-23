@@ -20,7 +20,7 @@ import {
   type ProductWebhook,
   type Parameter,
 } from '@/lib/db/schema'
-import { type ProductImageMeta } from '@/lib/services/catalog'
+import type { ProductImageMeta } from '@open-hybrid-cloud/types'
 import { count, eq, sql, and, inArray, isNull } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
@@ -561,35 +561,51 @@ export const addProductImage = async (
     return err(415, `Unsupported image type — allowed: ${ALLOWED_IMAGE_MIMES.join(', ')}`)
   }
 
-  const [product] = await db
-    .select({ id: products.id })
-    .from(products)
-    .where(eq(products.id, productId))
-    .limit(1)
-  // Checked explicitly: an INSERT with a bad FK raises a driver error, which the
-  // route would report as a 500 rather than "no such product".
-  if (!product) return err(404, 'Product not found')
+  // The cap check, the next position and the INSERT run in one transaction under a
+  // FOR UPDATE lock on the product row, so concurrent uploads to the same gallery
+  // queue instead of both reading the same COUNT/MAX. Without it two uploads to a
+  // product at the cap minus one both saw room and both took the same position,
+  // leaving nine images and two of them claiming to be position 8.
+  //
+  // A lock rather than the conditional single-statement write used elsewhere in
+  // this codebase (the TOTP guards, the delegation revoke): a conditional write
+  // serialises because the row it claims already exists and Postgres re-evaluates
+  // the predicate against the updated row. Here the write is an INSERT and the
+  // invariant spans a *set* of rows, which no row-level predicate can guard — even
+  // `INSERT ... SELECT ... HAVING COUNT(*) < n` reads its snapshot before either
+  // writer is visible to the other.
+  return db.transaction(async (tx): Promise<Result<{ id: number; mime: string; position: number }>> => {
+    const [product] = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, productId))
+      .for('update')
+      .limit(1)
+    // Checked explicitly: an INSERT with a bad FK raises a driver error, which the
+    // route would report as a 500 rather than "no such product".
+    if (!product) return err(404, 'Product not found')
 
-  const [counted] = await db
-    .select({
-      count: sql<number>`COUNT(*)::int`,
-      maxPosition: sql<number | null>`MAX(${productImages.position})`,
-    })
-    .from(productImages)
-    .where(eq(productImages.productId, productId))
+    const [counted] = await tx
+      .select({
+        count: sql<number>`COUNT(*)::int`,
+        maxPosition: sql<number | null>`MAX(${productImages.position})`,
+      })
+      .from(productImages)
+      .where(eq(productImages.productId, productId))
 
-  if (counted.count >= MAX_IMAGES_PER_PRODUCT) {
-    return err(409, `A product may have at most ${MAX_IMAGES_PER_PRODUCT} images`)
-  }
+    if (counted.count >= MAX_IMAGES_PER_PRODUCT) {
+      return err(409, `A product may have at most ${MAX_IMAGES_PER_PRODUCT} images`)
+    }
 
-  const position = counted.maxPosition === null ? 0 : counted.maxPosition + 1
+    const position = counted.maxPosition === null ? 0 : counted.maxPosition + 1
 
-  const [row] = await db
-    .insert(productImages)
-    .values({ productId, position, data: buffer, mime, alt: described.data })
-    .returning({ id: productImages.id })
+    const [row] = await tx
+      .insert(productImages)
+      .values({ productId, position, data: buffer, mime, alt: described.data })
+      .returning({ id: productImages.id })
 
-  return ok({ id: row.id, mime, position })
+    return ok({ id: row.id, mime, position })
+  })
 }
 
 /** Change one picture's description without re-uploading it. */

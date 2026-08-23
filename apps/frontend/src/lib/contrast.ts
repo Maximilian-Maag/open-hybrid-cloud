@@ -137,3 +137,62 @@ export const readableAccent = (
   }
   return toCanonicalHex(at(hi))
 }
+
+/**
+ * One hue at `steps` distinguishable lightnesses, darkest first, every one of them
+ * still clearing `target` against `background` (issue #106).
+ *
+ * The cost charts stack several segments in a single bar, and the app has exactly
+ * one chart colour to spend: the operator's. A categorical palette is not available
+ * — there is no second brand hue — so the segments are stepped tone-on-tone in the
+ * order the data is already sorted in (largest share darkest), which is an ordinal
+ * ramp over an ordered dimension rather than arbitrary colours on nominal ones.
+ *
+ * The floor is what makes it survive branding. `readableAccent` moves a colour in
+ * one direction only, so it cannot produce a ramp: a colour that already clears the
+ * target comes back unchanged, giving `steps` identical tones. This walks a single
+ * black → colour → white lightness parameter instead, whose contrast against a light
+ * surface falls monotonically, and binary-searches the tone that hits each step's
+ * ratio. Every step therefore clears 1.4.11's 3:1 against the card it is painted on,
+ * whatever the operator picked — including a near-white secondary.
+ *
+ * Colour is never the only channel: the legend beside these segments carries the
+ * label, the amount and the share as text.
+ */
+export const accentRamp = (
+  colour: string,
+  steps: number,
+  background = SURFACE,
+  target = AA_NON_TEXT,
+): string[] => {
+  const rgb = parseHex(colour)
+  if (!rgb || steps <= 0) return Array.from({ length: Math.max(0, steps) }, () => colour)
+
+  /** t = 0 is black, 0.5 the colour itself, 1 white — luminance rises with t. */
+  const toneAt = (t: number): string => {
+    const mix = t <= 0.5
+      ? rgb.map((v) => v * (t * 2))
+      : rgb.map((v) => v + (255 - v) * ((t - 0.5) * 2))
+    return toCanonicalHex(mix as [number, number, number])
+  }
+
+  const solve = (ratio: number): string => {
+    let lo = 0
+    let hi = 1
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2
+      // Contrast falls as t rises, so keep the half that still clears the ratio.
+      if (contrastRatio(toneAt(mid), background) >= ratio) lo = mid
+      else hi = mid
+    }
+    return toneAt(lo)
+  }
+
+  // The darkest step stops short of black so the hue stays recognisable; the
+  // lightest sits on the non-text floor rather than below it.
+  const DARKEST = 9
+  if (steps === 1) return [solve(DARKEST)]
+  return Array.from({ length: steps }, (_, i) =>
+    solve(DARKEST - ((DARKEST - target) * i) / (steps - 1)),
+  )
+}

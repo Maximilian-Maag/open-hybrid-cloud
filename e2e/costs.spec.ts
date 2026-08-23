@@ -39,6 +39,57 @@ test.describe('Cost dashboard', () => {
     await expect(page.getByRole('heading', { name: /per environment/i })).toBeVisible()
   })
 
+  // Issue #106. The charts are inline SVG with no client JavaScript, so what is
+  // pinned here is that they render server-side and that the data behind them is
+  // reachable as text — the two things that would silently regress.
+  test('offers a month-over-month comparison card whatever the window holds', async ({ page }) => {
+    // Rendered even when the window covers one month, where it says so rather than
+    // comparing against a month the filter excluded.
+    await expect(page.getByRole('heading', { name: /month over month/i })).toBeVisible({
+      timeout: 10000,
+    })
+  })
+
+  test('draws the trend and the share charts when there is spend', async ({ page }) => {
+    const noSpend = page.getByText(/no spending recorded for this range/i).first()
+    const trend = page.getByRole('heading', { name: /spend over time/i })
+    await expect(trend.or(noSpend)).toBeVisible({ timeout: 10000 })
+    if (await trend.count() === 0) return // nothing provisioned in this stack
+
+    // The picture carries an accessible name, not just a shape.
+    await expect(page.getByRole('img', { name: /spend over time/i })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /share of total.*per project/i })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: /share of total.*per cost centre/i }),
+    ).toBeVisible()
+  })
+
+  test('keeps the not-a-projection caveat attached to every chart, not just the total', async ({
+    page,
+  }) => {
+    // A column per month looks exactly like a monthly run rate, which these figures
+    // are not. One caveat at the top of the page would not be read next to a chart.
+    const trend = page.getByRole('heading', { name: /spend over time/i })
+    await expect(trend.or(page.getByText(/no spending recorded for this range/i).first())).toBeVisible({
+      timeout: 10000,
+    })
+    if (await trend.count() === 0) return
+
+    expect(await page.getByText(/not a projection over a period/i).count()).toBeGreaterThan(1)
+  })
+
+  test('the trend exposes its figures as a table, not only as an SVG', async ({ page }) => {
+    const trend = page.getByRole('heading', { name: /spend over time/i })
+    await expect(trend.or(page.getByText(/no spending recorded for this range/i).first())).toBeVisible({
+      timeout: 10000,
+    })
+    if (await trend.count() === 0) return
+
+    // Collapsed by default; the point is that nothing is gated behind seeing it.
+    await page.getByText(/^details$/i).first().click()
+    await expect(page.getByRole('columnheader', { name: /^month$/i })).toBeVisible()
+  })
+
   test('navigates to costs from the top nav', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('link', { name: /^costs$/i }).first().click()

@@ -281,6 +281,16 @@ const costBucketSchema = z.object({
   orderCount: z.number(),
 })
 
+const costPeriodSchema = z.object({
+  period: z.string().openapi({ description: 'Calendar month in UTC, YYYY-MM.', example: '2026-08' }),
+  totalEur: z.number(),
+  orderCount: z.number(),
+  estimatedOrders: z.number(),
+  partial: z.boolean().openapi({
+    description: 'The month is not over, so the figure will still grow. Charts must say so rather than showing it as a fall in spend.',
+  }),
+})
+
 const costFilterQuery = z.object({
   range: z.enum(['currentMonth', 'last3Months', 'last12Months', 'all', 'custom']).optional().openapi({
     description: 'Preset window, resolved server-side so the report and its export cannot disagree.',
@@ -301,7 +311,12 @@ registry.registerPath({
     'are counted in estimatedOrders. Totals are in EUR (the exchange-rate base) and the client converts to ' +
     'the viewer\'s currency; an amount whose currency has no stored rate appears in unconverted[] rather ' +
     'than being silently treated as EUR. These are sums of recorded prices, NOT a time-based projection — ' +
-    'the catalogue stores no billing period. Scoped by role: a project manager sees the projects they own.',
+    'the catalogue stores no billing period. Scoped by role: a project manager sees the projects they own. ' +
+    'series[] adds the same spend per calendar month (UTC), oldest first, with empty months in between filled ' +
+    'in so a trend cannot draw a straight line through a gap; it is computed from the same de-duplicated rows ' +
+    'as the breakdowns and therefore sums to totalEur. comparison holds the last two months of that series and ' +
+    'is null when the window covers fewer than two — comparing against a month the filter excluded would read ' +
+    'as "spend doubled".',
   tags: ['Costs'],
   security: bearerAuth,
   request: { query: costFilterQuery },
@@ -314,6 +329,15 @@ registry.registerPath({
             totalEur: z.number(),
             orderCount: z.number(),
             estimatedOrders: z.number(),
+            series: z.array(costPeriodSchema),
+            comparison: z
+              .object({
+                current: costPeriodSchema,
+                previous: costPeriodSchema,
+                changeEur: z.number(),
+                changePct: z.number().nullable(),
+              })
+              .nullable(),
             byProject: z.array(costBucketSchema),
             byCostCenter: z.array(costBucketSchema),
             byProduct: z.array(costBucketSchema),

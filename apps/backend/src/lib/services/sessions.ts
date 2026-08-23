@@ -2,7 +2,7 @@ import { and, desc, eq, gt, isNull, ne } from 'drizzle-orm'
 import type { SessionInfo } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
 import { sessions } from '@/lib/db/schema'
-import { logAudit } from '@/lib/audit'
+import { logAudit, logAuditWith } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 import type { AuthenticatedUser } from '@/lib/auth/middleware'
 
@@ -104,8 +104,13 @@ export const revokeAllSessionsOf = async (
   actorId: number | null,
   userId: number,
   reason: string,
+  // Pass the transaction when the revoke has to stand or fall with whatever
+  // caused it. A deactivation that commits while the revoke fails leaves the
+  // account disabled and still signed in, which is the failure this exists to
+  // prevent.
+  executor: Parameters<typeof logAuditWith>[0] = db,
 ): Promise<number> => {
-  const revoked = await db
+  const revoked = await executor
     .update(sessions)
     .set({ revokedAt: new Date() })
     .where(liveSessionsOf(userId))
@@ -113,7 +118,8 @@ export const revokeAllSessionsOf = async (
 
   if (revoked.length === 0) return 0
 
-  await logAudit(
+  await logAuditWith(
+    executor,
     actorId,
     'session.revoked_others',
     userId,

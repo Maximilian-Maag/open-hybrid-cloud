@@ -147,7 +147,10 @@ test.describe('Accessibility — dialogs', () => {
     // scan of /admin/users never opens it — the same reason the six above are
     // listed. The name matched is the button's aria-label, which carries the
     // user it belongs to.
-    ['/admin/users', /^Sessions:/],
+    // Matches the `activeSessions` key ('Active sessions'), not a literal — the
+    // button's accessible name is translated, so anchoring on English prose that
+    // is no longer there is how this silently stops opening the dialog.
+    ['/admin/users', /^Active sessions:/],
   ]
 
   for (const [path, buttonName] of MODALS) {

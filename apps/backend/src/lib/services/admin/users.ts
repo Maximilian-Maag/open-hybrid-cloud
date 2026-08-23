@@ -130,11 +130,26 @@ export const updateUser = async (
     .where(eq(users.id, id))
     .limit(1)
 
-  const [updated] = await db
-    .update(users)
-    .set(update)
-    .where(eq(users.id, id))
-    .returning(safeUserColumns)
+  // One transaction: the row change and the revoke that follows from it have to
+  // stand or fall together. Revoking after the UPDATE commits means a failure
+  // there leaves the account deactivated (or demoted) and still signed in — the
+  // exact state this revoke exists to prevent, reached by the error path.
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(users)
+      .set(update)
+      .where(eq(users.id, id))
+      .returning(safeUserColumns)
+
+    if (!row) return null
+
+    if (input.active === false || (input.role !== undefined && input.role !== before?.role)) {
+      const reason = input.active === false ? 'Account deactivated' : 'Role changed'
+      await revokeAllSessionsOf(actorId, id, reason, tx)
+    }
+
+    return row
+  })
 
   if (!updated) return err(404, 'Not found')
 
@@ -154,11 +169,6 @@ export const updateUser = async (
   // admin keeps admin until their token expires. That was already true with a 24 h
   // ceiling; "remember me" raises it to 30 days, which turns a small window into a
   // month. Revoking makes them sign in again and pick up the role they now have.
-  if (input.active === false || (input.role !== undefined && input.role !== before?.role)) {
-    const reason = input.active === false ? 'Account deactivated' : 'Role changed'
-    await revokeAllSessionsOf(actorId, id, reason)
-  }
-
   return ok(updated as SafeUser)
 }
 

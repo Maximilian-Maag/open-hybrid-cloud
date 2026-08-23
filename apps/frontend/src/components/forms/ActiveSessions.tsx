@@ -73,14 +73,20 @@ export function ActiveSessions({ token, initialSessions, userId }: Props) {
 
   const query = userId === undefined ? '' : `?userId=${userId}`
 
-  const reload = useCallback(async () => {
-    setSessions(await get<SessionInfo[]>(`/api/sessions${query}`, token))
-  }, [query, token])
+  // Fetches and returns; it does not set state. Every caller decides whether the
+  // component is still mounted before it writes — an unmount mid-flight otherwise
+  // means a setState on a dead component, and this card is opened in a modal that
+  // is closed by clicking away from it.
+  const fetchSessions = useCallback(
+    () => get<SessionInfo[]>(`/api/sessions${query}`, token),
+    [query, token],
+  )
 
   useEffect(() => {
     if (initialSessions !== undefined) return
     let live = true
-    reload()
+    fetchSessions()
+      .then((rows) => { if (live) setSessions(rows) })
       .catch((e: unknown) => {
         if (live) setError(e instanceof Error ? e.message : t('unexpectedError', lang))
       })
@@ -89,14 +95,14 @@ export function ActiveSessions({ token, initialSessions, userId }: Props) {
     // `initialSessions` is a mount-time decision, not something to react to: a
     // parent that re-renders with a new array must not restart the fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reload])
+  }, [fetchSessions])
 
   const run = async (key: number | 'others', action: () => Promise<RevokeSessionsResponse>) => {
     setBusy(key)
     setError(null)
     try {
       await action()
-      await reload()
+      setSessions(await fetchSessions())
     } catch (err) {
       setError(err instanceof Error ? err.message : t('unexpectedError', lang))
     } finally {

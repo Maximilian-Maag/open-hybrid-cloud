@@ -46,6 +46,26 @@ describe('GET /api/catalog/[id]/image', () => {
     expect((await call('999999')).status).toBe(404)
   })
 
+  it('rejects an id that is not all digits instead of serving its numeric prefix', async () => {
+    // `parseInt` stopped at the first non-digit, so this used to return the picture
+    // of the product whose id is the prefix. Each of these has a prefix that parses.
+    const cat = await createCategory()
+    const p = await createProduct(cat.id, 'PrefixVictim')
+    await createProductImage(p.id, { data: Buffer.from([0x89, 0x50, 0x4e, 0x47]) })
+
+    for (const malformed of [`${p.id}abc`, `${p.id}.5`, `${p.id} `, `0x${p.id}`]) {
+      const res = await call(malformed)
+      expect(res.status, malformed).toBe(400)
+      expect(await res.json()).toEqual({ error: 'Invalid product id' })
+    }
+  })
+
+  it('rejects a non-positive or oversized id rather than querying with it', async () => {
+    for (const bad of ['0', '-1', '99999999999999999999']) {
+      expect((await call(bad)).status, bad).toBe(400)
+    }
+  })
+
   it('serves without an Authorization header, agreeing with the gallery route', async () => {
     // The same pinned contract as /catalog/{id}/images/{imageId}: both are read by
     // an image tag, which sends no bearer token and no cross-origin cookie.

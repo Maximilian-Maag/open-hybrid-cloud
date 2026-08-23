@@ -15,6 +15,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
+  // `parseInt` read a leading number and dropped the rest, so `/catalog/12abc/image`
+  // served product 12's picture. Digits-only, matching `/catalog/{id}/images/{imageId}`
+  // and the rest of the API's route ids.
   const productId = parseRouteId(id)
   if (productId === null) return invalidId('product id')
 

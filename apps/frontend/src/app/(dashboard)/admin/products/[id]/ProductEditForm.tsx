@@ -180,6 +180,27 @@ export function ProductEditForm({ product, categories, environments, translation
     router.refresh()
   }
 
+  /**
+   * Point the translation modal at one language, starting from whatever is already
+   * stored for it.
+   *
+   * The endpoint is an upsert keyed on the language, so opening this on a language
+   * that already has a translation is an edit. It used to open blank whatever the
+   * language, and this form always sends `longDescription` — so re-saving a
+   * translation to fix a typo in its name wrote an empty long description over the
+   * prose the product page shows. Loading the stored values in is what makes the
+   * fields mean "what will be saved" rather than "what you retype"; omitting the
+   * untouched field instead would fix the erasure but still show the author an empty
+   * box next to text that exists.
+   */
+  function loadTranslation(code: string) {
+    const existing = translations.find((x) => x.languageCode === code)
+    setTranslationLang(code)
+    setTranslationName(existing?.name ?? '')
+    setTranslationDesc(existing?.description ?? '')
+    setTranslationLongDesc(existing?.longDescription ?? '')
+  }
+
   async function handleAddTranslation(e: React.FormEvent) {
     e.preventDefault()
     setTransSaving(true)
@@ -189,7 +210,9 @@ export function ProductEditForm({ product, categories, environments, translation
         name: translationName.trim(),
         description: translationDesc.trim(),
         // Always sent from this form, because this form is where it is edited —
-        // the endpoint leaves it alone only for callers that omit it.
+        // the endpoint leaves it alone only for callers that omit it. Safe to send
+        // unconditionally only because `loadTranslation` put the stored value in the
+        // box first; without that this line is an erase.
         longDescription: translationLongDesc.trim(),
       }, token)
       const updated = await post<ProductTranslation[]>(`/api/admin/products/${product.id}/translations`, {}, token)
@@ -562,7 +585,7 @@ export function ProductEditForm({ product, categories, environments, translation
           <Button size="sm" variant="secondary" onClick={handleAiTranslate} disabled={translating}>
             {translating ? 'Translating…' : 'AI Translate'}
           </Button>
-          <Button size="sm" onClick={() => { setTranslationName(''); setTranslationDesc(''); setTranslationLongDesc(''); setTransError(null); setTransModal(true) }}>
+          <Button size="sm" onClick={() => { loadTranslation(translationLang); setTransError(null); setTransModal(true) }}>
             Add Translation
           </Button>
         </div>
@@ -712,10 +735,17 @@ export function ProductEditForm({ product, categories, environments, translation
       </Card>
 
       {/* Translation Modal */}
-      <Modal open={transModal} onClose={() => setTransModal(false)} title="Add Translation" size="md">
+      <Modal
+        open={transModal}
+        onClose={() => setTransModal(false)}
+        title={translations.some((x) => x.languageCode === translationLang) ? 'Edit Translation' : 'Add Translation'}
+        size="md"
+      >
         <form onSubmit={handleAddTranslation} className="space-y-4">
           {transError && <Alert>{transError}</Alert>}
-          <Select label="Language" value={translationLang} onChange={(e) => setTranslationLang(e.target.value)} options={LANGUAGES} />
+          {/* Switching language re-points the whole form, so the fields keep
+              describing the language named above them. */}
+          <Select label="Language" value={translationLang} onChange={(e) => loadTranslation(e.target.value)} options={LANGUAGES} />
           <Input label="Name" value={translationName} onChange={(e) => setTranslationName(e.target.value)} required />
           <div className="flex flex-col gap-1">
             <label htmlFor="translation-description" className="text-sm font-medium text-slate-700">Description</label>

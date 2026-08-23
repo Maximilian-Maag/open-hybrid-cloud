@@ -6,8 +6,9 @@ import { auditLog } from '@/lib/db/schema'
  *
  * `action` is `entity.verb_in_snake_case` — `order.created`, `order.comment_added`,
  * `infra.decommission_scheduled` — and the entity prefix is the table the entity
- * lives in, singular: `user`, `cost_center`, `ci_source`, `environment`,
- * `parameter`, `category`, `product`, `pipeline_stack`, `config`, `branding`.
+ * lives in, singular even where the table is not: `user`, `cost_center`,
+ * `ci_source`, `environment`, `parameter`, `category`, `product`, `pipeline_stack`,
+ * `exchange_rate`, `config`, `branding`.
  * The prefix is what makes the log's `action` filter useful, so it matters more
  * than the exact verb.
  *

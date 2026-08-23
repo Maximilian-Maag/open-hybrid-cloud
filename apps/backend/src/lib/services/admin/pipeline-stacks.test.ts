@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { createCategory, createProduct, createCiSource, createEnvironment } from '@/test/helpers'
+import { createCategory, createProduct, createCiSource, createEnvironment, createUser } from '@/test/helpers'
 import { db } from '@/lib/db/client'
-import { pipelineStacks } from '@/lib/db/schema'
+import { pipelineStacks, auditLog } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import {
   listPipelineStacks,
   createPipelineStack,
@@ -313,5 +314,52 @@ describe('pipeline stack lifecycle progression', () => {
     // 6. List — gone
     const final = await listPipelineStacks(p.id)
     if (final.ok) expect(final.data.map((s) => s.id)).not.toContain(id)
+  })
+})
+
+/*
+ * `entityId` under a `pipeline_stack.` action has to be the STACK. It was the
+ * PRODUCT for all three verbs, so filtering the log by the prefix and reading the
+ * id gave the wrong entity every time — and NFA-04.3 makes the table append-only,
+ * so the entries already written can never be corrected. The product is still in
+ * `details`, where nothing is lost.
+ */
+describe('pipeline stack audit entries name the stack (#137)', () => {
+  const actionsFor = async (userId: number) =>
+    db.select().from(auditLog).where(eq(auditLog.userId, userId))
+
+  it('logs the stack id, not the product id, for create/update/delete', async () => {
+    const actor = await createUser({ role: 'admin' })
+    const cat = await createCategory()
+    // Both sequences restart at 1 between tests, so the first product would share
+    // its id with the first stack and the old behaviour would pass unnoticed. One
+    // throwaway product pushes them apart.
+    await createProduct(cat.id)
+    const p = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+
+    const created = await createPipelineStack(
+      p.id,
+      { environmentId: env.id, name: 'Audited Stack', steps: STEPS },
+      actor.id,
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    const stackId = created.data.id
+    expect(stackId).not.toBe(p.id)
+
+    await updatePipelineStack(p.id, stackId, { name: 'Renamed' }, actor.id)
+    await deletePipelineStack(p.id, stackId, actor.id)
+
+    const rows = await actionsFor(actor.id)
+    expect(rows.map((r) => r.action).sort()).toEqual([
+      'pipeline_stack.created',
+      'pipeline_stack.deleted',
+      'pipeline_stack.updated',
+    ])
+    expect(rows.every((r) => r.entityId === stackId)).toBe(true)
+    // Nothing was lost by moving it: every entry still names the product.
+    expect(rows.every((r) => r.details?.includes(`#${p.id}`))).toBe(true)
   })
 })

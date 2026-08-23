@@ -26,7 +26,7 @@ export const refreshExchangeRates = async (
 
   // Rates decide what every order costs, so a manual refresh is a mutation worth
   // recording — the count, not the rates themselves, which the table already has.
-  await logAudit(actorId ?? null, 'exchange_rates.refreshed', undefined, `${rows.length} rate(s) refreshed`)
+  await logAudit(actorId ?? null, 'exchange_rate.refreshed', undefined, `${rows.length} rate(s) refreshed`)
 
   return ok(rows)
 }

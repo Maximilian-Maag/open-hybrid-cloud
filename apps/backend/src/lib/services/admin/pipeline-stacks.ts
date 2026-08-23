@@ -40,11 +40,17 @@ export const createPipelineStack = async (
     })
     .returning(publicColumns)
 
+  // `entityId` is the STACK, matching the `pipeline_stack.` prefix — every other
+  // service passes the id of the entity its action names, and a filter on the prefix
+  // is only useful if the id under it means the same thing every time. It carried
+  // the product id, so a search for stack #7 found nothing and a search for product
+  // #7 found stacks. NFA-04.3 makes this table append-only, so the entries already
+  // written cannot be corrected; the product moves to `details`, where it belongs.
   await logAudit(
     actorId ?? null,
     'pipeline_stack.created',
-    productId,
-    `Stack ${input.name} (#${row.id}) for environment #${input.environmentId} with ${input.steps.length} step(s)`,
+    row.id,
+    `Stack ${input.name} on product #${productId} for environment #${input.environmentId} with ${input.steps.length} step(s)`,
   )
 
   return ok(row as PipelineStack)
@@ -73,8 +79,8 @@ export const updatePipelineStack = async (
   await logAudit(
     actorId ?? null,
     'pipeline_stack.updated',
-    productId,
-    `Stack #${stackId}: ${changedFields(input)}`,
+    stackId,
+    `On product #${productId}: ${changedFields(input)}`,
   )
 
   return ok(updated as PipelineStack)
@@ -92,7 +98,7 @@ export const deletePipelineStack = async (
 
   if (!deleted.length) return err(404, 'Not found')
 
-  await logAudit(actorId ?? null, 'pipeline_stack.deleted', productId, `Stack #${stackId} deleted`)
+  await logAudit(actorId ?? null, 'pipeline_stack.deleted', stackId, `Deleted stack on product #${productId}`)
 
   return ok(undefined)
 }

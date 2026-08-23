@@ -28,14 +28,17 @@ export interface AuditQuery {
  * all of which are unhandled 500s. Worse, `?userId=abc` became `NaN`, which is
  * falsy where the filter is applied, so the filter was silently dropped and the
  * WHOLE audit log came back under a query that looked filtered.
+ *
+ * "Rejects rather than coerces" is meant literally, which is why the numbers go
+ * through `positiveInt` and not through `Number` — see the note there.
  */
 export const parseAuditFilters = (params: URLSearchParams): Result<AuditQuery> => {
   const filters: AuditFilters = {}
 
   const userId = params.get('userId')
   if (userId !== null && userId !== '') {
-    const id = Number(userId)
-    if (!Number.isInteger(id) || id <= 0) return err(400, 'Invalid userId')
+    const id = positiveInt(userId)
+    if (id === null) return err(400, 'Invalid userId')
     filters.userId = id
   }
 
@@ -79,9 +82,29 @@ export const parseAuditFilters = (params: URLSearchParams): Result<AuditQuery> =
   })
 }
 
+/** Decimal digits and nothing else: no sign, no exponent, no radix prefix, no spaces. */
+const DECIMAL_DIGITS = /^\d+$/
+
+/**
+ * A query parameter as a positive integer, or null when it is not one.
+ *
+ * The digit test comes BEFORE `Number()` because `Number()` reads far more than a
+ * decimal integer and `Number.isInteger` waves the results through: `1e3` is 1000,
+ * `0x10` is 16, `' 7 '` is 7. A caller who typed one of those got a page or a user
+ * they did not name, under a parser documented to reject what it cannot read.
+ *
+ * `Number.isSafeInteger` is the second half. `9007199254740993` is all decimal
+ * digits, so the regex passes it, and `Number()` returns `9007199254740992` — the
+ * nearest representable double. Asking for user 9007199254740993 and being answered
+ * about user 9007199254740992 is the failure mode: silent, and off by one row.
+ */
+const positiveInt = (raw: string): number | null => {
+  if (!DECIMAL_DIGITS.test(raw)) return null
+  const value = Number(raw)
+  return Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
 const parsePositiveInt = (raw: string | null, fallback: number): number | 'invalid' => {
   if (raw === null || raw === '') return fallback
-  const value = Number(raw)
-  if (!Number.isInteger(value) || value <= 0) return 'invalid'
-  return value
+  return positiveInt(raw) ?? 'invalid'
 }

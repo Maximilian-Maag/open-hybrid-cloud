@@ -29,6 +29,8 @@ Browser → Frontend (Next.js / NextAuth) → Backend REST API (Next.js)
 
 Only the backend container communicates with external systems.
 
+GitHub and Bitbucket are wired up the same way as GitLab for triggering pipelines and receiving status callbacks, but only GitLab pipeline job traces are fetched to parse OpenTofu outputs (`supportsJobTrace` in `apps/backend/src/lib/ci/index.ts`) — infrastructure provisioned through GitHub or Bitbucket gets no parsed outputs on its detail page.
+
 ## Roles
 
 | Role | Description |
@@ -49,6 +51,8 @@ admin:            Orders → Provisioning → Completed
 On approval/creation the backend fires two sets of CI triggers in parallel:
 - **Product Webhooks** (`product_webhooks` table) — ordered, multi-target webhook list per product+environment
 - **Pipeline Stacks** (`pipeline_stacks` table) — step sequences sent as `PIPELINE_STACK` JSON to an orchestrator pipeline. Each step carries an `execOrder` (steps sharing a value run in parallel, higher values wait) and zero or more `upstreamRefs` mapping named CI variables to earlier steps' Terraform state — so portal-defined DAGs with cross-step data passing work without touching CI YAML
+
+Orders can also be placed one at a time (`POST /api/orders`) or collected in a **cart** (`cart_items` table, `/cart`) and checked out together against one project (`POST /api/cart/checkout`) — checkout creates one order per cart item and reports any that failed validation without discarding the rest of the cart. Either path can be flagged as a **trial** when the chosen environment has `trialEnabled` set: the infrastructure gets an automatic `scheduledDecommissionAt` equal to the configured trial duration (see "Scheduled decommissioning" below) instead of running indefinitely. Every order has a **comment thread** (`order_comments`, `GET/POST /api/orders/{id}/comments`); admins/root can additionally mark a comment **internal**, hiding it from the project manager who placed the order.
 
 ## Environment Variables
 
@@ -73,6 +77,9 @@ On approval/creation the backend fires two sets of CI triggers in parallel:
 | `SMTP_PASS` | No | SMTP authentication password |
 | `SMTP_TLS` | No | Enable TLS (`true`/`false`, default: `true`) |
 | `DECOMMISSION_SWEEP_SECRET` | No | Shared secret for the scheduled-decommission sweep. Blank leaves `POST /api/internal/decommission-sweep` disabled (503) — see [Scheduled decommissioning](#scheduled-decommissioning) |
+| `TRUST_PROXY` | No | Set to `1`/`true` when the backend sits behind a reverse proxy you trust to set `X-Forwarded-For` (nginx, an Ingress). Enables the **per-IP** half of the login rate limiter (`apps/backend/src/app/api/auth/login/route.ts`); the per-account half applies regardless. Leave unset when the backend is reachable directly, or the header becomes a spoofable bypass. |
+
+Only `JWT_SECRET` and `DATABASE_URL` are enforced at startup (`apps/backend/src/lib/config/validate.ts`) — an invalid or missing one is reported on `GET /api/health` rather than crashing the process. `ADMIN_EMAIL`/`ADMIN_PASSWORD` are listed as required because a blank value produces a broken root account on first boot, not because anything currently refuses to start without them.
 
 ### Frontend (`apps/frontend/.env`)
 
@@ -139,7 +146,7 @@ open-hybrid-cloud/
 | Tool | Version | Install |
 |------|---------|---------|
 | Node.js | 22+ | https://nodejs.org or `nvm install 22` |
-| pnpm | 9+ | `curl -fsSL https://get.pnpm.io/install.sh \| sh -` |
+| pnpm | 11.9.0 (pinned via `packageManager` in `package.json`) | `corepack enable` (Node ≥16.9 ships Corepack) |
 | Docker + Docker Compose | current | https://docs.docker.com/get-docker/ |
 
 ### Make Targets
@@ -161,7 +168,7 @@ Run `make help` to see all available commands.
 | `make docker-build` | Build both Docker images locally |
 | `make db-push` | Push Drizzle schema to the database |
 | `make db-studio` | Open Drizzle Studio (visual DB browser) |
-| `make docs` | Compile technical handbook to PDF |
+| `make handbook` | Compile the technical handbook to `docs/handbook.pdf` (not committed — see [Technical Handbook](#technical-handbook)) |
 | `make clean` | Remove build artifacts |
 
 ---
@@ -266,7 +273,7 @@ make run-frontend # terminal 2
 |-----|-----|-------|
 | Frontend | http://localhost:3000 | Next.js with hot reload |
 | Backend | http://localhost:3001 | Next.js API with hot reload |
-| API docs | http://localhost:3001/api/docs | OpenAPI (Swagger UI) |
+| API docs | http://localhost:3001/api/docs | OpenAPI (Swagger UI) — requires a signed-in session; log in via the frontend first |
 
 #### 6. Log in
 
@@ -339,19 +346,28 @@ make dev-down
 
 ### Docker Host
 
+Two different single-host setups exist under `infra/`, and they are not interchangeable:
+
+**A. Build from source** (`infra/docker-compose.yml`) — builds the frontend/backend images locally instead of pulling them:
+
 ```bash
 cd infra
 docker compose up -d
 ```
 
-Configure `apps/backend/.env` and `apps/frontend/.env` with production values before starting. Nginx (`infra/nginx/`) handles reverse proxying. See `infra/docker-compose.yml` for the full service definition.
+Configuration comes from `infra/docker-host/.env` (`env_file:` on every service, not `apps/*/env`) — copy `infra/docker-host/.env.example` and fill it in before starting. Nginx (`infra/nginx/default.conf`) terminates plain HTTP only; there is no TLS setup in this path.
 
-**Updating:**
+**B. Pull published images, with auto-update** (`infra/docker-host/`) — the path the release images (below) are meant for: pulls from Docker Hub, adds a `watchtower` container that polls for and applies new image tags, and expects TLS certificates:
 
 ```bash
-docker compose pull
-docker compose up -d
+cd infra/docker-host
+cp .env.example .env            # fill in DOCKERHUB_USERNAME, secrets, etc.
+cp nginx.conf.example nginx.conf # fill in your domain
+mkdir -p certs                   # place fullchain.pem + privkey.pem here
+sudo ./setup.sh --install        # Debian only; also installs Docker itself
 ```
+
+`setup.sh` also supports `--upgrade` (pull the newer images), `--logs [service]` and `--status` — see the script for what each does. Path A passes the backend container everything in `docker-host/.env` via `env_file:`, so adding `TRUST_PROXY` or `DECOMMISSION_SWEEP_SECRET` there is enough. Path B's `docker-compose.yml` instead lists each backend variable individually under `environment:`, and does **not** list `TRUST_PROXY` or `DECOMMISSION_SWEEP_SECRET` — setting them in that directory's `.env` has no effect until the compose file's backend `environment:` block also names them.
 
 ### Kubernetes
 
@@ -390,11 +406,23 @@ Response codes: `200` all due elements torn down, `207` some could not be starte
 
 | Trigger | Pipeline |
 |---------|----------|
-| Pull request | Type-check + lint + build (`.github/workflows/ci.yml`) |
+| Pull request | Type-check + lint + build + E2E + a11y gate, and (only if the PR touches `docs/handbook.tex`) a handbook compile check (`.github/workflows/ci.yml`) |
 | Push to `dev`/`staging`/`main` | Build & push Docker images (`.github/workflows/cd-release.yml`) |
-| Push to `main` | Additionally publishes a GitHub Release with `docs/handbook.pdf` |
+| Push to `main` | Additionally compiles the handbook fresh from `docs/handbook.tex` and publishes a GitHub Release with the resulting PDF attached |
 
 Required GitHub secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
+
+## Technical Handbook
+
+`docs/handbook.tex` compiles to a PDF, but the PDF itself is **not committed** — a
+generated artefact next to its source drifts the moment someone edits the source
+and forgets to recompile, and nothing enforced regenerating it. Instead:
+
+- `make handbook` compiles it locally to `docs/handbook.pdf` (gitignored).
+- Any pull request that touches `docs/handbook.tex` gets a CI job (`.github/workflows/ci.yml`) that compiles it and uploads the result as a build artifact ("handbook-pdf") — so a LaTeX error is caught in review, not discovered when someone tries to build a release.
+- Every push to `main` compiles it fresh and attaches it to that push's GitHub Release (`.github/workflows/cd-release.yml`) — the canonical place to download the current handbook.
+
+Both CI jobs use the same pinned LaTeX action (`xu-cheng/latex-action`, pinned by commit SHA like every other third-party action in this repo), so the PR check and the release build agree with each other. `make handbook` is *not* that toolchain — it shells out to your local `pdflatex` — so a green local build is evidence the source compiles, not proof CI will produce the same PDF.
 
 ## Documentation
 
@@ -405,4 +433,4 @@ Required GitHub secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
 | Root Manual | `docs/guides/root.md` |
 | Admin Manual | `docs/guides/admin.md` |
 | GitLab & OpenTofu Integration | `docs/guides/gitlab-opentofu-workflow.md` |
-| Technical Handbook (PDF) | `docs/handbook.pdf` |
+| Technical Handbook (source) | `docs/handbook.tex` — see [Technical Handbook](#technical-handbook) for how to get the PDF |

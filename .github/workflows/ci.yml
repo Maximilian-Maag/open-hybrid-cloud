@@ -13,6 +13,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Handbook ─────────────────────────────────────────────────────────────────
+  # docs/handbook.pdf is not committed (it drifts from handbook.tex the moment
+  # nobody regenerates it) — this job is the safety net: it catches a LaTeX
+  # source that fails to compile before it merges, and hands reviewers a built
+  # PDF as an artifact. The release workflow (cd-release.yml) builds the copy
+  # that ships with each GitHub Release; `make handbook` builds one locally.
+  handbook:
+    name: Handbook (LaTeX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check whether handbook.tex changed
+        id: changed
+        run: |
+          if git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}" \
+               | grep -qx 'docs/handbook.tex'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compile handbook (LaTeX)
+        if: steps.changed.outputs.changed == 'true'
+        uses: xu-cheng/latex-action@e2f99d4b3685b0da93f97e1b86ad8fab81105098 # v3
+        with:
+          root_file: handbook.tex
+          working_directory: docs
+          args: -pdf -interaction=nonstopmode -halt-on-error
+
+      - name: Upload handbook artifact
+        if: steps.changed.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: handbook-pdf
+          path: docs/handbook.pdf
+          retention-days: 7
+
   # ── Type-check & Lint ────────────────────────────────────────────────────────
   check:
     name: Type-check & Lint

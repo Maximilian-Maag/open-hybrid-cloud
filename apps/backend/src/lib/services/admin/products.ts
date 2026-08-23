@@ -22,7 +22,7 @@ import {
 import { count, eq, sql, and, inArray, isNull } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
-import { fireDestroyTriggers } from '@/lib/services/teardown'
+import { fireDestroyTriggers, destroyVariables } from '@/lib/services/teardown'
 import { recordProductVersion } from '@/lib/services/versions'
 import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
@@ -328,7 +328,7 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
    * outright, which keeps the table from filling up with tombstones.
    */
   const activeInfra = await db
-    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
+    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters, sequence: infrastructureElements.sequence, sizeCode: infrastructureElements.sizeCode })
     .from(infrastructureElements)
     .where(and(eq(infrastructureElements.productId, id), eq(infrastructureElements.status, 'active')))
 
@@ -347,7 +347,7 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
       .where(and(eq(infrastructureElements.id, infra.id), eq(infrastructureElements.status, 'active')))
       .returning({ id: infrastructureElements.id })
     if (!claimed.length) continue
-    const destroyVars = { ...infra.parameters, TF_ACTION: 'destroy', INFRA_ID: String(infra.id), ORDER_ID: String(infra.orderId) }
+    const destroyVars = destroyVariables(infra)
     try {
       // Fires destroy for BOTH product webhooks and pipeline stacks — stack-
       // provisioned infra would otherwise leak on product deletion.

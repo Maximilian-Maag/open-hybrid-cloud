@@ -13,6 +13,7 @@ import {
 import { and, eq, gte, lte, inArray, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { ok, err, type Result } from '@/lib/services/result'
+import { linePriceSql, lineCurrencySql } from '@/lib/services/sizes'
 
 /**
  * Spending overview (issue #32).
@@ -161,6 +162,8 @@ interface CostRow {
   snapshotCurrency: string | null
   livePrice: string | null
   liveCurrency: string | null
+  /** How many elements the order provisioned (issue #104). */
+  quantity: number | null
   infraStatus: string | null
 }
 
@@ -200,8 +203,14 @@ export const getCostReport = async (
       // The snapshot is the authoritative price: what the customer was charged.
       snapshotPrice: sql<string | null>`${orders.productSnapshot} ->> 'price'`,
       snapshotCurrency: sql<string | null>`${orders.productSnapshot} ->> 'currency'`,
-      livePrice: productEnvironments.price,
-      liveCurrency: productEnvironments.currency,
+      // The size's price where the order named one, the offering's otherwise
+      // (issue #98). Only ever reached by an order that predates snapshots — the
+      // snapshot above is authoritative — but it has to be the RIGHT fallback, or
+      // a legacy order of an offering that has since gained sizes would be priced
+      // at the offering's stale figure.
+      livePrice: linePriceSql(orders.productId, orders.environmentId, orders.sizeCode),
+      liveCurrency: lineCurrencySql(orders.productId, orders.environmentId, orders.sizeCode),
+      quantity: orders.quantity,
       infraStatus: infrastructureElements.status,
     })
     .from(orders)
@@ -256,7 +265,14 @@ export const getCostReport = async (
     const currency = (usingSnapshot ? row.snapshotCurrency : row.liveCurrency) ?? 'EUR'
     if (!usingSnapshot) estimatedOrders += 1
 
-    const amount = Number(rawPrice ?? '0')
+    // Unit price × quantity: an order of twenty XL VMs costs twenty times one
+    // (issue #104). The quantity comes from the order row rather than the
+    // snapshot because it is a fact about the order, not about what the catalogue
+    // offered; a row written before the column existed reads 1 through the
+    // column default, which is what it asked for.
+    const unit = Number(rawPrice ?? '0')
+    const quantity = row.quantity !== null && row.quantity >= 1 ? row.quantity : 1
+    const amount = Number.isFinite(unit) ? unit * quantity : unit
     // An unparseable or absent price contributes nothing rather than NaN, which
     // would poison every total it touched.
     if (!Number.isFinite(amount) || amount === 0) {
@@ -480,9 +496,20 @@ export interface CostRowExport {
   productName: string
   environmentName: string
   status: string
+  /** The size that was ordered, blank when the offering had none (issue #98). */
+  size: string
+  /** How many elements the order provisioned (issue #104). */
+  quantity: number
+  /** UNIT price, as recorded. The line is this times `quantity`. */
   price: string
   currency: string
+  /**
+   * The unit price in EUR. Kept as it was so an existing consumer of the CSV is
+   * not silently handed a different number under the same name.
+   */
   priceEur: number | null
+  /** unit × quantity, in EUR — the figure that reconciles with the report. */
+  lineTotalEur: number | null
   /** True when the price came from the live offering, not the order's snapshot. */
   estimated: boolean
 }
@@ -511,8 +538,11 @@ export const getCostRows = async (
       environmentName: deploymentEnvironments.name,
       snapshotPrice: sql<string | null>`${orders.productSnapshot} ->> 'price'`,
       snapshotCurrency: sql<string | null>`${orders.productSnapshot} ->> 'currency'`,
-      livePrice: productEnvironments.price,
-      liveCurrency: productEnvironments.currency,
+      livePrice: linePriceSql(orders.productId, orders.environmentId, orders.sizeCode),
+      liveCurrency: lineCurrencySql(orders.productId, orders.environmentId, orders.sizeCode),
+      sizeCode: orders.sizeCode,
+      snapshotSizeLabel: sql<string | null>`${orders.productSnapshot} ->> 'sizeLabel'`,
+      quantity: orders.quantity,
       projectId: orders.projectId,
       productId: orders.productId,
       environmentId: orders.environmentId,
@@ -548,6 +578,7 @@ export const getCostRows = async (
       const currency = (usingSnapshot ? row.snapshotCurrency : row.liveCurrency) ?? 'EUR'
       const amount = Number(price)
       const eur = Number.isFinite(amount) ? toEur(amount, currency, rates) : null
+      const quantity = row.quantity !== null && row.quantity >= 1 ? row.quantity : 1
       return {
         orderId: row.orderId,
         createdAt: row.createdAt,
@@ -559,9 +590,14 @@ export const getCostRows = async (
         productName: row.productName ?? `Product #${row.productId}`,
         environmentName: row.environmentName ?? `Environment #${row.environmentId}`,
         status: row.status,
+        // The snapshot's label first — that is what the size read as when it was
+        // ordered — then the code, which survives a rename.
+        size: row.snapshotSizeLabel || row.sizeCode || '',
+        quantity,
         price,
         currency,
         priceEur: eur === null ? null : round(eur),
+        lineTotalEur: eur === null ? null : round(eur * quantity),
         estimated: !usingSnapshot,
       }
     }),

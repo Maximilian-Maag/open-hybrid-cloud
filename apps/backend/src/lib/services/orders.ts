@@ -11,10 +11,11 @@ import {
   costCenters,
   type Parameter,
 } from '@/lib/db/schema'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, sql, inArray } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
+import { ELEMENT_SEQUENCE_VAR } from '@/lib/ci/stateKey'
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
@@ -22,6 +23,7 @@ import { redactParametersForOrders, REDACTED } from '@/lib/services/parameterRed
 import { resolveTrial, trialVariables, trialExpiry } from '@/lib/services/trial'
 import { captureProductSnapshot, type ProductSnapshot } from '@/lib/services/snapshot'
 import { substitutionsByEmail } from '@/lib/services/delegations'
+import { resolveOfferingPrice, validateQuantity } from '@/lib/services/sizes'
 
 export interface OrderRow {
   id: number
@@ -38,6 +40,10 @@ export interface OrderRow {
   updatedAt: Date
   /** Ordered as a time-boxed trial (issue #1). */
   isTrial: boolean
+  /** The chosen size (issue #98); null when the offering has none. */
+  sizeCode: string | null
+  /** How many infrastructure elements this order asked for (issue #104). */
+  quantity: number
   /**
    * What the customer was offered when the order was placed (issue #38). Null for
    * orders placed before snapshots existed.
@@ -56,6 +62,16 @@ export interface CreateOrderInput {
   parameters: Record<string, string>
   /** Order as a time-boxed trial (issue #1). Requires a trial-enabled offering. */
   trial?: boolean
+  /**
+   * The size to order (issue #98). Mandatory for an offering that defines sizes,
+   * and refused for one that does not — see `resolveOfferingPrice`.
+   */
+  sizeCode?: string | null
+  /**
+   * How many infrastructure elements to provision (issue #104). Defaults to 1, and
+   * the whole order — one approval, one snapshot — covers all of them.
+   */
+  quantity?: number
 }
 
 export interface CreatedOrder {
@@ -72,7 +88,16 @@ export interface CreatedOrder {
   createdAt: Date
   updatedAt: Date
   isTrial: boolean
+  sizeCode: string | null
+  quantity: number
+  /**
+   * The FIRST element of the order, kept for the callers and clients that were
+   * written when an order had exactly one. `infraIds` is the honest answer now
+   * that an order can have N (issue #104).
+   */
   infraId?: number
+  /** Every element the order provisioned, in sequence order. */
+  infraIds?: number[]
 }
 
 export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[]>> => {
@@ -93,6 +118,8 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
       isTrial: orders.isTrial,
+      sizeCode: orders.sizeCode,
+      quantity: orders.quantity,
       productSnapshot: orders.productSnapshot,
       productName: sql<string>`(
         SELECT name FROM product_translations
@@ -135,6 +162,8 @@ export const getOrderById = async (
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
       isTrial: orders.isTrial,
+      sizeCode: orders.sizeCode,
+      quantity: orders.quantity,
       productSnapshot: orders.productSnapshot,
       productName: sql<string>`(
         SELECT name FROM product_translations
@@ -312,6 +341,10 @@ export interface PreparedOrder {
   trialDurationMinutes: number
   productSnapshot: ProductSnapshot | null
   isAdmin: boolean
+  /** The validated size, or null when the offering has none (issue #98). */
+  sizeCode: string | null
+  /** How many elements to provision, validated against the cap (issue #104). */
+  quantity: number
 }
 
 export const prepareOrder = async (
@@ -359,6 +392,16 @@ export const prepareOrder = async (
     .limit(1)
   if (!offered) return err(400, 'Product is not offered in the selected environment')
 
+  // Size and quantity (issues #98 / #104), both server-side for the same reason
+  // the cost-centre rules are: the size picker does not exist in the browser for
+  // an offering with no sizes, and a quantity field is trivially edited. An
+  // offering that HAS sizes has no price of its own worth charging, so a request
+  // that names none is refused rather than billed at the legacy offering price.
+  const priced = await resolveOfferingPrice(productId, environmentId, input.sizeCode)
+  if (!priced.ok) return priced
+  const quantityResult = validateQuantity(input.quantity)
+  if (!quantityResult.ok) return quantityResult
+
   // Cost-centre rules (FA-10.4). These were previously enforced only in the
   // browser — OrderForm computes `needsCostCenter` and marks the field required —
   // so a direct POST could omit the cost centre on an environment that forces
@@ -388,7 +431,15 @@ export const prepareOrder = async (
   // Captured before anything is written, so both an admin's direct order and a
   // project manager's pending order record what was actually offered (issue #38).
   // Taken after validation, so the offering is known to exist.
-  const productSnapshot = await captureProductSnapshot(productId, product.categoryId, environmentId)
+  // Passed the size, so the snapshot records the price of what was actually
+  // chosen. Without it an order's history goes wrong the first time an admin
+  // re-prices a size — which is the whole reason snapshots exist (issue #38).
+  const productSnapshot = await captureProductSnapshot(
+    productId,
+    product.categoryId,
+    environmentId,
+    priced.data.sizeCode,
+  )
 
   return ok({
     projectId,
@@ -400,8 +451,184 @@ export const prepareOrder = async (
     trialDurationMinutes,
     productSnapshot,
     isAdmin,
+    sizeCode: priced.data.sizeCode,
+    quantity: quantityResult.data,
   })
 }
+
+/** What `provisionOrderElements` needs to fan an order out over its elements. */
+export interface ProvisionInput {
+  orderId: number
+  projectId: number
+  productId: number
+  environmentId: number
+  sizeCode: string | null
+  quantity: number
+  parameters: Record<string, string>
+  isTrial: boolean
+  trialDurationMinutes: number
+}
+
+export interface ProvisionOutcome {
+  /** Element ids in sequence order — element 1 first. */
+  elementIds: number[]
+  /** Every pipeline the order is waiting on, across all of its elements. */
+  pipelineIds: string[]
+}
+
+/**
+ * Provision the N infrastructure elements of one order (issues #98 / #104).
+ *
+ * One order, N elements, one approval — the shape the owner decided on. The
+ * consequences it has to hold up under:
+ *
+ *  - The FAN-OUT is per element, not per order: each element gets its own
+ *    pipeline run, because each is a separate piece of infrastructure that has to
+ *    be retryable and tearable-down on its own ("decommission 3 of 20").
+ *  - Each element therefore needs its own Terraform state, which is what
+ *    ELEMENT_SEQUENCE is for: the trigger layer derives TF_STATE_NAME from it, so
+ *    element 2 cannot apply on top of element 1's state. Element 1's key is
+ *    unchanged from the pre-quantity behaviour, so existing infrastructure keeps
+ *    working. See `elementStateSuffix`.
+ *  - The ROW is created before its triggers fire, not after, so an element that
+ *    fails to start is a visible element with no pipelines rather than a pipeline
+ *    with no row.
+ *  - The order's `pipelineId` is the union over its elements, which is what the
+ *    callback handler matches events against and what makes "all pipelines
+ *    succeeded" mean "every element provisioned".
+ *
+ * Shared by the admin's direct order and the approval path so the two cannot
+ * drift; a second copy of the fan-out is a second set of state-key rules.
+ *
+ * Throws only if NOT ONE element could be started, which is the case both callers
+ * already handle (they undo their claim). A partial failure records a sentinel in
+ * the order's pipeline status instead, so the order can never report itself
+ * complete while one of its elements was never triggered at all.
+ */
+export const provisionOrderElements = async (
+  input: ProvisionInput,
+): Promise<ProvisionOutcome> => {
+  const {
+    orderId, projectId, productId, environmentId, sizeCode, quantity,
+    parameters, isTrial, trialDurationMinutes,
+  } = input
+
+  const elementIds: number[] = []
+  const pipelineIds: string[] = []
+  const failures: string[] = []
+  let firstError: unknown = null
+
+  for (let sequence = 1; sequence <= quantity; sequence++) {
+    const [element] = await db
+      .insert(infrastructureElements)
+      .values({
+        orderId,
+        projectId,
+        environmentId,
+        productId,
+        status: 'active',
+        sizeCode,
+        sequence,
+        parameters,
+        pipelineId: [],
+        // The trial's clock starts here, at provisioning. The scheduled-decommission
+        // sweep (issue #30) is what actually tears it down, so a trial needs no
+        // teardown mechanism of its own.
+        ...(isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
+      })
+      .returning()
+    elementIds.push(element.id)
+
+    const triggerVars = elementTriggerVariables({
+      parameters,
+      orderId,
+      sizeCode,
+      sequence,
+      isTrial,
+      trialDurationMinutes,
+    })
+
+    let elementPipelineIds: string[]
+    try {
+      const webhookIds = await triggerProductWebhooks(productId, environmentId, triggerVars)
+      const stackIds = await triggerPipelineStacks(productId, environmentId, triggerVars)
+      elementPipelineIds = [...webhookIds, ...stackIds]
+    } catch (e) {
+      // One element failing to start must not abandon the rest: the order is a
+      // single decision, and nineteen of twenty VMs is still worth having. The
+      // failure is recorded below so the order cannot be reported as complete.
+      console.error(`[orders] Could not start element ${sequence} of order ${orderId}:`, e)
+      failures.push(e instanceof Error ? e.message : String(e))
+      if (firstError === null) firstError = e
+      continue
+    }
+
+    if (elementPipelineIds.length > 0) {
+      await db
+        .update(infrastructureElements)
+        .set({ pipelineId: elementPipelineIds })
+        .where(eq(infrastructureElements.id, element.id))
+      pipelineIds.push(...elementPipelineIds)
+    }
+  }
+
+  // Nothing at all started: the caller undoes its claim, exactly as it did when
+  // one order meant one trigger.
+  if (failures.length === quantity && firstError !== null) {
+    // Take the rows with it. They were inserted before their triggers fired (see
+    // above) and nothing else would ever remove them: `order_id` carries no ON
+    // DELETE CASCADE, and approveOrder puts the order back to 'pending' so the
+    // approval can be retried — which inserts another N. Left behind they are
+    // 'active' elements with no pipeline: counted in inventory, and decommissioning
+    // them fires destroy pipelines at infrastructure that was never created.
+    if (elementIds.length > 0) {
+      await db.delete(infrastructureElements).where(inArray(infrastructureElements.id, elementIds))
+    }
+    throw firstError
+  }
+
+  if (pipelineIds.length > 0 || failures.length > 0) {
+    const pipelineStatus: Record<string, string> = {}
+    failures.forEach((failure, i) => {
+      // Same sentinel shape the teardown path uses: an entry that is not
+      // 'success' keeps the all-succeeded check in the callback handler false, so
+      // the order stays visibly unfinished instead of completing on its siblings.
+      pipelineStatus[`trigger-failed:${i}`] = failure
+    })
+    await db
+      .update(orders)
+      .set({ pipelineId: pipelineIds, pipelineStatus, updatedAt: new Date() })
+      .where(eq(orders.id, orderId))
+  }
+
+  return { elementIds, pipelineIds }
+}
+
+/**
+ * The CI variables one element is provisioned with.
+ *
+ * `parameters` first, server-owned variables after: a customer-supplied parameter
+ * must never be able to overwrite ORDER_ID or the size the order was priced on.
+ */
+const elementTriggerVariables = (input: {
+  parameters: Record<string, string>
+  orderId: number
+  sizeCode: string | null
+  sequence: number
+  isTrial: boolean
+  trialDurationMinutes: number
+}): Record<string, string> => ({
+  ...input.parameters,
+  ORDER_ID: String(input.orderId),
+  // The size has to reach the CI run (issue #98) — it is what decides how much
+  // machine the template asks for. Absent, not empty, for an offering with no
+  // sizes, so a template can tell "no sizing" from "a size called ''".
+  ...(input.sizeCode !== null ? { SIZE: input.sizeCode } : {}),
+  // Which of the order's N this run is provisioning. The trigger layer derives
+  // TF_STATE_NAME from it; templates can use it to name resources.
+  [ELEMENT_SEQUENCE_VAR]: String(input.sequence),
+  ...(input.isTrial ? trialVariables(input.trialDurationMinutes) : {}),
+})
 
 /**
  * Create one order, provisioning it immediately for an admin or queueing it for
@@ -429,6 +656,7 @@ export const createPreparedOrder = async (
   const {
     projectId, productId, environmentId, parameters,
     costCenterId: resolvedCostCenterId, isTrial, trialDurationMinutes, productSnapshot, isAdmin,
+    sizeCode, quantity,
   } = prepared
 
   if (isAdmin) {
@@ -444,40 +672,32 @@ export const createPreparedOrder = async (
         costCenterId: resolvedCostCenterId,
         isTrial,
         productSnapshot,
+        sizeCode,
+        quantity,
       })
       .returning()
 
-    const triggerVars = {
-      ...parameters,
-      ORDER_ID: String(order.id),
-      ...(isTrial ? trialVariables(trialDurationMinutes) : {}),
-    }
-    const webhookIds = await triggerProductWebhooks(productId, environmentId, triggerVars)
-    const stackIds = await triggerPipelineStacks(productId, environmentId, triggerVars)
-    const pipelineIds = [...webhookIds, ...stackIds]
+    // One order, N elements: the fan-out lives in provisionOrderElements so the
+    // approval path cannot derive the state keys differently.
+    const provisioned = await provisionOrderElements({
+      orderId: order.id,
+      projectId,
+      productId,
+      environmentId,
+      sizeCode,
+      quantity,
+      parameters,
+      isTrial,
+      trialDurationMinutes,
+    })
 
-    if (pipelineIds.length > 0) {
-      await db.update(orders).set({ pipelineId: pipelineIds }).where(eq(orders.id, order.id))
-    }
-
-    const [infra] = await db
-      .insert(infrastructureElements)
-      .values({
-        orderId: order.id,
-        projectId,
-        environmentId,
-        productId,
-        status: 'active',
-        parameters,
-        pipelineId: pipelineIds,
-        // The trial's clock starts here, at provisioning. The scheduled-decommission
-        // sweep (issue #30) is what actually tears it down, so a trial needs no
-        // teardown mechanism of its own.
-        ...(isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
-      })
-      .returning()
-
-    await logAudit(session.id, 'order.provisioning', order.id, `Admin-initiated order for product ${productId}`)
+    await logAudit(
+      session.id,
+      'order.provisioning',
+      order.id,
+      `Admin-initiated order for product ${productId}` +
+        (quantity > 1 ? ` (${quantity} elements)` : ''),
+    )
 
     const email = await findUserEmail(session.id)
     const productName = await findProductName(productId)
@@ -485,7 +705,14 @@ export const createPreparedOrder = async (
       await sendOrderCreated(email, productName, order.id)
     }
 
-    return ok({ ...order, pipelineId: pipelineIds, infraId: infra.id })
+    return ok({
+      ...order,
+      pipelineId: provisioned.pipelineIds,
+      // Both: `infraId` is what every existing caller reads, `infraIds` is what
+      // an order of twenty actually produced.
+      infraId: provisioned.elementIds[0],
+      infraIds: provisioned.elementIds,
+    })
   } else {
     const [order] = await db
       .insert(orders)
@@ -501,6 +728,10 @@ export const createPreparedOrder = async (
         // provisioned and where its clock starts.
         isTrial,
         productSnapshot,
+        // Same for the size and the quantity: one approval covers the whole
+        // order, so the approver's single decision has to carry all N elements.
+        sizeCode,
+        quantity,
       })
       .returning()
 

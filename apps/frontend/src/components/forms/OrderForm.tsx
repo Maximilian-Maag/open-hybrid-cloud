@@ -15,9 +15,13 @@ import { post, get } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { Select } from '@/components/ui/Select'
+import { Input } from '@/components/ui/Input'
 import { ParameterFields } from './ParameterFields'
 import { t } from '@/lib/i18n'
 import { convertPrice } from '@/lib/locale'
+
+/** Mirrors MAX_ORDER_QUANTITY in the backend, which re-checks it. */
+const MAX_QUANTITY = 20
 
 interface OrderFormProps {
   product: ProductDetail
@@ -51,6 +55,11 @@ export function OrderForm({
   const [envId, setEnvId] = useState<string>('')
   const [projectId, setProjectId] = useState<string>(initialProjectId ?? '')
   const [costCenterId, setCostCenterId] = useState<string>('')
+  // The size (issue #98) and how many elements to provision (issue #104). Both are
+  // part of the line rather than of the parameters: the size decides the price and
+  // the quantity decides how many elements one approval covers.
+  const [sizeCode, setSizeCode] = useState<string>('')
+  const [quantity, setQuantity] = useState<string>('1')
   const [trial, setTrial] = useState(false)
   const [paramValues, setParamValues] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -93,6 +102,13 @@ export function OrderForm({
   // Trials are opt-in per offering (issue #1), so the toggle only exists where one
   // is actually offered. The server re-checks — a hidden control is not a control.
   const trialAvailable = selectedEnv?.trialEnabled === true
+  // Sizes belong to the offering. An offering with none prices off itself, which is
+  // every offering that predates sizing, so the control is not rendered at all.
+  const sizes = selectedEnv?.sizes ?? []
+  const needsSize = sizes.length > 0
+  const parsedQuantity = Number(quantity)
+  const quantityValid =
+    Number.isInteger(parsedQuantity) && parsedQuantity >= 1 && parsedQuantity <= MAX_QUANTITY
   const envParameters = resolvedParameters.filter(
     (p) => p.environmentId === null || String(p.environmentId) === envId,
   )
@@ -172,6 +188,10 @@ export function OrderForm({
       setError(t('selectEnvProject', lang))
       return
     }
+    if (needsSize && !sizeCode) {
+      setError(t('selectSize', lang))
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -189,6 +209,11 @@ export function OrderForm({
         projectId: Number(projectId),
         parameters: parametersWithDefaults,
         ...(needsCostCenter && costCenterId ? { costCenterId: Number(costCenterId) } : {}),
+        // Only when the offering has sizes: the server refuses one for an offering
+        // without any, and switching environment must not smuggle the old code
+        // through.
+        ...(needsSize ? { sizeCode } : {}),
+        ...(parsedQuantity > 1 ? { quantity: parsedQuantity } : {}),
         // Only sent when the selected environment offers a trial: switching
         // environments after ticking the box must not smuggle the flag through.
         ...(trialAvailable && trial ? { trial: true } : {}),
@@ -204,12 +229,27 @@ export function OrderForm({
     }
   }
 
-  function formatEnvPrice(env: ProductDetail['environments'][number]): string {
-    const converted = convertPrice(env.price, env.currency, localeCurrency, exchangeRates, lang)
-    if (converted.currency !== env.currency) {
+  function formatPrice(price: string, currency: string): string {
+    const converted = convertPrice(price, currency, localeCurrency, exchangeRates, lang)
+    if (converted.currency !== currency) {
       return `${converted.amount} ${converted.currency}`
     }
-    return `${env.price} ${env.currency}`
+    return `${price} ${currency}`
+  }
+
+  /**
+   * What an offering costs, for the environment picker.
+   *
+   * Price moved to the size (issue #98), so an offering with sizes has no single
+   * price: the cheapest is shown, and the size picker below states the rest. An
+   * offering with no sizes still has its own price, which is what every offering
+   * that predates sizing has.
+   */
+  function formatEnvPrice(env: ProductDetail['environments'][number]): string {
+    const sizes = env.sizes ?? []
+    if (sizes.length === 0) return formatPrice(env.price, env.currency)
+    const cheapest = [...sizes].sort((a, b) => Number(a.price) - Number(b.price))[0]
+    return formatPrice(cheapest.price, cheapest.currency)
   }
 
   if (success) {
@@ -232,12 +272,45 @@ export function OrderForm({
         label={t('environment', lang)}
         required
         value={envId}
-        onChange={(e) => setEnvId(e.target.value)}
+        onChange={(e) => {
+          setEnvId(e.target.value)
+          // A size code chosen for one offering means nothing in another.
+          setSizeCode('')
+        }}
         placeholder={t('selectEnvironment', lang)}
         options={product.environments.map((env) => ({
           value: env.environmentId,
           label: `${env.environmentName ?? `Env ${env.environmentId}`} — ${formatEnvPrice(env)}`,
         }))}
+      />
+
+      {needsSize && (
+        <Select
+          label={t('size', lang)}
+          required
+          value={sizeCode}
+          onChange={(e) => setSizeCode(e.target.value)}
+          placeholder={t('selectSize', lang)}
+          // The price is in the label: the size IS the price now, and a picker of
+          // bare letters asks the customer to guess what XL costs.
+          options={sizes.map((size) => ({
+            value: size.code,
+            label: `${size.label || size.code} — ${formatPrice(size.price, size.currency)}`,
+          }))}
+        />
+      )}
+
+      <Input
+        label={t('quantity', lang)}
+        type="number"
+        min={1}
+        max={MAX_QUANTITY}
+        step={1}
+        value={quantity}
+        onChange={(e) => setQuantity(e.target.value)}
+        // Said rather than silently clamped: one order provisions this many
+        // elements, and one approval covers all of them.
+        hint={`1 – ${MAX_QUANTITY}`}
       />
 
       <Select
@@ -331,7 +404,7 @@ export function OrderForm({
         </div>
       )}
 
-      <Button type="submit" disabled={loading} className="w-full">
+      <Button type="submit" disabled={loading || !quantityValid} className="w-full">
         {loading ? t('submitting', lang) : t('placeOrder', lang)}
       </Button>
     </form>

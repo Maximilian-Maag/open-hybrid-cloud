@@ -155,8 +155,11 @@ describe('GET /api/costs/export', () => {
     expect(res.headers.get('content-disposition')).toContain('costs.csv')
 
     const text = await res.text()
+    // `price` stays the UNIT price and `lineTotalEur` is what reconciles with the
+    // report total, now that one order can be twenty elements (issues #98/#104).
     expect(text.split('\n')[0]).toBe(
-      'orderId,createdAt,project,costCenter,product,environment,status,price,currency,priceEur,estimated',
+      'orderId,createdAt,project,costCenter,product,environment,size,quantity,status,' +
+        'price,currency,priceEur,lineTotalEur,estimated',
     )
     expect(text).toContain('Webshop')
     expect(text).toContain('Nginx Gateway')

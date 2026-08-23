@@ -268,6 +268,35 @@ export interface UpdateEnvironmentRequest {
   webhookToken?: string
 }
 
+/**
+ * One size an offering can be ordered in (issue #98).
+ *
+ * Price lives here rather than on the offering: the size is what the customer
+ * chooses and what they pay for. An offering with NO sizes keeps using its own
+ * `price` — that is every offering that predates sizing.
+ */
+export interface OfferingSize {
+  id: number
+  /** Reaches the pipeline as SIZE and is stored on the order line. */
+  code: string
+  label: string
+  price: string
+  currency: string
+  sortOrder: number
+  /** Retired sizes stay readable for existing orders but cannot be ordered. */
+  active: boolean
+}
+
+export interface UpsertSizeRequest {
+  code: string
+  label?: string
+  price?: string
+  currency?: string
+  sortOrder?: number
+  active?: boolean
+  changelog?: string
+}
+
 // Product Environments
 export interface ProductEnvironment {
   productId: number
@@ -293,6 +322,13 @@ export interface ProductEnvironment {
   environmentName?: string
   /** Resolved name of `overheadCostCenterId`, for display in the order form. */
   overheadCostCenterName?: string | null
+  /**
+   * The sizes this offering can be ordered in (issue #98), in the order an admin
+   * arranged them. Empty (or absent, on an endpoint that does not resolve them)
+   * means the offering has none and its own `price` applies; when it is non-empty
+   * an order MUST name one of these codes and is charged that size's price.
+   */
+  sizes?: OfferingSize[]
 }
 
 export interface UpsertProductEnvironmentRequest {
@@ -435,6 +471,15 @@ export interface Order {
   updatedAt: string
   /** Ordered as a time-boxed trial (issue #1). */
   isTrial?: boolean
+  /** The size that was ordered (issue #98). Null when the offering has none. */
+  sizeCode?: string | null
+  /**
+   * How many infrastructure elements the order provisioned (issue #104).
+   *
+   * One order, N elements: one approval covers all of them and the order's price is
+   * the unit price times this. Teardown stays per element.
+   */
+  quantity?: number
   /**
    * What the customer was offered when the order was placed (issue #38). Null for
    * orders placed before snapshots existed — the order detail page falls back to
@@ -453,6 +498,14 @@ export interface CreateOrderRequest {
   environmentId: number
   costCenterId?: number
   parameters: Record<string, string>
+  /**
+   * The size to order (issue #98). Mandatory when the offering defines sizes and
+   * refused when it does not — the server decides, because the picker is simply
+   * absent in the browser for an offering with none.
+   */
+  sizeCode?: string | null
+  /** How many elements to provision (issue #104). Defaults to 1, capped at 20. */
+  quantity?: number
   /**
    * Order as a time-boxed trial (issue #1). Only accepted for an offering with
    * `trialEnabled`; it does NOT bypass approval — a project manager's trial still
@@ -537,11 +590,24 @@ export interface CartItem {
   createdAt: string
   productName: string | null
   environmentName: string | null
+  /** The chosen size (issue #98), null when the offering has none. */
+  sizeCode?: string | null
+  /** How the size reads today. Display only — the code is what the line stores. */
+  sizeLabel?: string | null
+  /** How many elements this line will provision (issue #104). */
+  quantity?: number
+  /**
+   * UNIT price — the chosen size's, or the offering's for a line with no size. The
+   * line total is this times `quantity`.
+   */
   price: string | null
   currency: string | null
   /** Description of the product picture, for its `alt` attribute. */
   imageAlt?: string | null
-  /** False when the product is no longer offered in that environment. */
+  /**
+   * False when the product is no longer offered in that environment, or when the
+   * size the line chose has been retired.
+   */
   stillOffered: boolean
 }
 
@@ -549,6 +615,20 @@ export interface AddToCartRequest {
   productId: number
   environmentId: number
   parameters?: Record<string, string>
+  /** Required when the offering defines sizes, refused when it does not (#98). */
+  sizeCode?: string | null
+  /** Defaults to 1, capped at 20 (issue #104). */
+  quantity?: number
+}
+
+/**
+ * Patch one cart line. An omitted field is left alone, so the quantity control
+ * does not have to resend the parameters it never touched.
+ */
+export interface UpdateCartItemRequest {
+  parameters?: Record<string, string>
+  sizeCode?: string | null
+  quantity?: number
 }
 
 export interface CheckoutItem {
@@ -610,8 +690,23 @@ export interface ProductSnapshot {
   productName: string
   productDescription: string
   environmentName: string
+  /**
+   * The UNIT price that applied — the chosen size's, or the offering's when the
+   * order named no size (issue #98). The line total is this times the order's
+   * `quantity`, which lives on the order rather than here: quantity is a fact about
+   * the order, not about what the catalogue offered.
+   */
   price: string
   currency: string
+  /**
+   * The size that was ordered, and its label as it read at the time (issue #98).
+   *
+   * ABSENT means the snapshot predates sizing; NULL means the offering had no sizes
+   * when the order was placed. Text rather than an id, because an admin may retire
+   * or re-price a size and this record has to survive that.
+   */
+  sizeCode?: string | null
+  sizeLabel?: string | null
   costCenterMode: CostCenterMode
   forcedCostCenter: boolean
   /**
@@ -754,6 +849,15 @@ export interface InfrastructureElement {
    * (issue #30). null = no schedule.
    */
   scheduledDecommissionAt?: string | null
+  /** The size this element runs at (issue #98); null when it has none. */
+  sizeCode?: string | null
+  /**
+   * Which of its order's elements this is, 1-based (issue #104). Also what the
+   * element's Terraform state key is derived from, so it is stable for its life.
+   */
+  sequence?: number
+  /** How many elements the order asked for, so a row can read "3 of 20". */
+  orderQuantity?: number | null
   productName?: string
   environmentName?: string
   projectName?: string

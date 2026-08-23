@@ -3,7 +3,7 @@ import { db } from '@/lib/db/client'
 import { projects, users, costCenters, infrastructureElements, type Project } from '@/lib/db/schema'
 import { eq, sql, and } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
-import { fireDestroyTriggers } from '@/lib/services/teardown'
+import { fireDestroyTriggers, destroyVariables } from '@/lib/services/teardown'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 
 export interface ProjectRow {
@@ -144,7 +144,7 @@ export const deleteProject = async (
 
   // fire destroy webhooks for all active infra elements
   const activeInfra = await db
-    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
+    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters, sequence: infrastructureElements.sequence, sizeCode: infrastructureElements.sizeCode })
     .from(infrastructureElements)
     .where(and(eq(infrastructureElements.projectId, projectId), eq(infrastructureElements.status, 'active')))
 
@@ -163,7 +163,7 @@ export const deleteProject = async (
       .where(and(eq(infrastructureElements.id, infra.id), eq(infrastructureElements.status, 'active')))
       .returning({ id: infrastructureElements.id })
     if (!claimed.length) continue
-    const destroyVars = { ...infra.parameters, TF_ACTION: 'destroy', INFRA_ID: String(infra.id), ORDER_ID: String(infra.orderId) }
+    const destroyVars = destroyVariables(infra)
     try {
       // Fires destroy for BOTH product webhooks and pipeline stacks — stack-
       // provisioned infra would otherwise leak on project deletion.

@@ -10,6 +10,8 @@ import {
   jsonb,
   date,
   primaryKey,
+  foreignKey,
+  unique,
   customType,
   uniqueIndex,
   index,
@@ -298,6 +300,44 @@ export const productEnvironments = pgTable('product_environments', {
   trialDurationMinutes: integer('trial_duration_minutes').notNull().default(30),
 }, (t) => [primaryKey({ columns: [t.productId, t.environmentId] })])
 
+// The sizes an offering is available in — "an XL server in Linode" (issue #98).
+//
+// A table rather than more columns on `product_environments`: the number of sizes
+// is a per-offering editorial decision (XS…2XL for one product, one size for the
+// next), and columns cannot express that without either a fixed ceiling or a
+// column per size. Price lives HERE, on the size, because that is what the
+// customer actually chooses and pays for.
+//
+// `product_environments.price` is NOT dropped: an offering with no size rows keeps
+// using it, which is what every row that existed before this table did. See
+// `resolveOfferingPrice` for the one place that decides between the two.
+export const productEnvironmentSizes = pgTable('product_environment_sizes', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  productId: bigint('product_id', { mode: 'number' }).notNull(),
+  environmentId: bigint('environment_id', { mode: 'number' }).notNull(),
+  // What the pipeline receives as SIZE and what an order line stores. Short and
+  // stable ('XL'), unlike the label, which is prose an admin may rewrite.
+  code: text().notNull(),
+  label: text().notNull().default(''),
+  price: numeric({ precision: 12, scale: 2 }).notNull().default('0'),
+  currency: text().notNull().default('EUR'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  // Retired rather than deleted: a size that has been ordered is referenced by
+  // existing orders, and withdrawing it must not make those orders unreadable.
+  active: boolean().notNull().default(true),
+}, (t) => [
+  // Composite FK to the offering, not two separate ones to products and
+  // environments: a size for a (product, environment) pair that is not offered at
+  // all is not a thing, and the cascade removes the sizes with the offering.
+  foreignKey({
+    columns: [t.productId, t.environmentId],
+    foreignColumns: [productEnvironments.productId, productEnvironments.environmentId],
+  }).onDelete('cascade'),
+  // The code is what an order line stores, so two rows sharing one within an
+  // offering would make a stored line ambiguous.
+  unique('product_environment_sizes_offering_code_unique').on(t.productId, t.environmentId, t.code),
+])
+
 export const productWebhooks = pgTable('product_webhooks', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
@@ -378,6 +418,18 @@ export const orders = pgTable('orders', {
   // approval, which is where the trial clock has to start and where the trial
   // variables have to be passed to CI.
   isTrial: boolean('is_trial').notNull().default(false),
+  // The chosen size (issue #98) as a `product_environment_sizes.code`, and how
+  // many infrastructure elements the order asks for (issue #104).
+  //
+  // NULL size means "this offering has no sizes", which is every order placed
+  // before they existed and every offering that never defined any — those read
+  // their price from `product_environments`. Deliberately a code and not a foreign
+  // key: an admin may retire a size, and an order must stay readable when they do.
+  // The price that actually applied is in the snapshot, not looked up again.
+  sizeCode: text('size_code'),
+  // One order, N infrastructure elements. Default 1, which is exactly what every
+  // order placed before quantity existed asked for.
+  quantity: integer().notNull().default(1),
   // What the customer was actually offered when the order was placed (issue #38).
   // Orders reference the product by id, so without this a later price change or a
   // removed parameter silently rewrites history and the order detail page shows
@@ -412,6 +464,10 @@ export const cartItems = pgTable('cart_items', {
   // checkout. Validation happens at checkout, against the same rules a single
   // order goes through.
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
+  // A cart line is product × environment × size × quantity (issues #98/#104).
+  // NULL size = the offering has none; the line then prices off the offering.
+  sizeCode: text('size_code'),
+  quantity: integer().notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
@@ -440,6 +496,15 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   environmentId: bigint('environment_id', { mode: 'number' }).notNull().references(() => deploymentEnvironments.id),
   productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
   status: text({ enum: ['active', 'decommissioning', 'decommissioned'] }).notNull().default('active'),
+  // Copied from the order rather than joined: the element IS the thing that has a
+  // size, and a teardown or retry needs it without reaching for the order.
+  sizeCode: text('size_code'),
+  // Which of the order's N elements this is, 1-based (issue #104). It is what
+  // makes the Terraform state key of element 3 differ from element 1's — see
+  // `elementStateSuffix` — so it must be stable for the life of the element:
+  // provisioning, retry and teardown all derive the same key from it. Legacy rows
+  // are 1, which reproduces the state name they were provisioned with exactly.
+  sequence: integer().notNull().default(1),
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
   pipelineId: jsonb('pipeline_id').$type<string[]>().notNull().default([]),
   // Per-pipeline terminal status for the current decommission run, keyed by
@@ -539,6 +604,7 @@ export type IntegrationAuthType = (typeof INTEGRATION_AUTH_TYPES)[number]
 export type IntegrationFailureMode = (typeof INTEGRATION_FAILURE_MODES)[number]
 export type DeploymentEnvironment = typeof deploymentEnvironments.$inferSelect
 export type ProductEnvironment = typeof productEnvironments.$inferSelect
+export type ProductEnvironmentSize = typeof productEnvironmentSizes.$inferSelect
 export type ProductWebhook = typeof productWebhooks.$inferSelect
 export type PipelineStack = typeof pipelineStacks.$inferSelect
 export type ProductFavorite = typeof productFavorites.$inferSelect

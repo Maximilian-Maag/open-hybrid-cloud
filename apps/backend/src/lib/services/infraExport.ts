@@ -16,6 +16,10 @@ export interface InfraExportRow {
   projectName: string
   costCenter: string
   status: string
+  /** The size this element runs at (issue #98); blank when the offering has none. */
+  size: string
+  /** "3/20" for element three of an order of twenty (issue #104), else "1/1". */
+  element: string
   deployedAt: string
   parameters: string
 }
@@ -61,6 +65,10 @@ export const buildInfraExportRows = async (
       projectName: el.projectName ?? `#${el.projectId}`,
       costCenter: costCenters.get(el.orderId) ?? '',
       status: el.status,
+      size: el.sizeCode ?? '',
+      // Which of its order's elements this is. An inventory of twenty identical
+      // rows is unreadable without it.
+      element: `${el.sequence}/${el.orderQuantity ?? el.sequence}`,
       deployedAt: el.deployedAt ? new Date(el.deployedAt).toISOString() : '',
       parameters: options.includeParameters
         ? formatParameters(el.parameters, union(sensitive, sensitivePerOrder.get(el.orderId)))

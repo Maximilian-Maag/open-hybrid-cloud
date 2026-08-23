@@ -83,7 +83,11 @@ describe('GET /api/infrastructure/export', () => {
     expect(res.headers.get('content-disposition')).toContain('infrastructure.csv')
 
     const text = await res.text()
-    expect(text.split('\n')[0]).toBe('id,product,environment,project,costCenter,status,deployedAt')
+    // `size` and `element` (issues #98/#104): an inventory of twenty identical
+    // rows from one order is unreadable without which one each is.
+    expect(text.split('\n')[0]).toBe(
+      'id,product,environment,project,costCenter,status,size,element,deployedAt',
+    )
     expect(text).toContain('Nginx Gateway')
     expect(text).toContain('AWS Frankfurt')
     expect(text).toContain('Webshop Platform')

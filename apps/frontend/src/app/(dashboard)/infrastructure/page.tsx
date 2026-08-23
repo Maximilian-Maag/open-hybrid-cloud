@@ -190,7 +190,17 @@ function InfraRow({
           </div>
           <p className="text-xs text-slate-500">
             {showProject && <>{item.projectName ?? `Project #${item.projectId}`} · </>}
-            {item.environmentName} ·{' '}
+            {item.environmentName}
+            {/* The size this element runs at (issue #98) … */}
+            {item.sizeCode && <> · {t('size', lang)}: {item.sizeCode}</>}
+            {/* … and which of its order's N it is (issue #104). Twenty elements
+                from one order are otherwise twenty identical rows, and teardown is
+                per element, so knowing which one you are about to destroy is not
+                cosmetic. */}
+            {item.orderQuantity !== undefined && item.orderQuantity !== null && item.orderQuantity > 1 && (
+              <> · {item.sequence ?? 1}/{item.orderQuantity}</>
+            )}
+            {' · '}
             {item.deployedAt ? new Date(item.deployedAt).toLocaleString(lang) : t('notDeployed', lang)}
           </p>
           {outputs.length > 0 && (

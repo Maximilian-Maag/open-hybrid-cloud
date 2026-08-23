@@ -31,6 +31,7 @@ const TABLES = [
   schema.orders,
   schema.pipelineStacks,
   schema.productWebhooks,
+  schema.productEnvironmentSizes,
   schema.productEnvironments,
   schema.parameters,
   schema.productTranslations,
@@ -206,6 +207,25 @@ beforeAll(async () => {
       ADD COLUMN IF NOT EXISTS trial_enabled BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE product_environments
       ADD COLUMN IF NOT EXISTS trial_duration_minutes INTEGER NOT NULL DEFAULT 30;
+    -- Migration 0020: t-shirt sizes per offering (issue #98). Declared here rather
+    -- than with the other tables because the composite FK needs
+    -- product_environments to exist first.
+    CREATE TABLE IF NOT EXISTS product_environment_sizes (
+      id BIGSERIAL PRIMARY KEY,
+      product_id BIGINT NOT NULL,
+      environment_id BIGINT NOT NULL,
+      code TEXT NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
+      price NUMERIC(12,2) NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      sort_order INT NOT NULL DEFAULT 0,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      CONSTRAINT product_environment_sizes_offering_fk
+        FOREIGN KEY (product_id, environment_id)
+        REFERENCES product_environments(product_id, environment_id) ON DELETE CASCADE,
+      CONSTRAINT product_environment_sizes_offering_code_unique
+        UNIQUE (product_id, environment_id, code)
+    );
     CREATE TABLE IF NOT EXISTS product_favorites (
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -241,6 +261,9 @@ beforeAll(async () => {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_trial BOOLEAN NOT NULL DEFAULT FALSE;
     -- Migration 0013: what the customer was offered when the order was placed.
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_snapshot JSONB;
+    -- Migration 0020: the order line is product × environment × size × quantity.
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS size_code TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity INT NOT NULL DEFAULT 1;
     CREATE TABLE IF NOT EXISTS cart_items (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -249,6 +272,9 @@ beforeAll(async () => {
       parameters JSONB NOT NULL DEFAULT '{}',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- Migration 0020: a cart line carries its size and quantity.
+    ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS size_code TEXT;
+    ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS quantity INT NOT NULL DEFAULT 1;
     CREATE TABLE IF NOT EXISTS product_versions (
       id BIGSERIAL PRIMARY KEY,
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -285,6 +311,9 @@ beforeAll(async () => {
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
     -- Migration 0010: scheduled automatic teardown.
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS scheduled_decommission_at TIMESTAMPTZ;
+    -- Migration 0020: the element's own size, and which of the order's N it is.
+    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS size_code TEXT;
+    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS sequence INT NOT NULL DEFAULT 1;
     CREATE TABLE IF NOT EXISTS audit_log (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT,

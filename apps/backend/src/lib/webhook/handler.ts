@@ -1,7 +1,7 @@
 import type { PipelineEvent } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
 import { orders, infrastructureElements } from '@/lib/db/schema'
-import { eq, sql, inArray } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import {
   sendProvisioningCompleted,
@@ -93,20 +93,27 @@ export const handlePipelineEvent = async (
 
       await logAudit(null, 'order.completed', order.id, `Pipeline ${event.pipelineId} succeeded`)
 
-      // Every element of the order, not one of them: the outputs below are written
-      // to all of them, and a `.limit(1)` here meant an order that provisioned
-      // several had its outputs land on whichever row Postgres returned first.
+      // Every element of the order, not one of them: each is provisioned by its
+      // own pipelines and gets its own outputs below. Ordered by sequence so that
+      // "the order's first element" is element 1 rather than whichever row
+      // Postgres returned first.
       const infraElements = await db
-        .select({ id: infrastructureElements.id })
+        .select({ id: infrastructureElements.id, pipelineId: infrastructureElements.pipelineId })
         .from(infrastructureElements)
         .where(eq(infrastructureElements.orderId, order.id))
+        .orderBy(infrastructureElements.sequence, infrastructureElements.id)
 
       const productName = await findProductName(order.productId)
+      // The order's FIRST element, and how many it has. One order can now provision
+      // N (issue #104), so naming one id and stopping told the customer about a
+      // twentieth of what they ordered — the count is what makes the mail true.
+      // Falls back to the order id when an order somehow has no element at all,
+      // which is what this line always did.
       const infraId = infraElements[0]?.id ?? order.id
       const email = await findUserEmail(order.userId)
 
       if (email) {
-        await sendProvisioningCompleted(email, productName, infraId)
+        await sendProvisioningCompleted(email, productName, infraId, infraElements.length)
       }
 
       if (infraElements.length > 0) {
@@ -132,59 +139,74 @@ export const handlePipelineEvent = async (
                 `Terraform outputs.`,
             )
           } else {
-            // Every pipeline of the order, not only the one whose event completed
-            // it: an order fans out over the product's webhooks and pipeline stacks,
-            // and reading just `event.pipelineId` meant the other pipelines' outputs
-            // were dropped — with which set survived decided by CI timing (#121).
-            const outputs: Record<string, string> = {}
-            for (const pipelineId of merged[0].pipelineId) {
-              let traces: string[]
-              try {
-                traces = await fetchJobTraces(ciSource, pipelineId)
-              } catch (err) {
-                // One unreadable pipeline log must not cost the outputs of the
-                // pipelines that did report.
-                console.error(
-                  `[webhook] Could not read the job log of pipeline ${pipelineId} (order ${order.id}):`,
-                  err,
+            // Each element's outputs come from ITS OWN pipelines, which is why
+            // `provisionOrderElements` records them on the element row. Under
+            // quantity (#104) element 2's pipeline reports element 2's ip_address;
+            // merging the order's pipelines into one map dropped it as a duplicate
+            // key and stamped element 1's address onto all N — wrong, and silent.
+            //
+            // The merge still applies WITHIN one element: an element fans out over
+            // the product's webhooks and its pipeline stacks (#121), and reading
+            // only the pipeline whose event completed the order dropped the rest.
+            for (const element of infraElements) {
+              if (element.pipelineId.length === 0) {
+                // A row whose triggers never fired. Its outputs are unknown, and
+                // borrowing a sibling's is exactly the confusion this loop ends.
+                console.warn(
+                  `[webhook] Order ${order.id}: element ${element.id} has no pipeline of its own; ` +
+                    `no Terraform outputs recorded for it.`,
                 )
                 continue
               }
-              for (const trace of traces) {
-                for (const [key, value] of Object.entries(parseTofuOutputs(trace))) {
-                  // First writer wins, iterating the pipeline ids in the order they
-                  // were triggered: two pipelines that both declare `ip_address` are
-                  // a naming collision in the templates, and picking by CI timing
-                  // would make the recorded value change from run to run.
-                  if (key in outputs) {
-                    if (outputs[key] !== value) {
-                      console.warn(
-                        `[webhook] Order ${order.id}: output "${key}" is reported by more than one ` +
-                          `pipeline with different values; keeping the first.`,
-                      )
+
+              const outputs: Record<string, string> = {}
+              for (const pipelineId of element.pipelineId) {
+                let traces: string[]
+                try {
+                  traces = await fetchJobTraces(ciSource, pipelineId)
+                } catch (err) {
+                  // One unreadable pipeline log must not cost the outputs of the
+                  // pipelines that did report.
+                  console.error(
+                    `[webhook] Could not read the job log of pipeline ${pipelineId} (order ${order.id}):`,
+                    err,
+                  )
+                  continue
+                }
+                for (const trace of traces) {
+                  for (const [key, value] of Object.entries(parseTofuOutputs(trace))) {
+                    // First writer wins, iterating this element's pipeline ids in the
+                    // order they were triggered: two of ITS pipelines both declaring
+                    // `ip_address` is a naming collision in the templates, and picking
+                    // by CI timing would make the recorded value change from run to
+                    // run. Two ELEMENTS reporting the same key is normal and no longer
+                    // reaches this check at all.
+                    if (key in outputs) {
+                      if (outputs[key] !== value) {
+                        console.warn(
+                          `[webhook] Order ${order.id}, element ${element.id}: output "${key}" is ` +
+                            `reported by more than one of its pipelines with different values; ` +
+                            `keeping the first.`,
+                        )
+                      }
+                      continue
                     }
-                    continue
+                    outputs[key] = value
                   }
-                  outputs[key] = value
                 }
               }
-            }
 
-            if (Object.keys(outputs).length > 0) {
-              // Every element of the order, not just the first: an order that
-              // provisioned several left the rest empty for no reason a user could
-              // see. One statement, so a concurrent event cannot half-apply it.
-              await db
-                .update(infrastructureElements)
-                .set({ outputs })
-                .where(
-                  inArray(
-                    infrastructureElements.id,
-                    infraElements.map((el) => el.id),
-                  ),
+              if (Object.keys(outputs).length > 0) {
+                await db
+                  .update(infrastructureElements)
+                  .set({ outputs })
+                  .where(eq(infrastructureElements.id, element.id))
+              } else {
+                console.warn(
+                  `[webhook] No job log of element ${element.id} (order ${order.id}) contained an ` +
+                    `Outputs block.`,
                 )
-            } else {
-              console.warn(`[webhook] No job log of order ${order.id} contained an Outputs block.`)
+              }
             }
           }
         } catch (err) {

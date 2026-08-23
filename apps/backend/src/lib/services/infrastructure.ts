@@ -10,8 +10,9 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, sql, gte, lte } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
-import { fireDestroyTriggers } from '@/lib/services/teardown'
+import { fireDestroyTriggers, destroyVariables } from '@/lib/services/teardown'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
+import { ELEMENT_SEQUENCE_VAR } from '@/lib/ci/stateKey'
 import { ok, err, type Result } from '@/lib/services/result'
 import { trialVariables, trialExpiry } from '@/lib/services/trial'
 import {
@@ -35,6 +36,16 @@ export interface InfraRow {
   deployedAt: Date | null
   /** When set, the element is torn down automatically at or after this instant. */
   scheduledDecommissionAt: Date | null
+  /** The size this element was ordered at (issue #98); null when it has none. */
+  sizeCode: string | null
+  /**
+   * Which of its order's elements this is, 1-based (issue #104). Shown so a row of
+   * twenty identical elements can be told apart, and it is what the element's
+   * Terraform state key is derived from.
+   */
+  sequence: number
+  /** How many elements the order asked for, so a row can read "3 of 20". */
+  orderQuantity: number | null
   productName: string
   environmentName: string | null
   projectName: string | null
@@ -160,6 +171,9 @@ export const listInfrastructure = async (
       outputs: infrastructureElements.outputs,
       deployedAt: infrastructureElements.deployedAt,
       scheduledDecommissionAt: infrastructureElements.scheduledDecommissionAt,
+      sizeCode: infrastructureElements.sizeCode,
+      sequence: infrastructureElements.sequence,
+      orderQuantity: orders.quantity,
       productName: productNameSql,
       environmentName: deploymentEnvironments.name,
       projectName: projects.name,
@@ -304,27 +318,57 @@ export const retryProvisioning = async (
     ? await resolveTrialDuration(infra.productId, infra.environmentId)
     : 0
 
-  const variables = {
-    ...(infra.parameters as Record<string, string>),
-    // Pipeline stacks derive TF_STATE_NAME from stateKeyParam ?? ORDER_ID, and
-    // the stored parameters do not carry the server-generated order id. Reusing
-    // the ORIGINAL order id is the point: the retry has to target the same
-    // Terraform state the failed attempt was working on.
-    ORDER_ID: String(infra.orderId),
-    ...(order.isTrial ? trialVariables(trialDurationMinutes) : {}),
-  }
+  // EVERY element of the order, not only the one whose Retry was clicked (issue
+  // #104). The order is the unit that failed and the unit that has to become
+  // 'completed' again: re-firing one element of twenty would leave the order
+  // waiting on that element alone and complete it while nineteen were still
+  // broken. For the one-element orders that were the only kind before quantity
+  // existed, this loop runs exactly once and does exactly what it always did.
+  const siblings = await db
+    .select()
+    .from(infrastructureElements)
+    .where(eq(infrastructureElements.orderId, infra.orderId))
+    .orderBy(infrastructureElements.sequence, infrastructureElements.id)
 
-  let outcome: { pipelineIds: string[]; failures: string[] }
-  try {
-    const webhooks = await triggerProductWebhooksTracked(infra.productId, infra.environmentId, variables)
-    const stacks = await triggerPipelineStacksTracked(infra.productId, infra.environmentId, variables)
-    outcome = {
-      pipelineIds: [...webhooks.pipelineIds, ...stacks.pipelineIds],
-      failures: [...webhooks.failures, ...stacks.failures],
+  const elements = siblings.length ? siblings : [infra]
+
+  const outcome: { pipelineIds: string[]; failures: string[] } = { pipelineIds: [], failures: [] }
+  const perElementPipelines = new Map<number, string[]>()
+
+  for (const element of elements) {
+    const variables = {
+      ...(element.parameters as Record<string, string>),
+      // Pipeline stacks derive TF_STATE_NAME from stateKeyParam ?? ORDER_ID, and
+      // the stored parameters do not carry the server-generated order id. Reusing
+      // the ORIGINAL order id is the point: the retry has to target the same
+      // Terraform state the failed attempt was working on.
+      ORDER_ID: String(infra.orderId),
+      // And the element's own sequence, for the same reason: it is what suffixes
+      // the state key, so element 3 retries element 3's state and not element 1's.
+      [ELEMENT_SEQUENCE_VAR]: String(element.sequence),
+      ...(element.sizeCode !== null ? { SIZE: element.sizeCode } : {}),
+      ...(order.isTrial ? trialVariables(trialDurationMinutes) : {}),
     }
-  } catch (e) {
-    await releaseRetryClaim(order.id)
-    throw e
+
+    try {
+      const webhooks = await triggerProductWebhooksTracked(element.productId, element.environmentId, variables)
+      const stacks = await triggerPipelineStacksTracked(element.productId, element.environmentId, variables)
+      const started = [...webhooks.pipelineIds, ...stacks.pipelineIds]
+      perElementPipelines.set(element.id, started)
+      outcome.pipelineIds.push(...started)
+      outcome.failures.push(...webhooks.failures, ...stacks.failures)
+    } catch (e) {
+      // A throw on the FIRST element means nothing is running, so the claim can be
+      // released cleanly. Once something is running it cannot be recalled, so the
+      // failure is recorded as a sentinel instead and the order stays unfinished.
+      if (outcome.pipelineIds.length === 0) {
+        await releaseRetryClaim(order.id)
+        throw e
+      }
+      outcome.failures.push(
+        `element #${element.id}: ${e instanceof Error ? e.message : String(e)}`,
+      )
+    }
   }
 
   if (outcome.pipelineIds.length === 0) {
@@ -355,23 +399,27 @@ export const retryProvisioning = async (
     .set({ pipelineId: outcome.pipelineIds, pipelineStatus, updatedAt: new Date() })
     .where(eq(orders.id, order.id))
 
-  await db
-    .update(infrastructureElements)
-    .set({
-      status: 'active',
-      pipelineId: outcome.pipelineIds,
-      pipelineStatus: {},
-      // Outputs are parsed from the job trace on success. Any left over from an
-      // earlier attempt describe infrastructure this retry is about to replace.
-      outputs: {},
-      // A trial's clock restarts here for the same reason it starts at
-      // provisioning rather than ordering: the failed attempt may have burned the
-      // whole window, and the sweep would tear this retry down on sight. Only a
-      // trial's schedule is touched — a decommission an operator scheduled by hand
-      // (issue #30) must survive a retry.
-      ...(order.isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
-    })
-    .where(eq(infrastructureElements.id, infraId))
+  for (const element of elements) {
+    await db
+      .update(infrastructureElements)
+      .set({
+        status: 'active',
+        // Its OWN pipelines, not the order's union: the element has to be
+        // trackable and tearable-down on its own ("decommission 3 of 20").
+        pipelineId: perElementPipelines.get(element.id) ?? [],
+        pipelineStatus: {},
+        // Outputs are parsed from the job trace on success. Any left over from an
+        // earlier attempt describe infrastructure this retry is about to replace.
+        outputs: {},
+        // A trial's clock restarts here for the same reason it starts at
+        // provisioning rather than ordering: the failed attempt may have burned the
+        // whole window, and the sweep would tear this retry down on sight. Only a
+        // trial's schedule is touched — a decommission an operator scheduled by hand
+        // (issue #30) must survive a retry.
+        ...(order.isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
+      })
+      .where(eq(infrastructureElements.id, element.id))
+  }
 
   await logAudit(
     session.id,
@@ -601,16 +649,10 @@ const claimAndDestroy = async (
 
   if (!claimed.length) return err(400, 'Infrastructure element is not active')
 
-  const variables = {
-    ...(infra.parameters as Record<string, string>),
-    TF_ACTION: 'destroy',
-    INFRA_ID: String(infra.id),
-    // Pipeline stacks derive TF_STATE_NAME from stateKeyParam ?? ORDER_ID; the
-    // stored infra parameters don't carry the server-generated ORDER_ID, so pass
-    // it explicitly or a stack whose stateKeyParam is absent would destroy an
-    // empty/wrong state.
-    ORDER_ID: String(infra.orderId),
-  }
+  // "Decommission 3 of 20" is per element, which is what the infrastructure list
+  // already offers — the order gets no teardown of its own. `destroyVariables`
+  // carries the element's sequence so the destroy targets that element's state.
+  const variables = destroyVariables(infra)
 
   // Fires product webhooks AND pipeline stacks, and persists the started
   // pipeline ids (plus a sentinel per trigger that failed to start) so the

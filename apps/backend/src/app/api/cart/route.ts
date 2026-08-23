@@ -9,6 +9,11 @@ const AddToCartSchema = z.object({
   environmentId: z.number().int().positive(),
   // Prefill only — validated at checkout, not here. See the service for why.
   parameters: z.record(z.string()).optional(),
+  // The chosen size (issue #98) and how many elements the line asks for (#104).
+  // Both ARE validated here, by the service: unlike the parameters they are not
+  // filled in later, they are what the line is.
+  sizeCode: z.string().min(1).max(64).nullable().optional(),
+  quantity: z.number().int().positive().optional(),
 })
 
 export async function GET(req: NextRequest) {

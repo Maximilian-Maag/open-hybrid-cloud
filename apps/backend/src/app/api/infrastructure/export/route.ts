@@ -6,13 +6,16 @@ import { buildInfraExportRows, type InfraExportRow } from '@/lib/services/infraE
 import { getBranding } from '@/lib/services/admin/branding'
 import PDFDocument from 'pdfkit'
 
+// `parameters` stays LAST: buildCsv drops the final column when parameters were
+// not requested, so anything appended after it would be dropped instead.
 const HEADER = [
-  'id', 'product', 'environment', 'project', 'costCenter', 'status', 'deployedAt', 'parameters',
+  'id', 'product', 'environment', 'project', 'costCenter', 'status',
+  'size', 'element', 'deployedAt', 'parameters',
 ] as const
 
 const cells = (row: InfraExportRow) => [
   row.id, row.productName, row.environmentName, row.projectName,
-  row.costCenter, row.status, row.deployedAt, row.parameters,
+  row.costCenter, row.status, row.size, row.element, row.deployedAt, row.parameters,
 ]
 
 const buildCsv = (rows: InfraExportRow[], includeParameters: boolean): string => {
@@ -45,22 +48,26 @@ const buildPdf = async (
     const cols = includeParameters
       ? [
           { label: 'ID', width: 35 },
-          { label: 'Product', width: 110 },
-          { label: 'Environment', width: 100 },
-          { label: 'Project', width: 100 },
-          { label: 'Cost Center', width: 100 },
+          { label: 'Product', width: 90 },
+          { label: 'Environment', width: 85 },
+          { label: 'Project', width: 85 },
+          { label: 'Cost Center', width: 85 },
           { label: 'Status', width: 75 },
-          { label: 'Deployed', width: 105 },
-          { label: 'Parameters', width: 135 },
+          { label: 'Size', width: 40 },
+          { label: 'Elem', width: 38 },
+          { label: 'Deployed', width: 95 },
+          { label: 'Parameters', width: 112 },
         ]
       : [
           { label: 'ID', width: 40 },
-          { label: 'Product', width: 140 },
-          { label: 'Environment', width: 125 },
-          { label: 'Project', width: 125 },
-          { label: 'Cost Center', width: 125 },
+          { label: 'Product', width: 115 },
+          { label: 'Environment', width: 105 },
+          { label: 'Project', width: 105 },
+          { label: 'Cost Center', width: 105 },
           { label: 'Status', width: 90 },
-          { label: 'Deployed', width: 115 },
+          { label: 'Size', width: 45 },
+          { label: 'Elem', width: 40 },
+          { label: 'Deployed', width: 105 },
         ]
 
     const rowHeight = 18

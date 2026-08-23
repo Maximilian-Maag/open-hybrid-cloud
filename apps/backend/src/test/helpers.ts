@@ -115,6 +115,41 @@ export const linkProductEnvironment = async (
   return row
 }
 
+/**
+ * Add one size to an offering (issue #98).
+ *
+ * Note what this does to the offering it is added to: once it has ANY size, an
+ * order against it must name one, and its price comes from the size rather than
+ * from `product_environments.price`.
+ */
+export const createSize = async (
+  productId: number,
+  environmentId: number,
+  overrides?: {
+    code?: string
+    label?: string
+    price?: string
+    currency?: string
+    sortOrder?: number
+    active?: boolean
+  },
+) => {
+  const [row] = await db
+    .insert(schema.productEnvironmentSizes)
+    .values({
+      productId,
+      environmentId,
+      code: overrides?.code ?? 'M',
+      label: overrides?.label ?? 'Medium',
+      price: overrides?.price ?? '10.00',
+      currency: overrides?.currency ?? 'EUR',
+      sortOrder: overrides?.sortOrder ?? 0,
+      active: overrides?.active ?? true,
+    })
+    .returning()
+  return row
+}
+
 export const createProject = async (ownerId: number, name?: string) => {
   const [project] = await db
     .insert(schema.projects)
@@ -128,7 +163,14 @@ export const createOrder = async (
   productId: number,
   environmentId: number,
   userId: number,
-  overrides?: { status?: string; pipelineId?: string[]; isTrial?: boolean },
+  overrides?: {
+    status?: string
+    pipelineId?: string[]
+    isTrial?: boolean
+    sizeCode?: string | null
+    quantity?: number
+    productSnapshot?: schema.Order['productSnapshot']
+  },
 ) => {
   const [order] = await db
     .insert(schema.orders)
@@ -140,6 +182,9 @@ export const createOrder = async (
       status: (overrides?.status ?? 'pending') as schema.Order['status'],
       pipelineId: overrides?.pipelineId ?? [],
       ...(overrides?.isTrial !== undefined ? { isTrial: overrides.isTrial } : {}),
+      ...(overrides?.sizeCode !== undefined ? { sizeCode: overrides.sizeCode } : {}),
+      ...(overrides?.quantity !== undefined ? { quantity: overrides.quantity } : {}),
+      ...(overrides?.productSnapshot !== undefined ? { productSnapshot: overrides.productSnapshot } : {}),
     })
     .returning()
   return order
@@ -156,6 +201,8 @@ export const createInfraElement = async (
     pipelineStatus?: Record<string, string>
     parameters?: Record<string, string>
     deployedAt?: Date
+    sizeCode?: string | null
+    sequence?: number
   },
 ) => {
   const [el] = await db
@@ -168,6 +215,8 @@ export const createInfraElement = async (
       status: (overrides?.status ?? 'active') as schema.InfrastructureElement['status'],
       pipelineId: overrides?.pipelineId ?? [],
       pipelineStatus: overrides?.pipelineStatus ?? {},
+      ...(overrides?.sizeCode !== undefined ? { sizeCode: overrides.sizeCode } : {}),
+      ...(overrides?.sequence !== undefined ? { sequence: overrides.sequence } : {}),
       ...(overrides?.parameters ? { parameters: overrides.parameters } : {}),
       ...(overrides?.deployedAt ? { deployedAt: overrides.deployedAt } : {}),
     })

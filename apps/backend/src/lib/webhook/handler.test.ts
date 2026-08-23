@@ -392,7 +392,15 @@ describe('handlePipelineEvent — Terraform outputs', () => {
     (await db.select({ outputs: infrastructureElements.outputs }).from(infrastructureElements).where(eq(infrastructureElements.id, id)))[0]
       .outputs
 
-  const seedOrderWithElements = async (count: number, pipelineIds: string[] = ['pipe-1']) => {
+  // `pipelineIds` are the ORDER's. By default every element carries all of them,
+  // which is the one-element-several-pipelines shape (#121). Pass `perElement` to
+  // give each element pipelines of its own, which is what provisioning writes now
+  // that one order provisions N elements (#104).
+  const seedOrderWithElements = async (
+    count: number,
+    pipelineIds: string[] = ['pipe-1'],
+    perElement?: string[][],
+  ) => {
     const pm = await createUser({ role: 'project_manager', email: `out-pm-${Math.random()}@test.dev` })
     const cat = await createCategory()
     const product = await createProduct(cat.id, 'Gateway')
@@ -412,26 +420,84 @@ describe('handlePipelineEvent — Terraform outputs', () => {
     }
     const elements = []
     for (let i = 0; i < count; i++) {
-      elements.push(await createInfraElement(order.id, project.id, env.id, product.id, { pipelineId: pipelineIds }))
+      elements.push(
+        await createInfraElement(order.id, project.id, env.id, product.id, {
+          pipelineId: perElement?.[i] ?? pipelineIds,
+          sequence: i + 1,
+        }),
+      )
     }
     return { order, env, elements }
   }
 
-  it('records the outputs on every element of the order, not just the first', async () => {
-    // An order that provisioned several elements used to leave all but one empty,
-    // for no reason a user could see.
-    const { order, elements } = await seedOrderWithElements(2)
-    vi.mocked(fetchJobTraces).mockResolvedValueOnce(['Outputs:\n\nip = "203.0.113.7"'])
-    vi.mocked(parseTofuOutputs).mockReturnValueOnce({ ip: '203.0.113.7' })
+  it('records each element with the outputs of its OWN pipeline', async () => {
+    // Issue #104: each of the N elements is a separate machine reporting its own
+    // ip_address. Merging the order's pipelines into one map made every element
+    // report element 1's address — silent, confidently wrong operational data.
+    const { elements } = await seedOrderWithElements(2, ['pipe-el1', 'pipe-el2'], [
+      ['pipe-el1'],
+      ['pipe-el2'],
+    ])
+    vi.mocked(fetchJobTraces).mockImplementation(async (_ci, pipelineId) =>
+      pipelineId === 'pipe-el1' ? ['trace-el1'] : ['trace-el2'],
+    )
+    vi.mocked(parseTofuOutputs).mockImplementation(
+      (trace): Record<string, string> =>
+        trace === 'trace-el1' ? { ip: '203.0.113.7' } : { ip: '203.0.113.8' },
+    )
 
     await handlePipelineEvent(
-      { provider: 'gitlab', pipelineId: 'pipe-1', status: 'success' },
+      { provider: 'gitlab', pipelineId: 'pipe-el2', status: 'success' },
       elements[0].environmentId,
     )
 
     expect(await outputsOf(elements[0].id)).toEqual({ ip: '203.0.113.7' })
-    expect(await outputsOf(elements[1].id)).toEqual({ ip: '203.0.113.7' })
-    expect(order.id).toBeGreaterThan(0)
+    expect(await outputsOf(elements[1].id)).toEqual({ ip: '203.0.113.8' })
+  })
+
+  it('does not call the same-key collision a collision when it is two elements', async () => {
+    // Two elements reporting `ip` with different values is the normal case, not a
+    // template naming clash: warning about it trained operators to ignore the
+    // warning that does mean one.
+    const { elements } = await seedOrderWithElements(2, ['pipe-el1', 'pipe-el2'], [
+      ['pipe-el1'],
+      ['pipe-el2'],
+    ])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(fetchJobTraces).mockImplementation(async (_ci, pipelineId) =>
+      pipelineId === 'pipe-el1' ? ['trace-el1'] : ['trace-el2'],
+    )
+    vi.mocked(parseTofuOutputs).mockImplementation(
+      (trace): Record<string, string> =>
+        trace === 'trace-el1' ? { ip: '203.0.113.7' } : { ip: '203.0.113.8' },
+    )
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-el2', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('more than one'))
+    warn.mockRestore()
+  })
+
+  it('records nothing for an element whose triggers never fired, and says so', async () => {
+    // An element with no pipeline of its own has unknown outputs. Taking a
+    // sibling's is what this whole loop exists to stop.
+    const { elements } = await seedOrderWithElements(2, ['pipe-el1'], [['pipe-el1'], []])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(fetchJobTraces).mockResolvedValue(['trace-el1'])
+    vi.mocked(parseTofuOutputs).mockReturnValue({ ip: '203.0.113.7' })
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-el1', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(await outputsOf(elements[0].id)).toEqual({ ip: '203.0.113.7' })
+    expect(await outputsOf(elements[1].id)).toEqual({})
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no pipeline of its own'))
+    warn.mockRestore()
   })
 
   it('says why there are no outputs when the provider cannot be read', async () => {

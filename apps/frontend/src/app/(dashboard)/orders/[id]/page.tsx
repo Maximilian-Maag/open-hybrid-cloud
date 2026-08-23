@@ -57,6 +57,11 @@ export default async function OrderDetailPage({ params }: Props) {
   // it was validated against, even if that definition has since been removed.
   const snapshotParams = new Map((snapshot?.parameters ?? []).map((p) => [p.name, p]))
 
+  // Absent on an order placed before quantity existed, which asked for exactly one.
+  const quantity = order.quantity && order.quantity >= 1 ? order.quantity : 1
+  const unitPrice = Number(snapshot?.price ?? '0')
+  const lineTotal = Number.isFinite(unitPrice) ? (unitPrice * quantity).toFixed(2) : snapshot?.price
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <PageHeader
@@ -78,8 +83,33 @@ export default async function OrderDetailPage({ params }: Props) {
             <div>
               <dt className="font-medium text-slate-500">{t('price', lang)}</dt>
               <dd className="text-slate-900">
-                {snapshot.price} {snapshot.currency}
+                {/* The snapshot's price is the UNIT price that applied — the size's
+                    once sizes exist (issue #98). Multiplied out here because the
+                    order is for `quantity` elements and the line total is the
+                    number the reader is looking for. */}
+                {quantity > 1
+                  ? `${lineTotal} ${snapshot.currency} (${quantity} × ${snapshot.price} ${snapshot.currency})`
+                  : `${snapshot.price} ${snapshot.currency}`}
               </dd>
+            </div>
+          )}
+          {/* Shown whenever the order named a size, snapshot or not: the label from
+              the snapshot is what it read as at the time, the code survives a
+              rename. */}
+          {(snapshot?.sizeCode ?? order.sizeCode) && (
+            <div>
+              <dt className="font-medium text-slate-500">{t('size', lang)}</dt>
+              <dd className="text-slate-900">
+                {snapshot?.sizeLabel || snapshot?.sizeCode || order.sizeCode}
+              </dd>
+            </div>
+          )}
+          {quantity > 1 && (
+            <div>
+              <dt className="font-medium text-slate-500">{t('quantity', lang)}</dt>
+              {/* One order, N infrastructure elements (issue #104) — one approval
+                  covered all of them. */}
+              <dd className="text-slate-900">{quantity}</dd>
             </div>
           )}
           <div>

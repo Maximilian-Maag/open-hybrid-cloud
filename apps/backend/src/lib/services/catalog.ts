@@ -4,6 +4,7 @@ import { eq, or, and, isNull, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { withoutSensitiveDefaults } from '@/lib/services/parameterRedaction'
 import { safeImageContentType } from '@/lib/services/imageUpload'
+import { listActiveSizesForProduct } from '@/lib/services/sizes'
 
 /**
  * Load the parameter definitions that apply to a product in a given
@@ -283,6 +284,13 @@ export const getProduct = async (
     )
     .where(eq(productEnvironments.productId, productId))
 
+  // The sizes of every offering in one query, attached to their environment. The
+  // buy box and the order form both need them per environment, and a query per
+  // environment is how a three-environment product becomes four round trips.
+  // Sizes are the price list now (issue #98): an offering with none keeps its own
+  // `price`, which is what every offering that predates sizing has.
+  const sizesByEnvironment = await listActiveSizesForProduct(productId)
+
   const paramRows = await loadApplicableParameters(productId, product.categoryId, environmentId)
 
   // Collapse to one effective definition per name (scope + env precedence) so
@@ -302,9 +310,14 @@ export const getProduct = async (
   // Redacted HERE and not in `loadApplicableParameters`: the order service shares
   // that loader to validate a submission and needs the real default to apply it
   // for an omitted optional parameter. This is the way OUT (issue #131).
+  const environments = envRows.map((env) => ({
+    ...env,
+    sizes: sizesByEnvironment.get(env.environmentId) ?? [],
+  }))
+
   return ok({
     ...product,
-    environments: envRows,
+    environments,
     parameters: withoutSensitiveDefaults(resolved),
   } as ProductDetail)
 }

@@ -122,6 +122,11 @@ backend:
     # Cannot currently be rotated: a new key cannot decrypt what the old one
     # wrote, and every stored credential would have to be re-entered.
     secretEncryptionKey: ""
+    # TOTP_ENCRYPTION_KEY — encrypts the root account's second-factor secret at
+    # rest. 32 bytes, hex or base64: `openssl rand -base64 32`. Blank derives it
+    # from jwtSecret, which works but means rotating jwtSecret invalidates every
+    # enrolled authenticator.
+    totpEncryptionKey: ""
 
 # ── Ingress ───────────────────────────────────────────────────────────────────
 ingress:

@@ -69,6 +69,64 @@ export const sessions = pgTable('sessions', {
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
 })
 
+// Second factor for a local password account (issue #36). One row per user, so
+// the user id IS the primary key: a user has one authenticator, and expressing
+// that in the key removes the "which of these two secrets is live" question
+// entirely.
+//
+// Separate table rather than columns on `users`: every read of `users` goes
+// through a column whitelist to keep the password hash out of responses, and
+// adding four more secret-bearing columns to the table everything selects from
+// is how one of them eventually leaks. Nothing joins this table into a user
+// payload.
+export const userTotp = pgTable('user_totp', {
+  userId: bigint('user_id', { mode: 'number' }).primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  // AES-256-GCM envelope, never the raw secret — see lib/auth/totpSecret.ts.
+  // NULL until the first enrollment is confirmed.
+  secret: text('secret'),
+  // An enrollment in flight. Kept apart from `secret` so starting a
+  // re-enrollment cannot break the working authenticator: until a code proves
+  // the new secret actually reached an app, the old one keeps letting you in.
+  pendingSecret: text('pending_secret'),
+  pendingCreatedAt: timestamp('pending_created_at', { withTimezone: true }),
+  // Set when a code from `secret` was first accepted. `secret IS NOT NULL AND
+  // confirmed_at IS NOT NULL` is the one condition that means "2FA is on", and
+  // there is deliberately no column that can turn it off — the issue requires
+  // that 2FA cannot be disabled once set up, only re-enrolled.
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  // The RFC 6238 step of the last accepted code. Anything at or below it is
+  // refused, which is what stops a code read over a shoulder (or off a phished
+  // page) from being replayed for the remaining ~60 s of its window. In the
+  // database rather than in memory because the guard has to hold across a
+  // restart and across instances.
+  lastUsedStep: bigint('last_used_step', { mode: 'number' }),
+  // Consecutive failures and the resulting lock. Also persisted rather than
+  // in-memory: a six-digit code is a 10^6 space, and an attacker who can restart
+  // the process — or simply reach a second replica — would otherwise get an
+  // unlimited guess loop.
+  failedAttempts: integer('failed_attempts').notNull().default(0),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// One-time backup codes, issued as a set when 2FA is confirmed (issue #36).
+//
+// HASHED, not encrypted: unlike the TOTP secret, verification only ever needs to
+// answer "did the user present this exact string", so there is no reason for the
+// server to be able to read them back. `codeHash` is SHA-256 of the code — see
+// lib/services/twoFactor.ts for why a password KDF is the wrong tool for a
+// 128-bit random value.
+export const userRecoveryCodes = pgTable('user_recovery_codes', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(),
+  // Kept after use instead of deleted, so the audit trail can show that a
+  // recovery code was spent and when. A used row can never match again.
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [unique('user_recovery_codes_user_id_code_hash_unique').on(t.userId, t.codeHash)])
+
 export const categories = pgTable('categories', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   name: text().notNull(),
@@ -592,6 +650,8 @@ export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 export type Session = typeof sessions.$inferSelect
 export type NewSession = typeof sessions.$inferInsert
+export type UserTotp = typeof userTotp.$inferSelect
+export type UserRecoveryCode = typeof userRecoveryCodes.$inferSelect
 export type Category = typeof categories.$inferSelect
 export type Product = typeof products.$inferSelect
 export type ProductTranslation = typeof productTranslations.$inferSelect

@@ -1,9 +1,29 @@
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
-import type { LoginRequest, LoginResponse, Role } from '@open-hybrid-cloud/types'
+import {
+  type LoginRequest,
+  type LoginResponse,
+  type LoginResult,
+  type MfaLoginRequest,
+  type Role,
+  isMfaChallenge,
+} from '@open-hybrid-cloud/types'
 import { SESSION_COOKIE_MAX_AGE_SECONDS, apiTokenExpiry } from '@/lib/session'
 
 const API_URL = process.env.API_URL ?? 'http://localhost:3001'
+
+/**
+ * IMPORTANT: what this returns is what populates the `user` parameter in the
+ * `jwt` callback below. Both sign-in paths — with and without a second factor —
+ * end here, so the session looks identical either way.
+ */
+const toAuthUser = (data: LoginResponse) => ({
+  id: String(data.user.id),
+  email: data.user.email,
+  name: data.user.name,
+  role: data.user.role,
+  apiToken: data.token,
+})
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
@@ -13,10 +33,33 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         email: { type: 'email' },
         password: { type: 'password' },
         // Arrives as the string 'true' from signIn(), because credentials are
-        // form fields. Anything else means no.
+        // form fields. Anything else means no. Not sent on the second step of a
+        // two-step sign-in: the choice was made at the password step and rides
+        // inside the challenge, where this request cannot change it (#36, #37).
         rememberMe: { type: 'text' },
+        // Second factor (issue #36). Present only on the second call of a
+        // two-step sign-in: `mfaToken` is the challenge the backend issued after
+        // the password check, and `code` is the TOTP or recovery code.
+        mfaToken: { type: 'text' },
+        code: { type: 'text' },
       },
       async authorize(credentials) {
+        const mfaToken = String(credentials.mfaToken ?? '')
+        const code = String(credentials.code ?? '')
+
+        // Redeeming a challenge. The password is NOT re-checked here — the
+        // challenge is what proves it, and it is bound to the account's current
+        // password hash on the backend, so a stale one cannot be redeemed.
+        if (mfaToken && code) {
+          const res = await fetch(`${API_URL}/api/auth/login/mfa`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mfaToken, code } satisfies MfaLoginRequest),
+          })
+          if (!res.ok) return null
+          return toAuthUser(await res.json())
+        }
+
         const res = await fetch(`${API_URL}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -28,16 +71,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         })
 
         if (!res.ok) return null
-        const data: LoginResponse = await res.json()
+        const data: LoginResult = await res.json()
 
-        // IMPORTANT: The 'user' object returned here is what populates the 'user' parameter in the 'jwt' callback
-        return {
-          id: String(data.user.id),
-          email: data.user.email,
-          name: data.user.name,
-          role: data.user.role,
-          apiToken: data.token,
-        }
+        // A challenge is not a session. The backend sends no token on this path,
+        // so there is nothing to sign in with — refuse, and let the form redeem
+        // the challenge on its second call. Getting here means a client skipped
+        // the second step, which must not produce a session.
+        if (isMfaChallenge(data)) return null
+
+        return toAuthUser(data)
       },
     }),
   ],

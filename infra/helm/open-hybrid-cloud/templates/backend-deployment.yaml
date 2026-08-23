@@ -90,6 +90,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "open-hybrid-cloud.backend.fullname" . }}
                   key: ADMIN_PASSWORD
+            {{- with .Values.backend.secrets.totpEncryptionKey }}
+            - name: TOTP_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
+                  key: TOTP_ENCRYPTION_KEY
+            {{- end }}
             {{- with .Values.backend.env.smtp }}
             {{- if .pass }}
             - name: SMTP_PASS

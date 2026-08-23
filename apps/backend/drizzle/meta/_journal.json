@@ -122,6 +122,13 @@
       "breakpoints": true
     },
     {
+      "idx": 18,
+      "version": "7",
+      "when": 1787529600000,
+      "tag": "0018_totp_two_factor",
+      "breakpoints": true
+    },
+    {
       "idx": 19,
       "version": "7",
       "when": 1787616000000,

@@ -2068,6 +2068,92 @@ definition against the live database and applies the diff.
         default password immediately.
 \end{enumerate}
 
+\section{Two-Factor Authentication for the Root Account}
+\label{sec:root-2fa}
+
+The Root account signs in with a local password and holds the highest privilege
+level in the system, so it is the one account no identity provider protects.
+It can be given a second factor: standard TOTP (RFC~6238, SHA-1, 30-second
+window, six digits), compatible with Google Authenticator, Authy, Bitwarden and
+1Password. Admin and Project Manager accounts authenticate through Microsoft
+Entra ID and are covered by its MFA instead.
+
+Setup lives under \textbf{Settings → My Profile → Two-factor authentication};
+the end-user steps are in \file{docs/guides/root.md}. What matters at the
+operator level is the following.
+
+\subsection*{Configuration}
+
+The shared secret is encrypted at rest with AES-256-GCM. The key comes from
+\env{TOTP\_ENCRYPTION\_KEY} — 32 bytes, hex or base64:
+
+\begin{lstlisting}[style=bash]
+openssl rand -base64 32
+\end{lstlisting}
+
+If the variable is left blank the key is derived from \env{JWT\_SECRET} instead,
+so two-factor authentication works out of the box. That couples the two secrets:
+rotating \env{JWT\_SECRET} then makes every enrolled authenticator unreadable and
+forces a re-enrollment. Set \env{TOTP\_ENCRYPTION\_KEY} separately before anyone
+enrols in production, and back it up with the rest of your secrets.
+
+\subsection*{Storage}
+
+Two tables (migration \code{0018}):
+
+\begin{itemize}
+  \item \code{user\_totp} — one row per user. The live secret, an in-flight
+        pending secret, the confirmation timestamp, the last accepted time step
+        (the replay guard) and the failure counter with its lockout deadline.
+  \item \code{user\_recovery\_codes} — ten rows per enrollment, each holding a
+        SHA-256 hash of one code and the timestamp it was spent. The codes
+        themselves exist only in the browser response that issued them.
+\end{itemize}
+
+\subsection*{Rate limiting}
+
+Five consecutive failed codes lock the second factor for fifteen minutes. The
+counter and the deadline live in the database rather than in process memory, so a
+restart or a second replica does not hand an attacker a fresh allowance. Every
+failure, every lockout and every attempt made while locked is written to the
+audit log under the \code{auth.2fa.*} actions.
+
+\subsection*{It cannot be disabled}
+
+There is no API endpoint that removes a confirmed second factor —
+\code{DELETE /api/users/me/2fa} answers \code{405} by design. The supported
+route is a replacement, which requires the password plus a current code or an
+unused recovery code.
+
+\subsection*{Emergency reset}
+
+If the authenticator and all ten recovery codes are lost — or if
+\env{TOTP\_ENCRYPTION\_KEY} was lost or rotated, which makes the stored secret
+undecryptable and every two-factor sign-in fail closed — the only way back in is
+to clear the rows. This removes the protection, so record it in your change log.
+
+\begin{lstlisting}[style=bash]
+# Docker Compose
+docker exec -i ohc-postgres psql -U postgres -d open_hybrid_cloud <<'SQL'
+BEGIN;
+DELETE FROM user_recovery_codes
+  WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
+DELETE FROM user_totp
+  WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
+COMMIT;
+SQL
+
+# Kubernetes
+kubectl exec -n open-hybrid-cloud deploy/ohc-postgres -- \
+  psql -U postgres -d open_hybrid_cloud -c \
+  "DELETE FROM user_recovery_codes WHERE user_id = \
+     (SELECT id FROM users WHERE email = 'root@example.com'); \
+   DELETE FROM user_totp WHERE user_id = \
+     (SELECT id FROM users WHERE email = 'root@example.com');"
+\end{lstlisting}
+
+The account then signs in with its password alone and should enrol again at once.
+
 % ─────────────────────────────────────────────────────────────
 \chapter{System Configuration}
 \label{ch:sysconfig}
@@ -2635,6 +2721,59 @@ key, foreign keys, and notable constraints.
 
 \noindent\textbf{Constraint:} \code{sso\_sub IS NOT NULL OR password\_hash IS NOT NULL}
 (every account must have at least one credential).
+
+\subsection*{\texttt{user\_totp}}
+
+Second factor for a local account (see \autoref{sec:root-2fa}). Deliberately a
+separate table: every read of \code{users} goes through a column whitelist to
+keep \code{password\_hash} out of API responses, and secret-bearing columns on
+the table that everything selects from eventually leak.
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{user\_id}            & BIGINT      & ---   & PK, FK → \code{users(id)} ON DELETE CASCADE \\
+    \code{secret}              & TEXT        & NULL  & AES-256-GCM envelope; the live secret \\
+    \code{pending\_secret}     & TEXT        & NULL  & an enrollment in flight \\
+    \code{pending\_created\_at}& TIMESTAMPTZ & NULL  & pending enrollments expire after 15 min \\
+    \code{confirmed\_at}       & TIMESTAMPTZ & NULL  & set once a code proved the secret arrived \\
+    \code{last\_used\_step}    & BIGINT      & NULL  & replay guard: RFC 6238 step of the last accepted code \\
+    \code{failed\_attempts}    & INTEGER     & 0     & consecutive failures; cleared on success \\
+    \code{locked\_until}       & TIMESTAMPTZ & NULL  & set when the failure allowance runs out \\
+    \code{created\_at}         & TIMESTAMPTZ & NOW() & \\
+    \code{updated\_at}         & TIMESTAMPTZ & NOW() & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent\textbf{Invariant:} \code{secret IS NOT NULL AND confirmed\_at IS NOT
+NULL} is the one condition meaning ``two-factor authentication is on''. No column
+turns it off, and no API endpoint clears them.
+
+\subsection*{\texttt{user\_recovery\_codes}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}         & BIGSERIAL   & ---   & PK \\
+    \code{user\_id}   & BIGINT      & ---   & NOT NULL, FK → \code{users(id)} ON DELETE CASCADE \\
+    \code{code\_hash} & TEXT        & ---   & NOT NULL; SHA-256 of the code, never the code \\
+    \code{used\_at}   & TIMESTAMPTZ & NULL  & set when spent; the row is kept, not deleted \\
+    \code{created\_at}& TIMESTAMPTZ & NOW() & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent\textbf{Constraint:} UNIQUE \code{(user\_id, code\_hash)} — issuing the
+same code twice to one user would make ``each code is usable once'' untrue, and
+the index is also what makes verification a single constant-time lookup rather
+than a comparison per row.
 
 \subsection*{\texttt{categories}}
 

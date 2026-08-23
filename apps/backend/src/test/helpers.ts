@@ -1,7 +1,10 @@
 import bcrypt from 'bcryptjs'
+import { createHash } from 'node:crypto'
 import { db } from '@/lib/db/client'
 import * as schema from '@/lib/db/schema'
 import { createSession } from '@/lib/auth/sessions'
+import { generateTotpSecret, totp } from '@/lib/auth/totp'
+import { encryptTotpSecret } from '@/lib/auth/totpSecret'
 import type { Role } from '@open-hybrid-cloud/types'
 
 export const createUser = async (overrides?: {
@@ -255,6 +258,54 @@ export const createDelegation = async (
     .returning()
   return row
 }
+
+/**
+ * Give a user a confirmed TOTP factor and return the raw secret, so a test can
+ * generate the codes an authenticator app would show.
+ *
+ * Deliberately goes through the same encryption helper the service uses rather
+ * than writing a secret straight into the column: a test that set up a plaintext
+ * secret would pass while the production path was broken.
+ */
+export const enrollTotp = async (
+  userId: number,
+  overrides?: { confirmed?: boolean; recoveryCodes?: string[] },
+): Promise<Buffer> => {
+  const secret = generateTotpSecret()
+  const envelope = encryptTotpSecret(secret, userId)
+  const confirmed = overrides?.confirmed ?? true
+
+  await db
+    .insert(schema.userTotp)
+    .values(
+      confirmed
+        ? { userId, secret: envelope, confirmedAt: new Date() }
+        : { userId, pendingSecret: envelope, pendingCreatedAt: new Date() },
+    )
+    .onConflictDoUpdate({
+      target: schema.userTotp.userId,
+      set: confirmed
+        ? { secret: envelope, confirmedAt: new Date(), pendingSecret: null, pendingCreatedAt: null }
+        : { pendingSecret: envelope, pendingCreatedAt: new Date() },
+    })
+
+  if (overrides?.recoveryCodes?.length) {
+    await db.insert(schema.userRecoveryCodes).values(
+      overrides.recoveryCodes.map((code) => ({
+        userId,
+        codeHash: createHash('sha256')
+          .update(code.toUpperCase().replace(/[^A-Z0-9]/g, ''), 'utf8')
+          .digest('hex'),
+      })),
+    )
+  }
+
+  return secret
+}
+
+/** The code an authenticator app would be showing right now for `secret`. */
+export const currentTotpCode = (secret: Buffer, offsetSteps = 0): string =>
+  totp(secret, Math.floor(Date.now() / 1000) + offsetSteps * 30)
 
 interface SessionOverrides {
   ip?: string | null

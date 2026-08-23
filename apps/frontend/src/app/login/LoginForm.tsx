@@ -38,25 +38,94 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
   const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  /**
+   * The challenge from step one, held only in component state.
+   *
+   * Not in `sessionStorage` or a query parameter: it is a five-minute bearer
+   * credential for finishing a sign-in, and the page it is needed on is the page
+   * that received it. A reload starting over from the password is the correct
+   * outcome, not a bug to work around.
+   */
+  const [mfaToken, setMfaToken] = useState<string | null>(null)
+  const [code, setCode] = useState('')
 
+  const finishSignIn = async (result: { error?: string | null } | undefined) => {
+    if (result?.error) return false
+    router.push(callbackUrl)
+    router.refresh()
+    return true
+  }
+
+  /**
+   * Step one: check the password and find out whether a code is needed.
+   *
+   * This goes through the app's own route handler rather than `signIn`, because
+   * `signIn` can only answer yes or no — a sign-in that needs a second factor
+   * would come back as the same error as a wrong password, and the form could
+   * never know to ask for a code. See app/api/login-challenge/route.ts.
+   */
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
     try {
-      // Sent as a string because credentials are form fields; the backend turns
-      // it into an 8 h or a 30-day session (#37).
+      const res = await fetch('/api/login-challenge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // "Remember me" is sent with the PASSWORD, not with the code: the
+        // backend seals it into the challenge, so a two-step sign-in gets the
+        // lifetime the user actually asked for without the second step being
+        // able to change it (#37).
+        body: JSON.stringify({ email, password, rememberMe }),
+      })
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: boolean; mfaRequired?: boolean; mfaToken?: string; error?: string }
+        | null
+
+      if (!res.ok || !data?.ok) {
+        // The backend's own message for a rate-limited attempt says how long to
+        // wait, which is worth more than a generic failure; anything else is
+        // deliberately just "invalid credentials", so this cannot be used to
+        // find out which accounts exist.
+        setError(res.status === 429 && data?.error ? data.error : t('invalidCredentials', lang))
+        return
+      }
+
+      if (data.mfaRequired && data.mfaToken) {
+        setMfaToken(data.mfaToken)
+        setCode('')
+        return
+      }
+
+      // No second factor: sign in the ordinary way. `rememberMe` is sent as a
+      // string because NextAuth credentials are form fields (#37).
       const result = await signIn('credentials', {
         email,
         password,
         rememberMe: String(rememberMe),
         redirect: false,
       })
-      if (result?.error) {
+      if (!(await finishSignIn(result))) {
         setError(t('invalidCredentials', lang))
-      } else {
-        router.push(callbackUrl)
-        router.refresh()
+      }
+    } catch {
+      setError(t('unexpectedError', lang))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /** Step two: redeem the challenge with a TOTP code or a recovery code. */
+  async function handleCodeSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!mfaToken) return
+    setError(null)
+    setLoading(true)
+    try {
+      const result = await signIn('credentials', { email, mfaToken, code, redirect: false })
+      if (!(await finishSignIn(result))) {
+        setError(t('invalidCredentials', lang))
+        setCode('')
       }
     } catch {
       setError(t('unexpectedError', lang))
@@ -108,6 +177,60 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
             </Alert>
           )}
 
+          {mfaToken ? (
+            <form onSubmit={handleCodeSubmit} className="space-y-4">
+              <h2 className="text-base font-semibold text-slate-900">{t('twoFactorAuth', lang)}</h2>
+              <p className="text-sm text-slate-600">{t('twoFactorLoginHint', lang)}</p>
+              <div>
+                <label htmlFor="code" className="block text-sm font-medium text-slate-700 mb-1">
+                  {t('twoFactorCodeLabel', lang)}
+                </label>
+                <input
+                  id="code"
+                  name="code"
+                  type="text"
+                  // one-time-code lets a phone offer the code from its keychain;
+                  // the field also has to accept a 23-character recovery code,
+                  // so it is not numeric-only.
+                  autoComplete="one-time-code"
+                  inputMode="text"
+                  spellCheck={false}
+                  autoCapitalize="characters"
+                  required
+                  autoFocus
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm tracking-widest text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"
+                  style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
+                  placeholder="123456"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
+              >
+                {loading ? t('twoFactorVerifying', lang) : t('signIn', lang)}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // Discard the challenge as well as the code: going back means
+                  // starting over from the password, not keeping a live
+                  // half-finished sign-in around.
+                  setMfaToken(null)
+                  setCode('')
+                  setPassword('')
+                  setError(null)
+                }}
+                className="w-full rounded-md px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 focus:outline-none focus-visible:ring-2"
+                style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
+              >
+                {t('back', lang)}
+              </button>
+            </form>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
@@ -174,6 +297,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
               {loading ? t('signingIn', lang) : t('signIn', lang)}
             </button>
           </form>
+          )}
         </div>
       </div>
     </div>

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
+import { TwoFactorCard } from './TwoFactorCard'
 
 interface Props {
   token: string
@@ -125,6 +126,11 @@ export function SettingsForms({ token, initialName, email }: Props) {
           </div>
         </form>
       </Card>
+
+      {/* Only local password accounts can enrol: an SSO user has no password to
+          re-authenticate with, and their MFA belongs to the identity provider
+          (issue #36). The card asks the backend, which refuses them by role. */}
+      <TwoFactorCard token={token} />
     </div>
   )
 }

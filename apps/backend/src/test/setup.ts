@@ -23,6 +23,8 @@ const TABLES = [
   schema.auditLog,
   schema.approvalDelegations,
   schema.sessions,
+  schema.userRecoveryCodes,
+  schema.userTotp,
   schema.productFavorites,
   schema.orderComments,
   schema.productVersions,
@@ -60,6 +62,28 @@ beforeAll(async () => {
       password_hash TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- Migration 0018: TOTP second factor for the local root account.
+    CREATE TABLE IF NOT EXISTS user_totp (
+      user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      secret TEXT,
+      pending_secret TEXT,
+      pending_created_at TIMESTAMPTZ,
+      confirmed_at TIMESTAMPTZ,
+      last_used_step BIGINT,
+      failed_attempts INTEGER NOT NULL DEFAULT 0,
+      locked_until TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS user_recovery_codes (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code_hash TEXT NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS user_recovery_codes_user_id_code_hash_unique
+      ON user_recovery_codes (user_id, code_hash);
     -- Migration 0019: server-side sessions with revocation (issue #37).
     CREATE TABLE IF NOT EXISTS sessions (
       id BIGSERIAL PRIMARY KEY,

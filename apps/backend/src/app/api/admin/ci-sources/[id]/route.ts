@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { getCiSourceById, updateCiSource, deleteCiSource } from '@/lib/services/admin/ciSources'
 
 const UpdateCiSourceSchema = z.object({
@@ -19,7 +19,9 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await getCiSourceById(parseInt(id, 10)))
+  const ciSourceId = parseRouteId(id)
+  if (ciSourceId === null) return invalidId('CI source id')
+  return toResponse(await getCiSourceById(ciSourceId))
 }
 
 export async function PUT(
@@ -30,13 +32,15 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id } = await params
+  const ciSourceId = parseRouteId(id)
+  if (ciSourceId === null) return invalidId('CI source id')
   const body = await req.json().catch(() => null)
   const parsed = UpdateCiSourceSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateCiSource(parseInt(id, 10), parsed.data))
+  return toResponse(await updateCiSource(ciSourceId, parsed.data, session.id))
 }
 
 export async function DELETE(
@@ -47,5 +51,7 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await deleteCiSource(parseInt(id, 10)))
+  const ciSourceId = parseRouteId(id)
+  if (ciSourceId === null) return invalidId('CI source id')
+  return toResponse(await deleteCiSource(ciSourceId, session.id))
 }

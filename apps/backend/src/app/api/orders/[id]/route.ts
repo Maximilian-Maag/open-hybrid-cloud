@@ -1,6 +1,6 @@
 import { type NextRequest } from 'next/server'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { getOrderById } from '@/lib/services/orders'
 
 export async function GET(
@@ -11,5 +11,7 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await getOrderById(session, parseInt(id, 10)))
+  const orderId = parseRouteId(id)
+  if (orderId === null) return invalidId('order id')
+  return toResponse(await getOrderById(session, orderId))
 }

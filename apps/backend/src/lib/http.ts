@@ -20,3 +20,13 @@ export const parseRouteId = (raw: string): number | null => {
   const id = Number(raw)
   return Number.isSafeInteger(id) && id > 0 ? id : null
 }
+
+/**
+ * The 400 a route returns for a path segment that is not an id.
+ *
+ * Exists so adopting `parseRouteId` at the ~45 sites that still used `parseInt`
+ * costs two lines each and they all answer alike. `what` names the segment, so
+ * `/api/products/1abc/webhooks/x` says which of the two ids was wrong.
+ */
+export const invalidId = (what = 'id'): NextResponse =>
+  NextResponse.json({ error: `Invalid ${what}` }, { status: 400 })

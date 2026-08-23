@@ -36,6 +36,16 @@ export const categories = pgTable('categories', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   name: text().notNull(),
   displayOrder: integer('display_order').notNull().default(0),
+  /**
+   * When the category was retired, or null while it is live.
+   *
+   * The same rule as `products.retiredAt`, one level up: `products.category_id` is
+   * ON DELETE CASCADE, so deleting a category deleted its products and cascaded
+   * their orders away with them. A category holding an ordered product is retired
+   * along with that product, so it survives as the `category_id` the retired rows
+   * point at.
+   */
+  retiredAt: timestamp('retired_at', { withTimezone: true }),
 })
 
 export const products = pgTable('products', {
@@ -53,6 +63,18 @@ export const products = pgTable('products', {
    * constraint that would break the legacy rows the migration backfills.
    */
   imageAlt: text('image_alt'),
+  /**
+   * When the product was retired from the catalogue, or null while it is live.
+   *
+   * A product that has been ordered cannot be deleted: `orders.product_id` is ON
+   * DELETE CASCADE, so the delete took the order history — and its
+   * `product_snapshot` — with it (issue #142). Retiring keeps the row as the
+   * referent its orders need; `deleteProduct` withdraws every environment offering
+   * at the same time, and cart-add and order creation both require an offering, so
+   * nothing can be ordered from a retired product. Products that were never
+   * ordered are still deleted outright.
+   */
+  retiredAt: timestamp('retired_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

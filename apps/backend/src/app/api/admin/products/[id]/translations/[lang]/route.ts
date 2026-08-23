@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { upsertTranslation } from '@/lib/services/admin/products'
 
 const UpsertTranslationSchema = z.object({
@@ -17,6 +17,8 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id, lang } = await params
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
 
   const body = await req.json().catch(() => null)
   const parsed = UpsertTranslationSchema.safeParse(body)
@@ -24,5 +26,5 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await upsertTranslation(parseInt(id, 10), lang, parsed.data))
+  return toResponse(await upsertTranslation(productId, lang, parsed.data, session.id))
 }

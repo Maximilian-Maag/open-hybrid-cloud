@@ -111,32 +111,74 @@ export const changePassword = async (
   return ok(undefined)
 }
 
+/** True for the unique-violation Postgres raises on users.email / users.sso_sub. */
+const isUniqueViolation = (e: unknown): boolean => {
+  const messages: string[] = []
+  if (e instanceof Error) {
+    messages.push(e.message)
+    const cause = (e as { cause?: unknown }).cause
+    if (cause instanceof Error) messages.push(cause.message)
+    else if (typeof cause === 'object' && cause !== null && 'message' in cause) {
+      messages.push(String((cause as { message: unknown }).message))
+    }
+  }
+  const code = (e as { code?: string; cause?: { code?: string } })
+  if (code?.code === '23505' || code?.cause?.code === '23505') return true
+  return messages.some((m) => m.includes('unique') || m.includes('duplicate'))
+}
+
+/**
+ * Find or create the local account behind an SSO identity.
+ *
+ * Returns null when no account can be established, which the callback route turns
+ * into `?error=account_error`. That case is real and used to be a 500: `users.email`
+ * is UNIQUE, so an SSO identity whose email matches an existing LOCAL account
+ * raised 23505 out of an insert nobody caught, and the user could never sign in
+ * (issue #142). Renaming an already-linked account into another user's email hits
+ * the same constraint on the UPDATE.
+ *
+ * The collision is refused rather than resolved by adopting the existing account.
+ * Linking on a matching email would make the id_token's email claim sufficient to
+ * take over any local account, root included; deliberate linking is an operator's
+ * decision (set `sso_sub` on the account), not something a login should do on its
+ * own. The reason lands in the server log, because that is where the operator who
+ * has to make that decision will be looking.
+ */
 export const upsertSsoUser = async (
   sub: string,
   email: string,
   name: string,
 ): Promise<{ id: number; email: string; name: string; role: string; active: boolean } | null> => {
+  // Projected, like every other read in this file: an unprojected `.returning()`
+  // hands back `passwordHash` on an object the callback route then builds a
+  // session from — no leak today, one `NextResponse.json(user)` away from one.
   const existing = await db
-    .select()
+    .select(safeUserColumns)
     .from(users)
     .where(eq(users.ssoSub, sub))
     .limit(1)
 
-  let user: typeof existing[0]
-  if (existing.length > 0) {
-    const [updated] = await db
-      .update(users)
-      .set({ email, name })
-      .where(eq(users.ssoSub, sub))
-      .returning()
-    user = updated
-  } else {
+  try {
+    if (existing.length > 0) {
+      const [updated] = await db
+        .update(users)
+        .set({ email, name })
+        .where(eq(users.ssoSub, sub))
+        .returning(safeUserColumns)
+      return updated ?? null
+    }
+
     const [created] = await db
       .insert(users)
       .values({ email, name, role: 'project_manager', ssoSub: sub, active: true })
-      .returning()
-    user = created
+      .returning(safeUserColumns)
+    return created ?? null
+  } catch (e) {
+    if (!isUniqueViolation(e)) throw e
+    console.error(
+      `[auth] Refused the SSO login for sub ${sub}: the email ${email} already belongs to another account. ` +
+        'Link it deliberately by setting that account\'s sso_sub, or change one of the two addresses.',
+    )
+    return null
   }
-
-  return user
 }

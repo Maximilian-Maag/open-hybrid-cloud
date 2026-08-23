@@ -2,6 +2,8 @@ import { db } from '@/lib/db/client'
 import { pipelineStacks } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
+import { logAudit, changedFields } from '@/lib/audit'
+import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 import type { PipelineStack, CreatePipelineStackRequest, UpdatePipelineStackRequest } from '@open-hybrid-cloud/types'
 
 const publicColumns = {
@@ -25,6 +27,7 @@ export const listPipelineStacks = async (productId: number): Promise<Result<Pipe
 export const createPipelineStack = async (
   productId: number,
   input: CreatePipelineStackRequest,
+  actorId?: number,
 ): Promise<Result<PipelineStack>> => {
   const [row] = await db
     .insert(pipelineStacks)
@@ -37,6 +40,13 @@ export const createPipelineStack = async (
     })
     .returning(publicColumns)
 
+  await logAudit(
+    actorId ?? null,
+    'pipeline_stack.created',
+    productId,
+    `Stack ${input.name} (#${row.id}) for environment #${input.environmentId} with ${input.steps.length} step(s)`,
+  )
+
   return ok(row as PipelineStack)
 }
 
@@ -44,7 +54,10 @@ export const updatePipelineStack = async (
   productId: number,
   stackId: number,
   input: UpdatePipelineStackRequest,
+  actorId?: number,
 ): Promise<Result<PipelineStack>> => {
+  if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
+
   const [updated] = await db
     .update(pipelineStacks)
     .set({
@@ -56,15 +69,30 @@ export const updatePipelineStack = async (
     .returning(publicColumns)
 
   if (!updated) return err(404, 'Not found')
+
+  await logAudit(
+    actorId ?? null,
+    'pipeline_stack.updated',
+    productId,
+    `Stack #${stackId}: ${changedFields(input)}`,
+  )
+
   return ok(updated as PipelineStack)
 }
 
-export const deletePipelineStack = async (productId: number, stackId: number): Promise<Result<void>> => {
+export const deletePipelineStack = async (
+  productId: number,
+  stackId: number,
+  actorId?: number,
+): Promise<Result<void>> => {
   const deleted = await db
     .delete(pipelineStacks)
     .where(and(eq(pipelineStacks.id, stackId), eq(pipelineStacks.productId, productId)))
     .returning({ id: pipelineStacks.id })
 
   if (!deleted.length) return err(404, 'Not found')
+
+  await logAudit(actorId ?? null, 'pipeline_stack.deleted', productId, `Stack #${stackId} deleted`)
+
   return ok(undefined)
 }

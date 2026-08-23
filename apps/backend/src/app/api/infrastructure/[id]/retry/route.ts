@@ -1,6 +1,6 @@
-import { type NextRequest, NextResponse } from 'next/server'
+import { type NextRequest } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { retryProvisioning } from '@/lib/services/infrastructure'
 
 /**
@@ -15,10 +15,9 @@ export async function POST(
   const session = await requireRole('admin')(req)
   if (!isAuth(session)) return session
 
-  const id = Number((await params).id)
-  if (!Number.isInteger(id) || id <= 0) {
-    return NextResponse.json({ error: 'Invalid infrastructure id' }, { status: 400 })
-  }
+  const { id } = await params
+  const elementId = parseRouteId(id)
+  if (elementId === null) return invalidId('infrastructure id')
 
-  return toResponse(await retryProvisioning(session, id))
+  return toResponse(await retryProvisioning(session, elementId))
 }

@@ -292,22 +292,20 @@ describe('GET /api/admin/products/{id}/versions/diff', () => {
     expect((await GET(req('?from=abc&to=abc', rootAuth), p('abc'))).status).toBe(400)
   })
 
-  // Issue #143: the product id and both version ids are parsed with `Number()`
-  // rather than `parseRouteId` from lib/http.ts, which is digits-only. Hex,
-  // exponent, signed and whitespace-padded spellings all resolve to real rows.
-  // Asserting the CURRENT behaviour.
+  // Issue #143 made digits-only the contract for a route id: `parseRouteId` in
+  // lib/http.ts refuses anything `/^\d+$/` does not match, so a non-canonical
+  // spelling of the product id is a 400 before the diff is ever attempted. `from`
+  // and `to` are query parameters rather than route segments, so they are outside
+  // that contract and still go through `Number()`; they are held canonical here so
+  // the 400 is provably the path segment's doing.
   it.each([
     ['hex', (id: number) => `0x${id.toString(16)}`],
     ['exponent', (id: number) => `${id}e0`],
     ['signed', (id: number) => `+${id}`],
     ['whitespace-padded', (id: number) => ` ${id} `],
-  ])('accepts a %s spelling of the product and version ids (#143)', async (_label, spell) => {
+  ])('refuses a %s spelling of a real product id (#143)', async (_label, spell) => {
     const { product, rootAuth, older, newer } = await twoVersions()
-    const res = await GET(
-      req(`?from=${encodeURIComponent(spell(older.id))}&to=${encodeURIComponent(spell(newer.id))}`, rootAuth),
-      p(spell(product.id)),
-    )
-    expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ fields: [{ field: 'price' }] })
+    const res = await GET(req(`?from=${older.id}&to=${newer.id}`, rootAuth), p(spell(product.id)))
+    expect(res.status).toBe(400)
   })
 })

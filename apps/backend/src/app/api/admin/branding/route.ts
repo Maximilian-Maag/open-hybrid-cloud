@@ -26,5 +26,5 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateBranding(parsed.data))
+  return toResponse(await updateBranding(parsed.data, session.id))
 }

@@ -7,5 +7,5 @@ export async function POST(req: NextRequest) {
   const session = await requireRole('root')(req)
   if (!isAuth(session)) return session
 
-  return toResponse(await refreshExchangeRates())
+  return toResponse(await refreshExchangeRates(session.id))
 }

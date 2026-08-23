@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { parseRouteId, invalidId } from '@/lib/http'
 import { getProductImage } from '@/lib/services/catalog'
 
 export async function GET(
@@ -6,7 +7,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const result = await getProductImage(parseInt(id, 10))
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
+
+  const result = await getProductImage(productId)
 
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
   if (!result.data) return new NextResponse(null, { status: 404 })

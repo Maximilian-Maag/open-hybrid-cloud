@@ -14,6 +14,16 @@ export interface CiSource {
   projectRef: string | null
 }
 
+/**
+ * Unwrap the single row of a `count()` select.
+ *
+ * The reference checks in front of the admin deletes used to `select({ id })`
+ * and take `.length`, which materializes every referencing row inside the
+ * transaction to learn a number Postgres can return on its own.
+ */
+export const countWhere = async (query: PromiseLike<{ n: number }[]>): Promise<number> =>
+  (await query)[0].n
+
 export const findProductName = async (productId: number): Promise<string> => {
   const rows = await db
     .select({ name: productTranslations.name })

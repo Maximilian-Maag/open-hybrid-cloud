@@ -34,8 +34,9 @@ import {
 } from '@/lib/ci'
 import { parseTerraformVariables } from '@/lib/tfparser'
 import { db } from '@/lib/db/client'
-import { ciSources } from '@/lib/db/schema'
+import { ciSources, auditLog } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { createUser, createEnvironment } from '@/test/helpers'
 
 const mockedListProjects = vi.mocked(ciListProjects)
 const mockedListBranches = vi.mocked(ciListBranches)
@@ -211,5 +212,68 @@ describe('importCiVars', () => {
         { name: 'region', type: 'string', description: '', default: '' },
       ])
     }
+  })
+})
+
+describe('deleteCiSource reference checks (issue #142)', () => {
+  // deployment_environments.ci_source_id is NOT NULL with no ON DELETE clause, so
+  // the bare delete raised 23503 and escaped as an unhandled 500.
+  it('returns 409, not a 500, when an environment still uses the source', async () => {
+    const seed = await seedSource()
+    await createEnvironment(seed.id, undefined, 'Staging')
+
+    const result = await deleteCiSource(seed.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(409)
+      expect(result.message).toContain('deployment environment')
+      // Naming the blockers is what makes the 409 actionable.
+      expect(result.message).toContain('Staging')
+    }
+
+    expect((await db.select().from(ciSources).where(eq(ciSources.id, seed.id))).length).toBe(1)
+  })
+
+  it('still deletes an unreferenced source', async () => {
+    const seed = await seedSource()
+    const result = await deleteCiSource(seed.id)
+    expect(result.ok).toBe(true)
+    expect((await db.select().from(ciSources).where(eq(ciSources.id, seed.id))).length).toBe(0)
+  })
+})
+
+describe('CI source audit trail (issue #137)', () => {
+  it('records create, update and delete without ever recording the access token', async () => {
+    const actor = await createUser({ role: 'root' })
+
+    const created = await createCiSource(
+      { name: 'audited', url: 'https://gl.example.com', accessToken: 'tok-super-secret', provider: 'gitlab' },
+      actor.id,
+    )
+    if (!created.ok) throw new Error('seed failed')
+
+    await updateCiSource(created.data.id, { accessToken: 'rotated-secret-value' }, actor.id)
+    await deleteCiSource(created.data.id, actor.id)
+
+    const rows = await db.select().from(auditLog)
+    expect(rows.map((r) => r.action).sort()).toEqual([
+      'ci_source.created',
+      'ci_source.deleted',
+      'ci_source.updated',
+    ])
+    for (const row of rows) {
+      expect(row.userId).toBe(actor.id)
+      expect(row.details).not.toContain('tok-super-secret')
+      expect(row.details).not.toContain('rotated-secret-value')
+    }
+    // The rotation is still visible — by field name.
+    expect(rows.find((r) => r.action === 'ci_source.updated')?.details).toBe('Changed: accessToken')
+  })
+
+  it('rejects an empty update with a 400 instead of a 500', async () => {
+    const seed = await seedSource()
+    const result = await updateCiSource(seed.id, {})
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
   })
 })

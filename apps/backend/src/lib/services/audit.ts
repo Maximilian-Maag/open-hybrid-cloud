@@ -20,17 +20,39 @@ export interface AuditRow {
   createdAt: Date | null
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * A `from`/`to` filter value as an instant, or null when it is not a date.
+ *
+ * A bare `YYYY-MM-DD` is widened to cover the whole named day, so a single-day
+ * range returns that day's entries rather than only those written exactly at
+ * midnight — the convention `parseInfraFilters` and `parseCostFilters` follow.
+ *
+ * Exported so `parseAuditFilters` can validate a value through the very code that
+ * will interpret it. `to` used to append `T23:59:59Z` unconditionally, so a full
+ * ISO timestamp became an unparseable string and the bound was dropped without a
+ * word (issue #143).
+ */
+export const auditBoundary = (raw: string, edge: 'start' | 'end'): Date | null => {
+  const iso = DATE_ONLY.test(raw)
+    ? `${raw}T${edge === 'start' ? '00:00:00.000Z' : '23:59:59.999Z'}`
+    : raw
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 const buildConditions = (filters: AuditFilters) => {
   const conditions = []
   if (filters.userId) conditions.push(eq(auditLog.userId, filters.userId))
   if (filters.action) conditions.push(ilike(auditLog.action, `%${filters.action}%`))
   if (filters.from) {
-    const d = new Date(filters.from)
-    if (!isNaN(d.getTime())) conditions.push(gte(auditLog.createdAt, d))
+    const d = auditBoundary(filters.from, 'start')
+    if (d) conditions.push(gte(auditLog.createdAt, d))
   }
   if (filters.to) {
-    const d = new Date(`${filters.to}T23:59:59Z`)
-    if (!isNaN(d.getTime())) conditions.push(lte(auditLog.createdAt, d))
+    const d = auditBoundary(filters.to, 'end')
+    if (d) conditions.push(lte(auditLog.createdAt, d))
   }
   return conditions
 }
@@ -42,7 +64,11 @@ export const listAuditLog = async (
 ): Promise<Result<{ rows: AuditRow[]; total: number }>> => {
   const conditions = buildConditions(filters)
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined
-  const clampedPageSize = Math.min(pageSize, 200)
+  // The route rejects a malformed page/pageSize with a 400 (parseAuditFilters), so
+  // this is belt and braces for any other caller: a NaN or a negative reaching
+  // LIMIT/OFFSET is a syntax error from Postgres, i.e. an unhandled 500.
+  const clampedPageSize = Math.min(Math.max(1, Math.trunc(pageSize) || 1), 200)
+  const clampedPage = Math.max(1, Math.trunc(page) || 1)
 
   const [countResult, rows] = await Promise.all([
     db
@@ -64,11 +90,23 @@ export const listAuditLog = async (
       .where(whereClause)
       .orderBy(sql`${auditLog.createdAt} DESC`)
       .limit(clampedPageSize)
-      .offset((page - 1) * clampedPageSize),
+      .offset((clampedPage - 1) * clampedPageSize),
   ])
 
   return ok({ rows: rows as AuditRow[], total: countResult[0]?.count ?? 0 })
 }
+
+/**
+ * Ceiling on an export.
+ *
+ * The export had no LIMIT at all: one unfiltered GET on a mature installation
+ * selected every audit row ever written, joined them to `users`, buffered them in
+ * the route and — for `format=pdf` — laid every one of them out with pdfkit. That
+ * is a denial of service any admin can trigger by accident. 50 000 rows is far
+ * more than a compliance export needs in one go and still bounded; a longer
+ * history is exported a date range at a time.
+ */
+export const AUDIT_EXPORT_MAX_ROWS = 50_000
 
 export const exportAuditLog = async (filters: AuditFilters): Promise<Result<AuditRow[]>> => {
   const conditions = buildConditions(filters)
@@ -88,6 +126,7 @@ export const exportAuditLog = async (filters: AuditFilters): Promise<Result<Audi
     .leftJoin(users, eq(auditLog.userId, users.id))
     .where(whereClause)
     .orderBy(sql`${auditLog.createdAt} ASC`)
+    .limit(AUDIT_EXPORT_MAX_ROWS)
 
   return ok(rows as AuditRow[])
 }

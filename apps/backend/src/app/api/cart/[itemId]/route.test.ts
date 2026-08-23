@@ -211,24 +211,24 @@ describe('cart item id parsing', () => {
     },
   )
 
-  // Issue #143: this route parses its id with `Number()` + `Number.isInteger`
-  // rather than `parseRouteId` from lib/http.ts, which is digits-only. `Number`
-  // accepts hex, exponent, signed and whitespace-padded spellings, so several
-  // strings that are not a decimal id still resolve to a real row. Asserting the
-  // CURRENT behaviour — this is a documented deviation, not the intended contract.
+  // Issue #143 made digits-only the contract for a route id: `parseRouteId` in
+  // lib/http.ts refuses anything `/^\d+$/` does not match. Under the `Number()`
+  // parse this route used before, every spelling below resolved to a real row and
+  // acted on it, so each of these is a write that used to land.
   it.each([
     ['hex', (id: number) => `0x${id.toString(16)}`],
     ['exponent', (id: number) => `${id}e0`],
     ['signed', (id: number) => `+${id}`],
     ['whitespace-padded', (id: number) => ` ${id} `],
     ['trailing-zero decimal', (id: number) => `${id}.0`],
-  ])('accepts a %s spelling of a real id (#143)', async (_label, spell) => {
+  ])('refuses a %s spelling of a real id (#143)', async (_label, spell) => {
     const { pm, product, env, auth } = await setup()
-    const item = await seedCartItem(pm.id, product.id, env.id)
+    const item = await seedCartItem(pm.id, product.id, env.id, { KEEP: 'me' })
 
-    const res = await PUT(req({ parameters: { REACHED: 'yes' } }, auth), p(spell(item.id)))
-    expect(res.status).toBe(200)
+    expect((await PUT(req({ parameters: { REACHED: 'yes' } }, auth), p(spell(item.id)))).status).toBe(400)
+    expect((await DELETE(req(undefined, auth, 'DELETE'), p(spell(item.id)))).status).toBe(400)
+
     const [stored] = await db.select().from(cartItems).where(eq(cartItems.id, item.id))
-    expect(stored.parameters).toEqual({ REACHED: 'yes' })
+    expect(stored.parameters).toEqual({ KEEP: 'me' })
   })
 })

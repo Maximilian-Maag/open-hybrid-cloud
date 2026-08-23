@@ -28,6 +28,6 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  await updateAiConfig(parsed.data)
+  await updateAiConfig(parsed.data, session.id)
   return NextResponse.json({ success: true })
 }

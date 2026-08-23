@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
 import { toResponse } from '@/lib/http'
 import { listCart, addToCart, clearCart, pruneOrphanedCartItems } from '@/lib/services/cart'
+import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
 const AddToCartSchema = z.object({
   productId: z.number().int().positive(),
@@ -12,7 +13,7 @@ const AddToCartSchema = z.object({
   // The chosen size (issue #98) and how many elements the line asks for (#104).
   // Both ARE validated here, by the service: unlike the parameters they are not
   // filled in later, they are what the line is.
-  sizeCode: z.string().min(1).max(64).nullable().optional(),
+  sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional(),
   quantity: z.number().int().positive().optional(),
 })
 

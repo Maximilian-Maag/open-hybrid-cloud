@@ -3,7 +3,7 @@ import { productEnvironments, productEnvironmentSizes } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { recordProductVersion } from '@/lib/services/versions'
-import { listAllSizes, type OfferingSize } from '@/lib/services/sizes'
+import { listAllSizes, SIZE_CODE_MAX_LENGTH, type OfferingSize } from '@/lib/services/sizes'
 
 /**
  * Admin CRUD for the sizes of one offering (issue #98).
@@ -37,7 +37,7 @@ const PRICE_PATTERN = /^\d{1,10}(\.\d{1,2})?$/
  * restricted to what is safe to pass through a shell and stable to compare:
  * letters, digits, dash, underscore and dot.
  */
-const CODE_PATTERN = /^[A-Za-z0-9._-]{1,32}$/
+const CODE_PATTERN = new RegExp(`^[A-Za-z0-9._-]{1,${SIZE_CODE_MAX_LENGTH}}$`)
 
 const assertOfferingExists = async (
   productId: number,

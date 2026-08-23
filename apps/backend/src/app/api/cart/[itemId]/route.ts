@@ -3,13 +3,14 @@ import { z } from 'zod'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
 import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { updateCartItem, removeFromCart } from '@/lib/services/cart'
+import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
 // Every field optional: this is a patch, so sending only `quantity` — which is
 // what the cart's quantity control does — must not wipe the parameter prefill.
 const UpdateCartItemSchema = z
   .object({
     parameters: z.record(z.string()).optional(),
-    sizeCode: z.string().min(1).max(64).nullable().optional(),
+    sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional(),
     quantity: z.number().int().positive().optional(),
   })
   .refine((body) => Object.keys(body).length !== 0, {

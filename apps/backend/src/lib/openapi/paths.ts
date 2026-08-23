@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi'
 import { registry } from './registry'
+import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
 extendZodWithOpenApi(z)
 
@@ -510,7 +511,7 @@ registry.registerPath({
             productId: z.number().int().positive(),
             environmentId: z.number().int().positive(),
             parameters: z.record(z.string()).optional(),
-            sizeCode: z.string().min(1).max(64).nullable().optional().openapi({
+            sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional().openapi({
               description:
                 'Required when the offering defines sizes, refused when it does not (issue #98). Unlike ' +
                 'the parameters this IS validated here: it is what the line is, not something filled in ' +
@@ -556,7 +557,7 @@ registry.registerPath({
         'application/json': {
           schema: z.object({
             parameters: z.record(z.string()).optional(),
-            sizeCode: z.string().min(1).max(64).nullable().optional(),
+            sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional(),
             quantity: z.number().int().positive().optional(),
           }),
         },
@@ -1085,7 +1086,7 @@ registry.registerPath({
             environmentId: z.number().int().positive(),
             costCenterId: z.number().int().positive().optional(),
             parameters: z.record(z.string()),
-            sizeCode: z.string().min(1).max(64).nullable().optional().openapi({
+            sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional().openapi({
               description:
                 'The size to order (issue #98). Mandatory when the offering defines sizes and refused ' +
                 "when it does not — what is charged is the size's price, and the order snapshot records it.",
@@ -2431,7 +2432,7 @@ registry.registerPath({
       content: {
         'application/json': {
           schema: z.object({
-            code: z.string().min(1).max(32).openapi({
+            code: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).openapi({
               description: 'Letters, digits, dot, dash and underscore only — it reaches CI as SIZE.',
             }),
             label: z.string().max(120).optional(),

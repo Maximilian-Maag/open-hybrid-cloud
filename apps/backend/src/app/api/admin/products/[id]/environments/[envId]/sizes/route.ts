@@ -3,11 +3,12 @@ import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
 import { toResponse } from '@/lib/http'
 import { listSizes, upsertSize } from '@/lib/services/admin/sizes'
+import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
 const UpsertSizeSchema = z.object({
   // The natural key an admin thinks in, so POSTing the same code corrects that
   // size rather than creating a second one. Character set enforced in the service.
-  code: z.string().min(1).max(32),
+  code: z.string().min(1).max(SIZE_CODE_MAX_LENGTH),
   label: z.string().max(120).optional(),
   price: z.string().max(20).optional(),
   currency: z.string().length(3).optional(),

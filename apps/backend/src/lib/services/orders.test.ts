@@ -361,6 +361,59 @@ describe('createOrder — validation & ownership', () => {
     expect(dbOrder.parameters).not.toHaveProperty('FOO')
   })
 
+  it('places an order for a REQUIRED sensitive parameter that has a stored default', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'API_KEY',
+      type: 'string',
+      required: true,
+      sensitive: true,
+      defaultValue: 'the-real-secret',
+    })
+
+    // The form is never shown this value, so it can only send back the sentinel
+    // or nothing. Checking `required` before applying the default made such a
+    // product impossible to order: the server had the value and refused to use it.
+    for (const submitted of [{}, { API_KEY: '[redacted]' }]) {
+      const result = await createOrder(makeSession(admin), {
+        projectId: project.id,
+        productId: product.id,
+        environmentId: env.id,
+        parameters: submitted,
+      })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const [dbOrder] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+      expect(dbOrder.parameters).toEqual({ API_KEY: 'the-real-secret' })
+    }
+  })
+
+  it('still refuses a required parameter that has no default to fall back on', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.insert(parameters).values({
+      scope: 'product',
+      scopeId: product.id,
+      name: 'REGION',
+      type: 'string',
+      required: true,
+      defaultValue: '',
+    })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.message).toMatch(/Missing required parameter: REGION/)
+  })
+
   it('treats the redaction sentinel as "unchanged", not as the value (#131)', async () => {
     const { admin, product, env, project } = await buildBase()
     await db.insert(parameters).values({

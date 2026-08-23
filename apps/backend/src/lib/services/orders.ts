@@ -193,8 +193,18 @@ const validateAndApplyParameters = (
     const provided = value !== '' && value !== REDACTED
 
     if (!provided) {
+      // The default is applied BEFORE the required check, not after. A required
+      // parameter that has a stored default is satisfied by it — and since #131
+      // reads that value back redacted, the form can only ever return the
+      // sentinel or an empty string for a required SENSITIVE one. Checking
+      // `required` first made those orders impossible to place at all: the
+      // server held the value, refused to use it, and asked the user for
+      // something they are deliberately never shown.
+      if (def.defaultValue !== '') {
+        result[def.name] = def.defaultValue
+        continue
+      }
       if (def.required) return err(400, `Missing required parameter: ${def.name}`)
-      if (def.defaultValue !== '') result[def.name] = def.defaultValue
       continue
     }
 

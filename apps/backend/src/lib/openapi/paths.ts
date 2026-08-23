@@ -2587,6 +2587,7 @@ registry.registerPath({
     400: { description: 'The order is not exactly this product\'s gallery' },
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
+    404: { description: 'No such product' },
   },
 })
 

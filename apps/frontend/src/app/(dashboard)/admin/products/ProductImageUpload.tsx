@@ -251,6 +251,14 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
                 <input
                   id={`product-image-alt-${image.id}`}
                   type="text"
+                  // Keyed on the stored value, not `defaultValue` alone. The server
+                  // canonicalises the description (it trims), and `load()` refetches
+                  // after every change — an uncontrolled input keeps whatever was
+                  // typed, so the field and the row disagree and the next blur PATCHes
+                  // a value the server already rejected the whitespace of. The key
+                  // remounts the input when the stored value actually changes, which
+                  // keeps typing uninterrupted in between.
+                  key={`${image.id}:${image.alt}`}
                   defaultValue={image.alt}
                   maxLength={MAX_ALT}
                   onBlur={(e) => {

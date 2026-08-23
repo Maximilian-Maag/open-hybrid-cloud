@@ -9,6 +9,19 @@ import { parseRouteId } from '@/lib/http'
  * stored MIME type rather than a guess, and a one-hour public cache because the
  * bytes at a given image id never change — a replaced picture is a new row with a
  * new id, so there is nothing to invalidate.
+ *
+ * Unauthenticated on purpose, agreeing with `/catalog/{id}/image` rather than with
+ * the `requireAuth` on `/catalog` and `/catalog/{id}`. Both image routes are only
+ * ever reached as an `<img src>` — ProductGallery, ProductImage, the admin upload
+ * preview. The browser's image loader sends no `Authorization` header, and this API
+ * is a different origin (:3001) from the frontend (:3000) that holds the session
+ * cookie, so `requireAuth` would have nothing to read and would turn every picture
+ * in the app into a broken image. Serving these under the token means fetching each
+ * one as a blob instead, which also gives up the shared HTTP cache above.
+ *
+ * The exposure is the bytes alone, to whoever guesses a (product, image) pair: no
+ * public route lists either id, and the pairing is checked in the service, so a URL
+ * cannot be walked across products.
  */
 export async function GET(
   _req: NextRequest,

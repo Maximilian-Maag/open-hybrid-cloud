@@ -4011,11 +4011,11 @@ The \textbf{Role} column uses the following abbreviations:
   POST & \code{/api/auth/logout}                                     & Stateless no-op (client discards JWT)   & auth \\
   GET  & \code{/api/health}                                          & Health check + bootstrap trigger        & public \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Catalog}} \\[2pt]
+  \multicolumn{4}{@{}l}{\textit{Catalog (image bytes are public: a browser image request carries no bearer token)}} \\[2pt]
   GET  & \code{/api/catalog}                                         & List products by category               & auth \\
   GET  & \code{/api/catalog/\{id\}}                                  & Product detail with environments        & auth \\
-  GET  & \code{/api/catalog/\{id\}/image}                            & Serve the leading product image (BYTEA) & auth \\
-  GET  & \code{/api/catalog/\{id\}/images/\{imageId\}}                & Serve one gallery image (BYTEA)         & auth \\
+  GET  & \code{/api/catalog/\{id\}/image}                            & Serve the leading product image (BYTEA) & public \\
+  GET  & \code{/api/catalog/\{id\}/images/\{imageId\}}                & Serve one gallery image (BYTEA)         & public \\
   POST & \code{/api/catalog/\{id\}/order}                            & Place an order                          & auth \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Orders}} \\[2pt]

@@ -40,6 +40,19 @@ describe('GET /api/catalog/[id]/images/[imageId]', () => {
     expect((await call(String(p.id), '999999')).status).toBe(404)
   })
 
+  it('serves without an Authorization header, agreeing with /catalog/{id}/image', async () => {
+    // Pinned rather than incidental: the routes either side of this one require a
+    // bearer token, and the reason these two do not is that a browser image request
+    // cannot carry one. Flipping this to requireAuth breaks every picture in the
+    // app, so it should fail here first.
+    const cat = await createCategory()
+    const p = await createProduct(cat.id, 'Anon')
+    const image = await createProductImage(p.id)
+
+    const res = await call(String(p.id), String(image.id))
+    expect(res.status).toBe(200)
+  })
+
   it('400s on an id that is not a plain number', async () => {
     const cat = await createCategory()
     const p = await createProduct(cat.id, 'Bad')

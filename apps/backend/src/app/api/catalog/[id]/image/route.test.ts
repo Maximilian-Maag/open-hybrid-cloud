@@ -46,6 +46,16 @@ describe('GET /api/catalog/[id]/image', () => {
     expect((await call('999999')).status).toBe(404)
   })
 
+  it('serves without an Authorization header, agreeing with the gallery route', async () => {
+    // The same pinned contract as /catalog/{id}/images/{imageId}: both are read by
+    // an image tag, which sends no bearer token and no cross-origin cookie.
+    const cat = await createCategory()
+    const p = await createProduct(cat.id, 'Anon')
+    await createProductImage(p.id, { data: Buffer.from([1, 2, 3]) })
+
+    expect((await call(String(p.id))).status).toBe(200)
+  })
+
   it('sets a Cache-Control hint so browsers can cache within an hour', async () => {
     const cat = await createCategory()
     const p = await createProduct(cat.id, 'Cached')

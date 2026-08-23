@@ -451,7 +451,12 @@ test.describe('Accessibility — things axe cannot check', () => {
 test.describe('Accessibility — detail pages', () => {
   // t('breadcrumb', 'en'). The saved session carries no lang cookie, so these
   // pages render in English.
-  const crumbLabel = 'Breadcrumb'
+  // Located structurally, NOT by the English label. `getLang()` falls back to the
+  // Accept-Language header when no cookie is set, so a runner negotiating any
+  // other locale would translate the aria-label out from under a hard-coded
+  // selector — and the test would fail for a language setting rather than for an
+  // accessibility problem. Any labelled nav inside main is the trail; there is
+  // only one.
 
   const DETAIL_PAGES = [
     { from: '/infrastructure', link: 'a[href^="/infrastructure/"]', name: 'an infrastructure element' },
@@ -495,7 +500,7 @@ test.describe('Accessibility — detail pages', () => {
       // which reads as a second navigation landmark rather than a location. The
       // last crumb is the assertion that matters: a trail whose final item is not
       // marked as the current page states a path, not a position.
-      const trail = page.locator(`nav[aria-label="${crumbLabel}"] ol`)
+      const trail = page.locator('main nav[aria-label] ol')
       await expect(trail, 'expected a breadcrumb trail (WCAG 2.4.8)').toBeVisible()
       await expect(trail.locator('li')).not.toHaveCount(0)
       await expect(trail.locator('[aria-current="page"]')).toHaveCount(1)
@@ -585,7 +590,8 @@ test.describe('Accessibility — AAA clauses with no axe rule', () => {
     // detail pages it needs no seed data, so this clause is checked even in an
     // empty environment.
     await page.goto('/admin/products/new')
-    const trail = page.locator('nav[aria-label="Breadcrumb"] ol')
+    // Structural, not the English label — see the note on the other trail locator.
+    const trail = page.locator('main nav[aria-label] ol')
     await expect(trail).toBeVisible()
     await expect(trail.locator('> li')).toHaveCount(3)
     await expect(trail.locator('[aria-current="page"]')).toHaveCount(1)

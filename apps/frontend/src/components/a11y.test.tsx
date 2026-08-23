@@ -193,7 +193,9 @@ function linkWrappedButtons(): string[] {
       else if (entry.name.endsWith('.tsx') && !entry.name.endsWith('.test.tsx')) {
         // Table's doc comment names both components in one sentence, and the
         // negative control above is a deliberate one — hence the two exclusions.
-        const source = readFileSync(full, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+        const source = readFileSync(full, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '')
         if (/<Link\b[^>]*>(?:(?!<\/Link>)[\s\S])*?<Button\b/.test(source)) {
           found.push(relative(SRC_DIR, full))
         }

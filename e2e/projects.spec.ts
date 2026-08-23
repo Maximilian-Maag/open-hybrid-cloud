@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Projects', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,7 +9,7 @@ test.describe('Projects', () => {
 
   test('projects page loads without error', async ({ page }) => {
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('shows page title "Projects"', async ({ page }) => {
@@ -79,7 +79,9 @@ test.describe('Projects', () => {
       const firstLink = dataRows.first().getByRole('link').first()
       if (await firstLink.count() > 0) {
         await firstLink.click()
-        await expect(page).toHaveURL(/\/projects\/\d+/)
+        // See dashboard.spec.ts: a first-request compile under `next dev` outlasts
+        // the default expect timeout.
+        await page.waitForURL(/\/projects\/\d+/, { timeout: 30_000 })
       }
     }
   })

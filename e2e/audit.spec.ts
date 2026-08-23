@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Audit log', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,7 +9,7 @@ test.describe('Audit log', () => {
 
   test('audit page loads without error', async ({ page }) => {
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('shows page title "Audit Log"', async ({ page }) => {
@@ -68,7 +68,7 @@ test.describe('Audit log', () => {
     await page.getByLabel(/^action$/i).fill('login')
     // Table should reload — just check it doesn't crash
     await page.waitForTimeout(600)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('shows pagination when there are multiple pages', async ({ page }) => {

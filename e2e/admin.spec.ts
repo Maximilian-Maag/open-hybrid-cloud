@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Admin area', () => {
   test.beforeEach(async ({ page }) => {
@@ -36,79 +36,79 @@ test.describe('Admin area', () => {
   test('user management page loads', async ({ page }) => {
     await page.goto('/admin/users')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('categories page loads', async ({ page }) => {
     await page.goto('/admin/categories')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('products page loads', async ({ page }) => {
     await page.goto('/admin/products')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('environments page loads', async ({ page }) => {
     await page.goto('/admin/environments')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('cost centers page loads', async ({ page }) => {
     await page.goto('/admin/cost-centers')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('branding page loads', async ({ page }) => {
     await page.goto('/admin/branding')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('SMTP config page loads', async ({ page }) => {
     await page.goto('/admin/config/smtp')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('AI config page loads', async ({ page }) => {
     await page.goto('/admin/config/ai')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('exchange rates page loads', async ({ page }) => {
     await page.goto('/admin/exchange-rates')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('CI sources page loads', async ({ page }) => {
     await page.goto('/admin/ci-sources')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('global parameters page loads', async ({ page }) => {
     await page.goto('/admin/parameters')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('approvals page is accessible to root user', async ({ page }) => {
     await page.goto('/approvals')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('audit log page is accessible to root user', async ({ page }) => {
     await page.goto('/audit')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('unauthenticated user is redirected to /login from /admin', async ({ page }) => {
@@ -120,7 +120,7 @@ test.describe('Admin area', () => {
   test('new product page loads', async ({ page }) => {
     await page.goto('/admin/products/new')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 })
 

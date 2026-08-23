@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Product Detail Page', () => {
   test('product detail page loads from a catalogue tile', async ({ page }) => {
@@ -19,7 +19,7 @@ test.describe('Product Detail Page', () => {
     // Navigate to product detail
     await placeOrderLinks.first().click()
     await expect(page).toHaveURL(/\/catalog\/\d+/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('product detail page shows description and environments', async ({ page }) => {
@@ -133,7 +133,7 @@ test.describe('Order Placement Flow', () => {
     // 5s default. (These two tests only started running once the database had
     // orders in it — see issue #89.)
     await expect(page).toHaveURL(/\/orders\/\d+/, { timeout: 30_000 })
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
 
     // Order detail always shows these sections
     await expect(page.getByText(/product/i).first()).toBeVisible()
@@ -180,7 +180,7 @@ test.describe('Catalog - Category Filter', () => {
     await categoryButtons.first().click()
 
     // After clicking, page still shows either products or empty state (no 500 error)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
     await expect(
       page.getByRole('link', { name: /^details$/i }).or(page.getByText(/no products found/i)).first()
     ).toBeVisible({ timeout: 5000 })

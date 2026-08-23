@@ -49,23 +49,26 @@ test.describe('Dashboard', () => {
 
   test('navigates to catalog from Browse Catalog button', async ({ page }) => {
     await page.getByRole('link', { name: /browse catalog/i }).click()
-    await expect(page).toHaveURL(/\/catalog/)
+    // waitForURL, not toHaveURL: the target route is compiled on first request by
+    // `next dev`, which on a cold CI runner takes longer than the 5s default
+    // expect timeout. Same assertion, a budget that matches the server.
+    await page.waitForURL(/\/catalog/, { timeout: 30_000 })
   })
 
   test('navigates to orders from top nav', async ({ page }) => {
     await page.getByRole('link', { name: /^orders$/i }).first().click()
-    await expect(page).toHaveURL(/\/orders/)
+    await page.waitForURL(/\/orders/, { timeout: 30_000 })
   })
 
   test('navigates to projects from top nav', async ({ page }) => {
     await page.getByRole('link', { name: /^projects$/i }).first().click()
-    await expect(page).toHaveURL(/\/projects/)
+    await page.waitForURL(/\/projects/, { timeout: 30_000 })
   })
 
   test('header search submits and goes to catalog with query', async ({ page }) => {
     await page.getByPlaceholder(/search products/i).fill('server')
     await page.keyboard.press('Enter')
-    await expect(page).toHaveURL(/\/catalog\?q=server/)
+    await page.waitForURL(/\/catalog\?q=server/, { timeout: 30_000 })
   })
 
   test('sign out returns to login page', async ({ page }) => {

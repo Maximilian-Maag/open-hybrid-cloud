@@ -417,6 +417,21 @@ test.describe('Infrastructure detail', () => {
 
   test('an unknown element is a 404, not a broken page', async ({ page }) => {
     await page.goto('/infrastructure/999999')
-    await expectNoServerError(page)
+
+    // Deliberately NOT expectNoServerError. That helper asserts the not-found
+    // text is absent, which is the exact opposite of what this test wants: the
+    // not-found page IS the correct answer for an id that does not exist.
+    //
+    // Asserting the HTTP status does not work either — it is 200. The page is a
+    // server component that calls notFound() only after awaiting the API, by
+    // which point the dashboard layout has already streamed and the headers are
+    // gone. Measured, not assumed: page.goto() reports 200 here.
+    //
+    // So assert what the user actually sees: the app frame rendered, it says
+    // not-found, and it is not a server error.
+    await expect(page.locator('main')).toBeVisible()
+    await expect(page.getByText(/this page could not be found/i)).toBeVisible()
+    await expect(page.locator('body')).not.toContainText('Internal Server Error')
+    await expect(page.locator('body')).not.toContainText('Application error')
   })
 })

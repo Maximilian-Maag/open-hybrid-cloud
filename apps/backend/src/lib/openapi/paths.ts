@@ -88,7 +88,9 @@ const environmentSchema = z.object({
   description: z.string(),
   ciSourceId: z.number(),
   webhookUrl: z.string(),
-  webhookToken: z.string(),
+  // The outbound trigger token is never returned (issue #144) — only whether one
+  // is set. Send a new value to PUT /admin/environments/{id} to replace it.
+  webhookTokenSet: z.boolean(),
 })
 
 const costCenterSchema = z.object({
@@ -146,7 +148,8 @@ const webhookSchema = z.object({
   environmentId: z.number(),
   name: z.string(),
   webhookUrl: z.string(),
-  webhookToken: z.string(),
+  // As with the environment: whether a trigger token is set, never its value.
+  webhookTokenSet: z.boolean(),
   execOrder: z.number(),
 })
 

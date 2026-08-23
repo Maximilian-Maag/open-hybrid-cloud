@@ -10,7 +10,7 @@ import {
   makeAuthHeader,
 } from '@/test/helpers'
 import { db } from '@/lib/db/client'
-import { productEnvironments } from '@/lib/db/schema'
+import { productEnvironments, parameters } from '@/lib/db/schema'
 
 const makeReq = (url: string, auth?: string) =>
   new NextRequest(url, auth ? { headers: { authorization: auth } } : undefined)
@@ -90,5 +90,59 @@ describe('GET /api/catalog/[id]', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(Array.isArray(body.parameters)).toBe(true)
+  })
+
+  // Issue #131: this endpoint is requireAuth only, so a cleartext default here is
+  // readable by every account in the portal. Asserted against the whole response
+  // text, not just the field: the value must not be anywhere in what goes over the
+  // wire, whatever shape the payload grows into.
+  it('never serves the default of a sensitive parameter', async () => {
+    const user = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+
+    await db.insert(parameters).values([
+      {
+        scope: 'product',
+        scopeId: product.id,
+        name: 'ADMIN_PASSWORD',
+        label: 'Admin password',
+        type: 'string',
+        defaultValue: 'sup3rs3cret-default',
+        required: true,
+        sensitive: true,
+      },
+      { scope: 'product', scopeId: product.id, name: 'HOSTNAME', type: 'string', defaultValue: 'web-01' },
+    ])
+
+    const auth = await makeAuthHeader(user)
+    // Both shapes the endpoint answers in: with an environment (resolved) and
+    // without (resolved per environment) — they go through different collapsing.
+    for (const query of ['', `?environmentId=${env.id}`]) {
+      const res = await GET(
+        makeReq(`http://localhost/api/catalog/${product.id}${query}`, auth),
+        { params: Promise.resolve({ id: String(product.id) }) },
+      )
+      expect(res.status).toBe(200)
+      const text = await res.text()
+      expect(text, `query "${query}"`).not.toContain('sup3rs3cret-default')
+
+      // The DEFINITION still has to arrive — the order form needs the control, and
+      // needs to know to render it as a secret. Only the value is gone.
+      const body = JSON.parse(text)
+      const secret = body.parameters.find((p: { name: string }) => p.name === 'ADMIN_PASSWORD')
+      expect(secret).toMatchObject({
+        name: 'ADMIN_PASSWORD',
+        label: 'Admin password',
+        type: 'string',
+        required: true,
+        sensitive: true,
+        defaultValue: '',
+      })
+      // A non-sensitive default is not a secret and must still be prefilled.
+      expect(body.parameters.find((p: { name: string }) => p.name === 'HOSTNAME').defaultValue).toBe('web-01')
+    }
   })
 })

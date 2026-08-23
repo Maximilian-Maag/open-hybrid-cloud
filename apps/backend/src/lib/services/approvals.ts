@@ -15,6 +15,7 @@ import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks
 import { findProductName, findUserEmail } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
 import { trialVariables, trialExpiry } from '@/lib/services/trial'
+import { redactParametersForOrders } from '@/lib/services/parameterRedaction'
 
 export interface ApprovalRow {
   id: number
@@ -74,7 +75,10 @@ export const listApprovals = async (): Promise<Result<ApprovalRow[]>> => {
     .where(eq(orders.status, 'pending'))
     .orderBy(sql`${orders.createdAt} ASC`)
 
-  return ok(rows as ApprovalRow[])
+  // The queue is every pending order, shown to every admin, and the approvals page
+  // renders none of these values — so returning them in cleartext shipped every
+  // orderer's secrets to every admin for nothing (issue #131).
+  return ok(await redactParametersForOrders(rows as ApprovalRow[], (row) => row.id))
 }
 
 export const approveOrder = async (

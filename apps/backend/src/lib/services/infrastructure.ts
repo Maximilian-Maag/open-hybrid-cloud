@@ -18,6 +18,7 @@ import {
   loadSensitiveParameterNames,
   loadSnapshotSensitiveNames,
   redactParameters,
+  redactParametersForOrders,
   union,
 } from '@/lib/services/parameterRedaction'
 
@@ -177,7 +178,13 @@ export const listInfrastructure = async (
     // export is expected to match the list it was taken from.
     .orderBy(orderBy, sql`${infrastructureElements.id} DESC`)
 
-  return ok(rows as InfraRow[])
+  // The list is an API endpoint in its own right (GET /api/infrastructure), so it
+  // cannot rely on a consumer redacting: the CSV export happens to do it, which
+  // left the export as the ONLY line of defence and the list itself serving the
+  // values in cleartext (issue #131). Redacting here makes the export's own pass a
+  // harmless no-op, and matches the search filter above — which already excludes
+  // `parameters` precisely because these values are secret.
+  return ok(await redactParametersForOrders(rows as InfraRow[], (row) => row.orderId))
 }
 
 export interface InfraFacets {

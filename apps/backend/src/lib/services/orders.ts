@@ -18,6 +18,7 @@ import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
+import { redactParametersForOrders, REDACTED } from '@/lib/services/parameterRedaction'
 import { resolveTrial, trialVariables, trialExpiry } from '@/lib/services/trial'
 import { captureProductSnapshot, type ProductSnapshot } from '@/lib/services/snapshot'
 
@@ -107,7 +108,11 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
     .where(isAdmin ? undefined : eq(orders.userId, session.id))
     .orderBy(sql`${orders.createdAt} DESC`)
 
-  return ok(rows as OrderRow[])
+  // Server-side, because the only masking used to be the order detail page's
+  // `def?.sensitive ? '••••••'` — which reads the definition off the order's
+  // snapshot, so an order placed before snapshots existed rendered the secret in
+  // plaintext, and the raw value was in the JSON either way (issue #131).
+  return ok(await redactParametersForOrders(rows as OrderRow[], (row) => row.id))
 }
 
 export const getOrderById = async (
@@ -152,7 +157,9 @@ export const getOrderById = async (
     return err(403, 'Forbidden')
   }
 
-  return ok(order)
+  // See listOrders: the values leave the service redacted, whoever is asking.
+  const [redacted] = await redactParametersForOrders([order], (row) => row.id)
+  return ok(redacted)
 }
 
 /**
@@ -177,11 +184,27 @@ const validateAndApplyParameters = (
     // like `" true "` or `" 4 "` is accepted and persisted without whitespace
     // (which would otherwise leak into the CI trigger variables).
     const value = raw?.trim() ?? ''
-    const provided = value !== ''
+    // A client that posts back the redaction sentinel is echoing the placeholder
+    // it was shown, which means "unchanged" — never "the literal string
+    // [redacted]". Reads are redacted (#131), so the reorder and apply-template
+    // prefills hand the form this sentinel for every sensitive parameter; without
+    // this line it would be stored as the value and shipped to the pipeline as a
+    // trigger variable, overwriting the real secret.
+    const provided = value !== '' && value !== REDACTED
 
     if (!provided) {
+      // The default is applied BEFORE the required check, not after. A required
+      // parameter that has a stored default is satisfied by it — and since #131
+      // reads that value back redacted, the form can only ever return the
+      // sentinel or an empty string for a required SENSITIVE one. Checking
+      // `required` first made those orders impossible to place at all: the
+      // server held the value, refused to use it, and asked the user for
+      // something they are deliberately never shown.
+      if (def.defaultValue !== '') {
+        result[def.name] = def.defaultValue
+        continue
+      }
       if (def.required) return err(400, `Missing required parameter: ${def.name}`)
-      if (def.defaultValue !== '') result[def.name] = def.defaultValue
       continue
     }
 

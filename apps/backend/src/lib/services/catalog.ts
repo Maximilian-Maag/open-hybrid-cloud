@@ -2,6 +2,7 @@ import { db } from '@/lib/db/client'
 import { products, productEnvironments, deploymentEnvironments, costCenters, parameters, type Parameter } from '@/lib/db/schema'
 import { eq, or, and, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
+import { withoutSensitiveDefaults } from '@/lib/services/parameterRedaction'
 
 /**
  * Load the parameter definitions that apply to a product in a given
@@ -293,7 +294,14 @@ export const getProduct = async (
       ? resolveParameterDefs(paramRows)
       : resolveParameterDefsPerEnvironment(paramRows)
 
-  return ok({ ...product, environments: envRows, parameters: resolved } as ProductDetail)
+  // Redacted HERE and not in `loadApplicableParameters`: the order service shares
+  // that loader to validate a submission and needs the real default to apply it
+  // for an omitted optional parameter. This is the way OUT (issue #131).
+  return ok({
+    ...product,
+    environments: envRows,
+    parameters: withoutSensitiveDefaults(resolved),
+  } as ProductDetail)
 }
 
 export const getProductImage = async (

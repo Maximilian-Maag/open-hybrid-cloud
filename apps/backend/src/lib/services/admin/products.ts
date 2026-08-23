@@ -710,9 +710,33 @@ export const deleteProductEnvironment = async (
   return ok(undefined)
 }
 
-export const listProductWebhooks = async (id: number): Promise<Result<ProductWebhook[]>> => {
+/**
+ * Everything about a product webhook except its trigger token (issue #144).
+ *
+ * `webhook_token` is the credential that fires the pipeline; returning the whole
+ * row handed it back in cleartext from list, create and update. `webhookTokenSet`
+ * is what the admin UI actually needs — it renders the name and URL and nothing
+ * else — and the token can still be replaced through updateProductWebhook. Same
+ * shape as `ProductWebhook` in @open-hybrid-cloud/types, which never had the token
+ * in it: the frontend was already typed against the secret-free row.
+ */
+const publicWebhookColumns = {
+  id: productWebhooks.id,
+  productId: productWebhooks.productId,
+  environmentId: productWebhooks.environmentId,
+  name: productWebhooks.name,
+  webhookUrl: productWebhooks.webhookUrl,
+  execOrder: productWebhooks.execOrder,
+  webhookTokenSet: sql<boolean>`${productWebhooks.webhookToken} <> ''`,
+}
+
+export type PublicProductWebhook = Omit<ProductWebhook, 'webhookToken'> & {
+  webhookTokenSet: boolean
+}
+
+export const listProductWebhooks = async (id: number): Promise<Result<PublicProductWebhook[]>> => {
   const rows = await db
-    .select()
+    .select(publicWebhookColumns)
     .from(productWebhooks)
     .where(eq(productWebhooks.productId, id))
     .orderBy(productWebhooks.execOrder)
@@ -723,11 +747,11 @@ export const listProductWebhooks = async (id: number): Promise<Result<ProductWeb
 export const createProductWebhook = async (
   id: number,
   input: CreateWebhookInput,
-): Promise<Result<ProductWebhook>> => {
+): Promise<Result<PublicProductWebhook>> => {
   const [webhook] = await db
     .insert(productWebhooks)
     .values({ productId: id, ...input, execOrder: input.execOrder ?? 0 })
-    .returning()
+    .returning(publicWebhookColumns)
 
   return ok(webhook)
 }
@@ -736,12 +760,12 @@ export const updateProductWebhook = async (
   id: number,
   whId: number,
   input: UpdateWebhookInput,
-): Promise<Result<ProductWebhook>> => {
+): Promise<Result<PublicProductWebhook>> => {
   const [updated] = await db
     .update(productWebhooks)
     .set(input)
     .where(and(eq(productWebhooks.id, whId), eq(productWebhooks.productId, id)))
-    .returning()
+    .returning(publicWebhookColumns)
 
   if (!updated) return err(404, 'Not found')
   return ok(updated)

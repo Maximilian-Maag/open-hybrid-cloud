@@ -18,7 +18,7 @@ import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
 import { ParameterFields } from './ParameterFields'
 import { t } from '@/lib/i18n'
-import { convertPrice } from '@/lib/locale'
+import { convertPrice, sortByValue } from '@/lib/locale'
 
 /** Mirrors MAX_ORDER_QUANTITY in the backend, which re-checks it. */
 const MAX_QUANTITY = 20
@@ -248,7 +248,9 @@ export function OrderForm({
   function formatEnvPrice(env: ProductDetail['environments'][number]): string {
     const sizes = env.sizes ?? []
     if (sizes.length === 0) return formatPrice(env.price, env.currency)
-    const cheapest = [...sizes].sort((a, b) => Number(a.price) - Number(b.price))[0]
+    // Compared in EUR, not by the digits: sizes carry their own currency, so the
+    // cheapest is not whichever one has the smallest number on it.
+    const cheapest = sortByValue(sizes, exchangeRates)[0]
     return formatPrice(cheapest.price, cheapest.currency)
   }
 

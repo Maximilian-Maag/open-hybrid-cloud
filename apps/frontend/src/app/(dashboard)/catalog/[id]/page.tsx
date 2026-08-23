@@ -9,7 +9,7 @@ import { AddToCart } from './AddToCart'
 import { ProductImage } from '@/components/ui/ProductImage'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
-import { localeToCurrency, convertPrice } from '@/lib/locale'
+import { localeToCurrency, convertPrice, sortByValue } from '@/lib/locale'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -83,8 +83,9 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
       ? env.sizes.map((size) => ({ price: size.price, currency: size.currency }))
       : [{ price: env.price, currency: env.currency }]
 
-  const cheapestOf = (env: Offering) =>
-    [...amountsOf(env)].sort((a, b) => Number(a.price) - Number(b.price))[0]
+  // Compared in EUR rather than by the digits: each size carries its own
+  // currency, so the smallest number is not the cheapest offer.
+  const cheapestOf = (env: Offering) => sortByValue(amountsOf(env), ratesMap)[0]
 
   /**
    * An offering's price as a shopper reads it: one figure, or a range across its
@@ -94,19 +95,24 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
    * word and therefore no twenty-fifth translation of one.
    */
   const rangeOf = (env: Offering): { display: string; original: string | null } => {
-    const sorted = [...amountsOf(env)].sort((a, b) => Number(a.price) - Number(b.price))
-    const low = priceOf(sorted[0])
-    if (sorted.length === 1 || sorted[0].price === sorted[sorted.length - 1].price) return low
-    const high = priceOf(sorted[sorted.length - 1])
+    const sorted = sortByValue(amountsOf(env), ratesMap)
+    const cheapest = sorted[0]
+    const dearest = sorted[sorted.length - 1]
+    const low = priceOf(cheapest)
+    // Currency as well as price: two sizes at "10" in different currencies are
+    // two different prices, and collapsing them to one figure hides that.
+    if (cheapest.price === dearest.price && cheapest.currency === dearest.currency) return low
+    const high = priceOf(dearest)
     return { display: `${low.display} – ${high.display}`, original: null }
   }
 
   // The buy box leads with the cheapest thing the product can be bought for,
   // because that is the number a shopper reads as "the price" — the full list is
   // right below it.
-  const cheapest = [...product.environments].sort(
-    (a, b) => Number(cheapestOf(a).price) - Number(cheapestOf(b).price),
-  )[0]
+  const cheapest = sortByValue(
+    product.environments.map((env) => ({ ...cheapestOf(env), env })),
+    ratesMap,
+  )[0]?.env
 
   return (
     <div className="max-w-screen-xl mx-auto">

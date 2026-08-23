@@ -78,7 +78,7 @@ export async function POST(
   // exactly what this endpoint must stop producing (#105).
   const alt = formData?.get('alt')
   return toResponse(
-    await addProductImage(productId, buffer, typeof alt === 'string' ? alt : ''),
+    await addProductImage(productId, buffer, typeof alt === 'string' ? alt : '', session.id),
     201,
   )
 }
@@ -106,7 +106,7 @@ export async function PATCH(
     )
   }
 
-  const result = await reorderProductImages(productId, order as number[])
+  const result = await reorderProductImages(productId, order as number[], session.id)
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
   return new NextResponse(null, { status: 204 })
 }

@@ -28,7 +28,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'An image description is required' }, { status: 400 })
   }
 
-  const result = await updateProductImageAlt(parsed.productId, parsed.imageRowId, alt)
+  const result = await updateProductImageAlt(parsed.productId, parsed.imageRowId, alt, session.id)
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
   return new NextResponse(null, { status: 204 })
 }
@@ -44,7 +44,7 @@ export async function DELETE(
   const parsed = ids(id, imageId)
   if (!parsed) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
 
-  const result = await deleteProductImage(parsed.productId, parsed.imageRowId)
+  const result = await deleteProductImage(parsed.productId, parsed.imageRowId, session.id)
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
   return new NextResponse(null, { status: 204 })
 }

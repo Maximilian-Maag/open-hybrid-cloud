@@ -20,6 +20,7 @@ import {
   updateProduct,
   deleteProduct,
   addProductImage,
+  updateProductImageAlt,
   listProductImages,
   reorderProductImages,
   deleteProductImage,
@@ -919,6 +920,40 @@ describe('addProductImage', () => {
 })
 
 describe('reorderProductImages / deleteProductImage', () => {
+  it('audits every gallery mutation with the actor who made it', async () => {
+    // #137's rule, applied to the routes this branch adds: an admin mutation that
+    // writes no audit row is a change nobody can attribute afterwards.
+    const root = await createUser({ role: 'root' })
+    const cat = await createCategory()
+    const product = await seedProduct(cat.id, 'Audited gallery')
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(32, 1),
+    ])
+    const added = await addProductImage(product.id, png, 'A picture', root.id)
+    expect(added.ok).toBe(true)
+    if (!added.ok) return
+
+    await updateProductImageAlt(product.id, added.data.id, 'A better description', root.id)
+    await deleteProductImage(product.id, added.data.id, root.id)
+
+    const entries = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.entityId, product.id))
+    const actions = entries.map((e) => e.action)
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        'product.image_added',
+        'product.image_alt_updated',
+        'product.image_deleted',
+      ]),
+    )
+    for (const entry of entries) expect(entry.userId).toBe(root.id)
+    // Names, not values: the description an operator typed is not the log's business.
+    expect(entries.map((e) => e.details).join(' ')).not.toContain('A better description')
+  })
+
   it('answers 404 for a product that does not exist, whatever the order says', async () => {
     // An empty gallery is ambiguous, and the two cases owe different answers: an
     // empty list used to succeed (204) and a non-empty one used to be 400, so an

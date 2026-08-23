@@ -547,6 +547,7 @@ export const addProductImage = async (
   productId: number,
   buffer: Buffer,
   alt: string,
+  actorId?: number,
 ): Promise<Result<{ id: number; mime: string; position: number }>> => {
   const described = cleanAlt(alt)
   if (!described.ok) return described
@@ -604,6 +605,18 @@ export const addProductImage = async (
       .values({ productId, position, data: buffer, mime, alt: described.data })
       .returning({ id: productImages.id })
 
+    // Through `tx`, like every other write in here: an entry written on the pool
+    // would survive a rollback and claim an upload that never landed. The
+    // description itself stays out of the entry — the audit log records which
+    // picture was added, not what an operator typed about it.
+    await logAuditWith(
+      tx,
+      actorId ?? null,
+      'product.image_added',
+      productId,
+      `Image #${row.id} added at position ${position} (${mime}, ${buffer.length} bytes)`,
+    )
+
     return ok({ id: row.id, mime, position })
   })
 }
@@ -613,6 +626,7 @@ export const updateProductImageAlt = async (
   productId: number,
   imageId: number,
   alt: string,
+  actorId?: number,
 ): Promise<Result<void>> => {
   const described = cleanAlt(alt)
   if (!described.ok) return described
@@ -624,6 +638,10 @@ export const updateProductImageAlt = async (
     .returning({ id: productImages.id })
 
   if (updated.length === 0) return err(404, 'Image not found')
+
+  // The new description is not in the entry: names, not values (see `logAudit`).
+  await logAudit(actorId ?? null, 'product.image_alt_updated', productId, `Image #${imageId}: description changed`)
+
   return ok(undefined)
 }
 
@@ -637,6 +655,7 @@ export const updateProductImageAlt = async (
 export const deleteProductImage = async (
   productId: number,
   imageId: number,
+  actorId?: number,
 ): Promise<Result<void>> => {
   return db.transaction(async (tx): Promise<Result<void>> => {
     const deleted = await tx
@@ -656,6 +675,18 @@ export const deleteProductImage = async (
       await tx.update(productImages).set({ position: index }).where(eq(productImages.id, row.id))
     }
 
+    // Inside the transaction that re-packs the positions, so the entry cannot
+    // outlive a rollback. Position 0 is the picture the catalogue leads with, so
+    // deleting it promotes the next one — worth saying in the entry, because that
+    // is a visible change to a product nobody explicitly asked for.
+    await logAuditWith(
+      tx,
+      actorId ?? null,
+      'product.image_deleted',
+      productId,
+      `Image #${imageId} removed, ${remaining.length} image(s) left`,
+    )
+
     return ok(undefined)
   })
 }
@@ -671,6 +702,7 @@ export const deleteProductImage = async (
 export const reorderProductImages = async (
   productId: number,
   order: number[],
+  actorId?: number,
 ): Promise<Result<void>> => {
   return db.transaction(async (tx): Promise<Result<void>> => {
     const rows = await tx
@@ -704,6 +736,16 @@ export const reorderProductImages = async (
     for (const [index, id] of order.entries()) {
       await tx.update(productImages).set({ position: index }).where(eq(productImages.id, id))
     }
+
+    // Written through `tx` with the position updates: a refused reorder rolls the
+    // whole thing back, and an entry claiming one would be a lie.
+    await logAuditWith(
+      tx,
+      actorId ?? null,
+      'product.images_reordered',
+      productId,
+      `Gallery reordered (${order.length} image(s))`,
+    )
 
     return ok(undefined)
   })

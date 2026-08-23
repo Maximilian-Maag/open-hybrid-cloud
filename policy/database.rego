@@ -17,6 +17,7 @@ intentional_secret_reads := {
 	"apps/backend/src/lib/db/queries.ts accessToken": "the CI source's API token, sent as the PRIVATE-TOKEN header to GitLab; never returned to a portal client",
 	"apps/backend/src/lib/ci/webhooks.ts webhookToken": "the pipeline trigger token, sent to the CI provider to start a pipeline",
 	"apps/backend/src/lib/services/auth.ts passwordHash": "bcrypt.compare for a password change; the hash is compared and discarded",
+	"apps/backend/src/lib/services/twoFactor.ts passwordHash": "bcrypt.compare before enrolling or replacing a factor (#36 invariant 2: a password alone may not swap the factor out); TwoFactorAccount is service-internal and no route returns it",
 	"apps/backend/src/lib/services/admin/environments.ts callbackSecret": "the root-gated reveal endpoint — the operator has to be able to read the secret they must paste into the CI system",
 	"apps/backend/src/app/api/webhooks/github/workflow/route.ts callbackSecret": "verifies the HMAC of an incoming callback against the environment's own secret",
 	"apps/backend/src/app/api/webhooks/bitbucket/pipeline/route.ts callbackSecret": "verifies the HMAC of an incoming callback against the environment's own secret",

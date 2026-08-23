@@ -15,6 +15,7 @@ public_routes := {
 	"health": "the container health probe and the e2e readiness gate — it has to answer before anything is configured",
 	"auth/login": "issues the session; requiring one would be the login endpoint that demands a login",
 	"auth/callback": "the SSO redirect target; the identity provider is the caller and it carries no portal session",
+	"auth/login/mfa": "second half of the two-step login (#36) — the caller has no session yet, and the signed challenge from /auth/login is the proof this route checks",
 	"public/branding": "the login screen renders from it, before any session exists",
 	"public/exchange-rates": "read by the unauthenticated shell for price display",
 	"catalog/[id]/image": "loaded by the browser as an <img> src, which cannot carry a bearer token",

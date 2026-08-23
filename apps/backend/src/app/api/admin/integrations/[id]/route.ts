@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { integrationBaseUrl } from '@/lib/integrations/baseUrl'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
 import { toResponse, parseRouteId } from '@/lib/http'
 import {
@@ -14,7 +15,7 @@ import { INTEGRATION_AUTH_TYPES, INTEGRATION_FAILURE_MODES } from '@/lib/db/sche
 // Nexus. Delete and recreate.
 const UpdateIntegrationSchema = z.object({
   name: z.string().min(1).optional(),
-  baseUrl: z.string().url().optional(),
+  baseUrl: integrationBaseUrl().optional(),
   authType: z.enum(INTEGRATION_AUTH_TYPES).optional(),
   username: z.string().optional(),
   // Sending this rotates the credential; omitting it leaves the stored one

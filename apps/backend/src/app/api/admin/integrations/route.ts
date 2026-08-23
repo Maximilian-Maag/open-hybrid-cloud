@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { integrationBaseUrl } from '@/lib/integrations/baseUrl'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
 import { toResponse } from '@/lib/http'
 import { listIntegrations, createIntegration } from '@/lib/services/admin/integrations'
@@ -18,7 +19,7 @@ import {
 const CreateIntegrationSchema = z.object({
   kind: z.enum(INTEGRATION_KINDS),
   name: z.string().min(1),
-  baseUrl: z.string().url(),
+  baseUrl: integrationBaseUrl(),
   authType: z.enum(INTEGRATION_AUTH_TYPES),
   username: z.string().optional(),
   credential: z.string().min(1).optional(),

@@ -93,9 +93,14 @@ export const captureProductSnapshot = async (
   categoryId: number,
   environmentId: number,
   /**
-   * The size the order chose, if any. Optional so the admin paths that snapshot an
-   * offering for its version history (which is about the offering, not about one
-   * order) keep working unchanged; they record the offering's own price.
+   * The size the order chose, if any.
+   *
+   * Three states, not two, matching the ABSENT/NULL distinction the snapshot
+   * documents: omitting the argument leaves `sizeCode`/`sizeLabel` out of the
+   * snapshot altogether, which is what the admin version-history paths want —
+   * they snapshot an OFFERING, not an order, and have no answer to give. Passing
+   * null records "this order named no size", which order creation does whenever
+   * the offering has none.
    */
   sizeCode?: string | null,
 ): Promise<ProductSnapshot | null> => {
@@ -175,11 +180,11 @@ export const captureProductSnapshot = async (
     environmentName: offering.environmentName ?? `Environment #${environmentId}`,
     price: size?.price ?? offering.price,
     currency: size?.currency ?? offering.currency,
-    // Null, not omitted, when no size applied: "this offering had no sizes" is a
-    // fact worth recording, and it is what tells a reader this snapshot is not
-    // simply an older one that never captured the field.
-    sizeCode: sizeCode ?? null,
-    sizeLabel: size?.label ?? null,
+    // Spread, so an omitted argument leaves both fields absent rather than
+    // writing null. Null here means "the order named no size", and a snapshot
+    // that predates sizing means "nobody asked" — writing null unconditionally
+    // made every version-history snapshot claim the first of those.
+    ...(sizeCode !== undefined ? { sizeCode, sizeLabel: size?.label ?? null } : {}),
     costCenterMode: offering.costCenterMode,
     forcedCostCenter: offering.forcedCostCenter,
     // Null, not omitted: "no overhead account is configured" is a fact worth

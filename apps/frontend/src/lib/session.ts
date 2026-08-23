@@ -1,5 +1,5 @@
 /**
- * When the backend token dies, and how everything finds out.
+ * When the backend session dies, and how everything finds out.
  *
  * Two clocks used to run independently: the NextAuth cookie (30 days by default)
  * and the backend JWT it carries as `apiToken` (24 h, see the backend's
@@ -7,18 +7,52 @@
  * while every API call came back 401 — a page that looks logged in, holds no
  * data, and explains nothing (issue #103).
  *
- * So the two are pinned together: `API_TOKEN_MAX_AGE_SECONDS` is the NextAuth
- * session lifetime as well, and the token's own `exp` is carried on the session so
- * the middleware can refuse a request before it is made. A 401 that still gets
- * through — a rotated signing secret, a revoked session (#37), clock skew — is
- * handled at the point of the failed call, in `lib/api.ts`.
+ * #103 pinned the two together with one shared constant. #37 took that constant
+ * away: a session's lifetime is now a per-session decision — 8 h normally, 30 days
+ * with "remember me" — so no single number can describe every session, and a
+ * session can also end early because someone revoked it.
+ *
+ * What replaces the shared constant is stricter, not looser:
+ *
+ *  - `SESSION_COOKIE_MAX_AGE_SECONDS` sizes the cookie to the longest session the
+ *    backend will ever issue. It is a ceiling, not a promise.
+ *  - The exact end of *this* session travels on the session itself, as the
+ *    token's own `exp` (`apiTokenExp`), and the middleware and the dashboard
+ *    layout refuse to render past it. That is per-session and exact, which the
+ *    shared constant never was.
+ *  - Anything that ends a session early — a revoked session (#37), a rotated
+ *    signing secret, clock skew — shows up as a 401, and `lib/api.ts` turns a 401
+ *    into a sign-out and a trip to `/login?expired=1`.
+ *
+ * So the failure mode #103 fixed cannot return: the cookie outliving a short
+ * session is exactly the case `isApiTokenExpired` is checked for on every
+ * request.
  */
 
 /**
- * How long the backend signs its tokens for. Must match the backend's
- * `signToken` (`.setExpirationTime('24h')`); if that changes, this changes.
+ * Lifetime of an ordinary session, in seconds.
+ *
+ * Mirrors `DEFAULT_SESSION_TTL_SECONDS` in the backend's `lib/auth/sessions.ts`.
+ * Nothing here enforces it — the backend decides, and the token says so — but the
+ * two must not disagree, because this is the number the UI quotes.
  */
-export const API_TOKEN_MAX_AGE_SECONDS = 24 * 60 * 60
+export const DEFAULT_SESSION_MAX_AGE_SECONDS = 8 * 60 * 60
+
+/**
+ * Lifetime of a "remember me" session, in seconds. The maximum the backend will
+ * issue; mirrors `REMEMBER_ME_SESSION_TTL_SECONDS`.
+ */
+export const REMEMBER_ME_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+
+/**
+ * How long the NextAuth cookie is allowed to live.
+ *
+ * The ceiling, because one static config value has to cover both lifetimes and a
+ * cookie that expired before its session would sign a "remember me" user out
+ * after 8 h — the same class of bug as #103, in the other direction. A cookie that
+ * outlives its session is caught on every request by `isApiTokenExpired`.
+ */
+export const SESSION_COOKIE_MAX_AGE_SECONDS = REMEMBER_ME_SESSION_MAX_AGE_SECONDS
 
 /**
  * Seconds of slack before an `exp` counts as past.

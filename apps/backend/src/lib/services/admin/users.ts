@@ -14,6 +14,7 @@ import { count, eq, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
+import { revokeAllSessionsOf } from '@/lib/services/sessions'
 
 export interface SafeUser {
   id: number
@@ -109,7 +110,7 @@ export const getUserById = async (id: number): Promise<Result<SafeUser>> => {
 export const updateUser = async (
   id: number,
   input: UpdateUserInput,
-  actorId?: number,
+  actorId: number | null = null,
 ): Promise<Result<SafeUser>> => {
   if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
 
@@ -120,11 +121,42 @@ export const updateUser = async (
     update.passwordHash = await bcrypt.hash(password, 12)
   }
 
-  const [updated] = await db
-    .update(users)
-    .set(update)
-    .where(eq(users.id, id))
-    .returning(safeUserColumns)
+  // One transaction: the row change and the revoke that follows from it have to
+  // stand or fall together. Revoking after the UPDATE commits means a failure
+  // there leaves the account deactivated (or demoted) and still signed in — the
+  // exact state this revoke exists to prevent, reached by the error path.
+  const updated = await db.transaction(async (tx) => {
+    // Read inside the transaction and FOR UPDATE, so "the role actually changed"
+    // is answered from the same snapshot the write uses. Read outside, a
+    // concurrent update between the two makes the decision stale in both
+    // directions: revoking for a change that did not happen, or leaving a real
+    // demotion's sessions alive.
+    //
+    // The read still exists at all so that a no-op PUT resending the current role
+    // is not treated as a change — which would sign the user out and write an
+    // audit entry for nothing.
+    const [before] = await tx
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1)
+      .for('update')
+
+    const [row] = await tx
+      .update(users)
+      .set(update)
+      .where(eq(users.id, id))
+      .returning(safeUserColumns)
+
+    if (!row) return null
+
+    if (input.active === false || (input.role !== undefined && input.role !== before?.role)) {
+      const reason = input.active === false ? 'Account deactivated' : 'Role changed'
+      await revokeAllSessionsOf(actorId, id, reason, tx)
+    }
+
+    return row
+  })
 
   if (!updated) return err(404, 'Not found')
 
@@ -134,6 +166,16 @@ export const updateUser = async (
   const roleNote = input.role !== undefined ? ` (role now ${input.role})` : ''
   await logAudit(actorId ?? null, 'user.updated', id, `${changedFields(input)}${roleNote}`)
 
+  // Deactivating an account has to end its sessions (issue #37). `active` is only
+  // read at login, so before there were session rows to revoke a deactivated user
+  // simply stayed signed in until their token ran out — up to 8 h, or 30 days with
+  // "remember me". Clicking "Deactivate" is not a request to wait that long.
+  //
+  // A ROLE CHANGE ends them for the same reason, and this branch is why it has to.
+  // `role` is read from the token, not from the row (middleware.ts), so a demoted
+  // admin keeps admin until their token expires. That was already true with a 24 h
+  // ceiling; "remember me" raises it to 30 days, which turns a small window into a
+  // month. Revoking makes them sign in again and pick up the role they now have.
   return ok(updated as SafeUser)
 }
 

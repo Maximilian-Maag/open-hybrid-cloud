@@ -40,6 +40,9 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
+  // The actor is passed through so that a deactivation, which now also ends the
+  // account's sessions (#37), is attributed in the audit log to whoever did it
+  // rather than appearing as a system action.
   return toResponse(await updateUser(userId, parsed.data, session.id))
 }
 

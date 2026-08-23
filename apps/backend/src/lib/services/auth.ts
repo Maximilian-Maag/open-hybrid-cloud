@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { signToken } from '@/lib/auth/jwt'
+import { createSession } from '@/lib/auth/sessions'
 import { ok, err, type Result } from '@/lib/services/result'
+import type { Role } from '@open-hybrid-cloud/types'
 
 export interface UserProfile {
   id: number
@@ -26,9 +27,17 @@ const safeUserColumns = {
   createdAt: users.createdAt,
 }
 
+/** Where the login came from, recorded on the session row (issue #37). */
+export interface LoginContext {
+  ip?: string | null
+  userAgent?: string | null
+  rememberMe?: boolean
+}
+
 export const loginWithCredentials = async (
   email: string,
   password: string,
+  context: LoginContext = {},
 ): Promise<Result<string>> => {
   const rows = await db
     .select()
@@ -44,22 +53,30 @@ export const loginWithCredentials = async (
   const valid = await bcrypt.compare(password, user.passwordHash)
   if (!valid) return err(401, 'Invalid credentials')
 
-  const sessionUser = { id: user.id, email: user.email, name: user.name, role: user.role }
+  const sessionUser = { id: user.id, email: user.email, name: user.name, role: user.role as Role }
 
   // The credentials were correct; anything failing from here is the server's
   // fault. Without this the JWT_SECRET check inside signToken throws, the route
   // 500s with no body, and NextAuth reports CredentialsSignin — so a
   // misconfigured deployment looks exactly like a wrong password, which is what
   // an operator then spends the afternoon debugging.
-  let token: string
+  //
+  // Since #37 the same try also covers opening the session row: a token with no
+  // row behind it is refused by every request, so failing to write the row is
+  // failing to log in, and it should say so here rather than a moment later as a
+  // 401 on the first page.
   try {
-    token = await signToken(sessionUser)
+    const { token } = await createSession({
+      user: sessionUser,
+      ip: context.ip ?? null,
+      userAgent: context.userAgent ?? null,
+      rememberMe: context.rememberMe ?? false,
+    })
+    return ok(token)
   } catch (e) {
-    console.error('[auth] Could not sign a session token — check JWT_SECRET:', e)
+    console.error('[auth] Could not open a session — check JWT_SECRET and the database:', e)
     return err(500, 'The server is misconfigured and cannot issue a session. See the server log.')
   }
-
-  return ok(token)
 }
 
 export const getMe = async (userId: number): Promise<Result<UserProfile>> => {

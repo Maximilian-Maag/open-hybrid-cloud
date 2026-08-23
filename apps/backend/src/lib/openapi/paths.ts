@@ -266,6 +266,9 @@ registry.registerPath({
   method: 'post',
   path: '/auth/login',
   summary: 'Login with email and password',
+  description:
+    'Opens a server-side session (issue #37) and returns a token naming it. The token is only ' +
+    'accepted while that session is live, so a revoked session stops working on the next request.',
   tags: ['Auth'],
   security: [],
   request: {
@@ -275,6 +278,9 @@ registry.registerPath({
           schema: z.object({
             email: z.string().email(),
             password: z.string().min(1),
+            rememberMe: z.boolean().optional().openapi({
+              description: 'Extend the session from the 8 h default to 30 days.',
+            }),
           }),
         },
       },
@@ -815,6 +821,92 @@ registry.registerPath({
     200: { description: 'Removed' },
     400: { description: 'Invalid product id' },
     401: { description: 'Unauthorized' },
+  },
+})
+
+// ─── Sessions ─────────────────────────────────────────────────────────────────
+
+const sessionInfoSchema = z.object({
+  id: z.number(),
+  userId: z.number(),
+  ip: z.string().nullable().openapi({
+    description: 'Null unless a trusted proxy supplied one (TRUST_PROXY).',
+  }),
+  userAgent: z.string().nullable(),
+  createdAt: z.string(),
+  lastSeenAt: z.string().openapi({
+    description: 'Advanced at most once every five minutes, so it lags real activity by up to that.',
+  }),
+  expiresAt: z.string(),
+  current: z.boolean().openapi({ description: 'True for the session this request was made from.' }),
+})
+
+const revokeResponseSchema = z.object({ revoked: z.number() })
+
+registry.registerPath({
+  method: 'get',
+  path: '/sessions',
+  summary: 'List active sessions',
+  description:
+    "The caller's own sessions, or another user's with `userId` (root only). Revoked and expired " +
+    'sessions are omitted — this is what is live, not the history. Every call is written to the ' +
+    'audit log as `session.list`, including which user was looked at.',
+  tags: ['Sessions'],
+  security: bearerAuth,
+  request: { query: z.object({ userId: z.string().optional() }) },
+  responses: {
+    200: {
+      description: 'Active sessions, most recently seen first',
+      content: { 'application/json': { schema: z.array(sessionInfoSchema) } },
+    },
+    400: { description: 'Invalid user id' },
+    401: { description: 'Unauthorized' },
+    403: { description: "Not root, and asked for someone else's sessions" },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/sessions',
+  summary: 'Sign out everywhere else',
+  description:
+    "Revokes every live session of the caller except the one making the request. With `userId` " +
+    "(root only) it revokes ALL of that user's sessions — root's own session is not one of theirs, " +
+    'so there is nothing to keep. Audited as `session.revoked_others`.',
+  tags: ['Sessions'],
+  security: bearerAuth,
+  request: { query: z.object({ userId: z.string().optional() }) },
+  responses: {
+    200: {
+      description: 'How many sessions were revoked',
+      content: { 'application/json': { schema: revokeResponseSchema } },
+    },
+    400: { description: 'Invalid user id' },
+    401: { description: 'Unauthorized' },
+    403: { description: "Not root, and asked for someone else's sessions" },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/sessions/{id}',
+  summary: 'Revoke one session',
+  description:
+    'The caller\'s own session, or any session if the caller is root. Takes effect on the very next ' +
+    'request made with that token: the session row is checked before anything else happens. ' +
+    'Revoking a session that is already revoked reports `revoked: 0` rather than failing. ' +
+    'Audited as `session.revoked`.',
+  tags: ['Sessions'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Revoked (or already revoked)',
+      content: { 'application/json': { schema: revokeResponseSchema } },
+    },
+    400: { description: 'Invalid session id' },
+    401: { description: 'Unauthorized' },
+    404: { description: 'No such session, or not the caller\'s to revoke' },
   },
 })
 
@@ -3200,6 +3292,9 @@ registry.registerPath({
   method: 'put',
   path: '/admin/users/{id}',
   summary: '[root] Update a user',
+  description:
+    'Setting `active: false` also revokes every live session of that account (issue #37) — `active` ' +
+    'is only read at login, so without that the user would stay signed in until their token ran out.',
   tags: ['Admin'],
   security: bearerAuth,
   request: {

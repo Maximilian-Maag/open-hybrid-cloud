@@ -4,10 +4,14 @@ import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { loginWithCredentials } from '@/lib/services/auth'
+import { clientIp, clientUserAgent } from '@/lib/auth/requestMeta'
 
 const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  // Opt-in longer session (issue #37). Absent means the 8 h default; nothing here
+  // decides the actual length, only which of the two lifetimes applies.
+  rememberMe: z.boolean().optional(),
 })
 
 const loginAttempts = new Map<string, { count: number; resetAt: number }>()
@@ -24,14 +28,13 @@ const RATE_LIMIT_MAX_KEYS = 10_000
  * it, so we only trust it when the operator opts in via `TRUST_PROXY`. Without a
  * trusted proxy there is no reliable per-client address, so this contributes a
  * constant — the account component below still keeps buckets per-account.
+ *
+ * The trust decision itself lives in `lib/auth/requestMeta.ts`, because a session
+ * row records the same address and the two must not be able to disagree about
+ * what counts as knowing where a request came from.
  */
 function clientAddr(req: NextRequest): string {
-  const trustProxy = process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true'
-  if (trustProxy) {
-    const xff = req.headers.get('x-forwarded-for')?.split(',')[0].trim()
-    if (xff) return xff
-  }
-  return '-'
+  return clientIp(req) ?? '-'
 }
 
 /**
@@ -100,7 +103,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { email, password } = parsed.data
+  const { email, password, rememberMe } = parsed.data
 
   // Two independent buckets protect different attacks:
   //   - per-account (accountRateLimitKey): a burst against one account never
@@ -125,7 +128,11 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const result = await loginWithCredentials(email, password)
+  const result = await loginWithCredentials(email, password, {
+    ip: clientIp(req),
+    userAgent: clientUserAgent(req),
+    rememberMe,
+  })
 
   if (!result.ok) {
     return NextResponse.json({ error: result.message }, { status: result.status })

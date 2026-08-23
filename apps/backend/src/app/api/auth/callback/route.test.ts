@@ -9,6 +9,11 @@ vi.mock('@/lib/services/auth', () => ({
 
 import { GET } from './route'
 import { upsertSsoUser } from '@/lib/services/auth'
+import { createUser } from '@/test/helpers'
+import { verifyToken } from '@/lib/auth/jwt'
+import { db } from '@/lib/db/client'
+import { sessions } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 
 const mockedUpsert = vi.mocked(upsertSsoUser)
 
@@ -103,12 +108,16 @@ describe('GET /api/auth/callback (Entra ID OIDC)', () => {
     expect(res.headers.get('location')).toContain('/?error=account_disabled')
   })
 
-  it('happy path: signs a JWT and redirects to FRONTEND_URL/?token=…', async () => {
+  it('happy path: opens a session, and redirects to FRONTEND_URL/?token=…', async () => {
+    // A real users row, because since #37 the callback writes a session that
+    // references it — an SSO login that could not be listed or revoked would be a
+    // hole in the feature rather than a shortcut.
+    const user = await createUser({ email: 'c@example.com', name: 'Carol', role: 'admin' })
     const idToken = makeIdToken({ sub: 's-3', email: 'c@example.com', name: 'Carol' })
     vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ id_token: idToken }), { status: 200 }),
     )
-    mockedUpsert.mockResolvedValue({ id: 7, email: 'c@example.com', name: 'Carol', role: 'admin', active: true })
+    mockedUpsert.mockResolvedValue({ id: user.id, email: user.email, name: 'Carol', role: 'admin', active: true })
 
     const res = await GET(callbackReq({ code: 'abc' }))
     expect(res.status).toBe(307)
@@ -116,14 +125,23 @@ describe('GET /api/auth/callback (Entra ID OIDC)', () => {
     expect(loc).toMatch(/^https:\/\/portal\.example\.com\/\?token=/)
     // upsertSsoUser was called with the claim values
     expect(mockedUpsert).toHaveBeenCalledWith('s-3', 'c@example.com', 'Carol')
+
+    const token = new URL(loc as string).searchParams.get('token') as string
+    const rows = await db.select().from(sessions).where(eq(sessions.userId, user.id))
+    expect(rows).toHaveLength(1)
+    expect((await verifyToken(token))?.sid).toBe(rows[0].id)
+    // The default lifetime, not "remember me": how long the user stays signed in
+    // to the identity provider is the provider's business, not this callback's.
+    expect(rows[0].expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(8 * 60 * 60 * 1000)
   })
 
   it('falls back to preferred_username when email claim is absent', async () => {
+    const user = await createUser({ email: 'd@example.com', name: 'Dan', role: 'admin' })
     const idToken = makeIdToken({ sub: 's-4', preferred_username: 'd@example.com', name: 'Dan' })
     vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ id_token: idToken }), { status: 200 }),
     )
-    mockedUpsert.mockResolvedValue({ id: 8, email: 'd@example.com', name: 'Dan', role: 'admin', active: true })
+    mockedUpsert.mockResolvedValue({ id: user.id, email: user.email, name: 'Dan', role: 'admin', active: true })
 
     const res = await GET(callbackReq({ code: 'abc' }))
     expect(res.status).toBe(307)

@@ -69,6 +69,28 @@ test.describe('Settings', () => {
     await expect(page.getByText(/profile updated/i)).toBeVisible({ timeout: 10000 })
   })
 
+  // ── Active sessions (#37) ──────────────────────────────────────────────────
+
+  test('shows the Active sessions card with this session in it', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: /active sessions/i })).toBeVisible()
+    // The session doing the looking is always in the list, and always labelled:
+    // it is the one row that must not offer a sign-out button.
+    await expect(page.getByText(/this device/i)).toBeVisible()
+  })
+
+  test('does not offer to sign the current session out of itself', async ({ page }) => {
+    const row = page.getByRole('row').filter({ hasText: /this device/i })
+    await expect(row).toHaveCount(1)
+    await expect(row.getByRole('button')).toHaveCount(0)
+  })
+
+  test('never renders the session token or its hash', async ({ page }) => {
+    // Only a digest is stored and the digest is not served either; a 64-character
+    // hex string anywhere on this page would mean one of those two broke.
+    const card = page.locator('main')
+    await expect(card).not.toContainText(/\b[0-9a-f]{64}\b/)
+  })
+
   test('wrong current password shows an error on password change', async ({ page }) => {
     await page.getByLabel(/current password/i).fill('wrongpassword')
     await page.getByLabel(/^new password/i).fill('NewPassword123!')

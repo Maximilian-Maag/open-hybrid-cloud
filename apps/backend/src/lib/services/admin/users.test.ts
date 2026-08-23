@@ -9,7 +9,8 @@ import {
   deleteUser,
 } from './users'
 import { db } from '@/lib/db/client'
-import { users, auditLog } from '@/lib/db/schema'
+import { createSession } from '@/lib/auth/sessions'
+import { users, sessions, auditLog } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -111,6 +112,35 @@ describe('updateUser', () => {
       expect(result.data.role).toBe('admin')
       expect(result.data.active).toBe(false)
     }
+  })
+
+  it('ends every session when the role changes', async () => {
+    // `role` is read from the token, not from the row, so a demoted admin keeps
+    // admin until the token expires. With "remember me" that ceiling is 30 days,
+    // which is why this branch is the one that has to close it.
+    const u = await createUser({ role: 'admin' })
+    await createSession({ user: makeSession(u), rememberMe: true })
+
+    const live = () =>
+      db.select().from(sessions).where(eq(sessions.userId, u.id))
+    expect((await live()).filter((r) => r.revokedAt === null)).toHaveLength(1)
+
+    const result = await updateUser(u.id, { role: 'project_manager' })
+    expect(result.ok).toBe(true)
+    expect((await live()).filter((r) => r.revokedAt === null)).toHaveLength(0)
+  })
+
+  it('leaves sessions alone when the role is resent unchanged', async () => {
+    // A no-op PUT that echoes the current role must not sign the user out, which
+    // is why the prior role is read rather than trusting `input.role !== undefined`.
+    const u = await createUser({ role: 'admin' })
+    await createSession({ user: makeSession(u), rememberMe: false })
+
+    const result = await updateUser(u.id, { role: 'admin', name: 'Renamed' })
+    expect(result.ok).toBe(true)
+
+    const rows = await db.select().from(sessions).where(eq(sessions.userId, u.id))
+    expect(rows.filter((r) => r.revokedAt === null)).toHaveLength(1)
   })
 
   it('hashes the new password when provided', async () => {

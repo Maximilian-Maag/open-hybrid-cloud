@@ -35,6 +35,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
   const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -43,7 +44,14 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
     setError(null)
     setLoading(true)
     try {
-      const result = await signIn('credentials', { email, password, redirect: false })
+      // Sent as a string because credentials are form fields; the backend turns
+      // it into an 8 h or a 30-day session (#37).
+      const result = await signIn('credentials', {
+        email,
+        password,
+        rememberMe: String(rememberMe),
+        redirect: false,
+      })
       if (result?.error) {
         setError(t('invalidCredentials', lang))
       } else {
@@ -137,6 +145,23 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                 style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
                 placeholder="••••••••"
               />
+            </div>
+
+            {/* A real checkbox with a real label: this decides how long the
+                session lives, so it has to be reachable by keyboard and
+                announced, not a styled div. */}
+            <div className="flex items-center gap-2">
+              <input
+                id="rememberMe"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 focus:outline-none focus-visible:ring-2"
+                style={{ '--tw-ring-color': 'var(--ring-accent)' } as React.CSSProperties}
+              />
+              <label htmlFor="rememberMe" className="text-sm text-slate-700">
+                {t('rememberMe', lang)}
+              </label>
             </div>
 
             <button

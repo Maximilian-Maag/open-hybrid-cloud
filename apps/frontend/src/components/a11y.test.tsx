@@ -16,6 +16,8 @@ import { CostTrend } from '@/app/(dashboard)/costs/CostTrend'
 import { CostDistribution } from '@/app/(dashboard)/costs/CostDistribution'
 import { CostComparison } from '@/app/(dashboard)/costs/CostComparison'
 import { DelegationPanel } from '@/app/(dashboard)/approvals/DelegationPanel'
+import { ActiveSessions } from './forms/ActiveSessions'
+import type { SessionInfo } from '@open-hybrid-cloud/types'
 
 /**
  * Component-level accessibility checks (issue #102).
@@ -411,6 +413,53 @@ describe('DelegationPanel', () => {
     expect(
       await check(
         <DelegationPanel delegations={{ mine: [], grantedToMe: [], candidates: [] }} token="t" />,
+      ),
+    ).toHaveNoViolations()
+  })
+})
+
+describe('ActiveSessions', () => {
+  const session = (over: Partial<SessionInfo>): SessionInfo => ({
+    id: 1,
+    userId: 1,
+    ip: '203.0.113.7',
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/140.0',
+    createdAt: '2026-08-20T09:00:00.000Z',
+    lastSeenAt: '2026-08-21T11:30:00.000Z',
+    expiresAt: '2026-08-21T17:00:00.000Z',
+    current: false,
+    ...over,
+  })
+
+  it('is accessible with the current session and another device', async () => {
+    // Five "Sign out" buttons with the same visible label is the failure this
+    // guards: each one carries an aria-label naming its row (#37).
+    expect(
+      await check(
+        <ActiveSessions
+          token="t"
+          initialSessions={[
+            session({ id: 1, current: true }),
+            session({ id: 2, userAgent: 'Mozilla/5.0 (iPhone) Safari/605', ip: '198.51.100.4' }),
+          ]}
+        />,
+      ),
+    ).toHaveNoViolations()
+  })
+
+  it('is accessible with nothing to show', async () => {
+    expect(await check(<ActiveSessions token="t" initialSessions={[]} />)).toHaveNoViolations()
+  })
+
+  it('is accessible when a session recorded neither ip nor user agent', async () => {
+    // Both columns are nullable — no trusted proxy, or a client that sends no
+    // User-Agent — so the em-dash placeholder has to be checked too.
+    expect(
+      await check(
+        <ActiveSessions
+          token="t"
+          initialSessions={[session({ id: 3, ip: null, userAgent: null, current: true })]}
+        />,
       ),
     ).toHaveNoViolations()
   })

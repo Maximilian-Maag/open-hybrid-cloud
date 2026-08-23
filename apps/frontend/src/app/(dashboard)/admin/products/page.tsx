@@ -7,6 +7,8 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Table } from '@/components/ui/Table'
 import { Button } from '@/components/ui/Button'
 import { ProductRowActions } from './ProductRowActions'
+import { getLang } from '@/lib/getLang'
+import { t } from '@/lib/i18n'
 
 export default async function AdminProductsPage() {
   const session = await auth()
@@ -14,6 +16,7 @@ export default async function AdminProductsPage() {
   const role = (session.user as unknown as { role: Role }).role
   if (role !== 'root') redirect('/admin')
   const token = (session as unknown as { apiToken: string }).apiToken
+  const lang = await getLang()
 
   const [productsRes, categoriesRes] = await Promise.allSettled([
     get<Product[]>('/api/admin/products', token),
@@ -28,11 +31,11 @@ export default async function AdminProductsPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <PageHeader
-        title="Products"
-        subtitle="Manage catalog products."
+        title={t('productsTitle', lang)}
+        subtitle={t('manageCatalogProducts', lang)}
         actions={
           <Link href="/admin/products/new">
-            <Button>New Product</Button>
+            <Button>{t('newProduct', lang)}</Button>
           </Link>
         }
       />
@@ -40,7 +43,7 @@ export default async function AdminProductsPage() {
       <Table<Product>
         columns={[
           {
-            header: 'Name',
+            header: t('name', lang),
             render: (row) => (
               <Link href={`/admin/products/${row.id}`} className="font-medium text-blue-600 hover:underline">
                 {row.name}
@@ -48,14 +51,14 @@ export default async function AdminProductsPage() {
             ),
           },
           {
-            header: 'Category',
+            header: t('category', lang),
             render: (row) => catMap[row.categoryId] ?? `#${row.categoryId}`,
           },
-          { header: 'Language', accessor: 'baseLanguage' },
+          { header: t('language', lang), accessor: 'baseLanguage' },
           {
-            header: 'Created',
+            header: t('created', lang),
             render: (row) => (
-              <span className="text-xs text-slate-500">{new Date(row.createdAt).toLocaleDateString()}</span>
+              <span className="text-xs text-slate-500">{new Date(row.createdAt).toLocaleDateString(lang)}</span>
             ),
           },
           {
@@ -65,7 +68,7 @@ export default async function AdminProductsPage() {
           },
         ]}
         data={products}
-        emptyMessage="No products yet."
+        emptyMessage={t('noProductsYet', lang)}
       />
     </div>
   )

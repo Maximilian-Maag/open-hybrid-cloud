@@ -9,13 +9,8 @@ import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
-
-const LANGUAGES = [
-  { value: 'en', label: 'English' },
-  { value: 'de', label: 'German' },
-  { value: 'fr', label: 'French' },
-  { value: 'es', label: 'Spanish' },
-]
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface Props {
   categories: Category[]
@@ -27,6 +22,13 @@ const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp'
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 export function NewProductForm({ categories, token }: Props) {
+  const lang = useLang()
+  const LANGUAGES = [
+    { value: 'en', label: t('languageEnglish', lang) },
+    { value: 'de', label: t('languageGerman', lang) },
+    { value: 'fr', label: t('languageFrench', lang) },
+    { value: 'es', label: t('languageSpanish', lang) },
+  ]
   const router = useRouter()
   const [image, setImage] = useState<File | null>(null)
   const [imageAlt, setImageAlt] = useState('')
@@ -39,11 +41,11 @@ export function NewProductForm({ categories, token }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!categoryId) { setError('Select a category.'); return }
+    if (!categoryId) { setError(t('selectCategoryError', lang)); return }
     // Enforced here as well as on the server: an image without a description is
     // what makes every component downstream have to invent one.
     if (image && imageAlt.trim() === '') {
-      setError('Describe what the image shows, or remove it.')
+      setError(t('describeImageOrRemove', lang))
       return
     }
     setSaving(true)
@@ -75,42 +77,42 @@ export function NewProductForm({ categories, token }: Props) {
 
         if (!res || !res.ok) {
           const payload = res ? await res.json().catch(() => null) : null
-          imageError = payload?.error ?? 'the image could not be uploaded'
+          imageError = payload?.error ?? t('imageCouldNotBeUploaded', lang)
         }
       }
 
       router.push(`/admin/products/${created.id}${imageError ? `?imageError=${encodeURIComponent(imageError)}` : ''}`)
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create product.')
+      setError(err instanceof Error ? err.message : t('failedToCreateProduct', lang))
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <Card title="Product Details">
+    <Card title={t('productDetails', lang)}>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
           <Alert>{error}</Alert>
         )}
         <Select
-          label="Category"
+          label={t('category', lang)}
           required
           value={categoryId}
           onChange={(e) => setCategoryId(e.target.value)}
-          placeholder="Select category…"
+          placeholder={t('selectCategoryPlaceholder', lang)}
           options={categories.map((c) => ({ value: c.id, label: c.name }))}
         />
         <Select
-          label="Base Language"
+          label={t('baseLanguage', lang)}
           value={baseLanguage}
           onChange={(e) => setBaseLanguage(e.target.value)}
           options={LANGUAGES}
         />
-        <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+        <Input label={t('name', lang)} value={name} onChange={(e) => setName(e.target.value)} required />
         <div className="flex flex-col gap-1">
-          <label htmlFor="new-product-description" className="text-sm font-medium text-slate-700">Description</label>
+          <label htmlFor="new-product-description" className="text-sm font-medium text-slate-700">{t('description', lang)}</label>
           <textarea
             id="new-product-description"
             value={description}
@@ -121,7 +123,7 @@ export function NewProductForm({ categories, token }: Props) {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label htmlFor="new-product-image" className="text-sm font-medium text-slate-700">Image</label>
+          <label htmlFor="new-product-image" className="text-sm font-medium text-slate-700">{t('image', lang)}</label>
           <input
             id="new-product-image"
             type="file"
@@ -131,7 +133,7 @@ export function NewProductForm({ categories, token }: Props) {
               // Refused here as well as on the server, so a 40 MB file is not
               // uploaded just to be rejected.
               if (file && file.size > MAX_IMAGE_BYTES) {
-                setError(`That image is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is 10 MB.`)
+                setError(`${t('imageTooLargePrefix', lang)} ${(file.size / 1024 / 1024).toFixed(1)} ${t('mbLimitSuffix', lang)}`)
                 setImage(null)
                 e.target.value = ''
                 return
@@ -141,20 +143,20 @@ export function NewProductForm({ categories, token }: Props) {
             }}
             className="block text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
           />
-          <p className="text-xs text-slate-500">Optional. PNG, JPEG or WebP, up to 10 MB — can also be added later.</p>
+          <p className="text-xs text-slate-500">{t('imageHintOptional', lang)}</p>
         </div>
         {image && (
           <Input
-            label="Image description"
+            label={t('imageDescriptionLabel', lang)}
             required
             value={imageAlt}
             maxLength={300}
             onChange={(e) => setImageAlt(e.target.value)}
-            hint="Read aloud instead of the picture, and shown if it fails to load."
+            hint={t('imageDescriptionHint', lang)}
           />
         )}
         <div className="flex justify-end">
-          <Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create Product'}</Button>
+          <Button type="submit" disabled={saving}>{saving ? t('creating', lang) : t('createProductButton', lang)}</Button>
         </div>
       </form>
     </Card>

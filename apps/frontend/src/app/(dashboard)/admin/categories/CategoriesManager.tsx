@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 import { SkeletonListItem } from '@/components/ui/Skeleton'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface Props { token: string }
 
@@ -29,6 +31,7 @@ function parseDisplayOrder(raw: string, fallback: number): number {
 }
 
 export function CategoriesManager({ token }: Props) {
+  const lang = useLang()
   const { toast } = useToast()
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,11 +52,11 @@ export function CategoriesManager({ token }: Props) {
       setCategories(data ?? [])
       setError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load categories.')
+      setError(e instanceof Error ? e.message : t('failedToLoadCategories', lang))
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [token, lang])
 
   useEffect(() => { load() }, [load])
 
@@ -79,10 +82,10 @@ export function CategoriesManager({ token }: Props) {
       const body: CreateCategoryRequest = { name: formName.trim(), displayOrder: parseDisplayOrder(formOrder, 0) }
       await post('/api/admin/categories', body, token)
       setAddOpen(false)
-      toast('Category created.')
+      toast(t('categoryCreatedToast', lang))
       load()
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed to create.')
+      setFormError(e instanceof Error ? e.message : t('failedToCreateGeneric', lang))
     } finally {
       setSaving(false)
     }
@@ -102,10 +105,10 @@ export function CategoriesManager({ token }: Props) {
       await put(`/api/admin/categories/${id}`, body, token)
       setEditTarget(null)
       setFlashId(id)
-      toast('Category updated.')
+      toast(t('categoryUpdatedToast', lang))
       load()
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed to update.')
+      setFormError(e instanceof Error ? e.message : t('failedToUpdateGeneric', lang))
     } finally {
       setSaving(false)
     }
@@ -117,10 +120,10 @@ export function CategoriesManager({ token }: Props) {
     try {
       await del(`/api/admin/categories/${deleteTarget.id}`, token)
       setDeleteTarget(null)
-      toast('Category deleted.', 'info')
+      toast(t('categoryDeletedToast', lang), 'info')
       load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete.')
+      setError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
     } finally {
       setSaving(false)
     }
@@ -129,8 +132,8 @@ export function CategoriesManager({ token }: Props) {
   return (
     <>
       <Card
-        title="Categories"
-        action={<Button size="sm" onClick={openAdd}>Add Category</Button>}
+        title={t('categories', lang)}
+        action={<Button size="sm" onClick={openAdd}>{t('addCategory', lang)}</Button>}
       >
         {error && !deleteTarget && (
           <Alert className="mb-4">{error}</Alert>
@@ -140,18 +143,18 @@ export function CategoriesManager({ token }: Props) {
             {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
           </div>
         ) : categories.length === 0 ? (
-          <p className="text-center py-6 text-slate-600">No categories yet.</p>
+          <p className="text-center py-6 text-slate-600">{t('noCategoriesYet', lang)}</p>
         ) : (
           <div className="space-y-2">
             {categories.map((cat) => (
               <div key={cat.id} className={`flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3 ${cat.id === flashId ? 'animate-flash-row' : ''}`}>
                 <div>
                   <span className="font-medium text-slate-900">{cat.name}</span>
-                  <span className="ml-2 text-xs text-slate-600">order: {cat.displayOrder}</span>
+                  <span className="ml-2 text-xs text-slate-600">{t('displayOrder', lang)}: {cat.displayOrder}</span>
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(cat)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => { setError(null); setDeleteTarget(cat) }}>Delete</Button>
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(cat)}>{t('edit', lang)}</Button>
+                  <Button size="sm" variant="danger" onClick={() => { setError(null); setDeleteTarget(cat) }}>{t('delete', lang)}</Button>
                 </div>
               </div>
             ))}
@@ -159,43 +162,43 @@ export function CategoriesManager({ token }: Props) {
         )}
       </Card>
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Category" size="sm">
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('addCategory', lang)} size="sm">
         <form onSubmit={handleAdd} className="space-y-4">
           {formError && (
             <Alert>{formError}</Alert>
           )}
-          <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
-          <Input label="Display Order" type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
+          <Input label={t('name', lang)} value={formName} onChange={(e) => setFormName(e.target.value)} required />
+          <Input label={t('displayOrder', lang)} type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
           </div>
         </form>
       </Modal>
 
-      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Category" size="sm">
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={t('editCategory', lang)} size="sm">
         <form onSubmit={handleEdit} className="space-y-4">
           {formError && (
             <Alert>{formError}</Alert>
           )}
-          <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
-          <Input label="Display Order" type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
+          <Input label={t('name', lang)} value={formName} onChange={(e) => setFormName(e.target.value)} required />
+          <Input label={t('displayOrder', lang)} type="number" value={formOrder} onChange={(e) => setFormOrder(e.target.value)} />
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
           </div>
         </form>
       </Modal>
 
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete Category" size="sm">
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title={t('deleteCategoryTitle', lang)} size="sm">
         {error && <Alert className="mb-4">{error}</Alert>}
         <p className="text-sm text-slate-600 mb-6">
-          Delete category <strong>{deleteTarget?.name}</strong>? This cannot be undone.
+          {t('deleteCategoryPrompt', lang)} <strong>{deleteTarget?.name}</strong>? {t('cannotBeUndone', lang)}
         </p>
         <div className="flex justify-end gap-3">
-          <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => setDeleteTarget(null)}>{t('cancel', lang)}</Button>
           <Button variant="danger" onClick={handleDelete} disabled={saving}>
-            {saving ? 'Deleting…' : 'Delete'}
+            {saving ? t('deleting', lang) : t('delete', lang)}
           </Button>
         </div>
       </Modal>

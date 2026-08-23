@@ -11,14 +11,16 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 import { SkeletonListItem } from '@/components/ui/Skeleton'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface Props { token: string }
 
-const ROLES: { value: Role; label: string }[] = [
-  { value: 'project_manager', label: 'Project Manager' },
-  { value: 'admin', label: 'Admin' },
-  { value: 'root', label: 'Root' },
-]
+const ROLE_KEYS: Record<Role, 'roleProjectManager' | 'roleAdmin' | 'roleRoot'> = {
+  project_manager: 'roleProjectManager',
+  admin: 'roleAdmin',
+  root: 'roleRoot',
+}
 
 const roleBadge: Record<Role, string> = {
   project_manager: 'bg-slate-100 text-slate-600',
@@ -27,6 +29,10 @@ const roleBadge: Record<Role, string> = {
 }
 
 export function UsersManager({ token }: Props) {
+  const lang = useLang()
+  const ROLES: { value: Role; label: string }[] = (Object.keys(ROLE_KEYS) as Role[]).map((value) => ({
+    value, label: t(ROLE_KEYS[value], lang),
+  }))
   const { toast } = useToast()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,11 +54,11 @@ export function UsersManager({ token }: Props) {
       setUsers((await get<User[]>('/api/admin/users', token)) ?? [])
       setDeleteError(null)
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : 'Failed to load users.')
+      setDeleteError(e instanceof Error ? e.message : t('failedToLoadUsers', lang))
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [token, lang])
 
   useEffect(() => { load() }, [load])
 
@@ -76,10 +82,10 @@ export function UsersManager({ token }: Props) {
       }
       await post('/api/admin/users', body, token)
       setAddOpen(false)
-      toast('User created.')
+      toast(t('userCreatedToast', lang))
       load()
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed.')
+      setFormError(e instanceof Error ? e.message : t('genericFailed', lang))
     } finally {
       setSaving(false)
     }
@@ -95,10 +101,10 @@ export function UsersManager({ token }: Props) {
       await put(`/api/admin/users/${id}`, body, token)
       setEditTarget(null)
       setFlashId(id)
-      toast('User updated.')
+      toast(t('userUpdatedToast', lang))
       load()
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed.')
+      setFormError(e instanceof Error ? e.message : t('genericFailed', lang))
     } finally {
       setSaving(false)
     }
@@ -110,10 +116,10 @@ export function UsersManager({ token }: Props) {
     try {
       await del(`/api/admin/users/${deleteTarget.id}`, token)
       setDeleteTarget(null)
-      toast('User deleted.', 'info')
+      toast(t('userDeletedToast', lang), 'info')
       load()
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : 'Failed to delete.')
+      setDeleteError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
     } finally {
       setSaving(false)
     }
@@ -124,13 +130,13 @@ export function UsersManager({ token }: Props) {
       await put(`/api/admin/users/${user.id}`, { active: !user.active } satisfies UpdateUserRequest, token)
       load()
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : 'Failed to update.')
+      setDeleteError(e instanceof Error ? e.message : t('failedToUpdateGeneric', lang))
     }
   }
 
   return (
     <>
-      <Card title="Users" action={<Button size="sm" onClick={openAdd}>Add User</Button>}>
+      <Card title={t('users', lang)} action={<Button size="sm" onClick={openAdd}>{t('addUser', lang)}</Button>}>
         {deleteError && !deleteTarget && (
           <Alert className="mb-3">{deleteError}</Alert>
         )}
@@ -139,7 +145,7 @@ export function UsersManager({ token }: Props) {
             {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
           </div>
         ) : users.length === 0 ? (
-          <p className="text-center py-6 text-slate-600">No users yet.</p>
+          <p className="text-center py-6 text-slate-600">{t('noUsersYet', lang)}</p>
         ) : (
           <div className="space-y-2">
             {users.map((user) => (
@@ -150,7 +156,7 @@ export function UsersManager({ token }: Props) {
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-slate-900">{user.name}</p>
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${roleBadge[user.role]}`}>
-                        {user.role.replace('_', ' ')}
+                        {t(ROLE_KEYS[user.role], lang)}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500">{user.email}</p>
@@ -158,10 +164,10 @@ export function UsersManager({ token }: Props) {
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="ghost" onClick={() => toggleActive(user)}>
-                    {user.active ? 'Deactivate' : 'Activate'}
+                    {user.active ? t('deactivate', lang) : t('activate', lang)}
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(user)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(user) }}>Delete</Button>
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(user)}>{t('edit', lang)}</Button>
+                  <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(user) }}>{t('delete', lang)}</Button>
                 </div>
               </div>
             ))}
@@ -169,38 +175,38 @@ export function UsersManager({ token }: Props) {
         )}
       </Card>
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add User" size="md">
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('addUser', lang)} size="md">
         <form onSubmit={handleAdd} className="space-y-4">
           {formError && <Alert>{formError}</Alert>}
-          <Input label="Email" type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} required />
-          <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
-          <Select label="Role" value={formRole} onChange={(e) => setFormRole(e.target.value as Role)} options={ROLES} />
-          <Input label="Password" type="password" value={formPassword} onChange={(e) => setFormPassword(e.target.value)} required />
+          <Input label={t('email', lang)} type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} required />
+          <Input label={t('name', lang)} value={formName} onChange={(e) => setFormName(e.target.value)} required />
+          <Select label={t('role', lang)} value={formRole} onChange={(e) => setFormRole(e.target.value as Role)} options={ROLES} />
+          <Input label={t('password', lang)} type="password" value={formPassword} onChange={(e) => setFormPassword(e.target.value)} required />
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setAddOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create'}</Button>
+            <Button type="button" variant="secondary" onClick={() => setAddOpen(false)}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={saving}>{saving ? t('creating', lang) : t('createButton', lang)}</Button>
           </div>
         </form>
       </Modal>
 
-      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit User" size="md">
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={t('editUser', lang)} size="md">
         <form onSubmit={handleEdit} className="space-y-4">
           {formError && <Alert>{formError}</Alert>}
-          <Input label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
-          <Select label="Role" value={formRole} onChange={(e) => setFormRole(e.target.value as Role)} options={ROLES} />
+          <Input label={t('name', lang)} value={formName} onChange={(e) => setFormName(e.target.value)} required />
+          <Select label={t('role', lang)} value={formRole} onChange={(e) => setFormRole(e.target.value as Role)} options={ROLES} />
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => setEditTarget(null)}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" variant="secondary" onClick={() => setEditTarget(null)}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
           </div>
         </form>
       </Modal>
 
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete User" size="sm">
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title={t('deleteUserTitle', lang)} size="sm">
         {deleteError && <Alert className="mb-4">{deleteError}</Alert>}
-        <p className="text-sm text-slate-600 mb-6">Delete user <strong>{deleteTarget?.name}</strong> ({deleteTarget?.email})?</p>
+        <p className="text-sm text-slate-600 mb-6">{t('deleteUserPrompt', lang)} <strong>{deleteTarget?.name}</strong> ({deleteTarget?.email})?</p>
         <div className="flex justify-end gap-3">
-          <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button variant="danger" onClick={handleDelete} disabled={saving}>{saving ? 'Deleting…' : 'Delete'}</Button>
+          <Button variant="secondary" onClick={() => setDeleteTarget(null)}>{t('cancel', lang)}</Button>
+          <Button variant="danger" onClick={handleDelete} disabled={saving}>{saving ? t('deleting', lang) : t('delete', lang)}</Button>
         </div>
       </Modal>
     </>

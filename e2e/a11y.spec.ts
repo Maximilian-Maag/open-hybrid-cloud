@@ -216,7 +216,13 @@ test.describe('Accessibility — branding colours cannot break the chrome', () =
     // A mid grey is the one case where neither ink reaches AA, so the operator
     // has to be told rather than silently shipping an unreadable header.
     await page.getByRole('textbox', { name: /primary color — hex value/i }).fill('#7b7b7b')
-    await expect(page.getByRole('alert').filter({ hasText: /WCAG AA needs/i })).toBeVisible()
+    // Matches the `contrastFailsAA` string, not the sentence this warning used to
+    // be: translating the admin area replaced the hard-coded "WCAG AA needs N:1"
+    // with keys, so the old regex matched nothing and this test failed for a
+    // wording change rather than a behaviour one.
+    await expect(
+      page.getByRole('alert').filter({ hasText: /does not meet WCAG AA/i }),
+    ).toBeVisible()
   })
 })
 

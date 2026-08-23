@@ -11,6 +11,7 @@ import type {
 } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/api'
 import { getLang } from '@/lib/getLang'
+import { t } from '@/lib/i18n'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
 import { ProductEditForm } from './ProductEditForm'
@@ -58,19 +59,19 @@ export default async function AdminProductDetailPage({ params, searchParams }: P
     <div className="max-w-4xl mx-auto space-y-6">
       <PageHeader
         title={product.name}
-        subtitle="Edit product details, translations, environments, and parameters."
+        subtitle={t('editProductDetailsSubtitle', lang)}
         actions={
           <Link href="/admin/products">
-            <Button variant="secondary" size="sm">Back to Products</Button>
+            <Button variant="secondary" size="sm">{t('backToProducts', lang)}</Button>
           </Link>
         }
       />
       {/* Its own card, above the details form: the picture is uploaded on its own
           request (multipart to /image), not saved with the rest of the fields. */}
-      <Card title="Product Image">
+      <Card title={t('productImage', lang)}>
         {imageError && (
           <div className="mb-3">
-            <Alert>The product was created, but {imageError}. Try uploading it again below.</Alert>
+            <Alert>{t('productCreatedPrefix', lang)} {imageError}. {t('tryUploadingAgain', lang)}</Alert>
           </div>
         )}
         <ProductImageUpload productId={product.id} token={token} initialAlt={product.imageAlt} />

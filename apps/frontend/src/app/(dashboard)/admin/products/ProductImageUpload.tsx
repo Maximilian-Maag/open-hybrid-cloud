@@ -4,6 +4,8 @@ import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { ProductImage } from '@/components/ui/ProductImage'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
@@ -33,6 +35,7 @@ interface Props {
  * the way through JSON.
  */
 export function ProductImageUpload({ productId, token, initialAlt, onChanged }: Props) {
+  const lang = useLang()
   const inputRef = useRef<HTMLInputElement>(null)
   const [alt, setAlt] = useState(initialAlt ?? '')
   const [saved, setSaved] = useState<string | null>(null)
@@ -46,7 +49,7 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
     // Checked here as well as on the server: refusing a 40 MB file before it is
     // uploaded is the difference between instant feedback and a long wait.
     if (file.size > MAX_BYTES) {
-      setError(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB — the limit is 10 MB.`)
+      setError(`${t('fileTooLargePrefix', lang)} ${(file.size / 1024 / 1024).toFixed(1)} ${t('mbLimitSuffix', lang)}`)
       if (inputRef.current) inputRef.current.value = ''
       return
     }
@@ -54,7 +57,7 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
     // Refused before the upload rather than after: the server requires it too, and
     // an image nobody described is the thing this control exists to prevent.
     if (alt.trim() === '') {
-      setError('Describe what the image shows before uploading it.')
+      setError(t('describeBeforeUpload', lang))
       if (inputRef.current) inputRef.current.value = ''
       return
     }
@@ -73,14 +76,14 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
       })
       if (!res.ok) {
         const payload = await res.json().catch(() => null)
-        setError(payload?.error ?? 'Upload failed.')
+        setError(payload?.error ?? t('uploadFailed', lang))
         return
       }
       setVersion((v) => v + 1)
-      setSaved('Image uploaded.')
+      setSaved(t('imageUploaded', lang))
       onChanged?.()
     } catch {
-      setError('Upload failed.')
+      setError(t('uploadFailed', lang))
     } finally {
       setBusy(false)
       // Clear the input so choosing the same file again still fires onChange.
@@ -90,7 +93,7 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
 
   async function saveAlt() {
     if (alt.trim() === '') {
-      setError('An image description is required.')
+      setError(t('imageDescriptionRequiredError', lang))
       return
     }
     setBusy(true)
@@ -105,13 +108,13 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
       })
       if (!res.ok && res.status !== 204) {
         const payload = await res.json().catch(() => null)
-        setError(payload?.error ?? 'Could not save the description.')
+        setError(payload?.error ?? t('couldNotSaveDescription', lang))
         return
       }
-      setSaved('Description saved.')
+      setSaved(t('descriptionSaved', lang))
       onChanged?.()
     } catch {
-      setError('Could not save the description.')
+      setError(t('couldNotSaveDescription', lang))
     } finally {
       setBusy(false)
     }
@@ -127,15 +130,15 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
         cache: 'no-store',
       })
       if (!res.ok && res.status !== 204) {
-        setError('Could not remove the image.')
+        setError(t('couldNotRemoveImage', lang))
         return
       }
       setVersion((v) => v + 1)
       setAlt('')
-      setSaved('Image removed.')
+      setSaved(t('imageRemoved', lang))
       onChanged?.()
     } catch {
-      setError('Could not remove the image.')
+      setError(t('couldNotRemoveImage', lang))
     } finally {
       setBusy(false)
     }
@@ -148,7 +151,7 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
 
       <div className="flex flex-col gap-1">
         <label htmlFor={`product-image-alt-${productId}`} className="text-sm font-medium text-slate-700">
-          Image description <span className="text-red-500">*</span>
+          {t('imageDescriptionLabel', lang)} <span className="text-red-500">*</span>
         </label>
         <input
           id={`product-image-alt-${productId}`}
@@ -156,15 +159,15 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
           value={alt}
           maxLength={MAX_ALT}
           onChange={(e) => { setAlt(e.target.value); setSaved(null); setError(null) }}
-          placeholder="e.g. Dashboard of the managed gateway showing traffic graphs"
+          placeholder={t('placeholderImageAltExample', lang)}
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <p className="text-xs text-slate-500">
-          Read aloud instead of the picture, and shown if it fails to load. Required for every image.
+          {t('imageDescriptionHint', lang)} {t('requiredForEveryImage', lang)}
         </p>
         <div className="flex justify-end">
           <Button size="sm" variant="secondary" onClick={saveAlt} disabled={busy}>
-            Save description
+            {t('saveDescription', lang)}
           </Button>
         </div>
       </div>
@@ -178,7 +181,7 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
           {/* A file input with no label is an unlabelled control — the browser's
               "Choose file" text is not a name. */}
           <label htmlFor={`product-image-${productId}`} className="block text-sm font-medium text-slate-700">
-            Image file
+            {t('imageFileLabel', lang)}
           </label>
           <input
             ref={inputRef}
@@ -192,9 +195,9 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
             }}
             className="block text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
           />
-          <p className="text-xs text-slate-500">PNG, JPEG or WebP, up to 10 MB.</p>
+          <p className="text-xs text-slate-500">{t('imageFormatHintPlain', lang)}</p>
           <Button size="sm" variant="secondary" onClick={remove} disabled={busy}>
-            {busy ? 'Working…' : 'Remove image'}
+            {busy ? t('working', lang) : t('removeImage', lang)}
           </Button>
         </div>
       </div>

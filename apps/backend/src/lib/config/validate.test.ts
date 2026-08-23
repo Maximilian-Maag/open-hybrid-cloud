@@ -42,6 +42,39 @@ describe('configProblems', () => {
       'DATABASE_URL',
     ])
   })
+
+  describe('SECRET_ENCRYPTION_KEY (issue #111)', () => {
+    const key = 'a'.repeat(64)
+
+    it('says nothing when it is absent', () => {
+      // Absence disables the integration registry; it is not a misconfiguration.
+      // Warning about it on every boot of every deployment that does not use
+      // integrations is the noise that trains people to ignore this block.
+      expect(configProblems(validEnv)).toEqual([])
+    })
+
+    it('says nothing when it is a valid key', () => {
+      expect(configProblems({ ...validEnv, SECRET_ENCRYPTION_KEY: key })).toEqual([])
+    })
+
+    it('reports a key that is set but the wrong length', () => {
+      const problems = configProblems({ ...validEnv, SECRET_ENCRYPTION_KEY: 'a'.repeat(32) })
+      expect(problems.map((p) => p.variable)).toEqual(['SECRET_ENCRYPTION_KEY'])
+      expect(problems[0].message).toContain('64 hex characters')
+    })
+
+    it('reports a key that is the right length but not hex', () => {
+      // A base64 key is the likely mistake — 44 characters, or 64 if someone
+      // pads it — and it would otherwise be accepted as bytes it is not.
+      const problems = configProblems({ ...validEnv, SECRET_ENCRYPTION_KEY: 'z'.repeat(64) })
+      expect(problems.map((p) => p.variable)).toEqual(['SECRET_ENCRYPTION_KEY'])
+    })
+
+    it('warns that a changed key cannot decrypt existing credentials', () => {
+      const problems = configProblems({ ...validEnv, SECRET_ENCRYPTION_KEY: 'nope' })
+      expect(problems[0].message).toContain('cannot')
+    })
+  })
 })
 
 describe('reportConfigProblems', () => {

@@ -107,6 +107,50 @@ const ciSourceSchema = z.object({
   provider: z.string(),
 })
 
+const integrationKinds = ['foreman', 'ansible', 'nexus', 'pulp', 'loki', 'grafana'] as const
+const integrationAuthTypes = ['none', 'bearer', 'basic', 'token_header'] as const
+const integrationFailureModes = ['blocking', 'best_effort'] as const
+
+const integrationSchema = z.object({
+  id: z.number(),
+  kind: z.enum(integrationKinds),
+  name: z.string(),
+  baseUrl: z.string(),
+  authType: z.enum(integrationAuthTypes),
+  username: z.string(),
+  hasCredential: z.boolean().openapi({
+    description:
+      'Whether a credential is stored. The credential itself is never returned by any endpoint — ' +
+      'it is encrypted at rest and read only server-side.',
+  }),
+  environmentId: z.number().nullable().openapi({
+    description: 'Deployment environment this instance serves; null means portal-wide.',
+  }),
+  enabled: z.boolean(),
+  failureMode: z.enum(integrationFailureModes).openapi({
+    description:
+      'Whether a failed call to this integration aborts the operation that made it (blocking) ' +
+      'or is logged and carried on from (best_effort).',
+  }),
+  lastContactedAt: z.string().nullable().openapi({
+    description: 'Last time a probe reached this system. Set on success only; null means never.',
+  }),
+  lastError: z.string().nullable().openapi({
+    description: 'Why the most recent probe failed. Cleared on the next success.',
+  }),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+})
+
+const integrationProbeSchema = z.object({
+  ok: z.boolean(),
+  status: z.number().nullable(),
+  detail: z.string().optional(),
+  error: z.string().optional(),
+  lastContactedAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+})
+
 const infraSchema = z.object({
   id: z.number(),
   orderId: z.number(),
@@ -2410,6 +2454,184 @@ registry.registerPath({
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },
+  },
+})
+
+// ─── Admin — Integrations ─────────────────────────────────────────────────────
+//
+// The registry of external systems that are not CI providers (issue #111).
+// Root-only throughout: these rows hold credentials to systems that can
+// provision and destroy infrastructure.
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/integrations',
+  summary: '[root] List integrations',
+  description:
+    'Every registered external system. Credentials are never included — only `hasCredential`.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  responses: {
+    200: {
+      description: 'List of integrations',
+      content: { 'application/json': { schema: z.array(integrationSchema) } },
+    },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/integrations',
+  summary: '[root] Register an integration',
+  description:
+    'The credential is encrypted at rest (AES-256-GCM) with the key in SECRET_ENCRYPTION_KEY. ' +
+    'Without that key configured, any request carrying a credential is refused with 503 rather ' +
+    'than stored in plain text. `failureMode` is required: whether a failed call to this system ' +
+    'blocks the operation that made it is a decision the registry records, not a default.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            kind: z.enum(integrationKinds),
+            name: z.string().min(1),
+            baseUrl: z.string().url(),
+            authType: z.enum(integrationAuthTypes),
+            username: z.string().optional().openapi({ description: 'Required for authType "basic".' }),
+            credential: z.string().min(1).optional().openapi({
+              description: 'Token or password. Required unless authType is "none". Never returned.',
+            }),
+            environmentId: z.number().int().positive().nullable().optional().openapi({
+              description: 'Bind to one environment, or null/omitted for portal-wide.',
+            }),
+            enabled: z.boolean().optional(),
+            failureMode: z.enum(integrationFailureModes),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Integration created',
+      content: { 'application/json': { schema: integrationSchema } },
+    },
+    400: { description: 'Bad request, or a credential/username missing for the chosen authType' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    409: { description: 'An integration of this kind is already bound to that environment' },
+    503: { description: 'SECRET_ENCRYPTION_KEY is not configured, so a credential cannot be stored' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/integrations/{id}',
+  summary: '[root] Get an integration by ID',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Integration',
+      content: { 'application/json': { schema: integrationSchema } },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'put',
+  path: '/admin/integrations/{id}',
+  summary: '[root] Update an integration',
+  description:
+    'Sending `credential` rotates it and is audited as a rotation in its own right; omitting it ' +
+    'leaves the stored one alone. `kind` cannot be changed — delete and recreate instead, so a ' +
+    "row's credential, health record and audit history keep belonging to one system. Changing " +
+    '`baseUrl` or the credential clears the health record, because it described the old target.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            name: z.string().min(1).optional(),
+            baseUrl: z.string().url().optional(),
+            authType: z.enum(integrationAuthTypes).optional(),
+            username: z.string().optional(),
+            credential: z.string().min(1).optional(),
+            environmentId: z.number().int().positive().nullable().optional(),
+            enabled: z.boolean().optional(),
+            failureMode: z.enum(integrationFailureModes).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Updated integration',
+      content: { 'application/json': { schema: integrationSchema } },
+    },
+    400: { description: 'Bad request' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'An integration of this kind is already bound to that environment' },
+    503: { description: 'SECRET_ENCRYPTION_KEY is not configured, so a credential cannot be rotated' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/admin/integrations/{id}',
+  summary: '[root] Delete an integration',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Integration deleted',
+      content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/integrations/{id}/probe',
+  summary: '[root] Probe an integration for reachability',
+  description:
+    "Contacts the system's health endpoint now and records the outcome on the row. An " +
+    'unreachable system is a 200 with `ok: false` and a reason — the admin asked whether it ' +
+    'works, and "no, because …" answers that. POST because it makes an outbound call and writes ' +
+    '`lastContactedAt` / `lastError`.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Probe outcome, successful or not',
+      content: { 'application/json': { schema: integrationProbeSchema } },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'Integration is disabled' },
   },
 })
 

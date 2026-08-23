@@ -6,6 +6,7 @@
  * `signToken` throw during login, which reaches the browser as a failed sign-in
  * and reads as "wrong password". The operator then debugs the password.
  */
+import { SECRET_KEY_ENV, SECRET_KEY_HEX_LENGTH, isValidSecretKey } from '@/lib/crypto/secrets'
 
 /** Minimum length for an HS256 signing key — 256 bits of secret. */
 export const MIN_JWT_SECRET_LENGTH = 32
@@ -47,6 +48,26 @@ export const configProblems = (env: ConfigEnv = process.env): ConfigProblem[] =>
     problems.push({
       variable: 'DATABASE_URL',
       message: 'is not set — the server cannot reach its database.',
+    })
+  }
+
+  // SECRET_ENCRYPTION_KEY (issue #111) is reported only when it is SET but
+  // unusable, which is the case an operator got wrong. Its plain ABSENCE is not
+  // a problem in this sense: the portal runs fine without external-system
+  // integrations, and warning about it every boot on every deployment that does
+  // not use them is the kind of noise that trains people to ignore this block.
+  // The absent case is reported where it actually matters — the credential paths
+  // refuse with a 503 naming this variable (lib/services/admin/integrations.ts)
+  // rather than falling back to storing the credential in plain text.
+  const secretKey = env[SECRET_KEY_ENV]
+  if (secretKey !== undefined && secretKey !== '' && !isValidSecretKey(secretKey)) {
+    problems.push({
+      variable: SECRET_KEY_ENV,
+      message:
+        `is set but is not ${SECRET_KEY_HEX_LENGTH} hex characters, so integration ` +
+        'credentials cannot be encrypted or decrypted. Generate one with ' +
+        '`openssl rand -hex 32`. Note that a key which is later CHANGED cannot ' +
+        'decrypt what the previous key wrote.',
     })
   }
 

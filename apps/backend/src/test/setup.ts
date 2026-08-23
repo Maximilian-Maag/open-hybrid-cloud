@@ -34,6 +34,8 @@ const TABLES = [
   schema.productTranslations,
   schema.products,
   schema.categories,
+  // Before deployment_environments: integrations.environment_id references it.
+  schema.integrations,
   schema.deploymentEnvironments,
   schema.ciSources,
   schema.projects,
@@ -115,6 +117,30 @@ beforeAll(async () => {
       DROP CONSTRAINT IF EXISTS deployment_environments_callback_secret_unique;
     ALTER TABLE deployment_environments
       ADD CONSTRAINT deployment_environments_callback_secret_unique UNIQUE (callback_secret);
+    -- Migration 0023: the integration registry (issue #111). Placed after
+    -- deployment_environments because environment_id references it.
+    CREATE TABLE IF NOT EXISTS integrations (
+      id BIGSERIAL PRIMARY KEY,
+      kind TEXT NOT NULL CHECK (kind IN ('foreman','ansible','nexus','pulp','loki','grafana')),
+      name TEXT NOT NULL,
+      base_url TEXT NOT NULL,
+      auth_type TEXT NOT NULL DEFAULT 'bearer' CHECK (auth_type IN ('none','bearer','basic','token_header')),
+      username TEXT NOT NULL DEFAULT '',
+      credential TEXT,
+      environment_id BIGINT REFERENCES deployment_environments(id) ON DELETE CASCADE,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      failure_mode TEXT NOT NULL DEFAULT 'best_effort' CHECK (failure_mode IN ('blocking','best_effort')),
+      last_contacted_at TIMESTAMPTZ,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS integrations_kind_env_key
+      ON integrations (kind, environment_id) WHERE environment_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS integrations_kind_global_key
+      ON integrations (kind) WHERE environment_id IS NULL;
+    CREATE INDEX IF NOT EXISTS integrations_kind_enabled_idx
+      ON integrations (kind, enabled);
     CREATE TABLE IF NOT EXISTS product_environments (
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),

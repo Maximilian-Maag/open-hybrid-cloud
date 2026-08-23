@@ -99,6 +99,17 @@ spec:
                   key: SMTP_PASS
             {{- end }}
             {{- end }}
+            {{- if .Values.backend.secrets.secretEncryptionKey }}
+            # Optional, and the secret only carries this key when it is set, so
+            # the reference has to be conditional too: an unconditional
+            # secretKeyRef would hold the pod in CreateContainerConfigError on
+            # every release that leaves the integration registry off.
+            - name: SECRET_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  key: SECRET_ENCRYPTION_KEY
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /api/health

@@ -79,6 +79,9 @@ services:
       SMTP_USER: "${SMTP_USER:-}"
       SMTP_PASS: "${SMTP_PASS:-}"
       SMTP_TLS: "${SMTP_TLS:-true}"
+      # Optional — encrypts the integration registry's credentials (issue #111).
+      # Blank leaves the feature off; it never falls back to plain text.
+      SECRET_ENCRYPTION_KEY: "${SECRET_ENCRYPTION_KEY:-}"
     depends_on:
       postgres:
         condition: service_healthy

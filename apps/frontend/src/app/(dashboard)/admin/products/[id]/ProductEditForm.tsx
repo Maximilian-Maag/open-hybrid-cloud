@@ -66,6 +66,10 @@ export function ProductEditForm({ product, categories, environments, translation
   const [description, setDescription] = useState(product.description)
   const [categoryId, setCategoryId] = useState(String(product.categoryId))
   const [baseLanguage, setBaseLanguage] = useState(product.baseLanguage)
+  // Trust content for the product page (issue #107). Empty means "nobody has
+  // said", which the page renders by leaving the row out.
+  const [owner, setOwner] = useState(product.owner ?? '')
+  const [docsUrl, setDocsUrl] = useState(product.docsUrl ?? '')
   const [changelog, setChangelog] = useState('')
   const [saving, setSaving] = useState(false)
   // Bumped after a save so the history panel refetches and shows the entry the
@@ -76,9 +80,20 @@ export function ProductEditForm({ product, categories, environments, translation
 
   // Translations
   const [translations, setTranslations] = useState<ProductTranslation[]>(initTranslations)
+  // `router.refresh()` re-renders the server component and hands this one a new
+  // `translations` prop, but `useState` keeps its first value forever — so after
+  // "AI Translate" the list still described the product as it was before the run.
+  // `loadTranslation` then found no entry for a language the AI had just written,
+  // opened the modal blank, and the save wrote that blank over the new prose. The
+  // prop is the server's answer, so state follows it; this only fires on an actual
+  // refresh, because a client re-render does not produce new props.
+  useEffect(() => {
+    setTranslations(initTranslations)
+  }, [initTranslations])
   const [translationLang, setTranslationLang] = useState('de')
   const [translationName, setTranslationName] = useState('')
   const [translationDesc, setTranslationDesc] = useState('')
+  const [translationLongDesc, setTranslationLongDesc] = useState('')
   const [transModal, setTransModal] = useState(false)
   const [transSaving, setTransSaving] = useState(false)
   const [transError, setTransError] = useState<string | null>(null)
@@ -140,6 +155,12 @@ export function ProductEditForm({ product, categories, environments, translation
         description: description.trim(),
         categoryId: Number(categoryId),
         baseLanguage,
+        // Sent only when actually changed, and '' is how the form says "clear it".
+        // Sending them unconditionally would put "owner, documentation link" in
+        // every single history entry (issue #38), including saves that touched
+        // neither.
+        ...(owner.trim() !== (product.owner ?? '') ? { owner: owner.trim() } : {}),
+        ...(docsUrl.trim() !== (product.docsUrl ?? '') ? { docsUrl: docsUrl.trim() } : {}),
         // Optional, and cleared after saving: a changelog note describes one
         // change, so carrying it into the next save would misattribute it.
         ...(changelog.trim() ? { changelog: changelog.trim() } : {}),
@@ -169,6 +190,27 @@ export function ProductEditForm({ product, categories, environments, translation
     router.refresh()
   }
 
+  /**
+   * Point the translation modal at one language, starting from whatever is already
+   * stored for it.
+   *
+   * The endpoint is an upsert keyed on the language, so opening this on a language
+   * that already has a translation is an edit. It used to open blank whatever the
+   * language, and this form always sends `longDescription` — so re-saving a
+   * translation to fix a typo in its name wrote an empty long description over the
+   * prose the product page shows. Loading the stored values in is what makes the
+   * fields mean "what will be saved" rather than "what you retype"; omitting the
+   * untouched field instead would fix the erasure but still show the author an empty
+   * box next to text that exists.
+   */
+  function loadTranslation(code: string) {
+    const existing = translations.find((x) => x.languageCode === code)
+    setTranslationLang(code)
+    setTranslationName(existing?.name ?? '')
+    setTranslationDesc(existing?.description ?? '')
+    setTranslationLongDesc(existing?.longDescription ?? '')
+  }
+
   async function handleAddTranslation(e: React.FormEvent) {
     e.preventDefault()
     setTransSaving(true)
@@ -177,6 +219,11 @@ export function ProductEditForm({ product, categories, environments, translation
       await put(`/api/admin/products/${product.id}/translations/${translationLang}`, {
         name: translationName.trim(),
         description: translationDesc.trim(),
+        // Always sent from this form, because this form is where it is edited —
+        // the endpoint leaves it alone only for callers that omit it. Safe to send
+        // unconditionally only because `loadTranslation` put the stored value in the
+        // box first; without that this line is an erase.
+        longDescription: translationLongDesc.trim(),
       }, token)
       const updated = await post<ProductTranslation[]>(`/api/admin/products/${product.id}/translations`, {}, token)
         .catch(() => null)
@@ -187,6 +234,7 @@ export function ProductEditForm({ product, categories, environments, translation
           languageCode: translationLang,
           name: translationName.trim(),
           description: translationDesc.trim(),
+          longDescription: translationLongDesc.trim(),
         }
         setTranslations((prev) => {
           const idx = prev.findIndex((x) => x.languageCode === translationLang)
@@ -493,6 +541,27 @@ export function ProductEditForm({ product, categories, environments, translation
             <textarea id="product-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
+          {/* What the product page shows under "Good to know" (issue #107). Both
+              optional: the page omits whichever is empty rather than showing a
+              blank row. */}
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Owner"
+              value={owner}
+              maxLength={200}
+              onChange={(e) => setOwner(e.target.value)}
+              placeholder="e.g. Platform Networking"
+              hint="The team that runs this product, shown on its page."
+            />
+            <Input
+              label="Documentation link"
+              value={docsUrl}
+              maxLength={2000}
+              onChange={(e) => setDocsUrl(e.target.value)}
+              placeholder="https://…"
+              hint="Must start with http:// or https://."
+            />
+          </div>
           {/* Optional, per the issue. Cleared after saving, since a note describes
               one change and carrying it forward would misattribute it. */}
           <div className="flex flex-col gap-1">
@@ -526,7 +595,7 @@ export function ProductEditForm({ product, categories, environments, translation
           <Button size="sm" variant="secondary" onClick={handleAiTranslate} disabled={translating}>
             {translating ? 'Translating…' : 'AI Translate'}
           </Button>
-          <Button size="sm" onClick={() => { setTranslationName(''); setTranslationDesc(''); setTransError(null); setTransModal(true) }}>
+          <Button size="sm" onClick={() => { loadTranslation(translationLang); setTransError(null); setTransModal(true) }}>
             Add Translation
           </Button>
         </div>
@@ -545,6 +614,9 @@ export function ProductEditForm({ product, categories, environments, translation
                 <span className="text-xs font-mono text-slate-600 uppercase">{t.languageCode}</span>
                 <p className="font-medium text-slate-900">{t.name}</p>
                 <p className="text-sm text-slate-500 line-clamp-2">{t.description}</p>
+                {t.longDescription && (
+                  <p className="mt-1 text-xs text-slate-400 line-clamp-2">{t.longDescription}</p>
+                )}
               </div>
             ))}
           </div>
@@ -673,15 +745,35 @@ export function ProductEditForm({ product, categories, environments, translation
       </Card>
 
       {/* Translation Modal */}
-      <Modal open={transModal} onClose={() => setTransModal(false)} title="Add Translation" size="md">
+      <Modal
+        open={transModal}
+        onClose={() => setTransModal(false)}
+        title={translations.some((x) => x.languageCode === translationLang) ? 'Edit Translation' : 'Add Translation'}
+        size="md"
+      >
         <form onSubmit={handleAddTranslation} className="space-y-4">
           {transError && <Alert>{transError}</Alert>}
-          <Select label="Language" value={translationLang} onChange={(e) => setTranslationLang(e.target.value)} options={LANGUAGES} />
+          {/* Switching language re-points the whole form, so the fields keep
+              describing the language named above them. */}
+          <Select label="Language" value={translationLang} onChange={(e) => loadTranslation(e.target.value)} options={LANGUAGES} />
           <Input label="Name" value={translationName} onChange={(e) => setTranslationName(e.target.value)} required />
           <div className="flex flex-col gap-1">
             <label htmlFor="translation-description" className="text-sm font-medium text-slate-700">Description</label>
             <textarea id="translation-description" value={translationDesc} onChange={(e) => setTranslationDesc(e.target.value)} rows={3}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p className="text-xs text-slate-500">The short text on the catalogue tile. Keep it to a line or two.</p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="translation-long-description" className="text-sm font-medium text-slate-700">
+              Long description
+            </label>
+            <textarea id="translation-long-description" value={translationLongDesc}
+              onChange={(e) => setTranslationLongDesc(e.target.value)} rows={6} maxLength={20000}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p className="text-xs text-slate-500">
+              The product story, shown only on the product page. Blank lines start a new paragraph; markup is
+              not rendered.
+            </p>
           </div>
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setTransModal(false)}>Cancel</Button>

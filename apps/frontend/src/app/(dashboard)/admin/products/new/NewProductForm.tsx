@@ -60,7 +60,8 @@ export function NewProductForm({ categories, token }: Props) {
       const created = await post<Product>('/api/admin/products', body, token)
 
       // The image needs a product to belong to, so it goes up right after
-      // creation rather than as part of it. A failure here must not lose the
+      // creation rather than as part of it. It becomes the first picture of the
+      // gallery; the rest are added on the edit page (issue #107). A failure here must not lose the
       // product that was just created — say so and continue to the edit page,
       // where the upload can be retried.
       let imageError: string | null = null
@@ -68,8 +69,8 @@ export function NewProductForm({ categories, token }: Props) {
         const upload = new FormData()
         upload.append('image', image)
         upload.append('alt', imageAlt.trim())
-        const res = await fetch(`${API_URL}/api/admin/products/${created.id}/image`, {
-          method: 'PUT',
+        const res = await fetch(`${API_URL}/api/admin/products/${created.id}/images`, {
+          method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
           body: upload,
           cache: 'no-store',

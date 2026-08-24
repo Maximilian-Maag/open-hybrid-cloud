@@ -9,6 +9,7 @@ import {
   orders,
   parameters,
   productEnvironments,
+  productImages,
   productTranslations,
   products,
   projects,
@@ -81,8 +82,11 @@ interface DemoProduct {
   description: string
   germanName: string
   germanDescription: string
-  image: 'blue' | 'green' | 'amber'
-  imageAlt: string
+  /** Two, so the dev database actually exercises the gallery and its thumbnails. */
+  images: { hue: 'blue' | 'green' | 'amber'; alt: string }[]
+  longDescription: string
+  owner: string
+  docsUrl: string
   price: string
 }
 
@@ -94,8 +98,17 @@ const CATALOGUE: DemoProduct[] = [
     germanName: 'Managed Nginx Gateway',
     germanDescription:
       'Ein Reverse Proxy mit TLS-Terminierung, WAF-Regeln und projektbezogenem Rate Limiting.',
-    image: 'blue',
-    imageAlt: 'Abstract blue gradient standing in for a gateway product photo',
+    images: [
+      { hue: 'blue', alt: 'Abstract blue gradient standing in for a gateway product photo' },
+      { hue: 'green', alt: 'Abstract green gradient standing in for a screenshot of the gateway dashboard' },
+    ],
+    longDescription:
+      'The gateway terminates TLS at the edge of the environment you pick, applies the OWASP core rule set, ' +
+      'and rate-limits per project so one noisy service cannot exhaust another\'s budget. Certificates are ' +
+      'issued and renewed for you. Every request is logged to the environment\'s log sink, and the access ' +
+      'logs are queryable for 30 days.',
+    owner: 'Platform Networking',
+    docsUrl: 'https://example.internal/docs/managed-nginx-gateway',
     price: '120.00',
   },
   {
@@ -103,8 +116,17 @@ const CATALOGUE: DemoProduct[] = [
     description: 'A highly available Postgres cluster with automated backups and point-in-time recovery.',
     germanName: 'Postgres-Cluster',
     germanDescription: 'Ein hochverfügbarer Postgres-Cluster mit automatischen Backups.',
-    image: 'green',
-    imageAlt: 'Abstract green gradient standing in for a database product photo',
+    images: [
+      { hue: 'green', alt: 'Abstract green gradient standing in for a database product photo' },
+      { hue: 'blue', alt: 'Abstract blue gradient standing in for a diagram of the cluster topology' },
+    ],
+    longDescription:
+      'Three nodes with synchronous replication and automatic failover, backed up nightly to object storage ' +
+      'with write-ahead log shipping in between, so recovery to any point in the last seven days is a ' +
+      'request rather than a project. Connections arrive through a pooler, and the cluster is monitored ' +
+      'with alerting on replication lag and disk headroom.',
+    owner: 'Data Platform',
+    docsUrl: 'https://example.internal/docs/postgres-cluster',
     price: '340.00',
   },
   {
@@ -112,8 +134,17 @@ const CATALOGUE: DemoProduct[] = [
     description: 'A managed Kubernetes cluster with an autoscaling node pool and cluster-wide monitoring.',
     germanName: 'Kubernetes-Cluster',
     germanDescription: 'Ein gemanagter Kubernetes-Cluster mit automatisch skalierendem Node-Pool.',
-    image: 'amber',
-    imageAlt: 'Abstract amber gradient standing in for a Kubernetes product photo',
+    images: [
+      { hue: 'amber', alt: 'Abstract amber gradient standing in for a Kubernetes product photo' },
+      { hue: 'blue', alt: 'Abstract blue gradient standing in for the cluster monitoring dashboard' },
+    ],
+    longDescription:
+      'A managed control plane with a node pool that scales on pending pods, ingress and cert-manager ' +
+      'pre-installed, and cluster-wide metrics and logs shipped to the environment\'s observability stack. ' +
+      'You get a kubeconfig scoped to your project namespace; upgrades are applied in a maintenance window ' +
+      'you choose.',
+    owner: 'Container Platform',
+    docsUrl: 'https://example.internal/docs/kubernetes-cluster',
     price: '890.00',
   },
 ]
@@ -189,15 +220,41 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
         .values({
           categoryId: category.id,
           baseLanguage: 'en',
-          image: gradientPng(item.image),
-          imageMime: 'image/png',
-          imageAlt: item.imageAlt,
+          owner: item.owner,
+          docsUrl: item.docsUrl,
         })
         .returning()
 
+      // The pictures live in their own table since 0021, so the seed writes a
+      // gallery rather than one column — which is also what gives the a11y gate on
+      // /catalog/{id} a thumbnail strip to scan.
+      await tx.insert(productImages).values(
+        item.images.map((image, position) => ({
+          productId: product.id,
+          position,
+          data: gradientPng(image.hue),
+          mime: 'image/png',
+          alt: image.alt,
+        })),
+      )
+
       await tx.insert(productTranslations).values([
-        { productId: product.id, languageCode: 'en', name: item.name, description: item.description },
-        { productId: product.id, languageCode: 'de', name: item.germanName, description: item.germanDescription },
+        {
+          productId: product.id,
+          languageCode: 'en',
+          name: item.name,
+          description: item.description,
+          longDescription: item.longDescription,
+        },
+        {
+          productId: product.id,
+          languageCode: 'de',
+          name: item.germanName,
+          description: item.germanDescription,
+          // Left empty on purpose: an untranslated long text falls back to English
+          // in getProduct, and inventing German prose here would hide that.
+          longDescription: '',
+        },
       ])
 
       // Two environments at different prices, so the cheapest-offer logic on the

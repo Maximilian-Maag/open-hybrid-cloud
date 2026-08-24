@@ -3,6 +3,7 @@ import { db } from '@/lib/db/client'
 import { productFavorites, products } from '@/lib/db/schema'
 import { and, eq, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
+import { primaryImageAltSql } from '@/lib/services/catalog'
 
 export interface FavoriteProduct {
   productId: number
@@ -31,7 +32,7 @@ export const listFavorites = async (
     .select({
       productId: productFavorites.productId,
       categoryId: products.categoryId,
-      imageAlt: products.imageAlt,
+      imageAlt: primaryImageAltSql,
       createdAt: productFavorites.createdAt,
       name: sql<string>`COALESCE(
         (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),

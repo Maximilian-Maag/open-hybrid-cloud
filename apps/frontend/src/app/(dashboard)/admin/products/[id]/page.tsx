@@ -78,15 +78,15 @@ export default async function AdminProductDetailPage({ params, searchParams }: P
           </ButtonLink>
         }
       />
-      {/* Its own card, above the details form: the picture is uploaded on its own
-          request (multipart to /image), not saved with the rest of the fields. */}
-      <Card title={t('productImage', lang)}>
+      {/* Its own card, above the details form: pictures are uploaded on their own
+          requests (multipart to /images), not saved with the rest of the fields. */}
+      <Card title={t('productImages', lang)}>
         {imageError && (
           <div className="mb-3">
             <Alert>{t('productCreatedPrefix', lang)} {imageError}. {t('tryUploadingAgain', lang)}</Alert>
           </div>
         )}
-        <ProductImageUpload productId={product.id} token={token} initialAlt={product.imageAlt} />
+        <ProductImageUpload productId={product.id} token={token} />
       </Card>
 
       <ProductEditForm

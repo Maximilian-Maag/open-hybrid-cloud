@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { listCatalog, getProduct, getProductImage, CATALOG_MAX_LIMIT } from './catalog'
+import {
+  listCatalog,
+  getProduct,
+  getProductImage,
+  getProductImageById,
+  CATALOG_MAX_LIMIT,
+} from './catalog'
 import { db } from '@/lib/db/client'
 import {
   products,
@@ -13,6 +19,7 @@ import {
   createProduct,
   createCiSource,
   createEnvironment,
+  createProductImage,
 } from '@/test/helpers'
 
 describe('listCatalog', () => {
@@ -300,6 +307,159 @@ describe('getProduct', () => {
   })
 })
 
+describe('getProduct — the product page payload (#107)', () => {
+  it('carries the gallery in order, ids and descriptions only', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Gallery')
+    const second = await createProductImage(product.id, { position: 1, alt: 'The back' })
+    const first = await createProductImage(product.id, { position: 0, alt: 'The front' })
+
+    const result = await getProduct(product.id, 'en')
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.images).toEqual([
+        { id: first.id, alt: 'The front' },
+        { id: second.id, alt: 'The back' },
+      ])
+      // The alt the tiles and the cart read is the first picture's.
+      expect(result.data.imageAlt).toBe('The front')
+    }
+  })
+
+  it('has an empty gallery and a null imageAlt on a product with no picture', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Bare')
+
+    const result = await getProduct(product.id, 'en')
+    if (result.ok) {
+      expect(result.data.images).toEqual([])
+      expect(result.data.imageAlt).toBeNull()
+    }
+  })
+
+  it('translates the long description with the same fallback chain as the short one', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Story')
+    await db
+      .update(productTranslations)
+      .set({ longDescription: 'The English story, at length.' })
+      .where(eq(productTranslations.productId, product.id))
+    await db.insert(productTranslations).values({
+      productId: product.id,
+      languageCode: 'fr',
+      name: 'Histoire',
+      description: 'Court',
+      longDescription: "L'histoire française.",
+    })
+
+    const french = await getProduct(product.id, 'fr')
+    if (french.ok) expect(french.data.longDescription).toBe("L'histoire française.")
+
+    // No Italian translation, so English answers — the page would otherwise show
+    // nothing where the story goes.
+    const italian = await getProduct(product.id, 'it')
+    if (italian.ok) expect(italian.data.longDescription).toBe('The English story, at length.')
+  })
+
+  it('falls back when the translation row exists but its long text is empty', async () => {
+    // long_description is NOT NULL DEFAULT '', so this row is present and blank —
+    // which is exactly what the demo seed writes for de. COALESCE alone treats ''
+    // as a value and returns it, so the fallback never fired and the page showed
+    // no story. The missing-row case above passes either way, which is why this
+    // one has to exist separately.
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'BlankStory')
+    await db
+      .update(productTranslations)
+      .set({ longDescription: 'The English story, at length.' })
+      .where(eq(productTranslations.productId, product.id))
+    await db.insert(productTranslations).values({
+      productId: product.id,
+      languageCode: 'de',
+      name: 'Geschichte',
+      description: 'Kurz',
+      longDescription: '',
+    })
+
+    const german = await getProduct(product.id, 'de')
+    expect(german.ok).toBe(true)
+    if (german.ok) expect(german.data.longDescription).toBe('The English story, at length.')
+  })
+
+  it("returns '' rather than another language when nobody wrote a long description", async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'NoStory')
+
+    const result = await getProduct(product.id, 'en')
+    if (result.ok) expect(result.data.longDescription).toBe('')
+  })
+
+  it('carries the owner and the documentation link, null when unset', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Owned')
+
+    const bare = await getProduct(product.id, 'en')
+    if (bare.ok) {
+      expect(bare.data.owner).toBeNull()
+      expect(bare.data.docsUrl).toBeNull()
+    }
+
+    await db
+      .update(products)
+      .set({ owner: 'Platform Networking', docsUrl: 'https://example.internal/docs' })
+      .where(eq(products.id, product.id))
+
+    const filled = await getProduct(product.id, 'en')
+    if (filled.ok) {
+      expect(filled.data.owner).toBe('Platform Networking')
+      expect(filled.data.docsUrl).toBe('https://example.internal/docs')
+    }
+  })
+})
+
+describe('listCatalog — image descriptions come from the gallery', () => {
+  it('uses the first picture\'s alt text', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Tile')
+    await createProductImage(product.id, { position: 1, alt: 'Second' })
+    await createProductImage(product.id, { position: 0, alt: 'First' })
+
+    const result = await listCatalog('en', { categoryId: cat.id })
+    if (result.ok) {
+      const row = result.data.items.find((item) => item.id === product.id)
+      expect(row?.imageAlt).toBe('First')
+    }
+  })
+})
+
+describe('getProductImageById', () => {
+  it('returns the bytes, type and description of one gallery picture', async () => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'ById')
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0])
+    const image = await createProductImage(product.id, { data: jpeg, mime: 'image/jpeg', alt: 'A photo' })
+
+    const result = await getProductImageById(product.id, image.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(Buffer.from(result.data.data).equals(jpeg)).toBe(true)
+      expect(result.data.mime).toBe('image/jpeg')
+      expect(result.data.alt).toBe('A photo')
+    }
+  })
+
+  it("404s for an image that belongs to another product", async () => {
+    const cat = await createCategory()
+    const mine = await createProduct(cat.id, 'Mine')
+    const theirs = await createProduct(cat.id, 'Theirs')
+    const foreign = await createProductImage(theirs.id)
+
+    const result = await getProductImageById(mine.id, foreign.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+  })
+})
+
 describe('getProductImage', () => {
   it('returns null data when no image set', async () => {
     const cat = await createCategory()
@@ -310,17 +470,24 @@ describe('getProductImage', () => {
     if (result.ok) expect(result.data).toBeNull()
   })
 
-  it('returns { data, mime } when image exists', async () => {
+  it('returns { data, mime, alt } for the first picture of the gallery', async () => {
     const cat = await createCategory()
     const product = await createProduct(cat.id, 'P')
     const buf = Buffer.from([0x89, 0x50, 0x4e, 0x47])
-    await db.update(products).set({ image: buf }).where(eq(products.id, product.id))
+    await createProductImage(product.id, { position: 0, data: buf, alt: 'The front of it' })
+    await createProductImage(product.id, {
+      position: 1,
+      data: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+      mime: 'image/jpeg',
+      alt: 'The back of it',
+    })
 
     const result = await getProductImage(product.id)
     expect(result.ok).toBe(true)
     if (result.ok && result.data) {
       expect(Buffer.from(result.data.data).equals(buf)).toBe(true)
       expect(result.data.mime).toBe('image/png')
+      expect(result.data.alt).toBe('The front of it')
     }
   })
 

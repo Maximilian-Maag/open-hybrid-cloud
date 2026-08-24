@@ -926,7 +926,7 @@ the \code{postgres} Node.js driver.
   \item \textbf{Thin abstraction:} Drizzle stays close to SQL semantics
         (no opaque magic), making it straightforward to write efficient
         queries for JSONB columns, upserts, and aggregations.
-  \item BYTEA columns store product images and the branding logo
+  \item BYTEA columns store product images (\code{product\_images.data}) and the branding logo
         directly in the database, eliminating a separate object store at
         this scale.
 \end{itemize}
@@ -2724,7 +2724,8 @@ The table below shows the current effective schema.
     \code{users}                    & User accounts (local + SSO) with role-based access \\
     \code{categories}               & Product catalogue categories \\
     \code{products}                 & Infrastructure products offered in the catalogue \\
-    \code{product\_translations}    & Multi-language name + description per product \\
+    \code{product\_translations}    & Multi-language name + short/long description per product \\
+    \code{product\_images}          & A product's pictures in gallery order, each with its own alt text \\
     \code{parameters}               & Configurable inputs for global/category/product scope \\
     \code{ci\_sources}              & CI provider credentials (GitLab / GitHub / Bitbucket) \\
     \code{deployment\_environments} & Named environments linked to a CI source \\
@@ -2734,6 +2735,17 @@ The table below shows the current effective schema.
     \code{projects}                 & User-owned projects that group orders \\
     \code{orders}                   & Individual infrastructure provisioning requests \\
     \code{infrastructure\_elements} & Deployed instances tracked per order \\
+    \code{product\_environment\_sizes} & Per-offering size tiers and their prices; an offering with no rows here prices off \code{product\_environments.price} \\
+    \code{product\_versions}        & Timeline of catalogue changes to a product, so an order's snapshot can be explained against what it differs from \\
+    \code{product\_favorites}       & Per-user product bookmarks; composite primary key, so a product can be favourited once \\
+    \code{pipeline\_stacks}         & Ordered pipeline stacks a product provisions through, each with its own webhook \\
+    \code{cart\_items}              & Draft order lines, kept out of \code{orders} so no query over orders has to exclude drafts \\
+    \code{order\_comments}          & Free-text discussion thread on an order \\
+    \code{approval\_delegations}    & Date-bounded delegation of approval authority between users \\
+    \code{integrations}             & External system registry: encrypted credentials, health and failure semantics \\
+    \code{sessions}                 & Server-side sessions; stores only the SHA-256 of the token, never the token \\
+    \code{user\_totp}               & Per-user second-factor secret, kept out of \code{users} so nothing selects it by accident \\
+    \code{user\_recovery\_codes}    & Single-use second-factor recovery codes, stored as SHA-256 hashes \\
     \code{audit\_log}               & Append-only log of significant user actions \\
     \code{exchange\_rates}          & Cached currency conversion rates \\
     \code{branding}                 & Single-row branding config (logo, colours, texts) \\
@@ -2851,7 +2863,8 @@ than a comparison per row.
     \code{id}           & BIGSERIAL & ---  & PK \\
     \code{category\_id} & BIGINT    & ---  & NOT NULL, FK \textrightarrow{} \code{categories(id)} ON DELETE CASCADE \\
     \code{base\_language}& TEXT     & \code{'de'} & fallback language for translations \\
-    \code{image}        & BYTEA     & NULL & product image stored inline \\
+    \code{owner}        & TEXT      & NULL & team that runs the product, shown on its page \\
+    \code{docs\_url}    & TEXT      & NULL & link to the product documentation (http/https only) \\
     \code{created\_at}  & TIMESTAMPTZ & NOW() & \\
     \bottomrule
   \end{tabular}
@@ -2868,7 +2881,34 @@ than a comparison per row.
     \code{product\_id}    & BIGINT & --- & PK, FK \textrightarrow{} \code{products(id)} ON DELETE CASCADE \\
     \code{language\_code} & TEXT   & --- & PK, e.g.\ \code{de}, \code{en}, \code{fr} \\
     \code{name}           & TEXT   & --- & NOT NULL \\
-    \code{description}    & TEXT   & \code{''} & NOT NULL \\
+    \code{description}    & TEXT   & \code{''} & NOT NULL, the short text on the catalogue tile \\
+    \code{long\_description} & TEXT & \code{''} & NOT NULL, the long text on the product page \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{product\_images}}
+
+A product's pictures, in gallery order. Migration 0021 moved the single
+\code{image}/\code{image\_mime}/\code{image\_alt} triple off \code{products} into
+this table and dropped those columns, so this is the only place a product picture
+lives. \code{alt} is NOT NULL here: a row exists only when there is an image, so
+``an image with no description'' is ruled out by the schema rather than only by the
+service (which additionally rejects a blank one).
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}         & BIGSERIAL & ---  & PK \\
+    \code{product\_id}& BIGINT    & ---  & NOT NULL, FK \textrightarrow{} \code{products(id)} ON DELETE CASCADE \\
+    \code{position}   & INT       & 0    & NOT NULL, 0-based gallery order; reads order by (\code{position}, \code{id}) \\
+    \code{data}       & BYTEA     & ---  & NOT NULL, the image bytes \\
+    \code{mime}       & TEXT      & ---  & NOT NULL, detected from the bytes, never from the upload's header \\
+    \code{alt}        & TEXT      & ---  & NOT NULL, what the picture shows (WCAG 1.1.1) \\
+    \code{created\_at}& TIMESTAMPTZ & NOW() & \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -3592,9 +3632,32 @@ Under \textbf{Administration → Products → New}:
   \item Select the \textbf{Category}.
   \item Enter the product \textbf{Name} in the primary language.
   \item Enter a detailed \textbf{Description} in the primary language.
-  \item Upload a product \textbf{Image} (PNG or JPEG, max 10 MB).
   \item Click \textbf{Save \& Continue}.
 \end{enumerate}
+
+\subsection{Images}
+
+A product has a gallery rather than a single picture. The product page shows
+the first one large with the rest as thumbnails; the catalogue tile and the
+cart row show the first one only, so put the picture that best identifies the
+product at the top.
+
+\begin{enumerate}
+  \item Type an \textbf{Image description} --- what the picture shows, at most
+        300 characters. It is required: it is the \code{alt} text screen
+        readers announce and what browsers show when the picture fails to
+        load, and the upload is refused without it.
+  \item Choose a \textbf{file} (PNG, JPEG or WebP, max 10 MB) and upload. Each
+        upload appends to the gallery instead of replacing what is there.
+  \item Reorder with the \textbf{move earlier} / \textbf{move later} buttons on
+        each picture, and drop one with \textbf{remove}. Removing the first
+        picture promotes the next one to lead.
+\end{enumerate}
+
+\notebox{Up to 8 pictures per product. The format is decided by reading the
+file's leading bytes, not the extension or the browser's declared type, so a
+renamed file is rejected rather than stored under the wrong MIME type. SVG is
+not accepted --- it can carry script.}
 
 \subsection{Parameters}
 
@@ -4031,10 +4094,11 @@ The \textbf{Role} column uses the following abbreviations:
   POST & \code{/api/auth/logout}                                     & Stateless no-op (client discards JWT)   & auth \\
   GET  & \code{/api/health}                                          & Health check + bootstrap trigger        & public \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Catalog}} \\[2pt]
+  \multicolumn{4}{@{}l}{\textit{Catalog (image bytes are public: a browser image request carries no bearer token)}} \\[2pt]
   GET  & \code{/api/catalog}                                         & List products by category               & auth \\
   GET  & \code{/api/catalog/\{id\}}                                  & Product detail with environments        & auth \\
-  GET  & \code{/api/catalog/\{id\}/image}                            & Serve product image (BYTEA)             & auth \\
+  GET  & \code{/api/catalog/\{id\}/image}                            & Serve the leading product image (BYTEA) & public \\
+  GET  & \code{/api/catalog/\{id\}/images/\{imageId\}}                & Serve one gallery image (BYTEA)         & public \\
   POST & \code{/api/catalog/\{id\}/order}                            & Place an order                          & auth \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Orders}} \\[2pt]
@@ -4071,7 +4135,11 @@ The \textbf{Role} column uses the following abbreviations:
   GET  & \code{/api/admin/products/\{id\}}                           & Product detail (admin view)             & root \\
   PUT  & \code{/api/admin/products/\{id\}}                           & Update product                          & root \\
   DELETE & \code{/api/admin/products/\{id\}}                         & Delete product + cascade                & root \\
-  PUT  & \code{/api/admin/products/\{id\}/image}                     & Upload product image                    & root \\[6pt]
+  GET  & \code{/api/admin/products/\{id\}/images}                    & List the product gallery                & root \\
+  POST & \code{/api/admin/products/\{id\}/images}                    & Append a picture (multipart)            & root \\
+  PATCH & \code{/api/admin/products/\{id\}/images}                   & Reorder the gallery                     & root \\
+  PATCH & \code{/api/admin/products/\{id\}/images/\{imageId\}}       & Change one picture's description        & root \\
+  DELETE & \code{/api/admin/products/\{id\}/images/\{imageId\}}      & Remove one picture                      & root \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Admin — Environments \& CI Sources (role: root)}} \\[2pt]
   GET  & \code{/api/admin/environments}                              & Deployment environment list             & root \\

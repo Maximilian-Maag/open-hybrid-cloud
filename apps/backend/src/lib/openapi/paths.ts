@@ -78,6 +78,12 @@ const productSchema = z.object({
   description: z.string().nullable(),
 })
 
+/** One picture of a product's gallery — its bytes come from the image routes. */
+const productImageSchema = z.object({
+  id: z.number(),
+  alt: z.string().openapi({ description: 'Required whenever an image exists (#105); never blank.' }),
+})
+
 const parameterSchema = z.object({
   id: z.number(),
   scope: z.string(),
@@ -1099,6 +1105,18 @@ registry.registerPath({
           schema: productSchema.extend({
             environments: z.array(productEnvironmentSchema),
             parameters: z.array(parameterSchema),
+            images: z.array(productImageSchema).openapi({
+              description:
+                'The gallery in order. Empty on a product with no picture. Fetch the bytes from ' +
+                '/catalog/{id}/images/{imageId}.',
+            }),
+            longDescription: z.string().openapi({
+              description:
+                'The long text for the detail page, translated with the same fallback chain as ' +
+                '`description`. Empty string when nobody wrote one.',
+            }),
+            owner: z.string().nullable(),
+            docsUrl: z.string().nullable(),
           }),
         },
       },
@@ -1111,7 +1129,10 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/catalog/{id}/image',
-  summary: 'Get catalog product image (binary)',
+  summary: 'Get the product image the catalogue leads with (binary)',
+  description:
+    'The first picture of the gallery. Kept as its own endpoint because a tile, a cart row and a ' +
+    'favourites card only need one and can build this URL from the product id alone.',
   tags: ['Catalog'],
   security: [],
   request: {
@@ -1119,9 +1140,32 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: 'PNG image',
-      content: { 'image/png': { schema: z.any() } },
+      description: 'The image, served as the type it was stored as',
+      content: { 'image/*': { schema: z.any() } },
     },
+    400: { description: 'The product id is not a positive integer' },
+    404: { description: 'No such product, or it has no picture' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/catalog/{id}/images/{imageId}',
+  summary: 'Get one picture of a product gallery (binary)',
+  description:
+    'The ids come from `images` on /catalog/{id}. Scoped by product, so an image id from another ' +
+    'product answers 404 rather than serving the wrong picture.',
+  tags: ['Catalog'],
+  security: [],
+  request: {
+    params: z.object({ id: z.string(), imageId: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'The image, served as the type it was stored as',
+      content: { 'image/*': { schema: z.any() } },
+    },
+    400: { description: 'Invalid id' },
     404: { description: 'Image not found' },
   },
 })
@@ -2226,6 +2270,9 @@ registry.registerPath({
 
 const adminProductSchema = productSchema.extend({
   categoryName: z.string().nullable(),
+  /** Trust content for the product page (issue #107). */
+  owner: z.string().nullable(),
+  docsUrl: z.string().nullable(),
 })
 
 registry.registerPath({
@@ -2311,6 +2358,14 @@ registry.registerPath({
             baseLanguage: z.string().optional(),
             name: z.string().min(1).optional(),
             description: z.string().optional(),
+            owner: z.string().nullable().optional().openapi({
+              description: 'Who runs the product, shown on its page. Null or empty clears it.',
+            }),
+            docsUrl: z.string().nullable().optional().openapi({
+              description:
+                'Link to the product documentation. Must start with http:// or https://; null or ' +
+                'empty clears it.',
+            }),
           }),
         },
       },
@@ -2392,6 +2447,11 @@ registry.registerPath({
           schema: z.object({
             name: z.string().min(1),
             description: z.string().optional(),
+            longDescription: z.string().optional().openapi({
+              description:
+                'The long text the product page shows (issue #107). Omit to leave it unchanged — ' +
+                'callers that only know about name and description must not blank it.',
+            }),
           }),
         },
       },
@@ -2407,6 +2467,7 @@ registry.registerPath({
             languageCode: z.string(),
             name: z.string(),
             description: z.string(),
+            longDescription: z.string(),
           }),
         },
       },
@@ -2442,9 +2503,37 @@ registry.registerPath({
 })
 
 registry.registerPath({
-  method: 'put',
-  path: '/admin/products/{id}/image',
-  summary: '[root] Upload product image (multipart)',
+  method: 'get',
+  path: '/admin/products/{id}/images',
+  summary: '[root] List a product gallery',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'The gallery in order, without the bytes',
+      content: {
+        'application/json': {
+          schema: z.array(productImageSchema.extend({ position: z.number(), mime: z.string() })),
+        },
+      },
+    },
+    400: { description: 'Invalid product id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Product not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/products/{id}/images',
+  summary: '[root] Append a picture to a product gallery (multipart)',
+  description:
+    'Replaced `PUT /admin/products/{id}/image`, which could only overwrite the single picture a ' +
+    'product used to be allowed. `alt` is required: an image with no description is what #105 ' +
+    'rules out. The type is determined from the bytes, not from the declared Content-Type, and ' +
+    'SVG is refused because it can carry script.',
   tags: ['Admin'],
   security: bearerAuth,
   request: {
@@ -2452,19 +2541,91 @@ registry.registerPath({
     body: {
       content: {
         'multipart/form-data': {
-          schema: z.object({ image: z.any() }),
+          schema: z.object({ image: z.any(), alt: z.string() }),
         },
       },
     },
   },
   responses: {
-    200: {
-      description: 'Image uploaded',
-      content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+    201: {
+      description: 'Image stored',
+      content: {
+        'application/json': {
+          schema: z.object({ id: z.number(), mime: z.string(), position: z.number() }),
+        },
+      },
     },
-    400: { description: 'No image provided' },
+    400: { description: 'No image provided, or no description for it' },
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
+    404: { description: 'Product not found' },
+    409: { description: 'The gallery is already at its maximum size' },
+    413: { description: 'Image larger than 10 MB' },
+    415: { description: 'Unsupported image type' },
+  },
+})
+
+registry.registerPath({
+  method: 'patch',
+  path: '/admin/products/{id}/images',
+  summary: '[root] Reorder a product gallery',
+  description:
+    '`order` lists every image id of the product exactly once. A partial list is refused rather ' +
+    'than half-applied, so a reorder from a stale gallery cannot silently drop a picture.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': { schema: z.object({ order: z.array(z.number().int().positive()) }) },
+      },
+    },
+  },
+  responses: {
+    204: { description: 'Reordered' },
+    400: { description: 'The order is not exactly this product\'s gallery' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'No such product' },
+  },
+})
+
+registry.registerPath({
+  method: 'patch',
+  path: '/admin/products/{id}/images/{imageId}',
+  summary: '[root] Change one picture\'s description',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string(), imageId: z.string() }),
+    body: {
+      content: { 'application/json': { schema: z.object({ alt: z.string() }) } },
+    },
+  },
+  responses: {
+    204: { description: 'Description saved' },
+    400: { description: 'Missing, blank or over-long description' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Image not found for this product' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/admin/products/{id}/images/{imageId}',
+  summary: '[root] Remove one picture from a product gallery',
+  description: 'The remaining positions are closed up so the gallery order stays dense.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string(), imageId: z.string() }) },
+  responses: {
+    204: { description: 'Removed' },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Image not found for this product' },
   },
 })
 

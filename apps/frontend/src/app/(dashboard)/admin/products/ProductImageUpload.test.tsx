@@ -11,18 +11,52 @@ const file = (name: string, type: string, sizeBytes = 1024) => {
   return f
 }
 
-const lastCall = () => vi.mocked(fetch).mock.calls[vi.mocked(fetch).mock.calls.length - 1]
+const calls = () => vi.mocked(fetch).mock.calls as [string, RequestInit | undefined][]
+/** Every request that was not the gallery GET the component makes on mount. */
+const writes = () =>
+  calls().filter((call): call is [string, RequestInit] => {
+    const method = call[1]?.method
+    return method !== undefined && method !== 'GET'
+  })
+/** The last of those, or a failure that names what was missing. */
+const lastWrite = (): [string, RequestInit] => {
+  const all = writes()
+  if (all.length === 0) throw new Error('no write request was made')
+  return all[all.length - 1]
+}
 
 const fileInput = () => screen.getByLabelText(/image file/i, { selector: 'input[type="file"]' })
-const altInput = () => screen.getByLabelText(/image description/i)
+/** The description for the picture about to be uploaded, not one already in the gallery. */
+const newAltInput = () => screen.getByLabelText(/^image description \*?$/i)
 
 /** Describe the picture first — the control refuses to upload without it. */
 const describeIt = async (user: ReturnType<typeof userEvent.setup>, text = 'Traffic graphs') => {
-  await user.type(altInput(), text)
+  await user.type(newAltInput(), text)
+}
+
+/** The gallery the component loads on mount. */
+const gallery = (images: { id: number; alt: string }[] = []) =>
+  images.map((image, position) => ({ ...image, position, mime: 'image/png' }))
+
+/**
+ * fetch that answers the initial gallery GET and treats everything else as a
+ * successful write. Individual tests override the write with mockResolvedValueOnce
+ * or by inspecting the call.
+ */
+const stubFetch = (images: { id: number; alt: string }[] = []) => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init?: RequestInit) => {
+      if (!init?.method || init.method === 'GET') {
+        return new Response(JSON.stringify(gallery(images)), { status: 200 })
+      }
+      return new Response(JSON.stringify({ id: 1, mime: 'image/png', position: 0 }), { status: 201 })
+    }),
+  )
 }
 
 beforeEach(() => {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ mime: 'image/png' }), { status: 200 })))
+  stubFetch()
 })
 
 afterEach(() => {
@@ -30,18 +64,19 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('ProductImageUpload', () => {
-  it('uploads the chosen file as multipart with the bearer token', async () => {
+describe('ProductImageUpload — uploading', () => {
+  it('appends the chosen file as multipart with the bearer token', async () => {
     const user = userEvent.setup()
     render(<ProductImageUpload productId={7} token="test-token" />)
     await describeIt(user)
 
     await user.upload(fileInput(), file('p.png', 'image/png'))
 
-    await waitFor(() => expect(fetch).toHaveBeenCalled())
-    const [url, init] = lastCall() as [string, RequestInit]
-    expect(url).toContain('/api/admin/products/7/image')
-    expect(init.method).toBe('PUT')
+    await waitFor(() => expect(writes()).not.toHaveLength(0))
+    const [url, init] = lastWrite()
+    expect(url).toContain('/api/admin/products/7/images')
+    // POST, not PUT: a gallery is appended to, not overwritten (#107).
+    expect(init.method).toBe('POST')
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-token')
     // multipart, not base64 JSON: the endpoint reads formData()
     expect(init.body).toBeInstanceOf(FormData)
@@ -56,7 +91,7 @@ describe('ProductImageUpload', () => {
     await user.upload(fileInput(), file('huge.png', 'image/png', 11 * 1024 * 1024))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/11\.0 MB/)
-    expect(fetch).not.toHaveBeenCalled()
+    expect(writes()).toHaveLength(0)
   })
 
   it("shows the server's reason when it refuses the file", async () => {
@@ -64,11 +99,11 @@ describe('ProductImageUpload', () => {
     // is exactly how a file reaches the server and fails there: `accept` goes by
     // the declared type, the server goes by the bytes.
     const user = userEvent.setup()
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ error: 'Unsupported image type — allowed: image/png' }), { status: 415 }),
-    )
     render(<ProductImageUpload productId={7} token="t" />)
     await describeIt(user)
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'Unsupported image type — allowed: image/png' }), { status: 415 }),
+    )
 
     await user.upload(fileInput(), file('a.png', 'image/png'))
 
@@ -81,9 +116,9 @@ describe('ProductImageUpload', () => {
     await describeIt(user, 'Dashboard with traffic graphs')
 
     await user.upload(fileInput(), file('p.png', 'image/png'))
-    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    await waitFor(() => expect(writes()).not.toHaveLength(0))
 
-    const body = (lastCall() as [string, RequestInit])[1].body as FormData
+    const body = lastWrite()[1].body as FormData
     expect(body.get('alt')).toBe('Dashboard with traffic graphs')
   })
 
@@ -96,59 +131,26 @@ describe('ProductImageUpload', () => {
     await user.upload(fileInput(), file('p.png', 'image/png'))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/describe what the image shows/i)
-    expect(fetch).not.toHaveBeenCalled()
+    expect(writes()).toHaveLength(0)
   })
 
-  it('starts from the stored description when the product already has one', () => {
-    render(<ProductImageUpload productId={7} token="t" initialAlt="An existing description" />)
-    expect(altInput()).toHaveValue('An existing description')
-  })
-
-  it('saves a changed description without re-uploading the file', async () => {
+  it('clears the description after a successful upload', async () => {
+    // The next picture is a different picture; reusing the text is how a gallery
+    // ends up with the same alt on every image.
     const user = userEvent.setup()
-    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }))
-    render(<ProductImageUpload productId={9} token="t" initialAlt="Old" />)
+    render(<ProductImageUpload productId={7} token="t" />)
+    await describeIt(user, 'The front of it')
 
-    await user.clear(altInput())
-    await user.type(altInput(), 'New description')
-    await user.click(screen.getByRole('button', { name: /save description/i }))
+    await user.upload(fileInput(), file('p.png', 'image/png'))
 
-    await waitFor(() => expect(fetch).toHaveBeenCalled())
-    const [url, init] = lastCall() as [string, RequestInit]
-    expect(url).toContain('/api/admin/products/9/image')
-    expect(init.method).toBe('PATCH')
-    expect(JSON.parse(init.body as string)).toEqual({ alt: 'New description' })
-  })
-
-  it('refuses to save an empty description', async () => {
-    const user = userEvent.setup()
-    render(<ProductImageUpload productId={9} token="t" initialAlt="Old" />)
-
-    await user.clear(altInput())
-    await user.click(screen.getByRole('button', { name: /save description/i }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/description is required/i)
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it('removes the image with a DELETE', async () => {
-    const user = userEvent.setup()
-    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }))
-    render(<ProductImageUpload productId={12} token="t" />)
-
-    await user.click(screen.getByRole('button', { name: /remove image/i }))
-
-    await waitFor(() => expect(fetch).toHaveBeenCalled())
-    const [url, init] = lastCall() as [string, RequestInit]
-    expect(url).toContain('/api/admin/products/12/image')
-    expect(init.method).toBe('DELETE')
+    await waitFor(() => expect(newAltInput()).toHaveValue(''))
   })
 
   it('reports a network failure instead of looking successful', async () => {
     const user = userEvent.setup()
-    vi.mocked(fetch).mockRejectedValue(new Error('offline'))
     render(<ProductImageUpload productId={7} token="t" />)
     await describeIt(user)
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('offline'))
 
     await user.upload(fileInput(), file('p.png', 'image/png'))
 
@@ -164,9 +166,99 @@ describe('ProductImageUpload', () => {
     await user.upload(fileInput(), file('p.png', 'image/png'))
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
 
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ error: 'nope' }), { status: 415 }))
+    await describeIt(user, 'Another one')
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ error: 'nope' }), { status: 415 }))
     await user.upload(fileInput(), file('p2.png', 'image/png'))
     await screen.findByRole('alert')
     expect(onChanged).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ProductImageUpload — an existing gallery', () => {
+  const two = [
+    { id: 11, alt: 'The front of it' },
+    { id: 12, alt: 'The back of it' },
+  ]
+
+  it('lists the pictures it already has, with their descriptions', async () => {
+    stubFetch(two)
+    render(<ProductImageUpload productId={9} token="t" />)
+
+    expect(await screen.findByDisplayValue('The front of it')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('The back of it')).toBeInTheDocument()
+  })
+
+  it('saves a changed description without re-uploading the file', async () => {
+    stubFetch(two)
+    const user = userEvent.setup()
+    render(<ProductImageUpload productId={9} token="t" />)
+
+    const field = await screen.findByDisplayValue('The front of it')
+    await user.clear(field)
+    await user.type(field, 'A clearer description')
+    await user.tab()
+
+    await waitFor(() => expect(writes()).not.toHaveLength(0))
+    const [url, init] = lastWrite()
+    expect(url).toContain('/api/admin/products/9/images/11')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ alt: 'A clearer description' })
+  })
+
+  it('refuses to save an empty description', async () => {
+    stubFetch(two)
+    const user = userEvent.setup()
+    render(<ProductImageUpload productId={9} token="t" />)
+
+    const field = await screen.findByDisplayValue('The front of it')
+    await user.clear(field)
+    await user.tab()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/description is required/i)
+    expect(writes()).toHaveLength(0)
+  })
+
+  it('removes one picture with a DELETE naming it', async () => {
+    stubFetch(two)
+    const user = userEvent.setup()
+    render(<ProductImageUpload productId={12} token="t" />)
+
+    await user.click(await screen.findByRole('button', { name: /remove: the back of it/i }))
+
+    await waitFor(() => expect(writes()).not.toHaveLength(0))
+    const [url, init] = lastWrite()
+    expect(url).toContain('/api/admin/products/12/images/12')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('reorders by sending the whole order, with the two pictures swapped', async () => {
+    // The endpoint refuses a partial list, so "move down" is a complete order —
+    // which is also what keeps a reorder from half-applying.
+    stubFetch(two)
+    const user = userEvent.setup()
+    render(<ProductImageUpload productId={4} token="t" />)
+
+    await user.click(await screen.findByRole('button', { name: /move down: the front of it/i }))
+
+    await waitFor(() => expect(writes()).not.toHaveLength(0))
+    const [url, init] = lastWrite()
+    expect(url).toContain('/api/admin/products/4/images')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ order: [12, 11] })
+  })
+
+  it('cannot move the first picture up or the last one down', async () => {
+    stubFetch(two)
+    render(<ProductImageUpload productId={4} token="t" />)
+
+    expect(await screen.findByRole('button', { name: /move up: the front of it/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /move down: the back of it/i })).toBeDisabled()
+  })
+
+  it('says so, rather than showing an empty list, when the gallery cannot be loaded', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 500 })))
+    render(<ProductImageUpload productId={9} token="t" />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not load the gallery/i)
   })
 })

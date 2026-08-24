@@ -2745,7 +2745,9 @@ The table below shows the current effective schema.
     \code{integrations}             & External system registry: encrypted credentials, health and failure semantics \\
     \code{sessions}                 & Server-side sessions; stores only the SHA-256 of the token, never the token \\
     \code{user\_totp}               & Per-user second-factor secret, kept out of \code{users} so nothing selects it by accident \\
-    \code{user\_recovery\_codes}    & Single-use second-factor recovery codes, stored as SHA-256 hashes \\
+    \code{user\_recovery\_codes}    & Single-use second-factor recovery codes, stored as SHA-256 hashes; shared by both factor kinds \\
+    \code{webauthn\_credentials}    & Registered security keys and passkeys. Public keys only — a dump of this table authenticates nobody \\
+    \code{webauthn\_challenges}     & The in-flight ceremony challenge, one row per user, deleted when it is spent \\
     \code{audit\_log}               & Append-only log of significant user actions \\
     \code{exchange\_rates}          & Cached currency conversion rates \\
     \code{branding}                 & Single-row branding config (logo, colours, texts) \\

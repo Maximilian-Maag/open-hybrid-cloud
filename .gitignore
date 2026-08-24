@@ -92,3 +92,6 @@ Desktop.ini
 # Playwright
 test-results/
 playwright-report/
+
+# The pinned opa binary for `make policy` (50 MB, fetched by `make policy-install-opa`)
+.opa/

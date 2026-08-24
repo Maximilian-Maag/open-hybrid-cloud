@@ -5,7 +5,7 @@ import { AuditTable } from './AuditTable'
 vi.mock('@/lib/api', () => ({ get: vi.fn() }))
 import { get } from '@/lib/api'
 
-const mockGet = get as unknown as ReturnType<typeof vi.fn>
+const mockGet = vi.mocked(get)
 
 describe('AuditTable', () => {
   beforeEach(() => {

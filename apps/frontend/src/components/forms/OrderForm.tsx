@@ -89,7 +89,8 @@ export function OrderForm({
       // response (an error envelope, an empty array) would otherwise store
       // undefined and crash the next render on `.filter`.
       .then((detail) => { if (!stale && detail?.parameters) setResolvedParameters(detail.parameters) })
-      .catch(() => { /* keep the unresolved list — submit still validates server-side */ })
+      // eslint-disable-next-line no-restricted-syntax -- deliberate: keep the unresolved list, submit still validates server-side
+      .catch(() => {})
     return () => { stale = true }
   }, [envId, product.id, product.parameters, lang, token])
 
@@ -175,7 +176,7 @@ export function OrderForm({
       setParamValues({})
       return
     }
-    const tpl = templates.find((tpl) => String(tpl.id) === id)
+    const tpl = templates.find((candidate) => String(candidate.id) === id)
     if (!tpl) return
     setTemplateId(id)
     setParamValues(withoutRedacted(tpl.parameters ?? {}))
@@ -246,11 +247,13 @@ export function OrderForm({
    * that predates sizing has.
    */
   function formatEnvPrice(env: ProductDetail['environments'][number]): string {
-    const sizes = env.sizes ?? []
-    if (sizes.length === 0) return formatPrice(env.price, env.currency)
+    // Named for the argument, not for the component's `sizes`: this prices every
+    // environment in the list, including ones that are not the selected one.
+    const envSizes = env.sizes ?? []
+    if (envSizes.length === 0) return formatPrice(env.price, env.currency)
     // Compared in EUR, not by the digits: sizes carry their own currency, so the
     // cheapest is not whichever one has the smallest number on it.
-    const cheapest = sortByValue(sizes, exchangeRates)[0]
+    const cheapest = sortByValue(envSizes, exchangeRates)[0]
     return formatPrice(cheapest.price, cheapest.currency)
   }
 

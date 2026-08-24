@@ -98,12 +98,29 @@ export function storedRootTotpSecret(): string | null {
 /**
  * Finish a sign-in that came back asking for a second factor.
  *
- * Returns false when the page is not at the code step, so a caller can use it
- * unconditionally: an account with no factor simply never reaches it.
+ * Returns false when this account has none, so a caller can use it
+ * unconditionally.
+ *
+ * The wait is a race and not an `isVisible()`, which is what the first version of
+ * this got wrong: the code field appears only after the challenge round trip, so
+ * asking whether it is visible the instant the button is clicked always answered
+ * no, and the caller then sat on `waitForURL` until it timed out. Racing the field
+ * against the navigation resolves as soon as either happens, and cannot hang on
+ * an account that needs no code.
  */
 export async function completeSecondFactor(page: Page): Promise<boolean> {
-  const codeField = page.getByLabel(/authentication code|code/i).first()
-  if (!(await codeField.isVisible().catch(() => false))) return false
+  const codeField = page.getByLabel(/authentication code/i).first()
+  const needsCode = await Promise.race([
+    codeField
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => true)
+      .catch(() => false),
+    page
+      .waitForURL((url) => !url.pathname.includes('/login'), { timeout: 60_000 })
+      .then(() => false)
+      .catch(() => false),
+  ])
+  if (!needsCode) return false
 
   const secret = storedRootTotpSecret()
   if (!secret) {
@@ -114,7 +131,7 @@ export async function completeSecondFactor(page: Page): Promise<boolean> {
     )
   }
   await codeField.fill(totpCode(secret))
-  await page.getByRole('button', { name: /verify|sign in|continue/i }).first().click()
+  await page.getByRole('button', { name: /^sign in$/i }).click()
   return true
 }
 

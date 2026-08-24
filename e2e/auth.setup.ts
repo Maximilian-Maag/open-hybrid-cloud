@@ -80,8 +80,28 @@ async function enrolSecondFactorIfRequired(page: import('@playwright/test').Page
   // factor is confirmed rather than merely started.
   await page.getByText(/recovery codes/i).first().waitFor({ timeout: 30_000 })
 
-  // And the gate should now be lifted: the dashboard is reachable rather than
-  // bouncing back to /settings.
+  // Sign in again from scratch rather than waiting for the open session's token
+  // to catch up.
+  //
+  // The card clears the "must enrol" flag through NextAuth's `update()`, and the
+  // backend stops refusing the moment `confirm` returns — but the cookie the
+  // middleware reads is rewritten asynchronously, and the first version of this
+  // raced it and sat on /settings until it timed out. A fresh sign-in mints a
+  // token that is simply correct, and it costs a few seconds once per run.
+  //
+  // It also means the saved storageState comes from the two-step sign-in that is
+  // now the real path for an administrator, rather than from a session that
+  // happened to predate the requirement.
+  await page.context().clearCookies()
+  await page.goto('/login')
+  await page.getByLabel(/email address/i).fill(rootEmail)
+  await page.getByLabel(/password/i).fill(rootPassword)
+  await page.getByRole('button', { name: /sign in/i }).click()
+  await completeSecondFactor(page)
+  await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 75_000 })
+
+  // And the gate is lifted: the dashboard is reachable rather than bouncing back
+  // to the enrolment screen.
   await page.goto('/')
   await page.waitForURL((url) => !url.pathname.includes('/settings'), { timeout: 30_000 })
 }

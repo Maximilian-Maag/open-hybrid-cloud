@@ -2687,6 +2687,17 @@ The table below shows the current effective schema.
     \code{projects}                 & User-owned projects that group orders \\
     \code{orders}                   & Individual infrastructure provisioning requests \\
     \code{infrastructure\_elements} & Deployed instances tracked per order \\
+    \code{product\_environment\_sizes} & Per-offering size tiers and their prices; an offering with no rows here prices off \code{product\_environments.price} \\
+    \code{product\_versions}        & Timeline of catalogue changes to a product, so an order's snapshot can be explained against what it differs from \\
+    \code{product\_favorites}       & Per-user product bookmarks; composite primary key, so a product can be favourited once \\
+    \code{pipeline\_stacks}         & Ordered pipeline stacks a product provisions through, each with its own webhook \\
+    \code{cart\_items}              & Draft order lines, kept out of \code{orders} so no query over orders has to exclude drafts \\
+    \code{order\_comments}          & Free-text discussion thread on an order \\
+    \code{approval\_delegations}    & Date-bounded delegation of approval authority between users \\
+    \code{integrations}             & External system registry: encrypted credentials, health and failure semantics \\
+    \code{sessions}                 & Server-side sessions; stores only the SHA-256 of the token, never the token \\
+    \code{user\_totp}               & Per-user second-factor secret, kept out of \code{users} so nothing selects it by accident \\
+    \code{user\_recovery\_codes}    & Single-use second-factor recovery codes, stored as SHA-256 hashes \\
     \code{audit\_log}               & Append-only log of significant user actions \\
     \code{exchange\_rates}          & Cached currency conversion rates \\
     \code{branding}                 & Single-row branding config (logo, colours, texts) \\

@@ -231,6 +231,8 @@ export const createInfraElement = async (
     deployedAt?: Date
     sizeCode?: string | null
     sequence?: number
+    /** Terraform outputs, as the webhook settler writes them. */
+    outputs?: Record<string, string>
   },
 ) => {
   const [el] = await db
@@ -247,6 +249,7 @@ export const createInfraElement = async (
       ...(overrides?.sequence !== undefined ? { sequence: overrides.sequence } : {}),
       ...(overrides?.parameters ? { parameters: overrides.parameters } : {}),
       ...(overrides?.deployedAt ? { deployedAt: overrides.deployedAt } : {}),
+      ...(overrides?.outputs ? { outputs: overrides.outputs } : {}),
     })
     .returning()
   return el

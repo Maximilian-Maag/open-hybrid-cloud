@@ -26,6 +26,7 @@ import {
   createProject,
   linkProductEnvironment,
   createOrder as seedOrder,
+  createInfraElement,
   createCostCenter,
   createDelegation as seedDelegation,
 } from '@/test/helpers'
@@ -138,6 +139,102 @@ describe('getOrderById', () => {
     const result = await getOrderById(makeSession(admin), 999_999)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(404)
+  })
+
+  // The webhook handler has written `orders.pipeline_status` since #133 and this
+  // projection never selected it, so the order detail page listed pipeline ids
+  // with nothing beside them — a run that looks like it never reported.
+  it('returns the per-pipeline status the webhook handler recorded', async () => {
+    const { admin, pm, product, env, project } = await buildBase()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, {
+      pipelineId: ['pipe-a', 'pipe-b'],
+    })
+    await db
+      .update(orders)
+      .set({ pipelineStatus: { 'pipe-a': 'success', 'pipe-b': 'failed' } })
+      .where(eq(orders.id, order.id))
+
+    const result = await getOrderById(makeSession(admin), order.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.pipelineStatus).toEqual({ 'pipe-a': 'success', 'pipe-b': 'failed' })
+    }
+  })
+
+  it('reports an empty status map rather than undefined for an order with no pipelines', async () => {
+    // The page renders "pending" per id from an absent key; an undefined map
+    // would make that a crash instead.
+    const { admin, pm, product, env, project } = await buildBase()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+
+    const result = await getOrderById(makeSession(admin), order.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.pipelineStatus).toEqual({})
+  })
+
+  // Terraform outputs live on the ELEMENT, and the order had no route to them:
+  // you had to know to go to Infrastructure and find the right row.
+  it('returns the order\'s elements, with their Terraform outputs', async () => {
+    const { admin, pm, product, env, project } = await buildBase()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { quantity: 2 })
+    await createInfraElement(order.id, project.id, env.id, product.id, {
+      sequence: 1,
+      outputs: { endpoint: 'https://vm-1.example.com', ip: '10.0.0.1' },
+    })
+    await createInfraElement(order.id, project.id, env.id, product.id, {
+      sequence: 2,
+      outputs: { endpoint: 'https://vm-2.example.com' },
+    })
+
+    const result = await getOrderById(makeSession(admin), order.id)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    // In sequence order, because "the order's second element" has to mean the
+    // same thing here as it does everywhere else.
+    expect(result.data.elements?.map((e) => e.sequence)).toEqual([1, 2])
+    expect(result.data.elements?.[0].outputs).toEqual({
+      endpoint: 'https://vm-1.example.com',
+      ip: '10.0.0.1',
+    })
+    expect(result.data.elements?.[1].outputs).toEqual({ endpoint: 'https://vm-2.example.com' })
+  })
+
+  it('returns an empty element list for an order that has provisioned nothing', async () => {
+    const { admin, pm, product, env, project } = await buildBase()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+
+    const result = await getOrderById(makeSession(admin), order.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.elements).toEqual([])
+  })
+
+  it('does not carry elements on the list endpoint', async () => {
+    // One query per row for something the list does not render. If this ever
+    // needs them, it needs a join, not N+1.
+    const { admin, pm, product, env, project } = await buildBase()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id, {
+      outputs: { endpoint: 'https://vm.example.com' },
+    })
+
+    const result = await listOrders(makeSession(admin))
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.find((o) => o.id === order.id)?.elements).toBeUndefined()
+  })
+
+  it('still gives a project manager their own order, elements and all', async () => {
+    const { pm, product, env, project } = await buildBase()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+    await createInfraElement(order.id, project.id, env.id, product.id, {
+      outputs: { endpoint: 'https://vm.example.com' },
+    })
+
+    const result = await getOrderById(makeSession(pm), order.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.elements?.[0].outputs).toEqual({ endpoint: 'https://vm.example.com' })
+    }
   })
 })
 

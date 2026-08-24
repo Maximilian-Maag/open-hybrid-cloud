@@ -61,7 +61,39 @@ export async function POST(req: Request) {
 
   const data = (await res.json()) as PasswordCheckResult
   if (isMfaChallenge(data)) {
-    return NextResponse.json({ ok: true, mfaRequired: true, mfaToken: data.mfaToken })
+    // The WebAuthn request options ride along with the challenge rather than
+    // costing a second pre-auth round trip (#197 part 2).
+    //
+    // The alternative was another frontend /api route, and that is three more
+    // places to get right: the middleware matcher has to exempt it (an endpoint
+    // that is part of signing in cannot require being signed in — #36), and both
+    // reverse-proxy configs have to learn it, or it reaches the backend and 404s
+    // (#196). Folding it in here costs one row per correct password on an account
+    // that holds a key, which the next ceremony replaces anyway.
+    //
+    // Failing to build them is not a failed sign-in: the account may still have
+    // an authenticator app, and `methods` is what the form reads to decide.
+    let webauthnOptions: unknown = null
+    if (data.methods?.includes('webauthn')) {
+      try {
+        const opt = await fetch(`${API_URL}/api/auth/login/webauthn/options`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mfaToken: data.mfaToken }),
+          cache: 'no-store',
+        })
+        if (opt.ok) webauthnOptions = await opt.json()
+      } catch {
+        // Left null; the form falls back to whatever else `methods` offers.
+      }
+    }
+    return NextResponse.json({
+      ok: true,
+      mfaRequired: true,
+      mfaToken: data.mfaToken,
+      methods: data.methods ?? [],
+      webauthnOptions,
+    })
   }
 
   // Nothing to pass on and nothing to discard: `challengeOnly` opened no session.

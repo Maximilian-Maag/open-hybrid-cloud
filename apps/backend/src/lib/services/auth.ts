@@ -2,12 +2,13 @@ import bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
-import { users, userTotp } from '@/lib/db/schema'
+import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { createSession } from '@/lib/auth/sessions'
 import { peekMfaChallengeUserId, signMfaChallenge, verifyMfaChallenge } from '@/lib/auth/mfaChallenge'
 import {
   countWebauthnCredentials,
+  hasConfirmedTotp,
   requiresSecondFactor,
   secondFactorOutstanding,
   totpIssuer,
@@ -299,17 +300,8 @@ export const completeMfaLogin = async (
 const availableSecondFactors = async (userId: number): Promise<SecondFactorMethod[]> => {
   const methods: SecondFactorMethod[] = []
   if ((await countWebauthnCredentials(userId)) > 0) methods.push('webauthn')
-  if (await hasConfirmedTotpFactor(userId)) methods.push('totp')
+  if (await hasConfirmedTotp(userId)) methods.push('totp')
   return methods
-}
-
-const hasConfirmedTotpFactor = async (userId: number): Promise<boolean> => {
-  const [row] = await db
-    .select({ secret: userTotp.secret, confirmedAt: userTotp.confirmedAt })
-    .from(userTotp)
-    .where(eq(userTotp.userId, userId))
-    .limit(1)
-  return Boolean(row?.secret && row.confirmedAt)
 }
 
 /** Branding's shop name, or the default — what the authenticator was registered against. */

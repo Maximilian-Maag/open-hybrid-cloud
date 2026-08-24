@@ -211,6 +211,29 @@ export const countWebauthnCredentials = async (userId: number): Promise<number> 
   return row?.count ?? 0
 }
 
+/**
+ * Whether a confirmed TOTP secret exists (#197 part 2).
+ *
+ * Asked by the WebAuthn service (may this key be removed — is anything else left)
+ * and by the login path (which factors can this account present). One definition,
+ * because "2FA is on" has to mean the same thing in all three places.
+ *
+ * The comparison happens in SQL and the projection is a boolean, so the secret is
+ * never selected. `requiresSecondFactor` above still names the column and is
+ * allowlisted for it; there is no reason for a second read to be, when what the
+ * caller wants is one bit.
+ */
+export const hasConfirmedTotp = async (userId: number): Promise<boolean> => {
+  const [row] = await db
+    .select({
+      confirmed: sql<boolean>`${userTotp.secret} IS NOT NULL AND ${userTotp.confirmedAt} IS NOT NULL`,
+    })
+    .from(userTotp)
+    .where(eq(userTotp.userId, userId))
+    .limit(1)
+  return row?.confirmed === true
+}
+
 export const countUnusedRecoveryCodes = async (userId: number): Promise<number> => {
   const [row] = await db
     .select({ count: sql<number>`COUNT(*)::int` })

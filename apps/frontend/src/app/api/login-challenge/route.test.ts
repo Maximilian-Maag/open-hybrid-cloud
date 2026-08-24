@@ -26,7 +26,75 @@ describe('POST /api/login-challenge', () => {
   it('reports that a code is needed, and passes the challenge through', async () => {
     mockBackend({ mfaRequired: true, mfaToken: 'challenge', expiresIn: 300 })
     const body = await (await POST(makeReq({ email: 'root@x.dev', password: 'pw' }))).json()
-    expect(body).toEqual({ ok: true, mfaRequired: true, mfaToken: 'challenge' })
+    expect(body).toEqual({
+      ok: true,
+      mfaRequired: true,
+      mfaToken: 'challenge',
+      // No `methods` from the backend is an account with no key — and, for an
+      // older backend, the shape that predates them. Both mean "the code field".
+      methods: [],
+      webauthnOptions: null,
+    })
+  })
+
+  // Issue #197 part 2. The WebAuthn options ride along with the challenge rather
+  // than costing a second pre-auth round trip; see the route for why that is
+  // worth more than a tidier endpoint.
+  describe('when the account holds a security key', () => {
+    /** Backend answers the challenge first, then the options request. */
+    const mockChallengeThenOptions = (options: unknown, optionsOk = true) => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            mfaRequired: true,
+            mfaToken: 'challenge',
+            expiresIn: 300,
+            methods: ['webauthn', 'totp'],
+          }),
+        })
+        .mockResolvedValueOnce({ ok: optionsOk, status: optionsOk ? 200 : 500, json: async () => options })
+      vi.stubGlobal('fetch', fetchMock)
+      return fetchMock
+    }
+
+    it('fetches the request options and hands them to the form', async () => {
+      const fetchMock = mockChallengeThenOptions({ challenge: 'abc', allowCredentials: [] })
+      const body = await (await POST(makeReq({ email: 'root@x.dev', password: 'pw' }))).json()
+
+      expect(body.methods).toEqual(['webauthn', 'totp'])
+      expect(body.webauthnOptions).toEqual({ challenge: 'abc', allowCredentials: [] })
+      // The options request carries the challenge, which is what proves the
+      // password step to a route that opens nothing.
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ mfaToken: 'challenge' })
+    })
+
+    it('still returns the challenge when the options cannot be built', async () => {
+      // Not a failed sign-in: the account may hold an authenticator app too, and
+      // `methods` is what the form reads to decide what to offer.
+      mockChallengeThenOptions({ error: 'boom' }, false)
+      const body = await (await POST(makeReq({ email: 'root@x.dev', password: 'pw' }))).json()
+
+      expect(body.mfaToken).toBe('challenge')
+      expect(body.webauthnOptions).toBeNull()
+      expect(body.methods).toEqual(['webauthn', 'totp'])
+    })
+
+    it('does not ask for options when the account has no key', async () => {
+      const fetchMock = mockBackend({
+        mfaRequired: true,
+        mfaToken: 'challenge',
+        expiresIn: 300,
+        methods: ['totp'],
+      })
+      const body = await (await POST(makeReq({ email: 'root@x.dev', password: 'pw' }))).json()
+
+      expect(body.webauthnOptions).toBeNull()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('says only "no code needed" on the no-second-factor path', async () => {

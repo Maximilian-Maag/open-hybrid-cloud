@@ -89,6 +89,34 @@ export interface RevokeSessionsResponse {
  * rather than null so a client that forgets to check `mfaRequired` finds nothing
  * it could mistake for a session.
  */
+/** One registered security key or passkey (issue #197, part 2). */
+export interface WebauthnCredential {
+  id: number
+  /** What the user called it — they will have more than one. */
+  label: string
+  createdAt: string
+  lastUsedAt: string | null
+  /** A synced passkey rather than one bound to a single device. */
+  backedUp: boolean
+}
+
+export interface WebauthnCredentialsResponse {
+  credentials: WebauthnCredential[]
+}
+
+/**
+ * What finishing a registration returns.
+ *
+ * `recoveryCodes` is present only when this was the account's FIRST factor of any
+ * kind, and that response is the only copy that will ever exist — they are stored
+ * hashed. A second key does not reissue them, because that would silently
+ * invalidate the set the user already wrote down.
+ */
+export interface WebauthnRegistrationResult {
+  label: string
+  recoveryCodes?: string[]
+}
+
 /** Which second factors an account actually holds (issue #197, part 2). */
 export type SecondFactorMethod = 'totp' | 'webauthn'
 

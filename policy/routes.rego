@@ -16,6 +16,7 @@ public_routes := {
 	"auth/login": "issues the session; requiring one would be the login endpoint that demands a login",
 	"auth/callback": "the SSO redirect target; the identity provider is the caller and it carries no portal session",
 	"auth/login/mfa": "second half of the two-step login (#36) — the caller has no session yet, and the signed challenge from /auth/login is the proof this route checks",
+	"auth/login/webauthn/options": "the middle of a two-step login with a security key (#197) — the caller has no session yet, and the same signed challenge from /auth/login, checked against the account's current password hash, is the proof this route checks. It opens nothing: it returns the WebAuthn request options and the assertion is still redeemed at auth/login/mfa",
 	"public/branding": "the login screen renders from it, before any session exists",
 	"public/exchange-rates": "read by the unauthenticated shell for price display",
 	"catalog/[id]/image": "loaded by the browser as an <img> src, which cannot carry a bearer token",

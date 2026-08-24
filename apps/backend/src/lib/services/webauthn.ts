@@ -9,13 +9,14 @@ import {
   type AuthenticatorTransportFuture,
 } from '@simplewebauthn/server'
 import { db } from '@/lib/db/client'
-import { userTotp, webauthnChallenges, webauthnCredentials } from '@/lib/db/schema'
+import { webauthnChallenges, webauthnCredentials } from '@/lib/db/schema'
 import { logAudit } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 import { resolveRp } from '@/lib/auth/webauthnConfig'
 import {
   canHoldSecondFactor,
   countUnusedRecoveryCodes,
+  hasConfirmedTotp,
   loadTwoFactorAccount,
   replaceRecoveryCodes,
 } from '@/lib/services/twoFactor'
@@ -426,22 +427,6 @@ export const removeCredential = async (
 
 const countWebauthnCredentialsFor = async (userId: number): Promise<number> =>
   (await listCredentials(userId)).length
-
-/**
- * Whether a confirmed TOTP secret exists.
- *
- * Read from the row here rather than reusing `requiresSecondFactor`, because that
- * one also asks about the ROLE and answers a different question: this only needs
- * to know whether removing a key would leave the account with nothing.
- */
-const hasConfirmedTotp = async (userId: number): Promise<boolean> => {
-  const [row] = await db
-    .select({ secret: userTotp.secret, confirmedAt: userTotp.confirmedAt })
-    .from(userTotp)
-    .where(eq(userTotp.userId, userId))
-    .limit(1)
-  return Boolean(row?.secret && row.confirmedAt)
-}
 
 /** Re-exported so route handlers do not have to reach into the library. */
 export type { RegistrationResponseJSON, AuthenticationResponseJSON }

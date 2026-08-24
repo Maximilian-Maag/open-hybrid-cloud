@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { rejectCallback } from '@/lib/webhook/rejection'
 import { handlePipelineEvent } from '@/lib/webhook/handler'
 import { db } from '@/lib/db/client'
 import { deploymentEnvironments } from '@/lib/db/schema'
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
   // only ever match a non-blank secret. What did affect GitLab is the reuse of
   // the outbound trigger token as the inbound secret — migration 0025.
   if (!token) {
-    return NextResponse.json({ error: 'Missing token' }, { status: 401 })
+    return rejectCallback(req, { provider: 'gitlab', reason: 'Missing token' })
   }
 
   // Validate against the portal-generated callback_secret — separate from
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
     .limit(2)
 
   if (!envRows.length) {
-    return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    return rejectCallback(req, { provider: 'gitlab', reason: 'Invalid token' })
   }
 
   if (envRows.length > 1) {

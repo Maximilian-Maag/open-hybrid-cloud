@@ -127,9 +127,31 @@ export const fetchJobTraces = (
  * and a CSV column, and inventing a JSON shape here would be a guess about what a
  * template meant.
  */
+/**
+ * GitLab's per-line log prefix, when the instance emits timestamped job logs.
+ *
+ * With "job log timestamps" enabled — GitLab 17+, and on by default on some
+ * instances — every line of a trace arrives as
+ *
+ *     2026-08-24T15:41:17.013321Z 01O Outputs:
+ *     2026-08-24T15:41:17.013323Z 01O ip_address = "172.105.94.94"
+ *
+ * The parser trimmed whitespace and then looked for `^Outputs:`, which never
+ * matched, and the key/value regex begins `[A-Za-z_]` so it failed on the leading
+ * year too. Every deployment on such an instance recorded NO outputs, and looked
+ * exactly like a template that declared none — hcp-dev shipped VMs for weeks that
+ * way, and the apply log had `ip_address = "172.105.94.94"` in it the whole time.
+ *
+ * Matched narrowly on purpose: an ISO-8601 instant with a `Z`, then GitLab's
+ * two-digit stream marker (`01O`, `00E`, `00O+`), then the content. A line of
+ * Terraform output that merely begins with a date is not touched, because it has
+ * no stream marker after it.
+ */
+const GITLAB_LOG_PREFIX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z \d{2}[A-Z]\+? ?/
+
 export const parseTofuOutputs = (trace: string): Record<string, string> => {
   const stripped = trace.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
-  const lines = stripped.split('\n')
+  const lines = stripped.split('\n').map((line) => line.replace(GITLAB_LOG_PREFIX, ''))
   const outputs: Record<string, string> = {}
 
   let inOutputs = false

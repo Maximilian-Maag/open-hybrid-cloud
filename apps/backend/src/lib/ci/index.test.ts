@@ -179,3 +179,51 @@ describe('fetchJobTraces dispatch', () => {
     fetchMock.mockRestore()
   })
 })
+
+/**
+ * Issue #216 — the reason hcp-dev shipped VMs for weeks with no outputs on any of
+ * them, while the apply log said `ip_address = "172.105.94.94"` the whole time.
+ *
+ * These lines are copied verbatim from that instance's job 3973.
+ */
+describe('parseTofuOutputs on a GitLab instance with timestamped job logs', () => {
+  const timestamped = [
+    '2026-08-24T15:41:17.013317Z 01O Apply complete! Resources: 2 added, 0 changed, 0 destroyed.',
+    '2026-08-24T15:41:17.013321Z 01O Outputs:',
+    '2026-08-24T15:41:17.013322Z 01O ',
+    '2026-08-24T15:41:17.013323Z 01O firewall_id = "139797319"',
+    '2026-08-24T15:41:17.013324Z 01O hostname = "srfgdghjzukiklol"',
+    '2026-08-24T15:41:17.013326Z 01O ip_address = "172.105.94.94"',
+  ].join('\n')
+
+  it('reads the outputs through the per-line prefix', () => {
+    expect(parseTofuOutputs(timestamped)).toEqual({
+      firewall_id: '139797319',
+      hostname: 'srfgdghjzukiklol',
+      ip_address: '172.105.94.94',
+    })
+  })
+
+  it('handles the stderr and continuation markers too', () => {
+    // GitLab writes `00E` for stderr and suffixes `+` on continuation lines.
+    const mixed = [
+      '2026-08-24T15:41:17.000000Z 00E Outputs:',
+      '2026-08-24T15:41:17.000001Z 00O+endpoint = "https://vm.example.com"',
+    ].join('\n')
+    expect(parseTofuOutputs(mixed)).toEqual({ endpoint: 'https://vm.example.com' })
+  })
+
+  it('still reads a log with no prefixes at all', () => {
+    // Instances without the setting, and every existing fixture.
+    expect(parseTofuOutputs('Outputs:\n\nip_address = "10.0.0.1"\n')).toEqual({
+      ip_address: '10.0.0.1',
+    })
+  })
+
+  it('does not eat an output value that merely starts with a date', () => {
+    // The prefix is matched narrowly — an ISO instant AND a stream marker. A
+    // template that outputs a timestamp keeps it.
+    const dated = ['Outputs:', '', 'created_at = "2026-08-24T15:41:17.013321Z"'].join('\n')
+    expect(parseTofuOutputs(dated)).toEqual({ created_at: '2026-08-24T15:41:17.013321Z' })
+  })
+})

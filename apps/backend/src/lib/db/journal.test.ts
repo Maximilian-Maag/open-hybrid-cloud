@@ -50,8 +50,12 @@ describe('the migration journal', () => {
       .sort()
     const tags = journal().map((entry) => entry.tag)
 
-    expect([...tags].sort()).toEqual(files)
-    expect(tags).toEqual([...tags])
+    // Compared in order, not as sets. `files` is sorted, and the tags are
+    // zero-padded, so lexical order is numeric order — which is the order the
+    // journal must already be in. Sorting `tags` before comparing (or comparing
+    // it to a copy of itself, as this did) throws away the only part that says
+    // anything: that entry N really is the Nth migration.
+    expect(tags).toEqual(files)
     expect(new Set(tags).size).toBe(tags.length)
 
     const idxs = journal().map((entry) => entry.idx)

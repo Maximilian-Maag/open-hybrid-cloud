@@ -361,7 +361,7 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
    * outright, which keeps the table from filling up with tombstones.
    */
   const activeInfra = await db
-    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters, sequence: infrastructureElements.sequence, sizeCode: infrastructureElements.sizeCode })
+    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters, sequence: infrastructureElements.sequence, sizeCode: infrastructureElements.sizeCode, stateKeyNamespace: infrastructureElements.stateKeyNamespace })
     .from(infrastructureElements)
     .where(and(eq(infrastructureElements.productId, id), eq(infrastructureElements.status, 'active')))
 

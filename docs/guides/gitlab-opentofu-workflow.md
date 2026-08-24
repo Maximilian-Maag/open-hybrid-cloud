@@ -655,7 +655,7 @@ When an order is approved (or placed directly by an Admin), the portal fires `tr
 | CI Variable | Value |
 |---|---|
 | `TEMPLATE` | `orchestrator` |
-| `TF_STATE_NAME` | Value of the order parameter named by `stateKeyParam` (e.g. `hostname` → `my-vm-01`) |
+| `TF_STATE_NAME` | The `stateKeyParam` value, namespaced with the order id (e.g. `hostname = my-vm-01` on order 42 → `my-vm-01-42`) — see [stateKeyParam](#statekeyparam) |
 | `PIPELINE_STACK` | JSON array of step objects (see below) |
 | `ORDER_ID` | Webshop order ID |
 | *(all other order parameters)* | Uppercased, same as product webhooks |
@@ -701,11 +701,13 @@ Each step object:
 
 ### stateKeyParam
 
-`stateKeyParam` (default: `hostname`) names the order parameter used as the base Terraform state key. It must be:
-- **Stable** — the same value must be submitted at provision time and is stored on the infrastructure element for use at destroy time
-- **Unique per infrastructure element** — so state files never collide across concurrent orders
+`stateKeyParam` (default: `hostname`) names the order parameter whose value forms the readable half of the Terraform state key. The portal appends the **order id** to it and restricts it to `[A-Za-z0-9._-]`; the element's position within a multi-quantity order is appended after that (`-2`, `-3`, … for elements two onwards).
 
-Example: if `stateKeyParam = "hostname"` and the order sets `hostname = "my-vm-01"`, then the state keys across steps are `my-vm-01-vm`, `my-vm-01-dns`, `my-vm-01-fw`.
+The namespace is not cosmetic. The parameter value is typed by whoever places the order, so before it existed two users who typed the same hostname got pipelines pointed at the same Terraform state — and one decommissioning their own element destroyed the other's infrastructure (issue #183). The order id is server-generated, so uniqueness no longer depends on what anyone types.
+
+Example: `stateKeyParam = "hostname"`, order 42 sets `hostname = "my-vm-01"` → the state keys across steps are `my-vm-01-42-vm`, `my-vm-01-42-dns`, `my-vm-01-42-fw`.
+
+The value is stored on the infrastructure element, so a destroy or a retry derives the same key its `apply` used. Elements provisioned before the namespace existed keep deriving theirs from the raw value (`my-vm-01-vm`) — their state lives there.
 
 ### Orchestrator pipeline
 

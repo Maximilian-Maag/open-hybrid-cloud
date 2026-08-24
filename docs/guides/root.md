@@ -163,7 +163,7 @@ Parameters are configured on the product edit page under the **Parameters** card
 3. Each parameter is created with:
    - **Variable Name**: exact Terraform variable name (e.g. `hostname`) — sent to the CI pipeline as `TF_VAR_hostname`
    - **Display Label**: auto-generated human-readable name (e.g. `Hostname`) — shown to users in the order form. Edit this to be more descriptive if needed.
-4. Sensitive variables and internal CI variables are automatically excluded
+4. Sensitive variables, internal CI variables and names the server owns are automatically excluded — see *Reserved parameter names* below
 
 This only works today when the pipeline stack's environment uses a **GitLab** CI source: the endpoint recovers the GitLab numeric project id from the environment's Webhook URL (`/projects/<id>/trigger/pipeline`) to know where to fetch `variables.tf` from. On a GitHub or Bitbucket environment it fails with "Could not extract project ID…" — use Option B there.
 
@@ -171,6 +171,18 @@ This only works today when the pipeline stack's environment uses a **GitLab** CI
 - Click **Add Parameter**
 - Set **Variable Name** (must match the Terraform variable name), **Display Label** (user-facing), type (string, number, bool, dropdown), description, default value, and the required/sensitive flags
 - Click **Edit** on any existing parameter to modify it
+
+*Reserved parameter names*
+
+A parameter's name becomes a CI trigger variable verbatim, so the names the portal
+itself sets are refused (case-insensitively) on both create and edit:
+`REF`, `BRANCH`, `WORKFLOW`, `TF_ACTION`, `TF_STATE_NAME`, `TF_STATE_NAMESPACE`,
+`TEMPLATE`, `PIPELINE_STACK`, `ORDER_ID`, `ELEMENT_SEQUENCE`, `INFRA_ID`, `TRIAL`
+and `TRIAL_DURATION_MINUTES`. A parameter named `REF` would have let anyone who can
+order the product choose which git ref the provisioning pipeline runs, and one named
+`TF_ACTION` would have turned a provisioning order into a destroy (issue #183).
+Values submitted under these names are stripped on their way to the pipeline, so a
+definition created before the check existed is inert rather than dangerous.
 
 **Step 4 – Deployment Environments**
 - Select environments in which the product should be available
@@ -273,7 +285,7 @@ Pipeline Stacks let you define an ordered sequence of CI/CD template steps per p
 3. Fill in the required fields:
    - **Name**: Label for this stack (e.g. "VM + DNS")
    - **Environment**: Which deployment environment this stack applies to. The stack inherits the environment's **Webhook URL** and **Webhook Token** for outbound pipeline triggers — manage them once under **Admin → Environments**, not per stack.
-   - **State Key Parameter**: Name of the order parameter whose value is used as the OpenTofu state key (default: `hostname`). Must be stable across provision and destroy so state can be reused.
+   - **State Key Parameter**: Name of the order parameter whose value forms the readable half of the OpenTofu state key (default: `hostname`). The portal appends the order id to it, so two orders that submit the same value no longer share a state file, and stores the result on the infrastructure element so destroy targets what apply created.
 4. Click **+ Add Step** one or more times to build the step sequence:
    - **Template**: Path to the step template in the infra-templates repo (e.g. `linode/virtual-machine`)
    - **State Suffix**: Appended to the state key to form the unique state name for this step (e.g. `-vm`)
@@ -287,7 +299,7 @@ Pipeline Stacks let you define an ordered sequence of CI/CD template steps per p
 
 When an order is triggered, the portal calls the configured webhook URL with:
 - `TEMPLATE=orchestrator`
-- `TF_STATE_NAME=<value of the stateKeyParam from the order>`
+- `TF_STATE_NAME=<stateKeyParam value>-<order id>`
 - `PIPELINE_STACK=<JSON array of steps>`
 - All standard order parameters (`ORDER_ID`, `NAME`, etc.)
 

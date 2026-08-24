@@ -592,6 +592,13 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   // provisioning, retry and teardown all derive the same key from it. Legacy rows
   // are 1, which reproduces the state name they were provisioned with exactly.
   sequence: integer().notNull().default(1),
+  // What namespaces this element's Terraform state key, so the value a customer
+  // types into the stack's `stateKeyParam` cannot name another order's state
+  // (issue #183). The server-generated order id, as a string, written once at
+  // provisioning and never recomputed. NULL means the element was provisioned
+  // before #183: its state exists under the raw parameter value, so its teardown
+  // and its retries have to keep deriving the key that way.
+  stateKeyNamespace: text('state_key_namespace'),
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
   pipelineId: jsonb('pipeline_id').$type<string[]>().notNull().default([]),
   // Per-pipeline terminal status for the current decommission run, keyed by

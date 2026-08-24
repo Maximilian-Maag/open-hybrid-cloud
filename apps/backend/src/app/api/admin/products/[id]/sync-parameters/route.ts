@@ -8,6 +8,7 @@ import { getFileContent } from '@/lib/ci'
 import { parseTerraformVariables } from '@/lib/tfparser'
 import { logAudit } from '@/lib/audit'
 import type { CiProvider } from '@open-hybrid-cloud/types'
+import { isReservedCiVariable } from '@/lib/ci/reserved'
 
 const CI_INTERNAL_VARS = new Set(['ci_api_url', 'ci_project_id', 'ci_job_token', 'vm_state_name'])
 
@@ -101,8 +102,15 @@ export async function POST(
   // nested/validation braces are handled and numeric/boolean defaults are
   // recognised (a var with `default = 3` is optional, not required). Then
   // filter out sensitive and CI-internal variables explicitly, as before.
+  //
+  // And the names the server owns. This route is why issue #183 needed no one to
+  // type a dangerous name: it creates a parameter definition per Terraform
+  // variable, so a template declaring `variable "ref"` or `variable "tf_action"`
+  // produced the definition that let the ordering user choose the git ref or turn
+  // a provisioning order into a destroy. CI_INTERNAL_VARS is left alone — it is a
+  // separate list, of variables the pipeline supplies to itself.
   const vars = parseTerraformVariables(content).filter(
-    (v) => !v.sensitive && !CI_INTERNAL_VARS.has(v.name),
+    (v) => !v.sensitive && !CI_INTERNAL_VARS.has(v.name) && !isReservedCiVariable(v.name),
   )
 
   const existing = await db

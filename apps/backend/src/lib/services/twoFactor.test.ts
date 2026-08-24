@@ -907,6 +907,31 @@ describe('secondFactorOutstanding', () => {
     expect(await secondFactorOutstanding(999_999)).toBe(false)
   })
 
+  // The lockout this would otherwise be. `loadTwoFactorAccount` refuses to enroll
+  // an account with no local password, so an SSO administrator required to hold a
+  // factor would be refused every route by `requireAuth` AND refused the one
+  // screen that could lift it. Entra ID's MFA is what covers them.
+  it.each([['root'], ['admin']] as const)(
+    'is false for an SSO %s, who could never satisfy it',
+    async (role) => {
+      const [u] = await db
+        .insert(users)
+        .values({
+          email: `sso-outstanding-${role}@test.dev`,
+          name: 'SSO',
+          role,
+          ssoSub: `sub-outstanding-${role}`,
+          active: true,
+        })
+        .returning()
+
+      expect(await secondFactorOutstanding(u.id)).toBe(false)
+      // And the reason it has to be false: enrolment is refused for this account.
+      const enrol = await loadTwoFactorAccount(u.id)
+      expect(enrol.ok).toBe(false)
+    },
+  )
+
   it('becomes true again when an operator clears the row', async () => {
     // The emergency reset in docs/guides/root.md.
     const u = await createUser({ role: 'admin' })

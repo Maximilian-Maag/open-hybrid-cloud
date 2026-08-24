@@ -21,8 +21,10 @@ import { qrSvgFor } from '@/lib/auth/qr'
  * The rules that matter, in one place so a reviewer can check them against the
  * issue without reading the routes:
  *
- *   0. Only an administrative account — `root` or `admin` — may enroll or hold a
- *      factor, and both MUST (issue #197; #36 was root-only and opt-in).
+ *   0. Only a LOCAL administrative account — `root` or `admin`, signing in with a
+ *      password — may enroll or hold a factor, and every one of them MUST (issue
+ *      #197; #36 was root-only and opt-in). An SSO account is covered by its
+ *      identity provider's MFA and is excluded from both halves.
  *      `loadTwoFactorAccount` is the single gate that enforces who may, and
  *      `secondFactorOutstanding` is the single answer to who still owes one. The
  *      one exception, spelled out at `requiresSecondFactor`, is the login check:
@@ -235,10 +237,20 @@ export const requiresSecondFactor = async (userId: number): Promise<boolean> => 
  * administrative roles: `requireAuth` checks `canHoldSecondFactor` against the
  * role already in the token first, so a project manager's requests never reach
  * this query.
+ *
+ * SSO accounts are excluded. They have no local password, `loadTwoFactorAccount`
+ * refuses to enroll them, and their second factor is the identity provider's —
+ * so requiring one here would refuse them every route while refusing them the
+ * screen that could satisfy it.
  */
 export const secondFactorOutstanding = async (userId: number): Promise<boolean> => {
   const rows = await db
-    .select({ secret: userTotp.secret, confirmedAt: userTotp.confirmedAt, role: users.role })
+    .select({
+      secret: userTotp.secret,
+      confirmedAt: userTotp.confirmedAt,
+      role: users.role,
+      passwordHash: users.passwordHash,
+    })
     .from(users)
     // LEFT, not INNER: an account that has never started an enrolment has no
     // `user_totp` row at all, and that is precisely the case this must catch.
@@ -251,6 +263,12 @@ export const secondFactorOutstanding = async (userId: number): Promise<boolean> 
   const row = rows[0]
   if (!row) return false
   if (!canHoldSecondFactor(row.role)) return false
+  // An SSO account owes nothing, and demanding it would be a lockout with no way
+  // out: `loadTwoFactorAccount` refuses to enroll an account with no local
+  // password — its second factor belongs to the identity provider — so an SSO
+  // administrator gated here would be refused every route AND refused the one
+  // screen that could lift the gate. Entra ID's own MFA is what covers them.
+  if (!row.passwordHash) return false
   return !isConfirmed(row)
 }
 
@@ -699,13 +717,16 @@ export interface TwoFactorAccount {
  *   2. It signs in with a local password. An SSO user has no password to
  *      re-authenticate with and their MFA is Entra ID's job (issue #36); saying
  *      so beats returning "wrong password" for an account that has none.
- *   3. It is the root account. Issue #36 scopes the feature to root. Without
- *      this, any admin or project manager with a local password could enroll,
- *      collect recovery codes, and then be sent through a two-step login built
- *      for one account.
+ *   3. It is an administrative account. #36 scoped this to root; #197 widened it
+ *      to `root` and `admin` and made it mandatory for both. `project_manager`
+ *      stays out: it is the end-user role, and letting it enroll would send an
+ *      ordinary user through a two-step login built for administrators.
  *
  * Order only decides what a caller is told when more than one rule applies: an
- * SSO admin hears about the SSO, which is the more useful of the two answers.
+ * SSO admin hears about the SSO, which is the more useful of the two answers —
+ * and it is why rule 2 sitting above rule 3 matters more since #197. An SSO
+ * administrator is refused here, so `secondFactorOutstanding` must not require a
+ * factor of them; a gate they could never satisfy is a lockout, not a policy.
  *
  * 403 for the role, not 404: the caller is authenticated as this very account,
  * so there is nothing to hide from them, and a 401 would sign them out.

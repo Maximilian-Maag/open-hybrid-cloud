@@ -6,7 +6,7 @@ import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { createSession } from '@/lib/auth/sessions'
 import { peekMfaChallengeUserId, signMfaChallenge, verifyMfaChallenge } from '@/lib/auth/mfaChallenge'
-import { requiresSecondFactor, verifySecondFactor } from '@/lib/services/twoFactor'
+import { requiresSecondFactor, secondFactorOutstanding, verifySecondFactor } from '@/lib/services/twoFactor'
 import { logAudit } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 
@@ -48,7 +48,17 @@ export interface LoginContext {
  * wrong by ignoring a boolean.
  */
 export type LoginOutcome =
-  | { mfaRequired: false; token: string; user: SessionUser }
+  | {
+      mfaRequired: false
+      token: string
+      user: SessionUser
+      /**
+       * Set when the account is an administrator that still owes an enrollment
+       * (issue #197). The session is real — enrolling needs one — but every route
+       * except the enrollment endpoints will refuse it. See `requireAuth`.
+       */
+      mustEnrollSecondFactor?: boolean
+    }
   | { mfaRequired: true; mfaToken: string }
 
 /**
@@ -171,7 +181,27 @@ export const loginWithCredentials = async (
   const sessionUser = outcome.data.user
   const token = await issueSession(sessionUser, context)
   if (!token.ok) return token
-  return ok({ mfaRequired: false, token: token.data, user: sessionUser })
+
+  // Asked once, here, rather than on every request the client then makes: this
+  // is the moment the answer decides where the user is sent. `requireAuth` is
+  // what actually holds the line, and it re-asks per request precisely so that
+  // this flag being stale can never mean the gate is open.
+  const mustEnroll = await secondFactorOutstanding(sessionUser.id)
+  if (mustEnroll) {
+    await logAudit(
+      sessionUser.id,
+      'auth.2fa.enrollment_required',
+      sessionUser.id,
+      'Signed in without a second factor; enrollment required before the account can be used',
+    )
+  }
+
+  return ok({
+    mfaRequired: false,
+    token: token.data,
+    user: sessionUser,
+    ...(mustEnroll ? { mustEnrollSecondFactor: true } : {}),
+  })
 }
 
 /**

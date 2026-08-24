@@ -41,6 +41,20 @@ export interface LoginRequest {
 export interface LoginResponse {
   token: string
   user: SessionUser
+  /**
+   * The account is an administrator with no confirmed second factor, and must
+   * enroll one before the API will serve it anything else (issue #197).
+   *
+   * A real session token comes with it, deliberately: enrolling needs a working
+   * session, so the alternative — refusing to sign them in — would be a lockout
+   * with no way out. What the token cannot do is anything except enroll; the
+   * backend refuses every other route with `second_factor_required`, and this
+   * flag exists so the frontend can send the user straight there rather than
+   * letting them walk into a 403.
+   *
+   * Absent, not `false`, when nothing is owed — the flag is the exception.
+   */
+  mustEnrollSecondFactor?: boolean
 }
 
 /**

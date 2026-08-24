@@ -8,6 +8,17 @@ import { TwoFactorCard } from './TwoFactorCard'
 vi.mock('@/lib/api', () => ({ get: vi.fn(), post: vi.fn() }))
 vi.mock('@/lib/useLang', () => ({ useLang: () => 'en' }))
 
+// The card reads `mustEnrollSecondFactor` off the session and clears it once an
+// enrollment is confirmed (issue #197), so the tests have to supply one.
+// `sessionData` is reassigned per test rather than re-mocked.
+let sessionData: { mustEnrollSecondFactor?: boolean } = {}
+const updateSession = vi.fn()
+const getSession = vi.fn()
+vi.mock('next-auth/react', () => ({
+  useSession: () => ({ data: sessionData, update: updateSession }),
+  getSession: () => getSession(),
+}))
+
 const mockedGet = vi.mocked(get)
 const mockedPost = vi.mocked(post)
 
@@ -30,6 +41,9 @@ const OFFER = {
 beforeEach(() => {
   mockedGet.mockReset()
   mockedPost.mockReset()
+  updateSession.mockReset()
+  getSession.mockReset()
+  sessionData = {}
 })
 
 describe('TwoFactorCard — not yet set up', () => {
@@ -146,7 +160,18 @@ describe('TwoFactorCard — already active', () => {
   it('warns when the recovery codes have run out', async () => {
     mockedGet.mockResolvedValue(status({ enabled: true, recoveryCodesRemaining: 0 }))
     render(<TwoFactorCard token="tok" />)
-    expect(await screen.findByRole('alert')).toHaveTextContent(/only way in/i)
+    // Its own message, not the "save these now — they will not be shown again"
+    // one that belongs on the screen that just printed them. There are none on
+    // screen here; the count is zero, which is what this says (issue #197).
+    expect(await screen.findByRole('alert')).toHaveTextContent(/no recovery codes left/i)
+  })
+
+  it('does not tell the user to save codes that are not on screen', async () => {
+    // The bug this replaced: the count-is-zero warning reused the string that
+    // says "save these now", with nothing shown to save.
+    mockedGet.mockResolvedValue(status({ enabled: true, recoveryCodesRemaining: 0 }))
+    render(<TwoFactorCard token="tok" />)
+    expect(await screen.findByRole('alert')).not.toHaveTextContent(/save these now/i)
   })
 
   it('says nothing rather than erroring when the status cannot be read', async () => {
@@ -156,5 +181,65 @@ describe('TwoFactorCard — already active', () => {
     // whole settings page down with it.
     expect(await screen.findByLabelText(/confirm with your password/i)).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+// Issue #197: the account owes this enrollment.
+describe('TwoFactorCard — enrollment is required', () => {
+  it('says why the user was sent here', async () => {
+    sessionData = { mustEnrollSecondFactor: true }
+    mockedGet.mockResolvedValue(status())
+    render(<TwoFactorCard token="tok" />)
+    expect(await screen.findByText(/required for administrator accounts/i)).toBeInTheDocument()
+  })
+
+  it('says nothing of the sort when the enrollment is voluntary', async () => {
+    mockedGet.mockResolvedValue(status())
+    render(<TwoFactorCard token="tok" />)
+    await screen.findByLabelText(/confirm with your password/i)
+    expect(screen.queryByText(/required for administrator accounts/i)).toBeNull()
+  })
+
+  it('stops saying it once a factor is confirmed', async () => {
+    // The requirement is met; the prompt would only be noise.
+    sessionData = { mustEnrollSecondFactor: true }
+    mockedGet.mockResolvedValue(status({ enabled: true }))
+    render(<TwoFactorCard token="tok" />)
+    await screen.findByLabelText(/confirm with your password/i)
+    expect(screen.queryByText(/required for administrator accounts/i)).toBeNull()
+  })
+
+  it('clears the session flag after confirming, so the redirect stops', async () => {
+    // Without this the middleware keeps bouncing the user back here, having done
+    // exactly what was asked of them.
+    sessionData = { mustEnrollSecondFactor: true }
+    mockedGet.mockResolvedValue(status())
+    mockedPost.mockResolvedValueOnce(OFFER)
+    mockedPost.mockResolvedValueOnce({ recoveryCodes: ['aaaa-bbbb'] })
+
+    render(<TwoFactorCard token="tok" />)
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
+    await user.click(screen.getByRole('button', { name: /set up/i }))
+    await user.type(await screen.findByLabelText(/authentication code/i), '123456')
+    await user.click(screen.getByRole('button', { name: /activate/i }))
+
+    await waitFor(() => expect(updateSession).toHaveBeenCalledWith({ mustEnrollSecondFactor: false }))
+  })
+
+  it('does not touch the session when the enrollment was voluntary', async () => {
+    mockedGet.mockResolvedValue(status())
+    mockedPost.mockResolvedValueOnce(OFFER)
+    mockedPost.mockResolvedValueOnce({ recoveryCodes: ['aaaa-bbbb'] })
+
+    render(<TwoFactorCard token="tok" />)
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
+    await user.click(screen.getByRole('button', { name: /set up/i }))
+    await user.type(await screen.findByLabelText(/authentication code/i), '123456')
+    await user.click(screen.getByRole('button', { name: /activate/i }))
+
+    await screen.findByText('aaaa-bbbb')
+    expect(updateSession).not.toHaveBeenCalled()
   })
 })

@@ -21,12 +21,13 @@ import { qrSvgFor } from '@/lib/auth/qr'
  * The rules that matter, in one place so a reviewer can check them against the
  * issue without reading the routes:
  *
- *   0. Only the root account may enroll or hold a factor — the issue says "TOTP
- *      2FA for Root account". `loadTwoFactorAccount` is the single gate that
- *      enforces it, and every entry point calls it. The one exception, spelled
- *      out at `requiresSecondFactor`, is the login check: a confirmed row is
- *      honoured whatever the role, so a demoted root is asked for a code rather
- *      than quietly losing the protection or being locked out.
+ *   0. Only an administrative account — `root` or `admin` — may enroll or hold a
+ *      factor, and both MUST (issue #197; #36 was root-only and opt-in).
+ *      `loadTwoFactorAccount` is the single gate that enforces who may, and
+ *      `secondFactorOutstanding` is the single answer to who still owes one. The
+ *      one exception, spelled out at `requiresSecondFactor`, is the login check:
+ *      a confirmed row is honoured whatever the role, so a demoted admin is asked
+ *      for a code rather than quietly losing the protection or being locked out.
  *   1. A confirmed factor can never be switched off through the API. There is no
  *      `disable` function here, and nothing sets `secret` back to NULL. The only
  *      exits are a re-enrollment (which replaces it) and an operator deleting the
@@ -114,18 +115,24 @@ export interface EnrollmentOffer {
 }
 
 /**
- * The role that may hold a second factor.
+ * The roles that must hold a second factor.
  *
- * Issue #36 scopes TOTP to the root account. This constant and the predicate
- * below are the only places that say so — every entry point goes through
- * `loadTwoFactorAccount`, so widening the feature later is a change here and
- * nowhere else.
+ * #36 scoped TOTP to root. #197 widens it to every administrative role, on the
+ * owner's instruction, and makes it mandatory rather than opt-in: `root` is the
+ * webshop admin and `admin` is the IT admin, and both hold enough authority that
+ * a password alone is not an acceptable amount of proof. `project_manager` is the
+ * end-user role and stays opt-out — it is not administrative, and forcing
+ * enrolment on every ordinary user is a different decision nobody has made.
+ *
+ * This set and the predicate below are the only places that say so; every entry
+ * point goes through `loadTwoFactorAccount`, so widening it again is a change
+ * here and nowhere else.
  */
-const TWO_FACTOR_ROLE = 'root'
+const TWO_FACTOR_ROLES: ReadonlySet<string> = new Set(['root', 'admin'])
 
 /** Whether an account with this role may enroll or hold a second factor. */
 export const canHoldSecondFactor = (role: string | null | undefined): boolean =>
-  role === TWO_FACTOR_ROLE
+  typeof role === 'string' && TWO_FACTOR_ROLES.has(role)
 
 /** The one place that decides what "2FA is on" means. */
 const isConfirmed = (row: { secret: string | null; confirmedAt: Date | null } | undefined): boolean =>
@@ -203,6 +210,48 @@ export const requiresSecondFactor = async (userId: number): Promise<boolean> => 
     )
   }
   return true
+}
+
+/**
+ * Whether this account must enroll a second factor before it can do anything else
+ * (issue #197).
+ *
+ * The inverse of `requiresSecondFactor` in every sense that matters: that one
+ * asks "does this login have a factor to pass", this one asks "does this account
+ * owe us one". An administrative role with no confirmed row answers yes, and that
+ * is the state the API refuses to serve — see `requireAuth`.
+ *
+ * Deliberately NOT cached and not carried in the session token. Two reasons, and
+ * the second is the one that decides it:
+ *
+ *  - it has to become false the moment enrolment is confirmed, without the user
+ *    signing in again, or the gate would trap the account it just released;
+ *  - it has to become TRUE again the moment an operator clears the row by hand —
+ *    the emergency reset in docs/guides/root.md. A flag on the session row would
+ *    keep every existing session unblocked after exactly the event that should
+ *    block them.
+ *
+ * The cost is one indexed lookup per authenticated request, and only for the two
+ * administrative roles: `requireAuth` checks `canHoldSecondFactor` against the
+ * role already in the token first, so a project manager's requests never reach
+ * this query.
+ */
+export const secondFactorOutstanding = async (userId: number): Promise<boolean> => {
+  const rows = await db
+    .select({ secret: userTotp.secret, confirmedAt: userTotp.confirmedAt, role: users.role })
+    .from(users)
+    // LEFT, not INNER: an account that has never started an enrolment has no
+    // `user_totp` row at all, and that is precisely the case this must catch.
+    // `requiresSecondFactor` can use an inner join because a missing row means
+    // "no factor to ask for"; here it means "owes one".
+    .leftJoin(userTotp, eq(userTotp.userId, users.id))
+    .where(eq(users.id, userId))
+    .limit(1)
+
+  const row = rows[0]
+  if (!row) return false
+  if (!canHoldSecondFactor(row.role)) return false
+  return !isConfirmed(row)
 }
 
 export const getTwoFactorStatus = async (userId: number): Promise<Result<TwoFactorStatus>> => {
@@ -685,7 +734,7 @@ export const loadTwoFactorAccount = async (
     )
   }
   if (!canHoldSecondFactor(user.role)) {
-    return err(403, 'Two-factor authentication is available to the root account only.')
+    return err(403, 'Two-factor authentication is available to administrator accounts only.')
   }
   return ok({ id: user.id, email: user.email, passwordHash: user.passwordHash, role: user.role })
 }

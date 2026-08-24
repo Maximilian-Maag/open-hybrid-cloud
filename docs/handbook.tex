@@ -2097,17 +2097,36 @@ definition against the live database and applies the diff.
         default password immediately.
 \end{enumerate}
 
-\section{Two-Factor Authentication for the Root Account}
+\section{Mandatory Two-Factor Authentication for Administrators}
 \label{sec:root-2fa}
 
-The Root account signs in with a local password and holds the highest privilege
-level in the system, so it is the one account no identity provider protects.
-It can be given a second factor: standard TOTP (RFC~6238, SHA-1, 30-second
-window, six digits), compatible with Google Authenticator, Authy, Bitwarden and
-1Password. It is scoped to Root: every two-factor endpoint answers 403 for any
-other role, enforced in the service layer rather than per route. Admin and
-Project Manager accounts authenticate through Microsoft Entra ID and are covered
-by its MFA instead.
+Administrator accounts sign in with a local password and hold enough privilege to
+change what the portal does, so they are the accounts no identity provider
+protects. They are given a second factor: standard TOTP (RFC~6238, SHA-1,
+30-second window, six digits), compatible with Google Authenticator, Authy,
+Bitwarden and 1Password.
+
+It is \emph{required} and it covers both administrative roles, Root and Admin.
+The enforcement point is \code{requireAuth}: an administrative session with no
+confirmed factor is answered 403 with the code
+\code{second\_factor\_required} on every route except the enrolment endpoints
+and a read of the caller's own profile. The frontend redirect to Settings is a
+convenience on top of that, not the control — a client that ignores it, or calls
+the API directly with the token, meets the same refusal.
+
+The session is issued rather than withheld, deliberately: enrolling needs a
+working session, so refusing the sign-in would be a lockout with no way out of
+it. What the session can do is enrol, and nothing else.
+
+The requirement is a property of the \emph{role}, re-read per request, not a flag
+cached on the session row. That is what makes both directions work: the gate
+lifts the moment enrolment is confirmed, without a fresh sign-in, and closes
+again the moment an operator clears the row by hand.
+
+Project Manager accounts are excluded — it is the end-user role, and every
+two-factor endpoint answers 403 for it, enforced in the service layer rather than
+per route. Accounts that authenticate through Microsoft Entra ID are covered by
+its MFA instead.
 
 Setup lives under \textbf{Settings → My Profile → Two-factor authentication};
 the end-user steps are in \file{docs/guides/root.md}. What matters at the

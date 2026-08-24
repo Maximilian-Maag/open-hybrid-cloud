@@ -399,13 +399,22 @@ If the current password is incorrect or the confirmation does not match, the cha
 
 ### 10.2 Two-Factor Authentication
 
-The Root account holds a local password and the highest privilege level in the
-system, so it can be protected with a second factor: a six-digit code from an
-authenticator app (Google Authenticator, Authy, Bitwarden, 1Password — anything
-that supports standard TOTP). It is available to the Root account **only** — the
-server refuses every two-factor endpoint for any other role, and the card is not
-shown to them. Admin and Project Manager accounts sign in through Microsoft
-Entra ID and are covered by its MFA instead.
+Administrator accounts hold a local password and enough privilege to change what
+the portal does, so they are protected with a second factor: a six-digit code
+from an authenticator app (Google Authenticator, Authy, Bitwarden, 1Password —
+anything that supports standard TOTP).
+
+It is **required**, not optional, and it applies to both administrative roles —
+**Root and Admin**. An administrator with no authenticator can sign in, and then
+do nothing else: every part of the portal except the enrolment card answers
+"two-factor authentication is required", and the app sends them straight to
+Settings until they have one. Signing them in is deliberate — enrolling needs a
+working session, and refusing the sign-in would be a lockout with no way out.
+
+Project Manager accounts are not covered: it is the end-user role, it holds no
+administrative authority, and the server refuses every two-factor endpoint for
+it. Accounts that sign in through Microsoft Entra ID are covered by its MFA
+instead, and the server says so rather than offering enrolment.
 
 **Setting it up**
 
@@ -485,12 +494,18 @@ alongside it makes sure no leftover code from the previous enrollment stays
 usable. The account then signs in with its password alone, and should enroll again
 immediately.
 
-The same procedure applies to an account that was Root when it enrolled and has
-since been demoted. Its second factor keeps being required at sign-in — dropping
-it silently would remove a protection the owner set up and still relies on — but
-it can no longer be replaced through the interface, because replacing it is a
-Root-only operation. Either promote the account back to Root, or clear the row as
-above.
+The same procedure applies to an account that was administrative when it enrolled
+and has since been demoted to Project Manager. Its second factor keeps being
+required at sign-in — dropping it silently would remove a protection the owner set
+up and still relies on — but it can no longer be replaced through the interface,
+because replacing it is an administrator operation. Either promote the account
+back, or clear the row as above.
+
+Note the other direction too: clearing the row for an account that is still Root
+or Admin does not switch the second factor off. It puts the account back into
+"must enrol", so the next sign-in works and nothing else does until a new
+authenticator is confirmed. That is intentional — the requirement is a property of
+the role, not of the row.
 
 The same procedure is the way out if `TOTP_ENCRYPTION_KEY` is lost or rotated: the
 stored secrets become unreadable, every two-factor sign-in fails closed, and the

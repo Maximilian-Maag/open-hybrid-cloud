@@ -15,6 +15,7 @@ import {
   PENDING_ENROLLMENT_TTL_MS,
   RECOVERY_CODE_COUNT,
   requiresSecondFactor,
+  secondFactorOutstanding,
   startEnrollment,
   totpIssuer,
   verifySecondFactor,
@@ -40,8 +41,14 @@ const auditDetails = async (userId: number, action: string): Promise<string[]> =
  * Every 2FA path is root-only (#36), so the fixture user is root unless a test is
  * specifically about some other role.
  */
+/**
+ * A root account with NO factor yet — which is what almost every test here needs,
+ * because they enroll one through the service. `createUser` enrolls
+ * administrative roles by default since #197 made a factor mandatory, so this
+ * opts out.
+ */
 const createRoot = (overrides?: Parameters<typeof createUser>[0]) =>
-  createUser({ role: 'root', ...overrides })
+  createUser({ role: 'root', secondFactor: false, ...overrides })
 
 /**
  * Rows this database is currently waiting on a lock for.
@@ -788,35 +795,56 @@ describe('totpIssuer', () => {
   })
 })
 
-describe('root only (#36)', () => {
-  const OTHER_ROLES = ['admin', 'project_manager'] as const
+// #36 scoped this to root. #197 widened it to every administrative role and made
+// it mandatory, so what this block guards changed: `admin` moved from the refused
+// side to the allowed one, and `project_manager` — the end-user role — is the only
+// one left out.
+describe('administrators only (#36, widened by #197)', () => {
+  const ADMIN_ROLES = ['root', 'admin'] as const
 
-  it('refuses to load a non-root account, whatever else is right about it', async () => {
-    for (const role of OTHER_ROLES) {
-      const u = await createUser({ role })
-      const result = await loadTwoFactorAccount(u.id)
-      expect(result.ok, role).toBe(false)
-      if (!result.ok) {
-        expect(result.status).toBe(403)
-        expect(result.message).toMatch(/root account only/)
-      }
+  it.each(ADMIN_ROLES)('loads a %s account', async (role) => {
+    const u = await createUser({ role, secondFactor: false })
+    const result = await loadTwoFactorAccount(u.id)
+    expect(result.ok, role).toBe(true)
+  })
+
+  it.each(ADMIN_ROLES)('starts an enrollment for a %s account', async (role) => {
+    const u = await createUser({ role, secondFactor: false })
+    const result = await startEnrollment(u.id, u.email, 'OHC')
+    expect(result.ok, role).toBe(true)
+  })
+
+  it('confirms an enrollment for an admin, which #36 refused', async () => {
+    const u = await createUser({ role: 'admin', secondFactor: false })
+    const secret = await enrollTotp(u.id, { confirmed: false })
+
+    const result = await confirmEnrollment(u.id, currentTotpCode(secret))
+    expect(result.ok).toBe(true)
+    expect((await row(u.id)).confirmedAt).not.toBeNull()
+  })
+
+  it('refuses to load a project manager, who may not hold a factor', async () => {
+    const u = await createUser({ role: 'project_manager' })
+    const result = await loadTwoFactorAccount(u.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(403)
+      expect(result.message).toMatch(/administrator accounts only/)
     }
   })
 
-  it('refuses to start an enrollment for a non-root account', async () => {
-    for (const role of OTHER_ROLES) {
-      const u = await createUser({ role })
-      const result = await startEnrollment(u.id, u.email, 'OHC')
-      expect(result.ok, role).toBe(false)
-      if (!result.ok) expect(result.status).toBe(403)
-      // And nothing was written, so a role check added later cannot be walked
-      // around by an enrollment that was already half-started.
-      expect(await row(u.id)).toBeUndefined()
-    }
+  it('refuses to start an enrollment for a project manager', async () => {
+    const u = await createUser({ role: 'project_manager' })
+    const result = await startEnrollment(u.id, u.email, 'OHC')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(403)
+    // And nothing was written, so a role check added later cannot be walked
+    // around by an enrollment that was already half-started.
+    expect(await row(u.id)).toBeUndefined()
   })
 
-  it('refuses to confirm for a non-root account even when a row is pending', async () => {
-    const u = await createUser({ role: 'admin' })
+  it('refuses to confirm for a project manager even when a row is pending', async () => {
+    const u = await createUser({ role: 'project_manager' })
     // Bypass the service to build the state a missing guard would have left.
     const secret = await enrollTotp(u.id, { confirmed: false })
 
@@ -827,25 +855,64 @@ describe('root only (#36)', () => {
     expect(await db.select().from(userRecoveryCodes).where(eq(userRecoveryCodes.userId, u.id))).toHaveLength(0)
   })
 
-  it('refuses to report status for a non-root account', async () => {
+  it('refuses to report status for a project manager', async () => {
     const u = await createUser({ role: 'project_manager' })
     const result = await getTwoFactorStatus(u.id)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(403)
   })
 
-  it('still requires a confirmed factor at login for a demoted account', async () => {
-    // The documented decision: enrollment is root-only, so this row can only
-    // come from a root account that was demoted afterwards. That user holds the
+  it('still requires a confirmed factor at login for an account demoted out of eligibility', async () => {
+    // Now that `admin` may hold one, the demotion that produces this state has to
+    // go all the way to `project_manager`. The user still holds the
     // authenticator, so asking for the code is neither a silent downgrade nor a
     // lockout — see the comment on requiresSecondFactor.
     const u = await createRoot()
     const secret = await enrollTotp(u.id)
-    await db.update(users).set({ role: 'admin' }).where(eq(users.id, u.id))
+    await db.update(users).set({ role: 'project_manager' }).where(eq(users.id, u.id))
 
     expect(await requiresSecondFactor(u.id)).toBe(true)
     // And the factor still verifies, so the login can actually complete.
     expect((await verifySecondFactor(u.id, currentTotpCode(secret))).ok).toBe(true)
+  })
+})
+
+// Issue #197: who still owes an enrollment.
+describe('secondFactorOutstanding', () => {
+  it.each([['root'], ['admin']] as const)('is true for a %s with no factor', async (role) => {
+    const u = await createUser({ role, secondFactor: false })
+    expect(await secondFactorOutstanding(u.id)).toBe(true)
+  })
+
+  it.each([['root'], ['admin']] as const)('is false for a %s once confirmed', async (role) => {
+    const u = await createUser({ role, secondFactor: false })
+    await enrollTotp(u.id)
+    expect(await secondFactorOutstanding(u.id)).toBe(false)
+  })
+
+  it('is still true while an enrollment is only pending', async () => {
+    // A started-but-unconfirmed enrollment is not a second factor: nothing has
+    // proved the user can produce a code from it.
+    const u = await createRoot()
+    await enrollTotp(u.id, { confirmed: false })
+    expect(await secondFactorOutstanding(u.id)).toBe(true)
+  })
+
+  it('is false for a project manager, who may not hold one', async () => {
+    const u = await createUser({ role: 'project_manager' })
+    expect(await secondFactorOutstanding(u.id)).toBe(false)
+  })
+
+  it('is false for a user who does not exist', async () => {
+    expect(await secondFactorOutstanding(999_999)).toBe(false)
+  })
+
+  it('becomes true again when an operator clears the row', async () => {
+    // The emergency reset in docs/guides/root.md.
+    const u = await createUser({ role: 'admin' })
+    expect(await secondFactorOutstanding(u.id)).toBe(false)
+    await db.delete(userTotp).where(eq(userTotp.userId, u.id))
+    expect(await secondFactorOutstanding(u.id)).toBe(true)
   })
 })
 

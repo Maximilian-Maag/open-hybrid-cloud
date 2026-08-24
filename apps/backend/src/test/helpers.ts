@@ -7,27 +7,47 @@ import { generateTotpSecret, totp } from '@/lib/auth/totp'
 import { encryptTotpSecret } from '@/lib/auth/totpSecret'
 import type { Role } from '@open-hybrid-cloud/types'
 
+/**
+ * A user, with a confirmed second factor if their role requires one (#197).
+ *
+ * `root` and `admin` must hold a factor, and `requireAuth` refuses every request
+ * from one that does not. So an administrative fixture WITHOUT a factor does not
+ * represent an admin using the API — it represents an admin who cannot use it,
+ * and a test built on one would be asserting against a 403 it never meant to ask
+ * for. Enrolling by default is what makes these fixtures mean what they read as.
+ *
+ * Pass `secondFactor: false` for the tests that are *about* the un-enrolled
+ * state. That is the only reason to, and it should look deliberate.
+ *
+ * `project_manager` is unaffected: it may not hold a factor at all.
+ */
 export const createUser = async (overrides?: {
   email?: string
   name?: string
   role?: Role
   active?: boolean
   password?: string
+  /** Skip the automatic enrollment. Only for tests about an admin who owes one. */
+  secondFactor?: boolean
 }) => {
   const password = overrides?.password ?? 'password123'
   const passwordHash = await bcrypt.hash(password, 4)
   const email = overrides?.email ?? `user-${Math.random().toString(36).slice(2)}@test.dev`
+  const role = overrides?.role ?? 'project_manager'
 
   const [user] = await db
     .insert(schema.users)
     .values({
       email,
       name: overrides?.name ?? 'Test User',
-      role: overrides?.role ?? 'project_manager',
+      role,
       active: overrides?.active ?? true,
       passwordHash,
     })
     .returning()
+
+  const wantsFactor = overrides?.secondFactor ?? (role === 'root' || role === 'admin')
+  if (wantsFactor) await enrollTotp(user.id)
 
   return user
 }

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { requireAuth, isAuth } from '@/lib/auth/middleware'
+import { requireAuthPendingSecondFactor, isAuth } from '@/lib/auth/middleware'
 import { getTwoFactorStatus } from '@/lib/services/twoFactor'
 import { toResponse } from '@/lib/http'
 
@@ -12,7 +12,7 @@ import { toResponse } from '@/lib/http'
  * operator with database access, documented in docs/guides/root.md.
  */
 export async function GET(req: NextRequest) {
-  const session = await requireAuth(req)
+  const session = await requireAuthPendingSecondFactor(req)
   if (!isAuth(session)) return session
   return toResponse(await getTwoFactorStatus(session.id))
 }

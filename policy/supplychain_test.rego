@@ -4,17 +4,20 @@ import data.repo.policy
 
 # --- rule 6 ----------------------------------------------------------------
 
-action(uses, ref, local) := {"actionRefs": [{
+# `kind` is what the extractor classifies the `uses:` value as: a repository
+# action, a `docker://` image, or a path-local composite action. It replaced a
+# `local` boolean that filed `docker://` under "not ours to pin".
+action(uses, ref, kind) := {"actionRefs": [{
 	"file": ".github/workflows/ci.yml",
 	"line": 26,
 	"uses": uses,
 	"action": "actions/checkout",
 	"ref": ref,
-	"local": local,
+	"kind": kind,
 }]}
 
 test_action_pinned_to_a_tag_is_denied if {
-	facts := action("actions/checkout@v4", "v4", false)
+	facts := action("actions/checkout@v4", "v4", "repo")
 	denied := policy.deny with input as facts
 	some v in denied
 	v.rule == "action_pinned_to_sha"
@@ -28,7 +31,7 @@ test_action_pinned_to_a_sha_passes if {
 	facts := action(
 		"actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5",
 		"34e114876b0b11c390a56381ad16ebd13914f8d5",
-		false,
+		"repo",
 	)
 	denied := policy.deny with input as facts
 	count(denied) == 0
@@ -36,13 +39,13 @@ test_action_pinned_to_a_sha_passes if {
 
 # A composite action in this repository is reviewed with the repository.
 test_local_action_is_not_checked if {
-	facts := action("./.github/actions/setup", "", true)
+	facts := action("./.github/actions/setup", "", "local")
 	denied := policy.deny with input as facts
 	count(denied) == 0
 }
 
 test_action_with_no_ref_at_all_is_denied if {
-	facts := action("actions/checkout", "", false)
+	facts := action("actions/checkout", "", "repo")
 	denied := policy.deny with input as facts
 	some v in denied
 	v.rule == "action_pinned_to_sha"
@@ -52,7 +55,39 @@ test_action_with_no_ref_at_all_is_denied if {
 # A branch name is 40 characters of nothing in particular, but not hex.
 test_a_forty_character_branch_name_is_still_denied if {
 	name := "not-a-sha-not-a-sha-not-a-sha-not-a-shaX"
-	facts := action(sprintf("actions/checkout@%s", [name]), name, false)
+	facts := action(sprintf("actions/checkout@%s", [name]), name, "repo")
+	denied := policy.deny with input as facts
+	count(denied) == 1
+}
+
+# `docker://` was classified as local, which read as "reviewed with the
+# repository" and is the opposite of what it is: the step runs a third party's
+# whole root filesystem against this repository's secrets. A tag there is as
+# movable as a tag on an action.
+test_docker_action_on_a_tag_is_denied if {
+	facts := action("docker://vendor/image:latest", "", "docker")
+	denied := policy.deny with input as facts
+	some v in denied
+	v.rule == "action_pinned_to_sha"
+	contains(v.detail, "not to an image digest")
+	contains(v.why, "publisher can move")
+}
+
+# An image is immutable by digest, not by commit, so rule 6 checks the digest
+# form for `docker://` and the 40-hex commit form for everything else. A digest
+# is 64 hex characters and would fail the commit pattern.
+test_docker_action_on_a_digest_passes if {
+	digest := "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+	facts := action(sprintf("docker://vendor/image@%s", [digest]), digest, "docker")
+	denied := policy.deny with input as facts
+	count(denied) == 0
+}
+
+# And a commit SHA is not a digest: 40 hex characters where a digest is wanted
+# is still unpinned.
+test_docker_action_on_a_commit_sha_is_denied if {
+	sha := "34e114876b0b11c390a56381ad16ebd13914f8d5"
+	facts := action(sprintf("docker://vendor/image@%s", [sha]), sha, "docker")
 	denied := policy.deny with input as facts
 	count(denied) == 1
 }

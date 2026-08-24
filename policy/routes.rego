@@ -69,23 +69,55 @@ deny contains v if {
 	}
 }
 
+# Path segments that are not row ids, and what they are instead.
+#
+# Keyed by route and segment, like `intentional_secret_reads`: a route that may
+# take a language code in one segment does not thereby get to take an unchecked
+# id in another. Exemptions cost a line here and a sentence in review.
+non_id_segments := {
+	"admin/products/[id]/translations/[lang] lang": "a language code, checked against SUPPORTED_LANGUAGES by upsertTranslation rather than parsed as a number",
+	"admin/ci/[sourceId]/projects/[projectId]/branches projectId": "a GitLab project path, URL-encoded — the CI provider's identifier for a repository, not a portal row id",
+	"admin/ci/[sourceId]/projects/[projectId]/files projectId": "a GitLab project path, URL-encoded — the CI provider's identifier for a repository, not a portal row id",
+	"admin/ci/[sourceId]/projects/[projectId]/import-vars projectId": "a GitLab project path, URL-encoded — the CI provider's identifier for a repository, not a portal row id",
+}
+
+# Every dynamic segment, one at a time.
+#
+# This used to ask whether the file called `parseRouteId` *at all*, which made one
+# safe call vouch for the rest: `/[sourceId]/projects/[projectId]/…` parses
+# sourceId and passes projectId through raw, and rule 5 saw a route that parsed an
+# id and said nothing. A route's second and third segments are exactly where the
+# IDOR bugs were, so coverage has to be per segment.
 deny contains v if {
 	some route in input.routes
-	count(route.dynamicSegments) > 0
-	route.safeIdParses == 0
-	count(route.unsafeIdParses) == 0
+	some segment in route.dynamicSegments
+	name := trim_suffix(trim_prefix(segment, "["), "]")
+	not name in route.safeIdSegments
+	not non_id_segments[sprintf("%s %s", [route.apiPath, name])]
+
+	# The unsafe-parse rule above already reports this segment by name and line.
+	count([p | some p in route.unsafeIdParses; p.segment == name]) == 0
 
 	v := {
 		"rule": "route_id_parsed_safely",
 		"file": route.file,
 		"line": 0,
-		"detail": sprintf("has path segments %s but never calls parseRouteId", [concat(", ", route.dynamicSegments)]),
+		"detail": sprintf("`%s` never reaches parseRouteId%s", [segment, also_parsed(route)]),
 		"why": concat("", [
 			"A dynamic segment arrives as an arbitrary string. Reaching the database with it unvalidated is ",
-			"how #143's `parseInt` bugs got their reach; `parseRouteId` is the one place that decides what an id is.",
+			"how #143's `parseInt` bugs got their reach; `parseRouteId` is the one place that decides what an id is. ",
+			"Parsing one segment says nothing about the others. If this segment is not a row id, add ",
+			"`<apiPath> <segment>` to `non_id_segments` in policy/routes.rego with what it is instead.",
 		]),
 	}
 }
+
+# Naming what the route *did* parse is what makes a multi-segment report readable:
+# "[projectId] never reaches parseRouteId (sourceId does)" is a different sentence
+# from "this route never parses an id", and only one of them is true.
+also_parsed(route) := "" if count(route.safeIdSegments) == 0
+
+also_parsed(route) := sprintf(" (%s does)", [concat(", ", route.safeIdSegments)]) if count(route.safeIdSegments) > 0
 
 # ---------------------------------------------------------------------------
 # rule 10 — every route is exercised by a route test

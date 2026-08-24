@@ -7,7 +7,7 @@ package repo.policy
 
 deny contains v if {
 	some ref in input.actionRefs
-	not ref.local
+	ref.kind == "repo"
 	not regex.match(`^[0-9a-f]{40}$`, ref.ref)
 
 	v := {
@@ -20,6 +20,29 @@ deny contains v if {
 			"code runs with this repository's secrets. Pin the 40-character SHA and keep the version in a ",
 			"trailing comment: `uses: owner/action@<sha> # v4`. ",
 			"This gate obeys the same rule — see the OPA install step in .github/workflows/ci.yml.",
+		]),
+	}
+}
+
+# `uses: docker://…` is not a local action and never was: it pulls a whole root
+# filesystem from a registry and runs the step inside it. Treating it as local
+# exempted `docker://vendor/image:latest` — a tag the vendor can repoint — from
+# the rule that exists precisely to stop that. An image is immutable by digest,
+# not by commit, so it is checked against the digest form instead.
+deny contains v if {
+	some ref in input.actionRefs
+	ref.kind == "docker"
+	not regex.match(`^sha256:[0-9a-f]{64}$`, ref.ref)
+
+	v := {
+		"rule": "action_pinned_to_sha",
+		"file": ref.file,
+		"line": ref.line,
+		"detail": sprintf("`uses: %s` is pinned to %q, not to an image digest", [ref.uses, pinned_as(ref)]),
+		"why": concat("", [
+			"A `docker://` step runs a third party's container against this repository's secrets, and a tag ",
+			"is a pointer its publisher can move. Pin the digest and keep the tag in a trailing comment: ",
+			"`uses: docker://owner/image@sha256:<64 hex> # v1.2.3`.",
 		]),
 	}
 }
@@ -76,6 +99,22 @@ warn contains v if {
 	}
 }
 
-floating_detail(image) := sprintf("`%s` carries no tag, which Docker resolves to `latest`", [image.name]) if image.tag == ""
+floating_detail(image) := sprintf("`%s` carries no tag, which Docker resolves to `latest`", [image.name]) if {
+	not image.fromChartAppVersion
+	image.tag == ""
+}
 
-floating_detail(image) := sprintf("`%s` is on `latest`", [image.image]) if image.tag == "latest"
+floating_detail(image) := sprintf("`%s` is on `latest`", [image.image]) if {
+	not image.fromChartAppVersion
+	image.tag == "latest"
+}
+
+# The Helm chart has no `image:` scalar to report. Its tag is empty in values.yaml
+# and `_helpers.tpl` resolves that to `Chart.appVersion`, so the message has to
+# name all three or nobody can find what to edit.
+floating_detail(image) := sprintf(
+	"`%s` has an empty `tag`, so _helpers.tpl falls back to Chart.appVersion, which is `%s`",
+	[image.name, image.tag],
+) if {
+	image.fromChartAppVersion
+}

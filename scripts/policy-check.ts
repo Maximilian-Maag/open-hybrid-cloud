@@ -68,9 +68,11 @@ function main(): void {
   const opa = resolveOpa()
   if (!opa) {
     process.stderr.write(
-      `opa ${OPA_VERSION} is not installed.\n` +
-        `Run \`make policy-install-opa\` to fetch it into .opa/ (checksum-verified), ` +
-        `or put an opa ${OPA_VERSION} on PATH.\n`,
+      `No opa ${OPA_VERSION} matching the pinned checksum was found.\n` +
+        `Run \`make policy-install-opa\` to fetch it into .opa/.\n` +
+        `An opa on PATH or named by OPA= is used only if its SHA-256 is the pinned one — ` +
+        `a distribution build of ${OPA_VERSION} is a different artefact and is not accepted, ` +
+        `because a version string is not identity (see scripts/opa.ts).\n`,
     )
     process.exit(2)
   }

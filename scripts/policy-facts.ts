@@ -40,6 +40,11 @@ const I18N_FILE = `${FRONTEND}/src/lib/i18n.ts`
  * Columns that hold a credential. Named by their SQL identifier because that is
  * what a reviewer greps for and what the migration says; the extractor maps them
  * back to the Drizzle property names, so a policy can name both.
+ *
+ * The list is every column `schema.ts` documents as secret-bearing, not the ones
+ * #144 happened to leak. A column that is absent here produces no fact at all, so
+ * a projection that reaches it is neither denied nor deliberately allowlisted —
+ * it is simply invisible, which is the failure mode this rule exists to remove.
  */
 const SECRET_SQL_COLUMNS = [
   'access_token',
@@ -48,6 +53,17 @@ const SECRET_SQL_COLUMNS = [
   'password_hash',
   'smtp_pass',
   'ai_api_key',
+  // The session token's SHA-256 (sessions). Not the token itself, but a dump of
+  // these is enough to recognise a presented token, so it stays off responses.
+  'token_hash',
+  // The TOTP factor (user_totp): an AES-256-GCM envelope of the shared secret,
+  // and the in-flight enrollment kept beside it.
+  'secret',
+  'pending_secret',
+  // SHA-256 of a recovery code (user_recovery_codes).
+  'code_hash',
+  // The integration registry's encrypted token or password (integrations).
+  'credential',
 ]
 
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
@@ -109,20 +125,28 @@ interface RouteFact {
   authHelpers: string[]
   dynamicSegments: string[]
   lines: number
-  safeIdParses: number
+  /** The `params` keys that reach `parseRouteId`, not how many times it was called. */
+  safeIdSegments: string[]
+  /** `parseRouteId(x)` where `x` could not be traced back to a `params` key. */
+  unattributedSafeIdParses: number
   /** `parseInt`/`Number` applied to a value destructured from `params`. */
   unsafeIdParses: { line: number; call: string; segment: string }[]
   testFiles: string[]
 }
 
 /**
- * Identifiers bound from the route's `params`, e.g. `const { id, envId } = await params`.
+ * Local name -> the `params` key it was destructured from.
+ *
+ * `const { id, envId } = await params` binds both under their own names;
+ * `const { id: rawOrderId } = await params` binds `rawOrderId` to the key `id`.
+ * The key is what the rule needs, because that is what the `[segment]` directory
+ * is called — the local name is the route author's choice.
  *
  * Narrowing rule 5 to these is what keeps it off the two `parseInt(searchParams…)`
  * call sites, which are query parameters and a different question entirely.
  */
-function paramBindings(sf: ts.SourceFile): Set<string> {
-  const bound = new Set<string>()
+function paramBindings(sf: ts.SourceFile): Map<string, string> {
+  const bound = new Map<string, string>()
   visit(sf, (node) => {
     if (!ts.isVariableDeclaration(node) || !node.initializer) return
     if (!ts.isObjectBindingPattern(node.name)) return
@@ -130,10 +154,38 @@ function paramBindings(sf: ts.SourceFile): Set<string> {
     const text = init.getText(sf)
     if (!/(^|\.)params$/.test(text)) return
     for (const element of node.name.elements) {
-      if (ts.isIdentifier(element.name)) bound.add(element.name.text)
+      if (!ts.isIdentifier(element.name)) continue
+      const key =
+        element.propertyName && (ts.isIdentifier(element.propertyName) || ts.isStringLiteral(element.propertyName))
+          ? element.propertyName.text
+          : element.name.text
+      bound.set(element.name.text, key)
     }
   })
   return bound
+}
+
+/**
+ * The `params` key a `parseRouteId(...)` argument names, or null.
+ *
+ * Two shapes occur in this tree: an identifier destructured from `params`
+ * (`parseRouteId(sourceId)`) and a direct read (`parseRouteId((await params).itemId)`).
+ * Anything else — a value threaded through a helper, a computed key — is
+ * deliberately *not* guessed at; it is counted separately so the rule can say it
+ * saw a parse it could not attribute rather than silently crediting a segment.
+ */
+function parsedSegment(arg: ts.Expression, params: Map<string, string>): string | null {
+  if (ts.isIdentifier(arg)) return params.get(arg.text) ?? null
+  if (ts.isPropertyAccessExpression(arg) && ts.isIdentifier(arg.name)) {
+    const base = arg.expression
+    const inner = ts.isAwaitExpression(base) ? base.expression : base
+    if (ts.isParenthesizedExpression(inner)) {
+      const unwrapped = ts.isAwaitExpression(inner.expression) ? inner.expression.expression : inner.expression
+      if (/(^|\.)params$/.test(unwrapped.getText())) return arg.name.text
+    }
+    if (/(^|\.)params$/.test(inner.getText())) return arg.name.text
+  }
+  return null
 }
 
 function routeFacts(testImports: Map<string, string[]>): RouteFact[] {
@@ -144,7 +196,8 @@ function routeFacts(testImports: Map<string, string[]>): RouteFact[] {
     const methods: string[] = []
     const authHelpers = new Set<string>()
     const unsafeIdParses: RouteFact['unsafeIdParses'] = []
-    let safeIdParses = 0
+    const safeIdSegments = new Set<string>()
+    let unattributedSafeIdParses = 0
 
     visit(sf, (node) => {
       if (ts.isFunctionDeclaration(node) && node.name && HTTP_METHODS.has(node.name.text)) {
@@ -157,16 +210,34 @@ function routeFacts(testImports: Map<string, string[]>): RouteFact[] {
           if (exported && ts.isIdentifier(d.name) && HTTP_METHODS.has(d.name.text)) methods.push(d.name.text)
         }
       }
+      // `const GET = handler; export { GET }` and `export { handler as GET }`
+      // export exactly as much as `export const GET` does. Missing them would let
+      // an endpoint leave rules 1 and 10 — both gated on `count(methods) > 0` —
+      // by changing only the shape of its export.
+      if (ts.isExportDeclaration(node) && node.exportClause && ts.isNamedExports(node.exportClause)) {
+        for (const element of node.exportClause.elements) {
+          if (HTTP_METHODS.has(element.name.text)) methods.push(element.name.text)
+        }
+      }
       if (!ts.isCallExpression(node)) return
 
       const callee = calleeName(node)
       if (callee && AUTH_HELPERS.has(callee)) authHelpers.add(callee)
-      if (callee === 'parseRouteId') safeIdParses++
+      if (callee === 'parseRouteId') {
+        const arg = node.arguments[0]
+        const segment = arg ? parsedSegment(arg, params) : null
+        if (segment === null) unattributedSafeIdParses++
+        else safeIdSegments.add(segment)
+      }
 
       if (callee === 'parseInt' || callee === 'Number') {
         const arg = node.arguments[0]
         if (arg && ts.isIdentifier(arg) && params.has(arg.text)) {
-          unsafeIdParses.push({ line: lineOf(sf, node), call: node.getText(sf), segment: arg.text })
+          unsafeIdParses.push({
+            line: lineOf(sf, node),
+            call: node.getText(sf),
+            segment: params.get(arg.text) as string,
+          })
         }
       }
     })
@@ -179,7 +250,8 @@ function routeFacts(testImports: Map<string, string[]>): RouteFact[] {
       authHelpers: [...authHelpers].sort(),
       dynamicSegments: apiPath.split('/').filter((s) => s.startsWith('[')),
       lines: read(file).split('\n').length,
-      safeIdParses,
+      safeIdSegments: [...safeIdSegments].sort(),
+      unattributedSafeIdParses,
       unsafeIdParses,
       testFiles: testImports.get(file) ?? [],
     }
@@ -252,9 +324,14 @@ function tableFacts(): TableFact[] {
         const property = propName(p)
         if (!property || !ts.isPropertyAssignment(p)) continue
         // `text('access_token')`, `varchar('smtp_pass', …)` — the SQL name is the
-        // first argument of whichever column builder was used.
-        const m = /^\w+\(\s*'([^']+)'/.exec(p.initializer.getText(sf))
-        if (m && SECRET_SQL_COLUMNS.includes(m[1])) secretColumns.push({ property, column: m[1] })
+        // first argument of whichever column builder was used. `credential: text()`
+        // gives no name at all, and drizzle then uses the property verbatim (this
+        // schema sets no `casing`), so that is the fallback rather than a skip:
+        // without it the integration registry's credential column has no fact.
+        const text = p.initializer.getText(sf)
+        const named = /^\w+\(\s*'([^']+)'/.exec(text)
+        const column = named ? named[1] : property
+        if (SECRET_SQL_COLUMNS.includes(column)) secretColumns.push({ property, column })
       }
     }
 
@@ -328,7 +405,35 @@ function selectFacts(secretProperties: Set<string>): SelectFact[] {
 interface I18nFacts {
   file: string
   interfaceKeys: string[]
+  /** The codes in `SUPPORTED_LANGUAGES` — what the UI offers, table or no table. */
+  supported: string[]
   languages: { code: string; keyCount: number; missing: string[] }[]
+}
+
+/**
+ * The codes in `export const SUPPORTED_LANGUAGES = [{ code: 'bg', … }, …]`.
+ *
+ * Read separately from `translations` on purpose. A rule that only walked the
+ * tables it found could never see the interesting failure — a code the language
+ * picker still offers whose table was deleted, which `t()` answers entirely in
+ * English without anything failing.
+ */
+function supportedCodes(sf: ts.SourceFile): string[] {
+  const codes: string[] = []
+  visit(sf, (node) => {
+    if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name)) return
+    if (node.name.text !== 'SUPPORTED_LANGUAGES' || !node.initializer) return
+    const init = ts.isAsExpression(node.initializer) ? node.initializer.expression : node.initializer
+    if (!ts.isArrayLiteralExpression(init)) return
+    for (const entry of init.elements) {
+      if (!ts.isObjectLiteralExpression(entry)) continue
+      for (const p of entry.properties) {
+        if (!ts.isPropertyAssignment(p) || propName(p) !== 'code') continue
+        if (ts.isStringLiteral(p.initializer)) codes.push(p.initializer.text)
+      }
+    }
+  })
+  return codes.sort()
 }
 
 function i18nFacts(): I18nFacts {
@@ -376,7 +481,7 @@ function i18nFacts(): I18nFacts {
     }
   })
 
-  return { file: I18N_FILE, interfaceKeys, languages }
+  return { file: I18N_FILE, interfaceKeys, supported: supportedCodes(sf), languages }
 }
 
 // ---------------------------------------------------------------------------
@@ -387,7 +492,11 @@ interface MigrationFacts {
   dir: string
   journalFile: string
   files: { file: string; tag: string; index: number }[]
-  journal: { idx: number; tag: string }[]
+  /**
+   * The journal in file order. `when` is carried because it is the field
+   * drizzle-kit actually compares — see the rule in policy/database.rego.
+   */
+  journal: { idx: number; tag: string; when: number }[]
 }
 
 function migrationFacts(): MigrationFacts {
@@ -398,9 +507,9 @@ function migrationFacts(): MigrationFacts {
       return { file, tag, index: Number.parseInt(tag.slice(0, 4), 10) }
     })
   const journal = exists(journalFile)
-    ? (JSON.parse(read(journalFile)) as { entries: { idx: number; tag: string }[] }).entries.map(
-        (e) => ({ idx: e.idx, tag: e.tag }),
-      )
+    ? (
+        JSON.parse(read(journalFile)) as { entries: { idx: number; tag: string; when: number }[] }
+      ).entries.map((e) => ({ idx: e.idx, tag: e.tag, when: e.when }))
     : []
   return { dir: DRIZZLE_DIR, journalFile, files, journal }
 }
@@ -431,7 +540,19 @@ interface ActionRef extends Located {
   uses: string
   action: string
   ref: string
-  local: boolean
+  /**
+   * What has to be pinned, and to what:
+   *
+   *  - `local`   — `./.github/actions/…`, reviewed with this repository.
+   *  - `docker`  — `docker://…`, a third-party *image*, pinned by digest.
+   *  - `repo`    — `owner/action@…`, a third-party repository, pinned by commit.
+   *
+   * `docker://` used to be filed under `local`, which read as "not ours to pin"
+   * and is the opposite of the truth: it is the one form that fetches a whole
+   * root filesystem from a registry, and `docker://vendor/image:latest` was
+   * exempt from rule 6 entirely.
+   */
+  kind: 'local' | 'docker' | 'repo'
 }
 
 function actionRefs(): ActionRef[] {
@@ -441,17 +562,18 @@ function actionRefs(): ActionRef[] {
   ]
   return files.flatMap((file) =>
     scalarLines(file, 'uses').map(({ line, value }) => {
+      // A digest is `image@sha256:…`, a commit is `action@<sha>`; both sit after
+      // the last `@`, and `docker://` carries no `@` of its own.
       const at = value.lastIndexOf('@')
+      const kind = value.startsWith('./') ? 'local' : value.startsWith('docker://') ? 'docker' : 'repo'
       return {
         file,
         line,
         uses: value,
         action: at === -1 ? value : value.slice(0, at),
         ref: at === -1 ? '' : value.slice(at + 1),
-        // A composite action in this repository is reviewed with the repository;
-        // there is no third party to pin.
-        local: value.startsWith('./') || value.startsWith('docker://'),
-      }
+        kind,
+      } satisfies ActionRef
     }),
   )
 }
@@ -462,16 +584,92 @@ interface ImageRef extends Located {
   tag: string
   /** The tag comes from a shell expansion, e.g. `${IMAGE_TAG:-latest}`. */
   interpolated: boolean
+  /**
+   * Where the reference was assembled. `helm` means it does not appear as an
+   * `image:` scalar anywhere — the chart splits it across `repository`, `tag` and
+   * `Chart.appVersion` — so the rule's message has to say which of those to edit.
+   */
+  origin: 'compose' | 'helm'
+  /** Helm only: the chart's `tag` is empty, so the tag is `Chart.appVersion`. */
+  fromChartAppVersion: boolean
+}
+
+/**
+ * The image a Helm chart actually deploys.
+ *
+ * There is no `image:` scalar to read. `values.yaml` holds `repository` and
+ * `tag` under an `image:` mapping, the deployment templates call
+ * `open-hybrid-cloud.<component>.image`, and `_helpers.tpl` resolves the pair as
+ * `.Values.<component>.image.tag | default .Chart.AppVersion`. So an empty `tag`
+ * — which is what the chart ships — silently means `Chart.appVersion`, and that
+ * is `latest`. Walking `image:` scalars alone saw none of this and reported the
+ * chart as clean.
+ *
+ * Reported against values.yaml rather than the template, because the tag is what
+ * an operator edits and the fallback is what makes the empty value dangerous.
+ */
+function helmImageRefs(): ImageRef[] {
+  const out: ImageRef[] = []
+  for (const chart of walk('infra', (rel) => /\/Chart\.ya?ml$/.test(rel))) {
+    const dir = path.posix.dirname(chart)
+    const valuesFile = `${dir}/values.yaml`
+    if (!exists(valuesFile)) continue
+    const appVersion = scalarLines(chart, 'appVersion')[0]?.value ?? ''
+
+    // `image:` opens a mapping; `repository` and `tag` are the lines under it
+    // that are indented further. Same line-oriented subset as the rest of this
+    // file — the point is to keep the line number the message has to print.
+    const lines = read(valuesFile).split('\n')
+    lines.forEach((raw, i) => {
+      const opening = /^(\s*)image:\s*(?:#.*)?$/.exec(raw)
+      if (!opening) return
+      const indent = opening[1].length
+      let repository = ''
+      let tag: string | null = null
+      let tagLine = i + 1
+      for (let j = i + 1; j < lines.length; j++) {
+        const body = lines[j]
+        if (body.trim() === '' || /^\s*#/.test(body)) continue
+        const width = body.length - body.trimStart().length
+        if (width <= indent) break
+        const m = /^\s*(\w+):\s*(.*?)\s*(?:#.*)?$/.exec(body)
+        if (!m) continue
+        const value = m[2].replace(/^["']|["']$/g, '')
+        if (m[1] === 'repository') repository = value
+        if (m[1] === 'tag') {
+          tag = value
+          tagLine = j + 1
+        }
+      }
+      if (repository === '') return
+      const fromChartAppVersion = tag === null || tag === ''
+      const effective = fromChartAppVersion ? appVersion : (tag as string)
+      out.push({
+        file: valuesFile,
+        line: tagLine,
+        image: `${repository}:${effective}`,
+        name: repository,
+        tag: effective,
+        interpolated: effective.includes('${'),
+        origin: 'helm',
+        fromChartAppVersion,
+      })
+    })
+  }
+  return out
 }
 
 function imageRefs(): ImageRef[] {
   const files = walk('infra', (rel) => /\.ya?ml$/.test(rel) && !rel.includes('/templates/'))
-  const out: ImageRef[] = []
+  const out: ImageRef[] = [...helmImageRefs()]
   for (const file of files) {
     for (const { line, value } of scalarLines(file, 'image')) {
       // `${IMAGE_TAG:-latest}` contains a colon that is not the tag separator, so
-      // the split runs over a copy with every expansion blanked out.
-      const masked = value.replace(/\$\{[^}]*\}/g, (m) => ' '.repeat(m.length))
+      // the split runs over a copy with every expansion blanked out. The filler is
+      // written as an escape and not as a literal NUL: a raw NUL byte in the source
+      // makes git, grep and ripgrep classify this file as binary and stop showing
+      // its diffs.
+      const masked = value.replace(/\$\{[^}]*\}/g, (m) => '\0'.repeat(m.length))
       const colon = masked.lastIndexOf(':')
       const hasTag = colon > masked.lastIndexOf('/')
       const tag = hasTag ? value.slice(colon + 1) : ''
@@ -482,6 +680,8 @@ function imageRefs(): ImageRef[] {
         name: hasTag ? value.slice(0, colon) : value,
         tag,
         interpolated: tag.includes('${'),
+        origin: 'compose',
+        fromChartAppVersion: false,
       })
     }
   }
@@ -551,17 +751,35 @@ function silentCatches(): SilentCatch[] {
 interface ConsoleCall extends Located {
   method: string
   message: string
-  /** Whether any argument carries a value, rather than only fixed text. */
-  namesAValue: boolean
+  /** Whether the *message* interpolates a value, rather than being fixed text. */
+  messageNamesAValue: boolean
 }
 
 /**
- * `console.*` in library code, and whether the line carries an identifier.
+ * `console.*` in library code, and whether its message carries a value.
  *
  * #116 is about finding the log line for one order. A message that interpolates
  * nothing can be grepped for, but never narrowed — which is the difference this
  * records.
+ *
+ * Only the message argument counts, and only when it interpolates. Counting *any*
+ * non-literal argument made the fact true for every `console.error('… failed:', err)`
+ * in the tree — an Error is not a record id, and it is exactly the argument that
+ * is always there — so the rule reported nothing it was written to report.
  */
+const messageNamesAValue = (arg: ts.Expression | undefined): boolean => {
+  if (arg === undefined) return false
+  if (ts.isTemplateExpression(arg)) return arg.templateSpans.length > 0
+  // Six messages in this tree are long enough to be split across `+`, and the
+  // interpolation is usually in the first fragment; treating the concatenation as
+  // opaque would report every one of them.
+  if (ts.isBinaryExpression(arg) && arg.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    return messageNamesAValue(arg.left) || messageNamesAValue(arg.right)
+  }
+  if (ts.isParenthesizedExpression(arg)) return messageNamesAValue(arg.expression)
+  return false
+}
+
 function consoleCalls(): ConsoleCall[] {
   const sources = [
     ...walk(`${BACKEND}/src/lib`, (rel) => /\.tsx?$/.test(rel) && !/\.test\.tsx?$/.test(rel)),
@@ -575,19 +793,13 @@ function consoleCalls(): ConsoleCall[] {
       if (!ts.isCallExpression(node)) return
       const e = node.expression
       if (!ts.isPropertyAccessExpression(e) || e.expression.getText(sf) !== 'console') return
-      const args = node.arguments
-      const namesAValue = args.some(
-        (a) =>
-          (ts.isTemplateExpression(a) && a.templateSpans.length > 0) ||
-          (!ts.isStringLiteral(a) && !ts.isNoSubstitutionTemplateLiteral(a)),
-      )
-      const first = args[0]
+      const first = node.arguments[0]
       out.push({
         file,
         line: lineOf(sf, node),
         method: e.name.text,
         message: first ? first.getText(sf).split('\n')[0].slice(0, 120) : '',
-        namesAValue,
+        messageNamesAValue: messageNamesAValue(first),
       })
     })
   }

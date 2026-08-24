@@ -41,12 +41,17 @@ test_a_documented_catch_passes_on_either_side if {
 
 # --- rule 12 ---------------------------------------------------------------
 
-logs(file, namesAValue) := {"consoleCalls": [{
+# `messageNamesAValue` is about the *message* argument only. The rule used to ask
+# whether any argument was non-literal, which every `console.error('…', err)` in
+# the tree satisfied.
+logs(file, messageNamesAValue) := logs_saying(file, "'[orders] Could not start element'", messageNamesAValue)
+
+logs_saying(file, message, messageNamesAValue) := {"consoleCalls": [{
 	"file": file,
 	"line": 60,
 	"method": "error",
-	"message": "'[orders] Could not start element'",
-	"namesAValue": namesAValue,
+	"message": message,
+	"messageNamesAValue": messageNamesAValue,
 }]}
 
 test_a_log_about_an_order_that_names_no_id_warns if {
@@ -80,4 +85,21 @@ test_webhook_and_ci_modules_are_in_scope if {
 	ci_warned := policy.warn with input as ci
 	count(webhook_warned) == 1
 	count(ci_warned) == 1
+}
+
+# The shape the old reading let through, and the reason the fact is about the
+# message and not the argument list: an Error is a non-literal argument and it is
+# the one that is always there, so "any non-literal argument" made this call
+# count as naming the record. It says what went wrong, not which order it went
+# wrong for.
+test_a_fixed_message_with_an_error_argument_still_warns if {
+	facts := logs_saying(
+		"apps/backend/src/lib/notification/email.ts",
+		"'[notification] Failed to send email:'",
+		false,
+	)
+	warned := policy.warn with input as facts
+	some v in warned
+	v.rule == "log_names_the_record"
+	contains(v.detail, "carries no id")
 }

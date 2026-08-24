@@ -46,9 +46,14 @@ record_handling_prefixes := {
 	"apps/backend/src/lib/notification/",
 }
 
+# `messageNamesAValue`, not "any argument is not a literal": the second reading
+# made every `console.error('… failed:', err)` count as naming the record, since
+# an Error is a non-literal argument and it is the argument that is always there.
+# The rule reported almost nothing as a result. An Error says what went wrong; it
+# does not say which order it went wrong for.
 warn contains v if {
 	some c in input.consoleCalls
-	not c.namesAValue
+	not c.messageNamesAValue
 	some prefix in record_handling_prefixes
 	startswith(c.file, prefix)
 

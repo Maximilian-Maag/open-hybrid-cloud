@@ -21,6 +21,9 @@ intentional_secret_reads := {
 	"apps/backend/src/lib/services/admin/environments.ts callbackSecret": "the root-gated reveal endpoint — the operator has to be able to read the secret they must paste into the CI system",
 	"apps/backend/src/app/api/webhooks/github/workflow/route.ts callbackSecret": "verifies the HMAC of an incoming callback against the environment's own secret",
 	"apps/backend/src/app/api/webhooks/bitbucket/pipeline/route.ts callbackSecret": "verifies the HMAC of an incoming callback against the environment's own secret",
+	"apps/backend/src/lib/auth/sessions.ts tokenHash": "validateSession compares the stored SHA-256 against the hash of the presented token; the row never leaves the function",
+	"apps/backend/src/lib/services/admin/integrations.ts credential": "probeIntegrationById and resolveIntegration decrypt it to build the outbound Authorization header; no route returns a ResolvedIntegration, and the list/get paths project the column away",
+	"apps/backend/src/lib/services/twoFactor.ts secret": "requiresSecondFactor reads it only through isConfirmed — `secret IS NOT NULL AND confirmed_at IS NOT NULL` is what \"2FA is on\" means — and returns a boolean",
 }
 
 deny contains v if {
@@ -137,6 +140,82 @@ deny contains v if {
 		"line": 0,
 		"detail": sprintf("filename says %04d, journal entry says idx %d", [file.index, entry.idx]),
 		"why": "The journal's idx decides the order migrations run in; a filename that disagrees makes the directory listing lie about it.",
+	}
+}
+
+# An idx or a tag that appears twice. The gap rule below cannot see this — it only
+# asks whether each index has a predecessor, and two entries numbered 22 both have
+# a 21 — so an ambiguous order passed the whole of rule 4.
+#
+# Ambiguous is the charitable word. drizzle-kit applies entries in journal order
+# and records the one it applied; a repeated idx means the directory listing, the
+# journal and the applied history disagree about which migration is which.
+deny contains v if {
+	some entry in input.migrations.journal
+	count([e | some e in input.migrations.journal; e.idx == entry.idx]) > 1
+
+	v := {
+		"rule": "migration_matches_journal",
+		"file": input.migrations.journalFile,
+		"line": 0,
+		"detail": sprintf("idx %d is used by more than one entry", [entry.idx]),
+		"why": "Two entries with the same index leave the order they run in undefined, and the filename that says 0022 no longer identifies one migration.",
+	}
+}
+
+deny contains v if {
+	some entry in input.migrations.journal
+	count([e | some e in input.migrations.journal; e.tag == entry.tag]) > 1
+
+	v := {
+		"rule": "migration_matches_journal",
+		"file": input.migrations.journalFile,
+		"line": 0,
+		"detail": sprintf("tag %q is used by more than one entry", [entry.tag]),
+		"why": "One .sql file listed twice is applied twice, and the second run hits a table that already exists.",
+	}
+}
+
+# ---------------------------------------------------------------------------
+# rule 4b — the journal's `when` strictly increases
+# ---------------------------------------------------------------------------
+
+# The one field drizzle-kit actually compares. `pg-core/dialect.js`:
+#
+#     if (!lastDbMigration || Number(lastDbMigration.created_at) < migration.folderMillis)
+#
+# A strict `<` against the `when` of the last migration applied. So two entries
+# sharing a `when` are not untidiness: the first raises the watermark to that
+# value, and every later entry holding it fails the comparison and is SKIPPED,
+# with no error and no output.
+#
+# That is not hypothetical. Five entries on dev (0020, 0022, 0023, 0024, 0025)
+# carry 1787702400000 after several branches were rebased in parallel, each having
+# computed `when` against its own base. On a fresh database four migrations never
+# run — including 0025, the callback-secret rotation, so a security fix is present
+# in the source and absent from the database. #194 renumbers them.
+#
+# Warn only until #194 lands, because the collision is in the tree this evaluates.
+warn contains v if {
+	some i, entry in input.migrations.journal
+	i > 0
+	previous := input.migrations.journal[i - 1]
+	entry.when <= previous.when
+
+	v := {
+		"rule": "migration_when_increases",
+		"file": input.migrations.journalFile,
+		"line": 0,
+		"detail": sprintf(
+			"%s has when=%d, which does not come after %s (when=%d), so drizzle-kit skips it",
+			[entry.tag, entry.when, previous.tag, previous.when],
+		),
+		"why": concat("", [
+			"drizzle-kit decides whether to apply a migration with a strict `<` against the `when` of the ",
+			"last one it applied, so an entry whose `when` does not increase is skipped silently — no error, ",
+			"no output, and a database missing the change while the source contains it. #194 is the four ",
+			"migrations this already hid, one of them a security fix. Deny once it lands.",
+		]),
 	}
 }
 

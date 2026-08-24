@@ -1,10 +1,15 @@
 /**
  * Where the pinned `opa` binary comes from, locally and in CI.
  *
- * Pinned by version *and* checksum, for the same reason rule 6 pins Actions to a
- * commit: a gate that fetches whatever the download endpoint currently serves is
- * one supply-chain incident away from evaluating someone else's policy. The
- * checksums are the ones published alongside each release.
+ * Pinned by checksum, for the same reason rule 6 pins Actions to a commit: a gate
+ * that runs whatever the download endpoint served, or whatever is on PATH, is one
+ * supply-chain incident away from evaluating someone else's policy. The checksums
+ * are the ones published alongside each release.
+ *
+ * The pin is enforced twice, and both times against the bytes rather than against
+ * `opa version`: on download, and again on every `make policy` for whichever
+ * binary is about to be executed. The second is the one that matters — a version
+ * string is something a replacement program can simply print.
  *
  * `make policy-install-opa` runs this file; `scripts/policy-check.ts` calls
  * `resolveOpa()` and refuses to render a verdict without it.
@@ -41,32 +46,59 @@ const REPO_ROOT = path.resolve(import.meta.dirname, '..')
 /** Gitignored, so a working copy carries the binary without committing 50 MB. */
 export const LOCAL_OPA = path.join(REPO_ROOT, '.opa', 'opa')
 
-const isPinnedVersion = (bin: string): boolean => {
-  const r = spawnSync(bin, ['version'], { encoding: 'utf8' })
-  return r.status === 0 && (r.stdout ?? '').includes(`Version: ${OPA_VERSION.slice(1)}`)
+/** The release asset for the machine this is running on, if there is one. */
+export const pinnedAsset = (): { asset: string; sha256: string } | undefined =>
+  ASSETS[`${process.platform}-${process.arch}`]
+
+const sha256Of = (file: string): string | null => {
+  try {
+    return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+  } catch {
+    // Unreadable is indistinguishable from absent for this purpose: the next
+    // candidate is tried and the caller is told nothing was found.
+    return null
+  }
+}
+
+/** Where `opa` on PATH actually is, so it can be hashed like any other file. */
+const onPath = (): string | null => {
+  const r = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['opa'], { encoding: 'utf8' })
+  const first = (r.stdout ?? '').split('\n')[0].trim()
+  return r.status === 0 && first !== '' ? first : null
 }
 
 /**
  * The pinned opa, or null.
  *
- * An opa already on PATH is used only if it is the pinned version — a policy
- * evaluated by a different Rego version is a different policy, and the whole
- * point of `make policy` is that it answers what CI will answer.
+ * Checked by SHA-256 and not by `opa version`, because the version string is
+ * output rather than identity: an `.opa/opa`, an `OPA=` override or a PATH binary
+ * can be replaced with different code that still prints `Version: 1.9.0`, and the
+ * gate would then evaluate this repository's policies with somebody else's
+ * program while the README claims a checksum pin. Hashing the file that is about
+ * to be executed is the only check that makes that claim true.
+ *
+ * The consequence is deliberate: an opa 1.9.0 from a distribution package or
+ * built from source is *not* accepted, because it is not the artefact the pin
+ * names. `make policy-install-opa` fetches the one that is.
  */
 export function resolveOpa(): string | null {
-  const candidates = [process.env.OPA, LOCAL_OPA, 'opa'].filter((c): c is string => Boolean(c))
+  const target = pinnedAsset()
+  if (!target) return null
+  const candidates = [process.env.OPA, LOCAL_OPA, onPath()].filter((c): c is string => Boolean(c))
   for (const candidate of candidates) {
-    if (candidate !== 'opa' && !fs.existsSync(candidate)) continue
-    if (isPinnedVersion(candidate)) return candidate
+    if (sha256Of(candidate) === target.sha256) return candidate
   }
   return null
 }
 
 async function install(): Promise<void> {
   const key = `${process.platform}-${process.arch}`
-  const target = ASSETS[key]
+  const target = pinnedAsset()
   if (!target) {
-    throw new Error(`No pinned opa ${OPA_VERSION} build for ${key}. Install it by hand and set OPA=<path>.`)
+    throw new Error(
+      `No pinned opa ${OPA_VERSION} build for ${key}. The gate has no checksum to verify against on ` +
+        `this platform, so it cannot run here; add the asset and its published SHA-256 to scripts/opa.ts.`,
+    )
   }
 
   const url = `https://openpolicyagent.org/downloads/${OPA_VERSION}/${target.asset}`

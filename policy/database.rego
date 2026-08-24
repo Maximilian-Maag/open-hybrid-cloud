@@ -195,8 +195,11 @@ deny contains v if {
 # run — including 0025, the callback-secret rotation, so a security fix is present
 # in the source and absent from the database. #194 renumbers them.
 #
-# Warn only until #194 lands, because the collision is in the tree this evaluates.
-warn contains v if {
+# A deny, now that #194 has renumbered the five colliding entries and the journal
+# this evaluates is strictly increasing. It was a warn only for as long as the
+# collision was in the tree — a gate that reports the fault it cannot fail on is
+# how the fault stays.
+deny contains v if {
 	some i, entry in input.migrations.journal
 	i > 0
 	previous := input.migrations.journal[i - 1]
@@ -214,7 +217,8 @@ warn contains v if {
 			"drizzle-kit decides whether to apply a migration with a strict `<` against the `when` of the ",
 			"last one it applied, so an entry whose `when` does not increase is skipped silently — no error, ",
 			"no output, and a database missing the change while the source contains it. #194 is the four ",
-			"migrations this already hid, one of them a security fix. Deny once it lands.",
+			"migrations this already hid, one of them a security fix. Regenerate the migration, or edit the ",
+			"`when` so it comes after its predecessor's.",
 		]),
 	}
 }

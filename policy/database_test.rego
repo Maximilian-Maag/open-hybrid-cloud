@@ -228,25 +228,27 @@ files_194 := [file |
 
 test_the_194_collision_is_reported_once_per_skipped_migration if {
 	facts := migrations(files_194, journal_194)
-	warned := policy.warn with input as facts
-	when_warnings := [w | some w in warned; w.rule == "migration_when_increases"]
+	denied := policy.deny with input as facts
+	when_denials := [d | some d in denied; d.rule == "migration_when_increases"]
 
 	# Four entries share the watermark the first one set, and drizzle-kit skips
 	# every one of them. All four are named, because "the journal is wrong" is not
 	# something anyone can act on.
-	count(when_warnings) == 4
-	some v in when_warnings
+	count(when_denials) == 4
+	some v in when_denials
 	contains(v.detail, "0025_rotate_reused_callback_secret")
 	contains(v.detail, "skips it")
 	contains(v.why, "#194")
 }
 
-# The rest of rule 4 is satisfied by that input, which is the point: correspondence
-# and contiguity both pass while four migrations never run.
+# Correspondence and duplicate-detection are all satisfied by that input, which is
+# the point: every other part of rule 4 passes while four migrations never run. So
+# the `when` rule is the only thing denying here — the gaps in the real journal
+# (17, 18, 19, 21) warn, and warnings are not what this asserts.
 test_the_194_collision_passes_every_other_part_of_rule_4 if {
 	facts := migrations(files_194, journal_194)
 	denied := policy.deny with input as facts
-	count(denied) == 0
+	{d.rule | some d in denied} == {"migration_when_increases"}
 }
 
 test_a_strictly_increasing_journal_passes if {
@@ -257,8 +259,8 @@ test_a_strictly_increasing_journal_passes if {
 		],
 		[{"idx": 0, "tag": "0000_a", "when": 100}, {"idx": 1, "tag": "0001_b", "when": 200}],
 	)
-	warned := policy.warn with input as facts
-	not "migration_when_increases" in {w.rule | some w in warned}
+	denied := policy.deny with input as facts
+	not "migration_when_increases" in {d.rule | some d in denied}
 }
 
 # A `when` that goes backwards is the same skip as one that repeats.
@@ -270,8 +272,8 @@ test_a_decreasing_when_is_reported_too if {
 		],
 		[{"idx": 0, "tag": "0000_a", "when": 500}, {"idx": 1, "tag": "0001_b", "when": 400}],
 	)
-	warned := policy.warn with input as facts
-	some v in warned
+	denied := policy.deny with input as facts
+	some v in denied
 	v.rule == "migration_when_increases"
 }
 

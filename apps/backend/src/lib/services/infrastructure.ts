@@ -79,6 +79,21 @@ export type InfraStatusFilter = (typeof INFRA_STATUS_FILTERS)[number]
 export const INFRA_SORT_FIELDS = ['date', 'name', 'status'] as const
 export type InfraSortField = (typeof INFRA_SORT_FIELDS)[number]
 
+/** Page size when the caller does not ask for one. */
+export const INFRA_DEFAULT_LIMIT = 50
+/** Ceiling on what one list request may ask for, so `limit=100000` cannot be a denial of service. */
+export const INFRA_MAX_LIMIT = 100
+/**
+ * Ceiling on the export, which is a different job: a CSV of one page would be
+ * useless, so it gets a window three orders of magnitude wider than the list's.
+ *
+ * It is still a ceiling. `getCostCentersForInfra` feeds every returned order id
+ * into `inArray`, and postgres.js binds one parameter per element — past 65 535
+ * the query fails outright rather than degrading — so an unbounded export was a
+ * hard failure waiting on row count, not merely a slow one (issue #158).
+ */
+export const INFRA_EXPORT_LIMIT = 20_000
+
 export interface InfraFilters {
   productId?: number
   projectId?: number
@@ -91,6 +106,17 @@ export interface InfraFilters {
   deployedTo?: Date
   sort?: InfraSortField
   direction?: 'asc' | 'desc'
+  limit?: number
+  offset?: number
+}
+
+/** The shape `CatalogPage` established: a window plus what the window is a window into. */
+export interface InfraPage {
+  items: InfraRow[]
+  /** Elements matching the filters, ignoring the page window — what the UI counts. */
+  total: number
+  limit: number
+  offset: number
 }
 
 // Matched against the same expression the row displays, so a search hit is
@@ -104,11 +130,24 @@ const productNameSql = sql<string>`(
   LIMIT 1
 )`
 
+/**
+ * The caller's infrastructure, filtered, sorted and paged in the database.
+ *
+ * It used to return every element the caller could see. The dashboard fetched
+ * exactly that to render one integer, and the response grew with everything ever
+ * provisioned (issue #158).
+ */
 export const listInfrastructure = async (
   session: SessionUser,
   filters: InfraFilters,
-): Promise<Result<InfraRow[]>> => {
+): Promise<Result<InfraPage>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
+
+  // Capped at the export's ceiling, not the list's: `parseInfraFilters` already
+  // holds an HTTP caller to INFRA_MAX_LIMIT, and this is the backstop for the
+  // in-process caller that asks for an export-sized window.
+  const limit = Math.min(filters.limit ?? INFRA_DEFAULT_LIMIT, INFRA_EXPORT_LIMIT)
+  const offset = filters.offset ?? 0
 
   const conditions: ReturnType<typeof sql>[] = []
   if (!isAdmin) conditions.push(sql`${projects.ownerId} = ${session.id}`)
@@ -191,6 +230,23 @@ export const listInfrastructure = async (
     // deploy timestamp) comes back in a stable order across requests — an
     // export is expected to match the list it was taken from.
     .orderBy(orderBy, sql`${infrastructureElements.id} DESC`)
+    .limit(limit)
+    .offset(offset)
+
+  // Counted through the same joins as the rows, not a bare COUNT(*) on the table:
+  // the non-admin scope is `projects.owner_id` and the 'failed' status filter is
+  // `orders.status`, so both predicates live on joined tables and a count without
+  // them would answer a different question.
+  const [counted] = await db
+    .select({ total: sql<number>`COUNT(*)::int` })
+    .from(infrastructureElements)
+    .leftJoin(
+      deploymentEnvironments,
+      eq(infrastructureElements.environmentId, deploymentEnvironments.id),
+    )
+    .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
+    .leftJoin(orders, eq(infrastructureElements.orderId, orders.id))
+    .where(where)
 
   // The list is an API endpoint in its own right (GET /api/infrastructure), so it
   // cannot rely on a consumer redacting: the CSV export happens to do it, which
@@ -198,7 +254,12 @@ export const listInfrastructure = async (
   // values in cleartext (issue #131). Redacting here makes the export's own pass a
   // harmless no-op, and matches the search filter above — which already excludes
   // `parameters` precisely because these values are secret.
-  return ok(await redactParametersForOrders(rows as InfraRow[], (row) => row.orderId))
+  return ok({
+    items: await redactParametersForOrders(rows as InfraRow[], (row) => row.orderId),
+    total: counted?.total ?? 0,
+    limit,
+    offset,
+  })
 }
 
 export interface InfraFacets {

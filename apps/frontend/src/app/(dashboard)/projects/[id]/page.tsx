@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { redirect, notFound } from 'next/navigation'
-import type { Project, Order, CostCenter } from '@open-hybrid-cloud/types'
+import type { Project, Order, OrderPage, CostCenter } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
@@ -33,11 +33,15 @@ export default async function ProjectDetailPage({ params }: Props) {
   }
 
   const [ordersRes, costCentersRes] = await Promise.allSettled([
-    get<Order[]>(`/api/orders?projectId=${id}`, token),
+    // The API honours projectId now. It used to ignore it, so this table listed
+    // every order the caller could see under the heading "orders in project"
+    // (#158).
+    get<OrderPage>(`/api/orders?projectId=${id}`, token),
     get<CostCenter[]>('/api/admin/cost-centers', token),
   ])
 
-  const orders = ordersRes.status === 'fulfilled' ? (ordersRes.value ?? []) : []
+  const orders: Order[] = ordersRes.status === 'fulfilled' ? (ordersRes.value?.items ?? []) : []
+  const orderTotal = ordersRes.status === 'fulfilled' ? (ordersRes.value?.total ?? 0) : 0
   const costCenters = costCentersRes.status === 'fulfilled' ? (costCentersRes.value ?? []) : []
 
   return (
@@ -60,8 +64,16 @@ export default async function ProjectDetailPage({ params }: Props) {
 
       <ProjectEditForm project={project} costCenters={costCenters} token={token} />
 
+      {/* The API pages this list (#158). The heading says so when there is more
+          than the first page, rather than presenting a window as the whole. */}
       {orders.length > 0 && (
-        <Card title={t('ordersInProject', lang)}>
+        <Card
+          title={
+            orderTotal > orders.length
+              ? `${t('ordersInProject', lang)} — ${orders.length} / ${orderTotal}`
+              : t('ordersInProject', lang)
+          }
+        >
           <Table<Order>
             columns={[
               {

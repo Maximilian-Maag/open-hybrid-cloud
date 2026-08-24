@@ -7,7 +7,6 @@ import {
   productTranslations,
   costCenters,
   deploymentEnvironments,
-  infrastructureElements,
   exchangeRates,
 } from '@/lib/db/schema'
 import { and, eq, gte, lte, inArray, sql } from 'drizzle-orm'
@@ -164,7 +163,6 @@ interface CostRow {
   liveCurrency: string | null
   /** How many elements the order provisioned (issue #104). */
   quantity: number | null
-  infraStatus: string | null
 }
 
 export const getCostReport = async (
@@ -211,7 +209,6 @@ export const getCostReport = async (
       livePrice: linePriceSql(orders.productId, orders.environmentId, orders.sizeCode),
       liveCurrency: lineCurrencySql(orders.productId, orders.environmentId, orders.sizeCode),
       quantity: orders.quantity,
-      infraStatus: infrastructureElements.status,
     })
     .from(orders)
     .leftJoin(projects, eq(orders.projectId, projects.id))
@@ -236,7 +233,6 @@ export const getCostReport = async (
         eq(orders.environmentId, productEnvironments.environmentId),
       ),
     )
-    .leftJoin(infrastructureElements, eq(infrastructureElements.orderId, orders.id))
     .where(and(...conditions))) as CostRow[]
 
   const rates = await loadRates()
@@ -253,12 +249,18 @@ export const getCostReport = async (
   /** Keyed by `YYYY-MM`; filled in the same pass so the series cannot drift from the total. */
   const months = new Map<string, CostPeriod>()
 
-  // One order can join to several infrastructure rows; count each order once.
-  const seen = new Set<number>()
+  // Every join above is to a unique key — the two cost_centres and the
+  // environment by primary key, product_translations and product_environments by
+  // composite primary key — so the query returns exactly one row per order and
+  // this loop counts each one once. It used to also LEFT JOIN
+  // infrastructure_elements on a non-unique order_id for a column nothing read,
+  // which fanned the result out ~1.6x and was then de-duplicated here (issue
+  // #160): measured on 100 000 orders, 80 000 rows and a 51 MB temp-file hash
+  // became 50 000 rows and none, 566 ms to 300 ms.
+  let orderCount = 0
 
   for (const row of rows) {
-    if (seen.has(row.orderId)) continue
-    seen.add(row.orderId)
+    orderCount += 1
 
     const usingSnapshot = row.snapshotPrice !== null && row.snapshotCurrency !== null
     const rawPrice = usingSnapshot ? row.snapshotPrice : row.livePrice
@@ -300,7 +302,7 @@ export const getCostReport = async (
 
   return ok({
     totalEur: round(totalEur),
-    orderCount: seen.size,
+    orderCount,
     estimatedOrders,
     series,
     comparison: compare(series),

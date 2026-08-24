@@ -21,10 +21,14 @@ export default async function ApprovalsPage() {
   const currentUserId = Number((session.user as unknown as { id: string }).id)
   const lang = await getLang()
 
+  // GET /api/approvals, not GET /api/orders filtered here: the queue endpoint
+  // returns the pending orders and nothing else, where this page used to download
+  // every order in the installation and throw away the ones that were not pending
+  // (#158). It also carries `projectName`, which the orders list does not select —
+  // so the row's "· project ·" segment was rendering blank.
   let orders: Order[] = []
   try {
-    const all = (await get<Order[]>('/api/orders', token)) ?? []
-    orders = all.filter((o) => o.status === 'pending')
+    orders = (await get<Order[]>('/api/approvals', token)) ?? []
   } catch {
     /* empty */
   }

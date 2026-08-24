@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import type { Order, InfrastructureElement, Project, CatalogPage, Role } from '@open-hybrid-cloud/types'
+import type { OrderPage, InfraPage, Project, CatalogPage, Role } from '@open-hybrid-cloud/types'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { CountUp } from '@/components/ui/CountUp'
 import { getLang } from '@/lib/getLang'
@@ -32,24 +32,36 @@ export default async function DashboardHome() {
   const role = (session.user as unknown as { role: Role }).role
   const lang = await getLang()
 
-  const [orders, infra, projects, products] = await Promise.allSettled([
-    get<Order[]>('/api/orders', token),
-    get<InfrastructureElement[]>('/api/infrastructure', token),
+  const isAdminOrRoot = role === 'admin' || role === 'root'
+
+  // Every counter here is `page.total`, which the API computes as COUNT(*). This
+  // page used to download every order and every infrastructure element and count
+  // them with `.filter().length` — for an admin, the entire history of the
+  // installation, tens of megabytes of jsonb snapshots, to render three integers
+  // (#158). The five rows below are the only rows it actually renders.
+  const [orders, infra, projects, products, pending] = await Promise.allSettled([
+    get<OrderPage>('/api/orders?limit=5', token),
+    // status=active means "active and its order did not fail", which is what the
+    // Active badge on /infrastructure means — the old `.filter(i => i.status ===
+    // 'active')` here counted failed deployments as active, contradicting the
+    // page it links to.
+    get<InfraPage>('/api/infrastructure?status=active&limit=1', token),
     get<Project[]>('/api/projects', token),
     // Eight cards, so ask for eight rows: this used to fetch the whole catalogue
     // and slice it in the browser (#91).
     get<CatalogPage>('/api/catalog?lang=en&limit=8', token),
+    // Only the admin strip shows this one, so only an admin pays for it.
+    isAdminOrRoot ? get<OrderPage>('/api/orders?status=pending&limit=1', token) : Promise.resolve(null),
   ])
 
-  const orderList = orders.status === 'fulfilled' ? (orders.value ?? []) : []
-  const infraList = infra.status === 'fulfilled' ? (infra.value ?? []) : []
+  const orderList = orders.status === 'fulfilled' ? (orders.value?.items ?? []) : []
+  const totalOrders = orders.status === 'fulfilled' ? (orders.value?.total ?? 0) : 0
   const projectList = projects.status === 'fulfilled' ? (projects.value ?? []) : []
   const productList = products.status === 'fulfilled' ? (products.value?.items ?? []) : []
 
-  const activeInfra = infraList.filter((i) => i.status === 'active').length
-  const pendingOrders = orderList.filter((o) => o.status === 'pending').length
+  const activeInfra = infra.status === 'fulfilled' ? (infra.value?.total ?? 0) : 0
+  const pendingOrders = pending.status === 'fulfilled' ? (pending.value?.total ?? 0) : 0
   const featuredProducts = productList
-  const isAdminOrRoot = role === 'admin' || role === 'root'
 
   return (
     <div className="space-y-8">
@@ -84,7 +96,7 @@ export default async function DashboardHome() {
 
       {/* Stats strip */}
       <div className={`grid gap-4 ${isAdminOrRoot ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-2 lg:grid-cols-3'}`}>
-        <StatCard label={t('totalOrders', lang)} value={orderList.length} href="/orders" linkLabel={t('viewAll', lang)} />
+        <StatCard label={t('totalOrders', lang)} value={totalOrders} href="/orders" linkLabel={t('viewAll', lang)} />
         <StatCard label={t('activeInfrastructure', lang)} value={activeInfra} href="/infrastructure" linkLabel={t('overview', lang)} />
         {isAdminOrRoot && (
           pendingOrders > 0 ? (
@@ -161,7 +173,7 @@ export default async function DashboardHome() {
             </Link>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100">
-            {orderList.slice(0, 5).map((order) => (
+            {orderList.map((order) => (
               <Link
                 key={order.id}
                 href={`/orders/${order.id}`}

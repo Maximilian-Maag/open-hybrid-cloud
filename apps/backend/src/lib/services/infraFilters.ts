@@ -1,5 +1,7 @@
 import { ok, err, type Result } from '@/lib/services/result'
+import { parsePageWindow } from '@/lib/services/pageWindow'
 import {
+  INFRA_MAX_LIMIT,
   INFRA_STATUS_FILTERS,
   INFRA_SORT_FIELDS,
   type InfraFilters,
@@ -69,6 +71,10 @@ export const parseInfraFilters = (params: URLSearchParams): Result<InfraFilters>
     if (direction !== 'asc' && direction !== 'desc') return err(400, 'Invalid direction — expected asc or desc')
     filters.direction = direction
   }
+
+  const window = parsePageWindow(params, INFRA_MAX_LIMIT)
+  if (!window.ok) return window
+  Object.assign(filters, window.data)
 
   return ok(filters)
 }

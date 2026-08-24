@@ -49,7 +49,7 @@ describe('GET /api/infrastructure', () => {
     const res = await GET(makeReq('http://localhost/api/infrastructure', auth))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.length).toBe(2)
+    expect(body.items.length).toBe(2)
   })
 
   it('project_manager only sees own projects infrastructure', async () => {
@@ -75,8 +75,8 @@ describe('GET /api/infrastructure', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     // pm1 only sees infra from their own project
-    expect(body.length).toBe(1)
-    expect(body[0].projectId).toBe(proj1.id)
+    expect(body.items.length).toBe(1)
+    expect(body.items[0].projectId).toBe(proj1.id)
   })
 
   it('filters by productId', async () => {
@@ -102,8 +102,8 @@ describe('GET /api/infrastructure', () => {
     )
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.length).toBe(1)
-    expect(body[0].productId).toBe(prod1.id)
+    expect(body.items.length).toBe(1)
+    expect(body.items[0].productId).toBe(prod1.id)
   })
 
   it('filters by projectId', async () => {
@@ -130,17 +130,19 @@ describe('GET /api/infrastructure', () => {
     )
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.length).toBe(1)
-    expect(body[0].projectId).toBe(proj1.id)
+    expect(body.items.length).toBe(1)
+    expect(body.items[0].projectId).toBe(proj1.id)
   })
 
-  it('returns empty array when no infra elements exist', async () => {
+  it('returns an empty page when no infra elements exist', async () => {
     const admin = await createUser({ role: 'admin' })
     const auth = await makeAuthHeader(admin)
     const res = await GET(makeReq('http://localhost/api/infrastructure', auth))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toEqual([])
+    expect(body.items).toEqual([])
+    // Zero rows and zero matches, not a page past the end of a non-empty set.
+    expect(body.total).toBe(0)
   })
 
   // Issue #131: the detail endpoint and the CSV export both redacted, this list did

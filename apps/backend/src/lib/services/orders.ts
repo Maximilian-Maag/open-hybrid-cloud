@@ -54,6 +54,35 @@ export interface OrderRow {
   userName: string | null
 }
 
+/**
+ * The `status` values an order can hold, and so the whole vocabulary of the
+ * list's status filter. Mirrors `OrderStatus` in the shared types package.
+ */
+export const ORDER_STATUSES = ['pending', 'provisioning', 'completed', 'failed', 'rejected'] as const
+export type OrderStatusFilter = (typeof ORDER_STATUSES)[number]
+
+/** Page size when the caller does not ask for one. */
+export const ORDERS_DEFAULT_LIMIT = 50
+/** Ceiling on what one request may ask for, so `limit=100000` cannot be a denial of service. */
+export const ORDERS_MAX_LIMIT = 100
+
+export interface OrderFilters {
+  /** One `orders.status` value, exactly — the list has no "any of" vocabulary. */
+  status?: OrderStatusFilter
+  projectId?: number
+  limit?: number
+  offset?: number
+}
+
+/** The shape `CatalogPage` established: a window plus what the window is a window into. */
+export interface OrderPage {
+  items: OrderRow[]
+  /** Orders matching the filters, ignoring the page window — what the UI counts. */
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface CreateOrderInput {
   projectId: number
   productId: number
@@ -100,8 +129,34 @@ export interface CreatedOrder {
   infraIds?: number[]
 }
 
-export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[]>> => {
+/**
+ * Orders, filtered and paged in the database.
+ *
+ * It used to return every order the caller could see, and every row carries
+ * `parameters` and `product_snapshot` — a snapshot with ten parameter definitions
+ * is well over a kilobyte, so the response grew by megabytes per thousand orders
+ * and was built whole in memory by `NextResponse.json` (issue #158). The dashboard
+ * asked for all of it to render two integers.
+ *
+ * `status` and `projectId` are filters rather than something the caller does to
+ * the array afterwards, for the same reason: the approvals queue and a project's
+ * order table each want a slice, and a slice taken in JavaScript still had to
+ * cross the wire whole.
+ */
+export const listOrders = async (
+  session: SessionUser,
+  filters: OrderFilters = {},
+): Promise<Result<OrderPage>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
+
+  const limit = Math.min(filters.limit ?? ORDERS_DEFAULT_LIMIT, ORDERS_MAX_LIMIT)
+  const offset = filters.offset ?? 0
+
+  const conditions = []
+  if (!isAdmin) conditions.push(eq(orders.userId, session.id))
+  if (filters.status) conditions.push(eq(orders.status, filters.status))
+  if (filters.projectId !== undefined) conditions.push(eq(orders.projectId, filters.projectId))
+  const where = conditions.length > 0 ? and(...conditions) : undefined
 
   const rows = await db
     .select({
@@ -133,14 +188,33 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
     .from(orders)
     .leftJoin(deploymentEnvironments, eq(orders.environmentId, deploymentEnvironments.id))
     .leftJoin(users, eq(orders.userId, users.id))
-    .where(isAdmin ? undefined : eq(orders.userId, session.id))
-    .orderBy(sql`${orders.createdAt} DESC`)
+    .where(where)
+    // Tie-break on id: two orders placed in the same millisecond have no order
+    // between them otherwise, and OFFSET paging over a non-deterministic sort
+    // silently repeats one row on page 2 and skips another.
+    .orderBy(sql`${orders.createdAt} DESC`, sql`${orders.id} DESC`)
+    .limit(limit)
+    .offset(offset)
+
+  // Counted separately rather than with a window function, as the catalogue does:
+  // a page past the end of the result set returns no rows, and "no rows" must not
+  // be reported as "nothing matched". Only `orders` columns are filtered on, so
+  // the count needs none of the joins above.
+  const [counted] = await db
+    .select({ total: sql<number>`COUNT(*)::int` })
+    .from(orders)
+    .where(where)
 
   // Server-side, because the only masking used to be the order detail page's
   // `def?.sensitive ? '••••••'` — which reads the definition off the order's
   // snapshot, so an order placed before snapshots existed rendered the secret in
   // plaintext, and the raw value was in the JSON either way (issue #131).
-  return ok(await redactParametersForOrders(rows as OrderRow[], (row) => row.id))
+  return ok({
+    items: await redactParametersForOrders(rows as OrderRow[], (row) => row.id),
+    total: counted?.total ?? 0,
+    limit,
+    offset,
+  })
 }
 
 export const getOrderById = async (

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseInfraFilters } from './infraFilters'
+import { INFRA_MAX_LIMIT } from './infrastructure'
 
 const parse = (qs: string) => parseInfraFilters(new URLSearchParams(qs))
 
@@ -106,6 +107,21 @@ describe('parseInfraFilters', () => {
     for (const qs of ['sort=deployed_at', 'sort=id; DROP TABLE users', 'direction=sideways']) {
       const result = parse(qs)
       expect(result.ok, qs).toBe(false)
+    }
+  })
+
+  it('reads the page window, capped at the list ceiling', () => {
+    const ok = parse('limit=10&offset=50')
+    expect(ok.ok).toBe(true)
+    if (ok.ok) expect(ok.data).toMatchObject({ limit: 10, offset: 50 })
+
+    // The export asks for a far larger window in process; an HTTP caller cannot.
+    const capped = parse('limit=100000')
+    expect(capped.ok).toBe(true)
+    if (capped.ok) expect(capped.data.limit).toBe(INFRA_MAX_LIMIT)
+
+    for (const query of ['limit=0', 'limit=-5', 'limit=ten', 'offset=-1', 'offset=x']) {
+      expect(parse(query).ok, query).toBe(false)
     }
   })
 })

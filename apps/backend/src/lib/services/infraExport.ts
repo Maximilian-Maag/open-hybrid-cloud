@@ -6,7 +6,7 @@ import {
   union,
 } from '@/lib/services/parameterRedaction'
 import { ok, type Result } from '@/lib/services/result'
-import { listInfrastructure, type InfraFilters } from '@/lib/services/infrastructure'
+import { INFRA_EXPORT_LIMIT, listInfrastructure, type InfraFilters } from '@/lib/services/infrastructure'
 import { getCostCentersForInfra } from '@/lib/services/infraCostCenters'
 
 export interface InfraExportRow {
@@ -41,10 +41,13 @@ export const buildInfraExportRows = async (
   filters: InfraFilters,
   options: { includeParameters?: boolean } = {},
 ): Promise<Result<InfraExportRow[]>> => {
-  const listed = await listInfrastructure(session, filters)
+  // An export of one page would be useless, so it asks for the export window
+  // explicitly and overrides whatever `limit` the query string carried — the same
+  // filters, a different job. It is still bounded: see INFRA_EXPORT_LIMIT.
+  const listed = await listInfrastructure(session, { ...filters, limit: INFRA_EXPORT_LIMIT, offset: 0 })
   if (!listed.ok) return listed
 
-  const elements = listed.data
+  const elements = listed.data.items
   const costCenters = await getCostCentersForInfra(elements.map((e) => e.orderId))
   // Two sources, unioned per row: the live catalogue, and the sensitivity recorded
   // in each order's own snapshot. The catalogue alone loses the flag as soon as a

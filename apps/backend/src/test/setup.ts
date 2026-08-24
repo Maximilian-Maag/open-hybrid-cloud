@@ -346,6 +346,30 @@ beforeAll(async () => {
       details TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    -- Migration 0027: the list indexes (issue #159). Declared here for the same
+    -- reason as every other index in this file — the test database is built from
+    -- this DDL, not from the migrations, so an index that exists only there is an
+    -- index the tests never exercise.
+    CREATE INDEX IF NOT EXISTS audit_log_created_idx
+      ON audit_log (created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS audit_log_user_created_idx
+      ON audit_log (user_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS orders_created_idx
+      ON orders (created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS orders_user_created_idx
+      ON orders (user_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS orders_project_created_idx
+      ON orders (project_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS orders_status_created_idx
+      ON orders (status, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS infrastructure_elements_deployed_idx
+      ON infrastructure_elements (deployed_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS infrastructure_elements_project_idx
+      ON infrastructure_elements (project_id, deployed_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS infrastructure_elements_order_idx
+      ON infrastructure_elements (order_id);
+    CREATE INDEX IF NOT EXISTS products_category_live_idx
+      ON products (category_id, id) WHERE retired_at IS NULL;
     -- Migration 0022: out-of-office substitute approver (issue #35).
     CREATE TABLE IF NOT EXISTS approval_delegations (
       id BIGSERIAL PRIMARY KEY,

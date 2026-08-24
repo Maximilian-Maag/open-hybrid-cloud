@@ -2,13 +2,14 @@ import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import type { InfrastructureElement, InfraFacets, Role } from '@open-hybrid-cloud/types'
+import type { InfrastructureElement, InfraPage, InfraFacets, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from './InfraActions'
 import { InfraFilters } from './InfraFilters'
 import { InfraExport } from './InfraExport'
+import { Pager } from '@/components/ui/Pager'
 import { t, isValidLang } from '@/lib/i18n'
 import Link from 'next/link'
 
@@ -20,6 +21,9 @@ export const dynamic = 'force-dynamic'
 const FILTER_KEYS = [
   'search', 'status', 'environmentId', 'projectId', 'productId',
   'deployedFrom', 'deployedTo', 'sort', 'direction',
+  // The page window is a query parameter like any other, so a page-3 URL is
+  // bookmarkable and the export keeps ignoring it (#158).
+  'offset',
 ] as const
 
 async function detectLang(): Promise<string> {
@@ -60,10 +64,12 @@ export default async function InfrastructurePage({ searchParams }: Props) {
     if (value) query.set(key, value)
   }
   const qs = query.toString()
-  const isFiltered = qs !== ''
+  // `offset` is a position in the result set, not a filter — a page-2 URL with no
+  // filters must still say "nothing deployed", not "nothing matches".
+  const isFiltered = [...query.keys()].some((key) => key !== 'offset')
 
   const [listRes, facetsRes] = await Promise.allSettled([
-    get<InfrastructureElement[]>(`/api/infrastructure${qs ? `?${qs}` : ''}`, token),
+    get<InfraPage>(`/api/infrastructure${qs ? `?${qs}` : ''}`, token),
     get<InfraFacets>('/api/infrastructure/facets', token),
   ])
 
@@ -72,7 +78,8 @@ export default async function InfrastructurePage({ searchParams }: Props) {
   // and a backend outage rejects too; showing "nothing matches" for either claims
   // the infrastructure is gone.
   const listFailed = listRes.status === 'rejected'
-  const elements = listRes.status === 'fulfilled' ? (listRes.value ?? []) : []
+  const page = listRes.status === 'fulfilled' ? listRes.value : null
+  const elements: InfrastructureElement[] = page?.items ?? []
   // Empty facets degrade to unpopulated dropdowns rather than a broken page —
   // the free-text search and date filters still work.
   const facets = facetsRes.status === 'fulfilled'
@@ -100,7 +107,9 @@ export default async function InfrastructurePage({ searchParams }: Props) {
         actions={canExport ? <InfraExport token={token} lang={lang} /> : undefined}
       />
 
-      <InfraFilters facets={facets} lang={lang} resultCount={elements.length} />
+      {/* The matching count is the API's total, not the length of the page in
+          hand — the filter panel is reporting what matched, not what fitted. */}
+      <InfraFilters facets={facets} lang={lang} resultCount={page?.total ?? 0} />
 
       {listFailed ? (
         <div className="text-center py-12 text-red-600" role="alert">
@@ -131,6 +140,15 @@ export default async function InfrastructurePage({ searchParams }: Props) {
           </div>
         </Card>
       )}
+
+      <Pager
+        total={page?.total ?? 0}
+        limit={page?.limit ?? elements.length}
+        offset={page?.offset ?? 0}
+        path="/infrastructure"
+        params={query}
+        lang={lang}
+      />
     </div>
   )
 }

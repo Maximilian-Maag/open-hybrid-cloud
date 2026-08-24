@@ -244,4 +244,16 @@ describe('GET /api/infrastructure/export', () => {
     const lines = (await res.text()).split('\n').filter(Boolean)
     expect(lines).toHaveLength(1)
   })
+
+  it('exports every matching element, not the list page the query string asked for', async () => {
+    // The list is paged now (#158) and the export shares its filter parser, so
+    // `limit` reaches this endpoint too. An export truncated to one screenful
+    // would look complete and be wrong, so buildInfraExportRows overrides it.
+    const ctx = await seed()
+    const res = await GET(makeReq(`${URL_BASE}?limit=1`, await auth(ctx.admin)))
+    expect(res.status).toBe(200)
+    const rows = (await res.text()).trim().split('\n')
+    // Header plus both elements.
+    expect(rows.length).toBe(3)
+  })
 })

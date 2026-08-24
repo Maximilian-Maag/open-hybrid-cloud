@@ -1,5 +1,6 @@
 import { ok, err, type Result } from '@/lib/services/result'
 import { CATALOG_MAX_LIMIT, type CatalogFilters } from '@/lib/services/catalog'
+import { parsePageWindow } from '@/lib/services/pageWindow'
 
 /**
  * Parse the catalogue list filters out of a query string.
@@ -22,22 +23,9 @@ export const parseCatalogFilters = (params: URLSearchParams): Result<CatalogFilt
   const search = params.get('search')?.trim()
   if (search) filters.search = search
 
-  const rawLimit = params.get('limit')
-  if (rawLimit !== null && rawLimit !== '') {
-    const limit = Number(rawLimit)
-    if (!Number.isInteger(limit) || limit <= 0) return err(400, 'Invalid limit')
-    // Capped rather than refused: asking for more than a page is a reasonable
-    // thing to do, and the ceiling is an implementation limit, not a mistake the
-    // caller made.
-    filters.limit = Math.min(limit, CATALOG_MAX_LIMIT)
-  }
-
-  const rawOffset = params.get('offset')
-  if (rawOffset !== null && rawOffset !== '') {
-    const offset = Number(rawOffset)
-    if (!Number.isInteger(offset) || offset < 0) return err(400, 'Invalid offset')
-    filters.offset = offset
-  }
+  const window = parsePageWindow(params, CATALOG_MAX_LIMIT)
+  if (!window.ok) return window
+  Object.assign(filters, window.data)
 
   return ok(filters)
 }

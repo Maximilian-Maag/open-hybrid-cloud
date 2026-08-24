@@ -200,7 +200,10 @@ describe('OrderForm parameter resolution', () => {
 
   const mockReorderApi = (elements: unknown[] = [infraElement]) => {
     mockedGet.mockImplementation((async (path: string) => {
-      if (path.startsWith('/api/infrastructure')) return elements
+      // The endpoint returns a page now, not a bare array (#158).
+      if (path.startsWith('/api/infrastructure')) {
+        return { items: elements, total: elements.length, limit: 50, offset: 0 }
+      }
       if (path.startsWith('/api/catalog/')) {
         return { ...product, parameters: [param({ id: 2, name: 'REGION', environmentId: 2, scope: 'product', scopeId: 7, label: 'Region (env two)' })] }
       }

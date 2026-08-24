@@ -117,7 +117,12 @@ export const listAuditLog = async (
       .from(auditLog)
       .leftJoin(users, eq(auditLog.userId, users.id))
       .where(whereClause)
-      .orderBy(sql`${auditLog.createdAt} DESC`)
+      // Tie-break on id: audit rows are written in bursts and several can share a
+      // timestamp, and OFFSET paging over a sort with no total order repeats one
+      // of them on the next page and skips another. Also the exact shape of
+      // audit_log_created_idx, so the page is a bounded index walk rather than a
+      // full sort (issue #159).
+      .orderBy(sql`${auditLog.createdAt} DESC`, sql`${auditLog.id} DESC`)
       .limit(clampedPageSize)
       .offset((clampedPage - 1) * clampedPageSize),
   ])
@@ -173,7 +178,9 @@ export const exportAuditLog = async (
     .from(auditLog)
     .leftJoin(users, eq(auditLog.userId, users.id))
     .where(whereClause)
-    .orderBy(sql`${auditLog.createdAt} ASC`)
+    // Same total order as the paged list, read the other way round — an export is
+    // expected to be the list it was taken from, in the same sequence.
+    .orderBy(sql`${auditLog.createdAt} ASC`, sql`${auditLog.id} ASC`)
     .limit(maxRows + 1)
 
   if (rows.length > maxRows) {

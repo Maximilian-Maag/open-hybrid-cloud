@@ -572,6 +572,20 @@ export interface Order {
   userName?: string
 }
 
+/**
+ * `GET /api/orders`, which pages in the database now (issue #158).
+ *
+ * Same shape as `CatalogPage`, deliberately: a caller that has learnt one paged
+ * list has learnt them all.
+ */
+export interface OrderPage {
+  items: Order[]
+  /** Orders matching the filters, ignoring the page window. */
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface CreateOrderRequest {
   projectId: number
   productId: number
@@ -957,6 +971,15 @@ export interface InfrastructureElement {
  * status map, the cost centre the order is billed to, and which parameter values
  * were redacted — the names stay visible, the values do not.
  */
+/** `GET /api/infrastructure`, which pages in the database now (issue #158). */
+export interface InfraPage {
+  items: InfrastructureElement[]
+  /** Elements matching the filters, ignoring the page window. */
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface InfrastructureDetail extends InfrastructureElement {
   /** Status per id in `pipelineId`, from the run named by `pipelinePhase`. */
   pipelineStatus: Record<string, string>

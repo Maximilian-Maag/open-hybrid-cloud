@@ -11,7 +11,7 @@ vi.mock('@/lib/ci/webhooks', () => ({
   triggerPipelineStacks: vi.fn().mockResolvedValue([]),
 }))
 
-import { listOrders, getOrderById, createOrder } from './orders'
+import { listOrders, getOrderById, createOrder, ORDERS_MAX_LIMIT } from './orders'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooks } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
@@ -67,7 +67,7 @@ describe('listOrders', () => {
     const result = await listOrders(makeSession(admin))
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(2)
+      expect(result.data.items.length).toBe(2)
     }
   })
 
@@ -82,9 +82,81 @@ describe('listOrders', () => {
     const result = await listOrders(makeSession(pm))
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(1)
-      expect(result.data[0].userId).toBe(pm.id)
+      expect(result.data.items.length).toBe(1)
+      expect(result.data.items[0].userId).toBe(pm.id)
     }
+  })
+
+  it('pages: a window of rows, and the total behind it', async () => {
+    const { admin, pm, product, env, project } = await buildBase()
+    for (let i = 0; i < 5; i++) await seedOrder(project.id, product.id, env.id, pm.id)
+
+    const first = await listOrders(makeSession(admin), { limit: 2 })
+    expect(first.ok && first.data.items.length).toBe(2)
+    // The count is of matches, not of the page — the UI counts with it.
+    expect(first.ok && first.data.total).toBe(5)
+    expect(first.ok && first.data.limit).toBe(2)
+    expect(first.ok && first.data.offset).toBe(0)
+
+    const second = await listOrders(makeSession(admin), { limit: 2, offset: 2 })
+    expect(second.ok && second.data.items.length).toBe(2)
+    expect(second.ok && second.data.offset).toBe(2)
+    // Disjoint: a tie-break on id means page 2 cannot repeat a row from page 1.
+    const firstIds = first.ok ? first.data.items.map((r) => r.id) : []
+    const secondIds = second.ok ? second.data.items.map((r) => r.id) : []
+    expect(firstIds.filter((id) => secondIds.includes(id))).toEqual([])
+  })
+
+  it('a page past the end is empty but still reports the total', async () => {
+    const { admin, pm, product, env, project } = await buildBase()
+    await seedOrder(project.id, product.id, env.id, pm.id)
+
+    const result = await listOrders(makeSession(admin), { offset: 500 })
+    // "No rows" must not be reported as "nothing matched".
+    expect(result.ok && result.data.items).toEqual([])
+    expect(result.ok && result.data.total).toBe(1)
+  })
+
+  it('caps limit at ORDERS_MAX_LIMIT rather than serving what was asked for', async () => {
+    const { admin } = await buildBase()
+    const result = await listOrders(makeSession(admin), { limit: 100000 })
+    expect(result.ok && result.data.limit).toBe(ORDERS_MAX_LIMIT)
+  })
+
+  it('filters by status, in the database', async () => {
+    const { admin, pm, product, env, project } = await buildBase()
+    await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
+    await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
+
+    const result = await listOrders(makeSession(admin), { status: 'pending' })
+    expect(result.ok && result.data.items.map((r) => r.status)).toEqual(['pending'])
+    // The total is of the FILTERED set, which is what makes it usable as a counter.
+    expect(result.ok && result.data.total).toBe(1)
+  })
+
+  it('filters by projectId', async () => {
+    const { admin, pm, product, env, project } = await buildBase()
+    const otherProject = await createProject(pm.id)
+    await seedOrder(project.id, product.id, env.id, pm.id)
+    await seedOrder(otherProject.id, product.id, env.id, pm.id)
+
+    const result = await listOrders(makeSession(admin), { projectId: otherProject.id })
+    expect(result.ok && result.data.items.map((r) => r.projectId)).toEqual([otherProject.id])
+    expect(result.ok && result.data.total).toBe(1)
+  })
+
+  it('applies the caller scope on top of the filters, not instead of them', async () => {
+    const { pm, product, env, project } = await buildBase()
+    const otherPm = await createUser({ role: 'project_manager', email: 'other@test.dev' })
+    const otherProject = await createProject(otherPm.id)
+    await seedOrder(otherProject.id, product.id, env.id, otherPm.id, { status: 'pending' })
+    await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
+
+    // A project manager asking for pending orders must not be shown somebody
+    // else's, and the total must agree with the rows.
+    const result = await listOrders(makeSession(pm), { status: 'pending' })
+    expect(result.ok && result.data.items).toEqual([])
+    expect(result.ok && result.data.total).toBe(0)
   })
 
   it('returns joined productName, environmentName, userName fields', async () => {
@@ -94,7 +166,7 @@ describe('listOrders', () => {
     const result = await listOrders(makeSession(pm))
     expect(result.ok).toBe(true)
     if (result.ok) {
-      const row = result.data[0]
+      const row = result.data.items[0]
       expect(row.productName).toBe('Product A')
       expect(row.environmentName).toBe('Test Env')
       expect(row.userName).toBe('PM')
@@ -931,7 +1003,7 @@ describe('createOrder — product snapshot', () => {
     expect(detail.ok && detail.data.productSnapshot?.price).toBe('10.00')
 
     const listed = await listOrders(makeSession(ctx.admin))
-    expect(listed.ok && listed.data[0].productSnapshot?.price).toBe('10.00')
+    expect(listed.ok && listed.data.items[0].productSnapshot?.price).toBe('10.00')
   })
 })
 

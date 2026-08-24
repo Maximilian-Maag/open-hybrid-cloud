@@ -68,7 +68,7 @@ describe('GET /api/orders', () => {
     const res = await GET(makeReq('http://localhost/api/orders', undefined, adminAuth))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.length).toBeGreaterThanOrEqual(1)
+    expect(body.items.length).toBeGreaterThanOrEqual(1)
   })
 
   it('project_manager only sees own orders', async () => {
@@ -103,8 +103,8 @@ describe('GET /api/orders', () => {
     const res = await GET(makeReq('http://localhost/api/orders', undefined, auth1))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.length).toBe(1)
-    expect(body[0].userId).toBe(pm1.id)
+    expect(body.items.length).toBe(1)
+    expect(body.items[0].userId).toBe(pm1.id)
   })
 })
 

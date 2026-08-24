@@ -1,6 +1,13 @@
 import { test as setup } from '@playwright/test'
 import path from 'path'
-import { rootEmail, rootPassword } from './helpers'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import {
+  rootEmail,
+  rootPassword,
+  totpCode,
+  totpSecretFile,
+  completeSecondFactor,
+} from './helpers'
 
 export const rootAuthFile = path.join(__dirname, '.auth/root.json')
 
@@ -27,6 +34,54 @@ setup('authenticate as root', async ({ page }) => {
   // budget made this setup — and therefore every authenticated test — flaky for
   // a reason that has nothing to do with the app. Kept under the test timeout
   // above so a real failure reports as "still on /login", not "test timed out".
+  // Two-step already, if a previous run enrolled the factor and the database
+  // survived. On CI the database is a fresh container, so this is a no-op there.
+  await completeSecondFactor(page)
   await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 75_000 })
+
+  await enrolSecondFactorIfRequired(page)
   await page.context().storageState({ path: rootAuthFile })
 })
+
+/**
+ * Enrol the root account's authenticator, if #197 is asking for one.
+ *
+ * The suite cannot skip this and it should not want to: a second factor is
+ * mandatory for administrators now, so an authenticated root session is one that
+ * has been through this. Everything else in the suite would otherwise be testing
+ * a state no real administrator can be in — signed in and refused every route.
+ *
+ * Driven through the UI rather than seeded into the database, because the secret
+ * is stored as an AES-256-GCM envelope and a fixture that wrote a plaintext one
+ * would prove nothing. This is the enrolment a person does, and it doubles as the
+ * only end-to-end coverage that path has.
+ */
+async function enrolSecondFactorIfRequired(page: import('@playwright/test').Page): Promise<void> {
+  // The middleware sends an administrator who owes a factor here, and nowhere
+  // else. Landing anywhere else means nothing is owed.
+  if (!page.url().includes('/settings')) return
+  const passwordField = page.getByLabel(/confirm with your password/i)
+  if (!(await passwordField.isVisible().catch(() => false))) return
+
+  await passwordField.fill(rootPassword)
+  await page.getByRole('button', { name: /set up/i }).click()
+
+  // The setup key, shown once. Whitespace is presentation — the secret is the
+  // base32 without it.
+  const shown = await page.locator('code').first().innerText()
+  const secret = shown.replace(/\s/g, '')
+  mkdirSync(path.dirname(totpSecretFile), { recursive: true })
+  writeFileSync(totpSecretFile, secret)
+
+  await page.getByLabel(/authentication code/i).fill(totpCode(secret))
+  await page.getByRole('button', { name: /activate/i }).click()
+
+  // The recovery codes appear only on success, so they are what proves the
+  // factor is confirmed rather than merely started.
+  await page.getByText(/recovery codes/i).first().waitFor({ timeout: 30_000 })
+
+  // And the gate should now be lifted: the dashboard is reachable rather than
+  // bouncing back to /settings.
+  await page.goto('/')
+  await page.waitForURL((url) => !url.pathname.includes('/settings'), { timeout: 30_000 })
+}

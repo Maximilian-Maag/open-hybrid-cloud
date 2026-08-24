@@ -17,6 +17,7 @@ import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { ELEMENT_SEQUENCE_VAR } from '@/lib/ci/stateKey'
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
+import { productNameSql } from '@/lib/services/productName'
 import { ok, err, type Result } from '@/lib/services/result'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
 import { redactParametersForOrders, REDACTED } from '@/lib/services/parameterRedaction'
@@ -100,7 +101,10 @@ export interface CreatedOrder {
   infraIds?: number[]
 }
 
-export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[]>> => {
+export const listOrders = async (
+  session: SessionUser,
+  lang: string,
+): Promise<Result<OrderRow[]>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
 
   const rows = await db
@@ -121,12 +125,7 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
       sizeCode: orders.sizeCode,
       quantity: orders.quantity,
       productSnapshot: orders.productSnapshot,
-      productName: sql<string>`(
-        SELECT name FROM product_translations
-        WHERE product_id = ${orders.productId}
-          AND language_code = 'en'
-        LIMIT 1
-      )`,
+      productName: productNameSql(orders.productId, lang),
       environmentName: deploymentEnvironments.name,
       userName: users.name,
     })
@@ -146,6 +145,7 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
 export const getOrderById = async (
   session: SessionUser,
   orderId: number,
+  lang: string,
 ): Promise<Result<OrderRow>> => {
   const rows = await db
     .select({
@@ -165,12 +165,7 @@ export const getOrderById = async (
       sizeCode: orders.sizeCode,
       quantity: orders.quantity,
       productSnapshot: orders.productSnapshot,
-      productName: sql<string>`(
-        SELECT name FROM product_translations
-        WHERE product_id = ${orders.productId}
-          AND language_code = 'en'
-        LIMIT 1
-      )`,
+      productName: productNameSql(orders.productId, lang),
       environmentName: deploymentEnvironments.name,
       userName: users.name,
     })

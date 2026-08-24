@@ -20,7 +20,7 @@ afterEach(() => {
 })
 
 /** Everything the logger was handed, as one string. */
-const logged = () => errSpy.mock.calls.map((c) => c.join(' ')).join('\n')
+const logged = () => errSpy.mock.calls.map((c: unknown[]) => c.join(' ')).join('\n')
 
 describe('rejectCallback', () => {
   it('logs the rejection, which is the whole point', () => {

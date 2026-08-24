@@ -1,6 +1,6 @@
-import { type NextRequest, NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { deleteSize } from '@/lib/services/admin/sizes'
 
 /**
@@ -18,15 +18,13 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id, envId, sizeId } = await params
-  const productId = Number(id)
-  const environmentId = Number(envId)
-  const size = Number(sizeId)
-  if (
-    !Number.isInteger(productId) || productId <= 0 ||
-    !Number.isInteger(environmentId) || environmentId <= 0 ||
-    !Number.isInteger(size) || size <= 0
-  ) {
-    return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
+  // `Number` accepted `0x10` as 16 and ` 5 ` as 5, so a malformed segment
+  // resolved to a real size (#143). parseRouteId is digits-only.
+  const productId = parseRouteId(id)
+  const environmentId = parseRouteId(envId)
+  const size = parseRouteId(sizeId)
+  if (productId === null || environmentId === null || size === null) {
+    return invalidId('product, environment or size id')
   }
 
   return toResponse(await deleteSize(productId, environmentId, size))

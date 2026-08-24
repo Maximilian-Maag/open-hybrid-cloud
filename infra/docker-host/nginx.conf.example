@@ -1,3 +1,18 @@
+# Reverse proxy for the single-Docker-host deployment.
+#
+#   cp nginx.conf.example nginx.conf
+#   # edit the ONE line marked "CHANGE THIS" below
+#   docker compose up -d --force-recreate nginx
+#
+# Nothing else in this file is site-specific: the upstreams are container names
+# from docker-compose.yml and the certificate paths are the mount point defined
+# there. If you change nothing but the domain, this file is complete.
+#
+# Do not simplify the /api routing. Both the frontend and the backend are
+# Next.js applications and BOTH serve routes under /api; sending all of /api to
+# the backend breaks sign-in with a 404 (#196). The ordering of the location
+# blocks below is what keeps them apart, and it is load-bearing.
+
 events {
     worker_connections 1024;
 }
@@ -9,17 +24,25 @@ http {
     # returns 502 until nginx itself is restarted.
     resolver 127.0.0.11 valid=10s ipv6=off;
 
-    # HTTP → HTTPS redirect
+    # HTTP → HTTPS redirect. Deliberately a catch-all: this is the only server
+    # block on port 80, so nginx serves it for every Host header regardless of
+    # what is written here, and the redirect preserves the host it was asked
+    # for. Leaving it as `_` keeps the domain to a single place in this file.
     server {
         listen 80;
-        server_name your-domain.example.com;
+        server_name _;
         return 301 https://$host$request_uri;
     }
 
     # HTTPS
     server {
-        listen 443 ssl;
+        # ─────────────────────────────────────────────────────────────────────
+        # CHANGE THIS — your public domain, and the only edit this file needs.
+        # It must match NEXTAUTH_URL in .env and the name on the certificate.
+        # ─────────────────────────────────────────────────────────────────────
         server_name your-domain.example.com;
+
+        listen 443 ssl;
 
         ssl_certificate     /etc/nginx/certs/fullchain.pem;
         ssl_certificate_key /etc/nginx/certs/privkey.pem;
@@ -61,8 +84,37 @@ http {
             proxy_set_header   X-Forwarded-Proto $scheme;
         }
 
+        # Step one of a two-step sign-in is a FRONTEND route (#36), even though
+        # it lives under /api. Missing it here is what broke the deployed
+        # sign-in in #196: the general /api/ block below sent it to the backend,
+        # which has no such route and answered 404.
+        location = /api/login-challenge {
+            proxy_pass         http://$frontend_upstream;
+            proxy_http_version 1.1;
+            proxy_set_header   Host              $host;
+            proxy_set_header   X-Real-IP         $remote_addr;
+            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+        }
+
+        # The frontend's own liveness route, also under /api. The container
+        # healthcheck reaches it directly on :3000 and so never noticed that
+        # through this proxy it was answering from the backend.
+        location = /api/ping {
+            proxy_pass         http://$frontend_upstream;
+            proxy_http_version 1.1;
+            proxy_set_header   Host              $host;
+            proxy_set_header   X-Real-IP         $remote_addr;
+            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+        }
+
         # Backend API — proxied directly so browser-initiated requests work
         # (Next.js client components use relative /api/* URLs which land here)
+        #
+        # Anything the frontend serves under /api must be matched ABOVE this
+        # block. apps/frontend/src/lib/apiRoutes.test.ts enumerates them from
+        # the frontend build and fails if one is missing here.
         location /api/ {
             proxy_pass         http://$backend_upstream;
             proxy_http_version 1.1;

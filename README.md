@@ -120,6 +120,11 @@ open-hybrid-cloud/
 │       └── Dockerfile
 ├── packages/
 │   └── types/                    # Shared TypeScript interfaces
+├── policy/                       # Rego codebase invariants enforced by `make policy`
+├── scripts/
+│   ├── policy-facts.ts           # Extracts the JSON the Rego policies evaluate
+│   ├── policy-check.ts           # `make policy` — opa test, then opa eval
+│   └── opa.ts                    # The pinned opa binary, by version and checksum
 ├── infra/
 │   ├── docker-compose.dev.yml    # Local dev: postgres, mailpit, wiremock, structurizr
 │   ├── docker-compose.yml        # Docker host deployment
@@ -165,6 +170,7 @@ Run `make help` to see all available commands.
 | `make build` | Build all apps |
 | `make lint` | Lint all apps |
 | `make type-check` | TypeScript type-check all apps |
+| `make policy` | Run the OPA codebase-invariant gate — the same check CI runs (see [Policy gate](#policy-gate)) |
 | `make test` | Run unit and integration tests |
 | `make docker-build` | Build both Docker images locally |
 | `make db-push` | Push Drizzle schema to the database |
@@ -407,11 +413,51 @@ Response codes: `200` all due elements torn down, `207` some could not be starte
 
 | Trigger | Pipeline |
 |---------|----------|
-| Pull request | Type-check + lint + build + E2E + a11y gate, and (only if the PR touches `docs/handbook.tex`) a handbook compile check (`.github/workflows/ci.yml`) |
+| Pull request | Type-check + lint + build + E2E + a11y gate + policy gate, and (only if the PR touches `docs/handbook.tex`) a handbook compile check (`.github/workflows/ci.yml`) |
 | Push to `dev`/`staging`/`main` | Build & push Docker images (`.github/workflows/cd-release.yml`) |
 | Push to `main` | Additionally compiles the handbook fresh from `docs/handbook.tex` and publishes a GitHub Release with the resulting PDF attached |
 
 Required GitHub secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
+
+## Policy Gate
+
+`make policy` evaluates the Rego policies in `policy/` against the source tree
+and fails on a `deny`. It is the same command the "Policy (OPA)" job in
+`.github/workflows/ci.yml` runs, so a green run locally is the answer CI will
+give.
+
+It exists because ESLint enforces rules about *a file*, and every recurring
+defect in this repository has been a rule that spans files — a route whose auth
+helper is missing, a table added to `schema.ts` and to a migration but not to
+both places in `src/test/setup.ts`, an i18n key present in 2 of 25 languages, a
+`select()` that reached one column too far. Those are sentences you can write
+down, which makes them policy rather than lint.
+
+```bash
+make policy-install-opa   # once: fetches the pinned opa into .opa/ (gitignored, checksum-verified)
+make policy               # opa test on the policies, then opa eval on the tree
+make policy-facts         # the JSON the policies see, if a rule is not firing as expected
+```
+
+Each violation prints the rule, the file and *why the rule exists*, because a
+policy failure that does not explain itself gets suppressed rather than fixed:
+
+```
+DENY  route_requires_auth  apps/backend/src/app/api/reports/route.ts
+      exports GET but never calls requireAuth or requireRole, and "reports" is not on
+      the public allowlist
+      why: Whether a route authenticates is not visible in the file a reviewer is reading
+           — it is the absence of a call. ...
+```
+
+`deny` fails the build; `warn` reports and does not. A rule that cannot pass on
+`dev` yet ships as `warn` naming the issue that will promote it — a gate that
+starts red teaches people to ignore it. Adding a rule is one block in
+`policy/*.rego` and one test in the matching `*_test.rego`; the facts it reasons
+about come from `scripts/policy-facts.ts`.
+
+This bundle is **not** the runtime policy engine of issue #110. It never runs in
+production: its input is the source tree and its only output is a CI verdict.
 
 ## Technical Handbook
 

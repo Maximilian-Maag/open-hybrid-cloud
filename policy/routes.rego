@@ -19,6 +19,7 @@ public_routes := {
 	"public/branding": "the login screen renders from it, before any session exists",
 	"public/exchange-rates": "read by the unauthenticated shell for price display",
 	"catalog/[id]/image": "loaded by the browser as an <img> src, which cannot carry a bearer token",
+	"catalog/[id]/images/[imageId]": "one picture of the gallery (#107) — same reason as catalog/[id]/image above: reached only as an <img> src, and the API is a different origin from the session cookie, so requireAuth would have nothing to read and every picture would be a broken image. Both route ids go through parseRouteId and the service checks the (product, image) pairing, so a URL cannot be walked across products",
 	"webhooks/gitlab/pipeline": "authenticated by the environment's callback_secret over HMAC, not by a session",
 	"webhooks/github/workflow": "authenticated by the environment's callback_secret over HMAC, not by a session",
 	"webhooks/bitbucket/pipeline": "authenticated by the environment's callback_secret over HMAC, not by a session",

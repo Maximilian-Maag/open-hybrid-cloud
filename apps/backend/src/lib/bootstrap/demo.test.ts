@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { db } from '@/lib/db/client'
-import { categories, costCenters, products } from '@/lib/db/schema'
+import { categories, costCenters, productImages, products } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { createUser } from '@/test/helpers'
 import { seedDemoData } from './demo'
@@ -26,15 +26,21 @@ describe('seedDemoData', () => {
 
     expect(await seedDemoData()).toEqual({ created: true })
     expect(await marker()).toHaveLength(1)
-    // Every demo product carries a picture AND a description for it (#105) —
+    // Every demo product carries pictures AND a description for each (#105) —
     // seeding an image with no alt text would defeat the rule it was added for.
-    const rows = await db
-      .select({ image: products.image, alt: products.imageAlt })
-      .from(products)
-    expect(rows).toHaveLength(3)
-    for (const row of rows) {
-      expect(row.image).not.toBeNull()
-      expect(row.alt?.trim()).toBeTruthy()
+    // Two apiece, so the dev database exercises the gallery rather than the
+    // single-picture case the gallery replaced (#107).
+    const productRows = await db.select({ id: products.id }).from(products)
+    expect(productRows).toHaveLength(3)
+    for (const product of productRows) {
+      const images = await db
+        .select({ position: productImages.position, alt: productImages.alt })
+        .from(productImages)
+        .where(eq(productImages.productId, product.id))
+        .orderBy(productImages.position)
+      expect(images.length).toBeGreaterThan(1)
+      expect(images.map((image) => image.position)).toEqual(images.map((_, index) => index))
+      for (const image of images) expect(image.alt.trim()).toBeTruthy()
     }
   })
 

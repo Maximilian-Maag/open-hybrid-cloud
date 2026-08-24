@@ -28,7 +28,14 @@ As an Admin you can:
 - Products are organized by category
 - Prices are shown in the display currency of your browser locale
 - Click the star on a product card to **favourite** it (see 2.4) — favourited products get their own row at the top of the catalog page regardless of which page of results you're on
-- The product detail page shows: image (with its description read aloud by screen readers, or shown if the image fails to load), description, available environments with per-environment price, and the order form
+- The detail view shows: the picture gallery, the short and long description,
+  available environments with the price of each, a **Good to know** block (who owns
+  the product, whether your orders need approval, a link to its documentation), a
+  **Specifications** table of the parameters it takes, and the other products in the
+  same category
+- The gallery is operable from the keyboard: Tab reaches the thumbnails — each named
+  by what it shows — the previous/next buttons and **Enlarge image**; the left and
+  right arrow keys step through the pictures, and Escape closes the enlarged view
 
 ### 2.2 Ordering
 

@@ -1,10 +1,21 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { redirect, notFound } from 'next/navigation'
-import type { ProductDetail, Project, CostCenter, ExchangeRate, Category } from '@open-hybrid-cloud/types'
+import Link from 'next/link'
+import type {
+  ProductDetail,
+  Project,
+  CostCenter,
+  ExchangeRate,
+  Category,
+  CatalogPage,
+  Role,
+} from '@open-hybrid-cloud/types'
 import { Card } from '@/components/ui/Card'
 import { OrderForm } from '@/components/forms/OrderForm'
 import { AddToCart } from './AddToCart'
+import { ProductGallery } from '@/components/ui/ProductGallery'
+import { ProductSpecs } from '@/components/ui/ProductSpecs'
 import { ProductImage } from '@/components/ui/ProductImage'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { getLang } from '@/lib/getLang'
@@ -50,6 +61,16 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
 
   if (productRes.status === 'rejected') notFound()
   const product = productRes.value
+
+  // Cross-selling, at the size this catalogue actually is: "other products in this
+  // category" (issue #107). No new endpoint — the paged catalogue list already
+  // filters by category, and asking for one more than we show covers the case
+  // where this product is in the page it returns.
+  const relatedRes = await get<CatalogPage>(
+    `/api/catalog?lang=${lang}&categoryId=${product.categoryId}&limit=5`,
+    token,
+  ).catch(() => null)
+  const related = (relatedRes?.items ?? []).filter((item) => item.id !== product.id).slice(0, 4)
   const projects = projectsRes.status === 'fulfilled' ? (projectsRes.value ?? []) : []
   const costCenters = costCentersRes.status === 'fulfilled' ? (costCentersRes.value ?? []) : []
   const categories = categoriesRes.status === 'fulfilled' ? (categoriesRes.value ?? []) : []
@@ -68,6 +89,13 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
       original: converted.currency !== amount.currency ? `${amount.price} ${amount.currency}` : null,
     }
   }
+
+  // Whether this viewer's order is provisioned straight away or queued for
+  // approval is a property of their role, not of the product — createOrder branches
+  // on exactly this. Saying so here is the honest version of "does this need
+  // approval", and it needs no schema of its own.
+  const role = (session.user as unknown as { role: Role }).role
+  const ordersNeedApproval = role !== 'admin' && role !== 'root'
 
   /**
    * What an offering can cost — one amount per size, or its own single price when
@@ -132,10 +160,10 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Picture */}
+        {/* Pictures */}
         <div className="lg:col-span-4">
-          <div className="h-72 rounded-lg border border-slate-200 bg-white p-4 lg:sticky lg:top-28">
-            <ProductImage productId={product.id} alt={product.imageAlt ?? product.name} />
+          <div className="h-96 rounded-lg border border-slate-200 bg-white p-4 lg:sticky lg:top-28">
+            <ProductGallery productId={product.id} images={product.images} lang={lang} />
           </div>
         </div>
 
@@ -149,6 +177,69 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
           )}
           <hr className="my-4 border-slate-200" />
           <p className="leading-relaxed text-slate-600">{product.description}</p>
+
+          {/* The short description has to fit a catalogue tile, so it was never
+              going to carry the product's story. This is the long one, and it is
+              simply absent when nobody has written it. */}
+          {product.longDescription && (
+            <>
+              <h2 className="mt-6 mb-2 text-sm font-semibold text-slate-700">
+                {t('aboutThisProduct', lang)}
+              </h2>
+              {/* Split on blank lines rather than rendering the text as HTML:
+                  paragraphs are what a description needs, and the alternative is
+                  injecting operator-supplied markup into the page. */}
+              {product.longDescription
+                .split(/\n\s*\n/)
+                .map((paragraph) => paragraph.trim())
+                .filter(Boolean)
+                .map((paragraph, index) => (
+                  <p key={index} className="mt-2 leading-relaxed text-slate-600 whitespace-pre-line">
+                    {paragraph}
+                  </p>
+                ))}
+            </>
+          )}
+
+          {/* What a shopper checks before ordering, in the order they ask: who runs
+              it, whether ordering it means waiting for someone, and where the real
+              documentation is. */}
+          <h2 className="mt-6 mb-2 text-sm font-semibold text-slate-700">{t('goodToKnow', lang)}</h2>
+          <dl className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white text-sm">
+            {product.owner && (
+              <div className="flex items-baseline justify-between gap-3 px-4 py-2">
+                <dt className="text-slate-500">{t('owner', lang)}</dt>
+                <dd className="text-right font-medium text-slate-900">{product.owner}</dd>
+              </div>
+            )}
+            <div className="flex items-baseline justify-between gap-3 px-4 py-2">
+              {/* "Order" rather than "Approval": the row answers what happens when
+                  you order this, and the sentence in the value says whether that
+                  involves waiting for somebody. */}
+              <dt className="text-slate-500">{t('order', lang)}</dt>
+              <dd className="text-right text-slate-700">
+                {ordersNeedApproval ? t('approvalRequired', lang) : t('approvalImmediate', lang)}
+              </dd>
+            </div>
+            {product.docsUrl && (
+              <div className="flex items-baseline justify-between gap-3 px-4 py-2">
+                <dt className="text-slate-500">{t('documentation', lang)}</dt>
+                <dd className="text-right">
+                  {/* Underlined at rest, like the breadcrumb above and for the same
+                      reason: colour alone is not enough (WCAG 1.4.1). */}
+                  <a
+                    href={product.docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="break-all underline"
+                    style={{ color: 'var(--bp-text)' }}
+                  >
+                    {product.docsUrl}
+                  </a>
+                </dd>
+              </div>
+            )}
+          </dl>
 
           {product.environments.length > 0 && (
             <>
@@ -208,6 +299,16 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
         )}
       </div>
 
+      {/* The specification table: the parameters this product takes, which are the
+          closest thing here to "technical details" and were previously visible
+          only once you had scrolled into the order form. */}
+      {product.parameters.length > 0 && (
+        <div className="mt-8 max-w-3xl">
+          <h2 className="mb-2 text-sm font-semibold text-slate-700">{t('specifications', lang)}</h2>
+          <ProductSpecs parameters={product.parameters} lang={lang} />
+        </div>
+      )}
+
       {/* The form proper, linked from the buy box above. */}
       <div id="order" className="mt-8 max-w-3xl scroll-mt-28">
         <Card title={t('placeOrder', lang)}>
@@ -224,6 +325,38 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
           />
         </Card>
       </div>
+
+      {/* Cross-selling that means something in an internal catalogue: not
+          "customers also bought" — there is no such signal here — but the other
+          things in the same category, which is what a shopper who is comparing
+          would go looking for next. */}
+      {related.length > 0 && (
+        <section aria-labelledby="related-heading" className="mt-10">
+          <h2 id="related-heading" className="mb-3 text-sm font-semibold text-slate-700">
+            {t('otherInCategory', lang)}
+          </h2>
+          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {related.map((item) => (
+              <li key={item.id}>
+                <Link
+                  href={`/catalog/${item.id}`}
+                  className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  <span
+                    className="block h-28 border-b border-slate-100 p-2"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--bp) 8%, white)' }}
+                  >
+                    {/* Decorative: the link's own text names the product, so the
+                        picture would be announced twice. */}
+                    <ProductImage productId={item.id} alt="" />
+                  </span>
+                  <span className="block p-3 text-sm font-medium text-slate-900">{item.name}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }

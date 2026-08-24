@@ -28,10 +28,11 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { ProductEditForm } from './ProductEditForm'
-import { get, del } from '@/lib/api'
+import { get, del, put } from '@/lib/api'
 
 const mockedGet = vi.mocked(get)
 const mockedDel = vi.mocked(del)
+const mockedPut = vi.mocked(put)
 
 const LINKED_ENV = 1
 const UNLINKED_ENV = 2
@@ -347,5 +348,138 @@ describe('ProductEditForm order callbacks', () => {
 
     await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/admin/products/7/webhooks/1', 'test-token'))
     await waitFor(() => expect(screen.queryByText('Ticketing webhook')).not.toBeInTheDocument())
+  })
+})
+
+describe('ProductEditForm translations', () => {
+  const german = {
+    productId: 7,
+    languageCode: 'de',
+    name: 'Verwaltetes Postgres',
+    description: 'Eine betreute Datenbank.',
+    longDescription: 'Die lange Fassung, von Hand geschrieben.',
+  }
+
+  const formWith = (translations: typeof german[]) => (
+    <ProductEditForm
+      product={product}
+      categories={[{ id: 1, name: 'Databases', displayOrder: 0 }] as Category[]}
+      environments={environments}
+      translations={translations}
+      costCenters={costCenters}
+      token="test-token"
+    />
+  )
+
+  const renderWithTranslations = (translations = [german]) => render(formWith(translations))
+
+  // Modal renders its children whether or not it is open, and "Name" and "Save"
+  // label something in four other forms on this page — so every query here is
+  // scoped to the translation dialog, anchored on the one field only it has.
+  const dialog = () => {
+    const box = screen.getByLabelText(/^long description/i)
+    const found = box.closest('dialog')
+    if (!found) throw new Error('translation modal not found')
+    return found as HTMLElement
+  }
+  const longDesc = () => within(dialog()).getByLabelText(/^long description/i)
+  // "Name *" in the DOM: Input appends a required marker inside the label.
+  const name = () => within(dialog()).getByLabelText(/^name/i)
+  const openModal = (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(screen.getByRole('button', { name: 'Add Translation' }))
+  const save = (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(within(dialog()).getByRole('button', { name: 'Save' }))
+
+  beforeEach(() => {
+    mockedPut.mockReset().mockResolvedValue(undefined as never)
+  })
+
+  it('loads an existing translation into the modal instead of opening blank', async () => {
+    const user = userEvent.setup()
+    renderWithTranslations()
+
+    await openModal(user)
+
+    expect(name()).toHaveValue(german.name)
+    expect(within(dialog()).getByLabelText(/^description/i)).toHaveValue(german.description)
+    expect(longDesc()).toHaveValue(german.longDescription)
+  })
+
+  it('keeps the long description when a translation is re-saved without touching it', async () => {
+    // The erasure this covers: the modal opened blank, this form always sends
+    // longDescription, so fixing a typo in the name wiped the prose the product
+    // page shows.
+    const user = userEvent.setup()
+    renderWithTranslations()
+
+    await openModal(user)
+    await user.clear(name())
+    await user.type(name(), 'Verwaltete Postgres')
+    await save(user)
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    expect(mockedPut.mock.calls[0][1]).toMatchObject({
+      name: 'Verwaltete Postgres',
+      longDescription: german.longDescription,
+    })
+  })
+
+  it('opens blank for a language that has no translation yet', async () => {
+    const user = userEvent.setup()
+    renderWithTranslations([])
+
+    await openModal(user)
+
+    expect(name()).toHaveValue('')
+    expect(longDesc()).toHaveValue('')
+  })
+
+  it('re-points every field when the language is switched', async () => {
+    const user = userEvent.setup()
+    renderWithTranslations()
+
+    await openModal(user)
+    await user.selectOptions(within(dialog()).getByLabelText('Language'), 'fr')
+
+    // French has nothing stored, so the German text must not be left behind for
+    // the save to write under the wrong language.
+    expect(name()).toHaveValue('')
+    expect(longDesc()).toHaveValue('')
+
+    await user.selectOptions(within(dialog()).getByLabelText('Language'), 'de')
+    expect(longDesc()).toHaveValue(german.longDescription)
+  })
+
+  it('follows the server list after an AI run rather than saving over it', async () => {
+    // handleAiTranslate calls router.refresh(), which hands this component new
+    // props but leaves useState holding the pre-run list. A re-render with a new
+    // prop stands in for that refresh here: the modal has to show what the AI
+    // wrote, because the form always sends longDescription and would otherwise
+    // save a blank over it.
+    const user = userEvent.setup()
+    const { rerender } = renderWithTranslations([])
+
+    rerender(formWith([german]))
+    await openModal(user)
+
+    expect(name()).toHaveValue(german.name)
+    expect(longDesc()).toHaveValue(german.longDescription)
+
+    await save(user)
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    expect(mockedPut.mock.calls[0][1]).toMatchObject({ longDescription: german.longDescription })
+  })
+
+  it('still sends an edited long description', async () => {
+    const user = userEvent.setup()
+    renderWithTranslations()
+
+    await openModal(user)
+    await user.clear(longDesc())
+    await user.type(longDesc(), 'Eine neue Fassung.')
+    await save(user)
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    expect(mockedPut.mock.calls[0][1]).toMatchObject({ longDescription: 'Eine neue Fassung.' })
   })
 })

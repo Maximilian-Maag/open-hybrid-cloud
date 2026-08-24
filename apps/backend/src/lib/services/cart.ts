@@ -19,6 +19,7 @@ import {
   lineSizeLabelSql,
   lineSizeStillOfferedSql,
 } from '@/lib/services/sizes'
+import { primaryImageAltSql } from '@/lib/services/catalog'
 
 export interface CartRow {
   id: number
@@ -83,7 +84,7 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
       parameters: cartItems.parameters,
       createdAt: cartItems.createdAt,
       productName: productTranslations.name,
-      imageAlt: products.imageAlt,
+      imageAlt: primaryImageAltSql,
       environmentName: deploymentEnvironments.name,
       sizeCode: cartItems.sizeCode,
       quantity: cartItems.quantity,
@@ -100,9 +101,10 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
       ),
     })
     .from(cartItems)
-    // The image description lives on the product row, so that table has to be in
-    // the join chain — selecting a column from it without joining produces a
-    // cross join, which is how adding imageAlt broke every cart test at once.
+    // The image description is read by a subquery correlated on `products.id`, so
+    // that table has to be in the join chain — correlating on a table that is not
+    // joined produces a cross join, which is how adding imageAlt broke every cart
+    // test at once.
     .leftJoin(products, eq(cartItems.productId, products.id))
     .leftJoin(
       productTranslations,

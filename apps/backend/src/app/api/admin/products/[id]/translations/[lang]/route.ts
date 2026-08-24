@@ -7,6 +7,10 @@ import { upsertTranslation } from '@/lib/services/admin/products'
 const UpsertTranslationSchema = z.object({
   name: z.string().min(1),
   description: z.string().default(''),
+  // No default: absent means "leave the long text as it is", so the AI translator
+  // and any caller that only knows about name+description cannot blank out prose
+  // somebody wrote by hand (issue #107).
+  longDescription: z.string().max(20_000).optional(),
 })
 
 export async function PUT(

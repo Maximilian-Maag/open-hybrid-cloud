@@ -100,7 +100,11 @@ export interface DestroyOutcome {
  * the sweep skip permanently (issue #132).
  */
 export const fireDestroyTriggers = async (
-  infra: { id: number; productId: number; environmentId: number },
+  // `parameters` is the element's stored map with reserved names still in it. It
+  // is not sent anywhere: the stack trigger reads it only to derive the state key
+  // for a legacy element whose stack is keyed on a reserved name, which the
+  // filtered `variables` cannot answer. See `triggerPipelineStacksTracked`.
+  infra: { id: number; productId: number; environmentId: number; parameters?: Record<string, string> | unknown },
   variables: Record<string, string>,
 ): Promise<DestroyOutcome> => {
   // Switches the element's pipeline tracking from its provisioning run to this
@@ -120,6 +124,7 @@ export const fireDestroyTriggers = async (
     infra.environmentId,
     variables,
     onStarted,
+    infra.parameters as Record<string, string> | undefined,
   )
 
   const pipelineIds = [...webhookOutcome.pipelineIds, ...stackOutcome.pipelineIds]

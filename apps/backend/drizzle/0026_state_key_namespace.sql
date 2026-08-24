@@ -33,7 +33,12 @@ ALTER TABLE "infrastructure_elements" ADD COLUMN IF NOT EXISTS "state_key_namesp
 -- clean up:
 --
 --   SELECT id, scope, scope_id, name FROM parameters
---    WHERE upper(name) IN ('REF','BRANCH','WORKFLOW','TF_ACTION','TF_STATE_NAME',
---                          'TF_STATE_NAMESPACE','TEMPLATE','PIPELINE_STACK',
---                          'ORDER_ID','ELEMENT_SEQUENCE','INFRA_ID','SIZE',
---                          'TRIAL','TRIAL_DURATION_MINUTES');
+--    WHERE upper(trim(name)) IN ('REF','BRANCH','WORKFLOW','TF_ACTION','TF_STATE_NAME',
+--                                'TF_STATE_NAMESPACE','TEMPLATE','PIPELINE_STACK',
+--                                'ORDER_ID','ELEMENT_SEQUENCE','INFRA_ID',
+--                                'TRIAL','TRIAL_DURATION_MINUTES');
+--
+-- `trim` because `isReservedCiVariable` trims before comparing, so a legacy row
+-- named ` REF ` is inert at runtime and has to show up here too. SIZE is
+-- deliberately absent: it is not reserved (see lib/ci/reserved.ts), and listing
+-- it here would have an operator delete parameters that still work.

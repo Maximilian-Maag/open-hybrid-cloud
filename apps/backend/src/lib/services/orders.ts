@@ -590,7 +590,7 @@ export const provisionOrderElements = async (
       // (issue #134): the webhook 502s, the stack starts, and the order ends up
       // waiting on the stack alone.
       const webhooks = await triggerProductWebhooksTracked(productId, environmentId, triggerVars, onStarted)
-      const stacks = await triggerPipelineStacksTracked(productId, environmentId, triggerVars, onStarted)
+      const stacks = await triggerPipelineStacksTracked(productId, environmentId, triggerVars, onStarted, parameters)
       elementPipelineIds = [...webhooks.pipelineIds, ...stacks.pipelineIds]
       failures.push(
         ...[...webhooks.failures, ...stacks.failures].map((f) => `element ${sequence}: ${f}`),

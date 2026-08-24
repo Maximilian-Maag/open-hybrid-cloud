@@ -640,14 +640,24 @@ describe('retryProvisioning', () => {
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.pipelineIds).toEqual(['new-webhook', 'new-stack'])
 
-    for (const mock of [mockedWebhooks, mockedStacks]) {
-      expect(mock).toHaveBeenCalledWith(
-        product.id,
-        env.id,
-        expect.objectContaining({ hostname: 'web-01' }),
-        expect.any(Function),
-      )
-    }
+    expect(mockedWebhooks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ hostname: 'web-01' }),
+      expect.any(Function),
+    )
+
+    // The stack trigger takes a fifth argument the webhook trigger does not: the
+    // element's parameters with reserved names still in them, for state-key
+    // derivation only. A legacy stack keyed on a reserved name (REF) has no other
+    // way to find the value its own apply used — see webhooks.test.ts.
+    expect(mockedStacks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ hostname: 'web-01' }),
+      expect.any(Function),
+      expect.objectContaining({ hostname: 'web-01' }),
+    )
   })
 
   it('reuses the original ORDER_ID so the retry targets the same Terraform state', async () => {

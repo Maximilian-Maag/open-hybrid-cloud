@@ -334,4 +334,63 @@ describe('TF_STATE_NAME per element (issue #104)', () => {
 
     expect(stateNameOf()).toBe('web-01-2')
   })
+
+  // The interaction between the two halves of #183, and a regression the filter
+  // introduced on its own: a pre-#183 stack may be keyed on a name that is now
+  // RESERVED. `REF` is the realistic one — it was a creatable parameter name, and
+  // a deployment that used it as its state key parameter still has elements
+  // running under it.
+  describe('a legacy stack keyed on a reserved parameter name', () => {
+    it('derives the state key from the value the filter removed', async () => {
+      const { product, env } = await seedStack('REF')
+
+      // What the services pass: REF is gone from the trigger variables, because
+      // it decides which git ref the pipeline runs and is not the orderer's to
+      // choose. The unfiltered map is passed alongside for derivation only.
+      await triggerPipelineStacksTracked(
+        product.id,
+        env.id,
+        { ORDER_ID: '42', ELEMENT_SEQUENCE: '1' },
+        undefined,
+        { REF: 'legacy-state' },
+      )
+
+      // Not '42'. Falling back to the order id would address a state this
+      // element's apply never created, so destroy would report success having
+      // destroyed nothing.
+      expect(stateNameOf()).toBe('legacy-state')
+    })
+
+    it('still keeps the reserved name out of the pipeline request', async () => {
+      const { product, env } = await seedStack('REF')
+
+      await triggerPipelineStacksTracked(
+        product.id,
+        env.id,
+        { ORDER_ID: '42', ELEMENT_SEQUENCE: '1' },
+        undefined,
+        { REF: 'legacy-state' },
+      )
+
+      // Derivation reads it; the request must not carry it. This is the whole
+      // point of the filter — REF chooses the code that runs.
+      expect(mockedTriggerPipeline.mock.calls[0][3]).not.toHaveProperty('REF')
+    })
+
+    it('prefers the filtered map when the name is not reserved', async () => {
+      const { product, env } = await seedStack('hostname')
+
+      // The ordinary case must be untouched by the fallback: hostname is present
+      // in `variables`, so the unfiltered map is never consulted.
+      await triggerPipelineStacksTracked(
+        product.id,
+        env.id,
+        { hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: '42' },
+        undefined,
+        { hostname: 'stale-value' },
+      )
+
+      expect(stateNameOf()).toBe('web-01-42')
+    })
+  })
 })

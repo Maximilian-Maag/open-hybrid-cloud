@@ -59,6 +59,20 @@ export const triggerPipelineStacksTracked = async (
   environmentId: number,
   variables: Record<string, string>,
   onStarted?: PipelineStarted,
+  /**
+   * The element's stored parameters BEFORE reserved names were filtered out of
+   * them, consulted only to derive the state key and never sent anywhere.
+   *
+   * A pre-#183 stack may name a RESERVED variable as its `stateKeyParam` — `REF`
+   * is the realistic one — and the value of that parameter is the raw state key
+   * its apply created. `withoutReservedCiVariables` correctly keeps that name out
+   * of the outgoing request, but derivation still has to see it: without this the
+   * lookup below misses, `stateKeyBase` falls back to the order id, and destroy
+   * or retry addresses a state that element never had. The filtered map is still
+   * consulted first, so nothing changes for a stack whose stateKeyParam is an
+   * ordinary parameter name.
+   */
+  unfilteredParameters?: Record<string, string>,
 ): Promise<TriggerOutcome> => {
   const ciSource = await findCiSourceForEnv(environmentId)
   if (!ciSource) return { pipelineIds: [], failures: [] }
@@ -88,7 +102,9 @@ export const triggerPipelineStacksTracked = async (
   for (const stack of stacks) {
     if (!stack.steps || (stack.steps as unknown[]).length === 0) continue
     const base = stateKeyBase({
-      param: variables[stack.stateKeyParam],
+      // See `unfilteredParameters`: a reserved name is absent from `variables` by
+      // design, and for a legacy element that name may be what its state key was.
+      param: variables[stack.stateKeyParam] ?? unfilteredParameters?.[stack.stateKeyParam],
       orderId: variables['ORDER_ID'],
       // Server-owned and per element, so a stack's stateKeyParam value can no
       // longer name another order's state — see `stateKeyBase` for why an element

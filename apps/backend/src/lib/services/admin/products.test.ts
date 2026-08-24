@@ -193,6 +193,11 @@ describe('deleteProduct', () => {
       env.id,
       expect.objectContaining({ TF_ACTION: 'destroy' }),
       expect.any(Function),
+      // Fifth argument, which the webhook trigger does not take: the element's
+      // parameters with reserved names still in them, read only to derive the
+      // state key. A legacy stack keyed on a reserved name has no other way to
+      // find the value its own apply used.
+      expect.anything(),
     )
     // The product was ordered, so it is retired rather than deleted (issue #142)
     // and its infrastructure rows stay put, mid-decommission, for the callback that

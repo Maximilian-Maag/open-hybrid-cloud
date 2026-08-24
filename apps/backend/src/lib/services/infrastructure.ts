@@ -377,7 +377,15 @@ export const retryProvisioning = async (
 
     try {
       const webhooks = await triggerProductWebhooksTracked(element.productId, element.environmentId, variables, onStarted)
-      const stacks = await triggerPipelineStacksTracked(element.productId, element.environmentId, variables, onStarted)
+      const stacks = await triggerPipelineStacksTracked(
+        element.productId,
+        element.environmentId,
+        variables,
+        onStarted,
+        // Unfiltered, for state-key derivation only — a legacy stack keyed on a
+        // reserved name would otherwise retry against the wrong state.
+        element.parameters as Record<string, string>,
+      )
       const started = [...webhooks.pipelineIds, ...stacks.pipelineIds]
       perElementPipelines.set(element.id, started)
       outcome.pipelineIds.push(...started)

@@ -61,8 +61,37 @@ http {
             proxy_set_header   X-Forwarded-Proto $scheme;
         }
 
+        # Step one of a two-step sign-in is a FRONTEND route (#36), even though
+        # it lives under /api. Missing it here is what broke the deployed
+        # sign-in in #196: the general /api/ block below sent it to the backend,
+        # which has no such route and answered 404.
+        location = /api/login-challenge {
+            proxy_pass         http://$frontend_upstream;
+            proxy_http_version 1.1;
+            proxy_set_header   Host              $host;
+            proxy_set_header   X-Real-IP         $remote_addr;
+            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+        }
+
+        # The frontend's own liveness route, also under /api. The container
+        # healthcheck reaches it directly on :3000 and so never noticed that
+        # through this proxy it was answering from the backend.
+        location = /api/ping {
+            proxy_pass         http://$frontend_upstream;
+            proxy_http_version 1.1;
+            proxy_set_header   Host              $host;
+            proxy_set_header   X-Real-IP         $remote_addr;
+            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+        }
+
         # Backend API — proxied directly so browser-initiated requests work
         # (Next.js client components use relative /api/* URLs which land here)
+        #
+        # Anything the frontend serves under /api must be matched ABOVE this
+        # block. apps/frontend/src/lib/apiRoutes.test.ts enumerates them from
+        # the frontend build and fails if one is missing here.
         location /api/ {
             proxy_pass         http://$backend_upstream;
             proxy_http_version 1.1;

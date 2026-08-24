@@ -940,11 +940,35 @@ containers (\code{apps/backend/Dockerfile} and
 \textbf{Rationale:}
 Separating concerns at the container boundary gives each part its own
 deployment, scaling, and environment-variable scope. The frontend never
-holds database credentials; the backend never renders HTML. Nginx
-(or any reverse proxy) routes \code{/api/*} to port 3001 and all other
-paths to port 3000. At the anticipated load (tens of users, hundreds
-of orders per month), this split adds minimal operational overhead
-while making the security boundary explicit.
+holds database credentials; the backend never renders HTML. At the
+anticipated load (tens of users, hundreds of orders per month), this
+split adds minimal operational overhead while making the security
+boundary explicit.
+
+\textbf{Routing is not simply \code{/api/*}.} Both halves are Next.js
+applications and both serve routes under \code{/api}. A reverse proxy that
+sends all of \code{/api/*} to port 3001 breaks sign-in, because these paths
+belong to the \emph{frontend} on port 3000:
+
+\begin{itemize}
+  \item \code{/api/auth/*} --- NextAuth's own endpoints (\code{csrf},
+        \code{session}, \code{callback/credentials}, \code{signin}, \ldots)
+  \item \code{/api/login-challenge} --- step one of the two-step sign-in
+  \item \code{/api/ping} --- the frontend's liveness route
+\end{itemize}
+
+\noindent
+The one exception inside that range is \code{/api/auth/callback}, Entra ID's
+OAuth callback, which is the \emph{backend's} and must be matched exactly so it
+takes priority over the \code{/api/auth} prefix. Everything else under
+\code{/api} goes to port 3001, and every other path to port 3000.
+
+Getting this wrong produces a 404 that is easy to misattribute, since both
+applications answer with \code{X-Powered-By: Next.js}; the giveaway is that a
+reply from the backend also carries its CORS headers. \code{ingress.yaml} and
+\code{infra/docker-host/nginx.conf.example} both encode the split, and
+\code{apps/frontend/src/lib/apiRoutes.test.ts} fails if either falls behind the
+frontend's actual routes.
 
 \section{OpenTofu over Terraform}
 
@@ -1610,6 +1634,8 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 \end{figure}
 
 Nginx routes \code{/api/*} and \code{/api/webhooks/*} to the backend
+--- except the frontend's own \code{/api/auth}, \code{/api/login-challenge}
+and \code{/api/ping} (see section on the two-container split) ---
 container (port 3001) and all other paths to the frontend (port 3000).
 
 \subsection*{Step-by-Step Deployment Procedure}

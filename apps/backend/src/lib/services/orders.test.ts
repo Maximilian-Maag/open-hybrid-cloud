@@ -1133,3 +1133,59 @@ describe('createOrder — delegation in the approval-request email', () => {
     expect(subCall?.[4]).toEqual([])
   })
 })
+
+/**
+ * Issue #208. The orders table has had a Project column all along, reading a
+ * field on the shared `Order` type that neither projection ever selected — so the
+ * cell was blank and the detail page fell back to `#12`.
+ *
+ * These assert on the NAME rather than on the query succeeding, which is the
+ * whole point: every existing test passed with the field permanently undefined.
+ */
+describe('the project name (#208)', () => {
+  it('is on the list', async () => {
+    const { admin, pm, product, env, project } = await buildBase()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+
+    const result = await listOrders(makeSession(admin))
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      const row = result.data.find((o) => o.id === order.id)
+      expect(row?.projectName).toBe(project.name)
+    }
+  })
+
+  it('is on the detail', async () => {
+    const { admin, pm, product, env, project } = await buildBase()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+
+    const result = await getOrderById(makeSession(admin), order.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.projectName).toBe(project.name)
+  })
+
+  it('is a name, not the id it used to fall back to', async () => {
+    const { admin, pm, product, env, project } = await buildBase()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+
+    const result = await getOrderById(makeSession(admin), order.id)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.projectName).not.toBeUndefined()
+      expect(result.data.projectName).not.toBe(`#${project.id}`)
+    }
+  })
+
+  it('reaches a project manager looking at their own order', async () => {
+    // The join must not depend on being an admin: the list is filtered by owner
+    // for a project manager, and the name has to survive that.
+    const { pm, product, env, project } = await buildBase()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id)
+
+    const result = await listOrders(makeSession(pm))
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.find((o) => o.id === order.id)?.projectName).toBe(project.name)
+    }
+  })
+})

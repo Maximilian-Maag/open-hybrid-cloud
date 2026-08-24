@@ -144,7 +144,7 @@ export const deleteProject = async (
 
   // fire destroy webhooks for all active infra elements
   const activeInfra = await db
-    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters, sequence: infrastructureElements.sequence, sizeCode: infrastructureElements.sizeCode })
+    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters, sequence: infrastructureElements.sequence, sizeCode: infrastructureElements.sizeCode, stateKeyNamespace: infrastructureElements.stateKeyNamespace })
     .from(infrastructureElements)
     .where(and(eq(infrastructureElements.projectId, projectId), eq(infrastructureElements.status, 'active')))
 

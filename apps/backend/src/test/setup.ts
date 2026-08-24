@@ -358,6 +358,9 @@ beforeAll(async () => {
     -- Migration 0020: the element's own size, and which of the order's N it is.
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS size_code TEXT;
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS sequence INT NOT NULL DEFAULT 1;
+    -- Migration 0028: what namespaces the element's Terraform state key. NULL is
+    -- "provisioned before issue #183", so no default here either.
+    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS state_key_namespace TEXT;
     CREATE TABLE IF NOT EXISTS audit_log (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT,

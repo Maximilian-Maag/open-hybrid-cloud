@@ -61,6 +61,36 @@ function ingressFrontendPaths(): string[] {
   return [...list[1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
 }
 
+/**
+ * Entra ID's OAuth callback. It is the BACKEND's, and it sits inside the
+ * frontend's NextAuth prefix, so it survives only as an exact match that
+ * outranks `/api/auth`. Nothing else in this file would notice it going the
+ * wrong way: every other assertion here checks that frontend paths reach the
+ * frontend, and this one reaching the frontend breaks SSO silently.
+ */
+const BACKEND_INSIDE_FRONTEND_PREFIX = '/api/auth/callback'
+
+/** Paths the Helm ingress sends to the BACKEND by an exact match. */
+function ingressExactBackendPaths(): string[] {
+  const src = readFileSync(INGRESS, 'utf8')
+  const found: string[] = []
+  // `- path: X` … `pathType: Exact` … `backend.fullname`
+  for (const m of src.matchAll(/- path: (\S+)\n\s*pathType: Exact\n[\s\S]{0,200}?fullname" \$ \}\}/g)) {
+    if (m[0].includes('backend.fullname')) found.push(m[1])
+  }
+  return found
+}
+
+/** Paths nginx.conf.example proxies to the backend by an exact match. */
+function nginxExactBackendPaths(): string[] {
+  const src = readFileSync(NGINX, 'utf8')
+  const found: string[] = []
+  for (const m of src.matchAll(/location\s+=\s+(\/\S*)\s*\{([\s\S]*?)\n {8}\}/g)) {
+    if (m[2].includes('$backend_upstream')) found.push(m[1])
+  }
+  return found
+}
+
 /** Paths nginx.conf.example proxies to the frontend upstream. */
 function nginxFrontendPaths(): string[] {
   const src = readFileSync(NGINX, 'utf8')
@@ -96,13 +126,38 @@ describe('the proxy configs know which /api routes are the frontend’s', () => 
     expect(covered).toBe(true)
   })
 
+  it.each([
+    ['the Helm ingress', ingressExactBackendPaths],
+    ['nginx.conf.example', nginxExactBackendPaths],
+  ])('%s keeps /api/auth/callback on the backend', (_name, exactBackendPaths) => {
+    // The inverse of every assertion above, and the one that fails silently:
+    // remove the exact-match block and `/api/auth/callback` is swallowed by the
+    // `/api/auth` frontend prefix, Entra ID's OAuth callback lands on a Next.js
+    // app that does not serve it, and SSO breaks while this whole file still
+    // passes.
+    expect(exactBackendPaths()).toContain(BACKEND_INSIDE_FRONTEND_PREFIX)
+  })
+
   it('the frontend’s middleware exempts exactly these paths from auth', () => {
-    // The middleware matcher is the other copy of this list, and the one that
-    // decides whether an unauthenticated request even reaches the route. If it
-    // and the file tree disagree, one of them is wrong.
+    // Runs the real matcher rather than searching the source for a substring:
+    // these paths appear in that file's comments too, so a `toContain` check
+    // passes even if the matcher itself stops exempting them.
     const mw = readFileSync(path.join(REPO_ROOT, 'apps/frontend/src/middleware.ts'), 'utf8')
+    const matcher = /matcher: \[[\s\S]*?'(\/\(\(\?![\s\S]*?)',/.exec(mw)
+    if (!matcher) throw new Error('could not find the middleware matcher in middleware.ts')
+    // The matcher is a string literal in source, so its escapes are doubled.
+    const guard = new RegExp(`^${matcher[1].replace(/\\\\/g, '\\')}$`)
+
+    // Exempt: the middleware must NOT claim these, or an unauthenticated caller
+    // is redirected to /login and sign-in dies before it reaches the backend.
     for (const p of served) {
-      expect(mw).toContain(p.slice(1)) // 'api/login-challenge', …
+      expect(guard.test(p), `${p} is not exempt from the middleware`).toBe(false)
+    }
+
+    // Not exempt: a path the frontend does not serve must still be protected,
+    // so the assertion above cannot pass by the matcher exempting everything.
+    for (const p of ['/api/not-a-frontend-route', '/costs', '/admin/users']) {
+      expect(guard.test(p), `${p} should be protected`).toBe(true)
     }
   })
 })

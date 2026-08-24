@@ -1634,9 +1634,13 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 \end{figure}
 
 Nginx routes \code{/api/*} and \code{/api/webhooks/*} to the backend
---- except the frontend's own \code{/api/auth}, \code{/api/login-challenge}
-and \code{/api/ping} (see section on the two-container split) ---
-container (port 3001) and all other paths to the frontend (port 3000).
+container (port 3001), and all other paths to the frontend (port 3000).
+The exceptions are the frontend's own \code{/api/auth},
+\code{/api/login-challenge} and \code{/api/ping}, which go to the frontend
+(see section on the two-container split). \code{/api/auth/callback} is the
+exception to that exception: it is Entra ID's callback, it belongs to the
+backend, and it is matched exactly so that it outranks the \code{/api/auth}
+prefix.
 
 \subsection*{Step-by-Step Deployment Procedure}
 

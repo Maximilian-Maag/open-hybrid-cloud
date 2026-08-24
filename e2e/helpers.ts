@@ -100,6 +100,14 @@ export const totpStepOf = (at = Date.now()): number => Math.floor(at / 1000 / 30
  *
  * Costs up to thirty seconds, and only when it is actually needed.
  */
+/**
+ * The last step this process presented a code for.
+ *
+ * Per worker, which is all it can be — Playwright workers are separate processes.
+ * The retry in `completeSecondFactor` is what covers the gap between them.
+ */
+let lastSpentStep = -1
+
 export async function waitForTotpStepAfter(step: number): Promise<void> {
   while (totpStepOf() <= step) {
     await new Promise((resolve) => setTimeout(resolve, 1_000))
@@ -151,13 +159,27 @@ export async function completeSecondFactor(page: Page): Promise<boolean> {
         '(`make test-db`) so the bootstrap starts clean, or clear its user_totp row.',
     )
   }
+  // Wait for a step this process has not already spent, BEFORE filling.
+  //
+  // Reactive retry was not enough: a rejected code costs a failed submit plus up
+  // to thirty seconds of waiting, and Playwright's default test timeout is
+  // thirty. auth.setup spends two codes of its own, and every fresh sign-in after
+  // it lands in the same window — so the first attempt was usually the spent one
+  // and the test died mid-wait with a code field on screen and no error, which
+  // reads like the form is broken.
+  //
+  // Proactive turns that into one wait and one submit. The retry below stays for
+  // the case this cannot see: a parallel worker spending the step from under us.
+  await waitForTotpStepAfter(lastSpentStep)
+
   // Up to three steps, because the code has to be one this account has not spent.
   // Codes are single-use and the suite runs in parallel workers, so a step can be
   // spent by another worker — or by the enrolment that just confirmed one — with
   // no way to know from here except being refused. Retrying on the next step is
   // the only answer that does not depend on guessing who spent what.
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     const step = totpStepOf()
+    lastSpentStep = step
     await codeField.fill(totpCode(secret))
     await page.getByRole('button', { name: /^sign in$/i }).click()
 

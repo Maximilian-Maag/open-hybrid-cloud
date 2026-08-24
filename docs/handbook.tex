@@ -2100,11 +2100,11 @@ definition against the live database and applies the diff.
 \section{Mandatory Two-Factor Authentication for Administrators}
 \label{sec:root-2fa}
 
-Administrator accounts sign in with a local password and hold enough privilege to
-change what the portal does, so they are the accounts no identity provider
-protects. They are given a second factor: standard TOTP (RFC~6238, SHA-1,
-30-second window, six digits), compatible with Google Authenticator, Authy,
-Bitwarden and 1Password.
+\emph{Local} administrator accounts — those signing in with a password rather than
+through Entra ID — hold enough privilege to change what the portal does, and are
+the accounts no identity provider protects. They are given a second factor:
+standard TOTP (RFC~6238, SHA-1, 30-second window, six digits), compatible with
+Google Authenticator, Authy, Bitwarden and 1Password.
 
 It is \emph{required} and it covers both administrative roles, Root and Admin.
 The enforcement point is \code{requireAuth}: an administrative session with no
@@ -2123,10 +2123,17 @@ cached on the session row. That is what makes both directions work: the gate
 lifts the moment enrolment is confirmed, without a fresh sign-in, and closes
 again the moment an operator clears the row by hand.
 
-Project Manager accounts are excluded — it is the end-user role, and every
-two-factor endpoint answers 403 for it, enforced in the service layer rather than
-per route. Accounts that authenticate through Microsoft Entra ID are covered by
-its MFA instead.
+Two kinds of account are excluded, and the first exclusion is load-bearing. An
+Entra ID account promoted to Admin or Root has no local password:
+\code{loadTwoFactorAccount} refuses to enrol it, so
+\code{secondFactorOutstanding} must not require a factor of it either. A gate an
+account can never satisfy is a lockout, not a policy — it would be refused every
+route and refused the one screen that could lift the refusal. Its MFA is the
+identity provider's.
+
+Project Manager accounts are excluded for the ordinary reason: it is the end-user
+role, and every two-factor endpoint answers 403 for it, enforced in the service
+layer rather than per route.
 
 Setup lives under \textbf{Settings → My Profile → Two-factor authentication};
 the end-user steps are in \file{docs/guides/root.md}. What matters at the

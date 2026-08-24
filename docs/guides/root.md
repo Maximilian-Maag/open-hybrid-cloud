@@ -412,22 +412,28 @@ If the current password is incorrect or the confirmation does not match, the cha
 
 ### 10.2 Two-Factor Authentication
 
-Administrator accounts hold a local password and enough privilege to change what
-the portal does, so they are protected with a second factor: a six-digit code
-from an authenticator app (Google Authenticator, Authy, Bitwarden, 1Password —
-anything that supports standard TOTP).
+**Local** administrator accounts — the ones that sign in with a password rather
+than through Microsoft Entra ID — hold enough privilege to change what the portal
+does, so they are protected with a second factor: a six-digit code from an
+authenticator app (Google Authenticator, Authy, Bitwarden, 1Password — anything
+that supports standard TOTP).
 
 It is **required**, not optional, and it applies to both administrative roles —
-**Root and Admin**. An administrator with no authenticator can sign in, and then
-do nothing else: every part of the portal except the enrolment card answers
+**Root and Admin**. A local administrator with no authenticator can sign in, and
+then do nothing else: every part of the portal except the enrolment card answers
 "two-factor authentication is required", and the app sends them straight to
 Settings until they have one. Signing them in is deliberate — enrolling needs a
 working session, and refusing the sign-in would be a lockout with no way out.
 
-Project Manager accounts are not covered: it is the end-user role, it holds no
-administrative authority, and the server refuses every two-factor endpoint for
-it. Accounts that sign in through Microsoft Entra ID are covered by its MFA
-instead, and the server says so rather than offering enrolment.
+Two kinds of account are outside this:
+
+* **SSO administrators.** An Entra ID account promoted to Admin or Root has no
+  local password, so there is nothing to re-authenticate an enrolment with and
+  its MFA is the identity provider's job. The server refuses enrolment for it and
+  — importantly — does not require one either. Requiring a factor it could never
+  enrol would be a lockout rather than a policy.
+* **Project Managers.** The end-user role holds no administrative authority, and
+  the server refuses every two-factor endpoint for it.
 
 **Setting it up**
 

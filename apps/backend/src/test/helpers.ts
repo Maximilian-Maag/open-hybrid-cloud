@@ -50,6 +50,31 @@ export const createProduct = async (categoryId: number, name = 'Test Product') =
   return product
 }
 
+/**
+ * A picture in a product's gallery (`product_images`, migration 0021).
+ *
+ * `data` defaults to a real PNG signature so a test that only cares about
+ * ordering or descriptions does not have to invent bytes, and the serving route's
+ * content-type assertions still have something honest to read.
+ */
+export const createProductImage = async (
+  productId: number,
+  overrides?: { position?: number; data?: Buffer; mime?: string; alt?: string },
+) => {
+  const [image] = await db
+    .insert(schema.productImages)
+    .values({
+      productId,
+      position: overrides?.position ?? 0,
+      data: overrides?.data ?? Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      mime: overrides?.mime ?? 'image/png',
+      alt: overrides?.alt ?? 'A test product picture',
+    })
+    .returning()
+
+  return image
+}
+
 export const createCiSource = async (overrides?: { name?: string; url?: string }) => {
   const [src] = await db
     .insert(schema.ciSources)

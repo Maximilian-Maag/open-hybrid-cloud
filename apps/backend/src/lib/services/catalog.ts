@@ -1,10 +1,15 @@
 import { db } from '@/lib/db/client'
-import { products, productEnvironments, deploymentEnvironments, costCenters, parameters, type Parameter } from '@/lib/db/schema'
+import { products, productImages, productEnvironments, deploymentEnvironments, costCenters, parameters, type Parameter } from '@/lib/db/schema'
 import { eq, or, and, isNull, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { withoutSensitiveDefaults } from '@/lib/services/parameterRedaction'
 import { safeImageContentType } from '@/lib/services/imageUpload'
 import { listActiveSizesForProduct } from '@/lib/services/sizes'
+// The gallery payload is the shared API type, not a local twin of it. This module
+// declared its own identical `ProductImageMeta`, and admin/products.ts imported
+// that one while the frontend's ProductGallery imported the package's — two
+// definitions of one wire format, free to drift apart unnoticed.
+import type { ProductImageMeta } from '@open-hybrid-cloud/types'
 
 /**
  * Load the parameter definitions that apply to a product in a given
@@ -90,6 +95,31 @@ export const resolveParameterDefsPerEnvironment = (rows: Parameter[]): Parameter
   return [...byEnvironment.values()].flatMap((group) => resolveParameterDefs(group))
 }
 
+/**
+ * The description of the picture a product leads with.
+ *
+ * `products.image_alt` was a column until 0021 moved the pictures into
+ * `product_images`; every caller that renders a thumbnail still wants exactly one
+ * alt text, so it is read from the first gallery image. Ordered by (position, id)
+ * like every other read of that table, so "first" means the same thing here as it
+ * does in the gallery.
+ */
+/*
+ * The outer reference is written out rather than interpolated as `${products.id}`.
+ * When this constant is a select field of a query whose FROM table is `products`,
+ * drizzle renders that column unqualified as `"id"` — which then resolves in the
+ * INNER scope to `product_images.id`, making the subquery
+ * `WHERE product_images.product_id = product_images.id`: uncorrelated, and NULL
+ * for almost every row. It renders qualified when `products` is a JOINED table
+ * (cart.ts, favorites.ts), which is why only the catalogue reads were wrong.
+ */
+export const primaryImageAltSql = sql<string | null>`(
+  SELECT alt FROM product_images
+  WHERE product_id = ${sql.raw('"products"."id"')}
+  ORDER BY position, id
+  LIMIT 1
+)`
+
 export interface CatalogItem {
   id: number
   categoryId: number
@@ -104,6 +134,13 @@ export interface CatalogItem {
 export interface ProductDetail extends CatalogItem {
   environments: unknown[]
   parameters: unknown[]
+  /** The gallery, in order. Empty on a product with no picture. */
+  images: ProductImageMeta[]
+  /** The product story. Empty string when nobody wrote one — the page then shows only `description`. */
+  longDescription: string
+  /** Who runs it, and where its documentation is. Null when unset (issue #107). */
+  owner: string | null
+  docsUrl: string | null
 }
 
 /** Page size when the caller does not ask for one — a full grid on the catalogue page. */
@@ -194,7 +231,7 @@ export const listCatalog = async (
       createdAt: products.createdAt,
       // Carried with the product so every component that renders the picture uses
       // the description its uploader wrote, instead of inventing one.
-      imageAlt: products.imageAlt,
+      imageAlt: primaryImageAltSql,
       name: nameSql,
       description: descriptionSql,
     })
@@ -233,7 +270,9 @@ export const getProduct = async (
       createdAt: products.createdAt,
       // Carried with the product so every component that renders the picture uses
       // the description its uploader wrote, instead of inventing one.
-      imageAlt: products.imageAlt,
+      imageAlt: primaryImageAltSql,
+      owner: products.owner,
+      docsUrl: products.docsUrl,
       name: sql<string>`COALESCE(
         (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
         (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
@@ -244,6 +283,22 @@ export const getProduct = async (
         (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
         (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
         (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
+        ''
+      )`,
+      // Same fallback chain as the short description, with one difference: the
+      // last arm is '' rather than "any translation", because an untranslated
+      // long text is a wall of the wrong language, and the page simply omits the
+      // section when it is empty.
+      //
+      // NULLIF on every arm, because `long_description` is NOT NULL DEFAULT '':
+      // COALESCE('', 'the English text') is '', so without this the fallback fired
+      // only when the translation ROW was missing entirely. A language that has a
+      // row but an empty long text — which is what the demo seed creates for de —
+      // showed no story at all. Measured against Postgres, not assumed.
+      longDescription: sql<string>`COALESCE(
+        NULLIF((SELECT long_description FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}), ''),
+        NULLIF((SELECT long_description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'), ''),
+        NULLIF((SELECT long_description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'), ''),
         ''
       )`,
     })
@@ -315,35 +370,87 @@ export const getProduct = async (
     sizes: sizesByEnvironment.get(env.environmentId) ?? [],
   }))
 
+  const imageRows = await listProductImageMeta(productId)
+
   return ok({
     ...product,
     environments,
     parameters: withoutSensitiveDefaults(resolved),
+    images: imageRows,
   } as ProductDetail)
 }
 
-export const getProductImage = async (
-  productId: number,
-): Promise<Result<{ data: Buffer; mime: string; alt: string | null } | null>> => {
-  const rows = await db
-    .select({ image: products.image, imageMime: products.imageMime, imageAlt: products.imageAlt })
-    .from(products)
-    .where(eq(products.id, productId))
+/**
+ * The gallery's metadata — ids and descriptions, no bytes.
+ *
+ * Carried on the product detail so the page can render the whole gallery from one
+ * request; the bytes come one at a time from the image routes, which is what makes
+ * them cacheable.
+ */
+export const listProductImageMeta = async (productId: number): Promise<ProductImageMeta[]> =>
+  db
+    .select({ id: productImages.id, alt: productImages.alt })
+    .from(productImages)
+    .where(eq(productImages.productId, productId))
+    .orderBy(productImages.position, productImages.id)
+
+export interface ServedImage {
+  data: Buffer
+  mime: string
+  alt: string
+}
+
+/**
+ * The picture a product leads with — the first of its gallery.
+ *
+ * Still its own endpoint after #107 because that is what a tile, a cart row and a
+ * favourites card want: one picture, at a URL they can build from the product id
+ * alone. It is a view of `product_images`, not a second copy of it.
+ */
+export const getProductImage = async (productId: number): Promise<Result<ServedImage | null>> => {
+  const [row] = await db
+    .select({ data: productImages.data, mime: productImages.mime, alt: productImages.alt })
+    .from(productImages)
+    .where(eq(productImages.productId, productId))
+    .orderBy(productImages.position, productImages.id)
     .limit(1)
 
-  if (!rows.length) return err(404, 'Product not found')
-  if (!rows[0].image) return ok(null)
+  if (!row) {
+    // A product that exists but has no picture is not a 404 on the product — the
+    // caller renders a placeholder for the one and an error for the other.
+    const [product] = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, productId))
+      .limit(1)
+    return product ? ok(null) : err(404, 'Product not found')
+  }
 
-  // Rows written before the mime type was recorded fall back to PNG, which is
-  // what this route claimed for every image regardless of what it was.
-  //
-  // Then clamped to an allowed image type on the way out as well as on the way in:
-  // a row written before the upload path sniffed the bytes can still hold whatever
-  // type its uploader declared, and this blob is echoed straight back as a
-  // Content-Type. Anything unrecognised becomes an opaque download.
-  return ok({
-    data: rows[0].image,
-    mime: safeImageContentType(rows[0].imageMime ?? 'image/png'),
-    alt: rows[0].imageAlt,
-  })
+  // Clamped on the way out as well as on the way in: migration 0021 carried the
+  // legacy `products.image_mime` into this column verbatim, so a row written
+  // before the upload path sniffed the bytes can still hold whatever type its
+  // uploader declared — and this blob is echoed straight back as a Content-Type.
+  // Anything unrecognised becomes an opaque download.
+  return ok({ ...row, mime: safeImageContentType(row.mime) })
+}
+
+/**
+ * One specific picture of a product's gallery.
+ *
+ * Scoped by product id as well as image id so a URL cannot be walked across
+ * products, and so a stale gallery URL from another product 404s instead of
+ * serving the wrong picture.
+ */
+export const getProductImageById = async (
+  productId: number,
+  imageId: number,
+): Promise<Result<ServedImage>> => {
+  const [row] = await db
+    .select({ data: productImages.data, mime: productImages.mime, alt: productImages.alt })
+    .from(productImages)
+    .where(and(eq(productImages.productId, productId), eq(productImages.id, imageId)))
+    .limit(1)
+
+  if (!row) return err(404, 'Image not found')
+  return ok({ ...row, mime: safeImageContentType(row.mime) })
 }

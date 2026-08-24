@@ -2,6 +2,7 @@ import { db } from '@/lib/db/client'
 import { countWhere } from '@/lib/db/queries'
 import {
   products,
+  productImages,
   productTranslations,
   productEnvironments,
   productWebhooks,
@@ -19,6 +20,7 @@ import {
   type ProductWebhook,
   type Parameter,
 } from '@/lib/db/schema'
+import type { ProductImageMeta } from '@open-hybrid-cloud/types'
 import { count, eq, sql, and, inArray, isNull } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
@@ -45,6 +47,9 @@ export interface ProductAdminRow {
   categoryName: string | null
   name: string
   description: string
+  /** Trust content shown on the product page (issue #107); null when unset. */
+  owner: string | null
+  docsUrl: string | null
 }
 
 export interface CreateProductInput {
@@ -59,6 +64,9 @@ export interface UpdateProductInput {
   baseLanguage?: string
   name?: string
   description?: string
+  /** Empty string clears it — the admin form has no other way to say "nobody". */
+  owner?: string | null
+  docsUrl?: string | null
   /** Optional free text describing the change (issue #38). */
   changelog?: string
   /** Recorded as the version's author. */
@@ -110,6 +118,8 @@ export interface UpdateWebhookInput {
 export interface UpsertTranslationInput {
   name: string
   description?: string
+  /** The long text the detail page shows (issue #107). Omitted leaves it unchanged. */
+  longDescription?: string
 }
 
 const adminProductSelect = {
@@ -118,6 +128,8 @@ const adminProductSelect = {
   baseLanguage: products.baseLanguage,
   createdAt: products.createdAt,
   categoryName: categories.name,
+  owner: products.owner,
+  docsUrl: products.docsUrl,
   name: sql<string>`(
     SELECT name FROM product_translations
     WHERE product_id = ${products.id} AND language_code = 'en'
@@ -226,6 +238,25 @@ export const updateProduct = async (
     return err(400, EMPTY_UPDATE_MESSAGE)
   }
 
+  if (productFields.docsUrl !== undefined && productFields.docsUrl !== null) {
+    const trimmed = productFields.docsUrl.trim()
+    // Empty clears it; anything else has to be a link a browser will follow
+    // safely, because the product page renders it as an href. `javascript:` and
+    // `data:` URLs in an href are script execution, and an operator is not the
+    // only person who can end up editing this field.
+    if (trimmed === '') {
+      productFields.docsUrl = null
+    } else if (!/^https?:\/\//i.test(trimmed)) {
+      return err(400, 'The documentation link must start with http:// or https://')
+    } else {
+      productFields.docsUrl = trimmed
+    }
+  }
+  if (productFields.owner !== undefined && productFields.owner !== null) {
+    const trimmed = productFields.owner.trim()
+    productFields.owner = trimmed === '' ? null : trimmed
+  }
+
   const existing = await db
     .select({ id: products.id, baseLanguage: products.baseLanguage })
     .from(products)
@@ -296,6 +327,8 @@ const describeProductChange = (input: UpdateProductInput): string => {
   if (input.description !== undefined) changed.push('description')
   if (input.categoryId !== undefined) changed.push('category')
   if (input.baseLanguage !== undefined) changed.push('base language')
+  if (input.owner !== undefined) changed.push('owner')
+  if (input.docsUrl !== undefined) changed.push('documentation link')
   return changed.length > 0 ? `Product updated: ${changed.join(', ')}` : 'Product updated'
 }
 
@@ -455,12 +488,17 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
 /** Longest useful alt text; beyond this it is a description, not a label. */
 export const MAX_IMAGE_ALT_LENGTH = 300
 
-export const updateProductImage = async (
-  id: number,
-  buffer: Buffer,
-  alt: string,
-  actorId?: number,
-): Promise<Result<{ mime: string }>> => {
+/**
+ * How many pictures one product may have.
+ *
+ * A cap rather than none: every gallery image is bytea in the same row set the
+ * catalogue reads, the detail page carries all of their descriptions in its
+ * payload, and a thumbnail strip stops being navigable long before a hundred.
+ */
+export const MAX_IMAGES_PER_PRODUCT = 8
+
+/** Validate an image description the way #105 requires it. */
+const cleanAlt = (alt: string): Result<string> => {
   // Required, not optional: an empty alt is a claim that the picture carries no
   // information, and only the person uploading it can make that claim. Every
   // component that renders it used to decide for itself — the catalogue tile and
@@ -470,6 +508,49 @@ export const updateProductImage = async (
   if (description.length > MAX_IMAGE_ALT_LENGTH) {
     return err(400, `The image description must be at most ${MAX_IMAGE_ALT_LENGTH} characters`)
   }
+  return ok(description)
+}
+
+/** The gallery as the admin UI lists it: order, ids and descriptions, no bytes. */
+export const listProductImages = async (
+  productId: number,
+): Promise<Result<(ProductImageMeta & { position: number; mime: string })[]>> => {
+  const [product] = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1)
+  if (!product) return err(404, 'Product not found')
+
+  const rows = await db
+    .select({
+      id: productImages.id,
+      alt: productImages.alt,
+      position: productImages.position,
+      mime: productImages.mime,
+    })
+    .from(productImages)
+    .where(eq(productImages.productId, productId))
+    .orderBy(productImages.position, productImages.id)
+
+  return ok(rows)
+}
+
+/**
+ * Append a picture to a product's gallery.
+ *
+ * Appends rather than replaces, which is the whole point of #107: the single
+ * `PUT .../image` this replaced could only ever overwrite, so a product could
+ * never have a second picture.
+ */
+export const addProductImage = async (
+  productId: number,
+  buffer: Buffer,
+  alt: string,
+  actorId?: number,
+): Promise<Result<{ id: number; mime: string; position: number }>> => {
+  const described = cleanAlt(alt)
+  if (!described.ok) return described
 
   if (buffer.length === 0) return err(400, 'The uploaded file is empty')
   if (buffer.length > MAX_IMAGE_BYTES) {
@@ -481,62 +562,208 @@ export const updateProductImage = async (
     return err(415, `Unsupported image type — allowed: ${ALLOWED_IMAGE_MIMES.join(', ')}`)
   }
 
-  const updated = await db
-    .update(products)
-    .set({ image: buffer, imageMime: mime, imageAlt: description })
-    .where(eq(products.id, id))
-    .returning({ id: products.id })
+  // The cap check, the next position and the INSERT run in one transaction under a
+  // FOR UPDATE lock on the product row, so concurrent uploads to the same gallery
+  // queue instead of both reading the same COUNT/MAX. Without it two uploads to a
+  // product at the cap minus one both saw room and both took the same position,
+  // leaving nine images and two of them claiming to be position 8.
+  //
+  // A lock rather than the conditional single-statement write used elsewhere in
+  // this codebase (the TOTP guards, the delegation revoke): a conditional write
+  // serialises because the row it claims already exists and Postgres re-evaluates
+  // the predicate against the updated row. Here the write is an INSERT and the
+  // invariant spans a *set* of rows, which no row-level predicate can guard — even
+  // `INSERT ... SELECT ... HAVING COUNT(*) < n` reads its snapshot before either
+  // writer is visible to the other.
+  return db.transaction(async (tx): Promise<Result<{ id: number; mime: string; position: number }>> => {
+    const [product] = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, productId))
+      .for('update')
+      .limit(1)
+    // Checked explicitly: an INSERT with a bad FK raises a driver error, which the
+    // route would report as a 500 rather than "no such product".
+    if (!product) return err(404, 'Product not found')
 
-  // Previously this silently reported success for a product id that does not
-  // exist, because an UPDATE matching no rows is not an error.
-  if (updated.length === 0) return err(404, 'Product not found')
+    const [counted] = await tx
+      .select({
+        count: sql<number>`COUNT(*)::int`,
+        maxPosition: sql<number | null>`MAX(${productImages.position})`,
+      })
+      .from(productImages)
+      .where(eq(productImages.productId, productId))
 
-  await logAudit(actorId ?? null, 'product.image_updated', id, `Image replaced (${mime}, ${buffer.length} bytes)`)
+    if (counted.count >= MAX_IMAGES_PER_PRODUCT) {
+      return err(409, `A product may have at most ${MAX_IMAGES_PER_PRODUCT} images`)
+    }
 
-  return ok({ mime })
+    const position = counted.maxPosition === null ? 0 : counted.maxPosition + 1
+
+    const [row] = await tx
+      .insert(productImages)
+      .values({ productId, position, data: buffer, mime, alt: described.data })
+      .returning({ id: productImages.id })
+
+    // Through `tx`, like every other write in here: an entry written on the pool
+    // would survive a rollback and claim an upload that never landed. The
+    // description itself stays out of the entry — the audit log records which
+    // picture was added, not what an operator typed about it.
+    await logAuditWith(
+      tx,
+      actorId ?? null,
+      'product.image_added',
+      productId,
+      `Image #${row.id} added at position ${position} (${mime}, ${buffer.length} bytes)`,
+    )
+
+    return ok({ id: row.id, mime, position })
+  })
 }
 
+/** Change one picture's description without re-uploading it. */
 export const updateProductImageAlt = async (
-  id: number,
+  productId: number,
+  imageId: number,
   alt: string,
   actorId?: number,
 ): Promise<Result<void>> => {
-  const description = alt.trim()
-  if (description === '') return err(400, 'An image description is required')
-  if (description.length > MAX_IMAGE_ALT_LENGTH) {
-    return err(400, `The image description must be at most ${MAX_IMAGE_ALT_LENGTH} characters`)
-  }
+  const described = cleanAlt(alt)
+  if (!described.ok) return described
 
-  const [row] = await db
-    .select({ hasImage: products.image })
-    .from(products)
-    .where(eq(products.id, id))
-    .limit(1)
+  const updated = await db
+    .update(productImages)
+    .set({ alt: described.data })
+    .where(and(eq(productImages.id, imageId), eq(productImages.productId, productId)))
+    .returning({ id: productImages.id })
 
-  if (!row) return err(404, 'Product not found')
-  // Describing a picture that is not there would leave a description behind for
-  // whatever is uploaded next.
-  if (!row.hasImage) return err(409, 'This product has no image to describe')
+  if (updated.length === 0) return err(404, 'Image not found')
 
-  await db.update(products).set({ imageAlt: description }).where(eq(products.id, id))
-
-  await logAudit(actorId ?? null, 'product.image_alt_updated', id, 'Image description changed')
+  // The new description is not in the entry: names, not values (see `logAudit`).
+  await logAudit(actorId ?? null, 'product.image_alt_updated', productId, `Image #${imageId}: description changed`)
 
   return ok(undefined)
 }
 
-export const deleteProductImage = async (id: number, actorId?: number): Promise<Result<void>> => {
-  const updated = await db
-    .update(products)
-    .set({ image: null, imageMime: null, imageAlt: null })
-    .where(eq(products.id, id))
-    .returning({ id: products.id })
+/**
+ * Remove one picture and close the gap it leaves.
+ *
+ * Positions are re-packed so they stay dense: a reorder sends the ids it wants in
+ * the order it wants them, and a hole would make "position 3" mean two different
+ * things to the two operations.
+ */
+export const deleteProductImage = async (
+  productId: number,
+  imageId: number,
+  actorId?: number,
+): Promise<Result<void>> => {
+  return db.transaction(async (tx): Promise<Result<void>> => {
+    // The same product-row lock `addProductImage` takes, for the same reason: at
+    // READ COMMITTED a concurrent gallery mutation is invisible until it commits,
+    // so a re-pack computed from this snapshot can write positions that were
+    // already stale when it read them. Locking one row serialises every gallery
+    // mutation for that product and nothing else.
+    const [locked] = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, productId))
+      .for('update')
+      .limit(1)
+    if (!locked) return err(404, 'Product not found')
 
-  if (updated.length === 0) return err(404, 'Product not found')
+    const deleted = await tx
+      .delete(productImages)
+      .where(and(eq(productImages.id, imageId), eq(productImages.productId, productId)))
+      .returning({ id: productImages.id })
 
-  await logAudit(actorId ?? null, 'product.image_deleted', id, 'Image removed')
+    if (deleted.length === 0) return err(404, 'Image not found')
 
-  return ok(undefined)
+    const remaining = await tx
+      .select({ id: productImages.id })
+      .from(productImages)
+      .where(eq(productImages.productId, productId))
+      .orderBy(productImages.position, productImages.id)
+
+    for (const [index, row] of remaining.entries()) {
+      await tx.update(productImages).set({ position: index }).where(eq(productImages.id, row.id))
+    }
+
+    // Inside the transaction that re-packs the positions, so the entry cannot
+    // outlive a rollback. Position 0 is the picture the catalogue leads with, so
+    // deleting it promotes the next one — worth saying in the entry, because that
+    // is a visible change to a product nobody explicitly asked for.
+    await logAuditWith(
+      tx,
+      actorId ?? null,
+      'product.image_deleted',
+      productId,
+      `Image #${imageId} removed, ${remaining.length} image(s) left`,
+    )
+
+    return ok(undefined)
+  })
+}
+
+/**
+ * Put a product's gallery into the given order.
+ *
+ * The caller sends every image id exactly once, not a partial list: a reorder of a
+ * subset has no single correct interpretation, and refusing it here means the
+ * admin UI cannot half-apply one from a gallery it loaded before somebody else
+ * added a picture.
+ */
+export const reorderProductImages = async (
+  productId: number,
+  order: number[],
+  actorId?: number,
+): Promise<Result<void>> => {
+  return db.transaction(async (tx): Promise<Result<void>> => {
+    // The same product-row lock `addProductImage` takes, for the same reason: at
+    // READ COMMITTED a concurrent gallery mutation is invisible until it commits,
+    // so a re-pack computed from this snapshot can write positions that were
+    // already stale when it read them. Locking one row serialises every gallery
+    // mutation for that product and nothing else. It also answers the question an
+    // empty gallery cannot: no rows means either an unknown product or a real one
+    // with no pictures, and those owe different answers.
+    const [locked] = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.id, productId))
+      .for('update')
+      .limit(1)
+    if (!locked) return err(404, 'Product not found')
+
+    const rows = await tx
+      .select({ id: productImages.id })
+      .from(productImages)
+      .where(eq(productImages.productId, productId))
+
+    const known = new Set(rows.map((row) => row.id))
+    const requested = new Set(order)
+
+    if (requested.size !== order.length) {
+      return err(400, 'The new order repeats an image')
+    }
+    if (requested.size !== known.size || [...requested].some((id) => !known.has(id))) {
+      return err(400, 'The new order must list every image of this product exactly once')
+    }
+
+    for (const [index, id] of order.entries()) {
+      await tx.update(productImages).set({ position: index }).where(eq(productImages.id, id))
+    }
+
+    // Written through `tx` with the position updates: a refused reorder rolls the
+    // whole thing back, and an entry claiming one would be a lie.
+    await logAuditWith(
+      tx,
+      actorId ?? null,
+      'product.images_reordered',
+      productId,
+      `Gallery reordered (${order.length} image(s))`,
+    )
+
+    return ok(undefined)
+  })
 }
 
 export const translateProductById = async (
@@ -600,6 +827,15 @@ export const upsertTranslation = async (
   input: UpsertTranslationInput,
   actorId?: number,
 ): Promise<Result<ProductTranslation>> => {
+  // Only the fields the caller actually sent are overwritten: the AI translator
+  // and the admin form both write name+description without knowing about the long
+  // text, and an absent key must not blank out prose somebody wrote by hand.
+  const set: Partial<{ name: string; description: string; longDescription: string }> = {
+    name: input.name,
+    description: input.description ?? '',
+  }
+  if (input.longDescription !== undefined) set.longDescription = input.longDescription
+
   const [row] = await db
     .insert(productTranslations)
     .values({
@@ -607,10 +843,11 @@ export const upsertTranslation = async (
       languageCode: lang,
       name: input.name,
       description: input.description ?? '',
+      longDescription: input.longDescription ?? '',
     })
     .onConflictDoUpdate({
       target: [productTranslations.productId, productTranslations.languageCode],
-      set: { name: input.name, description: input.description ?? '' },
+      set,
     })
     .returning()
 

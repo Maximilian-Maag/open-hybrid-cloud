@@ -37,6 +37,7 @@ const TABLES = [
   schema.productEnvironments,
   schema.parameters,
   schema.productTranslations,
+  schema.productImages,
   schema.products,
   schema.categories,
   // Before deployment_environments: integrations.environment_id references it.
@@ -109,13 +110,30 @@ beforeAll(async () => {
       id BIGSERIAL PRIMARY KEY,
       category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
       base_language TEXT NOT NULL DEFAULT 'de',
-      image BYTEA,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS image_mime TEXT;
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS image_alt TEXT;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS owner TEXT;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS docs_url TEXT;
     -- Migration 0017: a product that has been ordered is retired, not deleted.
     ALTER TABLE products ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ;
+    -- Migration 0021 moved the single picture into product_images and dropped
+    -- these. Dropped here too rather than simply left out of the CREATE above: a
+    -- reused test database still has them, and a stale NOT NULL-free column is
+    -- exactly the second source of truth 0021 exists to remove.
+    ALTER TABLE products DROP COLUMN IF EXISTS image;
+    ALTER TABLE products DROP COLUMN IF EXISTS image_mime;
+    ALTER TABLE products DROP COLUMN IF EXISTS image_alt;
+    CREATE TABLE IF NOT EXISTS product_images (
+      id BIGSERIAL PRIMARY KEY,
+      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      position INT NOT NULL DEFAULT 0,
+      data BYTEA NOT NULL,
+      mime TEXT NOT NULL,
+      alt TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS product_images_product_position_idx
+      ON product_images (product_id, position);
     CREATE TABLE IF NOT EXISTS product_translations (
       product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       language_code TEXT NOT NULL,
@@ -123,6 +141,8 @@ beforeAll(async () => {
       description TEXT NOT NULL DEFAULT '',
       PRIMARY KEY (product_id, language_code)
     );
+    ALTER TABLE product_translations
+      ADD COLUMN IF NOT EXISTS long_description TEXT NOT NULL DEFAULT '';
     CREATE TABLE IF NOT EXISTS parameters (
       id BIGSERIAL PRIMARY KEY,
       scope TEXT NOT NULL CHECK (scope IN ('global','category','product')),
@@ -338,7 +358,7 @@ beforeAll(async () => {
     -- Migration 0020: the element's own size, and which of the order's N it is.
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS size_code TEXT;
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS sequence INT NOT NULL DEFAULT 1;
-    -- Migration 0026: what namespaces the element's Terraform state key. NULL is
+    -- Migration 0028: what namespaces the element's Terraform state key. NULL is
     -- "provisioned before issue #183", so no default here either.
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS state_key_namespace TEXT;
     CREATE TABLE IF NOT EXISTS audit_log (

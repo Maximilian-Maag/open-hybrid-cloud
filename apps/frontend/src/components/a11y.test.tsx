@@ -29,6 +29,9 @@ import { ParameterFields } from './forms/ParameterFields'
 import { FavoriteButton } from '@/app/(dashboard)/catalog/FavoriteButton'
 import { DelegationPanel } from '@/app/(dashboard)/approvals/DelegationPanel'
 import { ActiveSessions } from './forms/ActiveSessions'
+import userEvent from '@testing-library/user-event'
+import { ProductGallery } from './ui/ProductGallery'
+import { ProductSpecs } from './ui/ProductSpecs'
 
 /**
  * Component-level accessibility checks (issue #102).
@@ -721,5 +724,69 @@ describe('ParameterFields', () => {
     )
     expect(await axeOn(container)).toHaveNoViolations()
     expect(screen.getByLabelText('tf_var_region')).toBeInTheDocument()
+  })
+})
+
+describe('ProductGallery', () => {
+  const images = [
+    { id: 11, alt: 'The front of the gateway' },
+    { id: 12, alt: 'The gateway dashboard' },
+  ]
+
+  it('is accessible with a gallery, with one picture, and with none', async () => {
+    // The three states that differ structurally: thumbnails and a stepper, a
+    // single picture with neither, and the placeholder.
+    expect(await check(<ProductGallery productId={1} images={images} lang="en" />)).toHaveNoViolations()
+    expect(await check(<ProductGallery productId={1} images={[images[0]]} lang="en" />)).toHaveNoViolations()
+    expect(await check(<ProductGallery productId={1} images={[]} lang="en" />)).toHaveNoViolations()
+  })
+
+  it('is accessible with the zoom open', async () => {
+    const { container } = render(<ProductGallery productId={1} images={images} lang="en" />)
+    await userEvent.click(screen.getByRole('button', { name: /enlarge image/i }))
+
+    const results = (await axe(container, {
+      rules: {
+        region: { enabled: false },
+        'landmark-one-main': { enabled: false },
+        'page-has-heading-one': { enabled: false },
+        'color-contrast': { enabled: false },
+      },
+    })) as AxeResults
+    expect(results).toHaveNoViolations()
+  })
+})
+
+describe('ProductSpecs', () => {
+  const parameter = {
+    id: 1,
+    scope: 'product' as const,
+    scopeId: 1,
+    environmentId: null,
+    name: 'hostname',
+    label: 'Hostname',
+    type: 'string' as const,
+    description: 'Sent as TF_VAR_hostname',
+    defaultValue: 'web-01',
+    required: true,
+    sensitive: false,
+  }
+
+  it('is accessible as a specification table', async () => {
+    expect(await check(<ProductSpecs parameters={[parameter]} lang="en" />)).toHaveNoViolations()
+  })
+
+  it('is accessible with a sensitive parameter and an optional one', async () => {
+    expect(
+      await check(
+        <ProductSpecs
+          parameters={[
+            { ...parameter, sensitive: true, name: 'token', label: 'API token' },
+            { ...parameter, required: false, name: 'zone', label: 'Zone', defaultValue: '' },
+          ]}
+          lang="en"
+        />,
+      ),
+    ).toHaveNoViolations()
   })
 })

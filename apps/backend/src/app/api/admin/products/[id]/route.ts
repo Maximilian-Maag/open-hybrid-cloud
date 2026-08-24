@@ -9,6 +9,11 @@ const UpdateProductSchema = z.object({
   baseLanguage: z.string().optional(),
   name: z.string().min(1).optional(),
   description: z.string().optional(),
+  // Trust content for the product page (issue #107). Nullable as well as
+  // optional: the admin form has to be able to clear a field, and "absent" has to
+  // keep meaning "leave it alone".
+  owner: z.string().max(200).nullable().optional(),
+  docsUrl: z.string().max(2000).nullable().optional(),
   // Optional free text describing the change (issue #38).
   changelog: z.string().max(2000).optional(),
 })

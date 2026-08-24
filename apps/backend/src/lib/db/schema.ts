@@ -147,17 +147,14 @@ export const products = pgTable('products', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   categoryId: bigint('category_id', { mode: 'number' }).notNull().references(() => categories.id, { onDelete: 'cascade' }),
   baseLanguage: text('base_language').notNull().default('de'),
-  image: bytea('image'),
-  /** MIME type of `image`. Null on rows written before it was recorded. */
-  imageMime: text('image_mime'),
   /**
-   * What the picture shows, for the `alt` attribute (WCAG 1.1.1).
-   *
-   * Required whenever `image` is set — enforced in the service, because the column
-   * cannot express "not null only when another column is not null" without a table
-   * constraint that would break the legacy rows the migration backfills.
+   * Who runs this product, as a shopper would name them — a team, usually, which
+   * is why this is free text and not a reference to `users`. Null when nobody has
+   * said; the product page then leaves the row out rather than guessing.
    */
-  imageAlt: text('image_alt'),
+  owner: text(),
+  /** Link to the product's documentation. Validated as http(s) in the service. */
+  docsUrl: text('docs_url'),
   /**
    * When the product was retired from the catalogue, or null while it is live.
    *
@@ -173,11 +170,43 @@ export const products = pgTable('products', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+/**
+ * A product's pictures, in gallery order (issue #107).
+ *
+ * This replaced the single `image`/`image_mime`/`image_alt` triple on `products`;
+ * migration 0021 moved the existing picture here as position 0 and dropped the
+ * columns, so this table is the only place a product picture lives.
+ */
+export const productImages = pgTable('product_images', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
+  /** 0-based gallery order. Reads order by (position, id) — see 0021 for why it is not unique. */
+  position: integer().notNull().default(0),
+  data: bytea('data').notNull(),
+  mime: text().notNull(),
+  /**
+   * What the picture shows, for the `alt` attribute (WCAG 1.1.1).
+   *
+   * NOT NULL because a row here only exists when there is an image (#105). The
+   * service additionally rejects a blank or whitespace-only description, which the
+   * column cannot express.
+   */
+  alt: text().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const productTranslations = pgTable('product_translations', {
   productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
   languageCode: text('language_code').notNull(),
   name: text().notNull(),
+  /** The short one, shown on the catalogue tile and in search. */
   description: text().notNull().default(''),
+  /**
+   * The product story, shown only on the detail page (issue #107). Separate from
+   * `description` because that one has to stay short enough for a card, which left
+   * no room to explain what the thing actually is.
+   */
+  longDescription: text('long_description').notNull().default(''),
 }, (t) => [primaryKey({ columns: [t.productId, t.languageCode] })])
 
 export const parameters = pgTable('parameters', {
@@ -662,6 +691,7 @@ export type UserRecoveryCode = typeof userRecoveryCodes.$inferSelect
 export type Category = typeof categories.$inferSelect
 export type Product = typeof products.$inferSelect
 export type ProductTranslation = typeof productTranslations.$inferSelect
+export type ProductImageRow = typeof productImages.$inferSelect
 export type Parameter = typeof parameters.$inferSelect
 export type CiSource = typeof ciSources.$inferSelect
 export type Integration = typeof integrations.$inferSelect

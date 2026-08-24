@@ -120,15 +120,28 @@ Under **Administration → Products → New**:
 - Select a **category**
 - Enter **name** and **description** in the base language
 - Upload an **image** (PNG, JPEG or WebP, max 10 MB) — optional, and addable later
-  on the product's edit page under **Product Image**
+  on the product's edit page under **Product Images**
 
   The type is determined from the file's own bytes, not from what the browser
   declares, and SVG is refused: it can carry script and this file is served back to
   every visitor of the product page.
 
+  A picture uploaded here becomes the **first** of the product's gallery. Add the
+  rest on the edit page: up to eight per product, each with its own description,
+  and the order you put them in is the order the product page shows them — the
+  first one is what the catalogue tile, the cart row and the favourites card use.
+- Optionally name an **owner** (the team that runs the product) and a
+  **documentation link** (`http://` or `https://`). Both appear under
+  *Good to know* on the product page, and each is simply left out when empty.
+
 **Step 2 – Translations**
 - If an AI provider is configured: click **Generate AI Translation**
 - AI translates name and description into all enabled languages
+- Every translation also has a **long description** — the product story, shown only
+  on the product page while the short description stays on the catalogue tile.
+  Blank lines start a new paragraph; markup is not rendered. The AI translator
+  writes name and description only, so a long description is written by hand and is
+  never overwritten by it
 - Individual translations can be edited manually
 - Review all translations before saving
 

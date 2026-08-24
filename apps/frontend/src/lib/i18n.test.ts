@@ -95,7 +95,13 @@ describe('i18n', () => {
     'placeholderImageAltExample', 'describeBeforeUpload',
     'imageDescriptionRequiredError', 'uploadFailed', 'couldNotSaveDescription',
     'couldNotRemoveImage', 'imageUploaded', 'descriptionSaved', 'imageRemoved',
-    'fileTooLargePrefix', 'addCiSource', 'noCiSourcesYet', 'url', 'provider',
+    'fileTooLargePrefix',
+    // Gallery manager (#107). The control was still English-only after the
+    // admin area was translated (#100), so these join the same guard.
+    'couldNotLoadGallery', 'couldNotReorderGallery', 'imageOrderSaved',
+    'noPicturesYet', 'imageDescriptionLeading', 'moveUp', 'moveDown',
+    'maxPicturesPerProduct', 'removeOneToAddAnother',
+    'addCiSource', 'noCiSourcesYet', 'url', 'provider',
     'accessToken', 'accessTokenKeepLabel', 'editCiSource', 'deleteCiSourceTitle',
     'failedToLoadCiSources', 'addUser', 'noUsersYet', 'createButton', 'editUser',
     'deleteUserTitle', 'deleteUserPrompt', 'failedToLoadUsers', 'userCreatedToast',

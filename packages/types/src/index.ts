@@ -220,9 +220,30 @@ export interface Product {
   imageAlt?: string | null
 }
 
+/** One picture of a product's gallery; the bytes come from the image routes. */
+export interface ProductImageMeta {
+  id: number
+  /**
+   * What the picture shows. Never blank — the column is NOT NULL and the upload
+   * endpoint refuses an empty one (#105), so a gallery thumbnail always has a real
+   * accessible name.
+   */
+  alt: string
+}
+
 export interface ProductDetail extends Product {
   environments: ProductEnvironment[]
   parameters: Parameter[]
+  /** The gallery, in order. Empty on a product with no picture (issue #107). */
+  images: ProductImageMeta[]
+  /**
+   * The long product story, shown only on the detail page. Empty string when
+   * nobody wrote one; `description` stays the short text the tile uses.
+   */
+  longDescription: string
+  /** Who runs it, and where its documentation is. Null when unset. */
+  owner: string | null
+  docsUrl: string | null
 }
 
 export interface CreateProductRequest {
@@ -237,6 +258,10 @@ export interface UpdateProductRequest {
   baseLanguage?: string
   name?: string
   description?: string
+  /** Null or empty clears it (issue #107). */
+  owner?: string | null
+  /** Must start with http:// or https://; null or empty clears it. */
+  docsUrl?: string | null
   /** Optional free text describing the change, recorded in the history (issue #38). */
   changelog?: string
 }
@@ -245,7 +270,10 @@ export interface ProductTranslation {
   productId: number
   languageCode: string
   name: string
+  /** The short text, shown on the catalogue tile and in search. */
   description: string
+  /** The long text the detail page shows (issue #107); '' when unwritten. */
+  longDescription: string
 }
 
 // Parameters

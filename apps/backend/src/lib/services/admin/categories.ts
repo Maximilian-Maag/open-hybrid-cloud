@@ -121,6 +121,9 @@ export const deleteCategory = async (id: number, actorId?: number): Promise<Resu
       parameters: infrastructureElements.parameters,
       sequence: infrastructureElements.sequence,
       sizeCode: infrastructureElements.sizeCode,
+      // Required, not optional, so a projection that forgets it fails to compile
+      // rather than reading NULL and silently destroying nothing (#183).
+      stateKeyNamespace: infrastructureElements.stateKeyNamespace,
     })
     .from(infrastructureElements)
     .innerJoin(products, eq(infrastructureElements.productId, products.id))

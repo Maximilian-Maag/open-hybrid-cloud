@@ -265,7 +265,7 @@ describe('TF_STATE_NAME per element (issue #104)', () => {
   it('namespaces the stateKeyParam value with the order id', async () => {
     const { product, env } = await seedStack('hostname')
 
-    await triggerPipelineStacks(product.id, env.id, {
+    await triggerPipelineStacksTracked(product.id, env.id, {
       hostname: 'web-01',
       ORDER_ID: '42',
       ELEMENT_SEQUENCE: '1',
@@ -278,7 +278,7 @@ describe('TF_STATE_NAME per element (issue #104)', () => {
   it('gives two orders that typed the same hostname different states', async () => {
     const { product, env } = await seedStack('hostname')
 
-    await triggerPipelineStacks(product.id, env.id, {
+    await triggerPipelineStacksTracked(product.id, env.id, {
       hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: '42',
     })
     const first = stateNameOf()
@@ -287,7 +287,7 @@ describe('TF_STATE_NAME per element (issue #104)', () => {
     // A different user, same product, same value typed into the same field. This
     // pipeline used to point at the state the first one created — and destroying
     // this element then destroyed the first user's infrastructure.
-    await triggerPipelineStacks(product.id, env.id, {
+    await triggerPipelineStacksTracked(product.id, env.id, {
       hostname: 'web-01', ORDER_ID: '43', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: '43',
     })
 
@@ -298,7 +298,7 @@ describe('TF_STATE_NAME per element (issue #104)', () => {
   it('strips what a state key may not contain from the typed value', async () => {
     const { product, env } = await seedStack('hostname')
 
-    await triggerPipelineStacks(product.id, env.id, {
+    await triggerPipelineStacksTracked(product.id, env.id, {
       hostname: '../../other/state',
       ORDER_ID: '42',
       ELEMENT_SEQUENCE: '1',
@@ -313,7 +313,7 @@ describe('TF_STATE_NAME per element (issue #104)', () => {
   it('still suffixes a namespaced key per element', async () => {
     const { product, env } = await seedStack('hostname')
 
-    await triggerPipelineStacks(product.id, env.id, {
+    await triggerPipelineStacksTracked(product.id, env.id, {
       hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '3', TF_STATE_NAMESPACE: '42',
     })
 
@@ -326,7 +326,7 @@ describe('TF_STATE_NAME per element (issue #104)', () => {
     // No TF_STATE_NAMESPACE: the element predates #183, and its Terraform state
     // exists under the raw value. Re-deriving it would point the teardown at a
     // state that was never created.
-    await triggerPipelineStacks(product.id, env.id, {
+    await triggerPipelineStacksTracked(product.id, env.id, {
       hostname: 'web-01',
       ORDER_ID: '42',
       ELEMENT_SEQUENCE: '2',

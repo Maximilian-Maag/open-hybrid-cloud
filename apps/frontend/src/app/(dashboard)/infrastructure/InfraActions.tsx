@@ -96,10 +96,7 @@ export function InfraActions({ item, token, lang = 'en', canRetry = false }: Pro
     `/catalog/${item.productId}?fromInfra=${item.id}&projectId=${item.projectId}`
 
   return (
-    // Four buttons whose labels are full sentences in several languages. Measured
-    // at 375px they ran 209 → 531, so Decommission was off the screen on every
-    // card; wrapping is the only thing that fits them without abbreviating (#168).
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex items-center gap-2">
       {/* An <a> painted like a button, not an <a> wrapping one — see ButtonLink
           for why no gate catches that wrap. The classes were copied out of Button
           by hand here until ButtonLink existed. */}

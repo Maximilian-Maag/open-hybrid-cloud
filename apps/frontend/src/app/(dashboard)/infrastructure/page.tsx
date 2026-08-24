@@ -157,11 +157,8 @@ function InfraRow({
   const deploymentFailed = item.orderStatus === 'failed'
   return (
     <div className="rounded-lg border border-slate-200 p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        {/* min-w-0: without it the metadata line's longest word sets a floor the
-            row cannot shrink past, which is the same `min-width: auto` trap the
-            header search was in. */}
-        <div className="flex-1 min-w-0">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
           <div className="flex items-center gap-3 mb-1">
             {/* The row's own heading is the way in: the outputs, parameters and
                 pipeline runs are on the detail page, not in this list. */}

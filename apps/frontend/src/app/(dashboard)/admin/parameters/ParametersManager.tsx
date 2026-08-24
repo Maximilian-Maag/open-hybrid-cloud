@@ -165,7 +165,7 @@ export function ParametersManager({ token }: Props) {
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('addParameter', lang)} size="md">
         <form onSubmit={handleAdd} className="space-y-4">
           {formError && <Alert>{formError}</Alert>}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Input label={t('variableName', lang)} value={form.name} onChange={(e) => setField('name', e.target.value)} required hint={t('variableNameHint', lang)} />
             <Input label={t('displayLabel', lang)} value={form.label} onChange={(e) => setField('label', e.target.value)} hint={t('displayLabelHint', lang)} />
           </div>
@@ -194,7 +194,7 @@ export function ParametersManager({ token }: Props) {
       <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={t('editParameter', lang)} size="md">
         <form onSubmit={handleEdit} className="space-y-4">
           {formError && <Alert>{formError}</Alert>}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Input label={t('variableName', lang)} value={form.name} onChange={(e) => setField('name', e.target.value)} required hint={t('variableNameHint', lang)} />
             <Input label={t('displayLabel', lang)} value={form.label} onChange={(e) => setField('label', e.target.value)} hint={t('displayLabelHint', lang)} />
           </div>

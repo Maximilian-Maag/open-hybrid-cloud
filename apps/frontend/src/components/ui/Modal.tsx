@@ -15,24 +15,11 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
-/**
- * Every size is clamped to the viewport as well as to its nominal width.
- *
- * A <dialog> is laid out in the top layer, where `w-full` means the containing
- * block, not the screen — so none of these four used to fit a phone. The default
- * `md` measured 448px on a 375px viewport and rendered at x=111, shearing the
- * field labels off the left edge and running 184px past the right. That is 11
- * call sites, which is where most of this app's forms live (#167).
- *
- * `min()` rather than a second `max-w-*` utility: two max-width classes on one
- * element are decided by the order Tailwind emits them, not by the order they are
- * written in, so the clamp would be a coin flip.
- */
 const sizeClass: Record<string, string> = {
-  sm: 'max-w-[min(24rem,calc(100vw-2rem))]',
-  md: 'max-w-[min(28rem,calc(100vw-2rem))]',
-  lg: 'max-w-[min(32rem,calc(100vw-2rem))]',
-  xl: 'max-w-[min(42rem,calc(100vw-2rem))]',
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-2xl',
 }
 
 export function Modal({ open, onClose, title, ariaLabel, children, size = 'md', lang }: ModalProps) {

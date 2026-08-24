@@ -481,7 +481,7 @@ export function ProductEditForm({ product, categories, environments, translation
         <form onSubmit={handleSaveBasic} className="space-y-4">
           {error && <Alert>{error}</Alert>}
           {success && <Alert tone="success">Saved.</Alert>}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Select label="Category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required
               options={categories.map((c) => ({ value: c.id, label: c.name }))} />
             <Select label="Base Language" value={baseLanguage} onChange={(e) => setBaseLanguage(e.target.value)}
@@ -596,12 +596,9 @@ export function ProductEditForm({ product, categories, environments, translation
         ) : (
           <div className="space-y-2">
             {productParams.map((p) => (
-              <div key={p.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-slate-100 px-4 py-3">
-                <div className="min-w-0">
-                  {/* Name + variable name + type + two chips is a 384px line with
-                      nothing to break it, and the Edit/Delete cluster beside it
-                      measured 442 → 560 at 375px (#168). */}
-                  <div className="flex flex-wrap items-center gap-2 mb-0.5">
+              <div key={p.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
                     <p className="font-medium text-slate-900">{p.label || p.name}</p>
                     <span className="font-mono text-xs text-slate-600">{p.name}</span>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{p.type}</span>
@@ -614,7 +611,7 @@ export function ProductEditForm({ product, categories, environments, translation
                   {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
                   {p.defaultValue && <p className="text-xs text-slate-600 font-mono">default: {p.defaultValue}</p>}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEditParamModal(p)}>Edit</Button>
                   <Button size="sm" variant="danger" onClick={() => handleDeleteParam(p.id)}>Delete</Button>
                 </div>
@@ -697,7 +694,7 @@ export function ProductEditForm({ product, categories, environments, translation
       <Modal open={stackModal} onClose={() => setStackModal(false)} title={editStack ? 'Edit Pipeline Stack' : 'Add Pipeline Stack'} size="lg">
         <form onSubmit={handleSaveStack} className="space-y-4">
           {psError && <Alert>{psError}</Alert>}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Input label="Name" value={psName} onChange={(e) => setPsName(e.target.value)} required />
             <Select label="Environment" required={!editStack} value={psEnvId} onChange={(e) => setPsEnvId(e.target.value)}
               placeholder="Select environment…" options={environments.map((e) => ({ value: e.id, label: e.name }))}
@@ -723,7 +720,7 @@ export function ProductEditForm({ product, categories, environments, translation
                   <span className="text-xs font-medium text-slate-500">Step {i + 1}</span>
                   <Button type="button" size="sm" variant="danger" onClick={() => removeStep(i)}>Remove</Button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <Input label="Template" placeholder="linode/virtual-machine" value={step.template}
                     onChange={(e) => updateStep(i, 'template', e.target.value)} required
                     hint="Path under templates/ in your infra-templates repo" />
@@ -805,7 +802,7 @@ export function ProductEditForm({ product, categories, environments, translation
       <Modal open={paramModal} onClose={() => setParamModal(false)} title={editParam ? 'Edit Parameter' : 'Add Parameter'} size="md">
         <form onSubmit={handleSaveParam} className="space-y-4">
           {paramError && <Alert>{paramError}</Alert>}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Input label="Variable Name" value={paramForm.name} onChange={(e) => setParamForm((f) => ({ ...f, name: e.target.value }))} required
               hint="Terraform variable name — sent as TF_VAR_name" />
             <Input label="Display Label" value={paramForm.label} onChange={(e) => setParamForm((f) => ({ ...f, label: e.target.value }))}

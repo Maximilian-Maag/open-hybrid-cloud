@@ -172,15 +172,12 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-start gap-4">
+      <div className="flex items-start gap-4">
         <div className="h-32 w-32 shrink-0 rounded border border-slate-200 p-1">
           <ProductImage productId={productId} alt="" version={version} />
         </div>
 
-        {/* min-w-0 plus max-w-full on the input: a native file input reports a
-            min-content width of its own (273px measured here), and 2.5.5's
-            user-agent exception means it cannot be restyled away. */}
-        <div className="min-w-0 space-y-2">
+        <div className="space-y-2">
           {/* A file input with no label is an unlabelled control — the browser's
               "Choose file" text is not a name. */}
           <label htmlFor={`product-image-${productId}`} className="block text-sm font-medium text-slate-700">
@@ -196,7 +193,7 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
               const file = e.target.files?.[0]
               if (file) upload(file)
             }}
-            className="block max-w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
+            className="block text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50"
           />
           <p className="text-xs text-slate-500">{t('imageFormatHintPlain', lang)}</p>
           <Button size="sm" variant="secondary" onClick={remove} disabled={busy}>

@@ -607,6 +607,17 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   // becomes 'decommissioned' once EVERY id in pipeline_id succeeded.
   pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   outputs: jsonb().$type<Record<string, string>>().notNull().default({}),
+  /**
+   * Why `outputs` is empty, when something went wrong reading them (#215).
+   *
+   * NULL means nothing went wrong: either the outputs were recorded, or the
+   * element has not settled yet. Cleared on every successful read, so a fixed
+   * token and a re-run leave no stale complaint behind.
+   *
+   * Written for an operator to read on the element page. The log line keeps the
+   * detail that does not belong there — the pipeline id, the underlying error.
+   */
+  outputsError: text('outputs_error'),
   deployedAt: timestamp('deployed_at', { withTimezone: true }).defaultNow(),
   // When set, the element is torn down automatically at or after this instant
   // (issue #30). Temporary environments — test, demo, PoC — are otherwise

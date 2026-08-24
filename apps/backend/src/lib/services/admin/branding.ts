@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { logAudit, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
+import { brandColorRejection, isAcceptableBrandColor } from '@open-hybrid-cloud/types'
 import {
   ALLOWED_IMAGE_MIMES,
   MAX_IMAGE_BYTES,
@@ -60,6 +61,34 @@ export const getBranding = async (): Promise<Result<BrandingConfig>> => {
   return ok(rows[0] as BrandingConfig)
 }
 
+/**
+ * The colours an operator may store, checked HERE rather than only in the form.
+ *
+ * The portal chrome is painted on these two values and the text on it is one of
+ * two fixed inks, so a mid-tone choice cannot reach the 7:1 that WCAG 1.4.6 asks
+ * for whichever ink is picked (`#ca8a04` tops out at 6.05:1). The gate now
+ * enforces 1.4.6 on every page, which means an unusable colour in this table is
+ * a red CI run for everyone — and the branding form is a convenience, not the
+ * contract. A direct `PUT /api/admin/branding` has to be refused too.
+ *
+ * The rejection names the nearest shade of the same hue that would be accepted,
+ * because an operator's brand colour is usually a constant they cannot change and
+ * "invalid" on its own leaves them nowhere to go. See `brandColor.ts` in
+ * `@open-hybrid-cloud/types` for the band and the arithmetic.
+ */
+const rejectUnusableColors = (input: UpdateBrandingInput): string | null => {
+  for (const [field, label] of [
+    ['primaryColor', 'Primary color'],
+    ['secondaryColor', 'Secondary color'],
+  ] as const) {
+    const value = input[field]
+    // `undefined` means "not being changed"; only a supplied value is judged.
+    if (value === undefined) continue
+    if (!isAcceptableBrandColor(value)) return brandColorRejection(label, value)
+  }
+  return null
+}
+
 export const updateBranding = async (
   input: UpdateBrandingInput,
   actorId?: number,
@@ -67,6 +96,9 @@ export const updateBranding = async (
   // `onConflictDoUpdate({ set: {} })` hits the same "No values to set" as a bare
   // `.set({})`, and every field of this schema is optional.
   if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
+
+  const unusable = rejectUnusableColors(input)
+  if (unusable) return err(400, unusable)
 
   const [updated] = await db
     .insert(branding)

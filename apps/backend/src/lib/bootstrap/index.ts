@@ -4,6 +4,7 @@ import { db, client } from '@/lib/db/client'
 import { users, branding } from '@/lib/db/schema'
 import bcrypt from 'bcryptjs'
 import { reportConfigProblems } from '@/lib/config/validate'
+import { reconcileBrandingContrast } from './brandingContrast'
 
 // PostgreSQL error codes that mean the object already exists — safe to skip
 // when the DB was seeded via db:push instead of the migration runner.
@@ -79,6 +80,12 @@ export const runBootstrap = async (): Promise<void> => {
     })
     console.warn(`[bootstrap] Default branding created.`)
   }
+
+  // An existing row may predate the WCAG 1.4.6 rule that `updateBranding` now
+  // enforces. Nudge it to the nearest shade of the same hue rather than leaving
+  // a colour the API would refuse and the a11y gate would fail on — and record
+  // the change in the audit log so the operator can see what happened and why.
+  await reconcileBrandingContrast()
 
   const email = process.env.ADMIN_EMAIL
   const password = process.env.ADMIN_PASSWORD

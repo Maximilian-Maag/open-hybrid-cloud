@@ -1,96 +1,42 @@
 /**
  * Contrast helpers for operator-chosen branding colours.
  *
- * The portal lets an operator pick any primary colour, and the header, nav, hero
- * and footer are painted on top of it. Those surfaces used to hardcode white
- * text, which is only legible while the colour stays dark — the shipped default
- * (#131921) passes, a mid-tone like #ca8a04 drops to 1.88:1 against a required
- * 4.5:1. Rather than trusting the operator to pick well, derive the foreground
- * from the chosen background and warn when a pair still cannot reach AA.
+ * The WCAG arithmetic itself — hex parsing, relative luminance, contrast ratio,
+ * the two fixed inks and the AA/AAA thresholds — lives in
+ * `@open-hybrid-cloud/types` and is re-exported here. It moved because the
+ * backend needs the same numbers: a brand colour is now REFUSED when neither ink
+ * can reach 7:1 on it (WCAG 1.4.6), and that rule has to hold at the API, not
+ * only in the form. Two copies of a luminance formula is how the form and the
+ * API end up disagreeing about which colours exist.
  *
- * Ratios follow WCAG 2.1 relative luminance (1.4.3 / 1.4.11).
+ * What stays here is the part only the browser needs: the derived accent colour
+ * and the chart ramp, both of which are about painting the brand ON the app's own
+ * surfaces rather than the other way round.
+ *
+ * Ratios follow WCAG 2.1 relative luminance (1.4.3 / 1.4.6 / 1.4.11).
  */
 
-/** #rgb / #rrggbb → [r, g, b] in 0–255, or null when unparseable. */
-export const parseHex = (hex: string): [number, number, number] | null => {
-  const h = hex.trim().replace(/^#/, '')
-  if (h.length === 3) {
-    const [r, g, b] = h.split('')
-    if (!/^[0-9a-f]{3}$/i.test(h)) return null
-    return [parseInt(r + r, 16), parseInt(g + g, 16), parseInt(b + b, 16)]
-  }
-  if (h.length === 6) {
-    if (!/^[0-9a-f]{6}$/i.test(h)) return null
-    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
-  }
-  return null
-}
+export {
+  parseHex,
+  toCanonicalHex,
+  relativeLuminance,
+  contrastRatio,
+  readableInk,
+  isAcceptableBrandColor,
+  nearestPassingBrandColor,
+  checkBrandColor,
+  DARK_INK,
+  LIGHT_INK,
+  AA_BODY,
+  AA_LARGE,
+  AA_NON_TEXT,
+  AAA_BODY,
+  AAA_LARGE,
+  BRAND_MIN_RATIO,
+} from '@open-hybrid-cloud/types'
+export type { BrandColorCheck } from '@open-hybrid-cloud/types'
 
-/** [r, g, b] → canonical lowercase #rrggbb, which is what <input type="color"> requires. */
-export const toCanonicalHex = (rgb: [number, number, number]): string =>
-  '#' + rgb.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('')
-
-/** WCAG relative luminance, 0 (black) – 1 (white). */
-export const relativeLuminance = (rgb: [number, number, number]): number => {
-  const [r, g, b] = rgb.map((v) => {
-    const s = v / 255
-    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
-  })
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
-
-/** Contrast ratio between two hex colours, 1–21. Returns 1 if either is unparseable. */
-export const contrastRatio = (a: string, b: string): number => {
-  const ca = parseHex(a)
-  const cb = parseHex(b)
-  if (!ca || !cb) return 1
-  const la = relativeLuminance(ca)
-  const lb = relativeLuminance(cb)
-  const [hi, lo] = la > lb ? [la, lb] : [lb, la]
-  return (hi + 0.05) / (lo + 0.05)
-}
-
-// Near-black rather than pure black: on a mid-tone brand colour it reads as
-// deliberate typography instead of a harsh default, and it still clears AA
-// comfortably wherever pure black would.
-const DARK_INK = '#101827'
-const LIGHT_INK = '#ffffff'
-
-/**
- * Pick the foreground that contrasts best with `background`. Returns the ink
- * plus the ratio achieved, so callers can surface a warning when even the better
- * of the two cannot reach the threshold they need.
- */
-export const readableInk = (background: string): { ink: string; ratio: number } => {
-  const onLight = contrastRatio(background, DARK_INK)
-  const onDark = contrastRatio(background, LIGHT_INK)
-  return onLight >= onDark
-    ? { ink: DARK_INK, ratio: onLight }
-    : { ink: LIGHT_INK, ratio: onDark }
-}
-
-/** AA thresholds: 4.5:1 for body text, 3:1 for large (>=18.66px bold / 24px). */
-export const AA_BODY = 4.5
-export const AA_LARGE = 3
-/** WCAG 1.4.11: a UI component's boundary needs 3:1 against what is next to it. */
-export const AA_NON_TEXT = 3
-
-/**
- * AAA thresholds (1.4.6 Contrast (Enhanced)): 7:1 body, 4.5:1 large text.
- *
- * These only apply to the HALF of the branding problem we can actually move.
- * `readableAccent` derives a new colour, so it can always reach 7:1 — it just
- * darkens further. `readableInk` cannot: it picks between two fixed inks against
- * a background the operator owns, and for a wide band of mid-tones neither ink
- * gets there (#ca8a04 tops out at 6.05:1, #16a34a at 5.39:1). That is why 1.4.6
- * is recorded as out of scope for the branded chrome in docs/guides/accessibility.md
- * rather than enforced in the page gate.
- *
- * There is no enhanced equivalent of 1.4.11, so non-text boundaries stay at
- * AA_NON_TEXT.
- */
-export const AAA_BODY = 7
-export const AAA_LARGE = 4.5
+import { contrastRatio, parseHex, readableInk, relativeLuminance, toCanonicalHex, AA_BODY, AA_NON_TEXT, AAA_BODY } from '@open-hybrid-cloud/types'
 
 /**
  * The reference surface for accent colours used AS text or as a filled control.
@@ -106,17 +52,20 @@ export const SURFACE = '#f1f5f9'
 
 /**
  * Does this background support AA body text with the best available ink?
- * Used by the branding form to warn before an operator saves a colour that
- * would make the portal chrome unreadable.
+ *
+ * Kept as the weaker of the two questions even though the saved-colour rule is
+ * now the AAA one: it is what the AA regression tests are written against, and a
+ * colour that fails this fails 1.4.3 as well as 1.4.6.
  */
 export const meetsAaBody = (background: string): boolean =>
   readableInk(background).ratio >= AA_BODY
 
 /**
- * The same question at the AAA threshold. Not a gate — nothing rejects a colour
- * for failing this — but the branding form says so, because the operator is the
- * only person who can trade their brand for 7:1 and they should know the trade
- * exists.
+ * The same question at the AAA threshold — and, since the owner's decision to
+ * make AAA mandatory, the rule that actually governs what can be saved.
+ * `isAcceptableBrandColor` is the same predicate under the name the validation
+ * uses; this one stays because the branding form asks it about a value the
+ * operator is still typing.
  */
 export const meetsAaaBody = (background: string): boolean =>
   readableInk(background).ratio >= AAA_BODY

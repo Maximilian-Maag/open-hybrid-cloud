@@ -1019,6 +1019,12 @@ export interface AuditFilter {
 }
 
 // Branding
+//
+// The colour rule is shared runtime code, not a type: the admin form and
+// `updateBranding` have to agree on which colours are savable, and a rule the
+// form enforces alone is a suggestion. See ./brandColor.ts for the arithmetic.
+export * from './brandColor'
+
 export interface Branding {
   primaryColor: string
   secondaryColor: string

@@ -14,7 +14,9 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  # write, so the gate can ask Copilot to review when CodeRabbit declines. The
+  # request is best-effort — see the step for why GitHub may refuse it.
+  pull-requests: write
 
 concurrency:
   group: review-gate-${{ github.event.pull_request.number }}
@@ -50,6 +52,43 @@ jobs:
           # `--paginate --jq` emits one value per page, so emit a stream and slurp.
           bot='(.user.type == "Bot" or (.user.login | test("coderabbit|copilot"; "i")))'
 
+          # Where a declined review actually shows up.
+          #
+          # CodeRabbit does NOT post "rate limited" as a pull request review. It
+          # posts it as an ordinary comment in the PR conversation, which this gate
+          # never read — so `skipped` stayed 0, the poll ran the full fifteen
+          # minutes, and the failure said "no automated review appeared" when the
+          # truth was "the reviewer told us it was throttled, in a place we were
+          # not looking". Six PRs failed that way before anyone worked it out.
+          declined_notice() {
+            gh api "repos/$REPO/issues/$PR/comments" --paginate \
+              --jq ".[] | select($bot) | .body" 2>/dev/null \
+              | grep -icE 'rate limited|review skipped|exceed the limit of' || true
+          }
+
+          # Ask Copilot to review, once, when CodeRabbit has declined.
+          #
+          # Best effort, and it may simply not be possible: `copilot-pull-request-
+          # reviewer[bot]` is not a repository collaborator, and REST refuses to
+          # request a review from a non-collaborator ("Reviews may only be
+          # requested from collaborators"). There is no reviewer capability in
+          # `suggestedActors` either. So if this fails, the answer is a repository
+          # setting — Settings → Copilot → Code review → review new pull requests
+          # automatically — not a change to this workflow. Said out loud rather
+          # than retried silently, because a gate that cannot summon a reviewer
+          # should not pretend it is waiting for one.
+          copilot_requested=0
+          request_copilot() {
+            if [ "$copilot_requested" -eq 1 ]; then return 0; fi
+            copilot_requested=1
+            if gh api "repos/$REPO/pulls/$PR/requested_reviewers" -X POST \
+                 -f 'reviewers[]=copilot-pull-request-reviewer[bot]' >/dev/null 2>&1; then
+              echo "::notice::CodeRabbit declined; asked Copilot to review instead."
+            else
+              echo "::warning::CodeRabbit declined and Copilot could not be requested — the reviewer bot is not a collaborator, so a workflow cannot summon it. Enable automatic Copilot code review in the repository settings, or review this diff by hand and approve it."
+            fi
+          }
+
           while :; do
             ok=1
             reviews=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
@@ -68,10 +107,25 @@ jobs:
               substantive=$(echo "$reviews" | jq '[.[] | select((.body | test("review skipped|rate limited|exceed the limit of"; "i")) | not) | select(.body | length > 200)] | length')
               skipped=$(echo "$reviews" | jq '[.[] | select(.body | test("review skipped|rate limited|exceed the limit of"; "i"))] | length')
 
-              if [ "$substantive" -gt 0 ] || [ "$inline" -gt 0 ]; then
+              # A human review satisfies this gate. The failure message has always
+              # told people to "review it by hand and say so", and the gate then
+              # ignored them doing exactly that — which is the kind of instruction
+              # that teaches people the check is broken.
+              human=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+                --jq ".[] | select($bot | not) | select(.commit_id == \"$HEAD_SHA\") | select(.state == \"APPROVED\" or (.body | length > 30)) | .user.login" \
+                2>/dev/null | jq -R -s 'split("\n") | map(select(. != "")) | length') || human=0
+
+              if [ "$substantive" -gt 0 ] || [ "$inline" -gt 0 ] || [ "$human" -gt 0 ]; then
                 echo "$reviews" | jq -r '.[] | "  \(.login): \(.body[0:100] | gsub("\n"; " "))"'
-                echo "::notice::An automated review ran on ${HEAD_SHA:0:8} ($substantive review(s), $inline inline comment(s))."
+                echo "::notice::${HEAD_SHA:0:8} was reviewed ($substantive automated review(s), $inline inline comment(s), $human human review(s))."
                 exit 0
+              fi
+
+              # Nothing has reviewed it yet. If a reviewer has said it declined,
+              # stop hoping and try the other one.
+              if [ "$(declined_notice)" -gt 0 ]; then
+                skipped=1
+                request_copilot
               fi
             fi
 
@@ -84,8 +138,7 @@ jobs:
           done
 
           if [ "$skipped" -gt 0 ]; then
-            echo "$reviews" | jq -r '.[] | "  \(.login): \(.body[0:200] | gsub("\n"; " "))"'
-            echo "::error::A reviewer explicitly skipped this diff (rate limit or file cap) and nothing else reviewed it. Split the PR, wait for the quota, or review it by hand and say so in a comment."
+            echo "::error::A reviewer declined this diff (rate limit or file cap) and nothing else reviewed it. Wait for the quota, split the PR, or approve it yourself — a human review on this commit satisfies this gate."
             exit 1
           fi
 

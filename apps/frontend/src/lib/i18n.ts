@@ -421,6 +421,10 @@ export type Translations = {
   // Admin (#100): Exchange rates
   refreshRates: string
   refreshing: string
+  /** The manual refresh control on pages whose status arrives asynchronously. */
+  refresh: string
+  /** Why that button exists — the status is pushed by CI, not polled. */
+  refreshStatusHint: string
   currency: string
   rateToEur: string
   lastUpdated: string
@@ -999,6 +1003,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Обновяване на курсовете',
     refreshing: 'Обновяване…',
+    refresh: 'Опресняване',
+    refreshStatusHint: 'Статусът на внедряването пристига от CI във фонов режим — опреснете, за да видите какво е постъпило след зареждането на страницата.',
     currency: 'Валута',
     rateToEur: 'Курс (към EUR)',
     lastUpdated: 'Последно обновяване',
@@ -1566,6 +1572,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Obnovit kurzy',
     refreshing: 'Obnovuje se…',
+    refresh: 'Obnovit',
+    refreshStatusHint: 'Stav nasazení hlásí CI na pozadí — obnovením načtete to, co dorazilo od načtení této stránky.',
     currency: 'Měna',
     rateToEur: 'Kurz (na EUR)',
     lastUpdated: 'Poslední aktualizace',
@@ -2133,6 +2141,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Opdater kurser',
     refreshing: 'Opdaterer…',
+    refresh: 'Opdatér',
+    refreshStatusHint: 'Udrulningsstatus kommer fra CI i baggrunden — opdatér for at hente det, der er landet, siden siden blev indlæst.',
     currency: 'Valuta',
     rateToEur: 'Kurs (til EUR)',
     lastUpdated: 'Senest opdateret',
@@ -2700,6 +2710,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Kurse aktualisieren',
     refreshing: 'Wird aktualisiert…',
+    refresh: 'Aktualisieren',
+    refreshStatusHint: 'Der Bereitstellungsstatus wird im Hintergrund von der CI gemeldet — aktualisieren Sie, um zu übernehmen, was seit dem Laden dieser Seite eingegangen ist.',
     currency: 'Währung',
     rateToEur: 'Kurs (zu EUR)',
     lastUpdated: 'Zuletzt aktualisiert',
@@ -3267,6 +3279,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Ανανέωση ισοτιμιών',
     refreshing: 'Ανανέωση…',
+    refresh: 'Ανανέωση',
+    refreshStatusHint: 'Η κατάσταση ανάπτυξης έρχεται από το CI στο παρασκήνιο — ανανεώστε για να δείτε ό,τι έφτασε μετά τη φόρτωση της σελίδας.',
     currency: 'Νόμισμα',
     rateToEur: 'Ισοτιμία (προς EUR)',
     lastUpdated: 'Τελευταία ενημέρωση',
@@ -3834,6 +3848,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Refresh Rates',
     refreshing: 'Refreshing…',
+    refresh: 'Refresh',
+    refreshStatusHint: 'Deployment status arrives from CI in the background — refresh to pick up what has landed since this page loaded.',
     currency: 'Currency',
     rateToEur: 'Rate (to EUR)',
     lastUpdated: 'Last Updated',
@@ -4401,6 +4417,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Actualizar tipos',
     refreshing: 'Actualizando…',
+    refresh: 'Actualizar',
+    refreshStatusHint: 'El estado del despliegue llega de CI en segundo plano; actualice para recoger lo que haya llegado desde que se cargó la página.',
     currency: 'Moneda',
     rateToEur: 'Tipo (a EUR)',
     lastUpdated: 'Última actualización',
@@ -4968,6 +4986,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Värskenda kursse',
     refreshing: 'Värskendamine…',
+    refresh: 'Värskenda',
+    refreshStatusHint: 'Juurutamise olek saabub CI-st taustal — värskendage, et näha seda, mis on saabunud pärast lehe laadimist.',
     currency: 'Valuuta',
     rateToEur: 'Kurss (EUR-i suhtes)',
     lastUpdated: 'Viimati värskendatud',
@@ -5535,6 +5555,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Päivitä kurssit',
     refreshing: 'Päivitetään…',
+    refresh: 'Päivitä',
+    refreshStatusHint: 'Käyttöönoton tila saapuu CI:stä taustalla — päivitä nähdäksesi sen, mikä on saapunut sivun latauksen jälkeen.',
     currency: 'Valuutta',
     rateToEur: 'Kurssi (EUR-valuuttaan)',
     lastUpdated: 'Viimeksi päivitetty',
@@ -6102,6 +6124,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Actualiser les taux',
     refreshing: 'Actualisation…',
+    refresh: 'Actualiser',
+    refreshStatusHint: 'L’état du déploiement arrive de la CI en arrière-plan — actualisez pour récupérer ce qui est arrivé depuis le chargement de la page.',
     currency: 'Devise',
     rateToEur: 'Taux (vers EUR)',
     lastUpdated: 'Dernière mise à jour',
@@ -6669,6 +6693,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Athnuaigh na rátaí',
     refreshing: 'Ag athnuachan…',
+    refresh: 'Athnuaigh',
+    refreshStatusHint: 'Tagann stádas an imlonnaithe ón CI sa chúlra — athnuaigh chun a bhfuil tagtha ó luchtaíodh an leathanach a fháil.',
     currency: 'Airgeadra',
     rateToEur: 'Ráta (go EUR)',
     lastUpdated: 'Nuashonraithe go deireanach',
@@ -7236,6 +7262,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Ažuriraj tečajeve',
     refreshing: 'Ažuriranje…',
+    refresh: 'Osvježi',
+    refreshStatusHint: 'Status implementacije stiže iz CI-ja u pozadini — osvježite da biste vidjeli što je stiglo otkad je stranica učitana.',
     currency: 'Valuta',
     rateToEur: 'Tečaj (u EUR)',
     lastUpdated: 'Posljednje ažuriranje',
@@ -7803,6 +7831,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Árfolyamok frissítése',
     refreshing: 'Frissítés…',
+    refresh: 'Frissítés',
+    refreshStatusHint: 'A telepítés állapota a háttérben érkezik a CI-től — frissítsen, hogy lássa, mi érkezett az oldal betöltése óta.',
     currency: 'Pénznem',
     rateToEur: 'Árfolyam (EUR-ra)',
     lastUpdated: 'Utolsó frissítés',
@@ -8370,6 +8400,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Aggiorna tassi',
     refreshing: 'Aggiornamento…',
+    refresh: 'Aggiorna',
+    refreshStatusHint: 'Lo stato del deployment arriva dalla CI in background: aggiorna per vedere ciò che è arrivato da quando la pagina è stata caricata.',
     currency: 'Valuta',
     rateToEur: 'Tasso (verso EUR)',
     lastUpdated: 'Ultimo aggiornamento',
@@ -8937,6 +8969,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Atnaujinti kursus',
     refreshing: 'Atnaujinama…',
+    refresh: 'Atnaujinti',
+    refreshStatusHint: 'Diegimo būsena ateina iš CI fone — atnaujinkite, kad pamatytumėte, kas gauta nuo puslapio įkėlimo.',
     currency: 'Valiuta',
     rateToEur: 'Kursas (į EUR)',
     lastUpdated: 'Paskutinį kartą atnaujinta',
@@ -9504,6 +9538,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Atjaunināt kursus',
     refreshing: 'Notiek atjaunināšana…',
+    refresh: 'Atsvaidzināt',
+    refreshStatusHint: 'Izvietošanas statuss pienāk no CI fonā — atsvaidziniet, lai redzētu, kas ir saņemts kopš lapas ielādes.',
     currency: 'Valūta',
     rateToEur: 'Kurss (uz EUR)',
     lastUpdated: 'Pēdējā atjaunināšana',
@@ -10071,6 +10107,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Aġġorna r-rati',
     refreshing: 'Qed jiġi aġġornat…',
+    refresh: 'Aġġorna',
+    refreshStatusHint: 'L-istatus tal-installazzjoni jasal mis-CI fl-isfond — aġġorna biex tara dak li wasal minn meta tgħabbiet il-paġna.',
     currency: 'Munita',
     rateToEur: 'Rata (lejn EUR)',
     lastUpdated: 'Aġġornat l-aħħar',
@@ -10638,6 +10676,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Koersen vernieuwen',
     refreshing: 'Wordt vernieuwd…',
+    refresh: 'Vernieuwen',
+    refreshStatusHint: 'De implementatiestatus komt op de achtergrond van CI — vernieuw om op te halen wat sinds het laden van deze pagina is binnengekomen.',
     currency: 'Valuta',
     rateToEur: 'Koers (naar EUR)',
     lastUpdated: 'Laatst bijgewerkt',
@@ -11205,6 +11245,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Odśwież kursy',
     refreshing: 'Odświeżanie…',
+    refresh: 'Odśwież',
+    refreshStatusHint: 'Status wdrożenia napływa z CI w tle — odśwież, aby zobaczyć to, co dotarło od czasu wczytania strony.',
     currency: 'Waluta',
     rateToEur: 'Kurs (do EUR)',
     lastUpdated: 'Ostatnia aktualizacja',
@@ -11772,6 +11814,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Atualizar taxas',
     refreshing: 'A atualizar…',
+    refresh: 'Atualizar',
+    refreshStatusHint: 'O estado da implementação chega da CI em segundo plano — atualize para obter o que chegou desde que a página foi carregada.',
     currency: 'Moeda',
     rateToEur: 'Taxa (para EUR)',
     lastUpdated: 'Última atualização',
@@ -12339,6 +12383,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Actualizați cursurile',
     refreshing: 'Se actualizează…',
+    refresh: 'Reîmprospătați',
+    refreshStatusHint: 'Starea implementării sosește de la CI în fundal — reîmprospătați pentru a prelua ce a sosit de la încărcarea paginii.',
     currency: 'Valută',
     rateToEur: 'Curs (către EUR)',
     lastUpdated: 'Ultima actualizare',
@@ -12906,6 +12952,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Обновить курсы',
     refreshing: 'Обновление…',
+    refresh: 'Обновить',
+    refreshStatusHint: 'Статус развёртывания поступает от CI в фоновом режиме — обновите, чтобы увидеть то, что пришло после загрузки страницы.',
     currency: 'Валюта',
     rateToEur: 'Курс (к EUR)',
     lastUpdated: 'Последнее обновление',
@@ -13473,6 +13521,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Obnoviť kurzy',
     refreshing: 'Obnovuje sa…',
+    refresh: 'Obnoviť',
+    refreshStatusHint: 'Stav nasadenia hlási CI na pozadí — obnovením načítate to, čo dorazilo od načítania tejto stránky.',
     currency: 'Mena',
     rateToEur: 'Kurz (na EUR)',
     lastUpdated: 'Posledná aktualizácia',
@@ -14040,6 +14090,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Posodobi tečaje',
     refreshing: 'Posodabljanje…',
+    refresh: 'Osveži',
+    refreshStatusHint: 'Stanje uvajanja prihaja iz CI v ozadju — osvežite, da vidite, kaj je prispelo od nalaganja strani.',
     currency: 'Valuta',
     rateToEur: 'Tečaj (v EUR)',
     lastUpdated: 'Nazadnje posodobljeno',
@@ -14607,6 +14659,8 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     // Admin (#100): Exchange rates
     refreshRates: 'Uppdatera kurser',
     refreshing: 'Uppdaterar…',
+    refresh: 'Uppdatera',
+    refreshStatusHint: 'Distributionsstatus kommer från CI i bakgrunden — uppdatera för att hämta det som kommit in sedan sidan laddades.',
     currency: 'Valuta',
     rateToEur: 'Kurs (till EUR)',
     lastUpdated: 'Senast uppdaterad',

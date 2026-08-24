@@ -8,9 +8,9 @@ import {
   upsertSsoUser,
 } from './auth'
 import { db } from '@/lib/db/client'
-import { users } from '@/lib/db/schema'
+import { users, sessions } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { createUser } from '@/test/helpers'
+import { createUser, makeSession } from '@/test/helpers'
 
 describe('loginWithCredentials', () => {
   it('returns 401 for an unknown email', async () => {
@@ -92,14 +92,14 @@ describe('updateMe', () => {
 describe('changePassword', () => {
   it('returns 400 when current password is wrong', async () => {
     const u = await createUser({ password: 'good' })
-    const result = await changePassword(u.id, 'bad', 'new-password')
+    const result = await changePassword(u.id, 'bad', 'new-password', 1)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(400)
   })
 
   it('updates passwordHash in DB when current password is correct, verifiable with bcrypt', async () => {
     const u = await createUser({ password: 'old-pw' })
-    const result = await changePassword(u.id, 'old-pw', 'brand-new')
+    const result = await changePassword(u.id, 'old-pw', 'brand-new', 1)
     expect(result.ok).toBe(true)
 
     const [dbU] = await db.select().from(users).where(eq(users.id, u.id))
@@ -108,6 +108,23 @@ describe('changePassword', () => {
       expect(await bcrypt.compare('brand-new', dbU.passwordHash)).toBe(true)
       expect(await bcrypt.compare('old-pw', dbU.passwordHash)).toBe(false)
     }
+  })
+
+  it('ends the account\'s other sessions but not the caller\'s', async () => {
+    // The whole point of changing a password after a compromise (issue #184).
+    // Before this the phished token outlived the change by up to its full 30-day
+    // "remember me" lifetime, because nothing re-reads `password_hash` per request.
+    const u = await createUser({ password: 'old-pw' })
+    const mine = await makeSession(u)
+    const stolen = await makeSession(u, { rememberMe: true })
+
+    const result = await changePassword(u.id, 'old-pw', 'brand-new', mine.sessionId)
+    expect(result.ok).toBe(true)
+
+    const rows = await db.select().from(sessions).where(eq(sessions.userId, u.id))
+    const byId = new Map(rows.map((r) => [r.id, r.revokedAt]))
+    expect(byId.get(stolen.sessionId)).not.toBeNull()
+    expect(byId.get(mine.sessionId)).toBeNull()
   })
 
   it('returns 400 for SSO accounts without a password hash', async () => {
@@ -121,7 +138,7 @@ describe('changePassword', () => {
         active: true,
       })
       .returning()
-    const result = await changePassword(sso.id, 'whatever', 'new')
+    const result = await changePassword(sso.id, 'whatever', 'new', 1)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(400)
   })

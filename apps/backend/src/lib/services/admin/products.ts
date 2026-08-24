@@ -26,6 +26,7 @@ import { fireDestroyTriggers, destroyVariables } from '@/lib/services/teardown'
 import { recordProductVersion } from '@/lib/services/versions'
 import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
+import { backfillOrderSnapshots } from '@/lib/services/snapshot'
 import {
   ALLOWED_IMAGE_MIMES,
   MAX_IMAGE_BYTES,
@@ -420,6 +421,11 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
       // they are mid-decommission, and their pipelines report back to the callback
       // that reconciles them. That is what the note above wished for.
       await tx.update(products).set({ retiredAt: new Date() }).where(eq(products.id, id))
+      // BEFORE the offerings go: an order that predates snapshots is priced from
+      // them, and deleting them under it drops its spend to zero in every report
+      // that counts it (issue #189). Same transaction, so the two cannot part
+      // company.
+      await backfillOrderSnapshots(tx, [id])
       await tx.delete(productEnvironments).where(eq(productEnvironments.productId, id))
       // Transient rows that would otherwise dangle against something nobody can
       // order any more. Both cascade on a hard delete today.
@@ -844,15 +850,23 @@ export const deleteProductEnvironment = async (
     return err(409, 'Infrastructure is still deployed in this environment — decommission it first')
   }
 
-  const deleted = await db
-    .delete(productEnvironments)
-    .where(
-      and(
-        eq(productEnvironments.productId, id),
-        eq(productEnvironments.environmentId, envId),
-      ),
-    )
-    .returning({ productId: productEnvironments.productId })
+  // One transaction for the same reason the retire branch is one: the backfill
+  // has to be true if and only if the withdrawal is. Snapshots written for an
+  // offering that then survives would freeze old orders at today's price for no
+  // reason; a withdrawal that commits without them takes those orders' spend to
+  // zero (issue #189).
+  const deleted = await db.transaction(async (tx) => {
+    await backfillOrderSnapshots(tx, [id], envId)
+    return tx
+      .delete(productEnvironments)
+      .where(
+        and(
+          eq(productEnvironments.productId, id),
+          eq(productEnvironments.environmentId, envId),
+        ),
+      )
+      .returning({ productId: productEnvironments.productId })
+  })
 
   if (!deleted.length) return err(404, 'Not found')
 

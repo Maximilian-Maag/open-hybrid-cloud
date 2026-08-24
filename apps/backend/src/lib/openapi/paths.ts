@@ -1795,6 +1795,9 @@ registry.registerPath({
   method: 'put',
   path: '/users/me/password',
   summary: 'Change current user password',
+  description:
+    'Also ends every OTHER live session of the account (issue #184) — the session making the request ' +
+    'has just proved it knows the old password and is kept. Audited as `session.revoked_others`.',
   tags: ['Users'],
   security: bearerAuth,
   request: {
@@ -3647,7 +3650,11 @@ registry.registerPath({
   summary: '[root] Update a user',
   description:
     'Setting `active: false` also revokes every live session of that account (issue #37) — `active` ' +
-    'is only read at login, so without that the user would stay signed in until their token ran out.',
+    'is only read at login, so without that the user would stay signed in until their token ran out. ' +
+    'Changing `role` does the same, for the same reason. So does setting `password` (issue #184): an ' +
+    'administrator resetting somebody\'s password is remediating a compromise, and nothing re-reads ' +
+    '`password_hash` per request, so an unrevoked token would go on working for the rest of its life. ' +
+    'Audited as `session.revoked_others`.',
   tags: ['Admin'],
   security: bearerAuth,
   request: {

@@ -33,6 +33,11 @@ import { linePriceSql, lineCurrencySql } from '@/lib/services/sizes'
  * they fall back to the current price and are counted in `estimatedOrders` so the
  * total can be read with that in mind rather than presented as exact.
  *
+ * Retiring a product used to take that fallback away with it — the offering row the
+ * fallback reads is deleted, and those orders dropped to zero (issue #189). They
+ * now get a snapshot written at withdrawal instead, flagged `backfilled` so they
+ * keep counting as estimated here.
+ *
  * ── Which cost centre an order counts against ─────────────────────────────────
  * The order's own `cost_center_id` where it has one — 'select' mode, where the
  * orderer chose it, and 'overhead' mode, where the offering fixed it. In 'project'
@@ -81,7 +86,7 @@ export interface CostPeriod {
   period: string
   totalEur: number
   orderCount: number
-  /** Orders in this month priced from the live offering because they predate snapshots. */
+  /** Orders in this month priced from the live offering rather than from a record made at order time. */
   estimatedOrders: number
   /**
    * True when the month has not finished yet, so its figure will still grow.
@@ -107,7 +112,11 @@ export interface CostComparison {
 export interface CostReport {
   totalEur: number
   orderCount: number
-  /** Orders whose price came from the live offering because they predate snapshots. */
+  /**
+   * Orders whose price came from the live offering rather than from a record made
+   * when the order was placed — those that predate snapshots, and those whose
+   * snapshot was backfilled at withdrawal (issue #189).
+   */
   estimatedOrders: number
   /**
    * Spend per calendar month over the filtered window, oldest first, with the
@@ -160,6 +169,8 @@ interface CostRow {
   environmentName: string | null
   snapshotPrice: string | null
   snapshotCurrency: string | null
+  /** `'true'` on a snapshot written at withdrawal rather than at order time. */
+  snapshotBackfilled: string | null
   livePrice: string | null
   liveCurrency: string | null
   /** How many elements the order provisioned (issue #104). */
@@ -203,6 +214,7 @@ export const getCostReport = async (
       // The snapshot is the authoritative price: what the customer was charged.
       snapshotPrice: sql<string | null>`${orders.productSnapshot} ->> 'price'`,
       snapshotCurrency: sql<string | null>`${orders.productSnapshot} ->> 'currency'`,
+      snapshotBackfilled: sql<string | null>`${orders.productSnapshot} ->> 'backfilled'`,
       // The size's price where the order named one, the offering's otherwise
       // (issue #98). Only ever reached by an order that predates snapshots — the
       // snapshot above is authoritative — but it has to be the RIGHT fallback, or
@@ -263,7 +275,13 @@ export const getCostReport = async (
     const usingSnapshot = row.snapshotPrice !== null && row.snapshotCurrency !== null
     const rawPrice = usingSnapshot ? row.snapshotPrice : row.livePrice
     const currency = (usingSnapshot ? row.snapshotCurrency : row.liveCurrency) ?? 'EUR'
-    if (!usingSnapshot) estimatedOrders += 1
+    // A backfilled snapshot is still an estimate, and saying so is the whole
+    // reason it carries the flag: its price came from the live offering at
+    // withdrawal, not from a record made when the order was placed (issue #189).
+    // Counting it as exact would quietly empty `estimatedOrders` the day a
+    // catalogue was retired, and the caveat the UI prints with it.
+    const estimated = !usingSnapshot || row.snapshotBackfilled === 'true'
+    if (estimated) estimatedOrders += 1
 
     // Unit price × quantity: an order of twenty XL VMs costs twenty times one
     // (issue #104). The quantity comes from the order row rather than the
@@ -277,7 +295,7 @@ export const getCostReport = async (
     // would poison every total it touched.
     if (!Number.isFinite(amount) || amount === 0) {
       addTo(buckets, row, 0)
-      bumpMonth(months, row, 0, usingSnapshot, now)
+      bumpMonth(months, row, 0, estimated, now)
       continue
     }
 
@@ -287,13 +305,13 @@ export const getCostReport = async (
       addTo(buckets, row, 0)
       // Counted at zero, exactly as the breakdowns do: the amount is reported in
       // unconverted[] instead of being guessed at a rate that does not exist.
-      bumpMonth(months, row, 0, usingSnapshot, now)
+      bumpMonth(months, row, 0, estimated, now)
       continue
     }
 
     totalEur += eur
     addTo(buckets, row, eur)
-    bumpMonth(months, row, eur, usingSnapshot, now)
+    bumpMonth(months, row, eur, estimated, now)
   }
 
   const series = fillMonths(months, now)
@@ -368,7 +386,7 @@ const bumpMonth = (
   months: Map<string, CostPeriod>,
   row: CostRow,
   eur: number,
-  usingSnapshot: boolean,
+  estimated: boolean,
   now: Date,
 ): void => {
   if (!row.createdAt) return
@@ -377,14 +395,14 @@ const bumpMonth = (
   if (existing) {
     existing.totalEur += eur
     existing.orderCount += 1
-    if (!usingSnapshot) existing.estimatedOrders += 1
+    if (estimated) existing.estimatedOrders += 1
     return
   }
   months.set(period, {
     period,
     totalEur: eur,
     orderCount: 1,
-    estimatedOrders: usingSnapshot ? 0 : 1,
+    estimatedOrders: estimated ? 1 : 0,
     partial: period === monthKey(now),
   })
 }
@@ -510,7 +528,7 @@ export interface CostRowExport {
   priceEur: number | null
   /** unit × quantity, in EUR — the figure that reconciles with the report. */
   lineTotalEur: number | null
-  /** True when the price came from the live offering, not the order's snapshot. */
+  /** True when the price came from the live offering rather than from a record made at order time. */
   estimated: boolean
 }
 
@@ -538,6 +556,7 @@ export const getCostRows = async (
       environmentName: deploymentEnvironments.name,
       snapshotPrice: sql<string | null>`${orders.productSnapshot} ->> 'price'`,
       snapshotCurrency: sql<string | null>`${orders.productSnapshot} ->> 'currency'`,
+      snapshotBackfilled: sql<string | null>`${orders.productSnapshot} ->> 'backfilled'`,
       livePrice: linePriceSql(orders.productId, orders.environmentId, orders.sizeCode),
       liveCurrency: lineCurrencySql(orders.productId, orders.environmentId, orders.sizeCode),
       sizeCode: orders.sizeCode,
@@ -579,6 +598,14 @@ export const getCostRows = async (
       const amount = Number(price)
       const eur = Number.isFinite(amount) ? toEur(amount, currency, rates) : null
       const quantity = row.quantity !== null && row.quantity >= 1 ? row.quantity : 1
+      // Convert the LINE, exactly as the report does (`toEur(unit * quantity)`),
+      // rather than converting the unit and multiplying. The two are the same in
+      // real arithmetic and not in doubles: 1.17 USD × 3 at rate 1.04 is 3.375 to
+      // the penny either way, but (1.17/1.04)*3 lands a hair above the halfway
+      // point and (1.17*3)/1.04 a hair below, so they round to 3.38 and 3.37.
+      // This field is documented as the figure that reconciles with the report,
+      // and a cent that appears only in the export is exactly what stops it.
+      const lineEur = Number.isFinite(amount) ? toEur(amount * quantity, currency, rates) : null
       return {
         orderId: row.orderId,
         createdAt: row.createdAt,
@@ -597,8 +624,8 @@ export const getCostRows = async (
         price,
         currency,
         priceEur: eur === null ? null : round(eur),
-        lineTotalEur: eur === null ? null : round(eur * quantity),
-        estimated: !usingSnapshot,
+        lineTotalEur: lineEur === null ? null : round(lineEur),
+        estimated: !usingSnapshot || row.snapshotBackfilled === 'true',
       }
     }),
   )

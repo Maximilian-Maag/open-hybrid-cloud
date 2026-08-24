@@ -15,6 +15,7 @@ import { ok, err, type Result } from '@/lib/services/result'
 import { fireDestroyTriggers, destroyVariables } from '@/lib/services/teardown'
 import { logAudit, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
+import { backfillOrderSnapshots } from '@/lib/services/snapshot'
 
 export interface CreateCategoryInput {
   name: string
@@ -181,6 +182,10 @@ export const deleteCategory = async (id: number, actorId?: number): Promise<Resu
       const ids = inCategory.map((p) => p.id)
       if (ids.length > 0) {
         await tx.update(products).set({ retiredAt }).where(inArray(products.id, ids))
+        // Before the offerings go, for the reason deleteProduct gives: without it
+        // every pre-snapshot order in this category silently reports zero spend
+        // (issue #189).
+        await backfillOrderSnapshots(tx, ids)
         await tx.delete(productEnvironments).where(inArray(productEnvironments.productId, ids))
         await tx.delete(cartItems).where(inArray(cartItems.productId, ids))
         await tx.delete(productFavorites).where(inArray(productFavorites.productId, ids))

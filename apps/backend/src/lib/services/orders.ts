@@ -21,7 +21,8 @@ import {
   finishOrderTriggerRun,
   clearOrderTriggerRun,
 } from '@/lib/services/pipelineTracking'
-import { ELEMENT_SEQUENCE_VAR } from '@/lib/ci/stateKey'
+import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR } from '@/lib/ci/stateKey'
+import { isReservedCiVariable, withoutReservedCiVariables } from '@/lib/ci/reserved'
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
@@ -57,7 +58,37 @@ export interface OrderRow {
   productSnapshot: ProductSnapshot | null
   productName: string
   environmentName: string | null
+  /** The project the order was placed for. Null only if the project is gone. */
+  projectName: string | null
   userName: string | null
+  /**
+   * Per-pipeline outcome, keyed by pipeline id — `{ "pipe-a": "success" }`.
+   *
+   * The column has always been written by the webhook handler and was never
+   * selected here, so the order detail page listed pipeline ids with nothing
+   * against them and read as a run that never progressed. It is the same map
+   * `/infrastructure/{id}` already renders; the order is simply where people
+   * look first.
+   */
+  pipelineStatus: Record<string, string>
+  /**
+   * The infrastructure this order provisioned, in sequence order.
+   *
+   * Only populated by `getOrderById` — the list view would need one query per row
+   * for something it does not show. Terraform outputs live on the ELEMENT, so
+   * without this an order had no route to the endpoint, the address, the
+   * credentials: the things the person who ordered it actually came back for.
+   */
+  elements?: OrderElement[]
+}
+
+/** One provisioned element, as the order detail page needs it. */
+export interface OrderElement {
+  id: number
+  sequence: number
+  status: string
+  sizeCode: string | null
+  outputs: Record<string, string>
 }
 
 export interface CreateOrderInput {
@@ -121,6 +152,7 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
       costCenterId: orders.costCenterId,
       rejectionNote: orders.rejectionNote,
       pipelineId: orders.pipelineId,
+      pipelineStatus: orders.pipelineStatus,
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
       isTrial: orders.isTrial,
@@ -134,10 +166,17 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
         LIMIT 1
       )`,
       environmentName: deploymentEnvironments.name,
+      // Selected since #208. The orders table has had a Project column all along,
+      // reading `projectName` — a field on the shared `Order` type that nothing
+      // ever filled, so the cell was always blank and the detail page always fell
+      // back to `#12`. LEFT, like the other two: an inner join would drop rows
+      // from a list whose whole job is to show everything the caller may see.
+      projectName: projects.name,
       userName: users.name,
     })
     .from(orders)
     .leftJoin(deploymentEnvironments, eq(orders.environmentId, deploymentEnvironments.id))
+    .leftJoin(projects, eq(orders.projectId, projects.id))
     .leftJoin(users, eq(orders.userId, users.id))
     .where(isAdmin ? undefined : eq(orders.userId, session.id))
     .orderBy(sql`${orders.createdAt} DESC`)
@@ -165,6 +204,7 @@ export const getOrderById = async (
       costCenterId: orders.costCenterId,
       rejectionNote: orders.rejectionNote,
       pipelineId: orders.pipelineId,
+      pipelineStatus: orders.pipelineStatus,
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
       isTrial: orders.isTrial,
@@ -178,10 +218,17 @@ export const getOrderById = async (
         LIMIT 1
       )`,
       environmentName: deploymentEnvironments.name,
+      // Selected since #208. The orders table has had a Project column all along,
+      // reading `projectName` — a field on the shared `Order` type that nothing
+      // ever filled, so the cell was always blank and the detail page always fell
+      // back to `#12`. LEFT, like the other two: an inner join would drop rows
+      // from a list whose whole job is to show everything the caller may see.
+      projectName: projects.name,
       userName: users.name,
     })
     .from(orders)
     .leftJoin(deploymentEnvironments, eq(orders.environmentId, deploymentEnvironments.id))
+    .leftJoin(projects, eq(orders.projectId, projects.id))
     .leftJoin(users, eq(orders.userId, users.id))
     .where(eq(orders.id, orderId))
     .limit(1)
@@ -195,7 +242,23 @@ export const getOrderById = async (
 
   // See listOrders: the values leave the service redacted, whoever is asking.
   const [redacted] = await redactParametersForOrders([order], (row) => row.id)
-  return ok(redacted)
+
+  // One extra query, on the detail view only. `outputs` is the reason: it is the
+  // endpoint and the credentials the pipeline produced, it lives on the element,
+  // and until now nothing on the order page led to it.
+  const elements = await db
+    .select({
+      id: infrastructureElements.id,
+      sequence: infrastructureElements.sequence,
+      status: infrastructureElements.status,
+      sizeCode: infrastructureElements.sizeCode,
+      outputs: infrastructureElements.outputs,
+    })
+    .from(infrastructureElements)
+    .where(eq(infrastructureElements.orderId, orderId))
+    .orderBy(infrastructureElements.sequence)
+
+  return ok({ ...redacted, elements })
 }
 
 /**
@@ -204,8 +267,15 @@ export const getOrderById = async (
  * effective parameter map to persist/trigger with, or a 400 Result on the first
  * validation failure. Only keys that have a matching definition are kept —
  * submitted keys with no applicable definition are dropped so a client cannot
- * inject arbitrary CI trigger variables (e.g. REF, TF_ACTION). Server-only
- * trigger vars (ORDER_ID, TF_ACTION, …) are appended later in the trigger layer.
+ * inject arbitrary CI trigger variables. Server-only trigger vars (ORDER_ID,
+ * TF_ACTION, …) are appended later in the trigger layer.
+ *
+ * A definition whose NAME is one of those server-owned variables is dropped too.
+ * It used not to be, and that was the whole of issue #183: dropping undefined
+ * keys protects nothing once a definition legitimately carries the name, and
+ * `sync-parameters` creates definitions from a Terraform file without anyone
+ * typing one. Dropping it here keeps the value out of `orders.parameters`, so it
+ * is not there to be replayed when a pending order is approved months later.
  */
 const validateAndApplyParameters = (
   defs: Parameter[],
@@ -215,6 +285,10 @@ const validateAndApplyParameters = (
   const result: Record<string, string> = {}
 
   for (const def of resolved) {
+    // Silently, and including when the definition is `required`: the name is one
+    // the server decides, so there is nothing for the customer to supply and an
+    // error would only make such a product unorderable.
+    if (isReservedCiVariable(def.name)) continue
     const raw = submitted[def.name]
     // Normalize once, then validate and store the normalized value so a value
     // like `" true "` or `" 4 "` is accepted and persisted without whitespace
@@ -544,6 +618,7 @@ export const provisionOrderElements = async (
         status: 'active',
         sizeCode,
         sequence,
+        stateKeyNamespace: String(orderId),
         parameters,
         pipelineId: [],
         // The trial's clock starts here, at provisioning. The scheduled-decommission
@@ -577,7 +652,7 @@ export const provisionOrderElements = async (
       // (issue #134): the webhook 502s, the stack starts, and the order ends up
       // waiting on the stack alone.
       const webhooks = await triggerProductWebhooksTracked(productId, environmentId, triggerVars, onStarted)
-      const stacks = await triggerPipelineStacksTracked(productId, environmentId, triggerVars, onStarted)
+      const stacks = await triggerPipelineStacksTracked(productId, environmentId, triggerVars, onStarted, parameters)
       elementPipelineIds = [...webhooks.pipelineIds, ...stacks.pipelineIds]
       failures.push(
         ...[...webhooks.failures, ...stacks.failures].map((f) => `element ${sequence}: ${f}`),
@@ -639,6 +714,13 @@ export const provisionOrderElements = async (
  *
  * `parameters` first, server-owned variables after: a customer-supplied parameter
  * must never be able to overwrite ORDER_ID or the size the order was priced on.
+ *
+ * Re-asserting a name only protects the names that are re-asserted, which is how
+ * REF and TF_ACTION got through (issue #183). So the customer half is FILTERED
+ * rather than overwritten: every server-owned name is removed from it, whatever
+ * the parameter table happens to contain. That is what makes this safe for
+ * `orders.parameters` rows written before #183 — a pending order carrying REF
+ * still provisions on approval, just without choosing the git ref.
  */
 const elementTriggerVariables = (input: {
   parameters: Record<string, string>
@@ -648,8 +730,11 @@ const elementTriggerVariables = (input: {
   isTrial: boolean
   trialDurationMinutes: number
 }): Record<string, string> => ({
-  ...input.parameters,
+  ...withoutReservedCiVariables(input.parameters),
   ORDER_ID: String(input.orderId),
+  // Namespaces this element's Terraform state key, and is stored on the element
+  // row so its teardown derives the same one.
+  [STATE_KEY_NAMESPACE_VAR]: String(input.orderId),
   // The size has to reach the CI run (issue #98) — it is what decides how much
   // machine the template asks for. Absent, not empty, for an offering with no
   // sizes, so a template can tell "no sizing" from "a size called ''".

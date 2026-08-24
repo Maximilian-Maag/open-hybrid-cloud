@@ -121,6 +121,11 @@ export const deleteCategory = async (id: number, actorId?: number): Promise<Resu
       parameters: infrastructureElements.parameters,
       sequence: infrastructureElements.sequence,
       sizeCode: infrastructureElements.sizeCode,
+      // Required by destroyVariables rather than optional: read through a
+      // projection that forgot it, a NULL reads as "derive the pre-#183 state
+      // key", and a destroy pointed at the wrong state name destroys nothing
+      // while reporting success.
+      stateKeyNamespace: infrastructureElements.stateKeyNamespace,
     })
     .from(infrastructureElements)
     .innerJoin(products, eq(infrastructureElements.productId, products.id))

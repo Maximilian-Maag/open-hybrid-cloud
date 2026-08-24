@@ -640,14 +640,24 @@ describe('retryProvisioning', () => {
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.pipelineIds).toEqual(['new-webhook', 'new-stack'])
 
-    for (const mock of [mockedWebhooks, mockedStacks]) {
-      expect(mock).toHaveBeenCalledWith(
-        product.id,
-        env.id,
-        expect.objectContaining({ hostname: 'web-01' }),
-        expect.any(Function),
-      )
-    }
+    expect(mockedWebhooks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ hostname: 'web-01' }),
+      expect.any(Function),
+    )
+
+    // The stack trigger takes a fifth argument the webhook trigger does not: the
+    // element's parameters with reserved names still in them, for state-key
+    // derivation only. A legacy stack keyed on a reserved name (REF) has no other
+    // way to find the value its own apply used — see webhooks.test.ts.
+    expect(mockedStacks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ hostname: 'web-01' }),
+      expect.any(Function),
+      expect.objectContaining({ hostname: 'web-01' }),
+    )
   })
 
   it('reuses the original ORDER_ID so the retry targets the same Terraform state', async () => {
@@ -663,6 +673,36 @@ describe('retryProvisioning', () => {
       // The recorder that stores each pipeline id as it starts (issue #132).
       expect.any(Function),
     )
+  })
+
+  it('retries an element provisioned before #183 against the state key it already has', async () => {
+    // `failedDeployment` leaves state_key_namespace NULL, as every row written
+    // before the column existed is. Sending a namespace now would make the retry
+    // apply into a fresh state and leave the half-built infrastructure of the
+    // failed attempt orphaned.
+    const { admin, el } = await failedDeployment()
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const vars = mockedWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars).not.toHaveProperty('TF_STATE_NAMESPACE')
+  })
+
+  it("carries a namespaced element's own namespace into the retry (issue #183)", async () => {
+    const { admin, el } = await failedDeployment()
+    await db
+      .update(infrastructureElements)
+      .set({ stateKeyNamespace: '99', parameters: { hostname: 'web-01', REF: 'attacker/branch' } })
+      .where(eq(infrastructureElements.id, el.id))
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const vars = mockedWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars.TF_STATE_NAMESPACE).toBe('99')
+    // And a stored parameter still cannot choose which git ref the rerun uses.
+    expect(vars).not.toHaveProperty('REF')
   })
 
   it('resets the order to provisioning and clears the previous attempt tracking', async () => {

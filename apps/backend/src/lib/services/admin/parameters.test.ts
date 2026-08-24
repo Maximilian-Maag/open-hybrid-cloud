@@ -76,6 +76,28 @@ describe('createParameter', () => {
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.label).toBe('')
   })
+
+  it('refuses a name the server sets as a CI variable (issue #183)', async () => {
+    // A parameter's name becomes a trigger variable verbatim, so a definition
+    // named REF let whoever ordered the product choose the git ref the pipeline
+    // ran, and TF_ACTION turned a provisioning order into a destroy.
+    for (const name of ['REF', 'TF_ACTION', 'TF_STATE_NAME']) {
+      const result = await createParameter({ scope: 'global', name, type: 'string' })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.status).toBe(400)
+    }
+
+    const rows = await db.select().from(parameters)
+    expect(rows).toEqual([])
+  })
+
+  it('refuses the lowercase spelling a template would produce', async () => {
+    // `sync-parameters` imports Terraform variables, which are lowercase by
+    // convention — the path by which such a definition appears without anyone
+    // typing the name.
+    const result = await createParameter({ scope: 'global', name: 'tf_action', type: 'string' })
+    expect(result.ok).toBe(false)
+  })
 })
 
 describe('updateParameter', () => {
@@ -94,6 +116,19 @@ describe('updateParameter', () => {
       expect(result.data.name).toBe('new')
       expect(result.data.required).toBe(true)
     }
+  })
+
+  it('refuses a rename onto a reserved name (issue #183)', async () => {
+    // Or the create-time check would cost an attacker one extra request.
+    const created = await createParameter({ scope: 'global', name: 'hostname', type: 'string' })
+    if (!created.ok) throw new Error('seed failed')
+
+    const result = await updateParameter(created.data.id, { name: 'REF' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+
+    const [row] = await db.select().from(parameters).where(eq(parameters.id, created.data.id))
+    expect(row.name).toBe('hostname')
   })
 
   it('updates label field', async () => {

@@ -1,9 +1,9 @@
 import { db } from '@/lib/db/client'
 import { orders, infrastructureElements } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
+import { readOutputsForElement, outputsUnavailableReason } from '@/lib/webhook/outputs'
 import { sendProvisioningCompleted, sendDecommissioned } from '@/lib/notification'
-import { fetchJobTraces, parseTofuOutputs, supportsJobTrace } from '@/lib/ci'
 import { findProductName, findUserEmail, findCiSourceForEnv } from '@/lib/db/queries'
 
 /**
@@ -130,35 +130,45 @@ export const settleOrderIfComplete = async (
  * parsed is not swallowed — it propagates, so the caller abandons the completion
  * and the order stays findable for another attempt.
  */
+/**
+ * Say, on the element, why its outputs are missing (#215).
+ *
+ * Every branch below already logged. A log line reaches whoever has the container;
+ * the person who can fix a revoked CI token is looking at the element page. Both
+ * matter, so both happen — the log keeps the detail (the pipeline id, the
+ * underlying error) that does not belong in front of a user.
+ */
+const noteOutputsError = async (elementIds: number[], reason: string): Promise<void> => {
+  if (elementIds.length === 0) return
+  try {
+    await db
+      .update(infrastructureElements)
+      .set({ outputsError: reason })
+      .where(inArray(infrastructureElements.id, elementIds))
+  } catch (err) {
+    // Explaining the failure must never become the failure. The order has already
+    // completed by the time this runs, and losing the explanation is a smaller
+    // loss than abandoning that.
+    console.error('[webhook] Could not record why outputs are missing:', err)
+  }
+}
+
 const recordOutputs = async (
   order: SettleableOrder,
   infraElements: { id: number; pipelineId: string[] }[],
 ): Promise<void> => {
   if (infraElements.length === 0) return
 
+  const allIds = infraElements.map((e) => e.id)
   const ciSource = await findCiSourceForEnv(order.environmentId)
-  if (!ciSource) {
-    console.warn(`[webhook] No CI source for environment ${order.environmentId}; no outputs recorded.`)
-    return
-  }
-  if (!supportsJobTrace(ciSource.provider)) {
-    // Said out loud rather than silently producing an element with no outputs,
-    // which looked like a template that declared none.
-    console.warn(
-      `[webhook] Reading job logs is not implemented for ${ciSource.provider}; ` +
-        `order ${order.id} will have no Terraform outputs. See lib/ci/index.ts supportsJobTrace.`,
-    )
-    return
-  }
-  if (!ciSource.projectRef) {
-    // GitLab's job endpoints are project-scoped and the project is only named in
-    // the environment's trigger URL, so a URL of another shape means the log
-    // cannot be located at all. An operator can fix this, but only if they are told.
-    console.warn(
-      `[webhook] Cannot tell which GitLab project environment ${order.environmentId} triggers ` +
-        `(its webhook URL has no /projects/<id>/ segment); order ${order.id} will have no ` +
-        `Terraform outputs.`,
-    )
+
+  // Reasons that belong to the environment rather than to one element: no CI
+  // source, a provider whose logs cannot be read, a trigger URL with no project.
+  // One answer for every element of the order.
+  const unavailable = outputsUnavailableReason(ciSource)
+  if (unavailable || !ciSource) {
+    console.warn(`[webhook] Order ${order.id}: ${unavailable}`)
+    await noteOutputsError(allIds, unavailable ?? 'Terraform outputs cannot be collected.')
     return
   }
 
@@ -167,68 +177,24 @@ const recordOutputs = async (
   // (#104) element 2's pipeline reports element 2's ip_address; merging the
   // order's pipelines into one map dropped it as a duplicate key and stamped
   // element 1's address onto all N — wrong, and silent.
-  //
-  // The merge still applies WITHIN one element: an element fans out over the
-  // product's webhooks and its pipeline stacks (#121), and reading only the
-  // pipeline whose event completed the order dropped the rest.
   for (const element of infraElements) {
-    if (element.pipelineId.length === 0) {
-      // A row whose triggers never fired. Its outputs are unknown, and borrowing
-      // a sibling's is exactly the confusion this loop ends.
-      console.warn(
-        `[webhook] Order ${order.id}: element ${element.id} has no pipeline of its own; ` +
-          `no Terraform outputs recorded for it.`,
-      )
+    const { outputs, error } = await readOutputsForElement(ciSource, element.pipelineId, {
+      elementId: element.id,
+      orderId: order.id,
+    })
+
+    if (error) {
+      console.warn(`[webhook] Order ${order.id}, element ${element.id}: ${error}`)
+      await noteOutputsError([element.id], error)
       continue
     }
 
-    const outputs: Record<string, string> = {}
-    for (const pipelineId of element.pipelineId) {
-      let traces: string[]
-      try {
-        traces = await fetchJobTraces(ciSource, pipelineId)
-      } catch (err) {
-        // One unreadable pipeline log must not cost the outputs of the pipelines
-        // that did report.
-        console.error(
-          `[webhook] Could not read the job log of pipeline ${pipelineId} (order ${order.id}):`,
-          err,
-        )
-        continue
-      }
-      for (const trace of traces) {
-        for (const [key, value] of Object.entries(parseTofuOutputs(trace))) {
-          // First writer wins, iterating this element's pipeline ids in the order
-          // they were triggered: two of ITS pipelines both declaring `ip_address`
-          // is a naming collision in the templates, and picking by CI timing would
-          // make the recorded value change from run to run. Two ELEMENTS reporting
-          // the same key is normal and no longer reaches this check at all.
-          if (key in outputs) {
-            if (outputs[key] !== value) {
-              console.warn(
-                `[webhook] Order ${order.id}, element ${element.id}: output "${key}" is ` +
-                  `reported by more than one of its pipelines with different values; ` +
-                  `keeping the first.`,
-              )
-            }
-            continue
-          }
-          outputs[key] = value
-        }
-      }
-    }
-
-    if (Object.keys(outputs).length > 0) {
-      await db
-        .update(infrastructureElements)
-        .set({ outputs })
-        .where(eq(infrastructureElements.id, element.id))
-    } else {
-      console.warn(
-        `[webhook] No job log of element ${element.id} (order ${order.id}) contained an ` +
-          `Outputs block.`,
-      )
-    }
+    // Clears any previous complaint: a token that has been fixed and a pipeline
+    // that has been re-read should not leave a stale one on the page.
+    await db
+      .update(infrastructureElements)
+      .set({ outputs, outputsError: null })
+      .where(eq(infrastructureElements.id, element.id))
   }
 }
 

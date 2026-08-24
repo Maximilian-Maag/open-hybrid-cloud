@@ -1026,6 +1026,16 @@ export interface InfrastructureElement {
  * were redacted — the names stay visible, the values do not.
  */
 export interface InfrastructureDetail extends InfrastructureElement {
+  /**
+   * Why `outputs` is empty, when reading them went wrong (#215).
+   *
+   * Null means nothing went wrong: either they were read, or the element has not
+   * settled yet. Five distinct failures — no CI source, an unsupported provider,
+   * an unlocatable project, an unreadable log, a run that declared none — used to
+   * render as one blank card, so "your CI token expired" and "this template has
+   * no outputs" were the same screen.
+   */
+  outputsError?: string | null
   /** Status per id in `pipelineId`, from the run named by `pipelinePhase`. */
   pipelineStatus: Record<string, string>
   /**

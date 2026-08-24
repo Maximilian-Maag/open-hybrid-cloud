@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check test-db test-db-prune test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio db-seed db-seed-demo handbook handbook-clean clean
+.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check policy policy-facts policy-install-opa test-db test-db-prune test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio db-seed db-seed-demo handbook handbook-clean clean
 
 # pnpm is installed via standalone script — add its bin dir to PATH so make can find it
 PNPM_HOME ?= $(HOME)/.local/share/pnpm
@@ -17,6 +17,9 @@ help:
 	@echo "  build                 build all workspace packages"
 	@echo "  lint                  lint all apps"
 	@echo "  type-check            TypeScript type-check all apps"
+	@echo "  policy                run the OPA codebase-invariant gate (same as CI)"
+	@echo "  policy-facts          print the JSON the policies are evaluated against"
+	@echo "  policy-install-opa    fetch the pinned opa binary into .opa/"
 	@echo "  test-db               create the e2e database in the running Postgres"
 	@echo "  test-db-prune         drop the per-directory backend test databases"
 	@echo "  test                  run unit and integration tests"
@@ -58,6 +61,22 @@ lint:
 
 type-check:
 	$(PNPM) --parallel --filter './apps/*' exec tsc --noEmit
+
+# The codebase-invariant gate (issue #149): rules that span files, which is what
+# ESLint cannot see. Runs `opa test` on the policies first — a policy with a bug
+# is worse than no policy — then evaluates them against the tree. Deny fails,
+# warn reports. This is the same command the `policy` job in CI runs.
+# tsx transpiles without checking, so a typo in the extractor would silently
+# produce a fact the policies never match. The gate checks its own code first.
+policy:
+	@node_modules/.bin/tsc -p scripts/tsconfig.json
+	@node_modules/.bin/tsx scripts/policy-check.ts
+
+policy-facts:
+	@node_modules/.bin/tsx scripts/policy-facts.ts
+
+policy-install-opa:
+	@node_modules/.bin/tsx scripts/opa.ts
 
 # The backend suite creates its own database on first run — one per working
 # directory, so a mutation run in .stryker-tmp/sandbox-* cannot truncate the

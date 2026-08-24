@@ -67,7 +67,19 @@ const SECRET_SQL_COLUMNS = [
 ]
 
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
-const AUTH_HELPERS = new Set(['requireAuth', 'requireRole', 'requireRoot'])
+// `requireAuthPendingSecondFactor` authenticates exactly as `requireAuth` does —
+// same token, same session row, same 401 without one. It differs only in that it
+// permits an administrator who still owes an enrollment (#197), which is what
+// makes the enrollment endpoints reachable at all. A route using it is
+// authenticated; whether it *should* be one of the few that tolerates the pending
+// state is a judgement the helper's own doc comment records, and rule 1 is not
+// the thing that can decide it.
+const AUTH_HELPERS = new Set([
+  'requireAuth',
+  'requireAuthPendingSecondFactor',
+  'requireRole',
+  'requireRoot',
+])
 
 // ---------------------------------------------------------------------------
 // filesystem helpers

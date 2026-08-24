@@ -179,5 +179,13 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  return NextResponse.json({ token: result.data.token, user: result.data.user })
+  // `mustEnrollSecondFactor` rides along only when it is true (issue #197). The
+  // session is real; what it may reach is not, until an authenticator is
+  // confirmed. See `requireAuth` — this flag tells the client where to go, it
+  // does not decide anything.
+  return NextResponse.json({
+    token: result.data.token,
+    user: result.data.user,
+    ...(result.data.mustEnrollSecondFactor ? { mustEnrollSecondFactor: true } : {}),
+  })
 }

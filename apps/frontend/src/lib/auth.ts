@@ -38,6 +38,9 @@ const toAuthUser = (data: LoginResponse) => ({
   name: data.user.name,
   role: data.user.role,
   apiToken: data.token,
+  // Issue #197. Only ever true on the password-only path: an account that HAS a
+  // factor cannot owe one, so the two-step branch never sets it.
+  mustEnrollSecondFactor: data.mustEnrollSecondFactor === true,
 })
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -105,15 +108,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     // The 'jwt' callback is called first.
     // The 'user' object is only passed on the first call after sign-in.
-    jwt({ token, user }) {
+    jwt({ token, user, trigger, session }) {
       if (user) {
         // Persist the user role and apiToken from the 'authorize' function into the JWT token.
-        const u = user as { role: Role; apiToken: string }
+        const u = user as { role: Role; apiToken: string; mustEnrollSecondFactor?: boolean }
         token.role = u.role
         token.apiToken = u.apiToken
         // Carried so the middleware can end the session before making a request
         // that is certain to come back 401 (#103).
         token.apiTokenExp = apiTokenExpiry(u.apiToken)
+        // Issue #197: what the middleware redirects on. The backend re-checks it
+        // per request, so this being wrong can only ever cost a redirect — never
+        // access.
+        token.mustEnrollSecondFactor = u.mustEnrollSecondFactor === true
+      }
+
+      // Cleared by the enrollment screen calling `update()` once a factor is
+      // confirmed. Without this the token would keep saying "outstanding" until
+      // the next sign-in, and the middleware would bounce the user back to the
+      // screen they just finished. Only ever cleared, never set: nothing the
+      // client says can put the flag ON, so this cannot be used to claim an
+      // enrollment that did not happen — and the backend would refuse anyway.
+      if (trigger === 'update' && (session as { mustEnrollSecondFactor?: boolean } | null)?.mustEnrollSecondFactor === false) {
+        token.mustEnrollSecondFactor = false
       }
       return token
     },
@@ -127,6 +144,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       session.apiToken = token.apiToken as string | undefined
       session.apiTokenExp = (token.apiTokenExp as number | null | undefined) ?? undefined
+      session.mustEnrollSecondFactor = token.mustEnrollSecondFactor === true
       return session
     },
   },

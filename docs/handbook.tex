@@ -1687,52 +1687,51 @@ certificate and key at the paths referenced in
 
 \item \textbf{Configure Nginx as TLS-terminating reverse proxy.}
 
-Listing~\ref{lst:nginxconf} shows a minimal but production-ready
-Nginx configuration:
+The configuration is kept in the repository rather than reproduced here,
+so that it cannot drift away from what is actually deployed:
+\file{infra/docker-host/nginx.conf.example}.
 
-\begin{lstlisting}[style=yaml,caption={infra/nginx/default.conf},label={lst:nginxconf}]
-server {
-    listen 80;
-    server_name shop.example.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name shop.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/shop.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/shop.example.com/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
-
-    client_max_body_size 10m;
-
-    # Backend API (REST + webhooks)
-    location /api/ {
-        proxy_pass         http://ohc-backend:3001;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60s;
-    }
-
-    # Frontend (Next.js UI)
-    location / {
-        proxy_pass         http://ohc-frontend:3000;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60s;
-    }
-}
+\begin{lstlisting}[style=bash]
+cd infra/docker-host
+cp nginx.conf.example nginx.conf
+# Edit the ONE line marked "CHANGE THIS" -- your public domain.
+# It must match NEXTAUTH_URL in .env and the name on the certificate.
 \end{lstlisting}
 
-\item \textbf{Reload Nginx.}
+\begin{tcolorbox}[warnboxstyle]
+Do not simplify the \code{/api} routing to a single
+\code{location /api/} block. The frontend and the backend are \emph{both}
+Next.js applications and \emph{both} serve routes under \code{/api}. These
+belong to the frontend on port 3000:
+
+\begin{itemize}
+  \item \code{/api/auth/*} --- NextAuth's endpoints
+        (\code{csrf}, \code{session}, \code{callback/credentials}, \ldots)
+  \item \code{/api/login-challenge} --- step one of the two-step sign-in
+  \item \code{/api/ping} --- the frontend's liveness route
+\end{itemize}
+
+\noindent
+with one exception inside that range: \code{/api/auth/callback} is Entra ID's
+OAuth callback and belongs to the \emph{backend}, so it is matched exactly and
+outranks the \code{/api/auth} prefix. Everything else under \code{/api} goes to
+port 3001.
+
+Sending all of \code{/api} to the backend breaks sign-in with a 404 that is easy
+to misattribute, because both applications answer with
+\code{X-Powered-By: Next.js}; the giveaway is that a reply from the backend also
+carries its CORS headers. This is issue \#196, and the ordering of the
+\code{location} blocks in the example file is what prevents it.
+\end{tcolorbox}
+
+\item \textbf{Start Nginx.}
+
+Nginx runs as a container and mounts \file{nginx.conf} from the host, so a
+configuration change is applied by recreating that one container --- the
+application containers are untouched:
+
 \begin{lstlisting}[style=bash]
-nginx -t && systemctl reload nginx
+docker compose -f infra/docker-host/docker-compose.yml up -d --force-recreate nginx
 \end{lstlisting}
 
 \item \textbf{Verify the deployment.}

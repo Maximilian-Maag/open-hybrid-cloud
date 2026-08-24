@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { getCostReport, getCostRows, assertMaySeeProject } from './costs'
 import { deleteProduct, deleteProductEnvironment } from './admin/products'
+import { deleteCategory } from './admin/categories'
 import { db } from '@/lib/db/client'
 import { orders, exchangeRates, productEnvironments, projects } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -50,7 +51,7 @@ const setup = async () => {
   await linkProductEnvironment(postgres.id, env.id, { price: '20.00' })
   const mine = await createProject(pm.id, 'Webshop')
   const theirs = await createProject(otherPm.id, 'Hidden')
-  return { admin, pm, otherPm, nginx, postgres, env, mine, theirs }
+  return { admin, pm, otherPm, cat, nginx, postgres, env, mine, theirs }
 }
 
 /** Seed an order with a snapshot price, so the report reads the historical value. */
@@ -200,6 +201,25 @@ describe('getCostReport — which price', () => {
 
     const after = await getCostReport(makeSession(ctx.admin))
     expect(after.ok && after.data.totalEur).toBe(80)
+    expect(after.ok && after.data.estimatedOrders).toBe(1)
+  })
+
+  it('keeps a pre-snapshot order\'s spend when the category is retired', async () => {
+    // The third door onto the same loss: retiring a category withdraws the
+    // offerings of every product in it, with the same delete (issue #189).
+    const ctx = await setup()
+    await db
+      .update(productEnvironments)
+      .set({ price: '80.00' })
+      .where(eq(productEnvironments.productId, ctx.nginx.id))
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: 'x', noSnapshot: true })
+
+    // An order exists, so this retires rather than deletes.
+    expect((await deleteCategory(ctx.cat.id)).ok).toBe(true)
+
+    const after = await getCostReport(makeSession(ctx.admin))
+    expect(after.ok && after.data.totalEur).toBe(80)
+    expect(after.ok && after.data.orderCount).toBe(1)
     expect(after.ok && after.data.estimatedOrders).toBe(1)
   })
 

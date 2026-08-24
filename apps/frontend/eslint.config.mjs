@@ -37,13 +37,13 @@ const config = [
     // makes them possible at all — without a type checker ESLint cannot tell an
     // ignored Promise from an ignored number.
     //
-    // It roughly doubles lint time, and CI runs this on every PR: on an idle
-    // machine `eslint .` went from 5.2-6.5s to about 11s here, and from 4.7-5.0s
-    // to about 9s in the other app. Nearly all of that is building the program
-    // once, so it is a fixed toll rather than a per-rule one — the same 4 rules
-    // and 23 rules measured within a second of each other. Adding a type-aware
-    // rule later is therefore close to free; the decision to pay at all was made
-    // here, for `no-floating-promises`.
+    // It roughly doubles lint time, and CI runs this on every PR. Measured on an
+    // idle machine: `eslint .` was 5.2-6.5s with no type information and 10.9s
+    // with the program built and one type-aware rule running. Most of the
+    // increase is building the program once, so the fixed toll is what was being
+    // decided here — but it is not free per rule either: all 23 type-aware rules
+    // that were trialled together came to 18.8s, and the ones left off below are
+    // the expensive ones. Four cheap rules were kept.
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       parserOptions: {

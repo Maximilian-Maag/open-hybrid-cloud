@@ -665,7 +665,17 @@ export const provisionOrderElements = async (
   // of failed elements, because a trigger can now fail without throwing — an
   // order whose only webhook 502s used to fall through here and sit in
   // 'provisioning' waiting on nothing (issue #134).
-  if (pipelineIds.length === 0 && failures.length > 0) {
+  //
+  // And measured ONLY on the pipelines since #206. The condition used to also
+  // require `failures.length > 0`, which let the quietest version of the same
+  // fault through: a product with no webhook and no pipeline stack for this
+  // environment starts nothing and fails at nothing, so both helpers return empty
+  // and there was nothing for this branch to catch. The run then closed cleanly
+  // with an empty id list, and `isSettled` refuses an empty list on purpose — a
+  // run that started no pipeline has nothing to report success. The order sat in
+  // 'provisioning' with nothing in existence that could ever move it, and no
+  // error anywhere to say so.
+  if (pipelineIds.length === 0) {
     // Take the rows with it. They were inserted before their triggers fired (see
     // above) and nothing else would ever remove them: `order_id` carries no ON
     // DELETE CASCADE, and approveOrder puts the order back to 'pending' so the
@@ -676,7 +686,17 @@ export const provisionOrderElements = async (
       await db.delete(infrastructureElements).where(inArray(infrastructureElements.id, elementIds))
     }
     await clearOrderTriggerRun(orderId)
-    throw firstError ?? new Error(`Could not start any pipeline: ${failures.join('; ')}`)
+    // The two causes are different problems for whoever has to act on them, so
+    // they get different sentences. "Could not start any pipeline: " with an
+    // empty list after it told an operator nothing at all.
+    throw (
+      firstError ??
+      new Error(
+        failures.length > 0
+          ? `Could not start any pipeline: ${failures.join('; ')}`
+          : 'Nothing is configured to deploy this product into this environment: it has no product webhook and no pipeline stack, so the order has nothing to trigger. Add one in Admin → Products, then order again.',
+      )
+    )
   }
 
   // Closes the run: reconciles the recorded ids, replaces the `triggering` entry

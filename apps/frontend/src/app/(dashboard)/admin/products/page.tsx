@@ -60,7 +60,10 @@ export default async function AdminProductsPage() {
             ),
           },
           {
-            header: '',
+            // Named, not blank. `empty-table-header` is best-practice-only, so
+            // the gate never asked for it: a screen reader announced this
+            // column as "column 5, blank" for every row of the product table.
+            header: t('actions', lang),
             className: 'text-right',
             render: (row) => <ProductRowActions product={row} token={token} />,
           },

@@ -31,6 +31,9 @@ export default function CatalogPage() {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState(false)
+  // Separate from `error`: the initial load failing means there is nothing to
+  // show, while a failed append still has a full page of products behind it.
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false)
   // Favourited product ids. Held as a Set so a card can answer "am I starred?"
   // without scanning a list per render.
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
@@ -143,12 +146,18 @@ export default function CatalogPage() {
   const loadMore = async () => {
     if (!token || loadingMore) return
     setLoadingMore(true)
+    setLoadMoreFailed(false)
     try {
       const page = await get<CatalogPageData>(pageUrl(products.length), token)
       setProducts((prev) => [...prev, ...(page?.items ?? [])])
       setTotal(page?.total ?? 0)
     } catch {
-      // Keep what is on screen; the button stays available for another go.
+      // Keep what is on screen — but SAY so. This used to swallow the failure
+      // silently and leave the button enabled, which made a failed append
+      // indistinguishable from a successful one that happened to add nothing,
+      // for everyone. The banner goes through the same `error` state the
+      // initial load uses, so the retry affordance is the one already there.
+      setLoadMoreFailed(true)
     } finally {
       setLoadingMore(false)
     }
@@ -230,15 +239,21 @@ export default function CatalogPage() {
 
   const categoryName = (categoryId: number) => categories.find((c) => c.id === categoryId)?.name
 
-  const renderCard = (product: {
-    id: number
-    categoryId: number
-    name: string
-    description: string
-    imageAlt?: string | null
-  }) => (
+  const renderCard = (
+    product: {
+      id: number
+      categoryId: number
+      name: string
+      description: string
+      imageAlt?: string | null
+    },
+    // The shelf nests under its own h2, the main grid sits straight under the
+    // page h1 — same card, different depth.
+    level: 2 | 3 = 2,
+  ) => (
     <ProductCard
       key={product.id}
+      level={level}
       id={product.id}
       name={product.name}
       description={product.description}
@@ -268,11 +283,20 @@ export default function CatalogPage() {
       {/* Category sidebar */}
       <aside className="hidden md:block w-52 shrink-0">
         <div className="bg-white rounded-lg border border-slate-200 p-4 sticky top-28">
-          <h3 className="font-bold text-xs text-slate-500 mb-3 uppercase tracking-wide">{t('categories', lang)}</h3>
+          {/* h2, not h3: the sidebar is a section of the page, and the only
+              heading that used to sit above it was the h2 in the column beside
+              it. Nothing here is a subsection of anything. */}
+          <h2 className="font-bold text-xs text-slate-500 mb-3 uppercase tracking-wide">{t('categories', lang)}</h2>
           <ul className="space-y-1">
             <li>
               <button
                 onClick={() => setSelectedCategory(null)}
+                // The state, not just the paint. These buttons said "selected"
+                // with a background colour and nothing else, so a screen-reader
+                // user could not tell a filtered result set from a broken one
+                // (1.4.1, 4.1.2). aria-pressed rather than aria-current: these
+                // are toggles — clicking the selected category clears it.
+                aria-pressed={selectedCategory === null}
                 className="w-full text-left flex min-h-11 items-center px-3 py-1.5 rounded text-sm transition-colors font-semibold"
                 style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { color: '#475569' }}
                 onMouseEnter={(e) => { if (selectedCategory !== null) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
@@ -285,6 +309,7 @@ export default function CatalogPage() {
               <li key={cat.id}>
                 <button
                   onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
+                  aria-pressed={selectedCategory === cat.id}
                   className="w-full text-left flex min-h-11 items-center px-3 py-1.5 rounded text-sm transition-colors"
                   style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)', fontWeight: 600 } : { color: '#475569' }}
                   onMouseEnter={(e) => { if (selectedCategory !== cat.id) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
@@ -300,6 +325,49 @@ export default function CatalogPage() {
 
       {/* Main content */}
       <div className="flex-1 min-w-0">
+        {/* The page's h1, and it is deliberately the FIRST heading in this
+            column. /catalog had no h1 at all — the favourites shelf's h2 came
+            first in the DOM and the title below it was an h2 too — so a screen
+            reader's heading list started in the middle of the page. Putting the
+            title back on top is also what keeps `heading-order` clean: the
+            shelf and the cards below it can then descend h1 → h2 → h3 rather
+            than jumping from the title straight to a card. */}
+        <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
+          <div>
+            {search ? (
+              <h1 className="text-xl font-bold text-slate-800">
+                {t('resultsFor', lang)}: <span style={{ color: 'var(--bp-text)' }}>&ldquo;{search}&rdquo;</span>
+              </h1>
+            ) : (
+              <>
+                <h1 className="text-xl font-bold text-slate-800">{t('productCatalog', lang)}</h1>
+                <p className="text-sm text-slate-500 mt-0.5">{t('productCatalogSubtitle', lang)}</p>
+              </>
+            )}
+          </div>
+          {/* The result count is the only thing that says the filters did
+              anything: search is debounced, a category click refetches in place
+              and "Load more" appends, and none of it moves focus. As a plain
+              <span> that was silent — 4.1.3. This is the shape InfraFilters
+              already uses (role="status" + aria-live + aria-busy); the app had
+              its own answer and this page was not using it.
+              Rendered whether or not there are results, so going from 12
+              matches to 0 is announced too — the `total > 0` guard meant the
+              node was removed exactly when the news was worst. */}
+          <span
+            role="status"
+            aria-live="polite"
+            aria-busy={loading || loadingMore}
+            className="text-sm text-slate-500"
+          >
+            {total > 0 &&
+              (products.length < total
+                ? `${products.length} / ${total} ${t('products', lang)}`
+                : `${total} ${t('products', lang)}`)}
+            {!loading && total === 0 && `0 ${t('products', lang)}`}
+          </span>
+        </div>
+
         {/* Favourites shortcut. Hidden entirely when empty rather than shown as
             an empty shelf, and suppressed while searching or filtering so it
             cannot contradict the result set below it. */}
@@ -309,38 +377,17 @@ export default function CatalogPage() {
               {t('myFavorites', lang)}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {favoriteCards.map(renderCard)}
+              {favoriteCards.map((product) => renderCard(product, 3))}
             </div>
           </section>
         )}
-
-        <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
-          <div>
-            {search ? (
-              <h2 className="text-xl font-bold text-slate-800">
-                {t('resultsFor', lang)}: <span style={{ color: 'var(--bp-text)' }}>&ldquo;{search}&rdquo;</span>
-              </h2>
-            ) : (
-              <>
-                <h2 className="text-xl font-bold text-slate-800">{t('productCatalog', lang)}</h2>
-                <p className="text-sm text-slate-500 mt-0.5">{t('productCatalogSubtitle', lang)}</p>
-              </>
-            )}
-          </div>
-          {total > 0 && (
-            <span className="text-sm text-slate-500">
-              {products.length < total
-                ? `${products.length} / ${total} ${t('products', lang)}`
-                : `${total} ${t('products', lang)}`}
-            </span>
-          )}
-        </div>
 
         {/* Mobile category pills */}
         {categories.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4 md:hidden">
             <button
               onClick={() => setSelectedCategory(null)}
+              aria-pressed={selectedCategory === null}
               className="inline-flex min-h-11 items-center rounded-full px-4 py-1 text-sm font-medium transition-colors"
               style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
             >
@@ -350,6 +397,7 @@ export default function CatalogPage() {
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
+                aria-pressed={selectedCategory === cat.id}
                 className="inline-flex min-h-11 items-center rounded-full px-4 py-1 text-sm font-medium transition-colors"
                 style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
               >
@@ -389,11 +437,17 @@ export default function CatalogPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {products.map(renderCard)}
+              {products.map((product) => renderCard(product))}
             </div>
 
             {/* Only when there is genuinely more to fetch — a button that says
                 "load more" and then loads nothing is worse than no button. */}
+            {loadMoreFailed && (
+              <p role="alert" className="mt-4 text-center text-sm text-red-700">
+                {t('somethingWentWrong', lang)}
+              </p>
+            )}
+
             {products.length < total && (
               <div className="mt-6 text-center">
                 <button

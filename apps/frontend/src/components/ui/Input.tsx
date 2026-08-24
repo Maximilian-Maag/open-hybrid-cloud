@@ -16,7 +16,15 @@ export function Input({ label, error, hint, id, className = '', ...props }: Inpu
     <div className="flex flex-col gap-1">
       <label htmlFor={inputId} className="text-sm font-medium text-slate-700">
         {label}
-        {props.required && <span className="ml-1 text-red-500">*</span>}
+        {/* red-700, not red-500, and no gate would ever have said so. axe skips
+            glyph-only text: `colorContrastMatches` gates on `hasRealTextChildren`,
+            which strips punctuation first — `*` leaves an empty string, so the
+            span is excluded from `color-contrast` entirely (axe-core 4.13.0). It
+            measured 3.81:1 on white against the 4.5:1 AA needs; red-700 is 6.42
+            on white and 6.14 on slate-50, and is already the app's red for text
+            (see Button's `danger`). The same span is in Select and
+            ParameterFields — all four have to move together. */}
+        {props.required && <span className="ml-1 text-red-700">*</span>}
       </label>
       <input
         id={inputId}

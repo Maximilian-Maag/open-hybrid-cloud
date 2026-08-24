@@ -57,9 +57,14 @@ export default async function DashboardHome() {
       <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}>
         <div className="px-8 py-10 flex flex-col sm:flex-row items-center gap-6">
           <div className="flex-1">
-            <h2 className="text-2xl sm:text-3xl font-bold leading-tight mb-2">
+            {/* The dashboard's h1. It was an h2 and there was no h1 above it, so
+                the busiest route in the product had no top-level heading at all
+                — `page-has-heading-one` and `heading-order` are both
+                best-practice-only rules, so the gate never asked for either.
+                This page has no PageHeader; the hero greeting is the title. */}
+            <h1 className="text-2xl sm:text-3xl font-bold leading-tight mb-2">
               {t('welcomeBack', lang)}, {session.user?.name ?? 'User'}
-            </h2>
+            </h1>
             <p className="text-sm sm:text-base mb-5">
               {t('heroSubtitle', lang)}
             </p>
@@ -111,7 +116,7 @@ export default async function DashboardHome() {
       {featuredProducts.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-bold text-slate-800">{t('fromTheCatalog', lang)}</h3>
+            <h2 className="text-base font-bold text-slate-800">{t('fromTheCatalog', lang)}</h2>
             <Link
               href="/catalog"
               className="text-xs hover:underline flex items-center gap-1"
@@ -139,9 +144,9 @@ export default async function DashboardHome() {
                   </svg>
                 </div>
                 <div className="p-3 flex flex-col flex-1">
-                  <h4 className="font-semibold text-sm text-slate-800 group-hover:underline leading-snug mb-1 line-clamp-2">
+                  <h3 className="font-semibold text-sm text-slate-800 group-hover:underline leading-snug mb-1 line-clamp-2">
                     {product.name}
-                  </h4>
+                  </h3>
                   <p className="text-xs text-slate-500 line-clamp-2 flex-1">{product.description}</p>
                   <span className="text-xs font-medium mt-2" style={{ color: 'var(--bp-text)' }}>{t('orderNow', lang)}</span>
                 </div>
@@ -155,7 +160,7 @@ export default async function DashboardHome() {
       {orderList.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-bold text-slate-800">{t('recentOrders', lang)}</h3>
+            <h2 className="text-base font-bold text-slate-800">{t('recentOrders', lang)}</h2>
             <Link href="/orders" className="text-xs hover:underline" style={{ color: 'var(--bp-text)' }}>
               {t('viewAll', lang)}
             </Link>

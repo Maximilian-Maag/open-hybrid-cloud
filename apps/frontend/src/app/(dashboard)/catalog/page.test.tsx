@@ -435,3 +435,110 @@ describe('CatalogPage server-side filtering and paging', () => {
     expect(screen.queryByTestId('product-card-10')).not.toBeInTheDocument()
   })
 })
+
+/**
+ * What the page SAYS when the result set changes (#186).
+ *
+ * Search is debounced, a category click refetches in place and "Show more"
+ * appends — none of it moves focus, so the only thing that tells a screen-reader
+ * user anything happened is the result count, and that was a plain <span>.
+ * InfraFilters already had the right shape; this page did not use it.
+ */
+describe('CatalogPage announcements', () => {
+  beforeEach(() => { currentParams = new URLSearchParams() })
+
+  it('puts the result count in a live region that is present before it changes', async () => {
+    mockApi([])
+    render(<CatalogPage />)
+
+    // Present from the first paint, not conditionally rendered on `total > 0`:
+    // a live region inserted at the same moment as its content is not reliably
+    // announced, and the case that mattered most — dropping to zero matches —
+    // removed the node entirely.
+    const status = await screen.findByRole('status')
+    await waitFor(() => expect(status).toHaveTextContent('2 products'))
+    expect(status).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it('marks the region busy while a fetch is in flight', async () => {
+    let resolve!: (v: unknown) => void
+    mockedGet.mockImplementation((async (path: string) => {
+      if (path.startsWith('/api/catalog')) return new Promise((r) => { resolve = r })
+      if (path.startsWith('/api/admin/categories')) return categories
+      if (path.startsWith('/api/favorites')) return []
+      return []
+    }) as never)
+
+    render(<CatalogPage />)
+    const status = await screen.findByRole('status')
+    expect(status).toHaveAttribute('aria-busy', 'true')
+
+    resolve(catalogPage(products))
+    await waitFor(() => expect(status).toHaveAttribute('aria-busy', 'false'))
+  })
+
+  it('says so when appending the next page fails, instead of leaving a silent no-op', async () => {
+    // The catch used to swallow the error and leave the button enabled, so a
+    // failed append was indistinguishable from a successful one that added
+    // nothing — for everyone, not only for screen-reader users.
+    mockedGet.mockImplementation((async (path: string) => {
+      if (path.startsWith('/api/catalog')) {
+        if (path.includes('offset=0')) return catalogPage(products, 3)
+        throw new Error('network down')
+      }
+      if (path.startsWith('/api/admin/categories')) return categories
+      if (path.startsWith('/api/favorites')) return []
+      return []
+    }) as never)
+
+    const user = userEvent.setup()
+    render(<CatalogPage />)
+
+    await user.click(await screen.findByRole('button', { name: /show more/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/something went wrong/i)
+    // The two cards already on screen survive: this is an append failure, not a
+    // load failure.
+    expect(screen.getByTestId('product-card-10')).toBeInTheDocument()
+  })
+
+  it('exposes which category filter is applied, rather than only colouring it', async () => {
+    // aria-pressed, not aria-current: clicking the selected category clears it,
+    // which is a toggle. Colour alone is 1.4.1 and 4.1.2, and axe cannot infer
+    // that a background colour means "selected".
+    mockApi([])
+    const user = userEvent.setup()
+    render(<CatalogPage />)
+
+    await waitFor(() => expect(screen.getByTestId('product-card-10')).toBeInTheDocument())
+
+    const all = screen.getAllByRole('button', { name: 'All products' })[0]
+    expect(all).toHaveAttribute('aria-pressed', 'true')
+
+    const databases = screen.getAllByRole('button', { name: 'Databases' })[0]
+    expect(databases).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(databases)
+    expect(databases).toHaveAttribute('aria-pressed', 'true')
+    expect(all).toHaveAttribute('aria-pressed', 'false')
+
+    // Clicking it again clears the filter, which is why it is a toggle.
+    await user.click(databases)
+    expect(databases).toHaveAttribute('aria-pressed', 'false')
+    expect(all).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('gives the page an h1, and keeps the card headings one level below it', async () => {
+    // /catalog had no h1 at all: the favourites shelf's h2 came first in the DOM
+    // and the title below it was an h2 too. `page-has-heading-one` and
+    // `heading-order` are both best-practice-only rules, so the gate never asked
+    // for either (#185).
+    mockApi([])
+    render(<CatalogPage />)
+
+    await waitFor(() => expect(screen.getByTestId('product-card-10')).toBeInTheDocument())
+    expect(screen.getByRole('heading', { level: 1, name: /product catalog/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Managed Postgres' })).toBeInTheDocument()
+  })
+})

@@ -17,10 +17,19 @@ export default async function ImpressumPage() {
   const shopName = branding.shopName ?? 'Open Hybrid Cloud'
   const imprintText = branding.imprintText ?? ''
 
+  // The empty state is a page in its own right, not a placeholder: it is what
+  // /impressum serves on every install where the operator has not filled the
+  // imprint in, which is the default. It used to be a bare centred <div> — no
+  // <main>, no <h1> — so it failed `landmark-one-main`, `page-has-heading-one`
+  // and `region`, none of which the gate requested. The populated branch below
+  // already had both; only this one was missed.
   if (!imprintText) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center text-slate-600">{t('noImprintConfigured', lang)}</div>
+        <main className="text-center">
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">{t('imprint', lang)}</h1>
+          <p className="text-slate-600">{t('noImprintConfigured', lang)}</p>
+        </main>
       </div>
     )
   }

@@ -136,7 +136,10 @@ test.describe('Admin - Internationalization', () => {
     await loginAsRoot(page)
     await page.goto('/')
 
-    // Open language switcher (aria-label: "Language: English")
+    // Open language switcher. Its accessible name is the visible code plus a
+    // visually hidden qualifier — "EN — Language: English" — so /language/i
+    // still matches while the visible label is preserved (WCAG 2.5.3).
+    // These tests run in English; the qualifier is translated.
     await page.getByRole('button', { name: /language/i }).click()
     // Select German — button contains both code span "DE" and name span "Deutsch"
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^DE$/ }) }).click()

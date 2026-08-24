@@ -7,7 +7,7 @@ const columns = [{ header: 'Name', accessor: 'name' as const }]
 
 describe('Table', () => {
   it('renders column headers with scope="col"', () => {
-    render(<Table<Row> columns={columns} data={[{ id: 1, name: 'Alpha' }]} />)
+    render(<Table<Row> columns={columns} data={[{ id: 1, name: 'Alpha' }]} emptyMessage="Nothing here" />)
     const th = screen.getByText('Name')
     expect(th.tagName).toBe('TH')
     expect(th).toHaveAttribute('scope', 'col')
@@ -25,6 +25,7 @@ describe('Table', () => {
         columns={columns}
         data={[{ id: 1, name: 'Alpha' }]}
         onRowClick={onRowClick}
+        emptyMessage="Nothing here"
       />,
     )
     const row = screen.getByText('Alpha').closest('tr')
@@ -36,7 +37,7 @@ describe('Table', () => {
 
   it('keeps plain row semantics (no role/tabindex) when onRowClick is present', () => {
     render(
-      <Table<Row> columns={columns} data={[{ id: 1, name: 'Alpha' }]} onRowClick={() => {}} />,
+      <Table<Row> columns={columns} data={[{ id: 1, name: 'Alpha' }]} onRowClick={() => {}} emptyMessage="Nothing here" />,
     )
     const row = screen.getByText('Alpha').closest('tr')
     if (!row) throw new Error('row not found')

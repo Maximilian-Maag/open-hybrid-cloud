@@ -21,14 +21,24 @@ interface TableProps<T> {
    * (see the projects table). Table.test.tsx locks the plain semantics in.
    */
   onRowClick?: (row: T) => void
-  emptyMessage?: string
+  /**
+   * Required, and deliberately not defaulted.
+   *
+   * It used to default to the English literal 'No data found.', which rendered
+   * inside a document declaring some other language (WCAG 3.1.2) wherever a
+   * caller forgot it — and `tsc` had nothing to say, because the default made it
+   * optional. Only one call site was actually relying on it, so the honest fix
+   * is to let the type system ask. Table takes no `lang`, so the string has to
+   * come from a caller that has one.
+   */
+  emptyMessage: string
 }
 
 export function Table<T extends { id?: number | string }>({
   columns,
   data,
   onRowClick,
-  emptyMessage = 'No data found.',
+  emptyMessage,
 }: TableProps<T>) {
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200">

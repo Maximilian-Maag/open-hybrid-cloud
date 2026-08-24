@@ -6,6 +6,7 @@ import { axe } from 'vitest-axe'
 import type { AxeResults } from 'axe-core'
 import Link from 'next/link'
 import type { Parameter, SessionInfo } from '@open-hybrid-cloud/types'
+import { t } from '@/lib/i18n'
 import { Alert } from './ui/Alert'
 import { Button, ButtonLink } from './ui/Button'
 import { Card } from './ui/Card'
@@ -272,6 +273,18 @@ describe('Card', () => {
       ),
     ).toHaveNoViolations()
   })
+
+  it('titles at h2 by default, and at whatever level the page asks for', () => {
+    // The default is the fix: a Card sits under a PageHeader's h1, and a
+    // hardcoded h3 skipped a level on all 24 pages that pair them. `heading-order`
+    // is best-practice-only, so the page gate never asked (#185).
+    const { unmount } = render(<Card title="Cost centres"><p>Body</p></Card>)
+    expect(screen.getByRole('heading', { name: 'Cost centres', level: 2 })).toBeInTheDocument()
+    unmount()
+
+    render(<Card title="Nested" level={3}><p>Body</p></Card>)
+    expect(screen.getByRole('heading', { name: 'Nested', level: 3 })).toBeInTheDocument()
+  })
 })
 
 describe('StatusBadge', () => {
@@ -291,7 +304,7 @@ describe('Table', () => {
 
   it('is accessible with rows', async () => {
     expect(
-      await check(<Table columns={columns} data={[{ id: 1, name: 'web-01' }]} />),
+      await check(<Table columns={columns} data={[{ id: 1, name: 'web-01' }]} emptyMessage="Nothing yet" />),
     ).toHaveNoViolations()
   })
 
@@ -706,13 +719,78 @@ describe('ParameterFields', () => {
           parameters={[
             param({ id: 1, name: 'hostname', label: 'Hostname', type: 'string', required: true }),
             param({ id: 2, name: 'replicas', label: 'Replicas', type: 'number', description: 'How many' }),
-            param({ id: 3, name: 'public', label: 'Publicly reachable', type: 'bool' }),
-            param({ id: 4, name: 'size', label: 'Size', type: 'dropdown', defaultValue: 'small, large' }),
+            param({
+              id: 3,
+              name: 'public',
+              label: 'Publicly reachable',
+              type: 'bool',
+              description: 'Opens port 443 to the internet',
+            }),
+            param({
+              id: 4,
+              name: 'size',
+              label: 'Size',
+              type: 'dropdown',
+              defaultValue: 'small, large',
+              description: 'Decides the price',
+            }),
             param({ id: 5, name: 'token', label: 'API token', type: 'string', sensitive: true }),
           ]}
         />,
       ),
     ).toHaveNoViolations()
+  })
+
+  it('announces the description for every type that can carry one', () => {
+    // The fixture above used to give the bool and the dropdown `description: ''`,
+    // so the branch that draws it never ran and the two types that DROPPED it
+    // looked covered. Filling the fixture in is not enough on its own either —
+    // axe has no rule for "this <p> should have been referenced", so the
+    // accessible description has to be asserted directly. The string branch went
+    // through Input, which wired it; these two rendered it as loose text.
+    render(
+      <ParameterFields
+        onChange={() => {}}
+        lang="en"
+        parameters={[
+          param({ id: 1, name: 'hostname', label: 'Hostname', description: 'The DNS name' }),
+          param({
+            id: 2,
+            name: 'public',
+            label: 'Publicly reachable',
+            type: 'bool',
+            description: 'Opens port 443 to the internet',
+          }),
+          param({
+            id: 3,
+            name: 'size',
+            label: 'Size',
+            type: 'dropdown',
+            defaultValue: 'small, large',
+            description: 'Decides the price',
+          }),
+        ]}
+      />,
+    )
+    expect(screen.getByLabelText('Hostname')).toHaveAccessibleDescription('The DNS name')
+    expect(screen.getByLabelText('Publicly reachable')).toHaveAccessibleDescription(
+      'Opens port 443 to the internet',
+    )
+    expect(screen.getByLabelText('Size')).toHaveAccessibleDescription('Decides the price')
+  })
+
+  it('translates the dropdown placeholder instead of hardcoding English', () => {
+    // `<option value="">Select…</option>` was the only literal in this component,
+    // and it rendered inside a document declaring another language (3.1.2).
+    render(
+      <ParameterFields
+        onChange={() => {}}
+        lang="de"
+        parameters={[param({ id: 1, type: 'dropdown', label: 'Größe', defaultValue: 'klein, groß' })]}
+      />,
+    )
+    expect(screen.getByRole('option', { name: t('selectOption', 'de') })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Select…' })).toBeNull()
   })
 
   it('falls back to the variable name when no label is configured, rather than going unnamed', async () => {

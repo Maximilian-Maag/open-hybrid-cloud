@@ -22,6 +22,21 @@ Two things worth knowing before reading the table:
   `undefined`, which axe reports as *incomplete*, not *failed*. The spec therefore
   asserts on `incomplete` for that rule specifically. Without that it would be
   decoration.
+- **`best-practice` is requested too, and it is a third of the rule set.** Of
+  axe-core 4.13.0's 105 rules, 30 carry `best-practice` and no `wcagN` tag, so
+  the WCAG tags alone never ran them; three of those 30 are still skipped by
+  axe's default `tagExclude` of `['experimental', 'deprecated']`
+  (`focus-order-semantics`, `hidden-content`,
+  `landmark-complementary-is-top-level`), leaving 27 that the gate now
+  evaluates. They are structural checks WCAG expresses as judgements rather than
+  as testable rules — heading order, landmarks, empty headings and table
+  headers — which is exactly why they are not tagged `wcagN`, and exactly the
+  class of thing this app wants held. Turning them on found six real defects
+  (#185): no `<h1>` on `/` or `/catalog`, `Card`'s hardcoded `<h3>` skipping a
+  level on all 24 `PageHeader` pages, `/admin`'s section cards doing the same,
+  no `<main>` on `/login` or on `/impressum`'s empty state, and an unnamed
+  actions column on `/admin/products`. Nothing was added to
+  `RULES_OUT_OF_SCOPE` for it.
 
 ## AAA criteria: in scope
 
@@ -141,9 +156,22 @@ Adding one is a documentation project. Recorded as partially met, not claimed.
 | 2.1.3 Keyboard (No Exception) | Plausibly met — every control is a native element and the dialogs are `<dialog>` — but "no exception" is a claim about paths nobody has walked. Not asserted, so not claimed. |
 | 2.2.3 No Timing, 2.2.5 Re-authenticating, 2.2.6 Timeouts | The session expires. `expiredLoginUrl` returns you to the page you were on (#103), which is most of 2.2.5, but nothing warns before the timeout or preserves unsaved form data, which is 2.2.6. |
 | 2.3.2 Three Flashes | Met by construction: nothing flashes. |
-| 2.4.10 Section Headings | Largely met — `Card` titles are real headings and every page has an `h1` — but "organised using section headings" is a judgement about content structure, not something a rule can check. |
+| 2.4.10 Section Headings | Largely met — `Card` titles are real headings, and `page-has-heading-one` + `heading-order` now hold every scanned page to one `h1` and no skipped levels. That claim was previously made here without a check behind it, and it was false: `/` and `/catalog`, the two busiest routes, had no `h1` at all. "Organised using section headings" is still a judgement about content structure, not something a rule can check. |
 | 3.1.3 Unusual Words, 3.1.4 Abbreviations, 3.1.6 Pronunciation | The UI is dense with abbreviations (CI, SMTP, TLS, CSV, VM, `TF_VAR_`). Expanding them properly means a glossary in 25 languages. Real gap. |
 | 3.3.6 Error Prevention (All) | Every destructive action is behind a confirmation modal, which covers reversal for deletes. Submissions are not reviewable-before-final in general. |
+
+## What axe cannot check, and what stands in for it
+
+Four of these are asserted at the bottom of the spec. The last one is the reason
+this section exists at all.
+
+| Not checkable by axe | What the spec does instead |
+|---|---|
+| **Focus visibility** | Focuses each control and measures the painted ring against the background behind it, requiring 1.4.11's 3:1. The earlier version counted any non-transparent shadow layer as a pass, which measures "a ring exists", not "a ring can be seen" — and those come apart precisely where it matters. Colours are resolved by painting them on a 1x1 canvas: Tailwind 4's palette is oklch and Chromium serialises it back as oklch, so a regex would have to reimplement colour conversion. |
+| **Target size (2.5.5)** | Measures the rendered boxes. axe's `target-size` is the weaker WCAG 2.2 AA criterion (2.5.8, 24px). |
+| **Accessible-name language (3.1.2)** | Loads a page under `lang=de` and asserts the names assistive tech reads are German. |
+| **Selection state** | Asserts that what is drawn as selected also carries `aria-pressed` / `aria-current` — the top nav, the catalogue's category filters and the language menu. axe cannot infer that a background colour means "selected": there is no missing attribute, only a missing concept. |
+| **Glyph-only contrast** | **Not a gap axe could close.** `color-contrast` matches on `hasRealTextChildren`, which calls `removeUnicode(visibleText, { punctuations: true })` before deciding an element has text. A lone `*`, `·`, `→` or `—` strips to the empty string, so the element is excluded from the rule *by construction* — at every viewport, under every branding colour, with any rule configuration. The required-field asterisk was `text-red-500` (#fb2c36, 3.81:1 on white against a required 4.5) for as long as this suite has existed and neither layer could ever have said so. It is `text-red-700` now (6.42:1 on white, 6.14 on slate-50), and the spec measures every single-glyph element on the two pages that carry them. |
 
 ## When you add a page or a component
 
@@ -153,3 +181,12 @@ Adding one is a documentation project. Recorded as partially met, not claimed.
   `color-contrast` (no layout, no canvas), so contrast stays an e2e concern.
 - A new control needs the 44px floor. `Button`, `Input` and `Select` carry it; a
   hand-rolled `<button>` does not.
+- A new heading needs a level, not a size. `Card` and `ProductCard` take a
+  `level` prop defaulting to 2 because they sit under a `PageHeader`'s `h1`;
+  picking `h3` because it looks right is what produced the skip that
+  `heading-order` now catches.
+- A new indicator drawn as a colour needs a state attribute as well
+  (`aria-pressed` for a toggle, `aria-current` for one of a set). Nothing
+  automated will ask.
+- A new glyph-only marker needs its contrast checked by hand or by the spec's
+  sweep. axe will not check it, ever.

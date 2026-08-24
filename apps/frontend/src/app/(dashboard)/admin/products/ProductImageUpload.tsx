@@ -151,7 +151,7 @@ export function ProductImageUpload({ productId, token, initialAlt, onChanged }: 
 
       <div className="flex flex-col gap-1">
         <label htmlFor={`product-image-alt-${productId}`} className="text-sm font-medium text-slate-700">
-          {t('imageDescriptionLabel', lang)} <span className="text-red-500">*</span>
+          {t('imageDescriptionLabel', lang)} <span className="text-red-700">*</span>
         </label>
         <input
           id={`product-image-alt-${productId}`}

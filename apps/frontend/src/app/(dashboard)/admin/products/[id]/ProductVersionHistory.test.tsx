@@ -145,7 +145,45 @@ describe('ProductVersionHistory', () => {
     expect(within(panel).getByText('added')).toBeInTheDocument()
     expect(within(panel).getByText('removed')).toBeInTheDocument()
     expect(within(panel).getByText('changed')).toBeInTheDocument()
-    expect(within(panel).getByText(/defaultValue: eu → us/)).toBeInTheDocument()
+    expect(within(panel).getByText(/defaultValue: was eu, now us/)).toBeInTheDocument()
+  })
+
+  /**
+   * The direction of a change, in words (#186).
+   *
+   * A root admin reviewing what a catalogue change did used to hear
+   * "price 10.00 12.00". `line-through` is not announced by default by NVDA,
+   * JAWS or VoiceOver, red vs green is signalling by colour alone (1.4.1), and
+   * the arrow that carried the whole meaning was aria-hidden.
+   */
+  it('says which value is the old one and which is the new one, in words', async () => {
+    mockApi(
+      [version({ id: 9 }), version({ id: 8 })],
+      diff({ identical: false, fields: [{ field: 'price', from: '10.00', to: '25.00' }] }),
+    )
+    renderPanel()
+
+    await userEvent.click(await screen.findByRole('button', { name: /compare/i }))
+    const panel = await screen.findByTestId('version-diff')
+    // The whole row read as one string, which is what a screen reader gets.
+    expect(panel.textContent).toContain('price was 10.00')
+    expect(panel.textContent).toContain('now 25.00')
+  })
+
+  it('names an absent value instead of drawing a glyph most voices skip', async () => {
+    // `∅` rendered for an empty field, and most voices skip it — so
+    // "price ∅ → 12.00" and "price 12.00" were the same announcement, and the
+    // reader could not tell whether the price IS that or BECAME it.
+    mockApi(
+      [version({ id: 9 }), version({ id: 8 })],
+      diff({ identical: false, fields: [{ field: 'price', from: '', to: '12.00' }] }),
+    )
+    renderPanel()
+
+    await userEvent.click(await screen.findByRole('button', { name: /compare/i }))
+    const panel = await screen.findByTestId('version-diff')
+    expect(panel.textContent).toContain('was empty')
+    expect(panel.textContent).not.toContain('∅')
   })
 
   it('says so when two versions are identical', async () => {

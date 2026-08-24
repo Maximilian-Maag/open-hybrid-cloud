@@ -35,7 +35,9 @@ export function Select({
     <div className="flex flex-col gap-1">
       <label htmlFor={selectId} className="text-sm font-medium text-slate-700">
         {label}
-        {props.required && <span className="ml-1 text-red-500">*</span>}
+        {/* red-700 for the reason measured in Input.tsx: axe cannot check a
+            glyph-only marker at all, and red-500 was 3.81:1. */}
+        {props.required && <span className="ml-1 text-red-700">*</span>}
       </label>
       <select
         id={selectId}

@@ -109,6 +109,10 @@ export function OrderForm({
   const parsedQuantity = Number(quantity)
   const quantityValid =
     Number.isInteger(parsedQuantity) && parsedQuantity >= 1 && parsedQuantity <= MAX_QUANTITY
+  // The range is appended numerically rather than baked into 25 translations:
+  // MAX_QUANTITY mirrors a backend constant, and a number that moves must not
+  // need a translation round to stay true. Same shape as the field's own hint.
+  const quantityError = `${t('quantityInvalid', lang)} (1 – ${MAX_QUANTITY})`
   const envParameters = resolvedParameters.filter(
     (p) => p.environmentId === null || String(p.environmentId) === envId,
   )
@@ -190,6 +194,16 @@ export function OrderForm({
     }
     if (needsSize && !sizeCode) {
       setError(t('selectSize', lang))
+      return
+    }
+    // Checked here rather than by disabling the button. Clearing the field gives
+    // Number('') === 0, which used to silently disable submit with nothing said
+    // — and a disabled <button> is not focusable, so a screen-reader user tabbed
+    // to the end of the primary conversion path in this app and found no submit
+    // control at all, with no explanation (3.3.1, 3.3.3). Every other error in
+    // this form goes through Alert (role="alert"); this one now does too.
+    if (!quantityValid) {
+      setError(quantityError)
       return
     }
     setLoading(true)
@@ -313,6 +327,10 @@ export function OrderForm({
         // Said rather than silently clamped: one order provisions this many
         // elements, and one approval covers all of them.
         hint={`1 – ${MAX_QUANTITY}`}
+        // Input turns this into aria-invalid plus an aria-describedby'd message,
+        // so the field itself now says what is wrong instead of the failure
+        // being visible only as a submit button that stopped working.
+        error={quantityValid ? undefined : quantityError}
       />
 
       <Select
@@ -386,7 +404,10 @@ export function OrderForm({
           />
           {templateId && (
             <p className="mt-1 text-xs text-slate-500">
-              {t('paramsPrefilled', lang)}{templateId}. Edit as needed before submitting.
+              {/* The trailing sentence used to be an English literal welded onto
+                  a translated one, so this line read half in the user's language
+                  and half in English (3.1.2). */}
+              {t('paramsPrefilled', lang)}{templateId}. {t('editBeforeSubmitting', lang)}
             </p>
           )}
           {fromInfraId && templateId === fromInfraId && (
@@ -402,11 +423,15 @@ export function OrderForm({
             parameters={envParameters}
             values={paramValues}
             onChange={setParamValues}
+            lang={lang}
           />
         </div>
       )}
 
-      <Button type="submit" disabled={loading || !quantityValid} className="w-full">
+      {/* Not disabled on an invalid quantity — see handleSubmit. `loading` is a
+          different case: it is transient, the label changes to say so, and
+          re-submitting mid-flight would double-order. */}
+      <Button type="submit" disabled={loading} className="w-full">
         {loading ? t('submitting', lang) : t('placeOrder', lang)}
       </Button>
     </form>

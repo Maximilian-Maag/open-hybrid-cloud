@@ -51,11 +51,16 @@ const sizeClass: Record<Size, string> = {
   lg: 'px-5 py-2.5 text-base',
 }
 
-// focus-visible:ring-2 needs an explicit ring COLOUR. Tailwind v4 leaves
-// --tw-ring-color unset otherwise, so the ring renders fully transparent and the
-// button has no visible focus indicator at all (WCAG 2.4.7) — which is what this
-// component shipped with until the a11y gate caught it. ring-offset-white keeps
-// the ring readable where a button sits on a tinted card.
+// focus-visible:ring-2 needs an explicit ring COLOUR. This comment used to say
+// Tailwind v4 leaves --tw-ring-color unset and the ring therefore renders
+// transparent. That is wrong, and reasoning from it mis-triages the real cases:
+// in 4.3.1 the fallback is `currentcolor`, so an uncoloured ring is painted in
+// the element's own text colour. Transparent is harmless-looking; currentcolor
+// is worse, because it is invisible exactly when the text colour matches the
+// ground behind the ring — which is what happened to the sign-in button, whose
+// currentColor is --bp-ink (#ffffff on the shipped primary) against a #fff
+// offset on a white card (WCAG 2.4.7). ring-offset-white keeps the ring
+// readable where a button sits on a tinted card.
 //
 // min-h-11/min-w-11 is 44px: the WCAG 2.5.5 target size. It is a MINIMUM, so a
 // wide button keeps its width and an icon-only one gets squared off — which is

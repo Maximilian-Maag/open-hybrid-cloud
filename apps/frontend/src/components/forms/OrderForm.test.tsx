@@ -398,3 +398,77 @@ describe('OrderForm parameter resolution', () => {
     expect(screen.queryByLabelText(/try it out/i)).not.toBeInTheDocument()
   })
 })
+
+/**
+ * An invalid quantity used to disable submit and say nothing (#186).
+ *
+ * Clearing the field gives Number('') === 0, so the form silently became
+ * unsubmittable: no error, no aria-invalid, nothing announced. And a disabled
+ * <button> is not focusable, so a screen-reader user tabbing this form — the
+ * app's primary conversion path — reached the end and found no submit control at
+ * all, with no explanation (3.3.1, 3.3.3).
+ */
+describe('OrderForm quantity', () => {
+  const projects = [{ id: 5, name: 'Webshop', description: '', ownerId: 1, costCenterId: null, createdAt: '' }] as never
+
+  const renderForm = () => {
+    mockedGet.mockImplementation((async () => []) as never)
+    return render(<OrderForm product={product} projects={projects} costCenters={[]} token="t" />)
+  }
+
+  it('keeps the submit button focusable when the quantity is invalid', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    const submit = screen.getByRole('button', { name: /place order/i })
+    await user.clear(screen.getByLabelText(/quantity/i))
+
+    expect(submit).not.toBeDisabled()
+    submit.focus()
+    expect(document.activeElement).toBe(submit)
+  })
+
+  it('marks the field invalid and describes why', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    const quantity = screen.getByLabelText(/quantity/i)
+    expect(quantity).not.toHaveAttribute('aria-invalid')
+
+    await user.clear(quantity)
+    expect(quantity).toHaveAttribute('aria-invalid', 'true')
+    expect(quantity).toHaveAccessibleDescription(/whole number/i)
+  })
+
+  it('announces the failure through the same role="alert" every other error uses', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    await user.selectOptions(screen.getByLabelText(/environment/i), '1')
+    await waitFor(() => expect(screen.getByLabelText(/project/i)).toBeInTheDocument())
+    await user.selectOptions(screen.getByLabelText(/project/i), '5')
+    await user.clear(screen.getByLabelText(/quantity/i))
+
+    await user.click(screen.getByRole('button', { name: /place order/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/whole number/i)
+    // And nothing was ordered.
+    expect(mockedPost).not.toHaveBeenCalled()
+  })
+
+  it('still submits a valid quantity', async () => {
+    const user = userEvent.setup()
+    renderForm()
+
+    await user.selectOptions(screen.getByLabelText(/environment/i), '1')
+    await waitFor(() => expect(screen.getByLabelText(/project/i)).toBeInTheDocument())
+    await user.selectOptions(screen.getByLabelText(/project/i), '5')
+    await user.clear(screen.getByLabelText(/quantity/i))
+    await user.type(screen.getByLabelText(/quantity/i), '3')
+
+    await user.click(screen.getByRole('button', { name: /place order/i }))
+    await waitFor(() => expect(mockedPost).toHaveBeenCalled())
+    expect((mockedPost.mock.calls[0][1] as Record<string, unknown>).quantity).toBe(3)
+  })
+})

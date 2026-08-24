@@ -482,7 +482,7 @@ function CartItemRow({
         {/* Kept on the row rather than hidden behind a disclosure: unlike a retail
             cart, these are required to provision and checkout validates them. */}
         {applicable.length > 0 && (
-          <ParameterFields parameters={applicable} values={values} onChange={onValues} />
+          <ParameterFields parameters={applicable} values={values} onChange={onValues} lang={lang} />
         )}
 
         {/* Per item, because the cost-centre rules live on the offering and two

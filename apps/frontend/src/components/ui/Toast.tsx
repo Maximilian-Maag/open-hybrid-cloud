@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { t } from '@/lib/i18n'
 import { useLang } from '@/lib/useLang'
 
@@ -26,30 +26,46 @@ export function useToast() {
 
 let nextId = 1
 
+/**
+ * How long a toast stays up while nobody is looking at it.
+ *
+ * The countdown lives in the bubble, not here, because only the bubble knows
+ * whether the pointer or the keyboard is on it — see the note there. A provider
+ * -owned `setTimeout` cannot be paused, which is what made this a WCAG 2.2.1
+ * failure rather than a short-timer complaint.
+ */
+const TOAST_MS = 3500
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
   const toast = useCallback((message: string, type: ToastType = 'success') => {
     const id = nextId++
     setToasts((prev) => [...prev, { id, message, type }])
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500)
+  }, [])
+
+  const dismiss = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((x) => x.id !== id))
   }, [])
 
   return (
     <ToastContext.Provider value={{ toast }}>
-      {children}
-      {/* The live region is on each bubble (role="alert"/"status"), not here —
+      {/* BEFORE {children}, which looks wrong and is not: the container is
+          `fixed`, so DOM order costs nothing visually and buys the one thing
+          that mattered. It used to render after the whole app, so the dismiss
+          button — correct in itself, 44px and labelled — sat behind every
+          control on the page in tab order. On /admin/users that is well over
+          3.5 s of tabbing, so it could not be operated before the thing it
+          dismisses was gone (2.2.1).
+          The live region is on each bubble (role="alert"/"status"), not here —
           an aria-live container wrapping children that declare their own live
           role nests two regions, and some screen readers then announce twice. */}
       <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
         {toasts.map((t) => (
-          <ToastBubble
-            key={t.id}
-            item={t}
-            onDismiss={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
-          />
+          <ToastBubble key={t.id} item={t} onDismiss={() => dismiss(t.id)} />
         ))}
       </div>
+      {children}
     </ToastContext.Provider>
   )
 }
@@ -68,9 +84,40 @@ const typeIconPath: Record<ToastType, string> = {
 
 function ToastBubble({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) {
   const lang = useLang()
+  // Paused while the pointer is over the bubble or the keyboard is inside it.
+  // That is the 2.2.1 "extend" exception done as a simple action: a user who is
+  // reading the message, or who has tabbed to the dismiss button, is not racing
+  // a timer any more.
+  const [paused, setPaused] = useState(false)
+  // What is left of the 3.5 s, so pausing and resuming does not restart it —
+  // hovering a toast repeatedly must not keep it up forever, and must not throw
+  // away the time already spent either.
+  const remaining = useRef(TOAST_MS)
+  // The provider passes a fresh arrow every render, so the effect below would
+  // re-run — and re-read `remaining` — on every parent render if it depended on
+  // the prop directly.
+  const dismissRef = useRef(onDismiss)
+  dismissRef.current = onDismiss
+
+  useEffect(() => {
+    if (paused) return
+    const startedAt = Date.now()
+    const timer = setTimeout(() => dismissRef.current(), remaining.current)
+    return () => {
+      clearTimeout(timer)
+      remaining.current = Math.max(0, remaining.current - (Date.now() - startedAt))
+    }
+  }, [paused])
+
   return (
     <div
       role={item.type === 'error' ? 'alert' : 'status'}
+      onPointerEnter={() => setPaused(true)}
+      onPointerLeave={() => setPaused(false)}
+      // React's onFocus/onBlur are focusin/focusout, so they fire for the
+      // dismiss button inside as well as for the container.
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
       className={`flex items-center gap-3 rounded-lg px-4 py-3 shadow-xl text-sm font-medium text-white pointer-events-auto animate-toast-in min-w-56 max-w-xs ${typeClass[item.type]}`}
     >
       <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">

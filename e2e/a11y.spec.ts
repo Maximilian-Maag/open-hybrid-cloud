@@ -17,9 +17,15 @@ import type { Result } from 'axe-core'
  *     dark default and collapsed to 1.88:1 on a mid-tone amber, so the contrast
  *     check runs against a deliberately hostile colour as well. See
  *     apps/frontend/src/lib/contrast.ts.
- *  2. axe alone. Focus visibility, target size and accessible-name language are
- *     not things axe can test at the level this app claims, so they get explicit
- *     assertions at the bottom.
+ *  2. axe alone. Focus visibility, target size, accessible-name language,
+ *     selection state and glyph-only contrast are not things axe can test at the
+ *     level this app claims, so they get explicit assertions at the bottom.
+ *     Glyph-only contrast is not a gap axe could close: `color-contrast` matches
+ *     on `hasRealTextChildren`, which strips punctuation before deciding there is
+ *     text — so `*`, `·`, `→`, `—` and anything else that is one non-alphanumeric
+ *     character are excluded from the rule by construction, at every viewport and
+ *     under every configuration. The required-field asterisk sat at 3.81:1 for as
+ *     long as this suite has existed and neither layer could ever have said so.
  *  3. "AAA" as a slogan. Full AAA is not reachable for an app whose brand colour
  *     is chosen by the operator, so the AAA claim here is partial and the parts
  *     that were refused are written down — with the arithmetic — in
@@ -62,8 +68,32 @@ const AUTHED_PAGES = [
  * only consults `rule.enabled` when the include list is empty. wcag21aaa and
  * wcag22aaa match nothing today; they are here so a future axe release that adds
  * an AAA rule is picked up rather than silently skipped.
+ *
+ * `best-practice` is here because the WCAG tags alone leave a third of the rule
+ * set unasked-for. Measured against axe-core 4.13.0: 30 of its 105 rules carry
+ * `best-practice` and no `wcagN` tag, so none of them ran. Three of those 30 are
+ * still skipped after this — axe's default `tagExclude` is
+ * `['experimental', 'deprecated']`, which drops `focus-order-semantics`,
+ * `hidden-content` and `landmark-complementary-is-top-level` — leaving 27 rules
+ * that this suite now evaluates and did not before.
+ *
+ * Two of them are the reason it is worth it: `page-has-heading-one` and
+ * `heading-order` would each have caught, on the first run, that `/` and
+ * `/catalog` had no `<h1>` at all, and that every `PageHeader` page went
+ * h1 → h3 because `Card` hardcoded `<h3>`. Both are structural facts about the
+ * page that WCAG maps to a judgement (1.3.1, 2.4.6) rather than to a testable
+ * rule, which is exactly why they are tagged best-practice and not wcagN.
  */
-const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag2aaa', 'wcag21aaa', 'wcag22aaa']
+const WCAG = [
+  'wcag2a',
+  'wcag2aa',
+  'wcag21a',
+  'wcag21aa',
+  'wcag2aaa',
+  'wcag21aaa',
+  'wcag22aaa',
+  'best-practice',
+]
 
 /**
  * The one AAA rule this app cannot satisfy, and why it is switched off rather
@@ -107,16 +137,30 @@ const format = (violations: Result[]): string =>
     .join('\n\n')
 
 /**
- * Is a focus indicator actually painted on this element?
+ * Is a focus indicator painted on this element, and can it be SEEN?
  *
- * Tailwind renders its focus ring as a box-shadow AND always emits the ring
- * custom properties, so `boxShadow !== 'none'` is not enough — an unset ring
- * colour produces a shadow made entirely of fully transparent layers. A layer
- * counts only if its colour is not transparent.
+ * The first half is easy and was all this used to do: Tailwind draws its focus
+ * ring as a box-shadow and always emits the ring custom properties, so
+ * `boxShadow !== 'none'` proves nothing.
  *
- * Deliberately not a regex: the obvious one (a repeated group containing
- * `[^,]*`) backtracks exponentially on a long all-transparent shadow, which
- * CodeQL flags as a ReDoS.
+ * The second half is the part that mattered. The previous version counted any
+ * non-transparent shadow layer as a pass, which is a test for "a ring was
+ * painted", not "a ring is visible" — and those come apart exactly where it
+ * hurts. `ring-2` with no ring-<colour> leaves `--tw-ring-color` at its
+ * Tailwind 4.3.1 fallback of `currentcolor`; on the sign-in button currentColor
+ * is `--bp-ink`, which is #ffffff on the shipped default primary, painted over
+ * a #fff offset on a white card. Fully opaque, completely invisible, and the
+ * old probe passed it. So each layer's colour is now measured against the
+ * background it sits on, and 1.4.11's 3:1 is the bar.
+ *
+ * Colours are resolved by PAINTING them: Chromium serialises modern colours
+ * (oklch, color()) back out in their own syntax, and Tailwind 4's palette is
+ * oklch, so a regex over the computed string would have to reimplement colour
+ * conversion. A 1x1 canvas gives the sRGB bytes the user actually sees.
+ *
+ * Deliberately not a regex for the layer split: the obvious one (a repeated
+ * group containing `[^,]*`) backtracks exponentially on a long all-transparent
+ * shadow, which CodeQL flags as a ReDoS.
  */
 const focusProbe = () => {
   const el = document.activeElement as HTMLElement | null
@@ -124,31 +168,168 @@ const focusProbe = () => {
   const c = getComputedStyle(el)
   const outlined = c.outlineStyle !== 'none' && parseFloat(c.outlineWidth) > 0
 
-  const paints = (shadow: string): boolean => {
-    if (!shadow || shadow === 'none') return false
-    // Split on the colour function each layer starts with, then keep any layer
-    // whose colour is not fully transparent.
+  const ctx = document.createElement('canvas').getContext('2d')
+  /** Any CSS colour → [r, g, b, a] as painted, or null if the browser rejects it. */
+  const paint = (colour: string): [number, number, number, number] | null => {
+    if (!ctx) return null
+    ctx.clearRect(0, 0, 1, 1)
+    ctx.fillStyle = '#000'
+    ctx.fillStyle = colour
+    if (ctx.fillStyle === '#000000' && !/^(#0{3,8}|black|rgba?\(0, ?0, ?0)/i.test(colour.trim())) return null
+    ctx.clearRect(0, 0, 1, 1)
+    ctx.fillRect(0, 0, 1, 1)
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+    return [r, g, b, a / 255]
+  }
+
+  const luminance = ([r, g, b]: [number, number, number, number]): number => {
+    const [rr, gg, bb] = [r, g, b].map((v) => {
+      const sv = v / 255
+      return sv <= 0.03928 ? sv / 12.92 : Math.pow((sv + 0.055) / 1.055, 2.4)
+    })
+    return 0.2126 * rr + 0.7152 * gg + 0.0722 * bb
+  }
+
+  const ratio = (a: [number, number, number, number], b: [number, number, number, number]): number => {
+    const [hi, lo] = luminance(a) > luminance(b) ? [luminance(a), luminance(b)] : [luminance(b), luminance(a)]
+    return (hi + 0.05) / (lo + 0.05)
+  }
+
+  /**
+   * What the ring is painted ON.
+   *
+   * Started at the PARENT, not at the element: a focus ring is drawn outside the
+   * border box, so the element's own fill is not behind it. Measuring against
+   * the element itself reported the sign-in button's ring at 2.94:1 — against
+   * its own navy background, which the ring never touches — while the surface it
+   * actually sits on is the white card.
+   *
+   * The offset counts as a ground too where there is one: `ring-offset-2` puts a
+   * 2px band of `--tw-ring-offset-color` between the control and the ring, so
+   * that band is the ring's inner neighbour. The strictest of the two grounds
+   * wins.
+   */
+  const grounds = (): [number, number, number, number][] => {
+    const found: [number, number, number, number][] = []
+    for (let node = el.parentElement; node; node = node.parentElement) {
+      const painted = paint(getComputedStyle(node).backgroundColor)
+      if (painted && painted[3] > 0.5) { found.push(painted); break }
+    }
+    if (parseFloat(c.getPropertyValue('--tw-ring-offset-width')) > 0) {
+      const offset = paint(c.getPropertyValue('--tw-ring-offset-color').trim() || '#fff')
+      if (offset && offset[3] > 0.5) found.push(offset)
+    }
+    return found.length ? found : [[255, 255, 255, 1]]
+  }
+
+  /** Best contrast any shadow layer reaches against every ground it touches. */
+  const ringContrast = (shadow: string): number => {
+    if (!shadow || shadow === 'none') return 0
+    const against = grounds()
     return shadow
-      .split(/(?=rgba?\(|oklch\(|color\()/)
+      .split(/(?=rgba?\(|oklch\(|color\(|hsla?\(|lab\(|lch\()/)
       .map((s) => s.trim())
       .filter(Boolean)
-      .some((layer) => {
-        const alpha = /rgba\(\s*\d+,\s*\d+,\s*\d+,\s*([\d.]+)\s*\)/.exec(layer)
-        if (alpha) return parseFloat(alpha[1]) > 0
-        // oklch()/color() layers here carry no alpha, so they paint.
-        return true
-      })
+      .reduce((best, layer) => {
+        const colour = /^[a-z]+\([^)]*\)/i.exec(layer)?.[0]
+        const painted = colour ? paint(colour) : null
+        // A transparent layer paints nothing, whatever its hue.
+        if (!painted || painted[3] < 0.1) return best
+        const worst = against.reduce((lowest, g) => Math.min(lowest, ratio(painted, g)), Infinity)
+        return Math.max(best, worst)
+      }, 0)
   }
 
   return {
     outlined,
-    ringed: paints(c.boxShadow),
+    ringContrast: ringContrast(c.boxShadow),
     inDialog: !!el.closest('dialog'),
     id:
       el.tagName.toLowerCase() +
       (el.getAttribute('aria-label') ? `[${el.getAttribute('aria-label')}]` : '') +
       (el.getAttribute('type') ? `:${el.getAttribute('type')}` : ''),
   }
+}
+
+/** WCAG 1.4.11: a non-text indicator has to reach 3:1 against what it sits on. */
+const RING_MIN_CONTRAST = 3
+
+/** WCAG 1.4.3: body text needs 4.5:1. */
+const AA_BODY = 4.5
+
+/**
+ * Glyph-only text below the contrast it owes — the class axe skips.
+ *
+ * Same painting trick as `focusProbe`, and for the same reason: Tailwind 4's
+ * palette is oklch, so the computed colour string is oklch and a regex over it
+ * would mean reimplementing colour conversion.
+ *
+ * "Glyph-only" is one visible character that is not a letter or a digit, in an
+ * element with no element children — which is exactly the shape
+ * `hasRealTextChildren` throws away, and exactly what a required-field asterisk
+ * is. Deliberately narrow: widening it to all short text would re-report what
+ * `color-contrast` already covers.
+ *
+ * Two bars, because these glyphs are two different things:
+ *
+ *  - Exposed to assistive tech (the required-field `*`): it is text, so 1.4.3
+ *    asks for 4.5:1.
+ *  - `aria-hidden` (the breadcrumb `›`): never announced, so it is not text for
+ *    1.4.3 — but it is still the only thing doing its job visually, which is
+ *    1.4.11 at 3:1. Holding a decorative separator to body-text contrast would
+ *    be inventing a requirement; letting it off entirely left it at 2.51:1.
+ */
+const glyphOnlyContrast = ([textMin, decorationMin]: [number, number]) => {
+  const ctx = document.createElement('canvas').getContext('2d')
+  const paint = (colour: string): [number, number, number, number] | null => {
+    if (!ctx) return null
+    ctx.clearRect(0, 0, 1, 1)
+    ctx.fillStyle = '#000'
+    ctx.fillStyle = colour
+    ctx.clearRect(0, 0, 1, 1)
+    ctx.fillRect(0, 0, 1, 1)
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+    return [r, g, b, a / 255]
+  }
+  const luminance = ([r, g, b]: [number, number, number, number]): number => {
+    const [rr, gg, bb] = [r, g, b].map((v) => {
+      const sv = v / 255
+      return sv <= 0.03928 ? sv / 12.92 : Math.pow((sv + 0.055) / 1.055, 2.4)
+    })
+    return 0.2126 * rr + 0.7152 * gg + 0.0722 * bb
+  }
+  const ratio = (a: [number, number, number, number], b: [number, number, number, number]): number => {
+    const [hi, lo] = luminance(a) > luminance(b) ? [luminance(a), luminance(b)] : [luminance(b), luminance(a)]
+    return (hi + 0.05) / (lo + 0.05)
+  }
+  const backdrop = (from: Element): [number, number, number, number] => {
+    for (let node: Element | null = from; node; node = node.parentElement) {
+      const painted = paint(getComputedStyle(node).backgroundColor)
+      if (painted && painted[3] > 0.5) return painted
+    }
+    return [255, 255, 255, 1]
+  }
+
+  return Array.from(document.querySelectorAll<HTMLElement>('main *'))
+    .filter((el) => el.childElementCount === 0)
+    .filter((el) => {
+      const text = (el.textContent ?? '').trim()
+      return text.length === 1 && !/[\p{L}\p{N}]/u.test(text)
+    })
+    .filter((el) => {
+      const r = el.getBoundingClientRect()
+      return r.width > 0 && r.height > 0
+    })
+    .map((el) => {
+      const fg = paint(getComputedStyle(el).color)
+      if (!fg) return null
+      const min = el.closest('[aria-hidden="true"]') ? decorationMin : textMin
+      const measured = ratio(fg, backdrop(el))
+      if (measured >= min) return null
+      return `"${el.textContent?.trim()}" is ${measured.toFixed(2)}:1 (needs ${min}) — ` +
+        `<${el.tagName.toLowerCase()} class="${el.className}"> in ${el.parentElement?.tagName.toLowerCase()}`
+    })
+    .filter((s): s is string => s !== null)
 }
 
 type Page = import('@playwright/test').Page
@@ -348,8 +529,59 @@ test.describe('Accessibility — things axe cannot check', () => {
       // before reading the computed style.
       await page.waitForTimeout(250)
       const probe = await page.evaluate(focusProbe)
-      const visible = !!probe && (probe.outlined || probe.ringed)
-      expect(visible, `${label} (${selector}) must show a focus indicator`).toBe(true)
+      const visible = !!probe && (probe.outlined || probe.ringContrast >= RING_MIN_CONTRAST)
+      expect(
+        visible,
+        `${label} (${selector}) must show a focus indicator — ring contrast ${probe?.ringContrast.toFixed(2)}:1`,
+      ).toBe(true)
+    }
+  })
+
+  test('the sign-in button has a focus ring you can see (#186)', async ({ page }) => {
+    // The login page was outside this block entirely — the focus test only ever
+    // visited /admin/categories — and it is the one page every user passes
+    // through. Its submit button was the single control here with no ring
+    // colour: `ring-2` alone resolves to `currentcolor`, which on this button is
+    // --bp-ink (#ffffff on the shipped primary), over a #fff offset on a white
+    // card, with `focus:outline-none` having removed the fallback. The old probe
+    // could not have caught it; RING_MIN_CONTRAST is what makes it catchable.
+    await page.context().clearCookies()
+    await page.goto('/login')
+
+    // Pin the shipped default branding for the duration.
+    //
+    // This is the whole point of the test and it cannot be left to whatever the
+    // database happens to hold: the bug only appears when the operator's primary
+    // is DARK. `readableInk` then returns #ffffff for --bp-ink, currentColor on
+    // this button becomes white, and an uncoloured `ring-2` is painted white on a
+    // #fff offset on a white card. The shipped default (#131921) is exactly that
+    // case; the dev database frequently is not — it was holding a mid-tone amber
+    // when this was written, whose ink is #101827, and the invisible ring showed
+    // up as a perfectly visible dark one. Set on the element rather than through
+    // /admin/branding because these are inline custom properties and this test
+    // must not mutate shared server state.
+    await page.evaluate(() => {
+      const root = document.querySelector<HTMLElement>('[style*="--bp-ink"]')
+      root?.style.setProperty('--bp', '#131921')
+      root?.style.setProperty('--bp-ink', '#ffffff')
+    })
+
+    const controls: [string, string][] = [
+      ['email', 'input#email'],
+      ['password', 'input#password'],
+      ['stay signed in', 'input#rememberMe'],
+      ['sign in', 'form button[type="submit"]'],
+    ]
+
+    for (const [label, selector] of controls) {
+      await page.locator(selector).first().focus()
+      await page.waitForTimeout(250)
+      const probe = await page.evaluate(focusProbe)
+      expect(probe, `${label} did not take focus`).not.toBeNull()
+      expect(
+        probe!.outlined || probe!.ringContrast >= RING_MIN_CONTRAST,
+        `${label} (${selector}) focus ring is ${probe!.ringContrast.toFixed(2)}:1 against what it sits on — 1.4.11 wants ${RING_MIN_CONTRAST}:1`,
+      ).toBe(true)
     }
   })
 
@@ -377,8 +609,8 @@ test.describe('Accessibility — things axe cannot check', () => {
       if (!stop) continue
       stops++
       expect(
-        stop.outlined || stop.ringed,
-        `${stop.id} inside the dialog must show a focus indicator`,
+        stop.outlined || stop.ringContrast >= RING_MIN_CONTRAST,
+        `${stop.id} inside the dialog must show a focus indicator — ring contrast ${stop.ringContrast.toFixed(2)}:1`,
       ).toBe(true)
     }
 
@@ -408,11 +640,75 @@ test.describe('Accessibility — things axe cannot check', () => {
     )
   })
 
-  test('the current page is exposed to assistive tech, not signalled by colour alone', async ({ page }) => {
+  /**
+   * Selection, everywhere it is drawn (#186).
+   *
+   * This used to be one hard-coded assertion on `nav a[aria-current="page"]`,
+   * which proved the point for the top nav and nothing else — and the three
+   * places that got it WRONG were all somewhere else. Every one of them said
+   * "selected" with a background colour and no attribute at all, so the same
+   * check that passed on the nav could never have run on them.
+   *
+   * axe cannot infer any of this: there is no missing attribute to report, only
+   * a missing concept.
+   */
+  test('selection is exposed to assistive tech, not signalled by colour alone', async ({ page }) => {
     await page.goto('/catalog')
-    const current = page.locator('nav a[aria-current="page"]')
-    await expect(current).toHaveCount(1)
-    await expect(current).toHaveAttribute('href', '/catalog')
+
+    // 1. The top nav — the one case that already worked.
+    const currentPage = page.locator('nav a[aria-current="page"]')
+    await expect(currentPage).toHaveCount(1)
+    await expect(currentPage).toHaveAttribute('href', '/catalog')
+
+    // 2. The catalogue's category filters. They are toggles, so aria-pressed:
+    //    exactly one is pressed at rest ("All products"), and clicking a
+    //    category moves it. Without this a filtered result set and a broken
+    //    one are indistinguishable to a screen-reader user.
+    const filters = page.locator('aside button[aria-pressed]')
+    await expect(filters.first()).toBeVisible({ timeout: 30000 })
+    await expect(page.locator('aside button[aria-pressed="true"]')).toHaveCount(1)
+
+    const category = filters.nth(1)
+    if (await category.count()) {
+      await category.click()
+      await expect(category).toHaveAttribute('aria-pressed', 'true')
+      await expect(page.locator('aside button[aria-pressed="true"]')).toHaveCount(1)
+    }
+
+    // 3. The language menu: 25 buttons that used to announce identically.
+    await page.getByRole('button', { name: /language/i }).first().click()
+    const languages = page.locator('button[aria-current]')
+    await expect(languages).toHaveCount(1)
+    await expect(languages).toContainText('EN')
+  })
+
+  /**
+   * The required-field marker, which axe excludes from contrast BY CONSTRUCTION
+   * (#185).
+   *
+   * `colorContrastMatches` gates on `hasRealTextChildren`, which calls
+   * `removeUnicode(visibleText, { punctuations: true })` first. `*` is
+   * punctuation, so the stripped string is empty, the function returns false and
+   * the element is dropped from `color-contrast` entirely. No viewport, branding
+   * colour or rule configuration changes that — it is a permanent hole for ANY
+   * glyph-only indicator: asterisks, dots, bullets, chevrons, dashes. The
+   * component suite cannot help either; it disables `color-contrast` outright
+   * because jsdom has no layout.
+   *
+   * So it is measured here. Scope is deliberately "elements whose entire visible
+   * text is a single non-alphanumeric glyph", not just the asterisk, because the
+   * class is what recurs.
+   */
+  test('glyph-only indicators meet contrast, which axe cannot check for them', async ({ page }) => {
+    // Two pages with required markers on different grounds: white card and the
+    // slate-tinted admin form.
+    for (const path of ['/admin/products/new', '/admin/parameters']) {
+      await page.goto(path)
+      await expect(page.locator('main h1')).toBeVisible({ timeout: 30000 })
+
+      const failures = await page.evaluate(glyphOnlyContrast, [AA_BODY, RING_MIN_CONTRAST] as [number, number])
+      expect(failures, `${path}:\n  ${failures.join('\n  ')}`).toEqual([])
+    }
   })
 
   test('reduced-motion is honoured', async ({ page }) => {

@@ -46,7 +46,14 @@ export function Breadcrumbs({ items, label }: Props) {
           const last = i === items.length - 1
           return (
             <li key={`${item.label}-${i}`} className="flex items-center gap-x-1.5">
-              {i > 0 && <span aria-hidden="true" className="text-slate-400">›</span>}
+              {/* slate-500, not slate-400. The chevron is aria-hidden, so it is
+                  not text for 1.4.3 — but it is the only thing separating two
+                  crumbs visually, so 1.4.11's 3:1 applies and slate-400 measured
+                  2.51:1 on the slate-50 page background. slate-500 is 4.55.
+                  axe cannot see this: `color-contrast` drops any element whose
+                  visible text strips to nothing once punctuation is removed, and
+                  a lone `›` does. */}
+              {i > 0 && <span aria-hidden="true" className="text-slate-500">›</span>}
               {item.href && !last ? (
                 <Link href={item.href} className="underline" style={{ color: 'var(--bp-text)' }}>
                   {item.label}

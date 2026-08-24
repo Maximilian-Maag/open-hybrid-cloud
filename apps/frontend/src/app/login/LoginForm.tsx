@@ -160,7 +160,13 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         '--ring-accent': readableAccent(secondaryColor, '#ffffff', AA_LARGE),
       } as React.CSSProperties}
     >
-      <div className="w-full max-w-sm">
+      {/* A real <main>. The login page renders outside the dashboard layout, so
+          it had no landmark at all: `landmark-one-main` failed and `region`
+          reported the title block, both form rows and the "stay signed in" row
+          as content nobody could jump to. Both rules are best-practice-only,
+          which is why a page the whole product funnels through was never
+          checked for either. */}
+      <main className="w-full max-w-sm">
         <div className="text-center mb-8">
           {logoDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -217,7 +223,14 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                 type="submit"
                 disabled={loading}
                 className="w-full min-h-11 rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
+                style={{
+                  backgroundColor: 'var(--bp)',
+                  color: 'var(--bp-ink)',
+                  // See the note on the sign-in button below: --tw-ring-color
+                  // falls back to currentcolor, which on this button is
+                  // --bp-ink — white on the shipped default primary.
+                  '--tw-ring-color': 'var(--ring-accent)',
+                } as React.CSSProperties}
               >
                 {loading ? t('twoFactorVerifying', lang) : t('signIn', lang)}
               </button>
@@ -300,14 +313,27 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
               type="submit"
               disabled={loading}
               className="w-full min-h-11 rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-              style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
+              style={{
+                backgroundColor: 'var(--bp)',
+                color: 'var(--bp-ink)',
+                // The one control on this page that was missing a ring colour,
+                // and the worst place to miss it. `ring-2` with no ring-<colour>
+                // leaves --tw-ring-color at its Tailwind 4.3.1 fallback of
+                // `currentcolor`; currentColor here is --bp-ink, which
+                // readableInk('#131921') — the SHIPPED default primary —
+                // returns as #ffffff. White ring, #fff offset, white card, and
+                // `focus:outline-none` had already removed the UA outline: no
+                // focus indicator at all (2.4.7). The three other controls
+                // already set this; only the submit button did not.
+                '--tw-ring-color': 'var(--ring-accent)',
+              } as React.CSSProperties}
             >
               {loading ? t('signingIn', lang) : t('signIn', lang)}
             </button>
           </form>
           )}
         </div>
-      </div>
+      </main>
     </div>
   )
 }

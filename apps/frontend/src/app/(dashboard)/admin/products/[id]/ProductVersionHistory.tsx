@@ -144,12 +144,29 @@ export function ProductVersionHistory({ productId, token, lang = 'en' }: Props) 
                 <p className="text-sm text-slate-600">{t('noChanges', lang)}</p>
               ) : (
                 <>
+                  {/* Words, not colour and strikethrough.
+                      This row is the audit trail for catalogue prices, and it
+                      used to read out as "price 10.00 12.00": `line-through` is
+                      not announced by default by NVDA, JAWS or VoiceOver, red
+                      vs green is 1.4.1, and the arrow that carried the meaning
+                      was aria-hidden. `∅` was worse than nothing — most voices
+                      skip it, so a field that HAD no value read identically to
+                      one that still has this one.
+                      The from/now labels are visible rather than sr-only: they
+                      cost one word each and they are what makes the direction
+                      of the change unambiguous in print too. */}
                   {diff.fields.map((change) => (
                     <p key={change.field} className="text-sm">
                       <span className="font-medium text-slate-900">{change.field}</span>{' '}
-                      <span className="font-mono text-xs text-red-700 line-through">{change.from || '∅'}</span>{' '}
+                      <span className="text-xs text-slate-600">{t('changedFrom', lang)}</span>{' '}
+                      <span className="font-mono text-xs text-red-700 line-through">
+                        {change.from || t('emptyValue', lang)}
+                      </span>{' '}
                       <span aria-hidden="true">→</span>{' '}
-                      <span className="font-mono text-xs text-green-700">{change.to || '∅'}</span>
+                      <span className="text-xs text-slate-600">{t('changedTo', lang)}</span>{' '}
+                      <span className="font-mono text-xs text-green-700">
+                        {change.to || t('emptyValue', lang)}
+                      </span>
                     </p>
                   ))}
                   {diff.parameters.map((change) => (
@@ -161,9 +178,16 @@ export function ProductVersionHistory({ productId, token, lang = 'en' }: Props) 
                       {change.kind === 'changed' && (
                         <span className="text-xs text-slate-600">
                           {' — '}
+                          {/* Same substitution as above: the arrow is the only
+                              thing separating the two values here, and `∅` is
+                              silent. */}
                           {change.fields
-                            .map((f) => `${f.field}: ${f.from || '∅'} → ${f.to || '∅'}`)
-                            .join(', ')}
+                            .map(
+                              (f) =>
+                                `${f.field}: ${t('changedFrom', lang)} ${f.from || t('emptyValue', lang)}` +
+                                `, ${t('changedTo', lang)} ${f.to || t('emptyValue', lang)}`,
+                            )
+                            .join('; ')}
                         </span>
                       )}
                     </p>

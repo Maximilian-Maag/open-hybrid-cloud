@@ -91,6 +91,7 @@ export default async function ProjectDetailPage({ params }: Props) {
               },
             ]}
             data={orders}
+            emptyMessage={t('noOrders', lang)}
           />
         </Card>
       )}

@@ -16,6 +16,13 @@ interface Props {
   busy?: boolean
   onToggleFavorite: () => void
   lang: string
+  /**
+   * Heading rank for the product name. The main grid sits directly under the
+   * page's h1 so its cards are h2; the "My Favorites" shelf has an h2 of its
+   * own, so the cards inside it are h3. Same paint either way — the rank says
+   * where the card sits in the page, not how big the name is.
+   */
+  level?: 2 | 3 | 4 | 5 | 6
 }
 
 /**
@@ -35,7 +42,9 @@ export function ProductCard({
   busy,
   onToggleFavorite,
   lang,
+  level = 2,
 }: Props) {
+  const Heading = `h${level}` as const
   return (
     <div
       data-testid={`product-card-${id}`}
@@ -70,7 +79,7 @@ export function ProductCard({
             {categoryName}
           </span>
         )}
-        <h3 className="font-semibold text-sm text-slate-800 leading-snug mb-1 line-clamp-2">{name}</h3>
+        <Heading className="font-semibold text-sm text-slate-800 leading-snug mb-1 line-clamp-2">{name}</Heading>
         {description && (
           <p className="text-xs text-slate-500 leading-relaxed flex-1 mb-3 line-clamp-2">{description}</p>
         )}

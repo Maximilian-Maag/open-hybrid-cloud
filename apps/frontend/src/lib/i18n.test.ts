@@ -151,9 +151,28 @@ describe('i18n', () => {
     expectRealTranslations(ADMIN_KEYS, 10)
   })
 
+  // The accessibility pass (#185/#186) added seven strings, each replacing
+  // something that was English-only or not a string at all: a blank table header,
+  // colour-and-strikethrough as the only marker of a diff's direction, a `∅`
+  // glyph most voices skip, a hardcoded "Select…", a quantity failure that was
+  // announced by nothing, and a sentence welded onto a translated one in English.
+  // They go through the same per-key-per-language guard so none of them can ship
+  // as a silent English fallback in 24 languages.
+  const A11Y_KEYS: (keyof Translations)[] = [
+    'actions', 'changedFrom', 'changedTo', 'emptyValue', 'selectOption',
+    'quantityInvalid', 'editBeforeSubmitting',
+  ]
+
+  it('has a real translation for every accessibility-pass key in every language (#185, #186)', () => {
+    // Threshold 2 of 7: "Actions" is genuinely the French word, and a couple of
+    // the one-word diff labels legitimately coincide. More than two means the
+    // fallback is doing the work.
+    expectRealTranslations(A11Y_KEYS, 2)
+  })
+
   it('never yields the string "undefined" for a known key', () => {
     for (const { code } of SUPPORTED_LANGUAGES) {
-      for (const key of [...CHROME_KEYS, ...ADMIN_KEYS]) {
+      for (const key of [...CHROME_KEYS, ...ADMIN_KEYS, ...A11Y_KEYS]) {
         expect(String(t(key, code))).not.toBe('undefined')
       }
     }

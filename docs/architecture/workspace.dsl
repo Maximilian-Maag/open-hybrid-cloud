@@ -171,7 +171,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         # Deployment — Docker Host
         deploymentEnvironment "Docker Host" {
             deploymentNode "Docker Host" "Single server for local development and initial deployment" "Docker Engine" {
-                deploymentNode "nginx" "HTTPS termination and reverse proxy. Routes / to frontend, /api/* to backend." "Docker Container / Nginx" {
+                deploymentNode "nginx" "HTTPS termination and reverse proxy. Routes /api/* to the backend EXCEPT the frontend's own /api/auth, /api/login-challenge and /api/ping; /api/auth/callback is an exact match that stays on the backend; everything else to the frontend." "Docker Container / Nginx" {
                 }
                 deploymentNode "frontend" "Next.js frontend server" "Docker Container / Node.js" {
                     containerInstance frontend
@@ -207,7 +207,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         deploymentEnvironment "Kubernetes" {
             deploymentNode "Kubernetes Cluster" "Production cluster" "Kubernetes" {
                 deploymentNode "open-hybrid-cloud" "Application namespace" "Kubernetes Namespace" {
-                    deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes / to frontend service, /api/* to backend service." "Nginx Ingress / cert-manager" {
+                    deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes /api/* to the backend service EXCEPT the frontend's own /api/auth, /api/login-challenge and /api/ping; /api/auth/callback is an exact match that stays on the backend service; everything else to the frontend service." "Nginx Ingress / cert-manager" {
                     }
                     deploymentNode "frontend Deployment" "Next.js frontend pods, horizontally scalable." "Kubernetes Deployment" {
                         containerInstance frontend

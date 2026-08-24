@@ -85,6 +85,27 @@ export function totpCode(secretBase32: string, at = Date.now()): string {
   return String(binary % 1_000_000).padStart(6, '0')
 }
 
+/** The RFC 6238 step a moment falls in — the 30-second window a code belongs to. */
+export const totpStepOf = (at = Date.now()): number => Math.floor(at / 1000 / 30)
+
+/**
+ * Wait until the current step is past `step`.
+ *
+ * A TOTP code is single-use: `twoFactor.ts` records the step of an accepted code
+ * and refuses anything at or below it, which is what stops a code read over a
+ * shoulder being replayed for the rest of its window. So two sign-ins inside the
+ * same thirty seconds cannot both use the same code — the second is refused, and
+ * the login page says "Invalid email or password", which is exactly as
+ * informative as it is meant to be and no help at all here.
+ *
+ * Costs up to thirty seconds, and only when it is actually needed.
+ */
+export async function waitForTotpStepAfter(step: number): Promise<void> {
+  while (totpStepOf() <= step) {
+    await new Promise((resolve) => setTimeout(resolve, 1_000))
+  }
+}
+
 /** The stored root secret, or null when nothing has enrolled one yet. */
 export function storedRootTotpSecret(): string | null {
   try {
@@ -130,8 +151,28 @@ export async function completeSecondFactor(page: Page): Promise<boolean> {
         '(`make test-db`) so the bootstrap starts clean, or clear its user_totp row.',
     )
   }
-  await codeField.fill(totpCode(secret))
-  await page.getByRole('button', { name: /^sign in$/i }).click()
+  // Up to three steps, because the code has to be one this account has not spent.
+  // Codes are single-use and the suite runs in parallel workers, so a step can be
+  // spent by another worker — or by the enrolment that just confirmed one — with
+  // no way to know from here except being refused. Retrying on the next step is
+  // the only answer that does not depend on guessing who spent what.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const step = totpStepOf()
+    await codeField.fill(totpCode(secret))
+    await page.getByRole('button', { name: /^sign in$/i }).click()
+
+    const signedIn = await page
+      .waitForURL((url) => !url.pathname.includes('/login'), { timeout: 15_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (signedIn) return true
+
+    // Still on /login: either the code was spent, or the credentials are wrong
+    // and no amount of waiting will help. Only the first is worth a retry, and
+    // the page cannot tell us which — so try the next step and let the caller's
+    // own timeout end it if this is the second case.
+    await waitForTotpStepAfter(step)
+  }
   return true
 }
 

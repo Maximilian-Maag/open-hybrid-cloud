@@ -6,6 +6,8 @@ import {
   rootPassword,
   totpCode,
   totpSecretFile,
+  totpStepOf,
+  waitForTotpStepAfter,
   completeSecondFactor,
 } from './helpers'
 
@@ -73,6 +75,10 @@ async function enrolSecondFactorIfRequired(page: import('@playwright/test').Page
   mkdirSync(path.dirname(totpSecretFile), { recursive: true })
   writeFileSync(totpSecretFile, secret)
 
+  // The step this code belongs to. Confirming spends it — `twoFactor.ts` records
+  // the accepted step and refuses anything at or below — so the sign-in below has
+  // to wait for a step this account has not used.
+  const confirmedAtStep = totpStepOf()
   await page.getByLabel(/authentication code/i).fill(totpCode(secret))
   await page.getByRole('button', { name: /activate/i }).click()
 
@@ -92,6 +98,7 @@ async function enrolSecondFactorIfRequired(page: import('@playwright/test').Page
   // It also means the saved storageState comes from the two-step sign-in that is
   // now the real path for an administrator, rather than from a session that
   // happened to predate the requirement.
+  await waitForTotpStepAfter(confirmedAtStep)
   await page.context().clearCookies()
   await page.goto('/login')
   await page.getByLabel(/email address/i).fill(rootEmail)

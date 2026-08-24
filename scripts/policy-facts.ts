@@ -987,6 +987,75 @@ function testCases(): TestCaseFact[] {
   return out
 }
 
+// ---------------------------------------------------------------------------
+// pages and the accessibility gate
+// ---------------------------------------------------------------------------
+
+const APP_DIR = `${FRONTEND}/src/app`
+const A11Y_SPEC = 'e2e/a11y.spec.ts'
+
+/** The arrays in `e2e/a11y.spec.ts` that axe is actually pointed at. */
+const A11Y_PATH_ARRAYS = new Set(['PUBLIC_PAGES', 'AUTHED_PAGES'])
+
+/**
+ * The URL path a `page.tsx` answers on.
+ *
+ * Next.js route groups — the `(dashboard)` and `(auth)` directories — organise
+ * files without appearing in the URL, so they are stripped. Parallel and
+ * intercepting routes (`@slot`, `(.)`) do not exist in this tree; if they ever
+ * do, they belong here too.
+ */
+const routePathOfPage = (rel: string): string => {
+  const segments = rel
+    .slice(`${APP_DIR}/`.length, -'/page.tsx'.length)
+    .split('/')
+    .filter((seg) => seg !== '' && !(seg.startsWith('(') && seg.endsWith(')')))
+  return segments.length === 0 ? '/' : `/${segments.join('/')}`
+}
+
+interface PageFact {
+  file: string
+  routePath: string
+  /** A `[id]`-style segment: no single static URL reaches this page. */
+  dynamic: boolean
+  inA11ySpec: boolean
+}
+
+/**
+ * Every page in the frontend, and whether the axe gate visits it.
+ *
+ * The gate is a hand-written list of paths, so a page added without touching
+ * that list is never checked and nothing says so — the suite still reports the
+ * same number of green a11y assertions it did before the page existed.
+ */
+function pageFacts(): PageFact[] {
+  const pages = walk(APP_DIR, (rel) => rel.endsWith('/page.tsx'))
+  if (pages.length === 0) return []
+
+  const covered = new Set<string>()
+  if (exists(A11Y_SPEC)) {
+    const sf = parse(A11Y_SPEC)
+    visit(sf, (node) => {
+      if (!ts.isVariableDeclaration(node)) return
+      if (!ts.isIdentifier(node.name) || !A11Y_PATH_ARRAYS.has(node.name.text)) return
+      if (!node.initializer || !ts.isArrayLiteralExpression(node.initializer)) return
+      for (const element of node.initializer.elements) {
+        if (ts.isStringLiteral(element)) covered.add(element.text)
+      }
+    })
+  }
+
+  return pages.map((file) => {
+    const routePath = routePathOfPage(file)
+    return {
+      file,
+      routePath,
+      dynamic: routePath.includes('['),
+      inA11ySpec: covered.has(routePath),
+    }
+  })
+}
+
 export function collectFacts(): Record<string, unknown> {
   const testImports = routeTestImports()
   const tables = tableFacts()
@@ -1007,6 +1076,8 @@ export function collectFacts(): Record<string, unknown> {
     silentCatches: silentCatches(),
     consoleCalls: consoleCalls(),
     testCases: testCases(),
+    pages: pageFacts(),
+    a11ySpecFile: A11Y_SPEC,
   }
 }
 

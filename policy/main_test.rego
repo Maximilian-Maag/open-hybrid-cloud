@@ -58,18 +58,20 @@ test_every_violation_has_a_rule_a_file_and_a_reason if {
 		"silentCatches": [{"file": "apps/backend/src/lib/x.ts", "line": 1, "kind": "catch {}", "documented": false}],
 		"consoleCalls": [{"file": "apps/backend/src/lib/services/x.ts", "line": 1, "method": "warn", "message": "'x'", "messageNamesAValue": false}],
 		"testCases": [{"file": "e2e/x.spec.ts", "line": 1, "title": "shows the thing", "asserts": false, "skipped": false}],
+		"pages": [{"file": "apps/frontend/src/app/x/page.tsx", "routePath": "/x", "dynamic": false, "inA11ySpec": false}],
+		"a11ySpecFile": "e2e/a11y.spec.ts",
 	}
 
 	report := policy.report with input as facts
 
 	# Every rule in the catalogue fired at least once, so the assertion below is
 	# checking all of them rather than whichever two happened to be reachable.
-	# Fifteen names for the thirteen rules the catalogue now lists, because rule 4
+	# Sixteen names for the fourteen rules the catalogue now lists, because rule 4
 	# reports three different things about a journal — one that disagrees with the
 	# directory, a gap in the numbering, and a `when` that does not increase. The
 	# first is a broken deployment, the second is history, the third is the silent
 	# skip #194 fixed. If a new rule ships without a name here, this count says so.
-	count({v.rule | some v in array.concat(report.deny, report.warn)}) == 15
+	count({v.rule | some v in array.concat(report.deny, report.warn)}) == 16
 
 	every v in array.concat(report.deny, report.warn) {
 		v.rule != ""

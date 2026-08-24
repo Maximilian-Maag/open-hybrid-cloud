@@ -4,6 +4,7 @@ import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import type { InfrastructureElement, InfraFacets, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { RefreshButton } from '@/components/ui/RefreshButton'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from './InfraActions'
@@ -97,7 +98,14 @@ export default async function InfrastructurePage({ searchParams }: Props) {
       <PageHeader
         title={t('infrastructureTitle', lang)}
         subtitle={t('infrastructureSubtitle', lang)}
-        actions={canExport ? <InfraExport token={token} lang={lang} /> : undefined}
+        actions={
+          <>
+            {/* `router.refresh()` and not a reload: the rows are disclosures, and
+                a reload would close every one the user had opened. */}
+            <RefreshButton />
+            {canExport ? <InfraExport token={token} lang={lang} /> : null}
+          </>
+        }
       />
 
       <InfraFilters facets={facets} lang={lang} resultCount={elements.length} />

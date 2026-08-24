@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { redirect, notFound } from 'next/navigation'
 import type { InfrastructureDetail, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { RefreshButton } from '@/components/ui/RefreshButton'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -69,6 +70,10 @@ export default async function InfrastructureDetailPage({ params }: Props) {
         subtitle={[element.environmentName, element.projectName].filter(Boolean).join(' · ')}
         actions={
           <div className="flex items-center gap-3">
+            {/* The status and the pipeline outcomes below arrive from CI after
+                this page rendered, so there has to be a way to pick them up that
+                is not a full reload (#96). */}
+            <RefreshButton />
             {/* A styled Link, not a Button inside a Link: an <a> wrapping a
                 <button> is nested interactive content, which the axe gate in
                 e2e/a11y.spec.ts rejects and screen readers announce twice. */}

@@ -564,6 +564,18 @@ export interface UpdateProjectRequest {
 }
 
 // Orders
+
+/** One element an order provisioned, as the order detail page shows it. */
+export interface OrderElement {
+  id: number
+  /** 1-based position within the order (issue #104). */
+  sequence: number
+  status: InfraStatus
+  sizeCode: string | null
+  /** Terraform outputs — the endpoint, the address, whatever the run produced. */
+  outputs: Record<string, string>
+}
+
 export interface Order {
   id: number
   projectId: number
@@ -575,8 +587,22 @@ export interface Order {
   costCenterId: number | null
   rejectionNote: string | null
   pipelineId: string[]
+  /**
+   * Per-pipeline outcome, keyed by pipeline id — `{ "pipe-a": "success" }`.
+   *
+   * Written by the webhook handler since #133 and only surfaced on the order from
+   * here on: the detail page used to list `pipelineId` with nothing beside it,
+   * which reads as a pipeline that never reported.
+   */
+  pipelineStatus?: Record<string, string>
   createdAt: string
   updatedAt: string
+  /**
+   * The infrastructure this order provisioned (issue #104). Present on the detail
+   * endpoint only — `outputs` lives on the element, and this is the order's route
+   * to it.
+   */
+  elements?: OrderElement[]
   /** Ordered as a time-boxed trial (issue #1). */
   isTrial?: boolean
   /** The size that was ordered (issue #98). Null when the offering has none. */

@@ -231,6 +231,8 @@ export const createInfraElement = async (
     deployedAt?: Date
     sizeCode?: string | null
     sequence?: number
+    /** Terraform outputs, as the webhook settler writes them. */
+    outputs?: Record<string, string>
     /**
      * Left unset by default, which is what every element provisioned before
      * issue #183 has: the row then derives its Terraform state key from the raw
@@ -254,6 +256,7 @@ export const createInfraElement = async (
       ...(overrides?.stateKeyNamespace !== undefined ? { stateKeyNamespace: overrides.stateKeyNamespace } : {}),
       ...(overrides?.parameters ? { parameters: overrides.parameters } : {}),
       ...(overrides?.deployedAt ? { deployedAt: overrides.deployedAt } : {}),
+      ...(overrides?.outputs ? { outputs: overrides.outputs } : {}),
     })
     .returning()
   return el

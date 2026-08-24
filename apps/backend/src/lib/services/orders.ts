@@ -59,6 +59,34 @@ export interface OrderRow {
   productName: string
   environmentName: string | null
   userName: string | null
+  /**
+   * Per-pipeline outcome, keyed by pipeline id — `{ "pipe-a": "success" }`.
+   *
+   * The column has always been written by the webhook handler and was never
+   * selected here, so the order detail page listed pipeline ids with nothing
+   * against them and read as a run that never progressed. It is the same map
+   * `/infrastructure/{id}` already renders; the order is simply where people
+   * look first.
+   */
+  pipelineStatus: Record<string, string>
+  /**
+   * The infrastructure this order provisioned, in sequence order.
+   *
+   * Only populated by `getOrderById` — the list view would need one query per row
+   * for something it does not show. Terraform outputs live on the ELEMENT, so
+   * without this an order had no route to the endpoint, the address, the
+   * credentials: the things the person who ordered it actually came back for.
+   */
+  elements?: OrderElement[]
+}
+
+/** One provisioned element, as the order detail page needs it. */
+export interface OrderElement {
+  id: number
+  sequence: number
+  status: string
+  sizeCode: string | null
+  outputs: Record<string, string>
 }
 
 export interface CreateOrderInput {
@@ -122,6 +150,7 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
       costCenterId: orders.costCenterId,
       rejectionNote: orders.rejectionNote,
       pipelineId: orders.pipelineId,
+      pipelineStatus: orders.pipelineStatus,
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
       isTrial: orders.isTrial,
@@ -166,6 +195,7 @@ export const getOrderById = async (
       costCenterId: orders.costCenterId,
       rejectionNote: orders.rejectionNote,
       pipelineId: orders.pipelineId,
+      pipelineStatus: orders.pipelineStatus,
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
       isTrial: orders.isTrial,
@@ -196,7 +226,23 @@ export const getOrderById = async (
 
   // See listOrders: the values leave the service redacted, whoever is asking.
   const [redacted] = await redactParametersForOrders([order], (row) => row.id)
-  return ok(redacted)
+
+  // One extra query, on the detail view only. `outputs` is the reason: it is the
+  // endpoint and the credentials the pipeline produced, it lives on the element,
+  // and until now nothing on the order page led to it.
+  const elements = await db
+    .select({
+      id: infrastructureElements.id,
+      sequence: infrastructureElements.sequence,
+      status: infrastructureElements.status,
+      sizeCode: infrastructureElements.sizeCode,
+      outputs: infrastructureElements.outputs,
+    })
+    .from(infrastructureElements)
+    .where(eq(infrastructureElements.orderId, orderId))
+    .orderBy(infrastructureElements.sequence)
+
+  return ok({ ...redacted, elements })
 }
 
 /**

@@ -31,6 +31,7 @@ export default async function OrderDetailPage({ params }: Props) {
     notFound()
   }
 
+  const elements = order.elements ?? []
   const role = (session.user as unknown as { role: Role }).role
   // The API already excludes internal notes for a non-admin, so nothing has to be
   // filtered here — this only decides whether the WRITE control is offered.
@@ -209,12 +210,65 @@ export default async function OrderDetailPage({ params }: Props) {
         />
       </Card>
 
+      {/* The infrastructure the order actually produced.
+          Terraform outputs — the endpoint, the address, whatever the run wrote —
+          live on the ELEMENT, and until now the order had no route to them at
+          all: you had to know to go to Infrastructure and find the right row.
+          The order is where people look first, so they belong here too. */}
+      {elements.length > 0 && (
+        <Card title={t('infrastructure', lang)}>
+          <ul className="divide-y divide-slate-100">
+            {elements.map((el) => {
+              const outputs = Object.entries(el.outputs ?? {})
+              return (
+                <li key={el.id} className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <ButtonLink href={`/infrastructure/${el.id}`} variant="ghost">
+                      #{el.id}
+                    </ButtonLink>
+                    {quantity > 1 && (
+                      <span className="text-xs text-slate-500">
+                        {el.sequence}/{quantity}
+                      </span>
+                    )}
+                    <StatusBadge status={el.status} lang={lang} />
+                    {el.sizeCode && <span className="text-xs text-slate-500">{el.sizeCode}</span>}
+                  </div>
+
+                  {outputs.length > 0 ? (
+                    <table className="mt-2 min-w-full text-xs">
+                      <tbody className="divide-y divide-slate-100">
+                        {outputs.map(([k, v]) => (
+                          <tr key={k}>
+                            <td className="py-1 pr-4 font-mono text-slate-600 align-top">{k}</td>
+                            <td className="py-1 font-mono text-slate-900 break-all">{v}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">{t('noOutputs', lang)}</p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </Card>
+      )}
+
       {order.pipelineId && order.pipelineId.length > 0 && (
         <Card title={t('pipelineIds', lang)}>
-          <ul className="space-y-1">
+          <ul className="divide-y divide-slate-100">
             {order.pipelineId.map((pid, i) => (
-              <li key={i} className="font-mono text-xs text-slate-700 bg-slate-50 rounded px-3 py-1.5">
-                {pid}
+              <li key={i} className="flex items-baseline justify-between gap-4 py-2">
+                <span className="font-mono text-xs text-slate-700">{pid}</span>
+                {/* The outcome the webhook handler recorded against this id. It
+                    has always been written and was never selected into the order,
+                    so this list read as a run that never reported — the same map
+                    /infrastructure/{id} has shown all along. */}
+                <span className="text-xs text-slate-500">
+                  {order.pipelineStatus?.[pid] ?? t('statusPending', lang)}
+                </span>
               </li>
             ))}
           </ul>

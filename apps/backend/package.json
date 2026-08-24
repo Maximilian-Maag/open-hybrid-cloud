@@ -20,6 +20,7 @@
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.2.0",
     "@open-hybrid-cloud/types": "workspace:*",
+    "@simplewebauthn/server": "^13.3.2",
     "bcryptjs": "^3.0.0",
     "drizzle-orm": "^0.45.2",
     "jose": "^5.10.0",

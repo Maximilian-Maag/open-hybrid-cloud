@@ -89,11 +89,24 @@ export interface RevokeSessionsResponse {
  * rather than null so a client that forgets to check `mfaRequired` finds nothing
  * it could mistake for a session.
  */
+/** Which second factors an account actually holds (issue #197, part 2). */
+export type SecondFactorMethod = 'totp' | 'webauthn'
+
 export interface MfaChallengeResponse {
   mfaRequired: true
   mfaToken: string
   /** Seconds until the challenge expires. */
   expiresIn: number
+  /**
+   * What this account can present, so the form offers the right thing.
+   *
+   * Told at the challenge and not guessed, because an account may hold a key and
+   * no authenticator app, and a form that always asked for six digits would be
+   * asking for something that does not exist. Disclosed to a caller who has
+   * already proved the password, and it says which KINDS exist — never how many,
+   * and never anything identifying.
+   */
+  methods: SecondFactorMethod[]
 }
 
 export type LoginResult = LoginResponse | MfaChallengeResponse

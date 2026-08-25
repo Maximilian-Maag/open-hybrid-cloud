@@ -31,6 +31,7 @@ import { resolveTrial, trialVariables, trialExpiry } from '@/lib/services/trial'
 import { captureProductSnapshot, type ProductSnapshot } from '@/lib/services/snapshot'
 import { substitutionsByEmail } from '@/lib/services/delegations'
 import { resolveOfferingPrice, validateQuantity } from '@/lib/services/sizes'
+import { productNameSql } from '@/lib/db/productText'
 
 export interface OrderRow {
   id: number
@@ -137,7 +138,7 @@ export interface CreatedOrder {
   infraIds?: number[]
 }
 
-export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[]>> => {
+export const listOrders = async (session: SessionUser, lang = 'en'): Promise<Result<OrderRow[]>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
 
   const rows = await db
@@ -159,12 +160,7 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
       sizeCode: orders.sizeCode,
       quantity: orders.quantity,
       productSnapshot: orders.productSnapshot,
-      productName: sql<string>`(
-        SELECT name FROM product_translations
-        WHERE product_id = ${orders.productId}
-          AND language_code = 'en'
-        LIMIT 1
-      )`,
+      productName: productNameSql(lang, orders.productId),
       environmentName: deploymentEnvironments.name,
       // Selected since #208. The orders table has had a Project column all along,
       // reading `projectName` — a field on the shared `Order` type that nothing
@@ -191,6 +187,7 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
 export const getOrderById = async (
   session: SessionUser,
   orderId: number,
+  lang = 'en',
 ): Promise<Result<OrderRow>> => {
   const rows = await db
     .select({
@@ -211,12 +208,7 @@ export const getOrderById = async (
       sizeCode: orders.sizeCode,
       quantity: orders.quantity,
       productSnapshot: orders.productSnapshot,
-      productName: sql<string>`(
-        SELECT name FROM product_translations
-        WHERE product_id = ${orders.productId}
-          AND language_code = 'en'
-        LIMIT 1
-      )`,
+      productName: productNameSql(lang, orders.productId),
       environmentName: deploymentEnvironments.name,
       // Selected since #208. The orders table has had a Project column all along,
       // reading `projectName` — a field on the shared `Order` type that nothing

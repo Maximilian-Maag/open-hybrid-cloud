@@ -33,6 +33,7 @@ import {
   MAX_IMAGE_BYTES,
   detectImageMime,
 } from '@/lib/services/imageUpload'
+import { productNameSql, productDescriptionSql } from '@/lib/db/productText'
 
 // Re-exported from their new home in `imageUpload.ts`: the branding logo needs the
 // same sniffing and the same cap, and it should not have to import them through
@@ -122,7 +123,16 @@ export interface UpsertTranslationInput {
   longDescription?: string
 }
 
-const adminProductSelect = {
+/**
+ * Built per call rather than once at module scope, because the name it selects
+ * now depends on the admin's own language.
+ *
+ * Before #162 this selected `language_code = 'en'` flat, so the admin product
+ * list showed nothing at all — not the base-language name, `null`, rendered by
+ * the frontend as `Product #7` — for any product whose only translation was
+ * German. Which was ordinary: the admin form offered four of the 25 languages.
+ */
+const adminProductSelect = (lang: string) => ({
   id: products.id,
   categoryId: products.categoryId,
   baseLanguage: products.baseLanguage,
@@ -130,21 +140,13 @@ const adminProductSelect = {
   categoryName: categories.name,
   owner: products.owner,
   docsUrl: products.docsUrl,
-  name: sql<string>`(
-    SELECT name FROM product_translations
-    WHERE product_id = ${products.id} AND language_code = 'en'
-    LIMIT 1
-  )`,
-  description: sql<string>`(
-    SELECT description FROM product_translations
-    WHERE product_id = ${products.id} AND language_code = 'en'
-    LIMIT 1
-  )`,
-}
+  name: productNameSql(lang),
+  description: productDescriptionSql(lang),
+})
 
-export const listProducts = async (): Promise<Result<ProductAdminRow[]>> => {
+export const listProducts = async (lang = 'en'): Promise<Result<ProductAdminRow[]>> => {
   const rows = await db
-    .select(adminProductSelect)
+    .select(adminProductSelect(lang))
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id))
     // Retired products are gone as far as every catalogue and admin screen is
@@ -187,9 +189,9 @@ export const createProduct = async (
   return ok({ ...product, name, description, categoryName: null } as ProductAdminRow)
 }
 
-export const getProductAdmin = async (id: number): Promise<Result<ProductAdminRow & { environments: ProductEnvironment[]; parameters: Parameter[] }>> => {
+export const getProductAdmin = async (id: number, lang = 'en'): Promise<Result<ProductAdminRow & { environments: ProductEnvironment[]; parameters: Parameter[] }>> => {
   const rows = await db
-    .select(adminProductSelect)
+    .select(adminProductSelect(lang))
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id))
     .where(and(eq(products.id, id), isNull(products.retiredAt)))

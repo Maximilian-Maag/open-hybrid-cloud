@@ -13,6 +13,56 @@ describe('AuditTable', () => {
     mockGet.mockResolvedValue({ data: [], total: 0 })
   })
 
+  // #221. The failure used to be dropped: `entries` kept `[]` and the table
+  // rendered "no audit entries" — which for the audit log is the wrong default.
+  // "No entries match" is a statement about the record, and an administrator
+  // checking who changed something reads it as evidence. An outage produced the
+  // same screen as a clean record.
+  it('reports a failed query instead of rendering an empty audit log', async () => {
+    mockGet.mockRejectedValue(new Error('500 Internal Server Error'))
+
+    render(<AuditTable token="t" />)
+
+    expect(await screen.findByText('500 Internal Server Error')).toBeInTheDocument()
+    expect(screen.queryByText(/no audit entries/i)).not.toBeInTheDocument()
+  })
+
+  it('still shows the empty state when the query succeeds with nothing in it', async () => {
+    mockGet.mockResolvedValue({ data: [], total: 0 })
+
+    render(<AuditTable token="t" />)
+
+    expect(await screen.findByText(/no audit entries/i)).toBeInTheDocument()
+  })
+
+  // The generation guard covers the failure path too: a filter change that fails
+  // after a newer request has already answered must not replace the newer
+  // result with an error about a query nobody is looking at any more.
+  it('does not let a stale failure overwrite a newer success', async () => {
+    const entry = { id: 7, action: 'user.login', createdAt: new Date().toISOString() }
+    let rejectFirst: (e: Error) => void = () => {}
+    let call = 0
+    mockGet.mockImplementation(() => {
+      call += 1
+      if (call === 1) return new Promise((_resolve, reject) => { rejectFirst = reject })
+      return Promise.resolve({ data: [entry], total: 1 })
+    })
+
+    render(<AuditTable token="t" />)
+    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
+
+    // A second load — debounced, so `waitFor` covers the 300ms window — which
+    // answers while the first is still held open.
+    fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'login' } })
+    await waitFor(() => expect(screen.getByText('user.login')).toBeInTheDocument())
+
+    // Now the first, older request fails.
+    rejectFirst(new Error('500 Internal Server Error'))
+
+    await waitFor(() => expect(screen.getByText('user.login')).toBeInTheDocument())
+    expect(screen.queryByText('500 Internal Server Error')).not.toBeInTheDocument()
+  })
+
   it('keeps the newer page even if the older page answers later (#138)', async () => {
     // Clicking Next twice quickly fires a second `load()` before the first
     // one's request has answered. Resolve them out of order and the older

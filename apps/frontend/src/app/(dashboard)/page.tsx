@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth'
 import { get } from '@/lib/api'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import type { Order, InfrastructureElement, Project, CatalogPage, Role } from '@open-hybrid-cloud/types'
+import type { CatalogPage, DashboardSummary, Role } from '@open-hybrid-cloud/types'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { CountUp } from '@/components/ui/CountUp'
 import { getLang } from '@/lib/getLang'
@@ -32,22 +32,26 @@ export default async function DashboardHome() {
   const role = (session.user as unknown as { role: Role }).role
   const lang = await getLang()
 
-  const [orders, infra, projects, products] = await Promise.allSettled([
-    get<Order[]>(`/api/orders?lang=${lang}`, token),
-    get<InfrastructureElement[]>(`/api/infrastructure?lang=${lang}`, token),
-    get<Project[]>('/api/projects', token),
+  const [summary, products] = await Promise.allSettled([
+    // Four counters and five rows. This used to be three separate list
+    // endpoints — every order, every infrastructure element and every project,
+    // in full — reduced to four integers and a `.slice(0, 5)` in the browser.
+    // For an administrator that is the entire history of the installation, on
+    // the page every user lands on immediately after login (#158).
+    get<DashboardSummary>(`/api/dashboard?lang=${lang}`, token),
     // Eight cards, so ask for eight rows: this used to fetch the whole catalogue
     // and slice it in the browser (#91).
     get<CatalogPage>(`/api/catalog?lang=${lang}&limit=8`, token),
   ])
 
-  const orderList = orders.status === 'fulfilled' ? (orders.value ?? []) : []
-  const infraList = infra.status === 'fulfilled' ? (infra.value ?? []) : []
-  const projectList = projects.status === 'fulfilled' ? (projects.value ?? []) : []
+  // A failed summary must not read as an empty installation, so the counters
+  // show nothing rather than zero — see the `??` on each StatCard below.
+  const counts = summary.status === 'fulfilled' ? summary.value : null
   const productList = products.status === 'fulfilled' ? (products.value?.items ?? []) : []
 
-  const activeInfra = infraList.filter((i) => i.status === 'active').length
-  const pendingOrders = orderList.filter((o) => o.status === 'pending').length
+  const recentOrders = counts?.recentOrders ?? []
+  const activeInfra = counts?.infrastructure.active ?? 0
+  const pendingOrders = counts?.orders.pending ?? 0
   const featuredProducts = productList
   const isAdminOrRoot = role === 'admin' || role === 'root'
 
@@ -84,7 +88,7 @@ export default async function DashboardHome() {
 
       {/* Stats strip */}
       <div className={`grid gap-4 ${isAdminOrRoot ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-2 lg:grid-cols-3'}`}>
-        <StatCard label={t('totalOrders', lang)} value={orderList.length} href="/orders" linkLabel={t('viewAll', lang)} />
+        <StatCard label={t('totalOrders', lang)} value={counts?.orders.total ?? 0} href="/orders" linkLabel={t('viewAll', lang)} />
         <StatCard label={t('activeInfrastructure', lang)} value={activeInfra} href="/infrastructure" linkLabel={t('overview', lang)} />
         {isAdminOrRoot && (
           pendingOrders > 0 ? (
@@ -104,7 +108,7 @@ export default async function DashboardHome() {
             <StatCard label={t('pendingApprovals', lang)} value={0} />
           )
         )}
-        <StatCard label={t('projects', lang)} value={projectList.length} href="/projects" linkLabel={t('manage', lang)} />
+        <StatCard label={t('projects', lang)} value={counts?.projects.total ?? 0} href="/projects" linkLabel={t('manage', lang)} />
       </div>
 
       {/* Featured products */}
@@ -152,7 +156,7 @@ export default async function DashboardHome() {
       )}
 
       {/* Recent orders */}
-      {orderList.length > 0 && (
+      {recentOrders.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-base font-bold text-slate-800">{t('recentOrders', lang)}</h3>
@@ -161,7 +165,7 @@ export default async function DashboardHome() {
             </Link>
           </div>
           <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100">
-            {orderList.slice(0, 5).map((order) => (
+            {recentOrders.map((order) => (
               <Link
                 key={order.id}
                 href={`/orders/${order.id}`}

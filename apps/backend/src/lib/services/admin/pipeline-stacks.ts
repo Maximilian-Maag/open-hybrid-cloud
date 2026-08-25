@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/client'
-import { pipelineStacks } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { pipelineStacks, infrastructureElements } from '@/lib/db/schema'
+import { eq, and, ne, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { logAudit, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
@@ -56,6 +56,30 @@ export const createPipelineStack = async (
   return ok(row as PipelineStack)
 }
 
+/**
+ * Elements this stack's teardown would address, that are still standing.
+ *
+ * A stack is scoped to one product in one environment, and every element
+ * provisioned from that pair derives its Terraform state key through this
+ * stack's `stateKeyParam`. `decommissioned` rows are excluded — their state is
+ * already gone, so nothing is at risk. `decommissioning` rows are NOT: their
+ * destroy has been claimed but may not have run yet, which is precisely the
+ * window this guard is about.
+ */
+const liveElementsFor = async (stack: { productId: number; environmentId: number }): Promise<number> => {
+  const [row] = await db
+    .select({ n: sql<number>`COUNT(*)::int` })
+    .from(infrastructureElements)
+    .where(
+      and(
+        eq(infrastructureElements.productId, stack.productId),
+        eq(infrastructureElements.environmentId, stack.environmentId),
+        ne(infrastructureElements.status, 'decommissioned'),
+      ),
+    )
+  return row?.n ?? 0
+}
+
 export const updatePipelineStack = async (
   productId: number,
   stackId: number,
@@ -63,6 +87,53 @@ export const updatePipelineStack = async (
   actorId?: number,
 ): Promise<Result<PipelineStack>> => {
   if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
+
+  if (input.stateKeyParam !== undefined) {
+    const [existing] = await db
+      .select({
+        productId: pipelineStacks.productId,
+        environmentId: pipelineStacks.environmentId,
+        stateKeyParam: pipelineStacks.stateKeyParam,
+      })
+      .from(pipelineStacks)
+      .where(and(eq(pipelineStacks.id, stackId), eq(pipelineStacks.productId, productId)))
+      .limit(1)
+
+    if (!existing) return err(404, 'Not found')
+
+    // Refused only when it actually changes: re-sending the same value with an
+    // unrelated edit — which the admin form does, because it PATCHes the whole
+    // record — must not be blocked.
+    if (existing.stateKeyParam !== input.stateKeyParam) {
+      const live = await liveElementsFor(existing)
+      if (live > 0) {
+        // #200. An element's Terraform state key is not recorded anywhere: it is
+        // re-derived at trigger time from `variables[stack.stateKeyParam]`. So
+        // changing this field under a running element changes where its NEXT
+        // pipeline looks for state — and the next pipeline is usually its
+        // destroy.
+        //
+        // The destroy then addresses a state that was never created, reports
+        // success, and leaves the real state in the bucket with the
+        // infrastructure it describes still running. `claimAndDestroy` has
+        // already flipped the row to `decommissioning`, so the portal shows the
+        // element as torn down while the VM is still billing.
+        //
+        // This is a guard, not the fix. The fix is to record the derived key on
+        // the element at provisioning time so it cannot be recomputed at all —
+        // which needs a column, and is the rest of #200. Until then, refusing
+        // the edit is the only thing that keeps the two in step, and it closes
+        // the realistic path: an admin editing a stack in the admin UI.
+        return err(
+          409,
+          `${live} deployed element${live === 1 ? '' : 's'} still derive their Terraform state key ` +
+            `from "${existing.stateKeyParam}". Changing it would make their teardown address a state ` +
+            `that does not exist, leaving the real infrastructure running while the portal reports it ` +
+            `as decommissioned. Decommission them first, or add a new stack for new orders.`,
+        )
+      }
+    }
+  }
 
   const [updated] = await db
     .update(pipelineStacks)

@@ -127,6 +127,76 @@ export const userRecoveryCodes = pgTable('user_recovery_codes', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [unique('user_recovery_codes_user_id_code_hash_unique').on(t.userId, t.codeHash)])
 
+/**
+ * A registered WebAuthn/FIDO2 credential — a hardware key or a passkey (#197).
+ *
+ * One row per credential, not per user: one key is a single point of failure, and
+ * an account that holds only the key it just lost is the case recovery codes
+ * exist for. Those stay in `userRecoveryCodes` and are shared across factor
+ * types, because a recovery code answers "the factor is gone", whichever it was.
+ *
+ * Nothing here is secret. A WebAuthn registration leaves the private key on the
+ * authenticator and hands the server only the public half, so a dump of this
+ * table authenticates nobody — which is the sharpest difference from
+ * `userTotp.secret`, where the server holds material that a code can be computed
+ * from and has to encrypt it.
+ */
+export const webauthnCredentials = pgTable('webauthn_credentials', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  /** base64url, as the browser reports it. Unique across the table — see the migration. */
+  credentialId: text('credential_id').notNull().unique(),
+  /** The COSE public key, base64url. */
+  publicKey: text('public_key').notNull(),
+  /**
+   * The authenticator's signature counter, allowed only to increase.
+   *
+   * A value that goes backwards means two authenticators are answering for one
+   * credential, which is a clone. Many authenticators — every passkey — report a
+   * constant 0 instead, so this detects a clone where it can and says nothing
+   * where it cannot; see lib/services/webauthn.ts.
+   */
+  counter: bigint({ mode: 'number' }).notNull().default(0),
+  /** `['usb','nfc',…]`, fed back so the browser prompts for the right thing. */
+  transports: jsonb().notNull().default([]),
+  /** What the user called it. They will have more than one. */
+  label: text().notNull(),
+  /** Synced to a provider (a passkey) rather than bound to one device. */
+  backedUp: boolean('backed_up').notNull().default(false),
+  deviceType: text('device_type').notNull().default('singleDevice'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+})
+
+/**
+ * The in-flight WebAuthn ceremony challenge (#197).
+ *
+ * In the database rather than in a signed token, unlike `lib/auth/mfaChallenge`,
+ * for one reason: a WebAuthn challenge must be usable exactly once, and a
+ * stateless token can be replayed for as long as it is valid. The row is created
+ * when a ceremony starts and deleted when it finishes, so "used" and "gone" are
+ * the same state.
+ *
+ * One row per user: starting a second ceremony replaces the first, which is the
+ * behaviour worth having — two outstanding challenges for one account is not a
+ * case anybody needs.
+ */
+export const webauthnChallenges = pgTable('webauthn_challenges', {
+  userId: bigint('user_id', { mode: 'number' }).primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  challenge: text().notNull(),
+  /**
+   * `'register'` or `'authenticate'`.
+   *
+   * They prove different things and must not be interchangeable: a registration
+   * ceremony runs inside an already-authenticated session, so a registration
+   * challenge redeemed as an authentication one would be a second factor proved
+   * by a session that had not passed one.
+   */
+  kind: text().notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const categories = pgTable('categories', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   name: text().notNull(),

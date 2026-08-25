@@ -128,6 +128,23 @@ backend:
     # enrolled authenticator.
     totpEncryptionKey: ""
 
+  # ── Security keys / passkeys (issue #197) ───────────────────────────────────
+  # WEBAUTHN_RP_ID is a bare domain — no scheme, no port. WEBAUTHN_RP_ORIGIN is
+  # the full origin the browser sees, with scheme; comma-separate several if the
+  # portal answers on more than one hostname, and the RP ID must be a suffix of
+  # each. Both are required in production: the backend refuses to start a
+  # ceremony without them rather than issuing credentials nobody can use.
+  #
+  # These are NOT secrets — they are public identifiers the browser already
+  # knows — which is why they sit here and not under `secrets` above.
+  #
+  # Set them to match `ingress.hosts[0].host`. Changing rpId later invalidates
+  # every registered credential, so pick the broadest domain you might want
+  # before anyone enrols.
+  webauthn:
+    rpId: "shop.example.com"
+    rpOrigin: "https://shop.example.com"
+
 # ── Ingress ───────────────────────────────────────────────────────────────────
 ingress:
   enabled: true

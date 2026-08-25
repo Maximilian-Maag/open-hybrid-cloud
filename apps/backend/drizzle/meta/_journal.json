@@ -183,6 +183,13 @@
       "when": 1788307200000,
       "tag": "0028_state_key_namespace",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788480000000,
+      "tag": "0030_webauthn_credentials",
+      "breakpoints": true
     }
   ]
 }

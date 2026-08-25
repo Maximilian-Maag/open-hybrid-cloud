@@ -6,7 +6,19 @@ import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { createSession } from '@/lib/auth/sessions'
 import { peekMfaChallengeUserId, signMfaChallenge, verifyMfaChallenge } from '@/lib/auth/mfaChallenge'
-import { requiresSecondFactor, secondFactorOutstanding, verifySecondFactor } from '@/lib/services/twoFactor'
+import {
+  countWebauthnCredentials,
+  hasConfirmedTotp,
+  requiresSecondFactor,
+  secondFactorOutstanding,
+  totpIssuer,
+  verifySecondFactor,
+} from '@/lib/services/twoFactor'
+import {
+  verifyAuthentication as verifyWebauthnAssertion,
+  type AuthenticationResponseJSON,
+} from '@/lib/services/webauthn'
+import { getBranding } from '@/lib/services/admin/branding'
 import { logAudit } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 
@@ -47,6 +59,9 @@ export interface LoginContext {
  * token field is simply absent is the only version of that a caller cannot get
  * wrong by ignoring a boolean.
  */
+/** Which second factors the account holds — see `MfaChallengeResponse.methods`. */
+export type SecondFactorMethod = 'totp' | 'webauthn'
+
 export type LoginOutcome =
   | {
       mfaRequired: false
@@ -59,7 +74,7 @@ export type LoginOutcome =
        */
       mustEnrollSecondFactor?: boolean
     }
-  | { mfaRequired: true; mfaToken: string }
+  | { mfaRequired: true; mfaToken: string; methods: SecondFactorMethod[] }
 
 /**
  * What the password step alone establishes — before any session exists.
@@ -70,7 +85,7 @@ export type LoginOutcome =
  * does not.
  */
 export type PasswordOutcome =
-  | { mfaRequired: true; mfaToken: string }
+  | { mfaRequired: true; mfaToken: string; methods: SecondFactorMethod[] }
   | { mfaRequired: false; user: SessionUser }
 
 const sessionUserOf = (user: {
@@ -163,7 +178,7 @@ export const checkLoginPassword = async (
       return err(500, 'The server is misconfigured and cannot issue a session. See the server log.')
     }
     await logAudit(user.id, 'auth.2fa.challenged', user.id, 'Password accepted; second factor required')
-    return ok({ mfaRequired: true, mfaToken })
+    return ok({ mfaRequired: true, mfaToken, methods: await availableSecondFactors(user.id) })
   }
 
   return ok({ mfaRequired: false, user: sessionUserOf(user) })
@@ -215,9 +230,20 @@ export const loginWithCredentials = async (
  * Only past the code check does `issueSession` run, so the `sessions` row and the
  * token that names it come into existence together, here, and nowhere earlier.
  */
+/**
+ * What the second step presents: a typed code, or an assertion from a key.
+ *
+ * A union rather than two optional fields, so "neither" and "both" are not
+ * expressible. The two prove the same thing to different standards and the caller
+ * has to have picked one.
+ */
+export type SecondFactorProof =
+  | { kind: 'code'; code: string }
+  | { kind: 'webauthn'; response: AuthenticationResponseJSON }
+
 export const completeMfaLogin = async (
   mfaToken: string,
-  code: string,
+  proof: SecondFactorProof,
   context: LoginContext = {},
 ): Promise<Result<{ token: string; user: SessionUser }>> => {
   // Two passes over the token: the first only to learn which user to look up,
@@ -238,7 +264,15 @@ export const completeMfaLogin = async (
     return err(401, 'This sign-in attempt has expired. Start again.')
   }
 
-  const verified = await verifySecondFactor(user.id, code, { stage: 'login' })
+  // Both paths end in the same place: a Result that says yes or no, and a
+  // session opened only past it. The WebAuthn branch does not touch the TOTP
+  // lockout counter — a key cannot be brute-forced the way six digits can, and
+  // letting failed assertions lock the authenticator app would hand an attacker
+  // a way to disable the other factor.
+  const verified =
+    proof.kind === 'code'
+      ? await verifySecondFactor(user.id, proof.code, { stage: 'login' })
+      : await verifyWebauthnAssertion(user.id, proof.response, await currentShopName())
   if (!verified.ok) return verified
 
   const sessionUser = sessionUserOf(user)
@@ -252,9 +286,28 @@ export const completeMfaLogin = async (
     user.id,
     'auth.login.mfa',
     user.id,
-    `Signed in with a second factor (${verified.data.kind})`,
+    `Signed in with a second factor (${proof.kind === 'webauthn' ? 'security key' : proof.kind})`,
   )
   return ok({ token: token.data, user: sessionUser })
+}
+
+/**
+ * The factor kinds this account can actually present.
+ *
+ * Order is deliberate: a security key first, because it is the stronger of the
+ * two and the form should lead with it where both exist.
+ */
+const availableSecondFactors = async (userId: number): Promise<SecondFactorMethod[]> => {
+  const methods: SecondFactorMethod[] = []
+  if ((await countWebauthnCredentials(userId)) > 0) methods.push('webauthn')
+  if (await hasConfirmedTotp(userId)) methods.push('totp')
+  return methods
+}
+
+/** Branding's shop name, or the default — what the authenticator was registered against. */
+const currentShopName = async (): Promise<string> => {
+  const branding = await getBranding()
+  return totpIssuer(branding.ok ? branding.data.shopName : null)
 }
 
 export const getMe = async (userId: number): Promise<Result<UserProfile>> => {

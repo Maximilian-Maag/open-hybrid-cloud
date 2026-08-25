@@ -16,7 +16,7 @@ export default async function CartPage() {
   const lang = await getLang()
 
   const [cartRes, projectsRes, costCentersRes, ratesRes] = await Promise.allSettled([
-    get<CartItem[]>('/api/cart'),
+    get<CartItem[]>(`/api/cart?lang=${lang}`),
     get<Project[]>('/api/projects'),
     get<CostCenter[]>('/api/admin/cost-centers'),
     get<ExchangeRate[]>('/api/public/exchange-rates'),

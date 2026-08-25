@@ -10,11 +10,19 @@ export default defineConfig({
   //      31807504622 failed on — 4 failures + 3 flakes, all navigation
   //      timeouts, no assertion or API errors).
   //   2. The specs mutate GLOBAL singletons (CI sources, environments,
-  //      products, categories, users) against one shared database and then
-  //      assert on list contents — e.g. admin-environments deletes "the last
-  //      row with a Delete button", and auth.spec logs out and back in as root
-  //      while every other test shares the same storageState. Concurrency
-  //      makes those interfere by construction, no matter how much CPU there is.
+  //      products, categories, users, branding, SMTP and AI config) against one
+  //      shared database and then assert on list contents — e.g.
+  //      admin-environments deletes "the last row with a Delete button".
+  //      Concurrency makes those interfere by construction, no matter how much
+  //      CPU there is.
+  //
+  //      This used to also say "auth.spec logs out and back in as root while
+  //      every other test shares the same storageState". That half is not true:
+  //      each test gets an independent BrowserContext seeded FROM
+  //      e2e/.auth/root.json, and signing out in one context neither rewrites
+  //      that file nor invalidates another context's cookie. The real coupling
+  //      is the shared database and the branding singleton, and the wrong reason
+  //      would have been used to justify the wrong fix (#156).
   // Raising this needs BOTH fixed first: serve production builds instead of
   // `next dev`, and isolate per-worker state (or mark the admin specs serial).
   fullyParallel: !process.env.CI,

@@ -26,7 +26,7 @@ export default async function OrderDetailPage({ params }: Props) {
 
   let order: Order
   try {
-    order = await get<Order>(`/api/orders/${id}`)
+    order = await get<Order>(`/api/orders/${id}?lang=${lang}`)
   } catch {
     notFound()
   }

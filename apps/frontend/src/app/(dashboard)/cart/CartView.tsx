@@ -98,7 +98,7 @@ export function CartView({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to change the quantity.')
       try {
-        const fresh = await get<CartItem[]>('/api/cart')
+        const fresh = await get<CartItem[]>(`/api/cart?lang=${lang}`)
         if (fresh) setItems(fresh)
       } catch { /* the error above already says the change did not stick */ }
     }

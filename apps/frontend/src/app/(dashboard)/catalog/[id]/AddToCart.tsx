@@ -69,7 +69,7 @@ export function AddToCart({ product, lang }: Props) {
       // click landed is the count going up, and waiting for the server round trip
       // of router.refresh() to repaint the shell reads as a dead button.
       try {
-        const items = await get<CartItem[]>('/api/cart')
+        const items = await get<CartItem[]>(`/api/cart?lang=${lang}`)
         publishCartCount((items ?? []).length)
       } catch { /* the refresh below still corrects the badge */ }
       router.refresh()

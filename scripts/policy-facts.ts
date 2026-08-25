@@ -1418,6 +1418,81 @@ function migrationColumnFacts(): MigrationColumnFact[] {
   return out
 }
 
+// ---------------------------------------------------------------------------
+// hardcoded user-facing text
+// ---------------------------------------------------------------------------
+
+interface HardcodedTextFact {
+  file: string
+  line: number
+  /** 'text' for a JSX child, '@label' etc. for an attribute. */
+  kind: string
+  text: string
+}
+
+/**
+ * JSX attributes whose string value is read out to a person rather than to the
+ * machine. `className`, `href`, `id`, `name`, `type` and friends are absent on
+ * purpose — those are markup, not prose.
+ */
+const TEXT_ATTRS = new Set([
+  'label', 'placeholder', 'title', 'hint', 'alt', 'aria-label',
+  'emptyMessage', 'confirmLabel', 'summary',
+])
+
+/**
+ * Prose, as opposed to a value something downstream consumes verbatim.
+ *
+ * Every exclusion below was put there by a false positive found while counting
+ * this against `dev`, and each one is a category rather than a special case:
+ * codes the pipeline reads (`EUR`, `SIZE`, `REGION=eu-central`), paths and
+ * templates (`linode/virtual-machine`), format examples the field is showing
+ * the shape of (`smtp.example.com`, `you@example.com`), and single glyphs
+ * (`&ldquo;`). Getting this wrong in the permissive direction costs a missed
+ * string; getting it wrong the other way makes the gate cry wolf, which is
+ * worse, so the doubtful cases are excluded.
+ */
+function isUserFacingProse(raw: string): boolean {
+  const s = raw.trim()
+  if (s.length < 2) return false
+  if (!/[A-Za-z]{2}/.test(s)) return false
+  if (/^[A-Z0-9_]+$/.test(s)) return false
+  if (/[/\\]|:\/\/|^\.|\{|\}/.test(s)) return false
+  if (/^[a-z]+([A-Z][a-z]+)+$/.test(s)) return false
+  if (/^[a-z-]+$/.test(s) && !s.includes(' ')) return false
+  if (/^&[a-z]+;$/.test(s)) return false
+  if (/^\S+@\S+\.\S+$/.test(s)) return false
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(s)) return false
+  if (/^[A-Z][A-Z0-9_]*=/.test(s)) return false
+  return true
+}
+
+function hardcodedTextFacts(): HardcodedTextFact[] {
+  const out: HardcodedTextFact[] = []
+  const files = walk(`${FRONTEND}/src`, (rel) => rel.endsWith('.tsx') && !rel.includes('.test.'))
+
+  for (const rel of files) {
+    const sf = parse(rel)
+    visit(sf, (node) => {
+      if (ts.isJsxText(node)) {
+        const text = node.text.replace(/\s+/g, ' ').trim()
+        if (isUserFacingProse(text)) out.push({ file: rel, line: lineOf(sf, node), kind: 'text', text })
+        return
+      }
+      if (!ts.isJsxAttribute(node)) return
+      const name = node.name.getText(sf)
+      if (!TEXT_ATTRS.has(name)) return
+      // Only a bare string literal. `label={t('name', lang)}` is an expression
+      // and is exactly what this rule is asking for.
+      if (!node.initializer || !ts.isStringLiteral(node.initializer)) return
+      if (isUserFacingProse(node.initializer.text)) {
+        out.push({ file: rel, line: lineOf(sf, node), kind: `@${name}`, text: node.initializer.text })
+      }
+    })
+  }
+  return out
+}
+
 export function collectFacts(): Record<string, unknown> {
   const testImports = routeTestImports()
   const tables = tableFacts()
@@ -1432,6 +1507,7 @@ export function collectFacts(): Record<string, unknown> {
     secretColumns: SECRET_SQL_COLUMNS,
     selects: selectFacts(secretProperties),
     i18n: i18nFacts(),
+    hardcodedText: hardcodedTextFacts(),
     migrations: migrationFacts(),
     actionRefs: actionRefs(),
     imageRefs: imageRefs(),

@@ -10,6 +10,9 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, sql, gte, lte } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
+import { findCiSourceForEnv } from '@/lib/db/queries'
+import { readOutputsForElement, outputsUnavailableReason } from '@/lib/webhook/outputs'
+import { createRateLimitBucket } from '@/lib/rateLimit'
 import { fireDestroyTriggers, destroyVariables } from '@/lib/services/teardown'
 import { TRIGGERING_KEY, TRIGGERING_VALUE } from '@/lib/webhook/settle'
 import { recordOrderPipelineId, finishOrderTriggerRun } from '@/lib/services/pipelineTracking'
@@ -828,6 +831,13 @@ const claimAndDestroy = async (
  */
 export interface InfraDetail extends InfraRow {
   /**
+   * Why `outputs` is empty, when reading them went wrong (#215).
+   *
+   * Null means nothing went wrong: either they were read, or the element has not
+   * settled yet. Five distinct failures used to render as one blank card.
+   */
+  outputsError: string | null
+  /**
    * Status per pipeline id in `pipelineId`, taken from the run those ids belong
    * to — see `pipelinePhase`.
    */
@@ -846,6 +856,125 @@ export interface InfraDetail extends InfraRow {
   isTrial: boolean
   /** Names whose values were replaced with the redaction marker. */
   redactedParameters: string[]
+}
+
+/**
+ * Read this element's Terraform outputs again, from the pipeline logs (#218).
+ *
+ * Outputs are parsed exactly once, when the order settles. If anything was wrong
+ * at that instant the element is empty forever, and until now the only remedies
+ * were a database script or redeploying real infrastructure to get a second
+ * chance at reading a log that had not changed.
+ *
+ * That is not hypothetical: on one deployment three faults stacked on this single
+ * symptom — a rotated callback secret so orders never settled (#211), an expired
+ * CI token so the log could not be fetched, and a parser that could not read
+ * GitLab's timestamped log lines (#216). Each was fixed in turn and every element
+ * provisioned before the fix stayed blank, because nothing ever asked again.
+ *
+ * Idempotent and read-only against CI: it fetches logs and writes what it parsed.
+ * It starts no pipeline and touches no infrastructure, which is why it is offered
+ * to whoever may already see the element rather than to admins alone — `retry`
+ * re-fires real deployments and is rightly admin-only; this re-reads a text file.
+ */
+/**
+ * See the throttle comment inside `refreshElementOutputs`.
+ *
+ * Exported so the tests can clear it: element ids repeat across cases in a
+ * truncated database, so without that one case's element throttles the next.
+ */
+export const refreshOutputsLimit = createRateLimitBucket(1, 15_000)
+
+export const refreshElementOutputs = async (
+  session: SessionUser,
+  id: number,
+): Promise<Result<{ outputs: Record<string, string>; outputsError: string | null }>> => {
+  const isAdmin = session.role === 'admin' || session.role === 'root'
+
+  const [row] = await db
+    .select({
+      id: infrastructureElements.id,
+      orderId: infrastructureElements.orderId,
+      environmentId: infrastructureElements.environmentId,
+      pipelineId: infrastructureElements.pipelineId,
+      // Selected so the response can report what is STORED rather than what this
+      // particular read returned. The two differ whenever a read comes back
+      // empty, because an empty read deliberately does not overwrite outputs an
+      // earlier one recorded — see the update below.
+      outputs: infrastructureElements.outputs,
+      projectOwnerId: projects.ownerId,
+    })
+    .from(infrastructureElements)
+    .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
+    .where(eq(infrastructureElements.id, id))
+    .limit(1)
+
+  // 404 and not 403, for the reason `getInfrastructureElement` gives: telling a
+  // project manager that an element they may not see exists is itself information.
+  if (!row) return err(404, 'Infrastructure element not found')
+  if (!isAdmin && row.projectOwnerId !== session.id) {
+    return err(404, 'Infrastructure element not found')
+  }
+
+  // Throttled here rather than in the route, so it sits AFTER the scoping check:
+  // a caller who may not see this element gets 404 and never spends its budget,
+  // which would otherwise let anyone deny the refresh to the people who own it.
+  //
+  // Keyed by element and not by caller, because the resource being protected is
+  // the environment's CI access token. Each call makes one outbound request per
+  // pipeline the element has, against the same token the settle path uses to
+  // record status — an owner holding the button down would amplify one click
+  // into a stream of API calls and could exhaust that token for the whole
+  // environment, taking settlement down with it.
+  //
+  // 15 seconds is chosen against what a second call could possibly learn: the
+  // job log this reads does not change between two clicks a second apart, so a
+  // shorter window buys the operator nothing and costs the environment traffic.
+  if (refreshOutputsLimit.isRateLimited(`element|${id}`)) {
+    return err(429, 'The outputs for this element were just re-read. Try again in a few seconds.')
+  }
+
+  const ciSource = await findCiSourceForEnv(row.environmentId)
+  const unavailable = outputsUnavailableReason(ciSource)
+  if (unavailable || !ciSource) {
+    const reason = unavailable ?? 'Terraform outputs cannot be collected.'
+    await db
+      .update(infrastructureElements)
+      .set({ outputsError: reason })
+      .where(eq(infrastructureElements.id, id))
+    // What is stored, not `{}`. Nothing was overwritten here, so answering with
+    // an empty set would tell the caller the element has no outputs when the row
+    // still holds the ones an earlier read found — and the next GET would then
+    // disagree with this POST.
+    return ok({ outputs: row.outputs ?? {}, outputsError: reason })
+  }
+
+  const { outputs, error } = await readOutputsForElement(ciSource, row.pipelineId ?? [], {
+    elementId: row.id,
+    orderId: row.orderId,
+  })
+
+  await db
+    .update(infrastructureElements)
+    // Only overwrite the outputs when there are some: a read that failed must not
+    // erase what an earlier successful one recorded. The error still updates, so
+    // the page can say the latest attempt did not work.
+    .set(Object.keys(outputs).length > 0 ? { outputs, outputsError: null } : { outputsError: error })
+    .where(eq(infrastructureElements.id, id))
+
+  // Same rule as above: report the row as it now stands. A read that found
+  // nothing left the stored outputs alone, so those are the answer — with the
+  // error alongside them saying the latest attempt did not work.
+  const storedOutputs = Object.keys(outputs).length > 0 ? outputs : (row.outputs ?? {})
+
+  await logAudit(
+    session.id,
+    'infra.outputs_refreshed',
+    id,
+    error ?? `Read ${Object.keys(outputs).length} Terraform output(s) from the pipeline log`,
+  )
+
+  return ok({ outputs: storedOutputs, outputsError: error })
 }
 
 export const getInfrastructureElement = async (
@@ -869,6 +998,8 @@ export const getInfrastructureElement = async (
       pipelineStatus: infrastructureElements.pipelineStatus,
       orderPipelineStatus: orders.pipelineStatus,
       outputs: infrastructureElements.outputs,
+      // Why they are empty, when something went wrong reading them (#215).
+      outputsError: infrastructureElements.outputsError,
       deployedAt: infrastructureElements.deployedAt,
       scheduledDecommissionAt: infrastructureElements.scheduledDecommissionAt,
       productName: productNameSql,

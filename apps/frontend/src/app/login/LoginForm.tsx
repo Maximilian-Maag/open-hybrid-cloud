@@ -106,11 +106,21 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         | null
 
       if (!res.ok || !data?.ok) {
-        // The backend's own message for a rate-limited attempt says how long to
-        // wait, which is worth more than a generic failure; anything else is
-        // deliberately just "invalid credentials", so this cannot be used to
-        // find out which accounts exist.
-        setError(res.status === 429 && data?.error ? data.error : t('invalidCredentials', lang))
+        // Two statuses carry a message worth repeating, and everything else is
+        // deliberately just "invalid credentials" so this cannot be used to find
+        // out which accounts exist.
+        //
+        //   429 — says how long to wait, which is worth more than a generic
+        //         failure.
+        //   5xx — is not about the credentials AT ALL. A JWT_SECRET under 32
+        //         characters makes every login fail with a 500 saying the server
+        //         is misconfigured, and this used to render that as "invalid
+        //         email or password". An operator then checks the password they
+        //         know is right, forever. Nothing is disclosed by admitting the
+        //         server is broken: it is broken for every email, including ones
+        //         that do not exist.
+        const worthRepeating = res.status === 429 || res.status >= 500
+        setError(worthRepeating && data?.error ? data.error : t('invalidCredentials', lang))
         return
       }
 

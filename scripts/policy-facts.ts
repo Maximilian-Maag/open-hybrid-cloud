@@ -1068,6 +1068,356 @@ function pageFacts(): PageFact[] {
   })
 }
 
+// ---------------------------------------------------------------------------
+// lists that are declared more than once
+// ---------------------------------------------------------------------------
+
+/**
+ * The declarations that are copies of one list of language codes.
+ *
+ * Named explicitly rather than discovered, because "an array of two-letter
+ * strings" matches half a dozen unrelated things in this tree — the four
+ * base-language options on the product forms among them, which are deliberately
+ * *not* the 25. A registry is also the only shape that can notice a copy being
+ * renamed away: an entry that resolves to nothing is reported, where a search
+ * would simply find one fewer list and compare the rest happily.
+ *
+ * Add a row here when a third copy appears; do not add one for a list that is
+ * allowed to differ.
+ */
+const LANGUAGE_LIST_DECLARATIONS: { file: string; symbol: string; what: string }[] = [
+  { file: I18N_FILE, symbol: 'SUPPORTED_LANGUAGES', what: 'the language picker' },
+  { file: `${BACKEND}/src/lib/ai/index.ts`, symbol: 'LANGUAGES', what: 'the AI translation prompt' },
+]
+
+interface DeclaredList {
+  file: string
+  line: number
+  symbol: string
+  what: string
+  /** False when the registry names a declaration this tree no longer has. */
+  found: boolean
+  codes: string[]
+}
+
+/**
+ * The string codes in `const X = [...]`, for both shapes this repo writes:
+ * `['de', 'en']` and `[{ code: 'de', name: 'Deutsch' }]`.
+ */
+function codesInDeclaration(sf: ts.SourceFile, symbol: string): { line: number; codes: string[] } | null {
+  let found: { line: number; codes: string[] } | null = null
+  visit(sf, (node) => {
+    if (found !== null) return
+    if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name)) return
+    if (node.name.text !== symbol || !node.initializer) return
+    const init = ts.isAsExpression(node.initializer) ? node.initializer.expression : node.initializer
+    if (!ts.isArrayLiteralExpression(init)) return
+
+    const codes: string[] = []
+    for (const element of init.elements) {
+      if (ts.isStringLiteral(element)) {
+        codes.push(element.text)
+        continue
+      }
+      if (!ts.isObjectLiteralExpression(element)) continue
+      for (const p of element.properties) {
+        if (!ts.isPropertyAssignment(p) || propName(p) !== 'code') continue
+        if (ts.isStringLiteral(p.initializer)) codes.push(p.initializer.text)
+      }
+    }
+    found = { line: lineOf(sf, node), codes: [...new Set(codes)].sort() }
+  })
+  return found
+}
+
+/**
+ * Every hand-maintained copy of the supported-language list.
+ *
+ * The 25 codes exist twice: the frontend picker and the backend's translation
+ * prompt, which asks the model for "exactly these 25 languages". Nothing links
+ * the two, so adding a language to one of them produces a picker entry whose
+ * translations are never requested, or a prompt that spends tokens on a language
+ * nobody can select. Neither fails anything.
+ */
+function languageListFacts(): DeclaredList[] {
+  return LANGUAGE_LIST_DECLARATIONS.map(({ file, symbol, what }) => {
+    if (!exists(file)) return { file, line: 0, symbol, what, found: false, codes: [] }
+    const declaration = codesInDeclaration(parse(file), symbol)
+    if (declaration === null) return { file, line: 0, symbol, what, found: false, codes: [] }
+    return { file, line: declaration.line, symbol, what, found: true, codes: declaration.codes }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// the two ESLint flat configs
+// ---------------------------------------------------------------------------
+
+const ESLINT_CONFIGS = [`${BACKEND}/eslint.config.mjs`, `${FRONTEND}/eslint.config.mjs`]
+
+interface EslintConfigFact {
+  file: string
+  /** False when one of the two configs has been deleted or renamed away. */
+  found: boolean
+  /** Every `rules: { … }` entry in the file, flattened and sorted by name. */
+  rules: { name: string; value: string; line: number }[]
+}
+
+/** Source text with runs of whitespace collapsed, so formatting is not a diff. */
+const normalised = (sf: ts.SourceFile, node: ts.Node): string =>
+  node.getText(sf).replace(/\s+/g, ' ').trim()
+
+/**
+ * The rule blocks of both flat configs.
+ *
+ * Read as TypeScript because a flat config is a module, not data: the entries
+ * are spread out over several config objects and a regex over `"rule": value`
+ * would also match the paragraph-long comments that explain each choice.
+ *
+ * Flattened across the config objects rather than kept per block, because that
+ * is how ESLint resolves them — later blocks win — and because the two files
+ * only have to agree on the resulting rule set, not on how it is arranged.
+ *
+ * Every `rules:` property is collected, wherever it sits. Over-collecting is the
+ * safe direction: a rule the extractor should not have read still has to appear
+ * in both files, and a shape-based filter would be the thing that quietly
+ * stopped reading the block someone rearranged.
+ */
+function eslintConfigFacts(): EslintConfigFact[] {
+  return ESLINT_CONFIGS.map((file) => {
+    if (!exists(file)) return { file, found: false, rules: [] }
+    const sf = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+    const rules = new Map<string, { name: string; value: string; line: number }>()
+    visit(sf, (node) => {
+      if (!ts.isPropertyAssignment(node) || propName(node) !== 'rules') return
+      if (!ts.isObjectLiteralExpression(node.initializer)) return
+      for (const entry of node.initializer.properties) {
+        const name = propName(entry)
+        if (name === null || !ts.isPropertyAssignment(entry)) continue
+        rules.set(name, { name, value: normalised(sf, entry.initializer), line: lineOf(sf, entry) })
+      }
+    })
+    return { file, found: true, rules: [...rules.values()].sort((a, b) => a.name.localeCompare(b.name)) }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// environment variables
+// ---------------------------------------------------------------------------
+
+/**
+ * Variables every process has, which no operator has to be told to set. An
+ * exemption list rather than a prefix rule: each entry is a decision, and a
+ * shape-based exemption would quietly cover the next variable that happens to
+ * look like one of these.
+ */
+const AMBIENT_ENV_VARS = new Set(['NODE_ENV'])
+
+/**
+ * The filename, used three times: the root file is the whole-stack reference an
+ * operator deploying this reads, and `apps/<app>/.env.example` is the one
+ * actually loaded in development.
+ */
+const ENV_EXAMPLE = '.env.example'
+
+interface EnvRead {
+  name: string
+  file: string
+  line: number
+  /** `apps/backend` or `apps/frontend` — which per-app example must list it. */
+  app: string
+}
+
+interface EnvExampleFact {
+  file: string
+  keys: { name: string; line: number }[]
+  /** Keys assigned more than once: the last assignment silently wins. */
+  duplicates: { name: string; line: number; firstLine: number }[]
+}
+
+/**
+ * Every `process.env.NAME` and `process.env['NAME']` in shipped application
+ * code.
+ *
+ * Test files are excluded on purpose. `.env.example` documents what an operator
+ * has to set to run the product; a variable a fixture invents is not that, and
+ * including tests would make the rule report `process.env.X = 'y'` writes as if
+ * they were configuration.
+ *
+ * Computed names — `process.env[name]` inside a helper, which is how
+ * `lib/auth/sessions.ts` reads the two session TTLs — are not extracted. They
+ * cannot be resolved without a type checker, and a rule that guessed at them
+ * would report a variable that is documented and read as undocumented. The cost
+ * is that those reads are invisible here, which is under-coverage rather than a
+ * false positive.
+ */
+function envReads(): EnvRead[] {
+  const out: EnvRead[] = []
+  for (const app of [BACKEND, FRONTEND]) {
+    const files = walk(`${app}/src`, (rel) =>
+      /\.tsx?$/.test(rel) && !/\.test\.tsx?$/.test(rel))
+    for (const file of files) {
+      const sf = parse(file)
+      visit(sf, (node) => {
+        // `process.env.NAME`
+        if (
+          ts.isPropertyAccessExpression(node) &&
+          ts.isPropertyAccessExpression(node.expression) &&
+          ts.isIdentifier(node.expression.expression) &&
+          node.expression.expression.text === 'process' &&
+          node.expression.name.text === 'env' &&
+          ts.isIdentifier(node.name)
+        ) {
+          out.push({ name: node.name.text, file, line: lineOf(sf, node), app })
+        }
+        // `process.env['NAME']`
+        if (
+          ts.isElementAccessExpression(node) &&
+          ts.isPropertyAccessExpression(node.expression) &&
+          ts.isIdentifier(node.expression.expression) &&
+          node.expression.expression.text === 'process' &&
+          node.expression.name.text === 'env' &&
+          ts.isStringLiteral(node.argumentExpression)
+        ) {
+          out.push({ name: node.argumentExpression.text, file, line: lineOf(sf, node), app })
+        }
+      })
+    }
+  }
+  return out.filter((r) => !AMBIENT_ENV_VARS.has(r.name))
+}
+
+/** The assignments in one `.env.example`, and any key assigned twice. */
+function envExampleFacts(): EnvExampleFact[] {
+  const files = [ENV_EXAMPLE, `${BACKEND}/${ENV_EXAMPLE}`, `${FRONTEND}/${ENV_EXAMPLE}`]
+  return files.filter(exists).map((file) => {
+    const keys: { name: string; line: number }[] = []
+    const duplicates: { name: string; line: number; firstLine: number }[] = []
+    const firstSeen = new Map<string, number>()
+    read(file).split('\n').forEach((raw, i) => {
+      const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(raw)
+      if (!m) return
+      const line = i + 1
+      const first = firstSeen.get(m[1])
+      if (first === undefined) firstSeen.set(m[1], line)
+      else duplicates.push({ name: m[1], line, firstLine: first })
+      keys.push({ name: m[1], line })
+    })
+    return { file, keys, duplicates }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// what a migration does to an existing table
+// ---------------------------------------------------------------------------
+
+interface MigrationColumnFact {
+  file: string
+  line: number
+  table: string
+  column: string
+  /** `add` for ADD COLUMN, `setNotNull` for ALTER COLUMN … SET NOT NULL. */
+  kind: 'add' | 'setNotNull'
+  notNull: boolean
+  /** A DEFAULT, or an IDENTITY/GENERATED clause, which supplies one. */
+  hasDefault: boolean
+  /** An earlier statement in the same file that gives existing rows a value. */
+  backfilled: boolean
+}
+
+/**
+ * Comments blanked out, newlines kept, so an offset still maps to a line.
+ *
+ * Necessary rather than tidy: every migration in this tree opens with a
+ * paragraph of prose explaining the change, and those paragraphs contain the
+ * words this extractor looks for — "NOT NULL", "DEFAULT", the column names.
+ *
+ * String literals are not tracked, so a `;` or a `--` inside one would split a
+ * statement in the wrong place. No migration here has either, and the failure
+ * mode is a statement the rule cannot read rather than one it misreads: the
+ * halves stop matching ADD COLUMN and produce no fact.
+ */
+function stripSqlComments(sql: string): string {
+  const blank = (text: string): string => text.replace(/[^\n]/g, ' ')
+  return sql
+    .replace(/\/\*[\s\S]*?\*\//g, blank)
+    .replace(/--[^\n]*/g, blank)
+}
+
+const lineAt = (text: string, offset: number): number =>
+  text.slice(0, offset).split('\n').length
+
+/**
+ * Columns that migrations add to, or constrain on, tables that already exist.
+ *
+ * `CREATE TABLE` is deliberately not read: a table being created is empty, so
+ * every NOT NULL in it is free. The failure this exists to catch only happens to
+ * a table with rows in it, and Postgres reports it as
+ * `column "x" contains null values` — at deploy time, on the one database that
+ * has data, after the migration has already been merged and released.
+ */
+function migrationColumnFacts(): MigrationColumnFact[] {
+  const out: MigrationColumnFact[] = []
+  for (const file of walk(DRIZZLE_DIR, (rel) => rel.endsWith('.sql') && !rel.includes('/meta/'))) {
+    const sql = stripSqlComments(read(file))
+
+    // Statements in order, with the offset each one starts at, so a backfill can
+    // be recognised as something that happens BEFORE the constraint.
+    const statements: { text: string; offset: number }[] = []
+    let cursor = 0
+    for (const chunk of sql.split(';')) {
+      statements.push({ text: chunk, offset: cursor })
+      cursor += chunk.length + 1
+    }
+
+    /** Columns an earlier statement has already given every row a value for. */
+    const valued = new Set<string>()
+
+    for (const { text, offset } of statements) {
+      const table = /\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?"?([\w.]+)"?/i.exec(text)?.[1] ?? ''
+
+      for (const m of text.matchAll(
+        /\bADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([A-Za-z_]\w*)"?([\s\S]*?)(?=,\s*(?:ADD|ALTER|DROP)\b|$)/gi,
+      )) {
+        const definition = m[2]
+        const hasDefault =
+          /\bDEFAULT\b/i.test(definition) || /\bGENERATED\b/i.test(definition)
+        out.push({
+          file,
+          line: lineAt(sql, offset + (m.index ?? 0)),
+          table,
+          column: m[1],
+          kind: 'add',
+          notNull: /\bNOT\s+NULL\b/i.test(definition),
+          hasDefault,
+          backfilled: false,
+        })
+        if (hasDefault) valued.add(m[1])
+      }
+
+      for (const m of text.matchAll(
+        /\bALTER\s+COLUMN\s+"?([A-Za-z_]\w*)"?\s+SET\s+NOT\s+NULL\b/gi,
+      )) {
+        out.push({
+          file,
+          line: lineAt(sql, offset + (m.index ?? 0)),
+          table,
+          column: m[1],
+          kind: 'setNotNull',
+          notNull: true,
+          hasDefault: false,
+          backfilled: valued.has(m[1]),
+        })
+      }
+
+      // `UPDATE t SET "col" = …` — the backfill 0004 does before it constrains.
+      if (/^\s*UPDATE\b/i.test(text)) {
+        for (const m of text.matchAll(/"?([A-Za-z_]\w*)"?\s*=/g)) valued.add(m[1])
+      }
+    }
+  }
+  return out
+}
+
 export function collectFacts(): Record<string, unknown> {
   const testImports = routeTestImports()
   const tables = tableFacts()
@@ -1090,6 +1440,12 @@ export function collectFacts(): Record<string, unknown> {
     testCases: testCases(),
     pages: pageFacts(),
     a11ySpecFile: A11Y_SPEC,
+    languageLists: languageListFacts(),
+    eslintConfigs: eslintConfigFacts(),
+    envReads: envReads(),
+    envExamples: envExampleFacts(),
+    envExampleFile: ENV_EXAMPLE,
+    migrationColumns: migrationColumnFacts(),
   }
 }
 

@@ -190,6 +190,13 @@
       "when": 1788480000000,
       "tag": "0030_webauthn_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788566400000,
+      "tag": "0031_outputs_error",
+      "breakpoints": true
     }
   ]
 }

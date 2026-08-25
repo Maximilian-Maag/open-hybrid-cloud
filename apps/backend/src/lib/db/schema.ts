@@ -677,6 +677,22 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   // becomes 'decommissioned' once EVERY id in pipeline_id succeeded.
   pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   outputs: jsonb().$type<Record<string, string>>().notNull().default({}),
+  /**
+   * Why the LAST attempt to read the Terraform outputs did not produce any (#215).
+   *
+   * NULL means the last attempt worked, or none has been made yet. Cleared on
+   * every successful read, so a fixed token and a re-run leave no stale complaint
+   * behind.
+   *
+   * NOT "why `outputs` is empty": a failed read deliberately leaves `outputs`
+   * alone rather than erasing what an earlier one found, so this column being set
+   * while `outputs` holds values is the ordinary shape for "these are from
+   * before; the latest attempt failed".
+   *
+   * Written for an operator to read on the element page. The log line keeps the
+   * detail that does not belong there — the pipeline id, the underlying error.
+   */
+  outputsError: text('outputs_error'),
   deployedAt: timestamp('deployed_at', { withTimezone: true }).defaultNow(),
   // When set, the element is torn down automatically at or after this instant
   // (issue #30). Temporary environments — test, demo, PoC — are otherwise

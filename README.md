@@ -66,10 +66,6 @@ Orders can also be placed one at a time (`POST /api/orders`) or collected in a *
 | `ADMIN_PASSWORD` | Yes | Password of the initial root account |
 | `FRONTEND_URL` | No | Frontend origin (default: `http://localhost:3000`) |
 | `EXCHANGE_RATE_API_URL` | No | Exchange rate API endpoint |
-| `ENTRA_TENANT_ID` | No | Microsoft Entra ID tenant ID — leave blank to disable SSO |
-| `ENTRA_CLIENT_ID` | No | Entra ID application client ID |
-| `ENTRA_CLIENT_SECRET` | No | Entra ID client secret |
-| `ENTRA_REDIRECT_URI` | No | Callback URL registered in Entra ID (e.g. `https://your-domain/api/auth/callback`) |
 | `SMTP_HOST` | No | SMTP server hostname — leave blank to disable email |
 | `SMTP_PORT` | No | SMTP server port (default: `587`) |
 | `SMTP_FROM` | No | Sender address |
@@ -251,7 +247,7 @@ NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=my-local-nextauth-secret
 ```
 
-> **Note:** `SMTP_*` and `ENTRA_*` variables can be left blank. Leaving SMTP blank disables email notifications. Mailpit is available as a dev SMTP server if you want to test emails — set `SMTP_HOST=localhost` and `SMTP_PORT=1025`.
+> **Note:** `SMTP_*` variables can be left blank. Leaving SMTP blank disables email notifications. Mailpit is available as a dev SMTP server if you want to test emails — set `SMTP_HOST=localhost` and `SMTP_PORT=1025`.
 
 #### 4. Initialise the database
 

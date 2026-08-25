@@ -291,3 +291,110 @@ describe('user audit trail (issue #137)', () => {
     if (!result.ok) expect(result.status).toBe(400)
   })
 })
+
+// A root deactivated its own account on a live installation and locked everybody
+// out: the update revokes the account's sessions, so the request that switches
+// you off signs you out, and the page that could switch you back on is behind
+// the login you no longer pass. Recovery was an UPDATE against the database.
+describe('updateUser lockout guards (issue #250)', () => {
+  it('refuses to deactivate the account making the request', async () => {
+    const root = await createUser({ role: 'root', email: 'self-off@test.dev' })
+    await createUser({ role: 'root', email: 'spare-root-2@test.dev' })
+
+    const result = await updateUser(root.id, { active: false }, root.id)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+    const [row] = await db.select().from(users).where(eq(users.id, root.id))
+    expect(row.active).toBe(true)
+  })
+
+  // A second root, so that only the self-guard can refuse this: with one root the
+  // last-root guard below refuses it too and the test would pass either way.
+  it('refuses to take root away from the account making the request', async () => {
+    const root = await createUser({ role: 'root', email: 'self-demote@test.dev' })
+    await createUser({ role: 'root', email: 'spare-root@test.dev' })
+
+    const result = await updateUser(root.id, { role: 'admin' }, root.id)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+    const [row] = await db.select().from(users).where(eq(users.id, root.id))
+    expect(row.role).toBe('root')
+  })
+
+  it('lets the account making the request change anything else about itself', async () => {
+    const root = await createUser({ role: 'root', email: 'self-rename@test.dev' })
+
+    const result = await updateUser(root.id, { name: 'Renamed', active: true, role: 'root' }, root.id)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.name).toBe('Renamed')
+  })
+
+  it('refuses to deactivate the last active root even for another actor', async () => {
+    const root = await createUser({ role: 'root', email: 'last-root@test.dev' })
+    const other = await createUser({ role: 'admin', email: 'other-admin@test.dev' })
+
+    const result = await updateUser(root.id, { active: false }, other.id)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+    const [row] = await db.select().from(users).where(eq(users.id, root.id))
+    expect(row.active).toBe(true)
+  })
+
+  it('refuses to demote the last active root even for another actor', async () => {
+    const root = await createUser({ role: 'root', email: 'last-root-demote@test.dev' })
+    const other = await createUser({ role: 'admin', email: 'other-admin-2@test.dev' })
+
+    const result = await updateUser(root.id, { role: 'admin' }, other.id)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  // An inactive root is not a root anybody can sign in as, so it does not count
+  // towards "somebody can still administer this".
+  it('does not count an inactive root as the second root', async () => {
+    const root = await createUser({ role: 'root', email: 'only-active@test.dev' })
+    await createUser({ role: 'root', email: 'switched-off@test.dev', active: false })
+    const other = await createUser({ role: 'admin', email: 'other-admin-3@test.dev' })
+
+    const result = await updateUser(root.id, { active: false }, other.id)
+
+    expect(result.ok).toBe(false)
+  })
+
+  it('deactivates a root when another active root remains', async () => {
+    const root = await createUser({ role: 'root', email: 'first-root@test.dev' })
+    await createUser({ role: 'root', email: 'second-root@test.dev' })
+    const other = await createUser({ role: 'admin', email: 'other-admin-4@test.dev' })
+
+    const result = await updateUser(root.id, { active: false }, other.id)
+
+    expect(result.ok).toBe(true)
+    const [row] = await db.select().from(users).where(eq(users.id, root.id))
+    expect(row.active).toBe(false)
+  })
+
+  it('leaves a non-root account deactivatable when it is the only one', async () => {
+    const admin = await createUser({ role: 'admin', email: 'lone-admin@test.dev' })
+    const root = await createUser({ role: 'root', email: 'root-actor@test.dev' })
+
+    const result = await updateUser(admin.id, { active: false }, root.id)
+
+    expect(result.ok).toBe(true)
+  })
+
+  // Reactivating a root reads the same `before.role === 'root'` branch. It must
+  // not be counted as losing a root.
+  it('reactivates a deactivated root', async () => {
+    const root = await createUser({ role: 'root', email: 'reactivate@test.dev', active: false })
+    const other = await createUser({ role: 'root', email: 'reactivator@test.dev' })
+
+    const result = await updateUser(root.id, { active: true }, other.id)
+
+    expect(result.ok).toBe(true)
+  })
+})

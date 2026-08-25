@@ -361,7 +361,7 @@ beforeAll(async () => {
     -- Migration 0028: what namespaces the element's Terraform state key. NULL is
     -- "provisioned before issue #183", so no default here either.
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS state_key_namespace TEXT;
-    -- Migration 0029: why an element has no Terraform outputs (#215).
+    -- Migration 0031: why an element has no Terraform outputs (#215).
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS outputs_error TEXT;
     CREATE TABLE IF NOT EXISTS audit_log (
       id BIGSERIAL PRIMARY KEY,

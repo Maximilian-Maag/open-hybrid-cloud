@@ -14,9 +14,13 @@ import { apiRequest } from '@/lib/api'
  * config to the browser is not something to do on purpose.
  *
  * So: server components import `get` from here, client components import it from
- * `@/lib/api`, and this is the only module in the frontend that reads
- * `session.apiToken` for an API call (issue #146). The browser reaches the same
- * endpoints through `/api/proxy`, which attaches the token server-side.
+ * `@/lib/api`, and the browser reaches the same endpoints through `/api/proxy`,
+ * which attaches the token server-side.
+ *
+ * Two modules read `session.apiToken`, and only two: this one, and the proxy
+ * route that stands in for it on the browser's behalf. Both run server-side.
+ * That pair is the security boundary issue #146 closed — widening it is what
+ * puts the token back within reach of client JavaScript.
  */
 const bearer = async (): Promise<string | undefined> => {
   if (typeof window !== 'undefined') {

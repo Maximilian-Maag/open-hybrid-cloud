@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { startRegistration } from '@simplewebauthn/browser'
 import type {
   WebauthnCredential,
@@ -28,6 +29,9 @@ import { t } from '@/lib/i18n'
  * a public key and an attestation for the server to verify.
  */
 export function SecurityKeysCard() {
+  const { data: session, update: updateSession } = useSession()
+  // The token's copy of the gate, which is what the middleware reads.
+  const mustEnroll = session?.mustEnrollSecondFactor === true
   const lang = useLang()
   const [credentials, setCredentials] = useState<WebauthnCredential[] | null>(null)
   const [label, setLabel] = useState('')
@@ -78,6 +82,27 @@ export function SecurityKeysCard() {
       // the only copy that will ever exist.
       if (result.recoveryCodes?.length) setRecoveryCodes(result.recoveryCodes)
       await load()
+
+      // Lift the enrolment gate, exactly as `TwoFactorCard` does after a
+      // confirmed TOTP secret (#197).
+      //
+      // `secondFactorOutstanding` already stopped counting this account the
+      // moment the credential was stored — it re-reads both factors per request,
+      // and a key discharges the requirement as much as an app does. But the
+      // MIDDLEWARE reads `mustEnrollSecondFactor` off the token minted at
+      // sign-in, and nothing here was rewriting it. So an administrator who
+      // registered a key was still redirected to /settings?enroll2fa=1 from
+      // every page, and still shown "two-factor authentication is required" —
+      // having done exactly what was asked of them, with the only way out being
+      // to sign out and back in.
+      //
+      // After the recovery codes are on screen, not before: lifting the gate
+      // must not race the user reading the only copy of them.
+      if (mustEnroll) {
+        const { getSession } = await import('next-auth/react')
+        await updateSession({ mustEnrollSecondFactor: false })
+        await getSession()
+      }
     } catch (err) {
       // A user who closes the prompt lands here too, and telling them their key
       // failed would be wrong — so the browser's own abort is not an error.

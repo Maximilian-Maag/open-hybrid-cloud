@@ -9,6 +9,7 @@ import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from '../InfraActions'
+import { RereadOutputs } from './RereadOutputs'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 
@@ -129,7 +130,13 @@ export default async function InfrastructureDetailPage({ params }: Props) {
       {/* The reason this page exists */}
       <Card title={t('outputsTitle', lang)}>
         {outputs.length === 0 ? (
-          <p className="text-sm text-slate-600">{t('noOutputs', lang)}</p>
+          <div className="space-y-3">
+            {/* Why they are missing, when the server knows (#215). Five different
+                failures used to render as the same sentence, so "your CI token
+                expired" and "this template declares none" were the same screen. */}
+            <p className="text-sm text-slate-600">{element.outputsError ?? t('noOutputs', lang)}</p>
+            <RereadOutputs elementId={element.id} />
+          </div>
         ) : (
           <dl className="divide-y divide-slate-100">
             {outputs.map(([key, value]) => (

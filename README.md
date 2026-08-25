@@ -432,7 +432,9 @@ It exists because ESLint enforces rules about *a file*, and every recurring
 defect in this repository has been a rule that spans files — a route whose auth
 helper is missing, a table added to `schema.ts` and to a migration but not to
 both places in `src/test/setup.ts`, an i18n key present in 2 of 25 languages, a
-`select()` that reached one column too far. Those are sentences you can write
+`select()` that reached one column too far, a language code added to the picker
+but not to the AI prompt that translates for it, a variable the code reads that
+no `.env.example` tells an operator to set. Those are sentences you can write
 down, which makes them policy rather than lint.
 
 ```bash

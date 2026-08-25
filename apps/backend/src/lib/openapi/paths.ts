@@ -1748,6 +1748,46 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
+  path: '/infrastructure/{id}/outputs',
+  summary: "Read this element's Terraform outputs again from its pipeline log",
+  description:
+    'Outputs are parsed once, at settle. If anything was wrong at that instant — an expired CI token, ' +
+    'a trigger URL that names no project, a parser that could not read the log — the element stayed ' +
+    'blank forever, and nothing on the page distinguished that from a template that declares no ' +
+    'outputs. This re-reads the same pipelines and stores what it finds, and records why when it ' +
+    'finds nothing. ' +
+    'Not admin-only, unlike POST /infrastructure/{id}/retry: that re-fires CI against real ' +
+    'infrastructure, this fetches a text file whose result the caller can already see. Scoped like ' +
+    'GET /infrastructure/{id}, so a caller who may not see the element gets 404, not 403. ' +
+    'A read that comes back empty does not overwrite outputs already stored — a token that expires ' +
+    'between two clicks must not erase a correct answer. ' +
+    'Throttled to one call per element per 15 seconds: each call makes one outbound CI request per ' +
+    "pipeline, against the environment's shared access token, and the log does not change between two " +
+    'clicks a second apart.',
+  tags: ['Infrastructure'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Outputs re-read. `outputsError` says why there are none, when there are none.',
+      content: {
+        'application/json': {
+          schema: z.object({
+            outputs: z.record(z.string()),
+            outputsError: z.string().nullable(),
+          }),
+        },
+      },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    404: { description: 'Infrastructure element not found, or not visible to this caller' },
+    429: { description: 'This element was re-read within the last 15 seconds' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
   path: '/infrastructure/{id}/schedule-decommission',
   summary: 'Set or clear automatic decommissioning for an element',
   description:

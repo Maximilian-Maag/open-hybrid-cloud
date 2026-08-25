@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { createCategory, createProduct, createCiSource, createEnvironment, createUser } from '@/test/helpers'
+import {
+  createCategory,
+  createProduct,
+  createCiSource,
+  createEnvironment,
+  createUser,
+  createProject,
+  createOrder,
+  createInfraElement,
+} from '@/test/helpers'
 import { db } from '@/lib/db/client'
 import { pipelineStacks, auditLog } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -220,6 +229,99 @@ describe('updatePipelineStack', () => {
     const result = await updatePipelineStack(p2.id, stack.id, { name: 'hijack' })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(404)
+  })
+})
+
+/**
+ * Issue #200. An element's Terraform state key is not recorded anywhere — it is
+ * re-derived at trigger time from `variables[stack.stateKeyParam]`. So changing
+ * that field under a running element changes where its NEXT pipeline looks for
+ * state, and the next pipeline is usually its destroy.
+ *
+ * The destroy then addresses a state that was never created, reports success,
+ * and leaves the real state in the bucket with the infrastructure it describes
+ * still running — while `claimAndDestroy` has already flipped the row to
+ * `decommissioning`, so the portal shows it as torn down.
+ */
+describe('stateKeyParam is frozen while elements depend on it (#200)', () => {
+  const seedStackWithElement = async (status = 'active') => {
+    const seeded = await seedStack()
+    const pm = await createUser({ role: 'project_manager', email: `pm-${Date.now()}-${Math.round(performance.now() * 1000)}@test.dev` })
+    const project = await createProject(pm.id)
+    const order = await createOrder(project.id, seeded.p.id, seeded.env.id, pm.id, { status: 'completed' })
+    const el = await createInfraElement(order.id, project.id, seeded.env.id, seeded.p.id, { status })
+    return { ...seeded, el }
+  }
+
+  it('refuses the change while a deployed element still derives its key from it', async () => {
+    const { p, stack } = await seedStackWithElement()
+
+    const result = await updatePipelineStack(p.id, stack.id, { stateKeyParam: 'vm_name' })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(409)
+      // The message has to name the field, or an admin cannot tell which of the
+      // three things they just edited was refused.
+      expect(result.message).toContain('hostname')
+    }
+
+    const [row] = await db.select().from(pipelineStacks).where(eq(pipelineStacks.id, stack.id))
+    expect(row.stateKeyParam).toBe('hostname')
+  })
+
+  // A claimed teardown that has not run yet is exactly the window this guard is
+  // about — the destroy pipeline has not read the key.
+  it('counts an element that is mid-decommission', async () => {
+    const { p, stack } = await seedStackWithElement('decommissioning')
+
+    const result = await updatePipelineStack(p.id, stack.id, { stateKeyParam: 'vm_name' })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(409)
+  })
+
+  it('allows the change once every element is decommissioned', async () => {
+    const { p, stack } = await seedStackWithElement('decommissioned')
+
+    const result = await updatePipelineStack(p.id, stack.id, { stateKeyParam: 'vm_name' })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.stateKeyParam).toBe('vm_name')
+  })
+
+  // The admin form PATCHes the whole record, so it re-sends `stateKeyParam`
+  // unchanged on every save. Refusing that would make the stack uneditable for
+  // any product that has ever been deployed.
+  it('allows an unrelated edit that re-sends the same stateKeyParam', async () => {
+    const { p, stack } = await seedStackWithElement()
+
+    const result = await updatePipelineStack(p.id, stack.id, {
+      name: 'Renamed',
+      stateKeyParam: 'hostname',
+    })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.name).toBe('Renamed')
+  })
+
+  // Scoped to the product AND the environment the stack belongs to: an element
+  // of another product, or of the same product in another environment, derives
+  // its key from a different stack and is none of this stack's business.
+  it('ignores elements of another product', async () => {
+    const { stack } = await seedStackWithElement()
+    const other = await seedStack()
+
+    const result = await updatePipelineStack(other.p.id, other.stack.id, { stateKeyParam: 'vm_name' })
+
+    expect(result.ok).toBe(true)
+    // And the first stack is still guarded.
+    const stillRefused = await updatePipelineStack(
+      (await db.select().from(pipelineStacks).where(eq(pipelineStacks.id, stack.id)))[0].productId,
+      stack.id,
+      { stateKeyParam: 'vm_name' },
+    )
+    expect(stillRefused.ok).toBe(false)
   })
 })
 

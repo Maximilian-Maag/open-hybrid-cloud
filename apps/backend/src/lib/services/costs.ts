@@ -7,7 +7,6 @@ import {
   productTranslations,
   costCenters,
   deploymentEnvironments,
-  infrastructureElements,
   exchangeRates,
 } from '@/lib/db/schema'
 import { and, eq, gte, lte, inArray, sql } from 'drizzle-orm'
@@ -164,7 +163,6 @@ interface CostRow {
   liveCurrency: string | null
   /** How many elements the order provisioned (issue #104). */
   quantity: number | null
-  infraStatus: string | null
 }
 
 export const getCostReport = async (
@@ -211,7 +209,6 @@ export const getCostReport = async (
       livePrice: linePriceSql(orders.productId, orders.environmentId, orders.sizeCode),
       liveCurrency: lineCurrencySql(orders.productId, orders.environmentId, orders.sizeCode),
       quantity: orders.quantity,
-      infraStatus: infrastructureElements.status,
     })
     .from(orders)
     .leftJoin(projects, eq(orders.projectId, projects.id))
@@ -236,7 +233,6 @@ export const getCostReport = async (
         eq(orders.environmentId, productEnvironments.environmentId),
       ),
     )
-    .leftJoin(infrastructureElements, eq(infrastructureElements.orderId, orders.id))
     .where(and(...conditions))) as CostRow[]
 
   const rates = await loadRates()
@@ -253,13 +249,12 @@ export const getCostReport = async (
   /** Keyed by `YYYY-MM`; filled in the same pass so the series cannot drift from the total. */
   const months = new Map<string, CostPeriod>()
 
-  // One order can join to several infrastructure rows; count each order once.
-  const seen = new Set<number>()
-
+  // One row per order, from the query. There used to be a `seen` set here, and a
+  // guard skipping repeats, because the query joined `infrastructure_elements`
+  // for a column nothing read — and `order_id` is not unique there, so the join
+  // multiplied the result set and this loop then undid it. Both are gone; the
+  // export path never had the join and was already right (#160).
   for (const row of rows) {
-    if (seen.has(row.orderId)) continue
-    seen.add(row.orderId)
-
     const usingSnapshot = row.snapshotPrice !== null && row.snapshotCurrency !== null
     const rawPrice = usingSnapshot ? row.snapshotPrice : row.livePrice
     const currency = (usingSnapshot ? row.snapshotCurrency : row.liveCurrency) ?? 'EUR'
@@ -300,7 +295,9 @@ export const getCostReport = async (
 
   return ok({
     totalEur: round(totalEur),
-    orderCount: seen.size,
+    // Was `seen.size` — the count of DISTINCT orders left after the JS dedupe.
+    // One row per order now, so the two are the same number.
+    orderCount: rows.length,
     estimatedOrders,
     series,
     comparison: compare(series),

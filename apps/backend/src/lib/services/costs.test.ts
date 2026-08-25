@@ -104,15 +104,38 @@ describe('getCostReport — what counts as spend', () => {
     expect(result.ok && result.data.orderCount).toBe(0)
   })
 
+  // The query used to join `infrastructure_elements` for a column nothing read.
+  // `order_id` is not unique there, so the join multiplied the result set and a
+  // `seen` set in the aggregation loop undid it in JavaScript. Both are gone
+  // (#160); this is what says the answer did not move.
+  //
+  // Every bucket is asserted, not just the total: a join that came back would
+  // double all four groupings, and the four are built in the same pass from the
+  // same rows, so checking one of them checks the shape of all of them.
   it('counts an order once even with several infrastructure rows', async () => {
     const ctx = await setup()
     const order = await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00' })
+    await createInfraElement(order.id, ctx.mine.id, ctx.env.id, ctx.nginx.id)
     await createInfraElement(order.id, ctx.mine.id, ctx.env.id, ctx.nginx.id)
     await createInfraElement(order.id, ctx.mine.id, ctx.env.id, ctx.nginx.id)
 
     const result = await getCostReport(makeSession(ctx.admin))
     expect(result.ok && result.data.totalEur).toBe(10)
     expect(result.ok && result.data.orderCount).toBe(1)
+    if (result.ok) {
+      expect(result.data.byProject).toEqual([
+        expect.objectContaining({ totalEur: 10, orderCount: 1 }),
+      ])
+      expect(result.data.byProduct).toEqual([
+        expect.objectContaining({ totalEur: 10, orderCount: 1 }),
+      ])
+      expect(result.data.byEnvironment).toEqual([
+        expect.objectContaining({ totalEur: 10, orderCount: 1 }),
+      ])
+      // And the monthly series, which is filled in the same pass and would drift
+      // from the total if the rows were counted more than once.
+      expect(result.data.series.reduce((sum, m) => sum + m.totalEur, 0)).toBe(10)
+    }
   })
 })
 

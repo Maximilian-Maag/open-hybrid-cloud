@@ -285,7 +285,9 @@ Pipeline Stacks let you define an ordered sequence of CI/CD template steps per p
 3. Fill in the required fields:
    - **Name**: Label for this stack (e.g. "VM + DNS")
    - **Environment**: Which deployment environment this stack applies to. The stack inherits the environment's **Webhook URL** and **Webhook Token** for outbound pipeline triggers — manage them once under **Admin → Environments**, not per stack.
-   - **State Key Parameter**: Name of the order parameter whose value forms the readable half of the OpenTofu state key (default: `hostname`). The portal appends the order id to it, so two orders that submit the same value no longer share a state file, and stores the result on the infrastructure element so destroy targets what apply created.
+   - **State Key Parameter**: Name of the order parameter whose value forms the readable half of the OpenTofu state key (default: `hostname`). The portal appends the order id to it, so two orders that submit the same value no longer share a state file.
+
+     What is stored on the infrastructure element is the **namespace** — the order id half — not the whole key. The readable half is re-derived from this field every time a pipeline runs for that element, including its destroy. So this field cannot be changed while elements provisioned through the stack are still standing: the portal refuses the edit with a 409 naming how many, because a changed value would make their teardown address a state that was never created, report success, and leave the real infrastructure running while the portal shows it as decommissioned (#200). Decommission them first, or add a second stack for new orders.
 4. Click **+ Add Step** one or more times to build the step sequence:
    - **Template**: Path to the step template in the infra-templates repo (e.g. `linode/virtual-machine`)
    - **State Suffix**: Appended to the state key to form the unique state name for this step (e.g. `-vm`)
@@ -308,7 +310,7 @@ The orchestrator pipeline reads `PIPELINE_STACK` and dynamically triggers the in
 **Managing existing stacks:**
 
 - Each stack is listed with its name, environment, and step count
-- Click **Edit** on a stack to update its name, state key parameter, or steps. The environment cannot be changed after creation. Trigger URL and token are managed on the environment itself — rotate them in one place and every stack picks up the new value automatically.
+- Click **Edit** on a stack to update its name, state key parameter, or steps. The environment cannot be changed after creation, and the state key parameter cannot be changed while the stack has deployed elements (see above). Trigger URL and token are managed on the environment itself — rotate them in one place and every stack picks up the new value automatically.
 - Click **Delete** on a stack entry to remove it — active infrastructure is not affected, but future orders for that product+environment will no longer trigger that stack
 
 > **Order Callbacks vs. Pipeline Stacks:** Order Callbacks (section 4.1 "Step 4") notify external HTTP endpoints after order processing and are optional. Pipeline Stacks call a single orchestrator CI pipeline and let the portal define the execution DAG as data — suitable when all steps share one orchestrator entry point.

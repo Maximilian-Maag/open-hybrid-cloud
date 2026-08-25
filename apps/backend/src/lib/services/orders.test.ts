@@ -1135,6 +1135,100 @@ describe('createOrder — delegation in the approval-request email', () => {
 })
 
 /**
+ * Issue #206. A product with no webhook and no pipeline stack for the environment
+ * starts nothing and fails at nothing, so the "nothing started" guard — which
+ * used to require `failures.length > 0` — never fired. The run closed cleanly
+ * with an empty id list, `isSettled` refused it (rightly: nothing reported
+ * success), and the order sat in 'provisioning' with nothing in existence that
+ * could ever move it.
+ */
+describe('an order whose triggers fire nothing (#206)', () => {
+  beforeEach(() => {
+    mockedTriggerWebhooks.mockResolvedValue({ pipelineIds: [], failures: [] })
+    mockedTriggerStacks.mockResolvedValue({ pipelineIds: [], failures: [] })
+  })
+
+  it('is refused rather than left provisioning forever', async () => {
+    const ctx = await buildBase()
+    const result = await createOrder(makeSession(ctx.admin), {
+      projectId: ctx.project.id,
+      productId: ctx.product.id,
+      environmentId: ctx.env.id,
+      parameters: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(502)
+  })
+
+  it('says what is actually wrong, not "could not start any pipeline: "', async () => {
+    // The old message interpolated an empty failure list, which told an operator
+    // nothing. This is a misconfiguration and the fix is in Admin → Products.
+    const ctx = await buildBase()
+    const result = await createOrder(makeSession(ctx.admin), {
+      projectId: ctx.project.id,
+      productId: ctx.product.id,
+      environmentId: ctx.env.id,
+      parameters: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.message).toMatch(/no product webhook and no pipeline stack/i)
+      expect(result.message).not.toMatch(/Could not start any pipeline:\s*$/)
+    }
+  })
+
+  it('leaves no order claiming to be provisioning', async () => {
+    const ctx = await buildBase()
+    await createOrder(makeSession(ctx.admin), {
+      projectId: ctx.project.id,
+      productId: ctx.product.id,
+      environmentId: ctx.env.id,
+      parameters: {},
+    })
+
+    const rows = await db.select().from(orders).where(eq(orders.projectId, ctx.project.id))
+    expect(rows.every((o) => o.status !== 'provisioning')).toBe(true)
+  })
+
+  it('leaves no infrastructure element behind', async () => {
+    // They are inserted before their triggers fire. Left in place they are
+    // 'active' elements with no pipeline: counted in inventory, and
+    // decommissioning them fires destroy at infrastructure never created.
+    const ctx = await buildBase()
+    await createOrder(makeSession(ctx.admin), {
+      projectId: ctx.project.id,
+      productId: ctx.product.id,
+      environmentId: ctx.env.id,
+      parameters: {},
+      quantity: 3,
+    })
+
+    const rows = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.projectId, ctx.project.id))
+    expect(rows).toHaveLength(0)
+  })
+
+  it('still reports the failures when there were some', async () => {
+    // The other half of the same guard must keep its own message.
+    mockedTriggerWebhooks.mockResolvedValue({ pipelineIds: [], failures: ['webhook #1: 502'] })
+    const ctx = await buildBase()
+    const result = await createOrder(makeSession(ctx.admin), {
+      projectId: ctx.project.id,
+      productId: ctx.product.id,
+      environmentId: ctx.env.id,
+      parameters: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toMatch(/webhook #1: 502/)
+  })
+})
+
+/**
  * Issue #208. The orders table has had a Project column all along, reading a
  * field on the shared `Order` type that neither projection ever selected — so the
  * cell was blank and the detail page fell back to `#12`.

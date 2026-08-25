@@ -49,7 +49,7 @@ import {
   orders,
   auditLog,
 } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { eq, sql, and } from 'drizzle-orm'
 import { listCatalog, getProduct } from '@/lib/services/catalog'
 import {
   createUser,
@@ -149,6 +149,112 @@ describe('updateProduct', () => {
       .where(eq(productTranslations.productId, p.id))
     const en = tRows.find((r) => r.languageCode === 'en')
     expect(en?.name).toBe('After')
+  })
+})
+
+/**
+ * Issue #161. `updateProduct` mirrored the base-language text into the `en` row
+ * with `onConflictDoUpdate`, so fixing a typo in a German product name silently
+ * replaced the English translation someone had written.
+ *
+ * That is not one language's problem: ten read paths select `language_code =
+ * 'en'` with no fallback — the cart, the order list and detail, the
+ * infrastructure list and search, the approvals queue, the cost report, the admin
+ * product list, the order snapshot, the notification subject line — so the German
+ * string then showed to EVERY user in every language, and `snapshot.ts` froze it
+ * into `product_snapshot` for each new order after that.
+ */
+describe("the English mirror does not overwrite a real translation (#161)", () => {
+  const germanProduct = async () => {
+    const cat = await createCategory()
+    const created = await createProduct({
+      categoryId: cat.id,
+      baseLanguage: 'de',
+      name: 'Virtuelle Maschine',
+      description: 'Eine VM',
+    })
+    if (!created.ok) throw new Error('fixture failed')
+    return created.data
+  }
+
+  const translationsOf = async (productId: number) => {
+    const rows = await db
+      .select()
+      .from(productTranslations)
+      .where(eq(productTranslations.productId, productId))
+    return Object.fromEntries(rows.map((r) => [r.languageCode, r]))
+  }
+
+  it('leaves a translated English name alone when the German name changes', async () => {
+    const product = await germanProduct()
+    await upsertTranslation(product.id, 'en', { name: 'Virtual Machine', description: 'A VM' })
+
+    await updateProduct(product.id, { name: 'Virtuelle Maschine (Linux)', userId: 1 })
+
+    const rows = await translationsOf(product.id)
+    expect(rows.de.name).toBe('Virtuelle Maschine (Linux)')
+    expect(rows.en.name).toBe('Virtual Machine')
+  })
+
+  it('still moves the mirror along when nobody has translated it', async () => {
+    // The mirror exists so the ten `language_code = 'en'` readers have something
+    // to show. While it is untouched it must keep tracking the base language, or
+    // the cart and the order list go stale instead of blank.
+    const product = await germanProduct()
+
+    await updateProduct(product.id, { name: 'Virtuelle Maschine (Linux)', userId: 1 })
+
+    const rows = await translationsOf(product.id)
+    expect(rows.en.name).toBe('Virtuelle Maschine (Linux)')
+  })
+
+  it('decides per field: a translated name and an untracked description', async () => {
+    const product = await germanProduct()
+    // Only the name is translated; the description is still the German mirror.
+    await upsertTranslation(product.id, 'en', { name: 'Virtual Machine', description: 'Eine VM' })
+
+    await updateProduct(product.id, {
+      name: 'Virtuelle Maschine (Linux)',
+      description: 'Eine Linux-VM',
+      userId: 1,
+    })
+
+    const rows = await translationsOf(product.id)
+    expect(rows.en.name).toBe('Virtual Machine')
+    expect(rows.en.description).toBe('Eine Linux-VM')
+  })
+
+  it('seeds an English row when the product somehow has none', async () => {
+    const product = await germanProduct()
+    await db
+      .delete(productTranslations)
+      .where(
+        and(
+          eq(productTranslations.productId, product.id),
+          eq(productTranslations.languageCode, 'en'),
+        ),
+      )
+
+    await updateProduct(product.id, { name: 'Virtuelle Maschine (Linux)', userId: 1 })
+
+    const rows = await translationsOf(product.id)
+    expect(rows.en?.name).toBe('Virtuelle Maschine (Linux)')
+  })
+
+  it('an English-base product still updates its own row', async () => {
+    const cat = await createCategory()
+    const created = await createProduct({
+      categoryId: cat.id,
+      baseLanguage: 'en',
+      name: 'Virtual Machine',
+      description: 'A VM',
+    })
+    if (!created.ok) throw new Error('fixture failed')
+
+    await updateProduct(created.data.id, { name: 'Virtual Machine (Linux)', userId: 1 })
+
+    const rows = await translationsOf(created.data.id)
+    expect(rows.en.name).toBe('Virtual Machine (Linux)')
   })
 })
 

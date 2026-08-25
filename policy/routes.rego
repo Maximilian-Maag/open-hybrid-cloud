@@ -172,3 +172,39 @@ warn contains v if {
 		]),
 	}
 }
+
+# ---------------------------------------------------------------------------
+# server-only modules must not be reachable from a client component
+# ---------------------------------------------------------------------------
+
+# `lib/serverApi.ts` reads `session.apiToken` and statically imports
+# `@/lib/auth` to do it. A client component that imports it therefore pulls the
+# whole NextAuth server configuration into the browser bundle — which is not a
+# hypothetical: the strings `auth/login/mfa` and `NEXTAUTH_SECRET` were in the
+# built client chunks once already, and splitting `lib/api` from `lib/serverApi`
+# is what took them out (#146).
+#
+# `serverApi` does carry a runtime guard, and it cannot do this job. The import
+# is resolved at BUILD time, so by the time any code runs the auth config is
+# already in the chunk; the guard turns a silent leak into a loud failure, which
+# is better and is not prevention. Reading the imports is prevention, and it has
+# to happen before the build.
+#
+# Counted against dev: 0. This is a boundary that currently holds, written down
+# so it keeps holding.
+deny contains v if {
+	some hit in input.clientImports
+
+	v := {
+		"rule": "server_only_module_not_in_client",
+		"file": hit.file,
+		"line": hit.line,
+		"detail": sprintf("a 'use client' file imports %s", [hit.module]),
+		"why": concat("", [
+			"This module is server-only: it reads the session and imports the NextAuth server ",
+			"configuration. Importing it from a client component puts that configuration in the ",
+			"browser bundle. Client components call the API through `@/lib/api`, which reaches the ",
+			"backend via `/api/proxy` and never sees the token.",
+		]),
+	}
+}

@@ -1418,6 +1418,57 @@ function migrationColumnFacts(): MigrationColumnFact[] {
   return out
 }
 
+// ---------------------------------------------------------------------------
+// server-only modules in the client bundle
+// ---------------------------------------------------------------------------
+
+interface ClientImportFact {
+  file: string
+  line: number
+  module: string
+}
+
+/**
+ * Modules that must never be reachable from a client component.
+ *
+ * `lib/serverApi.ts` statically imports `@/lib/auth`, so a client component
+ * importing it pulls the whole NextAuth server configuration into the browser
+ * bundle — which is how the strings `auth/login/mfa` and `NEXTAUTH_SECRET` got
+ * into the built client chunks once already (#146).
+ */
+const SERVER_ONLY_MODULES = ['@/lib/serverApi', '@/lib/auth']
+
+/**
+ * Files that declare 'use client' and import one of those.
+ *
+ * The runtime guard inside `serverApi` cannot catch this: the import is resolved
+ * at build time, so by the time any code runs the damage is in the bundle. Only
+ * reading the imports catches it, and only before the build.
+ */
+function clientImportFacts(): ClientImportFact[] {
+  const out: ClientImportFact[] = []
+  const files = walk(`${FRONTEND}/src`, (rel) =>
+    (rel.endsWith('.tsx') || rel.endsWith('.ts')) && !rel.includes('.test.'))
+
+  for (const rel of files) {
+    const text = read(rel)
+    // The directive is only a directive at the very top of the file.
+    if (!/^\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*)*['"]use client['"]/.test(text)) continue
+
+    const sf = parse(rel)
+    for (const statement of sf.statements) {
+      if (!ts.isImportDeclaration(statement)) continue
+      if (!ts.isStringLiteral(statement.moduleSpecifier)) continue
+      const spec = statement.moduleSpecifier.text
+      if (!SERVER_ONLY_MODULES.includes(spec)) continue
+      // A type-only import is erased before it reaches the bundle.
+      if (statement.importClause?.isTypeOnly) continue
+      out.push({ file: rel, line: lineOf(sf, statement), module: spec })
+    }
+  }
+  return out
+}
+
 export function collectFacts(): Record<string, unknown> {
   const testImports = routeTestImports()
   const tables = tableFacts()
@@ -1439,6 +1490,7 @@ export function collectFacts(): Record<string, unknown> {
     consoleCalls: consoleCalls(),
     testCases: testCases(),
     pages: pageFacts(),
+    clientImports: clientImportFacts(),
     a11ySpecFile: A11Y_SPEC,
     languageLists: languageListFacts(),
     eslintConfigs: eslintConfigFacts(),

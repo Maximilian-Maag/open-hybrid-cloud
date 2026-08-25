@@ -24,9 +24,17 @@ import { apiRequest } from '@/lib/api'
  */
 const bearer = async (): Promise<string | undefined> => {
   if (typeof window !== 'undefined') {
-    // A guard, not an assertion about the code as it stands: importing this from
-    // a client component would pull `@/lib/auth` into the browser bundle, which
-    // is the thing the split exists to prevent. Failing loudly beats shipping it.
+    // A backstop, and worth being honest about what it can and cannot do. It
+    // cannot prevent the bundling: `@/lib/auth` is a static import at the top of
+    // this file, so a client component importing this module has already pulled
+    // the auth config into the browser bundle at BUILD time, long before this
+    // line runs. What it does is make the mistake fail loudly at runtime instead
+    // of working by accident.
+    //
+    // The thing that actually holds the boundary is that no client component
+    // imports this module, and that is checked rather than hoped for:
+    // `server_only_module_not_in_client` in policy/routes.rego denies a file
+    // carrying 'use client' that imports it.
     throw new Error('lib/serverApi is server-only — client code must use lib/api')
   }
   const session = await auth()

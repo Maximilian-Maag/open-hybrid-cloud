@@ -59,20 +59,19 @@ const config = {
   // in the dry run — see the timeout notes above, which is what this branch
   // fixes.
   //
-  // `break` is therefore NOT 90 yet, and setting it there today would only make
-  // the nightly permanently red, which is the failure mode this repo already
-  // names: a gate that starts red teaches people to ignore it. It is a ratchet
-  // instead — `break` sits just under the last measured score, so the number can
-  // only go up, and it is raised as tests land until it reaches `high`.
+  // `break` is 90 as well, by the owner's decision, taken with the gap in front
+  // of them. So the nightly FAILS until the score gets there — that is deliberate
+  // and it is the point: the run is a standing statement that the suite is not
+  // yet where it is meant to be, rather than a green tick over 26 percent.
   //
-  // Whoever raises it: run the nightly, take the reported score, and set `break`
-  // to a point or two below it in the same PR that adds the tests. Issue #245
-  // tracks the climb.
+  // What that costs, said plainly so nobody mistakes it for a regression: the
+  // Mutation testing workflow is red every night until #245 closes. It is not a
+  // pull-request check and blocks nothing; a red run there means "still climbing",
+  // and the number in the job summary is the thing to read.
   //
-  // The backend's `break` stays at 80 rather than dropping: nothing has measured
-  // it, so there is no evidence it is too high, and lowering a threshold on a
-  // guess is worse than finding out. The first green nightly sets it honestly.
-  thresholds: { high: 90, low: 80, break: 80 },
+  // Issue #245 tracks the climb and says where the points are — roughly two
+  // thirds of the frontend gap is files with no test at all, not weak assertions.
+  thresholds: { high: 90, low: 80, break: 90 },
 }
 
 export default config

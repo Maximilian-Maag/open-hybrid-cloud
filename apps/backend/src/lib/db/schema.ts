@@ -608,11 +608,16 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   outputs: jsonb().$type<Record<string, string>>().notNull().default({}),
   /**
-   * Why `outputs` is empty, when something went wrong reading them (#215).
+   * Why the LAST attempt to read the Terraform outputs did not produce any (#215).
    *
-   * NULL means nothing went wrong: either the outputs were recorded, or the
-   * element has not settled yet. Cleared on every successful read, so a fixed
-   * token and a re-run leave no stale complaint behind.
+   * NULL means the last attempt worked, or none has been made yet. Cleared on
+   * every successful read, so a fixed token and a re-run leave no stale complaint
+   * behind.
+   *
+   * NOT "why `outputs` is empty": a failed read deliberately leaves `outputs`
+   * alone rather than erasing what an earlier one found, so this column being set
+   * while `outputs` holds values is the ordinary shape for "these are from
+   * before; the latest attempt failed".
    *
    * Written for an operator to read on the element page. The log line keeps the
    * detail that does not belong there — the pipeline id, the underlying error.

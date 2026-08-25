@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { infrastructureElements } from '@/lib/db/schema'
+import { infrastructureElements, deploymentEnvironments } from '@/lib/db/schema'
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import {
   createUser, createCategory, createProduct, createCiSource,
@@ -38,7 +38,7 @@ const scenario = async () => {
   const el = await createInfraElement(order.id, project.id, env.id, product.id, {
     pipelineId: ['777'],
   })
-  return { admin, pm, project, el }
+  return { admin, pm, project, env, el }
 }
 
 beforeEach(() => {
@@ -164,6 +164,58 @@ describe('refreshElementOutputs', () => {
 
     // The owner's first click still works.
     expect((await refreshElementOutputs(session(stranger.admin), el.id)).ok).toBe(true)
+  })
+
+  // Review catch on #219. The response used to say `outputs: {}` on any read
+  // that found nothing, while the row kept the outputs an earlier read had
+  // recorded — so a POST and the GET right after it disagreed, and a caller who
+  // believed the POST would have shown an element as having no outputs.
+  it('answers with the outputs that are STORED, not with the failed read', async () => {
+    const { admin, el } = await scenario()
+    fetchJobTraces.mockResolvedValueOnce(['Outputs:\nip_address = "10.0.0.1"'])
+    await refreshElementOutputs(session(admin), el.id)
+    refreshOutputsLimit.clear()
+
+    fetchJobTraces.mockRejectedValue(new Error('GitLab jobs fetch failed: 502'))
+    const result = await refreshElementOutputs(session(admin), el.id)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.outputs).toEqual({ ip_address: '10.0.0.1' })
+    expect(result.data.outputsError).toMatch(/502/)
+
+    // And it matches the row, which is the property that was broken.
+    const [row] = await db.select().from(infrastructureElements).where(eq(infrastructureElements.id, el.id))
+    expect(result.data.outputs).toEqual(row.outputs)
+  })
+
+  // The OTHER early return, which leaves before any trace is fetched: the
+  // environment's trigger URL names no project, so there is no job endpoint to
+  // ask. It has its own `return ok(...)` and so its own chance to disagree with
+  // the row.
+  it('answers with the stored outputs when the log cannot be located at all', async () => {
+    const { admin, env, el } = await scenario()
+    fetchJobTraces.mockResolvedValueOnce(['Outputs:\nip_address = "10.0.0.1"'])
+    await refreshElementOutputs(session(admin), el.id)
+    refreshOutputsLimit.clear()
+
+    // A trigger URL of another shape: `gitlabProjectRefFromTriggerUrl` finds no
+    // /projects/<id>/ segment, so `outputsUnavailableReason` returns early.
+    await db
+      .update(deploymentEnvironments)
+      .set({ webhookUrl: 'https://gitlab.example.com/hooks/generic' })
+      .where(eq(deploymentEnvironments.id, env.id))
+
+    const result = await refreshElementOutputs(session(admin), el.id)
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.outputsError).toMatch(/projects/)
+    expect(result.data.outputs).toEqual({ ip_address: '10.0.0.1' })
+    expect(fetchJobTraces).toHaveBeenCalledTimes(1)
+
+    const [row] = await db.select().from(infrastructureElements).where(eq(infrastructureElements.id, el.id))
+    expect(result.data.outputs).toEqual(row.outputs)
   })
 
   it('lets the project manager who owns it refresh their own element', async () => {

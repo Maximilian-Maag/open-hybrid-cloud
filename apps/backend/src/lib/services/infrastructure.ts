@@ -888,6 +888,11 @@ export const refreshElementOutputs = async (
       orderId: infrastructureElements.orderId,
       environmentId: infrastructureElements.environmentId,
       pipelineId: infrastructureElements.pipelineId,
+      // Selected so the response can report what is STORED rather than what this
+      // particular read returned. The two differ whenever a read comes back
+      // empty, because an empty read deliberately does not overwrite outputs an
+      // earlier one recorded — see the update below.
+      outputs: infrastructureElements.outputs,
       projectOwnerId: projects.ownerId,
     })
     .from(infrastructureElements)
@@ -928,7 +933,11 @@ export const refreshElementOutputs = async (
       .update(infrastructureElements)
       .set({ outputsError: reason })
       .where(eq(infrastructureElements.id, id))
-    return ok({ outputs: {}, outputsError: reason })
+    // What is stored, not `{}`. Nothing was overwritten here, so answering with
+    // an empty set would tell the caller the element has no outputs when the row
+    // still holds the ones an earlier read found — and the next GET would then
+    // disagree with this POST.
+    return ok({ outputs: row.outputs ?? {}, outputsError: reason })
   }
 
   const { outputs, error } = await readOutputsForElement(ciSource, row.pipelineId ?? [], {
@@ -944,6 +953,11 @@ export const refreshElementOutputs = async (
     .set(Object.keys(outputs).length > 0 ? { outputs, outputsError: null } : { outputsError: error })
     .where(eq(infrastructureElements.id, id))
 
+  // Same rule as above: report the row as it now stands. A read that found
+  // nothing left the stored outputs alone, so those are the answer — with the
+  // error alongside them saying the latest attempt did not work.
+  const storedOutputs = Object.keys(outputs).length > 0 ? outputs : (row.outputs ?? {})
+
   await logAudit(
     session.id,
     'infra.outputs_refreshed',
@@ -951,7 +965,7 @@ export const refreshElementOutputs = async (
     error ?? `Read ${Object.keys(outputs).length} Terraform output(s) from the pipeline log`,
   )
 
-  return ok({ outputs, outputsError: error })
+  return ok({ outputs: storedOutputs, outputsError: error })
 }
 
 export const getInfrastructureElement = async (

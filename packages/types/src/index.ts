@@ -1027,13 +1027,19 @@ export interface InfrastructureElement {
  */
 export interface InfrastructureDetail extends InfrastructureElement {
   /**
-   * Why `outputs` is empty, when reading them went wrong (#215).
+   * Why the LAST attempt to read the Terraform outputs did not produce any (#215).
    *
-   * Null means nothing went wrong: either they were read, or the element has not
-   * settled yet. Five distinct failures — no CI source, an unsupported provider,
-   * an unlocatable project, an unreadable log, a run that declared none — used to
-   * render as one blank card, so "your CI token expired" and "this template has
-   * no outputs" were the same screen.
+   * Null means the last attempt worked, or none has been made yet. Five distinct
+   * failures — no CI source, an unsupported provider, an unlocatable project, an
+   * unreadable log, a run that declared none — used to render as one blank card,
+   * so "your CI token expired" and "this template has no outputs" were the same
+   * screen.
+   *
+   * **This is not "why `outputs` is empty".** A failed read never erases outputs
+   * an earlier one recorded — a token that expires between two clicks must not
+   * destroy a correct answer — so a non-null `outputsError` alongside a populated
+   * `outputs` is the normal shape for "these are from before; the latest attempt
+   * failed", and the page shows both.
    */
   outputsError?: string | null
   /** Status per id in `pipelineId`, from the run named by `pipelinePhase`. */

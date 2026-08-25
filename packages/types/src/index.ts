@@ -706,6 +706,16 @@ export interface Order {
   environmentName?: string
   projectName?: string
   userName?: string
+  /**
+   * The cost centre as a person refers to it — `IT-4711 — Platform Networking`.
+   *
+   * The order carries `costCenterId` because that is what it is charged against,
+   * and the detail page printed exactly that: `#3`. A cost centre is the one
+   * field on that page a finance reader has to recognise, and an internal row id
+   * is the one form in which they cannot.
+   */
+  costCenterCode?: string
+  costCenterName?: string
 }
 
 export interface CreateOrderRequest {

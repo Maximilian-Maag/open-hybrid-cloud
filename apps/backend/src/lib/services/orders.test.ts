@@ -1283,3 +1283,61 @@ describe('the project name (#208)', () => {
     }
   })
 })
+
+// The order detail page printed `#3` where the cost centre belongs. An internal
+// row id is the one form in which a finance reader cannot recognise the account
+// their order was charged against.
+describe('getOrderById cost centre naming', () => {
+  async function orderWithCostCentre(costCenterId: number | null) {
+    const owner = await createUser({ role: 'root' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(owner.id)
+    const order = await seedOrder(project.id, product.id, env.id, owner.id)
+    await db.update(orders).set({ costCenterId }).where(eq(orders.id, order.id))
+    return { owner, order }
+  }
+
+  it('answers with the code and the name, not just the id', async () => {
+    const cc = await createCostCenter({ code: 'IT-4711', name: 'Platform Networking' })
+    const { owner, order } = await orderWithCostCentre(cc.id)
+
+    const result = await getOrderById(makeSession(owner), order.id)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.costCenterId).toBe(cc.id)
+      expect(result.data.costCenterCode).toBe('IT-4711')
+      expect(result.data.costCenterName).toBe('Platform Networking')
+    }
+  })
+
+  // A cost centre is optional — see costCenterMode. Joining it must not make an
+  // order without one vanish from its own detail page.
+  it('still answers for an order that has no cost centre', async () => {
+    const { owner, order } = await orderWithCostCentre(null)
+
+    const result = await getOrderById(makeSession(owner), order.id)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.id).toBe(order.id)
+      expect(result.data.costCenterId).toBeNull()
+      expect(result.data.costCenterCode ?? null).toBeNull()
+    }
+  })
+
+  // An inactive cost centre is still the one the order was charged against, and
+  // the order has to keep reading correctly after an admin retires it.
+  it('names a retired cost centre too', async () => {
+    const cc = await createCostCenter({ code: 'OLD-1', name: 'Closed Department', active: false })
+    const { owner, order } = await orderWithCostCentre(cc.id)
+
+    const result = await getOrderById(makeSession(owner), order.id)
+
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.costCenterCode).toBe('OLD-1')
+  })
+})

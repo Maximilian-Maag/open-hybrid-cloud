@@ -154,7 +154,16 @@ export default async function OrderDetailPage({ params }: Props) {
           {order.costCenterId && (
             <div>
               <dt className="font-medium text-slate-500">{t('costCenter', lang)}</dt>
-              <dd className="text-slate-900">#{order.costCenterId}</dd>
+              {/* `IT-4711 — Platform Networking`, not `#3`. The id is what the
+                  order is charged against; the code and the name are what the
+                  person reading this page recognises. The fallback keeps the id
+                  rather than showing nothing, for an order whose cost centre row
+                  has since been deleted. */}
+              <dd className="text-slate-900">
+                {order.costCenterCode
+                  ? `${order.costCenterCode} — ${order.costCenterName}`
+                  : `#${order.costCenterId}`}
+              </dd>
             </div>
           )}
         </dl>

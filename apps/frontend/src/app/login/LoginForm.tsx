@@ -118,9 +118,14 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         setMfaToken(data.mfaToken)
         setCode('')
         setWebauthnOptions((data.webauthnOptions as AuthOptions | null) ?? null)
-        // Absent `methods` means an older backend; assume the code field, which
-        // is what every account had before keys existed.
-        setHasTotp(!data.methods || data.methods.includes('totp'))
+        // Two ways this can arrive without naming a method, and both mean "show
+        // the code field", which is what every account had before keys existed:
+        // `methods` absent is an older backend, and `methods: []` is a backend
+        // that requires a second factor and lists none. `!data.methods` covered
+        // only the first — an empty array is truthy, so the second hid the code
+        // field and left the user with no way to finish signing in at all.
+        const named = data.methods ?? []
+        setHasTotp(named.length === 0 || named.includes('totp'))
         return
       }
 

@@ -87,7 +87,7 @@ beforeAll(async () => {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS user_recovery_codes_user_id_code_hash_unique
       ON user_recovery_codes (user_id, code_hash);
-    -- Migration 0029: WebAuthn/FIDO2 credentials and the ceremony challenge (#197).
+    -- Migration 0030: WebAuthn/FIDO2 credentials and the ceremony challenge (#197).
     CREATE TABLE IF NOT EXISTS webauthn_credentials (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

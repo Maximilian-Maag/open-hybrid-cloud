@@ -138,8 +138,11 @@ const consumeChallenge = async (userId: number, kind: string): Promise<string | 
  *
  * No password is re-checked here, unlike `startEnrollment` for TOTP. The
  * difference is what the ceremony costs an attacker: registering a key requires
- * physically touching one, so a stolen session alone cannot add a factor and then
- * use it. Removing one does re-check — see `removeCredential`.
+ * physically touching one, so a stolen session alone cannot add a factor and
+ * then use it.
+ *
+ * That argument covers registration and NOT removal, which needs no hardware and
+ * currently re-checks nothing either — see `removeCredential`, and issue #231.
  */
 export const startRegistration = async (
   userId: number,
@@ -396,6 +399,12 @@ export const verifyAuthentication = async (
  * sign in and immediately be refused everything — the "enrol" state, reached by
  * deleting rather than by never having enrolled. Refusing here says so while the
  * user can still act on it.
+ *
+ * **A session is all this asks for.** Unlike registration, removal needs no
+ * hardware, so a stolen session can strip a victim's spare keys down to the last
+ * one the guard above protects — and for a role that `canHoldSecondFactor`
+ * excludes, down to none. Re-checking the password here is the fix; it changes
+ * the request shape, so it is issue #231 rather than a quiet edit inside #197.
  */
 export const removeCredential = async (
   userId: number,

@@ -14,6 +14,10 @@ import { parseRouteId, invalidId, toResponse } from '@/lib/http'
  * difference from a confirmed TOTP secret, which cannot be removed at all: a
  * credential must be removable, because a lost key that stays registered keeps
  * prompting for something the user no longer has.
+ *
+ * A session is the only thing asked for — no password re-check. Registration can
+ * argue that the hardware is the proof; removal cannot, so a stolen session can
+ * strip a victim's spare keys. Issue #231.
  */
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAuth(req)

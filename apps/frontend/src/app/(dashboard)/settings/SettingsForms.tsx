@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 import { TwoFactorCard } from './TwoFactorCard'
+import { SecurityKeysCard } from './SecurityKeysCard'
 
 interface Props {
   token: string
@@ -137,7 +138,16 @@ export function SettingsForms({ token, initialName, email, role }: Props) {
           Both administrative roles, since #197: `admin` must hold a factor too,
           and a card that stayed root-only would have left them required to enroll
           with nowhere to do it. */}
-      {(role === 'root' || role === 'admin') && <TwoFactorCard token={token} />}
+      {(role === 'root' || role === 'admin') && (
+        <>
+          <TwoFactorCard token={token} />
+          {/* A sibling, not a tab inside it: the two are not alternatives to pick
+              between. Either satisfies the requirement, and holding both is the
+              sensible thing — a key for every day, an app for the day the key is
+              in the other coat (#197 part 2). */}
+          <SecurityKeysCard token={token} />
+        </>
+      )}
     </div>
   )
 }

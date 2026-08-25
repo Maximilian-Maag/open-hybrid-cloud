@@ -1,7 +1,7 @@
 import { createHash, randomInt } from 'node:crypto'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { userRecoveryCodes, userTotp, users } from '@/lib/db/schema'
+import { userRecoveryCodes, userTotp, users, webauthnCredentials } from '@/lib/db/schema'
 import { logAudit } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 import {
@@ -163,12 +163,78 @@ const formatRecoveryCode = (raw: string): string =>
 const generateRecoveryCode = (): string =>
   Array.from({ length: RECOVERY_CODE_LENGTH }, () => RECOVERY_ALPHABET[randomInt(RECOVERY_ALPHABET.length)]).join('')
 
+/**
+ * Replace every recovery code this account has with a fresh set (#197 part 2).
+ *
+ * Shared by both enrollment paths, because recovery codes are shared: they are
+ * the way back in when the FACTOR is gone, and which kind it was does not change
+ * what they have to do. Confirming a TOTP secret and registering a first security
+ * key both land here.
+ *
+ * Previous codes go, used or not. They were issued against a factor that is being
+ * replaced, and leaving them live would mean an old backup code still walks past
+ * the new one.
+ *
+ * Takes the transaction so a caller can make the codes and the factor a single
+ * change — half-applied, this leaves a confirmed factor whose recovery codes
+ * belong to the previous one.
+ */
+export const replaceRecoveryCodes = async (
+  userId: number,
+  tx: { delete: typeof db.delete; insert: typeof db.insert } = db,
+): Promise<string[]> => {
+  const codes = Array.from({ length: RECOVERY_CODE_COUNT }, generateRecoveryCode)
+  await tx.delete(userRecoveryCodes).where(eq(userRecoveryCodes.userId, userId))
+  await tx
+    .insert(userRecoveryCodes)
+    .values(codes.map((c) => ({ userId, codeHash: hashRecoveryCode(c) })))
+  return codes.map(formatRecoveryCode)
+}
+
 const loadRow = async (userId: number) => {
   const rows = await db.select().from(userTotp).where(eq(userTotp.userId, userId)).limit(1)
   return rows[0]
 }
 
-const countUnusedRecoveryCodes = async (userId: number): Promise<number> => {
+/**
+ * How many security keys this account holds (#197 part 2).
+ *
+ * Its own query rather than a join, because both callers already have the row
+ * they need and only reach here when the TOTP answer was "no factor" — so on the
+ * common path (an account with an authenticator) it never runs at all.
+ */
+export const countWebauthnCredentials = async (userId: number): Promise<number> => {
+  const [row] = await db
+    .select({ count: sql<number>`COUNT(*)::int` })
+    .from(webauthnCredentials)
+    .where(eq(webauthnCredentials.userId, userId))
+  return row?.count ?? 0
+}
+
+/**
+ * Whether a confirmed TOTP secret exists (#197 part 2).
+ *
+ * Asked by the WebAuthn service (may this key be removed — is anything else left)
+ * and by the login path (which factors can this account present). One definition,
+ * because "2FA is on" has to mean the same thing in all three places.
+ *
+ * The comparison happens in SQL and the projection is a boolean, so the secret is
+ * never selected. `requiresSecondFactor` above still names the column and is
+ * allowlisted for it; there is no reason for a second read to be, when what the
+ * caller wants is one bit.
+ */
+export const hasConfirmedTotp = async (userId: number): Promise<boolean> => {
+  const [row] = await db
+    .select({
+      confirmed: sql<boolean>`${userTotp.secret} IS NOT NULL AND ${userTotp.confirmedAt} IS NOT NULL`,
+    })
+    .from(userTotp)
+    .where(eq(userTotp.userId, userId))
+    .limit(1)
+  return row?.confirmed === true
+}
+
+export const countUnusedRecoveryCodes = async (userId: number): Promise<number> => {
   const [row] = await db
     .select({ count: sql<number>`COUNT(*)::int` })
     .from(userRecoveryCodes)
@@ -199,13 +265,17 @@ const countUnusedRecoveryCodes = async (userId: number): Promise<number> => {
 export const requiresSecondFactor = async (userId: number): Promise<boolean> => {
   const rows = await db
     .select({ secret: userTotp.secret, confirmedAt: userTotp.confirmedAt, role: users.role })
-    .from(userTotp)
-    .innerJoin(users, eq(users.id, userTotp.userId))
-    .where(eq(userTotp.userId, userId))
+    .from(users)
+    // LEFT since #197 part 2: an account may hold a security key and no TOTP row
+    // at all, and an inner join would report it as having no second factor —
+    // signing it in on a password alone, past a factor it actually has.
+    .leftJoin(userTotp, eq(userTotp.userId, users.id))
+    .where(eq(users.id, userId))
     .limit(1)
 
   const row = rows[0]
-  if (!isConfirmed(row)) return false
+  if (!row) return false
+  if (!isConfirmed(row) && (await countWebauthnCredentials(userId)) === 0) return false
   if (!canHoldSecondFactor(row.role)) {
     console.warn(
       `[2fa] user ${userId} has role "${row.role}" but a confirmed second factor; still requiring it at login. See "Emergency 2FA reset" in docs/guides/root.md.`,
@@ -268,8 +338,15 @@ export const secondFactorOutstanding = async (userId: number): Promise<boolean> 
   // password — its second factor belongs to the identity provider — so an SSO
   // administrator gated here would be refused every route AND refused the one
   // screen that could lift the gate. Entra ID's own MFA is what covers them.
+  //
+  // First, because it is the cheapest and the most decisive: an account that may
+  // not enroll at all cannot owe an enrollment, whatever else is true of it.
   if (!row.passwordHash) return false
-  return !isConfirmed(row)
+  // Either factor discharges the requirement. A key is a stronger second factor
+  // than a TOTP code, so an account that registered one and never touched an
+  // authenticator app owes nothing.
+  if (isConfirmed(row)) return false
+  return (await countWebauthnCredentials(userId)) === 0
 }
 
 export const getTwoFactorStatus = async (userId: number): Promise<Result<TwoFactorStatus>> => {

@@ -104,6 +104,66 @@ describe('LoginForm — second factor required', () => {
     return screen.findByLabelText(/authentication code/i)
   }
 
+  /**
+   * `methods` is how the challenge says which factors the account holds. The
+   * check used to be `!data.methods || data.methods.includes('totp')`, meant to
+   * treat an ABSENT list as "older backend, assume the code field" — but an
+   * empty array is truthy in JavaScript, so `methods: []` fell through to
+   * `[].includes('totp')`, hid the code field, and left the user at a form with
+   * nothing to fill in and no way to finish signing in.
+   */
+  it('shows the code field when the challenge names no methods at all', async () => {
+    mockChallenge({ ok: true, mfaRequired: true, mfaToken: 'challenge-token', methods: [] })
+    render(<LoginForm {...props} />)
+    await signInAsPassword()
+
+    expect(await screen.findByLabelText(/authentication code/i)).toBeRequired()
+  })
+
+  it('shows the code field when an older backend omits methods', async () => {
+    mockChallenge({ ok: true, mfaRequired: true, mfaToken: 'challenge-token' })
+    render(<LoginForm {...props} />)
+    await signInAsPassword()
+
+    expect(await screen.findByLabelText(/authentication code/i)).toBeRequired()
+  })
+
+  it('shows the code field when the account holds a TOTP secret', async () => {
+    mockChallenge({
+      ok: true,
+      mfaRequired: true,
+      mfaToken: 'challenge-token',
+      methods: ['webauthn', 'totp'],
+    })
+    render(<LoginForm {...props} />)
+    await signInAsPassword()
+
+    expect(await screen.findByLabelText(/authentication code/i)).toBeRequired()
+  })
+
+  // The one case that SHOULD hide it: a key-only account has no code to type,
+  // and a required field it cannot fill would block the form.
+  it('hides the code field for an account that holds only security keys', async () => {
+    mockChallenge({
+      ok: true,
+      mfaRequired: true,
+      mfaToken: 'challenge-token',
+      methods: ['webauthn'],
+    })
+    render(<LoginForm {...props} />)
+    await signInAsPassword()
+
+    await waitFor(() => expect(screen.queryByLabelText(/^password$/i)).toBeNull())
+    // The input stays in the DOM — it is wrapped in a `hidden` div rather than
+    // unmounted, so the browser keeps the form's shape — and jsdom applies no
+    // Tailwind, so `toBeVisible()` cannot see that. What IS conditional is the
+    // hint above it and the `required` attribute on the field, and `required` is
+    // the one that matters: a required invisible input is a form the browser
+    // refuses to submit without saying why.
+    expect(screen.getByLabelText(/authentication code/i)).not.toBeRequired()
+    expect(screen.queryByText(/code from your authenticator app/i)).toBeNull()
+  })
+
   it('asks for a code instead of signing in', async () => {
     await enterMfa()
 

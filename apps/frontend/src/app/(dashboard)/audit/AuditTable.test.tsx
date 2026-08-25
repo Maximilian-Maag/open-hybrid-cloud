@@ -27,6 +27,29 @@ describe('AuditTable', () => {
     expect(screen.queryByText(/no audit entries/i)).not.toBeInTheDocument()
   })
 
+  // The point of the generation guard on the failure path, seen from the screen:
+  // an operator reading page 2 whose refresh fails keeps page 2, and is told the
+  // refresh failed. Replacing the rows with the error would destroy the answer
+  // they were reading in order to report that it could not be re-fetched.
+  it('keeps the rows already on screen when a later load fails', async () => {
+    const entry = { id: 7, action: 'user.login', createdAt: new Date().toISOString() }
+    let call = 0
+    mockGet.mockImplementation(() => {
+      call += 1
+      if (call === 1) return Promise.resolve({ data: [entry], total: 1 })
+      return Promise.reject(new Error('500 Internal Server Error'))
+    })
+
+    render(<AuditTable token="t" />)
+    await waitFor(() => expect(screen.getByText('user.login')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'login' } })
+
+    expect(await screen.findByText('500 Internal Server Error')).toBeInTheDocument()
+    // Still there. The error is above the table, not instead of it.
+    expect(screen.getByText('user.login')).toBeInTheDocument()
+  })
+
   it('still shows the empty state when the query succeeds with nothing in it', async () => {
     mockGet.mockResolvedValue({ data: [], total: 0 })
 

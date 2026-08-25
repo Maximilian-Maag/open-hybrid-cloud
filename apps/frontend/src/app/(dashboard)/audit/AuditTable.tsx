@@ -193,34 +193,42 @@ export function AuditTable({ token }: Props) {
         <div className="flex justify-center py-8">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
         </div>
-      ) : loadError ? (
-        <Alert>{loadError}</Alert>
       ) : (
-        <Table<AuditEntry>
-          columns={[
-            { header: t('id', lang), accessor: 'id', className: 'w-16' },
-            {
-              header: t('user', lang),
-              render: (row) => <span>{row.userName ?? (row.userId ? `#${row.userId}` : t('system', lang))}</span>,
-            },
-            { header: t('action', lang), accessor: 'action' },
-            {
-              header: t('entity', lang),
-              render: (row) => <span>{row.entityId ?? '—'}</span>,
-            },
-            { header: t('details', lang), accessor: 'details', className: 'max-w-xs truncate' },
-            {
-              header: t('date', lang),
-              render: (row) => (
-                <span className="text-xs text-slate-500 whitespace-nowrap">
-                  {new Date(row.createdAt).toLocaleString(lang)}
-                </span>
-              ),
-            },
-          ]}
-          data={entries}
-          emptyMessage={t('noAuditEntries', lang)}
-        />
+        <>
+          {/* Above the rows, not instead of them. A refresh that fails must not
+              also take away the answer the operator was reading — but on a first
+              load there is nothing to keep, and rendering the table's "no audit
+              entries" copy underneath an error is the very confusion #221 is
+              about: it reads as a statement that the record is empty. */}
+          {loadError && <Alert className="mb-4">{loadError}</Alert>}
+          {(!loadError || entries.length > 0) && (
+            <Table<AuditEntry>
+              columns={[
+                { header: t('id', lang), accessor: 'id', className: 'w-16' },
+                {
+                  header: t('user', lang),
+                  render: (row) => <span>{row.userName ?? (row.userId ? `#${row.userId}` : t('system', lang))}</span>,
+                },
+                { header: t('action', lang), accessor: 'action' },
+                {
+                  header: t('entity', lang),
+                  render: (row) => <span>{row.entityId ?? '—'}</span>,
+                },
+                { header: t('details', lang), accessor: 'details', className: 'max-w-xs truncate' },
+                {
+                  header: t('date', lang),
+                  render: (row) => (
+                    <span className="text-xs text-slate-500 whitespace-nowrap">
+                      {new Date(row.createdAt).toLocaleString(lang)}
+                    </span>
+                  ),
+                },
+              ]}
+              data={entries}
+              emptyMessage={t('noAuditEntries', lang)}
+            />
+          )}
+        </>
       )}
 
       {totalPages > 1 && (

@@ -89,8 +89,7 @@ export function OrderForm({
       // response (an error envelope, an empty array) would otherwise store
       // undefined and crash the next render on `.filter`.
       .then((detail) => { if (!stale && detail?.parameters) setResolvedParameters(detail.parameters) })
-      // eslint-disable-next-line no-restricted-syntax -- deliberate: keep the unresolved list, submit still validates server-side
-      .catch(() => {})
+      .catch(() => { /* keep the unresolved list — submit still validates server-side */ })
     return () => { stale = true }
   }, [envId, product.id, product.parameters, lang, token])
 

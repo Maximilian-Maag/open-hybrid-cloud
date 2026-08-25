@@ -121,18 +121,14 @@ const config = [
       // already uses (`catch { /* empty */ }`) — so this asks for the reason, not
       // for a rethrow. Zero violations when switched on.
       "no-empty": ["error", {"allowEmptyCatch": false}],
-      // #136, half two, which `no-empty` cannot see: it exempts function bodies,
-      // so `.catch(() => {})` sails past it. Two did, both of them a `useEffect`
-      // load whose failure left a section of the product form permanently empty.
-      // A selector cannot read comments, so unlike `no-empty` this one is not
-      // satisfied by writing the reason down — a genuinely deliberate drop takes
-      // a disable line. That is the intended cost: there is one such drop in the
-      // tree, and it should be visible in review rather than indistinguishable
-      // from the two accidents.
-      "no-restricted-syntax": ["error", {
-        "selector": "CallExpression[callee.property.name='catch'] > :matches(ArrowFunctionExpression, FunctionExpression)[body.body.length=0]",
-        "message": "An empty .catch() discards the failure. Handle it, or disable this line with the reason it is right to drop."
-      }],
+      // `.catch(() => {})` is deliberately NOT covered here. `no-empty` exempts
+      // function bodies so it sails past, and a selector that catches it cannot
+      // read comments — so the only way to spell a deliberate drop would be a
+      // disable line, which detaches the reason from the code it explains.
+      // `silent_catch_is_documented` in policy/hygiene.rego already denies this
+      // exact shape and DOES read the comment, so the reason stays inside the
+      // braces where the rest of the tree puts it. A rule that would force the
+      // opposite convention to the gate next door is worse than no rule.
       // `eslint-config-next` carries no `eslint:recommended`, so these four were
       // simply absent, and TypeScript catches none of them: `noFallthroughCasesInSwitch`
       // is not set in either tsconfig, and the other three are runtime shapes the

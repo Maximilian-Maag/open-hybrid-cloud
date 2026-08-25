@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { checkLoginPassword, loginWithCredentials } from '@/lib/services/auth'
 import { clientIp, clientUserAgent } from '@/lib/auth/requestMeta'
 import { MFA_CHALLENGE_TTL_SECONDS } from '@/lib/auth/mfaChallenge'
+import { createRateLimitBucket } from '@/lib/rateLimit'
 
 const LoginSchema = z.object({
   email: z.string().email(),
@@ -17,12 +18,10 @@ const LoginSchema = z.object({
   challengeOnly: z.boolean().optional(),
 })
 
-const loginAttempts = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT_MAX = 10
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
-// Hard cap on tracked keys so a flood of distinct clients can't grow the map
-// without bound (memory-DoS). Once exceeded we evict the oldest entries.
-const RATE_LIMIT_MAX_KEYS = 10_000
+// Ten attempts per fifteen minutes, per bucket. The counter itself lives in
+// lib/rateLimit.ts — it had a second caller (the outputs refresh) and two
+// hand-rolled copies would drift on the first fix to either.
+const loginLimit = createRateLimitBucket(10, 15 * 60 * 1000)
 
 /**
  * Client address component of the rate-limit key.
@@ -64,40 +63,6 @@ function ipRateLimitKey(req: NextRequest): string | null {
   return `ip|${addr}`
 }
 
-/**
- * Drop expired buckets, then—if still over the cap—evict oldest entries by
- * insertion order (Map preserves it) until back under the limit.
- */
-function pruneAttempts(now: number): void {
-  for (const [key, entry] of loginAttempts) {
-    if (entry.resetAt < now) loginAttempts.delete(key)
-  }
-  if (loginAttempts.size > RATE_LIMIT_MAX_KEYS) {
-    const overflow = loginAttempts.size - RATE_LIMIT_MAX_KEYS
-    let removed = 0
-    for (const key of loginAttempts.keys()) {
-      loginAttempts.delete(key)
-      if (++removed >= overflow) break
-    }
-  }
-}
-
-function isRateLimited(key: string): boolean {
-  const now = Date.now()
-  pruneAttempts(now)
-  const entry = loginAttempts.get(key)
-  if (!entry || entry.resetAt < now) {
-    loginAttempts.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
-    return false
-  }
-  if (entry.count >= RATE_LIMIT_MAX) return true
-  entry.count++
-  return false
-}
-
-function resetRateLimit(key: string): void {
-  loginAttempts.delete(key)
-}
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
@@ -122,7 +87,7 @@ export async function POST(req: NextRequest) {
   for (const key of rlKeys) {
     // Call isRateLimited for every key so the attempt is counted against all
     // buckets, not just the first that trips.
-    if (isRateLimited(key)) limited = true
+    if (loginLimit.isRateLimited(key)) limited = true
   }
   if (limited) {
     return NextResponse.json(
@@ -143,7 +108,7 @@ export async function POST(req: NextRequest) {
     if (!check.ok) {
       return NextResponse.json({ error: check.message }, { status: check.status })
     }
-    resetRateLimit(accountKey)
+    loginLimit.reset(accountKey)
     return NextResponse.json(
       check.data.mfaRequired
         ? { mfaRequired: true, mfaToken: check.data.mfaToken, expiresIn: MFA_CHALLENGE_TTL_SECONDS }
@@ -164,7 +129,7 @@ export async function POST(req: NextRequest) {
   // Reset ONLY the authenticated account's bucket. The per-IP bucket keeps its
   // accumulated failures so an attacker can't wipe spraying counters by logging
   // into an account they control.
-  resetRateLimit(accountKey)
+  loginLimit.reset(accountKey)
 
   // The password was right but the account has a second factor, so this response
   // carries NO session token — and no session row was written either. Only a

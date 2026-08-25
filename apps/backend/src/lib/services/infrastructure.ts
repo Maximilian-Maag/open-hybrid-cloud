@@ -12,6 +12,7 @@ import { eq, and, sql, gte, lte } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { findCiSourceForEnv } from '@/lib/db/queries'
 import { readOutputsForElement, outputsUnavailableReason } from '@/lib/webhook/outputs'
+import { createRateLimitBucket } from '@/lib/rateLimit'
 import { fireDestroyTriggers, destroyVariables } from '@/lib/services/teardown'
 import { TRIGGERING_KEY, TRIGGERING_VALUE } from '@/lib/webhook/settle'
 import { recordOrderPipelineId, finishOrderTriggerRun } from '@/lib/services/pipelineTracking'
@@ -867,6 +868,14 @@ export interface InfraDetail extends InfraRow {
  * to whoever may already see the element rather than to admins alone — `retry`
  * re-fires real deployments and is rightly admin-only; this re-reads a text file.
  */
+/**
+ * See the throttle comment inside `refreshElementOutputs`.
+ *
+ * Exported so the tests can clear it: element ids repeat across cases in a
+ * truncated database, so without that one case's element throttles the next.
+ */
+export const refreshOutputsLimit = createRateLimitBucket(1, 15_000)
+
 export const refreshElementOutputs = async (
   session: SessionUser,
   id: number,
@@ -891,6 +900,24 @@ export const refreshElementOutputs = async (
   if (!row) return err(404, 'Infrastructure element not found')
   if (!isAdmin && row.projectOwnerId !== session.id) {
     return err(404, 'Infrastructure element not found')
+  }
+
+  // Throttled here rather than in the route, so it sits AFTER the scoping check:
+  // a caller who may not see this element gets 404 and never spends its budget,
+  // which would otherwise let anyone deny the refresh to the people who own it.
+  //
+  // Keyed by element and not by caller, because the resource being protected is
+  // the environment's CI access token. Each call makes one outbound request per
+  // pipeline the element has, against the same token the settle path uses to
+  // record status — an owner holding the button down would amplify one click
+  // into a stream of API calls and could exhaust that token for the whole
+  // environment, taking settlement down with it.
+  //
+  // 15 seconds is chosen against what a second call could possibly learn: the
+  // job log this reads does not change between two clicks a second apart, so a
+  // shorter window buys the operator nothing and costs the environment traffic.
+  if (refreshOutputsLimit.isRateLimited(`element|${id}`)) {
+    return err(429, 'The outputs for this element were just re-read. Try again in a few seconds.')
   }
 
   const ciSource = await findCiSourceForEnv(row.environmentId)

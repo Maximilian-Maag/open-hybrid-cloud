@@ -148,6 +148,17 @@ describe('the API proxy', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('passes a 204 through', async () => {
+    // Every DELETE in the app ends here. A `Response` built with a non-null body
+    // and status 204 throws, so this is the shape most likely to break in a way
+    // no other test would notice.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+
+    const res = await DELETE(req('http://localhost/api/proxy/api/cart/3', { method: 'DELETE' }), params('api', 'cart', '3'))
+
+    expect(res.status).toBe(204)
+  })
+
   it('marks every answer no-store, because all of it is one user’s data', async () => {
     upstream({ ok: true }, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=3600' } })
 

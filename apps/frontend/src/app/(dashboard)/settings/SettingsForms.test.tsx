@@ -5,6 +5,10 @@ import { SettingsForms } from './SettingsForms'
 
 vi.mock('@/lib/api', () => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }))
 vi.mock('@/lib/useLang', () => ({ useLang: () => 'en' }))
+vi.mock('next-auth/react', () => ({
+  useSession: () => ({ data: {}, update: vi.fn() }),
+  getSession: vi.fn(),
+}))
 
 const mockedGet = vi.mocked(get)
 
@@ -22,20 +26,20 @@ beforeEach(() => {
 })
 
 describe('SettingsForms — the two-factor card', () => {
-  it('shows it to root', async () => {
-    render(<SettingsForms {...props} role="root" />)
+  // Both administrative roles since #197: `admin` must hold a factor too, so a
+  // card that stayed root-only would leave them required to enroll with nowhere
+  // to do it.
+  it.each(['root', 'admin'] as const)('shows it to %s', async (role) => {
+    render(<SettingsForms {...props} role={role} />)
     expect(await screen.findByText('Two-factor authentication')).toBeInTheDocument()
   })
 
-  it.each(['admin', 'project_manager'] as const)(
-    'hides it from %s, and never asks the backend for their status',
-    async (role) => {
-      render(<SettingsForms {...props} role={role} />)
+  it('hides it from project_manager, and never asks the backend for their status', async () => {
+    render(<SettingsForms {...props} role="project_manager" />)
 
-      // The profile form is there, so the page rendered — the card is simply absent.
-      expect(await screen.findByLabelText(/name/i)).toBeInTheDocument()
-      expect(screen.queryByText('Two-factor authentication')).toBeNull()
-      await waitFor(() => expect(mockedGet).not.toHaveBeenCalled())
-    },
-  )
+    // The profile form is there, so the page rendered — the card is simply absent.
+    expect(await screen.findByLabelText(/name/i)).toBeInTheDocument()
+    expect(screen.queryByText('Two-factor authentication')).toBeNull()
+    await waitFor(() => expect(mockedGet).not.toHaveBeenCalled())
+  })
 })

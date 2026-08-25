@@ -58,6 +58,8 @@ export interface OrderRow {
   productSnapshot: ProductSnapshot | null
   productName: string
   environmentName: string | null
+  /** The project the order was placed for. Null only if the project is gone. */
+  projectName: string | null
   userName: string | null
   /**
    * Per-pipeline outcome, keyed by pipeline id — `{ "pipe-a": "success" }`.
@@ -164,10 +166,17 @@ export const listOrders = async (session: SessionUser): Promise<Result<OrderRow[
         LIMIT 1
       )`,
       environmentName: deploymentEnvironments.name,
+      // Selected since #208. The orders table has had a Project column all along,
+      // reading `projectName` — a field on the shared `Order` type that nothing
+      // ever filled, so the cell was always blank and the detail page always fell
+      // back to `#12`. LEFT, like the other two: an inner join would drop rows
+      // from a list whose whole job is to show everything the caller may see.
+      projectName: projects.name,
       userName: users.name,
     })
     .from(orders)
     .leftJoin(deploymentEnvironments, eq(orders.environmentId, deploymentEnvironments.id))
+    .leftJoin(projects, eq(orders.projectId, projects.id))
     .leftJoin(users, eq(orders.userId, users.id))
     .where(isAdmin ? undefined : eq(orders.userId, session.id))
     .orderBy(sql`${orders.createdAt} DESC`)
@@ -209,10 +218,17 @@ export const getOrderById = async (
         LIMIT 1
       )`,
       environmentName: deploymentEnvironments.name,
+      // Selected since #208. The orders table has had a Project column all along,
+      // reading `projectName` — a field on the shared `Order` type that nothing
+      // ever filled, so the cell was always blank and the detail page always fell
+      // back to `#12`. LEFT, like the other two: an inner join would drop rows
+      // from a list whose whole job is to show everything the caller may see.
+      projectName: projects.name,
       userName: users.name,
     })
     .from(orders)
     .leftJoin(deploymentEnvironments, eq(orders.environmentId, deploymentEnvironments.id))
+    .leftJoin(projects, eq(orders.projectId, projects.id))
     .leftJoin(users, eq(orders.userId, users.id))
     .where(eq(orders.id, orderId))
     .limit(1)

@@ -28,7 +28,9 @@ afterEach(() => {
 
 describe('POST /api/auth/login', () => {
   it('returns a JWT token for valid credentials', async () => {
-    await createUser({ email: 'login@test.dev', password: 'correct-pass', role: 'admin' })
+    // A project manager, because since #197 an administrator holds a second
+    // factor and signing one in is a two-step flow — covered separately below.
+    await createUser({ email: 'login@test.dev', password: 'correct-pass', role: 'project_manager' })
 
     const res = await POST(makeRequest({ email: 'login@test.dev', password: 'correct-pass' }))
     expect(res.status).toBe(200)
@@ -36,7 +38,7 @@ describe('POST /api/auth/login', () => {
     const body = await res.json()
     expect(body.token).toBeDefined()
     expect(body.user.email).toBe('login@test.dev')
-    expect(body.user.role).toBe('admin')
+    expect(body.user.role).toBe('project_manager')
 
     const claims = await verifyToken(body.token)
     expect(claims?.user.email).toBe('login@test.dev')
@@ -400,5 +402,40 @@ describe('POST /api/auth/login', () => {
       if (prev === undefined) delete process.env.TRUST_PROXY
       else process.env.TRUST_PROXY = prev
     }
+  })
+})
+
+// Issue #197. An administrator with no factor is signed in — enrolling needs a
+// session — and told that is all this session may do.
+describe('POST /api/auth/login — an administrator who owes a second factor', () => {
+  it.each([['root'], ['admin']] as const)(
+    'signs a %s in and flags the enrollment',
+    async (role) => {
+      const email = `owes-${role}@test.dev`
+      await createUser({ email, password: 'correct-pass', role, secondFactor: false })
+
+      const res = await POST(makeRequest({ email, password: 'correct-pass' }))
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      // A real token: without one they could not reach the enrollment endpoints,
+      // and refusing the sign-in outright would be a lockout with no way back.
+      expect(body.token).toBeDefined()
+      expect(body.mustEnrollSecondFactor).toBe(true)
+    },
+  )
+
+  it('omits the flag entirely once a factor is confirmed', async () => {
+    // An enrolled administrator never reaches this path — they get a challenge —
+    // so the flag has to be absent rather than false on every other response.
+    await createUser({ email: 'no-flag@test.dev', password: 'correct-pass', role: 'project_manager' })
+    const res = await POST(makeRequest({ email: 'no-flag@test.dev', password: 'correct-pass' }))
+    expect(await res.json()).not.toHaveProperty('mustEnrollSecondFactor')
+  })
+
+  it('does not flag a project manager, who may not hold a factor at all', async () => {
+    await createUser({ email: 'pm-login@test.dev', password: 'correct-pass', role: 'project_manager' })
+    const res = await POST(makeRequest({ email: 'pm-login@test.dev', password: 'correct-pass' }))
+    expect((await res.json()).mustEnrollSecondFactor).toBeUndefined()
   })
 })

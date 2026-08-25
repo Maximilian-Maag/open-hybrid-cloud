@@ -3,10 +3,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { signToken } from './jwt'
 import { createSession } from './sessions'
-import { getSession, requireAuth, requireRole, isAuth, type AuthenticatedUser } from './middleware'
+import {
+  getSession,
+  requireAuth,
+  requireAuthPendingSecondFactor,
+  requireRole,
+  isAuth,
+  SECOND_FACTOR_REQUIRED,
+  type AuthenticatedUser,
+} from './middleware'
 import { db } from '@/lib/db/client'
-import { sessions } from '@/lib/db/schema'
-import { createUser } from '@/test/helpers'
+import { sessions, userTotp } from '@/lib/db/schema'
+import { createUser, enrollTotp } from '@/test/helpers'
 import type { Role } from '@open-hybrid-cloud/types'
 
 const makeReq = (token?: string): NextRequest =>
@@ -141,6 +149,88 @@ describe('requireAuth', () => {
 
     const result = await requireAuth(makeReq(token))
     expect((result as NextResponse).status).toBe(401)
+  })
+})
+
+// Issue #197. The session is valid in every other sense — right password, live
+// row, unexpired — and that is the point: what is refused is the *use* of it.
+describe('requireAuth, when an administrator owes a second factor', () => {
+  /** An administrative account with no confirmed factor, and a live session. */
+  const unenrolled = async (role: Role, email: string) => {
+    const user = await createUser({ role, email, secondFactor: false })
+    const created = await createSession({
+      user: { id: user.id, email: user.email, name: user.name, role },
+      ip: '203.0.113.1',
+      userAgent: 'vitest',
+    })
+    return { user, ...created }
+  }
+
+  it.each([['root'], ['admin']] as const)(
+    'refuses a %s with no confirmed factor',
+    async (role) => {
+      const { token } = await unenrolled(role, `ra-noenrol-${role}@test.dev`)
+      const result = await requireAuth(makeReq(token))
+      expect((result as NextResponse).status).toBe(403)
+      expect(await (result as NextResponse).json()).toMatchObject({
+        code: SECOND_FACTOR_REQUIRED,
+      })
+    },
+  )
+
+  it('403, never 401 — a 401 would sign the user out of the session they need to enroll with', async () => {
+    const { token } = await unenrolled('admin', 'ra-not-401@test.dev')
+    expect((await requireAuth(makeReq(token)) as NextResponse).status).not.toBe(401)
+  })
+
+  it('carries a machine-readable code, so the client need not match on English', async () => {
+    const { token } = await unenrolled('admin', 'ra-code@test.dev')
+    const body = await ((await requireAuth(makeReq(token))) as NextResponse).json()
+    expect(body.code).toBe(SECOND_FACTOR_REQUIRED)
+  })
+
+  it('lets the same session through once a factor is confirmed', async () => {
+    const { user, token } = await unenrolled('admin', 'ra-then-enrol@test.dev')
+    expect((await requireAuth(makeReq(token)) as NextResponse).status).toBe(403)
+
+    // No new sign-in: the gate has to lift for the session that was already open,
+    // or enrolling would leave the account exactly where it started.
+    await enrollTotp(user.id)
+    expect(isAuth(await requireAuth(makeReq(token)))).toBe(true)
+  })
+
+  it('closes again the moment an operator clears the factor', async () => {
+    // The emergency reset in docs/guides/root.md. A flag cached on the session
+    // row would leave every existing session open after precisely the event that
+    // should close them.
+    const { user, token } = await signedIn('admin', 'ra-cleared@test.dev')
+    expect(isAuth(await requireAuth(makeReq(token)))).toBe(true)
+
+    await db.delete(userTotp).where(eq(userTotp.userId, user.id))
+    expect((await requireAuth(makeReq(token)) as NextResponse).status).toBe(403)
+  })
+
+  it('never applies to a project manager, who may not hold a factor at all', async () => {
+    const { token } = await signedIn('project_manager', 'ra-pm@test.dev')
+    expect(isAuth(await requireAuth(makeReq(token)))).toBe(true)
+  })
+
+  it('stops requireRole too, so the gate cannot be walked around by an admin route', async () => {
+    const { token } = await unenrolled('root', 'ra-role@test.dev')
+    const result = await requireRole('admin')(makeReq(token))
+    expect((result as NextResponse).status).toBe(403)
+    expect((await (result as NextResponse).json()).code).toBe(SECOND_FACTOR_REQUIRED)
+  })
+
+  it('requireAuthPendingSecondFactor lets them through, which is how enrollment works at all', async () => {
+    const { user, token } = await unenrolled('admin', 'ra-pending@test.dev')
+    const result = await requireAuthPendingSecondFactor(makeReq(token))
+    expect(isAuth(result)).toBe(true)
+    expect((result as AuthenticatedUser).id).toBe(user.id)
+  })
+
+  it('requireAuthPendingSecondFactor still refuses no session at all', async () => {
+    expect(((await requireAuthPendingSecondFactor(makeReq())) as NextResponse).status).toBe(401)
   })
 })
 

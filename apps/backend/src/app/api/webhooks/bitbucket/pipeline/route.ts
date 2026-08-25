@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { rejectCallback } from '@/lib/webhook/rejection'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { handlePipelineEvent } from '@/lib/webhook/handler'
 import { isUsableCallbackSecret } from '@/lib/webhook/callback-secret'
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text()
 
   if (!signature) {
-    return NextResponse.json({ error: 'Missing signature' }, { status: 401 })
+    return rejectCallback(req, { provider: 'bitbucket', reason: 'Missing signature' })
   }
 
   // Validate against the inbound callback_secret, not the outbound
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
         '— rotate them (Admin → Environments); their callbacks stay refused until then.',
       )
     }
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    return rejectCallback(req, { provider: 'bitbucket', reason: 'Invalid signature' })
   }
 
   if (matchedEnvs.length > 1) {

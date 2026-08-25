@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import type {
   ConfirmTotpEnrollmentRequest,
   ConfirmTotpEnrollmentResponse,
@@ -36,6 +37,11 @@ type Step = 'idle' | 'scanning' | 'codes'
 
 export function TwoFactorCard({ token }: Props) {
   const lang = useLang()
+  // Read from the session rather than passed in: the same flag the middleware
+  // redirected on, so the card cannot disagree with the thing that sent the user
+  // here (issue #197).
+  const { data: session, update: updateSession } = useSession()
+  const mustEnroll = session?.mustEnrollSecondFactor === true
   const [status, setStatus] = useState<TwoFactorStatusResponse | null>(null)
   const [step, setStep] = useState<Step>('idle')
   const [password, setPassword] = useState('')
@@ -100,6 +106,20 @@ export function TwoFactorCard({ token }: Props) {
       setConfirmCode('')
       setStep('codes')
       await loadStatus()
+      // Clear the "must enroll" flag on the session token (issue #197). The
+      // backend already stopped refusing this account the moment `confirm`
+      // returned — it re-reads the factor per request — but the token minted at
+      // sign-in still says otherwise, and the middleware reads the token. Without
+      // this the user is bounced back here from wherever they navigate next,
+      // having done exactly what was asked of them.
+      //
+      // Deliberately after the recovery codes are on screen and not before: the
+      // gate lifting must not race the user reading the only copy of them.
+      if (mustEnroll) {
+        const { getSession } = await import('next-auth/react')
+        await updateSession({ mustEnrollSecondFactor: false })
+        await getSession()
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t('unexpectedError', lang))
     } finally {
@@ -111,6 +131,14 @@ export function TwoFactorCard({ token }: Props) {
     <Card title={t('twoFactorAuth', lang)}>
       <div className="space-y-4">
         {error && <Alert>{error}</Alert>}
+
+        {/* Why the user is on this page at all (issue #197). Without it, being
+            bounced here from wherever they were going reads as a bug. Shown until
+            the factor is confirmed, not until they start — an abandoned
+            enrollment leaves the requirement exactly where it was. */}
+        {mustEnroll && !status?.enabled && (
+          <Alert tone="warning">{t('twoFactorRequiredPrompt', lang)}</Alert>
+        )}
 
         {step === 'idle' && (
           <>
@@ -132,9 +160,15 @@ export function TwoFactorCard({ token }: Props) {
 
             {/* Out of recovery codes and no authenticator means the only way back
                 in is an operator with database access, so say so before it
-                happens rather than after. */}
+                happens rather than after.
+
+                Its own string, not `twoFactorRecoveryHint`: that one reads "save
+                these now — they will not be shown again", which is the right
+                thing to say on the screen that HAS just printed them, and
+                nonsense here, where the count is zero and there is nothing on
+                screen to save. */}
             {status?.enabled && status.recoveryCodesRemaining === 0 && (
-              <Alert tone="warning">{t('twoFactorRecoveryHint', lang)}</Alert>
+              <Alert tone="warning">{t('twoFactorRecoveryExhausted', lang)}</Alert>
             )}
 
             <form onSubmit={handleStart} className="space-y-4">

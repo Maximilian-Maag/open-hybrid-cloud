@@ -67,7 +67,19 @@ const SECRET_SQL_COLUMNS = [
 ]
 
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
-const AUTH_HELPERS = new Set(['requireAuth', 'requireRole', 'requireRoot'])
+// `requireAuthPendingSecondFactor` authenticates exactly as `requireAuth` does —
+// same token, same session row, same 401 without one. It differs only in that it
+// permits an administrator who still owes an enrollment (#197), which is what
+// makes the enrollment endpoints reachable at all. A route using it is
+// authenticated; whether it *should* be one of the few that tolerates the pending
+// state is a judgement the helper's own doc comment records, and rule 1 is not
+// the thing that can decide it.
+const AUTH_HELPERS = new Set([
+  'requireAuth',
+  'requireAuthPendingSecondFactor',
+  'requireRole',
+  'requireRoot',
+])
 
 // ---------------------------------------------------------------------------
 // filesystem helpers
@@ -808,6 +820,254 @@ function consoleCalls(): ConsoleCall[] {
 
 // ---------------------------------------------------------------------------
 
+interface TestCaseFact extends Located {
+  /** The test's name, as written — what the runner prints when it passes. */
+  title: string
+  /** Whether the body contains an assertion of any kind. */
+  asserts: boolean
+  /** Whether it announces itself as skipped, which is honest and not this rule's business. */
+  skipped: boolean
+}
+
+/**
+ * Every `it`/`test` in the repository, and whether it asserts anything.
+ *
+ * #154 catalogued ten e2e tests that report green having verified nothing —
+ * bodies that are entirely `if (await x.isVisible()) { … }` with no `else`, a bare
+ * `return` on an empty locator, a tautology like `expect(count > 0 || isEmpty)`.
+ * They were found by reading every spec line by line. That is not a thing anyone
+ * will do twice, and the failure mode is the worst kind: the suite gets bigger,
+ * the report stays green, and the coverage is imaginary.
+ *
+ * This is the mechanical half of that audit. It cannot judge whether an assertion
+ * is meaningful — `expect(true).toBe(true)` passes this — but "contains no
+ * assertion at all" is decidable, and it is the case that actually recurs.
+ *
+ * A test that calls `test.skip()` is exempt: announcing that it did not run is the
+ * honest behaviour this rule is trying to encourage, not the one it is trying to
+ * stop. `a11y.spec.ts` already does that with a reason, and it is the pattern the
+ * issue points at.
+ */
+const ASSERTION_CALLS = new Set(['expect', 'assert', 'expectTypeOf'])
+
+/**
+ * Calls that fail the test when the condition does not hold, without the word
+ * `expect` appearing in the test body.
+ *
+ * Playwright's waits are assertions: `waitForURL` throws when the navigation does
+ * not happen, and `dashboard.spec.ts` uses it deliberately in place of
+ * `toHaveURL` because the timeout budget has to match a cold `next dev`. Counting
+ * those as "asserts nothing" would report a working test as broken, and the fix
+ * a reader would then apply — adding a redundant `expect` — makes the suite worse.
+ */
+const ASSERTING_WAITS = /^waitFor(URL|Response|Request|Selector|Event|LoadState|Function)?$/
+
+/**
+ * A helper whose name says it asserts. `expectAccessible`, `expectRealTranslations`
+ * and `expectNoServerError` all contain the assertions their callers do not.
+ *
+ * Named-based, and deliberately so: following the call would mean resolving
+ * imports across the repository, and a convention this consistent is cheaper to
+ * rely on than to verify. The cost of being wrong is a missed empty test, not a
+ * false accusation.
+ */
+const ASSERTING_HELPER = /^(expect|assert)[A-Z]/
+
+function testCases(): TestCaseFact[] {
+  const files = [
+    ...walk('e2e', (rel) => /\.spec\.ts$/.test(rel)),
+    ...walk(`${BACKEND}/src`, (rel) => /\.test\.tsx?$/.test(rel)),
+    ...walk(`${FRONTEND}/src`, (rel) => /\.test\.tsx?$/.test(rel)),
+  ]
+
+  const out: TestCaseFact[] = []
+  for (const file of files) {
+    const sf = parse(file)
+
+    // Helpers defined in this file that assert.
+    //
+    // `qr.test.ts` has `roundTrip(text, ecc)`, whose body is nothing but
+    // assertions, and two of its tests are a loop around a call to it. Reporting
+    // those as "asserts nothing" would be wrong, and the fix a reader would apply
+    // — inlining the helper, or adding a redundant `expect` — makes the suite
+    // worse. So the assertions of a local helper count for its callers.
+    //
+    // One level, and only within the file: following imports would mean resolving
+    // the module graph, and a test whose assertions are two helpers deep in
+    // another file is rare enough to be worth a false positive rather than that
+    // machinery.
+    const assertingHelpers = new Set<string>()
+    visit(sf, (node) => {
+      let name: string | null = null
+      let body: ts.Node | undefined
+      if (ts.isFunctionDeclaration(node) && node.name) {
+        name = node.name.text
+        body = node.body
+      } else if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.initializer &&
+        (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+      ) {
+        name = node.name.text
+        body = node.initializer.body
+      }
+      if (!name || !body) return
+
+      let found = false
+      visit(body, (inner) => {
+        if (!ts.isCallExpression(inner)) return
+        const fn = inner.expression
+        if (ts.isIdentifier(fn) && (ASSERTION_CALLS.has(fn.text) || ASSERTING_HELPER.test(fn.text))) {
+          found = true
+        }
+        if (
+          ts.isPropertyAccessExpression(fn) &&
+          ts.isIdentifier(fn.expression) &&
+          ASSERTION_CALLS.has(fn.expression.text)
+        ) {
+          found = true
+        }
+      })
+      if (found) assertingHelpers.add(name)
+    })
+    visit(sf, (node) => {
+      if (!ts.isCallExpression(node)) return
+      const callee = node.expression
+      // `it(...)` / `test(...)`, but not `it.each(...)(...)` — that one is a call
+      // whose callee is itself a call, and the inner body is reached anyway.
+      const name = ts.isIdentifier(callee)
+        ? callee.text
+        : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression)
+          ? callee.expression.text
+          : null
+      if (name !== 'it' && name !== 'test') return
+
+      // `test.describe`, `test.beforeEach`, `test.use` and friends are also
+      // `test.<something>(…)`, and counting them as tests reported thirty-nine
+      // "tests that assert nothing" of which most were hooks. Only the modifiers
+      // that still declare a test case count.
+      if (ts.isPropertyAccessExpression(callee)) {
+        const modifier = callee.name.text
+        if (!/^(only|skip|todo|fixme|failing|fails|concurrent|sequential|each|for)$/.test(modifier)) {
+          return
+        }
+      }
+
+      // `it.skip` / `test.skip` declares itself; so does a `test.skip()` inside.
+      const declaredSkip =
+        ts.isPropertyAccessExpression(callee) && /^(skip|todo|fixme)$/.test(callee.name.text)
+
+      const title = node.arguments[0] && ts.isStringLiteralLike(node.arguments[0])
+        ? node.arguments[0].text
+        : ''
+      const body = node.arguments.find((a) => ts.isArrowFunction(a) || ts.isFunctionExpression(a))
+      if (!body) return
+
+      let asserts = false
+      let skipsInside = false
+      visit(body, (inner) => {
+        if (!ts.isCallExpression(inner)) return
+        const fn = inner.expression
+        if (
+          ts.isIdentifier(fn) &&
+          (ASSERTION_CALLS.has(fn.text) ||
+            ASSERTING_HELPER.test(fn.text) ||
+            assertingHelpers.has(fn.text))
+        ) {
+          asserts = true
+        }
+        if (ts.isPropertyAccessExpression(fn)) {
+          // `test.skip()` / `this.skip()` — declaring that it did not run.
+          if (fn.name.text === 'skip') skipsInside = true
+          // `expect(x).toBe(y)` — the callee is a property access on the call.
+          if (ts.isIdentifier(fn.expression) && ASSERTION_CALLS.has(fn.expression.text)) asserts = true
+          // `page.waitForURL(…)` and friends, which throw on failure.
+          if (ASSERTING_WAITS.test(fn.name.text)) asserts = true
+        }
+      })
+
+      out.push({
+        file,
+        line: lineOf(sf, node),
+        title,
+        asserts,
+        skipped: declaredSkip || skipsInside,
+      })
+    })
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// pages and the accessibility gate
+// ---------------------------------------------------------------------------
+
+const APP_DIR = `${FRONTEND}/src/app`
+const A11Y_SPEC = 'e2e/a11y.spec.ts'
+
+/** The arrays in `e2e/a11y.spec.ts` that axe is actually pointed at. */
+const A11Y_PATH_ARRAYS = new Set(['PUBLIC_PAGES', 'AUTHED_PAGES'])
+
+/**
+ * The URL path a `page.tsx` answers on.
+ *
+ * Next.js route groups — the `(dashboard)` and `(auth)` directories — organise
+ * files without appearing in the URL, so they are stripped. Parallel and
+ * intercepting routes (`@slot`, `(.)`) do not exist in this tree; if they ever
+ * do, they belong here too.
+ */
+const routePathOfPage = (rel: string): string => {
+  const segments = rel
+    .slice(`${APP_DIR}/`.length, -'/page.tsx'.length)
+    .split('/')
+    .filter((seg) => seg !== '' && !(seg.startsWith('(') && seg.endsWith(')')))
+  return segments.length === 0 ? '/' : `/${segments.join('/')}`
+}
+
+interface PageFact {
+  file: string
+  routePath: string
+  /** A `[id]`-style segment: no single static URL reaches this page. */
+  dynamic: boolean
+  inA11ySpec: boolean
+}
+
+/**
+ * Every page in the frontend, and whether the axe gate visits it.
+ *
+ * The gate is a hand-written list of paths, so a page added without touching
+ * that list is never checked and nothing says so — the suite still reports the
+ * same number of green a11y assertions it did before the page existed.
+ */
+function pageFacts(): PageFact[] {
+  const pages = walk(APP_DIR, (rel) => rel.endsWith('/page.tsx'))
+  if (pages.length === 0) return []
+
+  const covered = new Set<string>()
+  if (exists(A11Y_SPEC)) {
+    const sf = parse(A11Y_SPEC)
+    visit(sf, (node) => {
+      if (!ts.isVariableDeclaration(node)) return
+      if (!ts.isIdentifier(node.name) || !A11Y_PATH_ARRAYS.has(node.name.text)) return
+      if (!node.initializer || !ts.isArrayLiteralExpression(node.initializer)) return
+      for (const element of node.initializer.elements) {
+        if (ts.isStringLiteral(element)) covered.add(element.text)
+      }
+    })
+  }
+
+  return pages.map((file) => {
+    const routePath = routePathOfPage(file)
+    return {
+      file,
+      routePath,
+      dynamic: routePath.includes('['),
+      inA11ySpec: covered.has(routePath),
+    }
+  })
+}
+
 export function collectFacts(): Record<string, unknown> {
   const testImports = routeTestImports()
   const tables = tableFacts()
@@ -827,6 +1087,9 @@ export function collectFacts(): Record<string, unknown> {
     imageRefs: imageRefs(),
     silentCatches: silentCatches(),
     consoleCalls: consoleCalls(),
+    testCases: testCases(),
+    pages: pageFacts(),
+    a11ySpecFile: A11Y_SPEC,
   }
 }
 

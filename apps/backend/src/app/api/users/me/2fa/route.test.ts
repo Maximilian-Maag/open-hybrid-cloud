@@ -24,7 +24,7 @@ describe('GET /api/users/me/2fa', () => {
   })
 
   it('reports the status without leaking the secret', async () => {
-    const u = await createUser({ role: 'root' })
+    const u = await createUser({ role: 'root', secondFactor: false })
     await enrollTotp(u.id)
 
     const res = await GET(makeReq('/api/users/me/2fa', 'GET', undefined, await makeAuthHeader(u)))
@@ -41,11 +41,27 @@ describe('GET /api/users/me/2fa', () => {
     ])
   })
 
-  it('refuses a non-root session — #36 is 2FA for the root account', async () => {
+  it('serves an admin too — #197 widened this past root', async () => {
     const u = await createUser({ role: 'admin' })
     const res = await GET(makeReq('/api/users/me/2fa', 'GET', undefined, await makeAuthHeader(u)))
+    expect(res.status).toBe(200)
+    expect((await res.json()).enabled).toBe(true)
+  })
+
+  it('refuses a project manager, who may not hold a factor', async () => {
+    const u = await createUser({ role: 'project_manager' })
+    const res = await GET(makeReq('/api/users/me/2fa', 'GET', undefined, await makeAuthHeader(u)))
     expect(res.status).toBe(403)
-    expect((await res.json()).error).toMatch(/root account only/)
+    expect((await res.json()).error).toMatch(/administrator accounts only/)
+  })
+
+  it('is reachable by an administrator who still owes the enrollment', async () => {
+    // The point of `requireAuthPendingSecondFactor`: the gate that refuses every
+    // other route must not refuse the screen that lifts it.
+    const u = await createUser({ role: 'admin', secondFactor: false })
+    const res = await GET(makeReq('/api/users/me/2fa', 'GET', undefined, await makeAuthHeader(u)))
+    expect(res.status).toBe(200)
+    expect((await res.json()).enabled).toBe(false)
   })
 })
 
@@ -82,7 +98,7 @@ describe('POST /api/users/me/2fa/enroll', () => {
   })
 
   it('requires the current password', async () => {
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     const res = await ENROLL(
       makeReq('/x', 'POST', { password: 'wrong-one' }, await makeAuthHeader(u)),
     )
@@ -93,7 +109,7 @@ describe('POST /api/users/me/2fa/enroll', () => {
   })
 
   it('offers a QR code, a key URI and a typable secret', async () => {
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     const res = await ENROLL(makeReq('/x', 'POST', { password: 'right-one' }, await makeAuthHeader(u)))
     expect(res.status).toBe(200)
 
@@ -106,7 +122,7 @@ describe('POST /api/users/me/2fa/enroll', () => {
 
   it('names the configured shop as the issuer, so the app entry is recognisable', async () => {
     await db.update(branding).set({ shopName: 'Acme Cloud' })
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     const res = await ENROLL(makeReq('/x', 'POST', { password: 'right-one' }, await makeAuthHeader(u)))
     const body = await res.json()
     expect(new URL(body.otpauthUrl).searchParams.get('issuer')).toBe('Acme Cloud')
@@ -124,7 +140,7 @@ describe('POST /api/users/me/2fa/enroll', () => {
   })
 
   it('demands a current second factor before re-enrolling', async () => {
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     await enrollTotp(u.id)
 
     const res = await ENROLL(makeReq('/x', 'POST', { password: 'right-one' }, await makeAuthHeader(u)))
@@ -135,7 +151,7 @@ describe('POST /api/users/me/2fa/enroll', () => {
   })
 
   it('re-enrolls with a current code', async () => {
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     const secret = await enrollTotp(u.id)
 
     const res = await ENROLL(
@@ -146,7 +162,7 @@ describe('POST /api/users/me/2fa/enroll', () => {
   })
 
   it('re-enrolls with a recovery code — the path for a lost authenticator', async () => {
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     await enrollTotp(u.id, { recoveryCodes: ['ABCDE-FGHJK-LMNPQ-RSTUV'] })
 
     const res = await ENROLL(
@@ -156,7 +172,7 @@ describe('POST /api/users/me/2fa/enroll', () => {
   })
 
   it('refuses a re-enrollment with a wrong code', async () => {
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     await enrollTotp(u.id)
 
     const res = await ENROLL(
@@ -166,7 +182,7 @@ describe('POST /api/users/me/2fa/enroll', () => {
   })
 
   it('counts a failed re-enrollment code towards the lockout', async () => {
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     await enrollTotp(u.id)
     const auth = await makeAuthHeader(u)
 
@@ -178,22 +194,29 @@ describe('POST /api/users/me/2fa/enroll', () => {
   })
 
   it('rejects a malformed body', async () => {
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     const auth = await makeAuthHeader(u)
     for (const body of [{}, { password: '' }, { password: 'p', code: '' }]) {
       expect((await ENROLL(makeReq('/x', 'POST', body, auth))).status, JSON.stringify(body)).toBe(400)
     }
   })
 
-  it('refuses a non-root account even with the right password', async () => {
-    for (const role of ['admin', 'project_manager'] as const) {
-      const u = await createUser({ password: 'right-one', role })
-      const res = await ENROLL(
-        makeReq('/x', 'POST', { password: 'right-one' }, await makeAuthHeader(u)),
-      )
-      expect(res.status, role).toBe(403)
-      expect((await res.json()).error).toMatch(/root account only/)
-    }
+  it('refuses a project manager even with the right password', async () => {
+    const u = await createUser({ password: 'right-one', role: 'project_manager' })
+    const res = await ENROLL(
+      makeReq('/x', 'POST', { password: 'right-one' }, await makeAuthHeader(u)),
+    )
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toMatch(/administrator accounts only/)
+  })
+
+  it('lets an admin enroll, which #36 refused', async () => {
+    const u = await createUser({ password: 'right-one', role: 'admin', secondFactor: false })
+    const res = await ENROLL(
+      makeReq('/x', 'POST', { password: 'right-one' }, await makeAuthHeader(u)),
+    )
+    expect(res.status).toBe(200)
+    expect((await res.json()).secret).toBeDefined()
   })
 })
 
@@ -203,7 +226,7 @@ describe('POST /api/users/me/2fa/confirm', () => {
   })
 
   it('activates the factor and returns the recovery codes exactly once', async () => {
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     const auth = await makeAuthHeader(u)
 
     const enrolled = await (await ENROLL(makeReq('/x', 'POST', { password: 'right-one' }, auth))).json()
@@ -228,7 +251,7 @@ describe('POST /api/users/me/2fa/confirm', () => {
   })
 
   it('rejects a wrong code without activating anything', async () => {
-    const u = await createUser({ password: 'right-one', role: 'root' })
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
     const auth = await makeAuthHeader(u)
     await ENROLL(makeReq('/x', 'POST', { password: 'right-one' }, auth))
 
@@ -238,17 +261,17 @@ describe('POST /api/users/me/2fa/confirm', () => {
   })
 
   it('rejects a malformed body', async () => {
-    const u = await createUser({ role: 'root' })
+    const u = await createUser({ role: 'root', secondFactor: false })
     const auth = await makeAuthHeader(u)
     for (const body of [{}, { code: '' }, { code: 'x'.repeat(65) }]) {
       expect((await CONFIRM(makeReq('/x', 'POST', body, auth))).status, JSON.stringify(body)).toBe(400)
     }
   })
 
-  it('refuses a non-root account, without a role check of its own', async () => {
+  it('refuses a project manager, without a role check of its own', async () => {
     // The handler has no role branch: the gate is in the service, so this is
     // what proves confirm cannot drift away from enroll.
-    const u = await createUser({ role: 'admin' })
+    const u = await createUser({ role: 'project_manager' })
     const secret = await enrollTotp(u.id, { confirmed: false })
     const res = await CONFIRM(
       makeReq('/x', 'POST', { code: currentTotpCode(secret) }, await makeAuthHeader(u)),

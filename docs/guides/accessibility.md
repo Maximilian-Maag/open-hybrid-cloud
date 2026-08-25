@@ -149,6 +149,17 @@ Adding one is a documentation project. Recorded as partially met, not claimed.
 
 - A new route is not scanned until it is listed in `AUTHED_PAGES` / `PUBLIC_PAGES`
   or reached by the detail-page block. The gate covers what it is told to cover.
+  **The policy gate now says so**: `page_is_in_the_a11y_gate` (`policy/a11y.rego`)
+  compares the route tree against those two arrays and denies a static page that
+  is not on either. It exists because forgetting the list does not turn the suite
+  red — it reports the same green result it did before the page existed, so the
+  gate quietly stops covering the app while continuing to look like it does.
+- The five detail pages — `/orders/[id]`, `/projects/[id]`, `/catalog/[id]`,
+  `/infrastructure/[id]`, `/admin/products/[id]` — are **not** scanned, and the
+  same rule warns about each. A static path list cannot name them: reaching one
+  needs a seeded record. They are where the tables, forms and status panels live,
+  so they are also the pages most likely to have a defect. The warning is there to
+  keep that gap stated rather than implied by the list's silence.
 - A new UI primitive is not checked until it is in `a11y.test.tsx`. jsdom cannot do
   `color-contrast` (no layout, no canvas), so contrast stays an e2e concern.
 - A new control needs the 44px floor. `Button`, `Input` and `Select` carry it; a

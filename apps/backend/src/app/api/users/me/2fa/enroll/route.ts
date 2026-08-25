@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
-import { requireAuth, isAuth } from '@/lib/auth/middleware'
+import { requireAuthPendingSecondFactor, isAuth } from '@/lib/auth/middleware'
 import { logAudit } from '@/lib/audit'
 import { getBranding } from '@/lib/services/admin/branding'
 import {
@@ -41,7 +41,7 @@ const EnrollSchema = z.object({
 })
 
 export async function POST(req: NextRequest) {
-  const session = await requireAuth(req)
+  const session = await requireAuthPendingSecondFactor(req)
   if (!isAuth(session)) return session
 
   const body = await req.json().catch(() => null)

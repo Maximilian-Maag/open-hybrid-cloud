@@ -130,9 +130,14 @@ export function SettingsForms({ token, initialName, email, role }: Props) {
 
       {/* Cosmetic only. The gate is `loadTwoFactorAccount` on the server, which
           answers 403 to every 2FA endpoint for any other role; this just keeps a
-          card nobody can use off the page. An SSO root sees it and is told by the
-          backend that their MFA belongs to the identity provider (issue #36). */}
-      {role === 'root' && <TwoFactorCard token={token} />}
+          card nobody can use off the page. An SSO administrator sees it and is
+          told by the backend that their MFA belongs to the identity provider
+          (issue #36).
+
+          Both administrative roles, since #197: `admin` must hold a factor too,
+          and a card that stayed root-only would have left them required to enroll
+          with nowhere to do it. */}
+      {(role === 'root' || role === 'admin') && <TwoFactorCard token={token} />}
     </div>
   )
 }

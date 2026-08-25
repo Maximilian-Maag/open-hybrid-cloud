@@ -3,6 +3,7 @@ import { get } from '@/lib/api'
 import { redirect, notFound } from 'next/navigation'
 import type { Order, OrderComment, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { RefreshButton } from '@/components/ui/RefreshButton'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
@@ -75,9 +76,15 @@ export default async function OrderDetailPage({ params }: Props) {
       <PageHeader
         title={`${t('order', lang)} #${order.id}`}
         actions={
-          <ButtonLink href="/orders" variant="secondary" size="sm">
-            {t('backToOrders', lang)}
-          </ButtonLink>
+          <>
+            {/* The order status, the per-pipeline outcomes and the elements'
+                outputs all arrive from CI minutes after the order was placed
+                (#202). Without this the only way to see them was a reload. */}
+            <RefreshButton />
+            <ButtonLink href="/orders" variant="secondary" size="sm">
+              {t('backToOrders', lang)}
+            </ButtonLink>
+          </>
         }
       />
 

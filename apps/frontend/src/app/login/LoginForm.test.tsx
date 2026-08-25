@@ -85,6 +85,42 @@ describe('LoginForm — no second factor', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/15 minutes/)
   })
 
+  /**
+   * A 500 is not about the credentials.
+   *
+   * `JWT_SECRET` under 32 characters makes every login fail with a 500 whose
+   * body says the server is misconfigured — and this used to render as "invalid
+   * email or password", so an operator checks the password they know is right,
+   * forever. The backend logs the real reason at startup; the person in front of
+   * the form never sees the log.
+   */
+  it('repeats a server error instead of blaming the password', async () => {
+    mockChallenge(
+      { ok: false, error: 'The server is misconfigured and cannot issue a session. See the server log.' },
+      500,
+    )
+
+    render(<LoginForm {...props} />)
+    await signInAsPassword()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/misconfigured/)
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  // Nothing is disclosed by admitting the server is broken: it is broken for
+  // every email, including ones that do not exist. A 401 stays generic, which is
+  // what stops the form being an account-existence oracle.
+  it('still says nothing specific for a rejected password', async () => {
+    mockChallenge({ ok: false, error: 'No user with that email' }, 401)
+
+    render(<LoginForm {...props} />)
+    await signInAsPassword()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).not.toHaveTextContent(/No user with that email/)
+    expect(alert).toHaveTextContent(/invalid/i)
+  })
+
   it('honours a same-site callbackUrl and ignores an absolute one', async () => {
     params = new URLSearchParams({ callbackUrl: '/orders' })
     mockChallenge({ ok: true, mfaRequired: false })

@@ -53,6 +53,10 @@ export default async function InfrastructurePage({ searchParams }: Props) {
   const canRetry = canExport
 
   const query = new URLSearchParams()
+  // Set first so it survives whatever the filters add, and so a bookmarked URL
+  // that happens to carry its own `lang` cannot make the rows disagree with the
+  // rest of the page.
+  query.set('lang', lang)
   for (const key of FILTER_KEYS) {
     const raw = params[key]
     // Take the first value if a key was repeated: the API expects one, and
@@ -61,11 +65,16 @@ export default async function InfrastructurePage({ searchParams }: Props) {
     if (value) query.set(key, value)
   }
   const qs = query.toString()
-  const isFiltered = qs !== ''
+  // `lang` is not a filter — it is always present now, so asking whether the
+  // query string is empty would report every page as filtered.
+  const isFiltered = FILTER_KEYS.some((key) => query.has(key))
 
   const [listRes, facetsRes] = await Promise.allSettled([
-    get<InfrastructureElement[]>(`/api/infrastructure${qs ? `?${qs}` : ''}`, token),
-    get<InfraFacets>('/api/infrastructure/facets', token),
+    get<InfrastructureElement[]>(`/api/infrastructure?${qs}`, token),
+    // Same language as the rows: the facets are the option list for the filters
+    // above them, and a dropdown naming products in another language reads as a
+    // list of products the user does not have.
+    get<InfraFacets>(`/api/infrastructure/facets?lang=${lang}`, token),
   ])
 
   // A rejected list is NOT an empty inventory. An invalid bookmarked filter comes

@@ -60,18 +60,50 @@ test_every_violation_has_a_rule_a_file_and_a_reason if {
 		"testCases": [{"file": "e2e/x.spec.ts", "line": 1, "title": "shows the thing", "asserts": false, "skipped": false}],
 		"pages": [{"file": "apps/frontend/src/app/x/page.tsx", "routePath": "/x", "dynamic": false, "inA11ySpec": false}],
 		"a11ySpecFile": "e2e/a11y.spec.ts",
+		# One code in each copy and not in the other, so both halves of rule 15 fire.
+		"languageLists": [
+			{
+				"file": "apps/frontend/src/lib/i18n.ts", "line": 1, "symbol": "SUPPORTED_LANGUAGES",
+				"what": "the language picker", "found": true, "codes": ["en"],
+			},
+			{
+				"file": "apps/backend/src/lib/ai/index.ts", "line": 6, "symbol": "LANGUAGES",
+				"what": "the AI translation prompt", "found": true, "codes": ["de"],
+			},
+		],
+		"eslintConfigs": [
+			{
+				"file": "apps/backend/eslint.config.mjs", "found": true,
+				"rules": [{"name": "eqeqeq", "value": "\"error\"", "line": 7}],
+			},
+			{"file": "apps/frontend/eslint.config.mjs", "found": true, "rules": []},
+		],
+		"envReads": [{"name": "SWEEP_SECRET", "file": "apps/backend/src/lib/x.ts", "line": 3, "app": "apps/backend"}],
+		"envExamples": [{
+			"file": ".env.example",
+			"keys": [{"name": "TRUST_PROXY", "line": 1}, {"name": "TRUST_PROXY", "line": 9}],
+			"duplicates": [{"name": "TRUST_PROXY", "line": 9, "firstLine": 1}],
+		}],
+		"envExampleFile": ".env.example",
+		"migrationColumns": [{
+			"file": "apps/backend/drizzle/0031_add_quantity.sql", "line": 12, "table": "orders",
+			"column": "quantity", "kind": "add", "notNull": true, "hasDefault": false, "backfilled": false,
+		}],
 	}
 
 	report := policy.report with input as facts
 
 	# Every rule in the catalogue fired at least once, so the assertion below is
 	# checking all of them rather than whichever two happened to be reachable.
-	# Sixteen names for the fourteen rules the catalogue now lists, because rule 4
-	# reports three different things about a journal — one that disagrees with the
-	# directory, a gap in the numbering, and a `when` that does not increase. The
-	# first is a broken deployment, the second is history, the third is the silent
-	# skip #194 fixed. If a new rule ships without a name here, this count says so.
-	count({v.rule | some v in array.concat(report.deny, report.warn)}) == 16
+	# Twenty-one names for the eighteen rules the catalogue now lists, because two
+	# of them report more than one thing. Rule 4 reports three things about a
+	# journal — one that disagrees with the directory, a gap in the numbering, and
+	# a `when` that does not increase; the first is a broken deployment, the second
+	# is history, the third is the silent skip #194 fixed. Rule 17 reports both an
+	# undocumented variable and a key documented twice, which are different edits
+	# in different places. If a new rule ships without a name here, this count says
+	# so.
+	count({v.rule | some v in array.concat(report.deny, report.warn)}) == 21
 
 	every v in array.concat(report.deny, report.warn) {
 		v.rule != ""

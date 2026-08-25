@@ -142,6 +142,11 @@ changed blind.
   snapshots exist, and 0001 is stale. The runtime migrator is unaffected, but the
   next `drizzle-kit generate` will fail or emit a corrupt duplicate migration.
   Regenerate the snapshots with `drizzle-kit`. *Dir:* `drizzle/meta/`.
+  **FIXED (issue #141).** It was worse than "will fail": by the time the gap ran
+  0002–0031 it emitted 194 lines of already-applied DDL including `ALTER TABLE
+  "pipeline_stacks" DROP COLUMN "webhook_url"`, whose 42703 is not idempotent to
+  `runBootstrap`, so the app would not boot. Closed by snapshotting the journal
+  tip rather than rewriting history — see the follow-up entry below.
 
 - **OAuth login flow (LOW–MEDIUM).** The Entra `id_token` is decoded but not
   verified (no JWKS/`aud`/`iss`), there's no `state`/`nonce` (login-CSRF), and
@@ -326,6 +331,19 @@ at all levels are in `docs/TEST_PLAN.md`.
   runtime migrator (`readMigrationFiles`) is unaffected; only `drizzle-kit
   generate` is impacted. Fix in a dedicated effort: regenerate the snapshot chain
   with drizzle-kit and verify against a fresh DB before relying on `db:generate`.
+  **FIXED (issue #141), without rewriting history.** The reasoning above holds —
+  the .sql files and `_journal.json` are untouched. What was missing is that
+  drizzle-kit only ever reads ONE snapshot when generating: the lexicographically
+  last `meta/*.json` (`preparePrevSnapshot`). The intermediate snapshots were
+  never needed; only the newest one is. `drizzle/meta/0031_snapshot.json` now
+  describes the journal tip, `pnpm --filter backend db:snapshot` regenerates it
+  after a hand-written migration, and `src/lib/db/journal.test.ts` fails if it
+  falls behind schema.ts again. Verified by building one database from the 28
+  migrations and another with `db:push` from schema.ts and diffing
+  `information_schema` — every column, index, check and foreign key now matches;
+  the only remaining differences are constraint NAMES (`*_fkey` from Postgres
+  versus drizzle's `*_users_id_fk`), which no code refers to and which renaming
+  would cost a 40-constraint migration to buy nothing.
 - **GitHub workflow-run ID correlation** — needs a design decision (correlate via
   a unique dispatch input / run-name) and live-GitHub testing.
 - **OAuth hardening** (id_token signature/`aud`/`iss` verification, `state`/`nonce`,

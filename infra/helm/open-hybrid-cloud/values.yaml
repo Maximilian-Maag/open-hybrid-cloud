@@ -94,12 +94,6 @@ backend:
     frontendUrl: "https://shop.example.com"
     exchangeRateApiUrl: "https://api.exchangerate.host/latest"
 
-    # Optional — Microsoft Entra ID (OIDC)
-    entra:
-      tenantId: ""
-      clientId: ""
-      clientSecret: ""
-
     # Optional — SMTP
     smtp:
       host: ""

@@ -143,10 +143,13 @@ changed blind.
   next `drizzle-kit generate` will fail or emit a corrupt duplicate migration.
   Regenerate the snapshots with `drizzle-kit`. *Dir:* `drizzle/meta/`.
 
-- **OAuth login flow (LOW–MEDIUM).** The Entra `id_token` is decoded but not
+- **OAuth login flow (LOW–MEDIUM).** ~~The Entra `id_token` is decoded but not
   verified (no JWKS/`aud`/`iss`), there's no `state`/`nonce` (login-CSRF), and
-  the session JWT is delivered as a URL query param. Needs an auth-flow rework.
-  *File:* `auth/callback/route.ts`.
+  the session JWT is delivered as a URL query param. Needs an auth-flow rework.~~
+  Resolved by removal in #139: the flow was dead end-to-end — no route started
+  it and nothing on the frontend read its result — so the handler, the `ENTRA_*`
+  configuration and the proxy rules that advertised it are gone rather than
+  reworked; #250 carries what a real implementation needs. *File was:* `auth/callback/route.ts`.
 
 - **Login rate-limit is bypassable (MEDIUM).** Keyed on the spoofable
   `X-Forwarded-For`; the in-memory bucket is also unbounded. Derive the IP from

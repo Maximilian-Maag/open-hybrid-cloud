@@ -413,23 +413,6 @@ registry.registerPath({
   },
 })
 
-registry.registerPath({
-  method: 'get',
-  path: '/auth/callback',
-  summary: 'OIDC / Entra ID callback — exchanges code for JWT and redirects',
-  tags: ['Auth'],
-  security: [],
-  request: {
-    query: z.object({ code: z.string() }),
-  },
-  responses: {
-    302: { description: 'Redirect to frontend with JWT token' },
-    400: { description: 'Missing or invalid code / claims' },
-    500: { description: 'Entra ID not configured' },
-    502: { description: 'Token exchange failed' },
-  },
-})
-
 // ─── Costs ────────────────────────────────────────────────────────────────────
 
 const costBucketSchema = z.object({

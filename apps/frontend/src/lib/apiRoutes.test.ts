@@ -62,13 +62,21 @@ function ingressFrontendPaths(): string[] {
 }
 
 /**
- * Entra ID's OAuth callback. It is the BACKEND's, and it sits inside the
- * frontend's NextAuth prefix, so it survives only as an exact match that
- * outranks `/api/auth`. Nothing else in this file would notice it going the
- * wrong way: every other assertion here checks that frontend paths reach the
- * frontend, and this one reaching the frontend breaks SSO silently.
+ * Entra ID's OAuth callback used to live here.
+ *
+ * It was the BACKEND's, and it sits inside the frontend's NextAuth prefix, so it
+ * survived only as an exact match outranking `/api/auth`. #139 removed the flow:
+ * nothing on the frontend ever consumed its result, and it handed the session
+ * JWT back in a query string. The backend no longer serves the path, so a proxy
+ * rule pointing at it now sends the browser to a 404 — and, worse, would be read
+ * by the next person as evidence that SSO exists.
+ *
+ * Asserted as an absence rather than deleted, so re-adding the routing without
+ * re-adding the route fails here instead of in production. #250 has to invert
+ * this assertion back when SSO is built for real — it is the only check that
+ * would notice the callback landing on the wrong service.
  */
-const BACKEND_INSIDE_FRONTEND_PREFIX = '/api/auth/callback'
+const REMOVED_BACKEND_PATH = '/api/auth/callback'
 
 /** Paths the Helm ingress sends to the BACKEND by an exact match. */
 function ingressExactBackendPaths(): string[] {
@@ -129,13 +137,11 @@ describe('the proxy configs know which /api routes are the frontend’s', () => 
   it.each([
     ['the Helm ingress', ingressExactBackendPaths],
     ['nginx.conf.example', nginxExactBackendPaths],
-  ])('%s keeps /api/auth/callback on the backend', (_name, exactBackendPaths) => {
-    // The inverse of every assertion above, and the one that fails silently:
-    // remove the exact-match block and `/api/auth/callback` is swallowed by the
-    // `/api/auth` frontend prefix, Entra ID's OAuth callback lands on a Next.js
-    // app that does not serve it, and SSO breaks while this whole file still
-    // passes.
-    expect(exactBackendPaths()).toContain(BACKEND_INSIDE_FRONTEND_PREFIX)
+  ])('%s no longer sends /api/auth/callback to the backend (#139)', (_name, exactBackendPaths) => {
+    // The backend does not serve that path any more. A rule still pointing at it
+    // is a 404 waiting for whoever reinstates the Entra app registration, and it
+    // reads as evidence that SSO works — which is what #139 was about.
+    expect(exactBackendPaths()).not.toContain(REMOVED_BACKEND_PATH)
   })
 
   it('the frontend’s middleware exempts exactly these paths from auth', () => {

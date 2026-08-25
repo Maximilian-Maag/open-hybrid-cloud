@@ -49,8 +49,17 @@ const FORWARD_REQUEST_HEADERS = ['content-type', 'accept', 'accept-language']
  * `content-disposition` is load-bearing and easy to miss: the cost, audit and
  * infrastructure exports are fetched as blobs precisely so the token never lands
  * in a URL, and the filename comes back in this header.
+ *
+ * `content-length` is deliberately NOT here, and neither is `content-encoding`.
+ * Node's fetch asks the upstream for gzip on its own and decompresses what comes
+ * back, but leaves the original `Content-Length` on the response — so copying it
+ * would describe the compressed size while `upstream.body` carries the
+ * decompressed bytes, and every response over the compression threshold would
+ * arrive truncated. Both apps are Next.js and Next compresses by default, so
+ * this is the normal case rather than an edge one. Letting the runtime frame the
+ * response is correct and costs nothing.
  */
-const FORWARD_RESPONSE_HEADERS = ['content-type', 'content-disposition', 'content-length']
+const FORWARD_RESPONSE_HEADERS = ['content-type', 'content-disposition']
 
 /** A 401 the browser can act on, rather than the login page's HTML. */
 const unauthorized = () =>

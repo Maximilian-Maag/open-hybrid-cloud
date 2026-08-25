@@ -3478,7 +3478,7 @@ export default async function AdminWidgetsPage() {
   if (!session) redirect('/login')
 
   // No token argument, and never a token prop into a client component:
-  // serverApi reads it from the session on the server (see §JWT Authentication).
+  // serverApi reads it from the session on the server -- see JWT Authentication.
   const widgets = await fetchWidgets()
 
   return (

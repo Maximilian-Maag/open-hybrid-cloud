@@ -148,6 +148,20 @@ describe('the API proxy', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('does not copy the upstream Content-Length', async () => {
+    // Node's fetch asks for gzip itself and decompresses the body, but leaves the
+    // original Content-Length on the headers. Copying it would describe the
+    // compressed size while the body carries the decompressed bytes, and the
+    // browser would truncate every response over the compression threshold.
+    upstream({ ok: true }, {
+      headers: { 'content-type': 'application/json', 'content-length': '17' },
+    })
+
+    const res = await GET(req('http://localhost/api/proxy/api/orders'), params('api', 'orders'))
+
+    expect(res.headers.get('content-length')).not.toBe('17')
+  })
+
   it('passes a 204 through', async () => {
     // Every DELETE in the app ends here. A `Response` built with a non-null body
     // and status 204 throws, so this is the shape most likely to break in a way

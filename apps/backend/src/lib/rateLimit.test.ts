@@ -38,6 +38,19 @@ describe('createRateLimitBucket', () => {
     expect(bucket.isRateLimited('k')).toBe(false)
   })
 
+  // The boundary itself, which neither neighbouring test touches: the window is
+  // [start, resetAt), so at exactly `resetAt` it is over. `<` kept a capped key
+  // limited for that last millisecond.
+  it('expires the window at exactly its reset time', () => {
+    vi.useFakeTimers()
+    const bucket = createRateLimitBucket(1, 60_000)
+
+    expect(bucket.isRateLimited('k')).toBe(false)
+    vi.advanceTimersByTime(60_000)
+
+    expect(bucket.isRateLimited('k')).toBe(false)
+  })
+
   it('does not reopen the window early', () => {
     vi.useFakeTimers()
     const bucket = createRateLimitBucket(1, 60_000)

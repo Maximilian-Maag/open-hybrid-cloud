@@ -64,7 +64,11 @@ export const createRateLimitBucket = (max: number, windowMs: number): RateLimitB
    */
   const prune = (now: number): void => {
     for (const [key, entry] of attempts) {
-      if (entry.resetAt < now) attempts.delete(key)
+      // `<=`, not `<`: the window is [start, resetAt), so an entry whose reset
+      // time is exactly now has expired. `<` kept a capped key limited for the
+      // last millisecond of its window — inherited from the login route this was
+      // extracted from, and wrong in both.
+      if (entry.resetAt <= now) attempts.delete(key)
     }
     if (attempts.size > MAX_KEYS) {
       // Computed once. Reading `attempts.size` inside the loop would compare
@@ -83,7 +87,7 @@ export const createRateLimitBucket = (max: number, windowMs: number): RateLimitB
       const now = Date.now()
       prune(now)
       const entry = attempts.get(key)
-      if (!entry || entry.resetAt < now) {
+      if (!entry || entry.resetAt <= now) {
         attempts.set(key, { count: 1, resetAt: now + windowMs })
         return false
       }

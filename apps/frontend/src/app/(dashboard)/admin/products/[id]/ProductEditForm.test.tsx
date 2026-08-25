@@ -205,8 +205,6 @@ describe('ProductEditForm overhead cost centre', () => {
 
   it('saves the chosen account, and clears it when the mode moves away from overhead', async () => {
     const user = userEvent.setup()
-    const { put } = await import('@/lib/api')
-    const mockedPut = vi.mocked(put)
     mockedPut.mockReset().mockResolvedValue(undefined as never)
     renderForm(overheadProduct(null))
 
@@ -275,8 +273,6 @@ describe('ProductEditForm trial configuration', () => {
 
   it('saves the flag and duration', async () => {
     const user = userEvent.setup()
-    const { put } = await import('@/lib/api')
-    const mockedPut = vi.mocked(put)
     mockedPut.mockReset().mockResolvedValue(undefined as never)
     renderForm(trialProduct(true, 30))
 
@@ -293,8 +289,6 @@ describe('ProductEditForm trial configuration', () => {
     // The server rejects a non-positive duration, which would surface as a
     // confusing save error on a field the operator may not have meant to empty.
     const user = userEvent.setup()
-    const { put } = await import('@/lib/api')
-    const mockedPut = vi.mocked(put)
     mockedPut.mockReset().mockResolvedValue(undefined as never)
     renderForm(trialProduct(true, 30))
 

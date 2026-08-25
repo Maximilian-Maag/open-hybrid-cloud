@@ -525,6 +525,7 @@ export type Translations = {
   editCiSource: string
   deleteCiSourceTitle: string
   failedToLoadCiSources: string
+  failedToLoadEnvironments: string
   // Admin (#100): Users
   addUser: string
   noUsersYet: string
@@ -533,6 +534,7 @@ export type Translations = {
   deleteUserTitle: string
   deleteUserPrompt: string
   failedToLoadUsers: string
+  failedToLoadAuditEntries: string
   userCreatedToast: string
   userUpdatedToast: string
   userDeletedToast: string
@@ -1109,6 +1111,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Редактиране на CI източника',
     deleteCiSourceTitle: 'Изтриване на CI източника',
     failedToLoadCiSources: 'Зареждането на CI източниците не бе успешно.',
+    failedToLoadEnvironments: 'Зареждането на средите не бе успешно.',
     // Admin (#100): Users
     addUser: 'Добавяне на потребител',
     noUsersYet: 'Все още няма потребители.',
@@ -1117,6 +1120,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Изтриване на потребителя',
     deleteUserPrompt: 'Изтриване на потребителя',
     failedToLoadUsers: 'Зареждането на потребителите не бе успешно.',
+    failedToLoadAuditEntries: 'Зареждането на записите от одита не бе успешно.',
     userCreatedToast: 'Потребителят е създаден.',
     userUpdatedToast: 'Потребителят е актуализиран.',
     userDeletedToast: 'Потребителят е изтрит.',
@@ -1680,6 +1684,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Upravit zdroj CI',
     deleteCiSourceTitle: 'Smazat zdroj CI',
     failedToLoadCiSources: 'Nepodařilo se načíst zdroje CI.',
+    failedToLoadEnvironments: 'Nepodařilo se načíst prostředí.',
     // Admin (#100): Users
     addUser: 'Přidat uživatele',
     noUsersYet: 'Zatím žádní uživatelé.',
@@ -1688,6 +1693,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Smazat uživatele',
     deleteUserPrompt: 'Smazat uživatele',
     failedToLoadUsers: 'Nepodařilo se načíst uživatele.',
+    failedToLoadAuditEntries: 'Nepodařilo se načíst záznamy auditu.',
     userCreatedToast: 'Uživatel byl vytvořen.',
     userUpdatedToast: 'Uživatel byl aktualizován.',
     userDeletedToast: 'Uživatel byl smazán.',
@@ -2251,6 +2257,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Rediger CI-kilde',
     deleteCiSourceTitle: 'Slet CI-kilde',
     failedToLoadCiSources: 'Kunne ikke indlæse CI-kilder.',
+    failedToLoadEnvironments: 'Kunne ikke indlæse miljøer.',
     // Admin (#100): Users
     addUser: 'Tilføj bruger',
     noUsersYet: 'Ingen brugere endnu.',
@@ -2259,6 +2266,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Slet bruger',
     deleteUserPrompt: 'Slet bruger',
     failedToLoadUsers: 'Kunne ikke indlæse brugere.',
+    failedToLoadAuditEntries: 'Kunne ikke indlæse revisionsposter.',
     userCreatedToast: 'Bruger oprettet.',
     userUpdatedToast: 'Bruger opdateret.',
     userDeletedToast: 'Bruger slettet.',
@@ -2822,6 +2830,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'CI-Quelle bearbeiten',
     deleteCiSourceTitle: 'CI-Quelle löschen',
     failedToLoadCiSources: 'CI-Quellen konnten nicht geladen werden.',
+    failedToLoadEnvironments: 'Umgebungen konnten nicht geladen werden.',
     // Admin (#100): Users
     addUser: 'Benutzer hinzufügen',
     noUsersYet: 'Noch keine Benutzer.',
@@ -2830,6 +2839,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Benutzer löschen',
     deleteUserPrompt: 'Benutzer löschen',
     failedToLoadUsers: 'Benutzer konnten nicht geladen werden.',
+    failedToLoadAuditEntries: 'Auditeinträge konnten nicht geladen werden.',
     userCreatedToast: 'Benutzer erstellt.',
     userUpdatedToast: 'Benutzer aktualisiert.',
     userDeletedToast: 'Benutzer gelöscht.',
@@ -3393,6 +3403,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Επεξεργασία πηγής CI',
     deleteCiSourceTitle: 'Διαγραφή πηγής CI',
     failedToLoadCiSources: 'Η φόρτωση των πηγών CI απέτυχε.',
+    failedToLoadEnvironments: 'Η φόρτωση των περιβαλλόντων απέτυχε.',
     // Admin (#100): Users
     addUser: 'Προσθήκη χρήστη',
     noUsersYet: 'Δεν υπάρχουν ακόμη χρήστες.',
@@ -3401,6 +3412,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Διαγραφή χρήστη',
     deleteUserPrompt: 'Διαγραφή χρήστη',
     failedToLoadUsers: 'Η φόρτωση των χρηστών απέτυχε.',
+    failedToLoadAuditEntries: 'Η φόρτωση των εγγραφών ελέγχου απέτυχε.',
     userCreatedToast: 'Ο χρήστης δημιουργήθηκε.',
     userUpdatedToast: 'Ο χρήστης ενημερώθηκε.',
     userDeletedToast: 'Ο χρήστης διαγράφηκε.',
@@ -3964,6 +3976,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Edit CI Source',
     deleteCiSourceTitle: 'Delete CI Source',
     failedToLoadCiSources: 'Failed to load CI sources.',
+    failedToLoadEnvironments: 'Failed to load environments.',
     // Admin (#100): Users
     addUser: 'Add User',
     noUsersYet: 'No users yet.',
@@ -3972,6 +3985,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Delete User',
     deleteUserPrompt: 'Delete user',
     failedToLoadUsers: 'Failed to load users.',
+    failedToLoadAuditEntries: 'Failed to load audit entries.',
     userCreatedToast: 'User created.',
     userUpdatedToast: 'User updated.',
     userDeletedToast: 'User deleted.',
@@ -4535,6 +4549,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Editar fuente de CI',
     deleteCiSourceTitle: 'Eliminar fuente de CI',
     failedToLoadCiSources: 'Error al cargar las fuentes de CI.',
+    failedToLoadEnvironments: 'Error al cargar los entornos.',
     // Admin (#100): Users
     addUser: 'Añadir usuario',
     noUsersYet: 'Aún no hay usuarios.',
@@ -4543,6 +4558,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Eliminar usuario',
     deleteUserPrompt: 'Eliminar usuario',
     failedToLoadUsers: 'Error al cargar los usuarios.',
+    failedToLoadAuditEntries: 'Error al cargar las entradas de auditoría.',
     userCreatedToast: 'Usuario creado.',
     userUpdatedToast: 'Usuario actualizado.',
     userDeletedToast: 'Usuario eliminado.',
@@ -5106,6 +5122,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Muuda CI allikat',
     deleteCiSourceTitle: 'Kustuta CI allikas',
     failedToLoadCiSources: 'CI allikate laadimine ebaõnnestus.',
+    failedToLoadEnvironments: 'Keskkondade laadimine ebaõnnestus.',
     // Admin (#100): Users
     addUser: 'Lisa kasutaja',
     noUsersYet: 'Kasutajaid ei ole veel.',
@@ -5114,6 +5131,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Kustuta kasutaja',
     deleteUserPrompt: 'Kustuta kasutaja',
     failedToLoadUsers: 'Kasutajate laadimine ebaõnnestus.',
+    failedToLoadAuditEntries: 'Auditikirjete laadimine ebaõnnestus.',
     userCreatedToast: 'Kasutaja on loodud.',
     userUpdatedToast: 'Kasutaja on värskendatud.',
     userDeletedToast: 'Kasutaja on kustutatud.',
@@ -5677,6 +5695,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Muokkaa CI-lähdettä',
     deleteCiSourceTitle: 'Poista CI-lähde',
     failedToLoadCiSources: 'CI-lähteiden lataaminen epäonnistui.',
+    failedToLoadEnvironments: 'Ympäristöjen lataaminen epäonnistui.',
     // Admin (#100): Users
     addUser: 'Lisää käyttäjä',
     noUsersYet: 'Ei käyttäjiä vielä.',
@@ -5685,6 +5704,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Poista käyttäjä',
     deleteUserPrompt: 'Poista käyttäjä',
     failedToLoadUsers: 'Käyttäjien lataaminen epäonnistui.',
+    failedToLoadAuditEntries: 'Auditointimerkintöjen lataaminen epäonnistui.',
     userCreatedToast: 'Käyttäjä luotu.',
     userUpdatedToast: 'Käyttäjä päivitetty.',
     userDeletedToast: 'Käyttäjä poistettu.',
@@ -6248,6 +6268,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Modifier la source CI',
     deleteCiSourceTitle: 'Supprimer la source CI',
     failedToLoadCiSources: 'Échec du chargement des sources CI.',
+    failedToLoadEnvironments: 'Échec du chargement des environnements.',
     // Admin (#100): Users
     addUser: 'Ajouter un utilisateur',
     noUsersYet: 'Aucun utilisateur pour le moment.',
@@ -6256,6 +6277,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Supprimer l’utilisateur',
     deleteUserPrompt: 'Supprimer l’utilisateur',
     failedToLoadUsers: 'Échec du chargement des utilisateurs.',
+    failedToLoadAuditEntries: "Échec du chargement des entrées d'audit.",
     userCreatedToast: 'Utilisateur créé.',
     userUpdatedToast: 'Utilisateur mis à jour.',
     userDeletedToast: 'Utilisateur supprimé.',
@@ -6819,6 +6841,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Cuir an fhoinse CI in eagar',
     deleteCiSourceTitle: 'Scrios an fhoinse CI',
     failedToLoadCiSources: 'Theip ar luchtú na bhfoinsí CI.',
+    failedToLoadEnvironments: 'Theip ar luchtú na dtimpeallachtaí.',
     // Admin (#100): Users
     addUser: 'Cuir úsáideoir leis',
     noUsersYet: 'Níl aon úsáideoir ann fós.',
@@ -6827,6 +6850,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Scrios an úsáideoir',
     deleteUserPrompt: 'Scrios an úsáideoir',
     failedToLoadUsers: 'Theip ar luchtú na n-úsáideoirí.',
+    failedToLoadAuditEntries: 'Theip ar luchtú na n-iontrálacha iniúchta.',
     userCreatedToast: 'Cruthaíodh an úsáideoir.',
     userUpdatedToast: 'Nuashonraíodh an úsáideoir.',
     userDeletedToast: 'Scriosadh an úsáideoir.',
@@ -7390,6 +7414,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Uredi CI izvor',
     deleteCiSourceTitle: 'Izbriši CI izvor',
     failedToLoadCiSources: 'Učitavanje CI izvora nije uspjelo.',
+    failedToLoadEnvironments: 'Učitavanje okruženja nije uspjelo.',
     // Admin (#100): Users
     addUser: 'Dodaj korisnika',
     noUsersYet: 'Još nema korisnika.',
@@ -7398,6 +7423,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Izbriši korisnika',
     deleteUserPrompt: 'Izbriši korisnika',
     failedToLoadUsers: 'Učitavanje korisnika nije uspjelo.',
+    failedToLoadAuditEntries: 'Učitavanje zapisa revizije nije uspjelo.',
     userCreatedToast: 'Korisnik je stvoren.',
     userUpdatedToast: 'Korisnik je ažuriran.',
     userDeletedToast: 'Korisnik je izbrisan.',
@@ -7961,6 +7987,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'CI-forrás szerkesztése',
     deleteCiSourceTitle: 'CI-forrás törlése',
     failedToLoadCiSources: 'A CI-források betöltése sikertelen volt.',
+    failedToLoadEnvironments: 'A környezetek betöltése sikertelen volt.',
     // Admin (#100): Users
     addUser: 'Felhasználó hozzáadása',
     noUsersYet: 'Még nincs felhasználó.',
@@ -7969,6 +7996,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Felhasználó törlése',
     deleteUserPrompt: 'Felhasználó törlése',
     failedToLoadUsers: 'A felhasználók betöltése sikertelen volt.',
+    failedToLoadAuditEntries: 'Az auditbejegyzések betöltése sikertelen volt.',
     userCreatedToast: 'A felhasználó létrehozva.',
     userUpdatedToast: 'A felhasználó frissítve.',
     userDeletedToast: 'A felhasználó törölve.',
@@ -8532,6 +8560,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Modifica fonte CI',
     deleteCiSourceTitle: 'Elimina fonte CI',
     failedToLoadCiSources: 'Caricamento delle fonti CI non riuscito.',
+    failedToLoadEnvironments: 'Caricamento degli ambienti non riuscito.',
     // Admin (#100): Users
     addUser: 'Aggiungi utente',
     noUsersYet: 'Ancora nessun utente.',
@@ -8540,6 +8569,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Elimina utente',
     deleteUserPrompt: 'Elimina utente',
     failedToLoadUsers: 'Caricamento degli utenti non riuscito.',
+    failedToLoadAuditEntries: 'Caricamento delle voci di audit non riuscito.',
     userCreatedToast: 'Utente creato.',
     userUpdatedToast: 'Utente aggiornato.',
     userDeletedToast: 'Utente eliminato.',
@@ -9103,6 +9133,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Redaguoti CI šaltinį',
     deleteCiSourceTitle: 'Ištrinti CI šaltinį',
     failedToLoadCiSources: 'Nepavyko įkelti CI šaltinių.',
+    failedToLoadEnvironments: 'Nepavyko įkelti aplinkų.',
     // Admin (#100): Users
     addUser: 'Pridėti naudotoją',
     noUsersYet: 'Kol kas nėra naudotojų.',
@@ -9111,6 +9142,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Ištrinti naudotoją',
     deleteUserPrompt: 'Ištrinti naudotoją',
     failedToLoadUsers: 'Nepavyko įkelti naudotojų.',
+    failedToLoadAuditEntries: 'Nepavyko įkelti audito įrašų.',
     userCreatedToast: 'Naudotojas sukurtas.',
     userUpdatedToast: 'Naudotojas atnaujintas.',
     userDeletedToast: 'Naudotojas ištrintas.',
@@ -9674,6 +9706,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Redigēt CI avotu',
     deleteCiSourceTitle: 'Dzēst CI avotu',
     failedToLoadCiSources: 'Neizdevās ielādēt CI avotus.',
+    failedToLoadEnvironments: 'Neizdevās ielādēt vides.',
     // Admin (#100): Users
     addUser: 'Pievienot lietotāju',
     noUsersYet: 'Vēl nav lietotāju.',
@@ -9682,6 +9715,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Dzēst lietotāju',
     deleteUserPrompt: 'Dzēst lietotāju',
     failedToLoadUsers: 'Neizdevās ielādēt lietotājus.',
+    failedToLoadAuditEntries: 'Neizdevās ielādēt audita ierakstus.',
     userCreatedToast: 'Lietotājs izveidots.',
     userUpdatedToast: 'Lietotājs atjaunināts.',
     userDeletedToast: 'Lietotājs dzēsts.',
@@ -10245,6 +10279,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Editja s-sors CI',
     deleteCiSourceTitle: 'Ħassar is-sors CI',
     failedToLoadCiSources: 'It-tagħbija tas-sorsi CI ma rnexxietx.',
+    failedToLoadEnvironments: 'It-tagħbija tal-ambjenti ma rnexxietx.',
     // Admin (#100): Users
     addUser: 'Żid utent',
     noUsersYet: 'L-ebda utent s’issa.',
@@ -10253,6 +10288,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Ħassar l-utent',
     deleteUserPrompt: 'Ħassar l-utent',
     failedToLoadUsers: 'It-tagħbija tal-utenti ma rnexxietx.',
+    failedToLoadAuditEntries: 'It-tagħbija tal-entrati tal-verifika ma rnexxietx.',
     userCreatedToast: 'L-utent inħoloq.',
     userUpdatedToast: 'L-utent ġie aġġornat.',
     userDeletedToast: 'L-utent tħassar.',
@@ -10816,6 +10852,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'CI-bron bewerken',
     deleteCiSourceTitle: 'CI-bron verwijderen',
     failedToLoadCiSources: 'Laden van CI-bronnen mislukt.',
+    failedToLoadEnvironments: 'Laden van omgevingen mislukt.',
     // Admin (#100): Users
     addUser: 'Gebruiker toevoegen',
     noUsersYet: 'Nog geen gebruikers.',
@@ -10824,6 +10861,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Gebruiker verwijderen',
     deleteUserPrompt: 'Gebruiker verwijderen',
     failedToLoadUsers: 'Laden van gebruikers mislukt.',
+    failedToLoadAuditEntries: 'Laden van auditregels mislukt.',
     userCreatedToast: 'Gebruiker aangemaakt.',
     userUpdatedToast: 'Gebruiker bijgewerkt.',
     userDeletedToast: 'Gebruiker verwijderd.',
@@ -11387,6 +11425,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Edytuj źródło CI',
     deleteCiSourceTitle: 'Usuń źródło CI',
     failedToLoadCiSources: 'Nie udało się wczytać źródeł CI.',
+    failedToLoadEnvironments: 'Nie udało się wczytać środowisk.',
     // Admin (#100): Users
     addUser: 'Dodaj użytkownika',
     noUsersYet: 'Brak użytkowników.',
@@ -11395,6 +11434,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Usuń użytkownika',
     deleteUserPrompt: 'Usuń użytkownika',
     failedToLoadUsers: 'Nie udało się wczytać użytkowników.',
+    failedToLoadAuditEntries: 'Nie udało się wczytać wpisów audytu.',
     userCreatedToast: 'Użytkownik utworzony.',
     userUpdatedToast: 'Użytkownik zaktualizowany.',
     userDeletedToast: 'Użytkownik usunięty.',
@@ -11958,6 +11998,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Editar fonte de CI',
     deleteCiSourceTitle: 'Eliminar fonte de CI',
     failedToLoadCiSources: 'Falha ao carregar as fontes de CI.',
+    failedToLoadEnvironments: 'Falha ao carregar os ambientes.',
     // Admin (#100): Users
     addUser: 'Adicionar utilizador',
     noUsersYet: 'Ainda não há utilizadores.',
@@ -11966,6 +12007,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Eliminar utilizador',
     deleteUserPrompt: 'Eliminar utilizador',
     failedToLoadUsers: 'Falha ao carregar os utilizadores.',
+    failedToLoadAuditEntries: 'Falha ao carregar as entradas de auditoria.',
     userCreatedToast: 'Utilizador criado.',
     userUpdatedToast: 'Utilizador atualizado.',
     userDeletedToast: 'Utilizador eliminado.',
@@ -12529,6 +12571,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Editați sursa CI',
     deleteCiSourceTitle: 'Ștergeți sursa CI',
     failedToLoadCiSources: 'Încărcarea surselor CI a eșuat.',
+    failedToLoadEnvironments: 'Încărcarea mediilor a eșuat.',
     // Admin (#100): Users
     addUser: 'Adăugați utilizator',
     noUsersYet: 'Niciun utilizator momentan.',
@@ -12537,6 +12580,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Ștergeți utilizatorul',
     deleteUserPrompt: 'Ștergeți utilizatorul',
     failedToLoadUsers: 'Încărcarea utilizatorilor a eșuat.',
+    failedToLoadAuditEntries: 'Încărcarea intrărilor de audit a eșuat.',
     userCreatedToast: 'Utilizator creat.',
     userUpdatedToast: 'Utilizator actualizat.',
     userDeletedToast: 'Utilizator șters.',
@@ -13100,6 +13144,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Изменить источник CI',
     deleteCiSourceTitle: 'Удалить источник CI',
     failedToLoadCiSources: 'Не удалось загрузить источники CI.',
+    failedToLoadEnvironments: 'Не удалось загрузить среды.',
     // Admin (#100): Users
     addUser: 'Добавить пользователя',
     noUsersYet: 'Пользователей пока нет.',
@@ -13108,6 +13153,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Удалить пользователя',
     deleteUserPrompt: 'Удалить пользователя',
     failedToLoadUsers: 'Не удалось загрузить пользователей.',
+    failedToLoadAuditEntries: 'Не удалось загрузить записи аудита.',
     userCreatedToast: 'Пользователь создан.',
     userUpdatedToast: 'Пользователь обновлён.',
     userDeletedToast: 'Пользователь удалён.',
@@ -13671,6 +13717,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Upraviť zdroj CI',
     deleteCiSourceTitle: 'Vymazať zdroj CI',
     failedToLoadCiSources: 'Nepodarilo sa načítať zdroje CI.',
+    failedToLoadEnvironments: 'Nepodarilo sa načítať prostredia.',
     // Admin (#100): Users
     addUser: 'Pridať používateľa',
     noUsersYet: 'Zatiaľ žiadni používatelia.',
@@ -13679,6 +13726,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Vymazať používateľa',
     deleteUserPrompt: 'Vymazať používateľa',
     failedToLoadUsers: 'Nepodarilo sa načítať používateľov.',
+    failedToLoadAuditEntries: 'Nepodarilo sa načítať záznamy auditu.',
     userCreatedToast: 'Používateľ bol vytvorený.',
     userUpdatedToast: 'Používateľ bol aktualizovaný.',
     userDeletedToast: 'Používateľ bol vymazaný.',
@@ -14242,6 +14290,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Uredi vir CI',
     deleteCiSourceTitle: 'Izbriši vir CI',
     failedToLoadCiSources: 'Nalaganje virov CI ni uspelo.',
+    failedToLoadEnvironments: 'Nalaganje okolij ni uspelo.',
     // Admin (#100): Users
     addUser: 'Dodaj uporabnika',
     noUsersYet: 'Še ni uporabnikov.',
@@ -14250,6 +14299,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Izbriši uporabnika',
     deleteUserPrompt: 'Izbriši uporabnika',
     failedToLoadUsers: 'Nalaganje uporabnikov ni uspelo.',
+    failedToLoadAuditEntries: 'Nalaganje revizijskih vnosov ni uspelo.',
     userCreatedToast: 'Uporabnik je bil ustvarjen.',
     userUpdatedToast: 'Uporabnik je bil posodobljen.',
     userDeletedToast: 'Uporabnik je bil izbrisan.',
@@ -14813,6 +14863,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     editCiSource: 'Redigera CI-källa',
     deleteCiSourceTitle: 'Ta bort CI-källa',
     failedToLoadCiSources: 'Det gick inte att läsa in CI-källor.',
+    failedToLoadEnvironments: 'Det gick inte att läsa in miljöer.',
     // Admin (#100): Users
     addUser: 'Lägg till användare',
     noUsersYet: 'Inga användare ännu.',
@@ -14821,6 +14872,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     deleteUserTitle: 'Ta bort användare',
     deleteUserPrompt: 'Ta bort användare',
     failedToLoadUsers: 'Det gick inte att läsa in användare.',
+    failedToLoadAuditEntries: 'Det gick inte att läsa in granskningsposter.',
     userCreatedToast: 'Användare skapad.',
     userUpdatedToast: 'Användare uppdaterad.',
     userDeletedToast: 'Användare borttagen.',

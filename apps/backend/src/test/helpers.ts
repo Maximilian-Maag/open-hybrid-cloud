@@ -238,6 +238,32 @@ export const createOrder = async (
   return order
 }
 
+/**
+ * Give a product something to deploy with, in one environment.
+ *
+ * Needed by any fixture that expects an order to reach 'provisioning': since #206
+ * a product with no webhook and no pipeline stack for the environment is refused
+ * at order time rather than left in a provisioning state nothing can complete.
+ */
+export const createProductWebhook = async (
+  productId: number,
+  environmentId: number,
+  overrides?: { name?: string; webhookUrl?: string; webhookToken?: string; execOrder?: number },
+) => {
+  const [hook] = await db
+    .insert(schema.productWebhooks)
+    .values({
+      productId,
+      environmentId,
+      name: overrides?.name ?? 'Deploy',
+      webhookUrl: overrides?.webhookUrl ?? 'https://gitlab.example.com/api/v4/projects/1/trigger/pipeline',
+      webhookToken: overrides?.webhookToken ?? 'trigger-token',
+      ...(overrides?.execOrder !== undefined ? { execOrder: overrides.execOrder } : {}),
+    })
+    .returning()
+  return hook
+}
+
 export const createInfraElement = async (
   orderId: number,
   projectId: number,

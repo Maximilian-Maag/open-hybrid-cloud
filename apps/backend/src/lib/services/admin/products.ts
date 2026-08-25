@@ -222,6 +222,75 @@ export const getProductAdmin = async (id: number, lang = 'en'): Promise<Result<P
   return ok({ ...rows[0], environments: envRows, parameters: paramRows } as ProductAdminRow & { environments: ProductEnvironment[]; parameters: Parameter[] })
 }
 
+
+/**
+ * Keep an `en` row in step with the base language WITHOUT destroying a real
+ * translation (#161).
+ *
+ * Ten read paths — the cart, the order list and detail, the infrastructure list
+ * and search, the approvals queue, the cost report, the admin product list, the
+ * order snapshot and the notification subject line — select
+ * `language_code = 'en'` with no fallback. So an `en` row has to exist for every
+ * product, whatever its base language, or those screens go blank.
+ *
+ * `createProduct` seeds one with `onConflictDoNothing`. `updateProduct` used to
+ * refresh it with `onConflictDoUpdate`, which meant a typo fix in the German
+ * name overwrote the English translation someone had written — silently, with no
+ * version entry saying so, and visible only by opening the translations tab.
+ * Because of those ten paths, the German string then showed to every user in
+ * every language, and `snapshot.ts` froze it into `product_snapshot` for each new
+ * order after that.
+ *
+ * The distinction that fixes it: is the `en` row still a MIRROR, or has someone
+ * translated it? It is a mirror exactly while it still equals the base-language
+ * text it was copied from. So:
+ *
+ *   - no `en` row yet          → insert the new text; the invariant needs a row
+ *   - `en` field == old base   → still a mirror, move it along
+ *   - `en` field != old base   → a translation. Leave it. It is not ours.
+ *
+ * Decided per FIELD, not per row: a product whose name was translated but whose
+ * description never was should keep the name and still track the description.
+ */
+const mirrorIntoEnglish = async (
+  productId: number,
+  args: {
+    updateData: Partial<{ name: string; description: string }>
+    seed: { name: string; description: string }
+    priorBase?: { name: string; description: string }
+    priorEn?: { name: string; description: string }
+  },
+): Promise<void> => {
+  const { updateData, seed, priorBase, priorEn } = args
+
+  if (!priorEn) {
+    // No row to protect. Seeding one is what keeps the ten `language_code = 'en'`
+    // readers from showing an empty product name.
+    await db
+      .insert(productTranslations)
+      .values({ productId, languageCode: 'en', name: seed.name, description: seed.description })
+      .onConflictDoNothing()
+    return
+  }
+
+  const stillMirrored: Partial<{ name: string; description: string }> = {}
+  if (updateData.name !== undefined && priorEn.name === priorBase?.name) {
+    stillMirrored.name = updateData.name
+  }
+  if (updateData.description !== undefined && priorEn.description === priorBase?.description) {
+    stillMirrored.description = updateData.description
+  }
+
+  // Every field the caller changed has been translated. Nothing to mirror, and
+  // an empty `set` is an error in the SQL rather than a no-op.
+  if (Object.keys(stillMirrored).length === 0) return
+
+  await db
+    .update(productTranslations)
+    .set(stillMirrored)
+    .where(and(eq(productTranslations.productId, productId), eq(productTranslations.languageCode, 'en')))
+}
+
 export const updateProduct = async (
   id: number,
   input: UpdateProductInput,
@@ -283,6 +352,22 @@ export const updateProduct = async (
     if (name !== undefined) updateData.name = name
     if (description !== undefined) updateData.description = description
 
+    // Read both rows BEFORE the base-language write, because deciding what to do
+    // with the `en` mirror below needs the base text as it was, not as it is
+    // about to become.
+    const [priorBase, priorEn] = await Promise.all([
+      db
+        .select({ name: productTranslations.name, description: productTranslations.description })
+        .from(productTranslations)
+        .where(and(eq(productTranslations.productId, id), eq(productTranslations.languageCode, lang)))
+        .limit(1),
+      db
+        .select({ name: productTranslations.name, description: productTranslations.description })
+        .from(productTranslations)
+        .where(and(eq(productTranslations.productId, id), eq(productTranslations.languageCode, 'en')))
+        .limit(1),
+    ])
+
     await db
       .insert(productTranslations)
       .values({ productId: id, languageCode: lang, name: name ?? '', description: description ?? '' })
@@ -292,13 +377,12 @@ export const updateProduct = async (
       })
 
     if (lang !== 'en') {
-      await db
-        .insert(productTranslations)
-        .values({ productId: id, languageCode: 'en', name: name ?? '', description: description ?? '' })
-        .onConflictDoUpdate({
-          target: [productTranslations.productId, productTranslations.languageCode],
-          set: updateData,
-        })
+      await mirrorIntoEnglish(id, {
+        updateData,
+        seed: { name: name ?? '', description: description ?? '' },
+        priorBase: priorBase[0],
+        priorEn: priorEn[0],
+      })
     }
   }
 

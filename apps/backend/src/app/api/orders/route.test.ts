@@ -21,6 +21,7 @@ import {
   createEnvironment,
   createProject,
   linkProductEnvironment,
+  createProductWebhook,
   makeAuthHeader,
 } from '@/test/helpers'
 import { sendApprovalRequest, sendOrderCreated } from '@/lib/notification'
@@ -173,6 +174,10 @@ describe('POST /api/orders', () => {
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
     await linkProductEnvironment(product.id, env.id)
+    // Something to deploy it with. Without this the order is refused since #206:
+    // a product with no webhook and no pipeline stack has nothing to trigger, and
+    // this fixture used to assert the dead-end state that produced.
+    await createProductWebhook(product.id, env.id)
     const proj = await createProject(pm.id)
 
     const auth = await makeAuthHeader(admin)

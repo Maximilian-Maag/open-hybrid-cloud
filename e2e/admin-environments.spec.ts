@@ -143,5 +143,28 @@ test.describe('Admin - Environment Management', () => {
     dialog = page.locator('dialog[open]')
     await dialog.getByRole('button', { name: /reveal current/i }).click()
     await expect(dialog.locator('input[readonly]')).toHaveValue(newValue, { timeout: 5000 })
+
+    // Clean up what this test created (#156). The sibling test above deletes its
+    // own environment and CI source as part of what it asserts; this one had no
+    // reason to, so every run left one more of each behind — and the list
+    // assertions elsewhere in this file match `.last()`, which is exactly the
+    // kind of selector a growing list breaks.
+    //
+    // Same steps and same selectors as that sibling, so this is a path the suite
+    // already proves works.
+    await dialog.getByRole('button', { name: /^cancel$/i }).click()
+    await envRow.getByRole('button', { name: /^delete$/i }).click()
+    await expect(page.getByRole('heading', { name: /delete environment/i })).toBeVisible()
+    await page.getByRole('button', { name: /^delete$/i }).last().click()
+    await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
+    await expect(page.getByText(envName)).not.toBeVisible({ timeout: 8000 })
+
+    await page.goto('/admin/ci-sources')
+    await expect(page.getByText(ciName)).toBeVisible({ timeout: 8000 })
+    const ciRow = page.locator('div').filter({ has: page.getByText(ciName) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()
+    await ciRow.getByRole('button', { name: /^delete$/i }).click()
+    await page.getByRole('button', { name: /^delete$/i }).last().click()
+    await expect(page.locator('dialog[open]')).not.toBeVisible({ timeout: 8000 })
+    await expect(page.getByText(ciName)).not.toBeVisible({ timeout: 8000 })
   })
 })

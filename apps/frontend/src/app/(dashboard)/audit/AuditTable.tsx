@@ -6,6 +6,7 @@ import { get } from '@/lib/api'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
@@ -30,6 +31,7 @@ export function AuditTable({ token }: Props) {
   const [debouncedUser, setDebouncedUser] = useState('')
   const [debouncedAction, setDebouncedAction] = useState('')
   const [exportError, setExportError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const pageSize = 20
 
@@ -76,12 +78,24 @@ export function AuditTable({ token }: Props) {
         setEntries(result.data ?? [])
         setTotal(result.total ?? 0)
       }
-    } catch {
-      /* empty */
+      setLoadError(null)
+    } catch (err) {
+      // The failure used to be dropped here, and the table then rendered "no
+      // audit entries" — which for the audit log specifically is the wrong
+      // default. "No entries match" is a statement about the record, and an
+      // administrator checking who changed something reads it as evidence. An
+      // outage produced the same screen as a clean record.
+      //
+      // Guarded by the same generation check as the success path: a stale
+      // FAILURE must not overwrite a newer success either. The rows are left
+      // alone rather than cleared, so a filter change that fails does not also
+      // destroy the answer the operator was reading.
+      if (loadGeneration.current !== generation) return
+      setLoadError(err instanceof Error ? err.message : t('failedToLoadAuditEntries', lang))
     } finally {
       if (loadGeneration.current === generation) setLoading(false)
     }
-  }, [token, page, debouncedUser, debouncedAction, fromFilter, toFilter])
+  }, [token, page, debouncedUser, debouncedAction, fromFilter, toFilter, lang])
 
   useEffect(() => { void load() }, [load])
 
@@ -180,31 +194,41 @@ export function AuditTable({ token }: Props) {
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
         </div>
       ) : (
-        <Table<AuditEntry>
-          columns={[
-            { header: t('id', lang), accessor: 'id', className: 'w-16' },
-            {
-              header: t('user', lang),
-              render: (row) => <span>{row.userName ?? (row.userId ? `#${row.userId}` : t('system', lang))}</span>,
-            },
-            { header: t('action', lang), accessor: 'action' },
-            {
-              header: t('entity', lang),
-              render: (row) => <span>{row.entityId ?? '—'}</span>,
-            },
-            { header: t('details', lang), accessor: 'details', className: 'max-w-xs truncate' },
-            {
-              header: t('date', lang),
-              render: (row) => (
-                <span className="text-xs text-slate-500 whitespace-nowrap">
-                  {new Date(row.createdAt).toLocaleString(lang)}
-                </span>
-              ),
-            },
-          ]}
-          data={entries}
-          emptyMessage={t('noAuditEntries', lang)}
-        />
+        <>
+          {/* Above the rows, not instead of them. A refresh that fails must not
+              also take away the answer the operator was reading — but on a first
+              load there is nothing to keep, and rendering the table's "no audit
+              entries" copy underneath an error is the very confusion #221 is
+              about: it reads as a statement that the record is empty. */}
+          {loadError && <Alert className="mb-4">{loadError}</Alert>}
+          {(!loadError || entries.length > 0) && (
+            <Table<AuditEntry>
+              columns={[
+                { header: t('id', lang), accessor: 'id', className: 'w-16' },
+                {
+                  header: t('user', lang),
+                  render: (row) => <span>{row.userName ?? (row.userId ? `#${row.userId}` : t('system', lang))}</span>,
+                },
+                { header: t('action', lang), accessor: 'action' },
+                {
+                  header: t('entity', lang),
+                  render: (row) => <span>{row.entityId ?? '—'}</span>,
+                },
+                { header: t('details', lang), accessor: 'details', className: 'max-w-xs truncate' },
+                {
+                  header: t('date', lang),
+                  render: (row) => (
+                    <span className="text-xs text-slate-500 whitespace-nowrap">
+                      {new Date(row.createdAt).toLocaleString(lang)}
+                    </span>
+                  ),
+                },
+              ]}
+              data={entries}
+              emptyMessage={t('noAuditEntries', lang)}
+            />
+          )}
+        </>
       )}
 
       {totalPages > 1 && (

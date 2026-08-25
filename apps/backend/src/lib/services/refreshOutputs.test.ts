@@ -21,7 +21,7 @@ vi.mock('@/lib/ci', () => ({
   supportsJobTrace: () => true,
 }))
 
-const { refreshElementOutputs } = await import('./infrastructure')
+const { refreshElementOutputs, refreshOutputsLimit } = await import('./infrastructure')
 
 const session = (u: { id: number; role: string }): SessionUser =>
   ({ id: u.id, email: 'x@test.dev', name: 'X', role: u.role }) as SessionUser
@@ -43,6 +43,9 @@ const scenario = async () => {
 
 beforeEach(() => {
   fetchJobTraces.mockReset()
+  // Element ids repeat across cases in a truncated database, so without this
+  // one case's element is still inside the next case's refresh cooldown.
+  refreshOutputsLimit.clear()
 })
 
 /**
@@ -94,6 +97,8 @@ describe('refreshElementOutputs', () => {
     fetchJobTraces.mockRejectedValueOnce(new Error('GitLab jobs fetch failed: 401'))
     await refreshElementOutputs(session(admin), el.id)
 
+    // Past the 15s cooldown, which these two calls are not about.
+    refreshOutputsLimit.clear()
     fetchJobTraces.mockResolvedValue(['Outputs:\nip_address = "10.0.0.1"'])
     await refreshElementOutputs(session(admin), el.id)
 
@@ -108,12 +113,57 @@ describe('refreshElementOutputs', () => {
     fetchJobTraces.mockResolvedValueOnce(['Outputs:\nip_address = "10.0.0.1"'])
     await refreshElementOutputs(session(admin), el.id)
 
+    // Past the 15s cooldown, which these two calls are not about.
+    refreshOutputsLimit.clear()
     fetchJobTraces.mockRejectedValue(new Error('GitLab jobs fetch failed: 502'))
     await refreshElementOutputs(session(admin), el.id)
 
     const [row] = await db.select().from(infrastructureElements).where(eq(infrastructureElements.id, el.id))
     expect(row.outputs).toEqual({ ip_address: '10.0.0.1' })
     expect(row.outputsError).toMatch(/502/)
+  })
+
+  // Each call makes one outbound CI request per pipeline the element has,
+  // against the token the settle path shares. Without a cooldown, holding the
+  // button down amplifies one click into an unbounded stream of API calls and
+  // can exhaust that token for the whole environment.
+  it('refuses a second re-read of the same element inside the cooldown', async () => {
+    const { admin, el } = await scenario()
+    fetchJobTraces.mockResolvedValue(['Outputs:\nip_address = "10.0.0.1"'])
+
+    const first = await refreshElementOutputs(session(admin), el.id)
+    expect(first.ok).toBe(true)
+
+    const second = await refreshElementOutputs(session(admin), el.id)
+    expect(second.ok).toBe(false)
+    if (!second.ok) expect(second.status).toBe(429)
+    // The point of the cooldown: the second click cost no outbound traffic.
+    expect(fetchJobTraces).toHaveBeenCalledTimes(1)
+  })
+
+  it('throttles per element, so one element does not block another', async () => {
+    const { admin, el } = await scenario()
+    const other = await scenario()
+    fetchJobTraces.mockResolvedValue(['Outputs:\nip_address = "10.0.0.1"'])
+
+    expect((await refreshElementOutputs(session(admin), el.id)).ok).toBe(true)
+    expect((await refreshElementOutputs(session(other.admin), other.el.id)).ok).toBe(true)
+  })
+
+  // The cooldown sits behind the scoping check on purpose: if it came first, a
+  // caller who may not see an element could spend its budget and deny the
+  // refresh to the people who own it.
+  it('does not let a caller who cannot see the element spend its cooldown', async () => {
+    const { el } = await scenario()
+    const stranger = await scenario()
+    fetchJobTraces.mockResolvedValue(['Outputs:\nip_address = "10.0.0.1"'])
+
+    const denied = await refreshElementOutputs(session(stranger.pm), el.id)
+    expect(denied.ok).toBe(false)
+    if (!denied.ok) expect(denied.status).toBe(404)
+
+    // The owner's first click still works.
+    expect((await refreshElementOutputs(session(stranger.admin), el.id)).ok).toBe(true)
   })
 
   it('lets the project manager who owns it refresh their own element', async () => {
@@ -141,9 +191,8 @@ describe('refreshElementOutputs', () => {
   })
 
   it('explains rather than throwing when the element has no pipeline', async () => {
-    const { admin, project, el } = await scenario()
+    const { admin, el } = await scenario()
     await db.update(infrastructureElements).set({ pipelineId: [] }).where(eq(infrastructureElements.id, el.id))
-    void project
 
     const result = await refreshElementOutputs(session(admin), el.id)
     expect(result.ok).toBe(true)

@@ -16,6 +16,8 @@ overrides:
   #   undici    >=7.29.0  CVE-2026-15157 / -14643 / -16729 / -16728
   #   @auth/core >=0.41.3 CVE-2026-73419  OAuth state/nonce/PKCE cookies not
   #                                       bound to the provider that set them
+  #   qs        >=6.15.2  GHSA (medium)   qs.stringify crashes on a null/undefined
+  #                                       prototype, a remotely triggerable DoS
   postcss: ">=8.5.23"
   # Constrained to the 7.x line: 7.29.0 is the patched release, and a major bump
   # to 8.x on a transitive fetch dependency is not something a security patch
@@ -23,3 +25,9 @@ overrides:
   undici: ">=7.29.0 <8"
   "@auth/core": ">=0.41.3"
   esbuild: ">=0.25.0"
+  # Reached only through @stryker-mutator/core -> typed-rest-client, so it is in
+  # the mutation-testing toolchain and not in either shipped app — no request
+  # from a user ever reaches this `qs`. Pinned anyway: a dev-only advisory is
+  # still an advisory, the fix is a patch release, and leaving one open trains
+  # people to skim the list.
+  qs: ">=6.15.2"

@@ -5,6 +5,7 @@ import { getCostRows, getCostReport, assertMaySeeProject, type CostRowExport } f
 import { parseCostFilters } from '@/lib/services/costFilters'
 import { getBranding } from '@/lib/services/admin/branding'
 import PDFDocument from 'pdfkit'
+import { requestLang } from '@/lib/http'
 
 // `price` is the UNIT price and `lineTotalEur` is what reconciles with the report
 // total — an order of 20 costs 20 times one (issues #98/#104).
@@ -145,11 +146,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid format — expected csv or pdf' }, { status: 400 })
   }
 
-  const result = await getCostRows(session, filters.data)
+  const result = await getCostRows(session, filters.data, requestLang(req))
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
 
   if (format === 'pdf') {
-    const report = await getCostReport(session, filters.data)
+    const report = await getCostReport(session, filters.data, new Date(), requestLang(req))
     const branding = await getBranding()
     const pdf = await buildPdf(
       result.data,

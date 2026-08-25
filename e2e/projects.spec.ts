@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Projects', () => {
@@ -88,21 +88,64 @@ test.describe('Projects', () => {
 })
 
 test.describe('Project detail', () => {
-  test('project detail page shows edit form', async ({ page }) => {
+  /**
+   * Every test in this block gets its own project (#156).
+   *
+   * They used to open "the first row of the table" and `test.skip()` when there
+   * was none — so they ran only because `can create a new project`, in the block
+   * above, happened to leave one behind. In CI that is a single worker running
+   * the file top to bottom, so it usually held; locally, `fullyParallel` puts
+   * them in different workers and three of these four tests skip, silently. A
+   * suite that reports "passed" for a test that never ran is the failure #154
+   * catalogued.
+   *
+   * Creating one here also means the test knows the project's NAME, so it can
+   * find its own row instead of guessing at `.first()`, and can delete it
+   * afterwards instead of leaving it in the database for every future run.
+   */
+  const createdProjects: string[] = []
+
+  const openOwnProject = async (page: Page): Promise<string> => {
     await loginAsRoot(page)
     await page.goto('/projects')
 
-    const dataRows = page.getByRole('table').getByRole('row').filter({ hasNot: page.getByRole('columnheader') })
-    const count = await dataRows.count()
-    if (count === 0) {
-      test.skip()
-      return
-    }
+    const name = `E2E Detail ${Date.now()}-${process.env.TEST_WORKER_INDEX ?? '0'}`
+    await page.getByRole('button', { name: /new project/i }).click()
+    await page.getByLabel(/^name/i).fill(name)
+    await page.getByRole('button', { name: /create project/i }).click()
+    await expect(page.getByText(name)).toBeVisible({ timeout: 12_000 })
+    createdProjects.push(name)
 
-    const firstLink = dataRows.first().getByRole('link').first()
-    if (await firstLink.count() === 0) { test.skip(); return }
-    await firstLink.click()
-    await expect(page).toHaveURL(/\/projects\/\d+/, { timeout: 5000 })
+    await page.getByText(name).click()
+    await expect(page).toHaveURL(/\/projects\/\d+/, { timeout: 8000 })
+    return name
+  }
+
+  // Runs even when the test failed, which is the point: a failed run used to
+  // leave a dirtier database behind for its own retry.
+  test.afterEach(async ({ page }) => {
+    while (createdProjects.length > 0) {
+      const name = createdProjects.pop()
+      if (!name) break
+      try {
+        await page.goto('/projects')
+        const row = page.getByText(name)
+        if ((await row.count()) === 0) continue
+        await row.first().click()
+        await expect(page).toHaveURL(/\/projects\/\d+/, { timeout: 8000 })
+        await page.getByRole('button', { name: /^delete$/i }).click()
+        await page.getByRole('button', { name: /^delete$/i }).last().click()
+        await expect(page).toHaveURL(/\/projects$/, { timeout: 8000 })
+      } catch {
+        // Cleanup is best effort. A project left behind is untidy; a cleanup
+        // failure reported as a test failure would hide the real result, which
+        // is worse. The name carries a timestamp, so it collides with nothing.
+      }
+    }
+  })
+
+  test('project detail page shows edit form', async ({ page }) => {
+    await openOwnProject(page)
 
     await expect(page.getByText(/project details/i)).toBeVisible()
     // Required name field: label shows "Name *"
@@ -112,15 +155,7 @@ test.describe('Project detail', () => {
   })
 
   test('saving project changes shows success message', async ({ page }) => {
-    await loginAsRoot(page)
-    await page.goto('/projects')
-
-    const dataRows = page.getByRole('table').getByRole('row').filter({ hasNot: page.getByRole('columnheader') })
-    if (await dataRows.count() === 0) { test.skip(); return }
-    const firstLink = dataRows.first().getByRole('link').first()
-    if (await firstLink.count() === 0) { test.skip(); return }
-    await firstLink.click()
-    await expect(page).toHaveURL(/\/projects\/\d+/, { timeout: 5000 })
+    await openOwnProject(page)
 
     // Change the description field (safe — no side effects)
     const descField = page.getByLabel(/description/i).first()
@@ -130,19 +165,9 @@ test.describe('Project detail', () => {
   })
 
   test('can delete a project', async ({ page }) => {
-    await loginAsRoot(page)
-    await page.goto('/projects')
-
-    // Create a temporary project to delete
-    const projectName = `Delete Me ${Date.now()}`
-    await page.getByRole('button', { name: /new project/i }).click()
-    await page.getByLabel(/^name/i).fill(projectName)
-    await page.getByRole('button', { name: /create project/i }).click()
-    await expect(page.getByText(projectName)).toBeVisible({ timeout: 12000 })
-
-    // Navigate to the project detail
-    await page.getByText(projectName).click()
-    await expect(page).toHaveURL(/\/projects\/\d+/)
+    const projectName = await openOwnProject(page)
+    // This test deletes it itself, so the afterEach must not try again.
+    createdProjects.pop()
 
     // Open delete confirmation modal and confirm
     await page.getByRole('button', { name: /^delete$/i }).click()
@@ -156,16 +181,7 @@ test.describe('Project detail', () => {
   })
 
   test('Delete button opens confirmation modal', async ({ page }) => {
-    await loginAsRoot(page)
-    await page.goto('/projects')
-
-    const dataRows = page.getByRole('table').getByRole('row').filter({ hasNot: page.getByRole('columnheader') })
-    if (await dataRows.count() === 0) { test.skip(); return }
-
-    const firstLink = dataRows.first().getByRole('link').first()
-    if (await firstLink.count() === 0) { test.skip(); return }
-    await firstLink.click()
-    await expect(page).toHaveURL(/\/projects\/\d+/, { timeout: 5000 })
+    await openOwnProject(page)
 
     await page.getByRole('button', { name: /^delete$/i }).click()
 

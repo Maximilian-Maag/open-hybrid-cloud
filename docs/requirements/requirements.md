@@ -22,7 +22,7 @@
 | FA-02.1 | Products are organized into categories. Categories are manageable by the Root. | Shipped — `apps/backend/src/lib/db/schema.ts` `categories`; `docs/guides/root.md` §3 |
 | FA-02.2 | Each product has: name, description, image, category, parameter sets, and prices per deployment environment. | Shipped — `schema.ts` `products`/`productEnvironments` |
 | FA-02.3 | Product images are stored in the database (PostgreSQL `bytea`). | Shipped — `schema.ts` products `imageData`/`imageMime`/`imageAlt` |
-| FA-02.4 | Product content (name, description) is multilingual (all 24 EU official languages + Russian). | Shipped — `productTranslations` table; `apps/frontend/src/lib/i18n.ts` |
+| FA-02.4 | Product content (name, description) is multilingual (all 24 EU official languages + Russian). | Shipped — `productTranslations` table; `apps/frontend/src/lib/i18n.ts`. The admin product forms offered four of the 25 as a base language until #162 and now offer all of them from `SUPPORTED_LANGUAGES`. |
 | FA-02.5 | Each product can be available in one or more deployment environments. | Shipped — `productEnvironments` join table |
 | FA-02.6 | Price and cost center configuration can be defined separately per product and environment. | Shipped — same table, per-row `price`/`costCenterMode` |
 
@@ -146,7 +146,7 @@
 |----|-------------|--------------|
 | FA-12.1 | The UI is available in all 24 EU official languages and Russian. | Shipped — `apps/frontend/src/lib/i18n.ts` `SUPPORTED_LANGUAGES` (25 entries) |
 | FA-12.2 | Language selection is based on the user's session preference, with fallback to the Accept-Language header. | Shipped |
-| FA-12.3 | Product content (name, description) is loaded language-specifically from a translation table. | Shipped — `productTranslations` |
+| FA-12.3 | Product content (name, description) is loaded language-specifically from a translation table. | Shipped — one lookup, `lib/db/productText.ts`, used by every read path. Until #162 only the catalogue honoured the reader's language; nine other paths hardcoded `'en'`, so a German user saw German in the catalogue and English in their cart, orders, approvals, infrastructure and cost report. Notification subjects are the one exception and stay English: they are sent from webhook handlers with no request to take a language from, and the recipient's language is not stored. |
 
 ---
 

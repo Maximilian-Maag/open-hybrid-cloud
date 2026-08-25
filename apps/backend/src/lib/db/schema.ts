@@ -238,7 +238,11 @@ export const products = pgTable('products', {
    */
   retiredAt: timestamp('retired_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // The catalogue's category filter, which seq-scanned `products` (issue #159).
+  // Migration 0032; declared here too, or `db:push` would drop it again.
+  index('products_category_idx').on(t.categoryId),
+])
 
 /**
  * A product's pictures, in gallery order (issue #107).
@@ -602,7 +606,19 @@ export const orders = pgTable('orders', {
   pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // Issue #159. Each of these is a filter plus the sort that follows it, in one
+  // index, so the planner never has to sort the matched rows separately.
+  // Migration 0032; declared here too, or `db:push` would drop them again.
+  //
+  // A project manager's own order list.
+  index('orders_user_created_at_idx').on(t.userId, t.createdAt.desc()),
+  // The approval queue: pending orders, oldest first, which is the order they
+  // are worked in. Also the dashboard's pending count.
+  index('orders_status_created_at_idx').on(t.status, t.createdAt),
+  // The cost report's project + date-range filter.
+  index('orders_project_created_at_idx').on(t.projectId, t.createdAt.desc()),
+])
 
 // Items a user has collected but not yet ordered (issue #28).
 //
@@ -684,7 +700,21 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   // only way to express "never": a sentinel far-future date would eventually
   // arrive.
   scheduledDecommissionAt: timestamp('scheduled_decommission_at', { withTimezone: true }),
-})
+}, (t) => [
+  // Issue #159. Single-column on purpose: the infrastructure list combines
+  // project, product, environment and status filters freely and sorts by any of
+  // four columns, so no one composite serves it — separate indexes let the
+  // planner bitmap-AND whichever filters were actually supplied.
+  // Migration 0032; declared here too, or `db:push` would drop them again.
+  //
+  // The partial `..._due_decommission_idx` from migration 0010 is deliberately
+  // absent: it, and the other pre-0032 migration indexes missing from this file,
+  // are issue #141's schema-drift backlog and adding them here would collide with
+  // the branch already doing that.
+  index('infrastructure_elements_project_idx').on(t.projectId),
+  index('infrastructure_elements_order_idx').on(t.orderId),
+  index('infrastructure_elements_deployed_at_idx').on(t.deployedAt.desc()),
+])
 
 export const exchangeRates = pgTable('exchange_rates', {
   currencyCode: text('currency_code').primaryKey(),
@@ -699,7 +729,15 @@ export const auditLog = pgTable('audit_log', {
   entityId: bigint('entity_id', { mode: 'number' }),
   details: text().notNull().default(''),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // The one table guaranteed to grow forever — a row per order action, and
+  // nothing ever deletes one — and it had no index at all (issue #159). Every
+  // read is "newest first, one page at a time", plus a COUNT(*) over the same
+  // predicate, so without these the audit page sorted the whole table twice per
+  // request. Migration 0032; declared here too, or `db:push` would drop them.
+  index('audit_log_created_at_idx').on(t.createdAt.desc()),
+  index('audit_log_user_created_at_idx').on(t.userId, t.createdAt.desc()),
+])
 
 /**
  * An admin's approval authority, held by a substitute for a period (issue #35).

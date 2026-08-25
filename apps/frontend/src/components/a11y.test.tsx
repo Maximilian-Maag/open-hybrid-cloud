@@ -485,7 +485,7 @@ describe('DelegationPanel', () => {
       await check(
         <DelegationPanel
           delegations={{ mine: [], grantedToMe: [], candidates }}
-          token="t"
+         
         />,
       ),
     ).toHaveNoViolations()
@@ -496,7 +496,7 @@ describe('DelegationPanel', () => {
       await check(
         <DelegationPanel
           delegations={{ mine: [delegation], grantedToMe: [delegation], candidates }}
-          token="t"
+         
         />,
       ),
     ).toHaveNoViolations()
@@ -505,7 +505,7 @@ describe('DelegationPanel', () => {
   it('is accessible when there is nobody to nominate', async () => {
     expect(
       await check(
-        <DelegationPanel delegations={{ mine: [], grantedToMe: [], candidates: [] }} token="t" />,
+        <DelegationPanel delegations={{ mine: [], grantedToMe: [], candidates: [] }} />,
       ),
     ).toHaveNoViolations()
   })
@@ -530,7 +530,7 @@ describe('ActiveSessions', () => {
     expect(
       await check(
         <ActiveSessions
-          token="t"
+         
           initialSessions={[
             session({ id: 1, current: true }),
             session({ id: 2, userAgent: 'Mozilla/5.0 (iPhone) Safari/605', ip: '198.51.100.4' }),
@@ -541,7 +541,7 @@ describe('ActiveSessions', () => {
   })
 
   it('is accessible with nothing to show', async () => {
-    expect(await check(<ActiveSessions token="t" initialSessions={[]} />)).toHaveNoViolations()
+    expect(await check(<ActiveSessions initialSessions={[]} />)).toHaveNoViolations()
   })
 
   it('is accessible when a session recorded neither ip nor user agent', async () => {
@@ -550,7 +550,7 @@ describe('ActiveSessions', () => {
     expect(
       await check(
         <ActiveSessions
-          token="t"
+         
           initialSessions={[session({ id: 3, ip: null, userAgent: null, current: true })]}
         />,
       ),

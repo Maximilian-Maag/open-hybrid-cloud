@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
 import type { Order, Role, ApprovalDelegationsResponse } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -17,13 +17,12 @@ export default async function ApprovalsPage() {
   const role = (session.user as unknown as { role: Role }).role
   if (role !== 'admin' && role !== 'root') redirect('/')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const currentUserId = Number((session.user as unknown as { id: string }).id)
   const lang = await getLang()
 
   let orders: Order[] = []
   try {
-    const all = (await get<Order[]>('/api/orders', token)) ?? []
+    const all = (await get<Order[]>('/api/orders')) ?? []
     orders = all.filter((o) => o.status === 'pending')
   } catch {
     /* empty */
@@ -36,7 +35,7 @@ export default async function ApprovalsPage() {
   if (role === 'admin') {
     try {
       delegations =
-        (await get<ApprovalDelegationsResponse>('/api/approvals/delegations', token)) ??
+        (await get<ApprovalDelegationsResponse>('/api/approvals/delegations')) ??
         EMPTY_DELEGATIONS
     } catch {
       /* empty */
@@ -52,7 +51,7 @@ export default async function ApprovalsPage() {
 
       {/* Above the queue on purpose: a substitute has to know whose authority they
           are holding before they start acting on rows that are not usually theirs. */}
-      {role === 'admin' && <DelegationPanel delegations={delegations} token={token} />}
+      {role === 'admin' && <DelegationPanel delegations={delegations} />}
 
       {orders.length === 0 ? (
         <div className="text-center py-12 text-slate-600">{t('noPendingOrders', lang)}</div>
@@ -62,7 +61,6 @@ export default async function ApprovalsPage() {
             <ApprovalRow
               key={order.id}
               order={order}
-              token={token}
               currentUserId={currentUserId}
             />
           ))}

@@ -30,7 +30,6 @@ interface Props {
   initialItems: CartItem[]
   projects: Project[]
   costCenters: CostCenter[]
-  token: string
   lang: string
   /** Rates relative to EUR, for the subtotal in the viewer's currency. */
   exchangeRates: Record<string, number>
@@ -51,7 +50,6 @@ export function CartView({
   initialItems,
   projects,
   costCenters,
-  token,
   lang,
   exchangeRates,
   localeCurrency,
@@ -75,7 +73,6 @@ export function CartView({
     try {
       const detail = await get<ProductDetail>(
         `/api/catalog/${item.productId}?lang=${lang}&environmentId=${item.environmentId}`,
-        token,
       )
       if (detail?.parameters) setDefs((prev) => ({ ...prev, [item.id]: detail.parameters }))
     } catch {
@@ -97,11 +94,11 @@ export function CartView({
     // put back by the reload below.
     setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, quantity: next } : i)))
     try {
-      await put(`/api/cart/${itemId}`, { quantity: next }, token)
+      await put(`/api/cart/${itemId}`, { quantity: next })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to change the quantity.')
       try {
-        const fresh = await get<CartItem[]>('/api/cart', token)
+        const fresh = await get<CartItem[]>('/api/cart')
         if (fresh) setItems(fresh)
       } catch { /* the error above already says the change did not stick */ }
     }
@@ -110,7 +107,7 @@ export function CartView({
   async function handleRemove(itemId: number) {
     setError(null)
     try {
-      await del(`/api/cart/${itemId}`, token)
+      await del(`/api/cart/${itemId}`)
       setItems((prev) => {
         const next = prev.filter((i) => i.id !== itemId)
         publishCartCount(next.length)
@@ -124,7 +121,7 @@ export function CartView({
   async function handleClear() {
     setError(null)
     try {
-      await del('/api/cart', token)
+      await del('/api/cart')
       setItems([])
       publishCartCount(0)
     } catch (e) {
@@ -145,7 +142,7 @@ export function CartView({
           ...(costCentres[item.id] ? { costCenterId: Number(costCentres[item.id]) } : {}),
         })),
       }
-      const result = await post<CheckoutResponse>('/api/cart/checkout', body, token)
+      const result = await post<CheckoutResponse>('/api/cart/checkout', body)
 
       if (result.failed.length > 0) {
         // Some orders exist and their pipelines may already be running, so this is

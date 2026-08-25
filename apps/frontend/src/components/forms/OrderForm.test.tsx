@@ -71,12 +71,12 @@ describe('OrderForm parameter resolution', () => {
       return []
     }) as never)
 
-    render(<OrderForm product={product} projects={[]} costCenters={[]} token="t" />)
+    render(<OrderForm product={product} projects={[]} costCenters={[]} />)
 
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
 
     await waitFor(() => {
-      expect(mockedGet).toHaveBeenCalledWith('/api/catalog/7?lang=en&environmentId=1', 't')
+      expect(mockedGet).toHaveBeenCalledWith('/api/catalog/7?lang=en&environmentId=1')
     })
 
     // Exactly one REGION control, and it is the definition createOrder will
@@ -94,7 +94,7 @@ describe('OrderForm parameter resolution', () => {
       return []
     }) as never)
 
-    render(<OrderForm product={product} projects={[]} costCenters={[]} token="t" />)
+    render(<OrderForm product={product} projects={[]} costCenters={[]} />)
 
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '2')
 
@@ -142,7 +142,7 @@ describe('OrderForm parameter resolution', () => {
   it('offers a cost-centre picker in select mode', async () => {
     const detail = envWithMode('select')
     mockCatalogFor(detail)
-    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} />)
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
 
     expect(await screen.findByLabelText(/^cost center/i)).toBeInTheDocument()
@@ -152,7 +152,7 @@ describe('OrderForm parameter resolution', () => {
   it('shows the fixed account instead of a picker in overhead mode', async () => {
     const detail = envWithMode('overhead', { overheadCostCenterId: 10, overheadCostCenterName: 'Shared Platform' })
     mockCatalogFor(detail)
-    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} />)
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
 
     expect(await screen.findByTestId('overhead-cost-center')).toHaveTextContent('Shared Platform')
@@ -163,7 +163,7 @@ describe('OrderForm parameter resolution', () => {
   it('renders a placeholder when an overhead offering has no account configured', async () => {
     const detail = envWithMode('overhead')
     mockCatalogFor(detail)
-    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} />)
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
 
     expect(await screen.findByTestId('overhead-cost-center')).toHaveTextContent('—')
@@ -172,7 +172,7 @@ describe('OrderForm parameter resolution', () => {
   it('shows no cost-centre control at all in project mode', async () => {
     const detail = envWithMode('project')
     mockCatalogFor(detail)
-    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} />)
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
 
     expect(screen.queryByLabelText(/^cost center/i)).not.toBeInTheDocument()
@@ -210,7 +210,7 @@ describe('OrderForm parameter resolution', () => {
 
   it('preselects the project it was given', async () => {
     mockReorderApi()
-    render(<OrderForm product={product} projects={projects} costCenters={[]} token="t" initialProjectId="5" />)
+    render(<OrderForm product={product} projects={projects} costCenters={[]} initialProjectId="5" />)
 
     expect(screen.getByLabelText(/project/i)).toHaveValue('5')
   })
@@ -218,7 +218,7 @@ describe('OrderForm parameter resolution', () => {
   it('adopts the named element: its environment and its parameters', async () => {
     mockReorderApi()
     render(
-      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+      <OrderForm product={product} projects={projects} costCenters={[]}
         fromInfraId="99" initialProjectId="5" />,
     )
 
@@ -231,7 +231,7 @@ describe('OrderForm parameter resolution', () => {
   it('explains that the form was pre-filled', async () => {
     mockReorderApi()
     render(
-      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+      <OrderForm product={product} projects={projects} costCenters={[]}
         fromInfraId="99" initialProjectId="5" />,
     )
 
@@ -244,7 +244,7 @@ describe('OrderForm parameter resolution', () => {
     // A stale or hand-edited link must not silently apply someone else's config.
     mockReorderApi([])
     render(
-      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+      <OrderForm product={product} projects={projects} costCenters={[]}
         fromInfraId="99" initialProjectId="5" />,
     )
 
@@ -257,7 +257,7 @@ describe('OrderForm parameter resolution', () => {
     const user = userEvent.setup()
     mockReorderApi()
     render(
-      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+      <OrderForm product={product} projects={projects} costCenters={[]}
         fromInfraId="99" initialProjectId="5" />,
     )
 
@@ -270,7 +270,7 @@ describe('OrderForm parameter resolution', () => {
 
   it('ignores the reorder hint when no element was named', async () => {
     mockReorderApi()
-    render(<OrderForm product={product} projects={projects} costCenters={[]} token="t" initialProjectId="5" />)
+    render(<OrderForm product={product} projects={projects} costCenters={[]} initialProjectId="5" />)
 
     await waitFor(() => expect(mockedGet).toHaveBeenCalled())
     expect(screen.queryByText(/parameters were pre-filled/i)).not.toBeInTheDocument()
@@ -318,7 +318,7 @@ describe('OrderForm parameter resolution', () => {
         product={detail}
         projects={[{ id: 5, name: 'Webshop', description: '', ownerId: 1, costCenterId: null, createdAt: '' }] as never}
         costCenters={[]}
-        token="t"
+       
       />,
     )
   }

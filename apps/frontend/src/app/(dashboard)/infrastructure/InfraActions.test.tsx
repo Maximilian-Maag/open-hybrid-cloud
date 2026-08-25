@@ -41,7 +41,7 @@ const element = (over?: Partial<InfrastructureElement>) => ({
 } as unknown as InfrastructureElement)
 
 const renderActions = (over?: Partial<InfrastructureElement>, canRetry = true) =>
-  render(<InfraActions item={element(over)} token="test-token" lang="en" canRetry={canRetry} />)
+  render(<InfraActions item={element(over)} lang="en" canRetry={canRetry} />)
 
 beforeEach(() => {
   refresh.mockReset()
@@ -87,7 +87,7 @@ describe('InfraActions retry', () => {
     await user.click(within(dialog).getByRole('button', { name: /^retry$/i }))
 
     await waitFor(() =>
-      expect(mockedPost).toHaveBeenCalledWith('/api/infrastructure/42/retry', {}, 'test-token'),
+      expect(mockedPost).toHaveBeenCalledWith('/api/infrastructure/42/retry', {}),
     )
     expect(refresh).toHaveBeenCalled()
   })

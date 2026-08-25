@@ -13,10 +13,9 @@ import { t } from '@/lib/i18n'
 
 interface Props {
   initial: SmtpConfig | null
-  token: string
 }
 
-export function SmtpForm({ initial, token }: Props) {
+export function SmtpForm({ initial }: Props) {
   const lang = useLang()
   const { toast } = useToast()
   const [host, setHost] = useState(initial?.host ?? '')
@@ -38,7 +37,7 @@ export function SmtpForm({ initial, token }: Props) {
         tls,
         ...(password ? { password } : {}),
       }
-      await put('/api/admin/config/smtp', body, token)
+      await put('/api/admin/config/smtp', body)
       toast(t('smtpConfigSavedToast', lang))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('failedToSaveSmtp', lang))

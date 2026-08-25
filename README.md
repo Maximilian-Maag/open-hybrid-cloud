@@ -88,7 +88,7 @@ Only `JWT_SECRET` and `DATABASE_URL` are enforced at startup (`apps/backend/src/
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `NEXT_PUBLIC_API_URL` | Yes | Backend URL reachable from the **browser** (used for client-side fetches) |
+| `NEXT_PUBLIC_API_URL` | Yes | Backend URL reachable from the **browser**. Only for unauthenticated assets (product images): every authenticated call from client JavaScript goes to the frontend's own `/api/proxy`, which attaches the token server-side (#146) |
 | `API_URL` | Yes | Backend URL reachable from the **frontend server** (used for SSR) |
 | `NEXTAUTH_URL` | Yes | Canonical frontend URL |
 | `NEXTAUTH_SECRET` | Yes | NextAuth.js signing secret (min. 32 chars) |
@@ -239,7 +239,7 @@ EXCHANGE_RATE_API_URL=http://localhost:8080/exchange-rates  # WireMock stub
 **`apps/frontend/.env` — changes required for local dev:**
 
 ```dotenv
-# Browser-side API calls (must be reachable from your machine)
+# Browser-side asset URLs, e.g. product images (must be reachable from your machine)
 NEXT_PUBLIC_API_URL=http://localhost:3001
 
 # Server-side (SSR) API calls — same target when running outside Docker

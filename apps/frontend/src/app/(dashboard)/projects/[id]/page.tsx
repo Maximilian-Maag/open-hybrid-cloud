@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { redirect, notFound } from 'next/navigation'
 import type { Project, Order, CostCenter } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -22,19 +22,18 @@ export default async function ProjectDetailPage({ params }: Props) {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
 
   let project: Project
   try {
-    project = await get<Project>(`/api/projects/${id}`, token)
+    project = await get<Project>(`/api/projects/${id}`)
   } catch {
     notFound()
   }
 
   const [ordersRes, costCentersRes] = await Promise.allSettled([
-    get<Order[]>(`/api/orders?projectId=${id}`, token),
-    get<CostCenter[]>('/api/admin/cost-centers', token),
+    get<Order[]>(`/api/orders?projectId=${id}`),
+    get<CostCenter[]>('/api/admin/cost-centers'),
   ])
 
   const orders = ordersRes.status === 'fulfilled' ? (ordersRes.value ?? []) : []
@@ -58,7 +57,7 @@ export default async function ProjectDetailPage({ params }: Props) {
         }
       />
 
-      <ProjectEditForm project={project} costCenters={costCenters} token={token} />
+      <ProjectEditForm project={project} costCenters={costCenters} />
 
       {orders.length > 0 && (
         <Card title={t('ordersInProject', lang)}>

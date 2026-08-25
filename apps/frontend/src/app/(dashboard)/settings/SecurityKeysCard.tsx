@@ -15,10 +15,6 @@ import { Button } from '@/components/ui/Button'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
-interface Props {
-  token: string
-}
-
 /**
  * Security keys and passkeys (issue #197, part 2).
  *
@@ -31,7 +27,7 @@ interface Props {
  * prompt, and the private key never leaves the authenticator; what comes back is
  * a public key and an attestation for the server to verify.
  */
-export function SecurityKeysCard({ token }: Props) {
+export function SecurityKeysCard() {
   const lang = useLang()
   const [credentials, setCredentials] = useState<WebauthnCredential[] | null>(null)
   const [label, setLabel] = useState('')
@@ -41,14 +37,14 @@ export function SecurityKeysCard({ token }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const data = await get<WebauthnCredentialsResponse>('/api/users/me/webauthn', token)
+      const data = await get<WebauthnCredentialsResponse>('/api/users/me/webauthn')
       setCredentials(data.credentials)
     } catch {
       // A list that cannot be read is not worth an error banner over the whole
       // settings page; the card shows nothing until it can.
       setCredentials(null)
     }
-  }, [token])
+  }, [])
 
   useEffect(() => {
     void load()
@@ -68,7 +64,6 @@ export function SecurityKeysCard({ token }: Props) {
       const options = await post<Parameters<typeof startRegistration>[0]['optionsJSON']>(
         '/api/users/me/webauthn/register/options',
         {},
-        token,
       )
       // Opens the platform prompt. Everything the user does — touching the key,
       // Touch ID, a PIN — happens inside here, and the private half of the
@@ -77,7 +72,6 @@ export function SecurityKeysCard({ token }: Props) {
       const result = await post<WebauthnRegistrationResult>(
         '/api/users/me/webauthn/register/verify',
         { label: label.trim(), response },
-        token,
       )
       setLabel('')
       // Present only when this was the first factor on the account, and this is
@@ -100,7 +94,7 @@ export function SecurityKeysCard({ token }: Props) {
     setError(null)
     setBusy(true)
     try {
-      await del(`/api/users/me/webauthn/${id}`, token)
+      await del(`/api/users/me/webauthn/${id}`)
       await load()
     } catch (err) {
       // Includes the 409 for removing the last factor an account has, whose

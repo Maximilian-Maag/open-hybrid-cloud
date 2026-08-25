@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { Category, CreateProductRequest, Product } from '@open-hybrid-cloud/types'
-import { post } from '@/lib/api'
+import { post, PROXY_PREFIX } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
@@ -14,14 +14,12 @@ import { t } from '@/lib/i18n'
 
 interface Props {
   categories: Category[]
-  token: string
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp'
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
-export function NewProductForm({ categories, token }: Props) {
+export function NewProductForm({ categories }: Props) {
   const lang = useLang()
   const LANGUAGES = [
     { value: 'en', label: t('languageEnglish', lang) },
@@ -57,7 +55,7 @@ export function NewProductForm({ categories, token }: Props) {
         categoryId: Number(categoryId),
         baseLanguage,
       }
-      const created = await post<Product>('/api/admin/products', body, token)
+      const created = await post<Product>('/api/admin/products', body)
 
       // The image needs a product to belong to, so it goes up right after
       // creation rather than as part of it. It becomes the first picture of the
@@ -69,9 +67,12 @@ export function NewProductForm({ categories, token }: Props) {
         const upload = new FormData()
         upload.append('image', image)
         upload.append('alt', imageAlt.trim())
-        const res = await fetch(`${API_URL}/api/admin/products/${created.id}/images`, {
+        // Through /api/proxy, which attaches the bearer token server-side — the
+        // browser only ever holds the HttpOnly session cookie (#146). Not
+        // `apiRequest`, because this needs the raw Response to read the
+        // backend's own error message out of a failed upload.
+        const res = await fetch(`${PROXY_PREFIX}/api/admin/products/${created.id}/images`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
           body: upload,
           cache: 'no-store',
         }).catch(() => null)

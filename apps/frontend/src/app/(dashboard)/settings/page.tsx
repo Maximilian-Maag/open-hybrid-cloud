@@ -4,7 +4,7 @@ import type { SessionInfo } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { SettingsForms } from './SettingsForms'
 import { ActiveSessions } from '@/components/forms/ActiveSessions'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { t } from '@/lib/i18n'
 import { getLang } from '@/lib/getLang'
 
@@ -12,7 +12,6 @@ export default async function SettingsPage() {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const userName = session.user?.name ?? ''
   const userEmail = session.user?.email ?? ''
 
@@ -31,14 +30,14 @@ export default async function SettingsPage() {
   // the settings page still renders.
   let sessions: SessionInfo[] | undefined
   try {
-    sessions = await get<SessionInfo[]>('/api/sessions', token)
+    sessions = await get<SessionInfo[]>('/api/sessions')
   } catch { /* fall through with undefined */ }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <PageHeader title={t('profileSettings', lang)} subtitle={t('profileSettingsSubtitle', lang)} />
-      <SettingsForms token={token} initialName={userName} email={userEmail} role={session.user?.role} />
-      <ActiveSessions token={token} initialSessions={sessions} />
+      <SettingsForms initialName={userName} email={userEmail} role={session.user?.role} />
+      <ActiveSessions initialSessions={sessions} />
     </div>
   )
 }

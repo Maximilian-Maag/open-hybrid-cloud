@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import Link from 'next/link'
 import { redirect, notFound } from 'next/navigation'
 import type { InfrastructureDetail, Role } from '@open-hybrid-cloud/types'
@@ -28,7 +28,6 @@ export default async function InfrastructureDetailPage({ params }: Props) {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
   const role = (session.user as unknown as { role: Role }).role
   // Same bar as the list's actions and the export: these re-fire or tear down real
@@ -37,7 +36,7 @@ export default async function InfrastructureDetailPage({ params }: Props) {
 
   let element: InfrastructureDetail
   try {
-    element = await get<InfrastructureDetail>(`/api/infrastructure/${id}`, token)
+    element = await get<InfrastructureDetail>(`/api/infrastructure/${id}`)
   } catch {
     // The API answers 404 for an element outside the caller's scope as well, so
     // this covers "gone" and "not yours" without distinguishing them here either.
@@ -123,7 +122,7 @@ export default async function InfrastructureDetailPage({ params }: Props) {
               </Field>
             )}
           </dl>
-          <InfraActions item={element} token={token} lang={lang} canRetry={canAct} />
+          <InfraActions item={element} lang={lang} canRetry={canAct} />
         </div>
       </Card>
 

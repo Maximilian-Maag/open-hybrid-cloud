@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
 import type { CostReport, CostBucket, ExchangeRate, Project } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -29,7 +29,6 @@ export default async function CostsPage({ searchParams }: Props) {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
   const localeCurrency = localeToCurrency(lang)
   const params = await searchParams
@@ -45,9 +44,9 @@ export default async function CostsPage({ searchParams }: Props) {
   const qs = query.toString()
 
   const [reportRes, projectsRes, ratesRes] = await Promise.allSettled([
-    get<CostReport>(`/api/costs${qs ? `?${qs}` : ''}`, token),
-    get<Project[]>('/api/projects', token),
-    get<ExchangeRate[]>('/api/public/exchange-rates', token),
+    get<CostReport>(`/api/costs${qs ? `?${qs}` : ''}`),
+    get<Project[]>('/api/projects'),
+    get<ExchangeRate[]>('/api/public/exchange-rates'),
   ])
 
   // A rejected report is the one failure that leaves nothing to show — an invalid
@@ -73,7 +72,7 @@ export default async function CostsPage({ searchParams }: Props) {
       <PageHeader
         title={t('costs', lang)}
         subtitle={t('costsSubtitle', lang)}
-        actions={<CostExport token={token} lang={lang} />}
+        actions={<CostExport lang={lang} />}
       />
 
       <CostFilters projects={projects} lang={lang} />

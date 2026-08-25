@@ -52,7 +52,13 @@ export const config = {
      * died as "Invalid email or password" without ever reaching the backend
      * (#36). Anything added under /api here needs the same thought: an endpoint
      * that is part of signing in cannot require being signed in.
+     *
+     * /api/proxy is exempt for the same reason in a different key (#146): it is
+     * how the browser reaches the backend API, so it is fetched, not navigated
+     * to. A middleware 307 to /login would be followed by `fetch` and the caller
+     * would parse the login page as its JSON. The route does its own auth check
+     * and answers 401, which lib/api.ts already turns into a sign-out.
      */
-    '/((?!login|impressum|api/auth|api/login-challenge|api/ping|_next/static|_next/image|favicon\\.ico).*)',
+    '/((?!login|impressum|api/auth|api/login-challenge|api/ping|api/proxy|_next/static|_next/image|favicon\\.ico).*)',
   ],
 }

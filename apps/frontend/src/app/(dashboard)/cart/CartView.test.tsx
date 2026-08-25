@@ -61,7 +61,7 @@ const renderCart = (items: CartItem[], p: Project[] = projects) =>
       initialItems={items}
       projects={p}
       costCenters={costCenters}
-      token="t"
+     
       lang="en"
       exchangeRates={{}}
       localeCurrency="EUR"
@@ -146,8 +146,8 @@ describe('CartView', () => {
 
     // Definitions depend on the product AND environment pair, so one fetch each.
     await waitFor(() => expect(mockedGet).toHaveBeenCalledTimes(2))
-    expect(mockedGet).toHaveBeenCalledWith('/api/catalog/10?lang=en&environmentId=2', 't')
-    expect(mockedGet).toHaveBeenCalledWith('/api/catalog/11?lang=en&environmentId=3', 't')
+    expect(mockedGet).toHaveBeenCalledWith('/api/catalog/10?lang=en&environmentId=2')
+    expect(mockedGet).toHaveBeenCalledWith('/api/catalog/11?lang=en&environmentId=3')
   })
 
   it('renders a parameter field per applicable definition', async () => {
@@ -256,7 +256,7 @@ describe('CartView', () => {
     renderCart([item(), item({ id: 2 })])
 
     await user.click(within(screen.getByTestId('cart-item-1')).getByRole('button', { name: /remove/i }))
-    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/cart/1', 't'))
+    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/cart/1'))
     await waitFor(() => expect(screen.queryByTestId('cart-item-1')).not.toBeInTheDocument())
     expect(screen.getByTestId('cart-item-2')).toBeInTheDocument()
   })
@@ -266,7 +266,7 @@ describe('CartView', () => {
     renderCart([item(), item({ id: 2 })])
 
     await user.click(screen.getByRole('button', { name: /empty cart/i }))
-    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/cart', 't'))
+    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/cart'))
     expect(await screen.findByText(/your cart is empty/i)).toBeInTheDocument()
   })
 

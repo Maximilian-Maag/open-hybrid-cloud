@@ -29,6 +29,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect(expiredLoginUrl('/'))
   }
 
+  // Server-side, and it stays there. This layout renders on the server, so the
+  // Authorization headers below never cross the wire to a browser — which is the
+  // whole distinction #146 turns on. Nothing here may become a prop.
   const token = session.apiToken
   const role = session.user.role
   const lang = await getLang()

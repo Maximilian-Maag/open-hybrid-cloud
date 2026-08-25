@@ -45,7 +45,7 @@ describe('ActiveSessions', () => {
     // Offering "sign out" on the row you are sitting in reads as a way to log
     // yourself out — that is what the menu item is for — and clicking it would
     // 401 the page out from under the user with no explanation.
-    render(<ActiveSessions token="t" initialSessions={[here, phone]} />)
+    render(<ActiveSessions initialSessions={[here, phone]} />)
 
     expect(screen.getByText('This device')).toBeTruthy()
     const buttons = screen.getAllByRole('button', { name: /^Sign out:/ })
@@ -54,7 +54,7 @@ describe('ActiveSessions', () => {
   })
 
   it('names each row in the button\'s accessible name, not just "Sign out"', () => {
-    render(<ActiveSessions token="t" initialSessions={[here, phone]} />)
+    render(<ActiveSessions initialSessions={[here, phone]} />)
     expect(screen.getByRole('button', { name: /Safari · iOS/ })).toBeTruthy()
   })
 
@@ -66,7 +66,7 @@ describe('ActiveSessions', () => {
       return jsonResponse([here])
     })
 
-    render(<ActiveSessions token="t" initialSessions={[here, phone]} />)
+    render(<ActiveSessions initialSessions={[here, phone]} />)
     await userEvent.click(screen.getByRole('button', { name: /^Sign out:/ }))
 
     await waitFor(() => {
@@ -79,11 +79,11 @@ describe('ActiveSessions', () => {
   })
 
   it('offers "sign out everywhere else" only while there is somewhere else', () => {
-    const { unmount } = render(<ActiveSessions token="t" initialSessions={[here, phone]} />)
+    const { unmount } = render(<ActiveSessions initialSessions={[here, phone]} />)
     expect(screen.getByRole('button', { name: 'Sign out everywhere else' })).toBeTruthy()
     unmount()
 
-    render(<ActiveSessions token="t" initialSessions={[here]} />)
+    render(<ActiveSessions initialSessions={[here]} />)
     expect(screen.queryByRole('button', { name: 'Sign out everywhere else' })).toBeNull()
   })
 
@@ -92,7 +92,7 @@ describe('ActiveSessions', () => {
       (init?.method ?? 'GET') === 'DELETE' ? jsonResponse({ revoked: 2 }) : jsonResponse([here]),
     )
 
-    render(<ActiveSessions token="t" initialSessions={[here, phone, session({ id: 3 })]} />)
+    render(<ActiveSessions initialSessions={[here, phone, session({ id: 3 })]} />)
     await userEvent.click(screen.getByRole('button', { name: 'Sign out everywhere else' }))
 
     await waitFor(() => {
@@ -108,7 +108,7 @@ describe('ActiveSessions', () => {
       new Response(JSON.stringify({ error: 'Session not found' }), { status: 404 }),
     )
 
-    render(<ActiveSessions token="t" initialSessions={[here, phone]} />)
+    render(<ActiveSessions initialSessions={[here, phone]} />)
     await userEvent.click(screen.getByRole('button', { name: /^Sign out:/ }))
 
     await waitFor(() => {
@@ -121,7 +121,7 @@ describe('ActiveSessions', () => {
   it('reads an unknown ip or user agent as "not recorded", not as a blank cell', () => {
     // Both columns are nullable: no trusted proxy, or a client that sends no
     // User-Agent. An empty cell would read as a bug.
-    render(<ActiveSessions token="t" initialSessions={[session({ ip: null, userAgent: null })]} />)
+    render(<ActiveSessions initialSessions={[session({ ip: null, userAgent: null })]} />)
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
   })
 
@@ -130,7 +130,7 @@ describe('ActiveSessions', () => {
     // nothing a server-side fetch could have pre-loaded.
     const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(jsonResponse([phone]))
 
-    render(<ActiveSessions token="t" userId={77} />)
+    render(<ActiveSessions userId={77} />)
 
     await waitFor(() => expect(screen.getByRole('button', { name: /^Sign out:/ })).toBeTruthy())
     expect(String(fetchMock.mock.calls[0][0])).toContain('userId=77')
@@ -140,7 +140,7 @@ describe('ActiveSessions', () => {
     // The settings page's case: the server already fetched it, and a second
     // request on hydration would be an audit entry per page load for nothing.
     const fetchMock = vi.spyOn(global, 'fetch')
-    render(<ActiveSessions token="t" initialSessions={[here]} />)
+    render(<ActiveSessions initialSessions={[here]} />)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -148,7 +148,7 @@ describe('ActiveSessions', () => {
     vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 }),
     )
-    render(<ActiveSessions token="t" userId={5} />)
+    render(<ActiveSessions userId={5} />)
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Forbidden'))
   })
 
@@ -159,7 +159,7 @@ describe('ActiveSessions', () => {
       (init?.method ?? 'GET') === 'DELETE' ? jsonResponse({ revoked: 1 }) : jsonResponse([]),
     )
 
-    render(<ActiveSessions token="t" userId={77} initialSessions={[phone]} />)
+    render(<ActiveSessions userId={77} initialSessions={[phone]} />)
     await userEvent.click(screen.getByRole('button', { name: /^Sign out:/ }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSession } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import type { Product, Category, CatalogPage as CatalogPageData, FavoriteProduct } from '@open-hybrid-cloud/types'
 import { get, put, del } from '@/lib/api'
@@ -17,8 +16,6 @@ const PAGE_SIZE = 24
 const SEARCH_DEBOUNCE_MS = 300
 
 export default function CatalogPage() {
-  const { data: session } = useSession()
-  const token = (session as unknown as { apiToken?: string })?.apiToken
   const searchParams = useSearchParams()
   const lang = useLang()
 
@@ -79,8 +76,7 @@ export default function CatalogPage() {
 
   const loadFavorites = useCallback(
     (generation: number) => {
-      if (!token) return
-      get<FavoriteProduct[]>(`/api/favorites?lang=${lang}`, token)
+      get<FavoriteProduct[]>(`/api/favorites?lang=${lang}`)
         .then((favs) => {
           if (favoritesGeneration.current !== generation) return
           setFavorites(new Set((favs ?? []).map((f) => f.productId)))
@@ -92,11 +88,10 @@ export default function CatalogPage() {
           setFavoriteItems([])
         })
     },
-    [token, lang],
+    [lang],
   )
 
   const load = useCallback(async () => {
-    if (!token) return
     // Claimed before the request goes out, so a response can tell whether it
     // is still the newest one asked for by the time it comes back.
     const generation = ++loadGeneration.current
@@ -104,8 +99,8 @@ export default function CatalogPage() {
     setError(false)
     try {
       const [page, cats] = await Promise.all([
-        get<CatalogPageData>(pageUrl(0), token),
-        get<Category[]>('/api/admin/categories', token),
+        get<CatalogPageData>(pageUrl(0)),
+        get<Category[]>('/api/admin/categories'),
       ])
       // A newer load has started since this one went out (another category
       // click, or the debounced search firing) — its answer belongs to a
@@ -129,7 +124,7 @@ export default function CatalogPage() {
     } finally {
       if (loadGeneration.current === generation) setLoading(false)
     }
-  }, [token, pageUrl, loadFavorites])
+  }, [pageUrl, loadFavorites])
 
   useEffect(() => { void load() }, [load])
 
@@ -141,10 +136,10 @@ export default function CatalogPage() {
    * what I have" is the more defensible of the two.
    */
   const loadMore = async () => {
-    if (!token || loadingMore) return
+    if (loadingMore) return
     setLoadingMore(true)
     try {
-      const page = await get<CatalogPageData>(pageUrl(products.length), token)
+      const page = await get<CatalogPageData>(pageUrl(products.length))
       setProducts((prev) => [...prev, ...(page?.items ?? [])])
       setTotal(page?.total ?? 0)
     } catch {
@@ -173,7 +168,7 @@ export default function CatalogPage() {
   }
 
   async function toggleFavorite(productId: number) {
-    if (!token || favoriteBusy.has(productId)) return
+    if (favoriteBusy.has(productId)) return
     favoritesGeneration.current += 1
     const wasFavorited = favorites.has(productId)
     // Captured before the optimistic update below removes it. A rollback
@@ -200,8 +195,8 @@ export default function CatalogPage() {
     setFavoriteBusy((prev) => new Set(prev).add(productId))
 
     try {
-      if (wasFavorited) await del(`/api/favorites/${productId}`, token)
-      else await put(`/api/favorites/${productId}`, {}, token)
+      if (wasFavorited) await del(`/api/favorites/${productId}`)
+      else await put(`/api/favorites/${productId}`, {})
     } catch {
       // Roll back rather than leave the star claiming something the server did
       // not record.

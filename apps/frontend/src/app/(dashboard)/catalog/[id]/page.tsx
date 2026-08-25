@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import type {
@@ -47,16 +47,15 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
   const localeCurrency = localeToCurrency(lang)
 
   const [productRes, projectsRes, costCentersRes, ratesRes, categoriesRes] = await Promise.allSettled([
-    get<ProductDetail>(`/api/catalog/${id}?lang=${lang}`, token),
-    get<Project[]>('/api/projects', token),
-    get<CostCenter[]>('/api/admin/cost-centers', token),
-    get<ExchangeRate[]>('/api/admin/exchange-rates', token),
-    get<Category[]>('/api/admin/categories', token),
+    get<ProductDetail>(`/api/catalog/${id}?lang=${lang}`),
+    get<Project[]>('/api/projects'),
+    get<CostCenter[]>('/api/admin/cost-centers'),
+    get<ExchangeRate[]>('/api/admin/exchange-rates'),
+    get<Category[]>('/api/admin/categories'),
   ])
 
   if (productRes.status === 'rejected') notFound()
@@ -68,7 +67,6 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
   // where this product is in the page it returns.
   const relatedRes = await get<CatalogPage>(
     `/api/catalog?lang=${lang}&categoryId=${product.categoryId}&limit=5`,
-    token,
   ).catch(() => null)
   const related = (relatedRes?.items ?? []).filter((item) => item.id !== product.id).slice(0, 4)
   const projects = projectsRes.status === 'fulfilled' ? (projectsRes.value ?? []) : []
@@ -282,7 +280,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
               <div className="mt-4 space-y-3">
                 {/* Environment plus one click, and nothing else: parameters are
                     what checkout is for (issue #28). */}
-                <AddToCart product={product} token={token} lang={lang} />
+                <AddToCart product={product} lang={lang} />
                 {/* Styled as a link, not a Button inside a Link: nested
                     interactives fail the axe gate in e2e/a11y.spec.ts. Outlined
                     rather than filled — it is the second action, and it only jumps
@@ -316,7 +314,6 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
             product={product}
             projects={projects}
             costCenters={costCenters}
-            token={token}
             lang={lang}
             exchangeRates={ratesMap}
             localeCurrency={localeCurrency}

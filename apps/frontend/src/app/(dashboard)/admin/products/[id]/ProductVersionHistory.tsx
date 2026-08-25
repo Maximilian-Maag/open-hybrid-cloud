@@ -10,7 +10,6 @@ import { t } from '@/lib/i18n'
 
 interface Props {
   productId: number
-  token: string
   lang?: string
 }
 
@@ -22,7 +21,7 @@ interface Props {
  * reference panel, and a slow or failing read of it must not delay or break the
  * edit form above it.
  */
-export function ProductVersionHistory({ productId, token, lang = 'en' }: Props) {
+export function ProductVersionHistory({ productId, lang = 'en' }: Props) {
   const [versions, setVersions] = useState<ProductVersion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +32,7 @@ export function ProductVersionHistory({ productId, token, lang = 'en' }: Props) 
 
   useEffect(() => {
     let stale = false
-    get<ProductVersion[]>(`/api/admin/products/${productId}/versions`, token)
+    get<ProductVersion[]>(`/api/admin/products/${productId}/versions`)
       .then((rows) => {
         if (stale) return
         const list = rows ?? []
@@ -49,7 +48,7 @@ export function ProductVersionHistory({ productId, token, lang = 'en' }: Props) 
       .catch((e) => { if (!stale) setError(e instanceof Error ? e.message : 'Failed to load the history.') })
       .finally(() => { if (!stale) setLoading(false) })
     return () => { stale = true }
-  }, [productId, token])
+  }, [productId])
 
   async function handleCompare() {
     setDiffError(null)
@@ -58,7 +57,6 @@ export function ProductVersionHistory({ productId, token, lang = 'en' }: Props) 
       setDiff(
         await get<ProductVersionDiff>(
           `/api/admin/products/${productId}/versions/diff?from=${fromId}&to=${toId}`,
-          token,
         ),
       )
     } catch (e) {

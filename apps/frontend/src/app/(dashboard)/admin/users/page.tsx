@@ -11,14 +11,13 @@ export default async function UsersPage() {
   if (!session) redirect('/login')
   const role = (session.user as unknown as { role: Role }).role
   if (role !== 'root') redirect('/admin')
-  const token = (session as unknown as { apiToken: string }).apiToken
 
   const lang = await getLang()
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <PageHeader title={t('users', lang)} subtitle={t('usersSubtitle', lang)} />
-      <UsersManager token={token} />
+      <UsersManager />
     </div>
   )
 }

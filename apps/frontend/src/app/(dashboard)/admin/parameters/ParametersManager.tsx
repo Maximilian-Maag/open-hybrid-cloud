@@ -12,8 +12,6 @@ import { Modal } from '@/components/ui/Modal'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
-interface Props { token: string }
-
 const TYPE_KEYS: Record<ParameterType, 'typeString' | 'typeNumber' | 'typeBoolean' | 'typeDropdown'> = {
   string: 'typeString',
   number: 'typeNumber',
@@ -26,7 +24,7 @@ const emptyForm = () => ({
   defaultValue: '', required: false, sensitive: false,
 })
 
-export function ParametersManager({ token }: Props) {
+export function ParametersManager() {
   const lang = useLang()
   const TYPES: { value: ParameterType; label: string }[] = (Object.keys(TYPE_KEYS) as ParameterType[]).map((value) => ({
     value, label: t(TYPE_KEYS[value], lang),
@@ -44,7 +42,7 @@ export function ParametersManager({ token }: Props) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = (await get<Parameter[]>('/api/admin/parameters', token)) ?? []
+      const all = (await get<Parameter[]>('/api/admin/parameters')) ?? []
       setParams(all.filter((p) => p.scope === 'global'))
       setDeleteError(null)
     } catch (e) {
@@ -52,7 +50,7 @@ export function ParametersManager({ token }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [token, lang])
+  }, [lang])
 
   useEffect(() => { void load() }, [load])
 
@@ -83,7 +81,7 @@ export function ParametersManager({ token }: Props) {
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
       }
-      await post('/api/admin/parameters', body, token)
+      await post('/api/admin/parameters', body)
       setAddOpen(false); void load()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : t('genericFailed', lang))
@@ -103,7 +101,7 @@ export function ParametersManager({ token }: Props) {
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
       }
-      await put(`/api/admin/parameters/${editTarget.id}`, body, token)
+      await put(`/api/admin/parameters/${editTarget.id}`, body)
       setEditTarget(null); void load()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : t('genericFailed', lang))
@@ -116,7 +114,7 @@ export function ParametersManager({ token }: Props) {
     if (!deleteTarget) return
     setSaving(true); setDeleteError(null)
     try {
-      await del(`/api/admin/parameters/${deleteTarget.id}`, token)
+      await del(`/api/admin/parameters/${deleteTarget.id}`)
       setDeleteTarget(null); void load()
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))

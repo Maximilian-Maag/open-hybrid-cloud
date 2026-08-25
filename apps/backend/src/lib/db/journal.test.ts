@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
+import type * as DrizzleKitApiModule from 'drizzle-kit/api'
+
+type DrizzleKitApi = typeof DrizzleKitApiModule
 
 /**
  * The migration journal, checked against the one rule drizzle actually applies.
@@ -61,5 +65,67 @@ describe('the migration journal', () => {
     const idxs = journal().map((entry) => entry.idx)
     expect(idxs).toEqual([...idxs].sort((a, b) => a - b))
     expect(new Set(idxs).size).toBe(idxs.length)
+  })
+})
+
+/**
+ * The snapshot `db:generate` diffs against, checked against schema.ts.
+ *
+ * drizzle-kit never reads the .sql files when generating. It reads ONE file — the
+ * lexicographically last `drizzle/meta/*.json` that is not `_journal.json`
+ * (`preparePrevSnapshot`) — and emits whatever turns that into schema.ts. Because
+ * most migrations here are hand-written, `meta/` held only `0000_snapshot.json`
+ * and `0001_snapshot.json` while the journal listed 28 migrations, so the diff was
+ * taken against the database as it stood thirty migrations ago.
+ *
+ * What that emitted (issue #141), among 194 lines of already-applied DDL:
+ *
+ *     ALTER TABLE "pipeline_stacks" DROP COLUMN "webhook_url";
+ *
+ * — a column migration 0003 had already dropped. Postgres answers 42703, which is
+ * not one of `IDEMPOTENT_PG_CODES` in lib/bootstrap, so `runBootstrap` rethrows
+ * and the app does not boot. `pnpm db:generate` is a documented workflow, so the
+ * documented workflow produced a file that stopped the server from starting.
+ *
+ * This fails if the snapshot ever falls behind again. `pnpm --filter backend
+ * db:snapshot` is what fixes it after a hand-written migration; `db:generate`
+ * writes the snapshot itself.
+ */
+describe('the drizzle snapshot', () => {
+  // Picked exactly as drizzle-kit picks it, not by name: reproducing the choice
+  // is the only way this test speaks about the file that will actually be used.
+  const snapshotFiles = () =>
+    readdirSync(join(DRIZZLE_DIR, 'meta'))
+      .filter((name) => !name.startsWith('_'))
+      .sort()
+
+  it('is named for the newest migration in the journal', () => {
+    const entries = journal()
+    const tip = entries[entries.length - 1]
+    const files = snapshotFiles()
+
+    expect(files[files.length - 1]).toBe(`${String(tip.idx).padStart(4, '0')}_snapshot.json`)
+  })
+
+  it('describes the same schema as schema.ts, so db:generate emits nothing', async () => {
+    // Loaded through `createRequire` rather than `import`: drizzle-kit's ESM
+    // build carries an esbuild shim that throws "Dynamic require of fs is not
+    // supported" the moment anything in it reaches for a node builtin. Its CJS
+    // build is the one that works, and this is a node-environment test.
+    const { generateDrizzleJson, generateMigration } = createRequire(import.meta.url)(
+      'drizzle-kit/api',
+    ) as DrizzleKitApi
+    const schema = await import('./schema')
+
+    const files = snapshotFiles()
+    const prev = JSON.parse(readFileSync(join(DRIZZLE_DIR, 'meta', files[files.length - 1]), 'utf8'))
+    const cur = generateDrizzleJson(schema, prev.id)
+
+    // Not "the file matches byte for byte": the snapshot carries a random uuid per
+    // write, so equality would fail on every regeneration. What has to hold is
+    // that the diff drizzle-kit takes is empty.
+    const statements = await generateMigration(prev, cur)
+
+    expect(statements, statements.join('\n')).toEqual([])
   })
 })

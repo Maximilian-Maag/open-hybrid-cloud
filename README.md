@@ -296,7 +296,30 @@ Open http://localhost:3000 and sign in with the `ADMIN_EMAIL` / `ADMIN_PASSWORD`
    ```bash
    pnpm --filter backend db:generate
    ```
-   Commit the generated file under `apps/backend/drizzle/`.
+   Commit the generated file under `apps/backend/drizzle/`, **including the
+   `drizzle/meta/` snapshot it writes alongside it**.
+
+`schema.ts` and the migrations have to stay in step, and two footguns make that
+easy to get wrong (issue #141):
+
+- `db:generate` never reads the `.sql` files. It diffs `schema.ts` against the
+  lexicographically last `drizzle/meta/*.json` and emits whatever turns one into
+  the other. A missing snapshot means it regenerates migrations that have already
+  run — and re-dropping an already-dropped column raises `42703`, which
+  `runBootstrap` does not treat as idempotent, so the server stops booting.
+- `db:push` drops whatever `schema.ts` does not declare. An index or CHECK that
+  lives only in a migration is silently removed the next time somebody runs
+  `make db-push` against a migration-built database.
+
+So: if you hand-write a migration rather than generating one, declare the same
+objects in `schema.ts` and then refresh the snapshot:
+
+```bash
+pnpm --filter backend db:snapshot
+```
+
+`apps/backend/src/lib/db/journal.test.ts` fails if the snapshot and `schema.ts`
+disagree, so CI catches a forgotten refresh.
 
 #### Running tests
 

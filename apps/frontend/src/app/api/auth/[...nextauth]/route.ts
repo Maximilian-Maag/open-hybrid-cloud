@@ -17,7 +17,22 @@ import { stripServerOnlySessionFields } from '@/lib/sessionResponse'
  * always comes from here. If that ever changes, the prop is a second copy of
  * this leak and has to be stripped too.
  */
-export const POST = handlers.POST
+/**
+ * Both verbs, not just GET.
+ *
+ * `useSession().update()` — which TwoFactorCard and SecurityKeysCard both call
+ * after enrolling — POSTs to `/api/auth/session`, and NextAuth answers it with
+ * the same session JSON that GET returns. Stripping only GET therefore closed
+ * the leak on page load and left it open on every session refresh, which is
+ * precisely the moment the 2FA cards trigger one. Caught in review of this PR.
+ *
+ * The wrapper is a no-op on every other NextAuth endpoint that goes through
+ * here: it rewrites a response only when the body is a JSON object that
+ * actually carries one of the server-only fields, and passes redirects, errors
+ * and the CSRF and provider endpoints through untouched.
+ */
+export const POST = async (req: NextRequest): Promise<Response> =>
+  stripServerOnlySessionFields(await handlers.POST(req))
 
 export const GET = async (req: NextRequest): Promise<Response> =>
   stripServerOnlySessionFields(await handlers.GET(req))

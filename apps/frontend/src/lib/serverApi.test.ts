@@ -21,10 +21,10 @@ afterEach(() => {
 })
 
 /**
- * Issue #146. This is the only module in the frontend that reads
- * `session.apiToken` for an API call, and it is deliberately not the one client
- * components import — see the file for why the split is load-bearing rather than
- * tidy.
+ * Issue #146. One of the two modules in the frontend that read
+ * `session.apiToken` — this one for server components, the `/api/proxy` route
+ * for the browser — and deliberately not the one client components import. See
+ * the file for why the split is load-bearing rather than tidy.
  */
 describe('serverApi', () => {
   it.each([

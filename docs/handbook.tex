@@ -959,6 +959,12 @@ belong to the \emph{frontend} on port 3000:
         \code{session}, \code{callback/credentials}, \code{signin}, \ldots)
   \item \code{/api/login-challenge} --- step one of the two-step sign-in
   \item \code{/api/ping} --- the frontend's liveness route
+  \item \code{/api/proxy/*} --- how the browser reaches the backend API at all
+        (issue~\#146). The browser no longer holds the bearer token; it calls
+        this route with the HttpOnly session cookie and the route attaches the
+        token server-side. Sending this one to port 3001 does not produce a 404
+        --- it produces a 401 on every request the signed-in user makes, which
+        is harder to attribute.
 \end{itemize}
 
 \noindent
@@ -1652,8 +1658,8 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 Nginx routes \code{/api/*} and \code{/api/webhooks/*} to the backend
 container (port 3001), and all other paths to the frontend (port 3000).
 The exceptions are the frontend's own \code{/api/auth},
-\code{/api/login-challenge} and \code{/api/ping}, which go to the frontend
-(see section on the two-container split). \code{/api/auth/callback} used to be
+\code{/api/login-challenge}, \code{/api/ping} and \code{/api/proxy}, which go
+to the frontend (see section on the two-container split). \code{/api/auth/callback} used to be
 the exception to that exception --- Entra ID's callback, matched exactly so it
 outranked the \code{/api/auth} prefix --- but the SSO flow was removed in
 issue~\#139 and the whole prefix is the frontend's again.
@@ -1729,6 +1735,12 @@ belong to the frontend on port 3000:
         (\code{csrf}, \code{session}, \code{callback/credentials}, \ldots)
   \item \code{/api/login-challenge} --- step one of the two-step sign-in
   \item \code{/api/ping} --- the frontend's liveness route
+  \item \code{/api/proxy/*} --- how the browser reaches the backend API at all
+        (issue~\#146). The browser no longer holds the bearer token; it calls
+        this route with the HttpOnly session cookie and the route attaches the
+        token server-side. Sending this one to port 3001 does not produce a 404
+        --- it produces a 401 on every request the signed-in user makes, which
+        is harder to attribute.
 \end{itemize}
 
 \noindent

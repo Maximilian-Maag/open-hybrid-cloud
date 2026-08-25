@@ -5,6 +5,7 @@ import { ok, err, type Result } from '@/lib/services/result'
 import { withoutSensitiveDefaults } from '@/lib/services/parameterRedaction'
 import { safeImageContentType } from '@/lib/services/imageUpload'
 import { listActiveSizesForProduct } from '@/lib/services/sizes'
+import { productNameSql, productDescriptionSql, productLongDescriptionSql } from '@/lib/db/productText'
 // The gallery payload is the shared API type, not a local twin of it. This module
 // declared its own identical `ProductImageMeta`, and admin/products.ts imported
 // that one while the frontend's ProductGallery imported the package's — two
@@ -196,18 +197,8 @@ export const listCatalog = async (
   // Built once and used in both the SELECT and the WHERE: searching against a
   // different expression than the one displayed is how a search result becomes
   // inexplicable.
-  const nameSql = sql<string>`COALESCE(
-    (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
-    (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
-    (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
-    (SELECT name FROM product_translations WHERE product_id = ${products.id} LIMIT 1)
-  )`
-  const descriptionSql = sql<string>`COALESCE(
-    (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
-    (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
-    (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
-    ''
-  )`
+  const nameSql = productNameSql(lang)
+  const descriptionSql = productDescriptionSql(lang)
 
   // Retired products stay in the table as the referent their orders need
   // (products.retiredAt, issue #142) and must never appear in the catalogue.
@@ -273,34 +264,9 @@ export const getProduct = async (
       imageAlt: primaryImageAltSql,
       owner: products.owner,
       docsUrl: products.docsUrl,
-      name: sql<string>`COALESCE(
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} LIMIT 1)
-      )`,
-      description: sql<string>`COALESCE(
-        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
-        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
-        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
-        ''
-      )`,
-      // Same fallback chain as the short description, with one difference: the
-      // last arm is '' rather than "any translation", because an untranslated
-      // long text is a wall of the wrong language, and the page simply omits the
-      // section when it is empty.
-      //
-      // NULLIF on every arm, because `long_description` is NOT NULL DEFAULT '':
-      // COALESCE('', 'the English text') is '', so without this the fallback fired
-      // only when the translation ROW was missing entirely. A language that has a
-      // row but an empty long text — which is what the demo seed creates for de —
-      // showed no story at all. Measured against Postgres, not assumed.
-      longDescription: sql<string>`COALESCE(
-        NULLIF((SELECT long_description FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}), ''),
-        NULLIF((SELECT long_description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'), ''),
-        NULLIF((SELECT long_description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'), ''),
-        ''
-      )`,
+      name: productNameSql(lang),
+      description: productDescriptionSql(lang),
+      longDescription: productLongDescriptionSql(lang),
     })
     .from(products)
     // A retired product is gone as far as the shop is concerned, even though the

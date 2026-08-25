@@ -28,6 +28,7 @@ import {
   redactParametersForOrders,
   union,
 } from '@/lib/services/parameterRedaction'
+import { productNameSql as productNameFor } from '@/lib/db/productText'
 
 export interface InfraRow {
   id: number
@@ -99,22 +100,25 @@ export interface InfraFilters {
   direction?: 'asc' | 'desc'
 }
 
+// Built per request rather than once at module scope, because it now depends on
+// the caller's language.
+//
 // Matched against the same expression the row displays, so a search hit is
-// always visibly explicable. Deliberately excludes `parameters`: the values
-// there include ones flagged sensitive, and a substring match would turn the
-// filter into an oracle for confirming a secret's value.
-const productNameSql = sql<string>`(
-  SELECT name FROM product_translations
-  WHERE product_id = ${infrastructureElements.productId}
-    AND language_code = 'en'
-  LIMIT 1
-)`
+// always visibly explicable — which is what it stopped being when the display
+// followed the catalogue's language and the search stayed on English: a German
+// user typing `Virtuelle` into the box, having just read `Virtuelle Maschine` in
+// the catalogue, got nothing back (#162). Deliberately excludes `parameters`:
+// the values there include ones flagged sensitive, and a substring match would
+// turn the filter into an oracle for confirming a secret's value.
+const elementProductName = (lang: string) => productNameFor(lang, infrastructureElements.productId)
 
 export const listInfrastructure = async (
   session: SessionUser,
   filters: InfraFilters,
+  lang = 'en',
 ): Promise<Result<InfraRow[]>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
+  const productNameSql = elementProductName(lang)
 
   const conditions: ReturnType<typeof sql>[] = []
   if (!isAdmin) conditions.push(sql`${projects.ownerId} = ${session.id}`)
@@ -227,8 +231,13 @@ export interface InfraFacets {
  */
 export const listInfrastructureFacets = async (
   session: SessionUser,
+  lang = 'en',
 ): Promise<Result<InfraFacets>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
+  // The facets are the option list for the filters above the same rows, so they
+  // have to name products the way the rows do or the filter reads as a list of
+  // products the user does not have.
+  const productNameSql = elementProductName(lang)
   const scope = isAdmin ? undefined : sql`${projects.ownerId} = ${session.id}`
 
   const rows = await db
@@ -971,8 +980,10 @@ export const refreshElementOutputs = async (
 export const getInfrastructureElement = async (
   session: SessionUser,
   id: number,
+  lang = 'en',
 ): Promise<Result<InfraDetail>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
+  const productNameSql = elementProductName(lang)
 
   const rows = await db
     .select({

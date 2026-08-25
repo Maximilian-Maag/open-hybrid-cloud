@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { useLang } from '@/lib/useLang'
-import { t } from '@/lib/i18n'
+import { t, SUPPORTED_LANGUAGES } from '@/lib/i18n'
 
 interface Props {
   categories: Category[]
@@ -23,12 +23,13 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 export function NewProductForm({ categories, token }: Props) {
   const lang = useLang()
-  const LANGUAGES = [
-    { value: 'en', label: t('languageEnglish', lang) },
-    { value: 'de', label: t('languageGerman', lang) },
-    { value: 'fr', label: t('languageFrench', lang) },
-    { value: 'es', label: t('languageSpanish', lang) },
-  ]
+  // All 25, from the single list `SUPPORTED_LANGUAGES` — not the four this used
+  // to name. Offering `en`, `de`, `fr` and `es` while the app translates its own
+  // UI into 25 made a `pl`-only or `mt`-only product impossible to create, and
+  // every read path outside the catalogue then had no name to show for it
+  // (#162). Labelled in each language's own name, which is what the language
+  // switcher does and what a reader who does not speak the UI language can find.
+  const LANGUAGES = SUPPORTED_LANGUAGES.map((l) => ({ value: l.code, label: l.name }))
   const router = useRouter()
   const [image, setImage] = useState<File | null>(null)
   const [imageAlt, setImageAlt] = useState('')

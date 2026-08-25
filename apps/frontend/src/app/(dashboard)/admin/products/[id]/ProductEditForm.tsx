@@ -32,14 +32,14 @@ import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ProductVersionHistory } from './ProductVersionHistory'
-import { t } from '@/lib/i18n'
+import { t, SUPPORTED_LANGUAGES } from '@/lib/i18n'
 
-const LANGUAGES = [
-  { value: 'en', label: 'English' },
-  { value: 'de', label: 'German' },
-  { value: 'fr', label: 'French' },
-  { value: 'es', label: 'Spanish' },
-]
+// All 25, from the single list `SUPPORTED_LANGUAGES` — not the four this used to
+// name. Offering `en`, `de`, `fr` and `es` while the app translates its own UI
+// into 25 made a `pl`-only or `mt`-only product impossible to create as a base
+// language, and every read path outside the catalogue then had no name to show
+// for it (#162).
+const LANGUAGES = SUPPORTED_LANGUAGES.map((l) => ({ value: l.code, label: l.name }))
 
 const COST_CENTER_MODES: { value: CostCenterMode; label: string }[] = [
   { value: 'project', label: 'From Project' },

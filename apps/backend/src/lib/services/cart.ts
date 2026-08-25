@@ -4,7 +4,6 @@ import {
   cartItems,
   products,
   productEnvironments,
-  productTranslations,
   deploymentEnvironments,
 } from '@/lib/db/schema'
 import { and, eq, sql, inArray } from 'drizzle-orm'
@@ -20,6 +19,7 @@ import {
   lineSizeStillOfferedSql,
 } from '@/lib/services/sizes'
 import { primaryImageAltSql } from '@/lib/services/catalog'
+import { productNameSql } from '@/lib/db/productText'
 
 export interface CartRow {
   id: number
@@ -75,7 +75,7 @@ export const MAX_CHECKOUT_ELEMENTS = 100
  * request per item, and the offering is checked so an item whose product was
  * withdrawn can be shown as unavailable instead of silently failing at checkout.
  */
-export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>> => {
+export const listCart = async (session: SessionUser, lang = 'en'): Promise<Result<CartRow[]>> => {
   const rows = await db
     .select({
       id: cartItems.id,
@@ -83,7 +83,7 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
       environmentId: cartItems.environmentId,
       parameters: cartItems.parameters,
       createdAt: cartItems.createdAt,
-      productName: productTranslations.name,
+      productName: productNameSql(lang, cartItems.productId),
       imageAlt: primaryImageAltSql,
       environmentName: deploymentEnvironments.name,
       sizeCode: cartItems.sizeCode,
@@ -106,13 +106,6 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
     // joined produces a cross join, which is how adding imageAlt broke every cart
     // test at once.
     .leftJoin(products, eq(cartItems.productId, products.id))
-    .leftJoin(
-      productTranslations,
-      and(
-        eq(cartItems.productId, productTranslations.productId),
-        eq(productTranslations.languageCode, 'en'),
-      ),
-    )
     .leftJoin(deploymentEnvironments, eq(cartItems.environmentId, deploymentEnvironments.id))
     // Left, not inner: an item whose offering was withdrawn must still be listed,
     // so the user can see why checkout will refuse it.

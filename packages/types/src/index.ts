@@ -217,6 +217,33 @@ export interface CatalogPage {
   offset: number
 }
 
+/**
+ * The landing page's counters and its five most recent orders.
+ *
+ * `GET /api/dashboard` exists so the dashboard stops answering "how many orders
+ * do I have" by downloading every order, every infrastructure element and every
+ * project and calling `.length` on the results (issue #158). Fixed size,
+ * whatever the history behind it.
+ */
+export interface DashboardSummary {
+  orders: { total: number; pending: number }
+  infrastructure: { active: number }
+  projects: { total: number }
+  /** Newest first, capped at five — what the page renders. */
+  recentOrders: DashboardOrder[]
+}
+
+/** One row of the dashboard's recent-orders list, with only what it renders. */
+export interface DashboardOrder {
+  id: number
+  productId: number
+  productName: string | null
+  environmentName: string | null
+  projectName: string | null
+  status: OrderStatus
+  createdAt: string
+}
+
 export interface Product {
   id: number
   categoryId: number

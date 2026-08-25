@@ -37,13 +37,38 @@ const config = {
   // objects are no longer covered by the score.
   ignoreStatic: true,
 
+  // The dry run is its own clock, defaulting to five minutes for the whole
+  // suite. The frontend's takes ~50 seconds, so this is headroom rather than a
+  // fix — but overrunning it produces no score at all, silently, and a gate that
+  // can vanish without saying so is worth one line to prevent.
+  dryRunTimeoutMinutes: 20,
+
   // 80 is the floor, and it fails the command rather than tutting at it (#127).
   //
   // Note what this is measured over: `mutate` below deliberately includes files
   // with no test at all, so they show up as blind spots. They score zero and they
   // drag this number down — which is the intended pressure, but it means a low
   // score here can mean "untested file added" rather than "assertions got worse".
-  thresholds: { high: 90, low: 80, break: 80 },
+  // 90 is the target the owner set, and it is a long way above where this stands
+  // today: the frontend's last completed run scored 26.80 (54.69 over the code
+  // its tests actually reach, with 4,470 mutants having no test near them at
+  // all), and the backend has never produced a number because its nightly died
+  // in the dry run — see the timeout notes above, which is what this branch
+  // fixes.
+  //
+  // `break` is 90 as well, by the owner's decision, taken with the gap in front
+  // of them. So the nightly FAILS until the score gets there — that is deliberate
+  // and it is the point: the run is a standing statement that the suite is not
+  // yet where it is meant to be, rather than a green tick over 26 percent.
+  //
+  // What that costs, said plainly so nobody mistakes it for a regression: the
+  // Mutation testing workflow is red every night until #245 closes. It is not a
+  // pull-request check and blocks nothing; a red run there means "still climbing",
+  // and the number in the job summary is the thing to read.
+  //
+  // Issue #245 tracks the climb and says where the points are — roughly two
+  // thirds of the frontend gap is files with no test at all, not weak assertions.
+  thresholds: { high: 90, low: 80, break: 90 },
 }
 
 export default config

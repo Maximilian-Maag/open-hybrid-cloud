@@ -200,6 +200,83 @@ describe('LoginForm — second factor required', () => {
     expect(screen.queryByText(/code from your authenticator app/i)).toBeNull()
   })
 
+  /**
+   * The button half of the same screen (#240).
+   *
+   * The submit button was rendered unconditionally, so a key-only account got a
+   * "Sign in" button under the hidden code field. Pressing it submitted an empty
+   * code and the backend refused it — a refusal that reads as "your login was
+   * rejected" for a control that should never have been there.
+   *
+   * `queryByRole` and not `toBeVisible`: the button is not rendered at all, and
+   * jsdom would not see a `hidden` class if it were only styled away.
+   */
+  it('offers no submit button for an account that holds only security keys', async () => {
+    mockChallenge({
+      ok: true,
+      mfaRequired: true,
+      mfaToken: 'challenge-token',
+      methods: ['webauthn'],
+      webauthnOptions: { challenge: 'abc', allowCredentials: [] },
+    })
+    render(<LoginForm {...props} />)
+    await signInAsPassword()
+
+    await waitFor(() => expect(screen.queryByLabelText(/^password$/i)).toBeNull())
+    // The key button is the whole interface, plus the way out.
+    expect(screen.getByRole('button', { name: /use security key/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /verify/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /sign in/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /back/i })).toBeInTheDocument()
+  })
+
+  /**
+   * The label, where a code IS wanted (#240).
+   *
+   * It said "Sign in" — the same words as the button on the password step the
+   * user had just pressed, which reads as being asked to log in again rather
+   * than to confirm a code. Asserted as an absence too: a button whose
+   * accessible name still contains "sign in" is the bug.
+   */
+  it('names the second-factor action rather than repeating "Sign in"', async () => {
+    await enterMfa()
+
+    expect(screen.getByRole('button', { name: /^verify$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /sign in/i })).toBeNull()
+  })
+
+  /**
+   * Neither control (#240).
+   *
+   * `login-challenge` leaves `webauthnOptions` null when building them fails,
+   * rather than failing the sign-in. On a key-only account that hides the code
+   * field AND removes the key button, so without this the card would be a
+   * heading and a Back link with nothing said about why.
+   */
+  it('explains itself when the challenge can offer no factor at all', async () => {
+    mockChallenge({
+      ok: true,
+      mfaRequired: true,
+      mfaToken: 'challenge-token',
+      methods: ['webauthn'],
+      webauthnOptions: null,
+    })
+    render(<LoginForm {...props} />)
+    await signInAsPassword()
+
+    expect(await screen.findByText(/could not offer a second factor/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /use security key/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /verify/i })).toBeNull()
+  })
+
+  // The message is for the dead end only: a code field on screen is an interface,
+  // so saying "no second factor could be offered" next to it would be a lie.
+  it('says nothing of the sort when the code field is there', async () => {
+    await enterMfa()
+
+    expect(screen.queryByText(/could not offer a second factor/i)).toBeNull()
+  })
+
   it('asks for a code instead of signing in', async () => {
     await enterMfa()
 
@@ -216,7 +293,7 @@ describe('LoginForm — second factor required', () => {
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText(/authentication code/i), '123456')
-    await user.click(screen.getByRole('button', { name: /^sign in$/i }))
+    await user.click(screen.getByRole('button', { name: /^verify$/i }))
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/'))
     const credentials = signIn.mock.calls[0][1] as Record<string, unknown>
@@ -231,7 +308,7 @@ describe('LoginForm — second factor required', () => {
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText(/authentication code/i), 'ABCDE-FGHJK-LMNPQ-RSTUV')
-    await user.click(screen.getByRole('button', { name: /^sign in$/i }))
+    await user.click(screen.getByRole('button', { name: /^verify$/i }))
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/'))
     expect((signIn.mock.calls[0][1] as Record<string, unknown>).code).toBe('ABCDE-FGHJK-LMNPQ-RSTUV')
@@ -244,7 +321,7 @@ describe('LoginForm — second factor required', () => {
     const user = userEvent.setup()
     const field = screen.getByLabelText(/authentication code/i)
     await user.type(field, '000000')
-    await user.click(screen.getByRole('button', { name: /^sign in$/i }))
+    await user.click(screen.getByRole('button', { name: /^verify$/i }))
 
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(field).toHaveValue('')
@@ -259,7 +336,7 @@ describe('LoginForm — second factor required', () => {
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText(/authentication code/i), '000000')
-    await user.click(screen.getByRole('button', { name: /^sign in$/i }))
+    await user.click(screen.getByRole('button', { name: /^verify$/i }))
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/locked/i)

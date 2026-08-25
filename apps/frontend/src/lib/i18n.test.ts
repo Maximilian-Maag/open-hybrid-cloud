@@ -174,6 +174,9 @@ describe('i18n', () => {
     'twoFactorActivate', 'twoFactorRecoveryCodes', 'twoFactorRecoveryHint',
     'twoFactorRecoveryLeft', 'twoFactorLoginHint', 'twoFactorVerifying',
     'twoFactorCurrentPassword', 'twoFactorLockedOut',
+    // The login step-two button and its dead-end message (#240). They went in as
+    // one block across all 25 tables, same as the rest of this list.
+    'twoFactorVerify', 'twoFactorNoMethod',
   ]
 
   it('has a real translation for every two-factor key in every language', () => {
@@ -201,6 +204,22 @@ describe('i18n', () => {
         .map(([c, n]) => `${c} (${n}/${TWO_FACTOR_KEYS.length})`)
         .join(', ')}`,
     ).toEqual([])
+  })
+
+  /**
+   * The step-two button must not repeat the step-one button (#240).
+   *
+   * The label WAS `signIn` in every language — the same words as the button on
+   * the password step the user had just pressed, which reads as "your login was
+   * refused, do it again" rather than "confirm this code". A translation that
+   * lands back on the sign-in wording puts the defect back, so this is asserted
+   * per language rather than only for English.
+   */
+  it('does not label the second-factor button with the sign-in wording', () => {
+    for (const { code } of SUPPORTED_LANGUAGES) {
+      expect(t('twoFactorVerify', code), `${code}.twoFactorVerify`).toBeTruthy()
+      expect(t('twoFactorVerify', code), `${code} repeats signIn`).not.toBe(t('signIn', code))
+    }
   })
 
   it('keeps subtitles as sentences and titles as labels', () => {

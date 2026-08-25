@@ -66,10 +66,6 @@ Orders can also be placed one at a time (`POST /api/orders`) or collected in a *
 | `ADMIN_PASSWORD` | Yes | Password of the initial root account |
 | `FRONTEND_URL` | No | Frontend origin (default: `http://localhost:3000`) |
 | `EXCHANGE_RATE_API_URL` | No | Exchange rate API endpoint |
-| `ENTRA_TENANT_ID` | No | Microsoft Entra ID tenant ID — leave blank to disable SSO |
-| `ENTRA_CLIENT_ID` | No | Entra ID application client ID |
-| `ENTRA_CLIENT_SECRET` | No | Entra ID client secret |
-| `ENTRA_REDIRECT_URI` | No | Callback URL registered in Entra ID (e.g. `https://your-domain/api/auth/callback`) |
 | `SMTP_HOST` | No | SMTP server hostname — leave blank to disable email |
 | `SMTP_PORT` | No | SMTP server port (default: `587`) |
 | `SMTP_FROM` | No | Sender address |
@@ -251,7 +247,7 @@ NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=my-local-nextauth-secret
 ```
 
-> **Note:** `SMTP_*` and `ENTRA_*` variables can be left blank. Leaving SMTP blank disables email notifications. Mailpit is available as a dev SMTP server if you want to test emails — set `SMTP_HOST=localhost` and `SMTP_PORT=1025`.
+> **Note:** `SMTP_*` variables can be left blank. Leaving SMTP blank disables email notifications. Mailpit is available as a dev SMTP server if you want to test emails — set `SMTP_HOST=localhost` and `SMTP_PORT=1025`.
 
 #### 4. Initialise the database
 
@@ -300,7 +296,30 @@ Open http://localhost:3000 and sign in with the `ADMIN_EMAIL` / `ADMIN_PASSWORD`
    ```bash
    pnpm --filter backend db:generate
    ```
-   Commit the generated file under `apps/backend/drizzle/`.
+   Commit the generated file under `apps/backend/drizzle/`, **including the
+   `drizzle/meta/` snapshot it writes alongside it**.
+
+`schema.ts` and the migrations have to stay in step, and two footguns make that
+easy to get wrong (issue #141):
+
+- `db:generate` never reads the `.sql` files. It diffs `schema.ts` against the
+  lexicographically last `drizzle/meta/*.json` and emits whatever turns one into
+  the other. A missing snapshot means it regenerates migrations that have already
+  run — and re-dropping an already-dropped column raises `42703`, which
+  `runBootstrap` does not treat as idempotent, so the server stops booting.
+- `db:push` drops whatever `schema.ts` does not declare. An index or CHECK that
+  lives only in a migration is silently removed the next time somebody runs
+  `make db-push` against a migration-built database.
+
+So: if you hand-write a migration rather than generating one, declare the same
+objects in `schema.ts` and then refresh the snapshot:
+
+```bash
+pnpm --filter backend db:snapshot
+```
+
+`apps/backend/src/lib/db/journal.test.ts` fails if the snapshot and `schema.ts`
+disagree, so CI catches a forgotten refresh.
 
 #### Running tests
 

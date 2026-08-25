@@ -8,7 +8,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         gitlab = softwaresystem "GitLab" "CI provider executing OpenTofu workflows; pushes pipeline events back via webhook. The only provider job traces are fetched from, so the only one OpenTofu outputs are parsed from." "Existing System"
         github = softwaresystem "GitHub" "CI provider: triggers workflow_dispatch runs, browses repos/branches/files. Pushes workflow-run status back via webhook. No job-trace fetch (see gitlab), so orders provisioned here get no parsed OpenTofu outputs." "Existing System"
         bitbucket = softwaresystem "Bitbucket" "CI provider: triggers pipelines, browses repos/branches/files. Pushes pipeline status back via webhook. No job-trace fetch (see gitlab), so orders provisioned here get no parsed OpenTofu outputs." "Existing System"
-        oidc_provider = softwaresystem "Microsoft Entra ID" "SSO identity provider (OIDC) for admins and project managers." "Existing System"
+        oidc_provider = softwaresystem "Microsoft Entra ID" "PLANNED SSO identity provider (OIDC). Not implemented: the half-built callback handler was removed in #139 because no route started the flow, nothing consumed its result, and it returned the session JWT in a query string. Everything below that touches this system is the intended design, not the shipped one." "Existing System"
         ai_translation = softwaresystem "AI Translation Service" "Optional AI provider for product content translation; supports cloud and on-premise models." "Existing System"
         smtp = softwaresystem "Mail Server" "SMTP server for transactional order and deployment notification emails." "Existing System"
         exchange_rate_api = softwaresystem "Exchange Rate API" "Provides current exchange rates for per-locale currency conversion." "Existing System"
@@ -17,7 +17,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
 
             frontend = container "Frontend" "React UI; server-side rendered with NextAuth.js sessions, communicates with Backend API via REST." "Next.js / React / Tailwind CSS / NextAuth.js" {
 
-                ui_auth = component "Auth Pages" "Login with local credentials or SSO (OIDC); JWT in HttpOnly cookie forwarded to Backend."
+                ui_auth = component "Auth Pages" "Login with local credentials; JWT in HttpOnly cookie forwarded to Backend. SSO is planned, not shipped (#139)."
                 ui_catalog = component "Catalog" "Filtered product grid with locale currency prices; environment and parameter selection for ordering."
                 ui_orders = component "Orders" "Order form with dynamic parameters, project/cost-centre assignment and live status polling."
                 ui_approvals = component "Approvals" "Pending order queue for admins with inline approve/reject actions."
@@ -40,7 +40,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
                 svc_approvals = component "Approvals Service" "Approve (triggers CI, creates infra element) and reject (stores note, notifies orderer)."
                 svc_infrastructure = component "Infrastructure Service" "Ownership check, status guard, CI destroy trigger, audit write."
                 svc_admin = component "Admin Services" "One service per domain: users, products, categories, environments, ciSources, parameters, costCenters, exchangeRates, config, branding, pipelineStacks."
-                svc_auth = component "Auth Service" "Bcrypt credential verify, SSO user upsert, JWT issue. Returns Result<T>."
+                svc_auth = component "Auth Service" "Bcrypt credential verify, JWT issue. Returns Result<T>. The SSO user upsert went with the removed callback (#139)."
                 lib_queries = component "Query Helpers" "Shared DB reads used across services: findProductName, findUserEmail, findAdminEmails, findCiSourceForEnv."
                 lib_result = component "Result<T> / toResponse" "Ok<T>|Err discriminated union; toResponse() maps Result to NextResponse."
                 api_notification = component "Notification" "Seven typed send functions; HTML-escapes all user strings before embedding in email bodies."
@@ -63,7 +63,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         github -> webshop "Pushes workflow-run status events via webhook" "JSON/HTTPS"
         webshop -> bitbucket "Browses repositories, triggers pipelines" "JSON/HTTPS"
         bitbucket -> webshop "Pushes pipeline status events via webhook" "JSON/HTTPS"
-        webshop -> oidc_provider "Authenticates admins and project leaders" "OIDC/HTTPS"
+        webshop -> oidc_provider "PLANNED (#139): authenticates admins and project leaders" "OIDC/HTTPS"
         webshop -> ai_translation "Translates product content (optional, configurable)" "JSON/HTTPS"
         webshop -> smtp "Sends transactional emails" "SMTP"
         webshop -> exchange_rate_api "Fetches current exchange rates" "JSON/HTTPS"
@@ -80,17 +80,17 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         github -> backend "Pushes workflow-run status events via webhook" "JSON/HTTPS"
         backend -> bitbucket "Triggers pipelines, browses repositories" "JSON/HTTPS"
         bitbucket -> backend "Pushes pipeline status events via webhook" "JSON/HTTPS"
-        backend -> oidc_provider "OIDC Authorization Code Flow" "OIDC/HTTPS"
+        backend -> oidc_provider "PLANNED (#139): OIDC Authorization Code Flow" "OIDC/HTTPS"
         backend -> ai_translation "AI translation requests (optional)" "JSON/HTTPS"
         backend -> smtp "Sends transactional emails via Nodemailer" "SMTP"
         backend -> exchange_rate_api "Fetches current exchange rates" "JSON/HTTPS"
 
         # Relationships — frontend components
-        admin -> ui_auth "Logs in via SSO or local account"
-        project_manager -> ui_auth "Logs in via SSO"
+        admin -> ui_auth "Logs in with a local account (SSO planned, #139)"
+        project_manager -> ui_auth "Logs in with a local account (SSO planned, #139)"
         root -> ui_auth "Logs in with local account"
-        ui_auth -> backend "POST /api/auth/login, GET /api/auth/callback" "JSON/HTTPS"
-        ui_auth -> oidc_provider "OIDC Authorization Code Flow via NextAuth.js" "OIDC/HTTPS"
+        ui_auth -> backend "POST /api/auth/login" "JSON/HTTPS"
+        ui_auth -> oidc_provider "PLANNED (#139): OIDC Authorization Code Flow via NextAuth.js. There has never been an SSO provider in the NextAuth config or a button on the login page." "OIDC/HTTPS"
 
         admin -> ui_catalog "Browses infrastructure products"
         project_manager -> ui_catalog "Browses infrastructure products"
@@ -121,7 +121,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
 
         # Relationships — backend components
         # Route handler → service
-        api_auth -> svc_auth "Delegates credential/SSO logic" "internal"
+        api_auth -> svc_auth "Delegates credential logic" "internal"
         api_orders -> svc_orders "Delegates order creation" "internal"
         api_orders -> svc_approvals "Delegates approve/reject" "internal"
         api_infrastructure -> svc_infrastructure "Delegates list and decommission" "internal"
@@ -137,7 +137,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         svc_approvals -> lib_queries "findProductName, findUserEmail" "internal"
         svc_infrastructure -> api_ci "triggerProductWebhooks with TF_ACTION=destroy" "internal"
         svc_infrastructure -> lib_queries "findCiSourceForEnv" "internal"
-        svc_auth -> oidc_provider "Validates OIDC ID token" "OIDC/HTTPS"
+        svc_auth -> oidc_provider "PLANNED (#139): validates OIDC ID token. The removed handler decoded it without checking the signature, aud or iss." "OIDC/HTTPS"
         svc_admin -> api_ai "Triggers AI translation for a product" "internal"
         svc_admin -> api_exchange "Refreshes stored exchange rates" "internal"
         svc_admin -> api_ci "Browses repositories, imports variables.tf" "internal"
@@ -171,7 +171,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         # Deployment — Docker Host
         deploymentEnvironment "Docker Host" {
             deploymentNode "Docker Host" "Single server for local development and initial deployment" "Docker Engine" {
-                deploymentNode "nginx" "HTTPS termination and reverse proxy. Routes /api/* to the backend EXCEPT the frontend's own /api/auth, /api/login-challenge and /api/ping; /api/auth/callback is an exact match that stays on the backend; everything else to the frontend." "Docker Container / Nginx" {
+                deploymentNode "nginx" "HTTPS termination and reverse proxy. Routes /api/* to the backend EXCEPT the frontend's own /api/auth, /api/login-challenge and /api/ping; everything else to the frontend. The /api/auth/callback exact match went with the SSO flow (#139) and has to come back with it." "Docker Container / Nginx" {
                 }
                 deploymentNode "frontend" "Next.js frontend server" "Docker Container / Node.js" {
                     containerInstance frontend
@@ -207,7 +207,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         deploymentEnvironment "Kubernetes" {
             deploymentNode "Kubernetes Cluster" "Production cluster" "Kubernetes" {
                 deploymentNode "open-hybrid-cloud" "Application namespace" "Kubernetes Namespace" {
-                    deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes /api/* to the backend service EXCEPT the frontend's own /api/auth, /api/login-challenge and /api/ping; /api/auth/callback is an exact match that stays on the backend service; everything else to the frontend service." "Nginx Ingress / cert-manager" {
+                    deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes /api/* to the backend service EXCEPT the frontend's own /api/auth, /api/login-challenge and /api/ping; everything else to the frontend service. The /api/auth/callback exact match went with the SSO flow (#139) and has to come back with it." "Nginx Ingress / cert-manager" {
                     }
                     deploymentNode "frontend Deployment" "Next.js frontend pods, horizontally scalable." "Kubernetes Deployment" {
                         containerInstance frontend

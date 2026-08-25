@@ -70,11 +70,6 @@ services:
       TOTP_ENCRYPTION_KEY: "${TOTP_ENCRYPTION_KEY:-}"
       FRONTEND_URL: "${NEXTAUTH_URL}"
       EXCHANGE_RATE_API_URL: "${EXCHANGE_RATE_API_URL}"
-      # Optional — Microsoft Entra ID (OIDC). Leave blank to disable.
-      ENTRA_TENANT_ID: "${ENTRA_TENANT_ID:-}"
-      ENTRA_CLIENT_ID: "${ENTRA_CLIENT_ID:-}"
-      ENTRA_CLIENT_SECRET: "${ENTRA_CLIENT_SECRET:-}"
-      ENTRA_REDIRECT_URI: "${ENTRA_REDIRECT_URI:-}"
       # Optional — SMTP. Leave blank to disable email.
       SMTP_HOST: "${SMTP_HOST:-}"
       SMTP_PORT: "${SMTP_PORT:-587}"

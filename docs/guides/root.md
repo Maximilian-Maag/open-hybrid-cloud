@@ -333,7 +333,6 @@ Under **Administration → Users**:
 
 - Create local user accounts (name, email, password, role)
 - Edit or deactivate existing accounts
-- SSO users (Admins and project managers via Entra ID, if configured) are created automatically on first login and appear in this list as well
 - Roles: **Admin**, **Project Manager**, **Root**
 
 ---
@@ -426,9 +425,8 @@ If the current password is incorrect or the confirmation does not match, the cha
 
 ### 10.2 Two-Factor Authentication
 
-**Local** administrator accounts — the ones that sign in with a password rather
-than through Microsoft Entra ID — hold enough privilege to change what the portal
-does, so they are protected with a second factor: a six-digit code from an
+Administrator accounts hold enough privilege to change what the portal does, so
+they are protected with a second factor: a six-digit code from an
 authenticator app (Google Authenticator, Authy, Bitwarden, 1Password — anything
 that supports standard TOTP).
 
@@ -441,11 +439,13 @@ working session, and refusing the sign-in would be a lockout with no way out.
 
 Two kinds of account are outside this:
 
-* **SSO administrators.** An Entra ID account promoted to Admin or Root has no
-  local password, so there is nothing to re-authenticate an enrolment with and
-  its MFA is the identity provider's job. The server refuses enrolment for it and
-  — importantly — does not require one either. Requiring a factor it could never
-  enrol would be a lockout rather than a policy.
+* **Accounts with no local password.** Enrolment is re-authenticated with the
+  current password, so an account that has none has nothing to enrol against.
+  The server refuses enrolment for it and — importantly — does not require one
+  either: requiring a factor it could never enrol would be a lockout rather than
+  a policy. Only a single-sign-on account was ever created this way, and that
+  flow was removed (#139), so no new one can appear; rows left behind in an
+  existing database still take this branch.
 * **Project Managers.** The end-user role holds no administrative authority, and
   the server refuses every two-factor endpoint for it.
 

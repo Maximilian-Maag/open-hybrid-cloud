@@ -15,6 +15,7 @@ import {
   customType,
   uniqueIndex,
   index,
+  check,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import type { StackStep } from '@open-hybrid-cloud/types'
@@ -67,7 +68,20 @@ export const sessions = pgTable('sessions', {
   // Set, never deleted: a revoked session is evidence, and the audit entry that
   // records the revocation points at a row that has to still be there.
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
-})
+}, (t) => [
+  // The session list: this user's live sessions, newest activity first. Partial
+  // on `revoked_at IS NULL` because revoked rows are kept forever as evidence and
+  // would otherwise grow the index without ever being read through it.
+  //
+  // `nullsFirst()` is not cosmetic: a bare `DESC` in SQL means NULLS FIRST, but
+  // drizzle defaults a `.desc()` index column to NULLS LAST, which is a different
+  // index from the one migration 0019 built. Both columns are NOT NULL so nothing
+  // observable changes — but a snapshot that disagrees with the database is how
+  // #141 started.
+  index('sessions_user_live_idx')
+    .on(t.userId, t.lastSeenAt.desc().nullsFirst())
+    .where(sql`revoked_at IS NULL`),
+])
 
 // Second factor for a local password account (issue #36). One row per user, so
 // the user id IS the primary key: a user has one authenticator, and expressing
@@ -125,7 +139,13 @@ export const userRecoveryCodes = pgTable('user_recovery_codes', {
   // recovery code was spent and when. A used row can never match again.
   usedAt: timestamp('used_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [unique('user_recovery_codes_user_id_code_hash_unique').on(t.userId, t.codeHash)])
+}, (t) => [
+  // A unique INDEX rather than a `unique()` constraint because that is what
+  // migration 0018 creates. The two enforce the same rule but are different
+  // objects to Postgres, and declaring the constraint here made `db:push` try to
+  // ADD CONSTRAINT over an index of that name (#141).
+  uniqueIndex('user_recovery_codes_user_id_code_hash_unique').on(t.userId, t.codeHash),
+])
 
 /**
  * A registered WebAuthn/FIDO2 credential — a hardware key or a passkey (#197).
@@ -166,7 +186,11 @@ export const webauthnCredentials = pgTable('webauthn_credentials', {
   deviceType: text('device_type').notNull().default('singleDevice'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-})
+}, (t) => [
+  // Every read is "the credentials belonging to this user" — the login ceremony
+  // and the settings list both start there.
+  index('webauthn_credentials_user_idx').on(t.userId),
+])
 
 /**
  * The in-flight WebAuthn ceremony challenge (#197).
@@ -211,7 +235,12 @@ export const categories = pgTable('categories', {
    * point at.
    */
   retiredAt: timestamp('retired_at', { withTimezone: true }),
-})
+}, (t) => [
+  // The catalogue only ever shows live categories, and after #142 retired rows
+  // accumulate rather than being deleted. Partial on `retired_at IS NULL` so the
+  // filter every read applies is answered from the index.
+  index('categories_live_idx').on(t.id).where(sql`retired_at IS NULL`),
+])
 
 export const products = pgTable('products', {
   id: bigserial({ mode: 'number' }).primaryKey(),
@@ -238,7 +267,14 @@ export const products = pgTable('products', {
    */
   retiredAt: timestamp('retired_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // The catalogue's category filter, which seq-scanned `products` (issue #159).
+  // Migration 0032; declared here too, or `db:push` would drop it again.
+  index('products_category_idx').on(t.categoryId),
+  // Same rule as `categories_live_idx`: the catalogue reads live products only.
+  // Migration 0024 (#141).
+  index('products_live_idx').on(t.id).where(sql`retired_at IS NULL`),
+])
 
 /**
  * A product's pictures, in gallery order (issue #107).
@@ -263,7 +299,10 @@ export const productImages = pgTable('product_images', {
    */
   alt: text().notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // Gallery order for one product — the order every read applies.
+  index('product_images_product_position_idx').on(t.productId, t.position),
+])
 
 export const productTranslations = pgTable('product_translations', {
   productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
@@ -414,6 +453,14 @@ export const integrations = pgTable('integrations', {
   // Every read is a resolve: "the <kind> for this environment, else the global
   // one, if enabled".
   index('integrations_kind_enabled_idx').on(t.kind, t.enabled),
+  // `text({ enum: [...] })` is a TypeScript type and nothing more — it emits a
+  // plain `text` column. Migration 0023 backs each of the three with a CHECK, so
+  // a row written by something that is not this ORM still cannot hold a value the
+  // readers do not handle. Declared here because `db:push` drops what schema.ts
+  // does not (#141).
+  check('integrations_kind_check', sql`kind IN ('foreman','ansible','nexus','pulp','loki','grafana')`),
+  check('integrations_auth_type_check', sql`auth_type IN ('none','bearer','basic','token_header')`),
+  check('integrations_failure_mode_check', sql`failure_mode IN ('blocking','best_effort')`),
 ])
 
 export const deploymentEnvironments = pgTable('deployment_environments', {
@@ -493,6 +540,8 @@ export const productEnvironmentSizes = pgTable('product_environment_sizes', {
   // The code is what an order line stores, so two rows sharing one within an
   // offering would make a stored line ambiguous.
   unique('product_environment_sizes_offering_code_unique').on(t.productId, t.environmentId, t.code),
+  // The size picker reads one offering's sizes in display order.
+  index('product_environment_sizes_offering_idx').on(t.productId, t.environmentId, t.sortOrder),
 ])
 
 export const productWebhooks = pgTable('product_webhooks', {
@@ -543,7 +592,10 @@ export const productVersions = pgTable('product_versions', {
   // being a history.
   createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // The history panel: one product's versions, newest first.
+  index('product_versions_product_idx').on(t.productId, t.createdAt.desc().nullsFirst()),
+])
 
 export const costCenters = pgTable('cost_centers', {
   id: bigserial({ mode: 'number' }).primaryKey(),
@@ -602,7 +654,24 @@ export const orders = pgTable('orders', {
   pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // Issue #159. Each of these is a filter plus the sort that follows it, in one
+  // index, so the planner never has to sort the matched rows separately.
+  // Migration 0032; declared here too, or `db:push` would drop them again.
+  //
+  // `nullsFirst()` on every `.desc()` because that is what the migration's bare
+  // SQL `DESC` means, while drizzle defaults a descending index column to NULLS
+  // LAST. It matters most on `infrastructure_elements.deployed_at`, which is
+  // nullable — there the two are genuinely different indexes (#141).
+  //
+  // A project manager's own order list.
+  index('orders_user_created_at_idx').on(t.userId, t.createdAt.desc().nullsFirst()),
+  // The approval queue: pending orders, oldest first, which is the order they
+  // are worked in. Also the dashboard's pending count.
+  index('orders_status_created_at_idx').on(t.status, t.createdAt),
+  // The cost report's project + date-range filter.
+  index('orders_project_created_at_idx').on(t.projectId, t.createdAt.desc().nullsFirst()),
+])
 
 // Items a user has collected but not yet ordered (issue #28).
 //
@@ -626,7 +695,10 @@ export const cartItems = pgTable('cart_items', {
   sizeCode: text('size_code'),
   quantity: integer().notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // The cart is always read whole, for one user, in the order things were added.
+  index('cart_items_user_idx').on(t.userId, t.createdAt),
+])
 
 // Free-text discussion on an order (issue #34). The rejection note already proved
 // a note can be stored per order; this generalises it into a thread.
@@ -644,7 +716,10 @@ export const orderComments = pgTable('order_comments', {
   // Distinct from createdAt so an edited comment can be shown as edited rather
   // than silently rewritten under a reader who already replied to it.
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // The thread on one order, oldest first.
+  index('order_comments_order_idx').on(t.orderId, t.createdAt),
+])
 
 export const infrastructureElements = pgTable('infrastructure_elements', {
   id: bigserial({ mode: 'number' }).primaryKey(),
@@ -700,7 +775,24 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   // only way to express "never": a sentinel far-future date would eventually
   // arrive.
   scheduledDecommissionAt: timestamp('scheduled_decommission_at', { withTimezone: true }),
-})
+}, (t) => [
+  // Issue #159. Single-column on purpose: the infrastructure list combines
+  // project, product, environment and status filters freely and sorts by any of
+  // four columns, so no one composite serves it — separate indexes let the
+  // planner bitmap-AND whichever filters were actually supplied.
+  // Migration 0032; declared here too, or `db:push` would drop them again.
+  index('infrastructure_elements_project_idx').on(t.projectId),
+  index('infrastructure_elements_order_idx').on(t.orderId),
+  index('infrastructure_elements_deployed_at_idx').on(t.deployedAt.desc().nullsFirst()),
+  // Migration 0010's partial index, which #159 left to this branch (#141). The
+  // sweep in `lib/services/decommission.ts` asks, on every tick, for the active
+  // elements whose schedule has come due. Partial on exactly that predicate so
+  // the answer is a bounded scan rather than a full table scan — almost every row
+  // is either unscheduled or already decommissioned.
+  index('infrastructure_elements_due_decommission_idx')
+    .on(t.scheduledDecommissionAt)
+    .where(sql`scheduled_decommission_at IS NOT NULL AND status = 'active'`),
+])
 
 export const exchangeRates = pgTable('exchange_rates', {
   currencyCode: text('currency_code').primaryKey(),
@@ -715,7 +807,15 @@ export const auditLog = pgTable('audit_log', {
   entityId: bigint('entity_id', { mode: 'number' }),
   details: text().notNull().default(''),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // The one table guaranteed to grow forever — a row per order action, and
+  // nothing ever deletes one — and it had no index at all (issue #159). Every
+  // read is "newest first, one page at a time", plus a COUNT(*) over the same
+  // predicate, so without these the audit page sorted the whole table twice per
+  // request. Migration 0032; declared here too, or `db:push` would drop them.
+  index('audit_log_created_at_idx').on(t.createdAt.desc().nullsFirst()),
+  index('audit_log_user_created_at_idx').on(t.userId, t.createdAt.desc().nullsFirst()),
+])
 
 /**
  * An admin's approval authority, held by a substitute for a period (issue #35).
@@ -741,7 +841,18 @@ export const approvalDelegations = pgTable('approval_delegations', {
   // Cancelled early. Kept rather than deleted so the audit entries that name this
   // delegation keep resolving.
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
-})
+}, (t) => [
+  // Both directions are looked up on every approval: "who did this admin hand
+  // authority to" and "whose authority am I holding today", each bounded by the
+  // period.
+  index('approval_delegations_from_idx').on(t.fromUserId, t.startsOn, t.endsOn),
+  index('approval_delegations_to_idx').on(t.toUserId, t.startsOn, t.endsOn),
+  // Migration 0022's two CHECKs. A delegation that ends before it starts is never
+  // in force, and one to yourself delegates nothing — neither is a state any
+  // reader handles, and neither can be expressed in a column type.
+  check('approval_delegations_period_check', sql`ends_on >= starts_on`),
+  check('approval_delegations_not_self_check', sql`from_user_id <> to_user_id`),
+])
 
 export const branding = pgTable('branding', {
   id: integer().primaryKey().default(1),

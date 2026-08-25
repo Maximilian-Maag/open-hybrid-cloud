@@ -600,7 +600,7 @@ its major logical components.
 
   % Middle row — service layer
   \node[c4component, below=0.9cm of auth] (sauth)
-    {\textbf{Auth Service}\\[2pt]\scriptsize credentials, SSO upsert};
+    {\textbf{Auth Service}\\[2pt]\scriptsize credentials, sessions};
   \node[c4component, right=of sauth] (sorder)
     {\textbf{Order Service}\\[2pt]\scriptsize state machine, CI trigger};
   \node[c4component, right=of sorder] (sinfra)
@@ -677,7 +677,8 @@ All domain logic is in the service layer.
     and branding — each delegates to the corresponding admin service. \\[6pt]
   \multicolumn{2}{@{}l}{\textit{Service Layer (\file{src/lib/services/})}} \\[2pt]
   Auth Service &
-    Verifies bcrypt passwords, upserts SSO users, returns or invalidates JWTs.
+    Verifies bcrypt passwords, returns or invalidates JWTs. The SSO user upsert
+    went with the removed callback (issue~\#139).
     Returns \code{Result<string>} (token) or a typed error. \\[4pt]
   Order / Approval Services &
     Implements the order state machine: \textit{pending} →
@@ -961,10 +962,14 @@ belong to the \emph{frontend} on port 3000:
 \end{itemize}
 
 \noindent
-The one exception inside that range is \code{/api/auth/callback}, Entra ID's
-OAuth callback, which is the \emph{backend's} and must be matched exactly so it
-takes priority over the \code{/api/auth} prefix. Everything else under
-\code{/api} goes to port 3001, and every other path to port 3000.
+There used to be one exception inside that range: \code{/api/auth/callback},
+Entra ID's OAuth callback, which was the \emph{backend's} and had to be matched
+exactly so it outranked the \code{/api/auth} prefix. That flow was removed
+(issue~\#139) --- nothing on the frontend ever consumed its result, and it handed
+the session JWT back in a query string --- so the whole of \code{/api/auth} now
+belongs to the frontend. Reinstating SSO means reinstating that exact match with
+it. Everything else under \code{/api} goes to port 3001, and every other path to
+port 3000.
 
 Getting this wrong produces a 404 that is easy to misattribute, since both
 applications answer with \code{X-Powered-By: Next.js}; the giveaway is that a
@@ -1542,8 +1547,6 @@ Section~\ref{sec:webhook} for the JSON schema.
   \item Docker 24+ (or a Kubernetes cluster)
   \item PostgreSQL 15+ (external or containerized)
   \item SMTP server credentials (optional, can be configured later)
-  \item Microsoft Entra ID application registration for OIDC
-        (optional for local-only operation)
   \item Linode API token with Read/Write scope
   \item GitLab instance with webhook support
 \end{itemize}
@@ -1580,9 +1583,6 @@ cp apps/frontend/.env.example apps/frontend/.env
     \env{SMTP\_PASS}          & SMTP authentication password                       & No  \\
     \env{SMTP\_TLS}           & \code{true} to enable TLS                         & No  \\
     \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint                    & No  \\
-    \env{ENTRA\_TENANT\_ID}   & Microsoft Entra ID tenant ID (SSO)                & No  \\
-    \env{ENTRA\_CLIENT\_ID}   & Entra ID application client ID                     & No  \\
-    \env{ENTRA\_CLIENT\_SECRET} & Entra ID client secret                           & No  \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -1653,10 +1653,10 @@ Nginx routes \code{/api/*} and \code{/api/webhooks/*} to the backend
 container (port 3001), and all other paths to the frontend (port 3000).
 The exceptions are the frontend's own \code{/api/auth},
 \code{/api/login-challenge} and \code{/api/ping}, which go to the frontend
-(see section on the two-container split). \code{/api/auth/callback} is the
-exception to that exception: it is Entra ID's callback, it belongs to the
-backend, and it is matched exactly so that it outranks the \code{/api/auth}
-prefix.
+(see section on the two-container split). \code{/api/auth/callback} used to be
+the exception to that exception --- Entra ID's callback, matched exactly so it
+outranked the \code{/api/auth} prefix --- but the SSO flow was removed in
+issue~\#139 and the whole prefix is the frontend's again.
 
 \subsection*{Step-by-Step Deployment Procedure}
 
@@ -1732,10 +1732,10 @@ belong to the frontend on port 3000:
 \end{itemize}
 
 \noindent
-with one exception inside that range: \code{/api/auth/callback} is Entra ID's
-OAuth callback and belongs to the \emph{backend}, so it is matched exactly and
-outranks the \code{/api/auth} prefix. Everything else under \code{/api} goes to
-port 3001.
+The exception that used to sit inside that range --- \code{/api/auth/callback},
+Entra ID's OAuth callback, matched exactly so it outranked the \code{/api/auth}
+prefix --- went with the SSO flow in issue~\#139. Everything else under
+\code{/api} goes to port 3001.
 
 Sending all of \code{/api} to the backend breaks sign-in with a 404 that is easy
 to misattribute, because both applications answer with
@@ -2106,7 +2106,6 @@ definition against the live database and applies the diff.
 
 \begin{enumerate}
   \item Navigate to the webshop URL.
-  \item Click \textbf{Local Login} (not \textbf{Sign in with Microsoft}).
   \item Enter the email and password from \env{ADMIN\_EMAIL} and
         \env{ADMIN\_PASSWORD}.
   \item Navigate to \textbf{Settings → My Profile} and change the
@@ -2116,9 +2115,9 @@ definition against the live database and applies the diff.
 \section{Mandatory Two-Factor Authentication for Administrators}
 \label{sec:root-2fa}
 
-\emph{Local} administrator accounts — those signing in with a password rather than
-through Entra ID — hold enough privilege to change what the portal does, and are
-the accounts no identity provider protects. They are given a second factor:
+Administrator accounts hold enough privilege to change what the portal does, and
+no identity provider stands in front of them --- SSO was removed in issue~\#139.
+They are given a second factor:
 standard TOTP (RFC~6238, SHA-1, 30-second window, six digits), compatible with
 Google Authenticator, Authy, Bitwarden and 1Password.
 
@@ -2140,12 +2139,15 @@ lifts the moment enrolment is confirmed, without a fresh sign-in, and closes
 again the moment an operator clears the row by hand.
 
 Two kinds of account are excluded, and the first exclusion is load-bearing. An
-Entra ID account promoted to Admin or Root has no local password:
+account with no local password cannot re-authenticate an enrolment:
 \code{loadTwoFactorAccount} refuses to enrol it, so
 \code{secondFactorOutstanding} must not require a factor of it either. A gate an
 account can never satisfy is a lockout, not a policy — it would be refused every
-route and refused the one screen that could lift the refusal. Its MFA is the
-identity provider's.
+route and refused the one screen that could lift the refusal. Only the removed
+SSO flow (issue~\#139) ever created such an account, so no new one can appear;
+rows an earlier deployment wrote still take this branch. Note that the code keys
+on the missing password hash, not on \code{sso\_sub}, so an operator setting
+that column on a password account does not buy an exemption from it.
 
 Project Manager accounts are excluded for the ordinary reason: it is the end-user
 role, and every two-factor endpoint answers 403 for it, enforced in the service
@@ -2411,9 +2413,9 @@ browser locale and applying the stored rate.
     \textbf{Role} & \textbf{Description} &
       \textbf{Auth method} & \textbf{DB role} \\
     \midrule
-    Admin         & Full access; direct ordering; approval & SSO  & \code{admin} \\
+    Admin         & Full access; direct ordering; approval & Local & \code{admin} \\
     Root    & Catalog \& config; no ordering          & Local & \code{root} \\
-    Project Manager  & Orders own infra; approval required     & SSO  & \code{project\_leader} \\
+    Project Manager  & Orders own infra; approval required     & Local & \code{project\_leader} \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -2429,7 +2431,9 @@ Under \textbf{Administration → Users}:
   \item Click \textbf{Save}.
 \end{enumerate}
 
-SSO users are created automatically on first login.
+Every account is created here. SSO account auto-provisioning went with the
+removed callback (issue~\#139), so there is no other way for a user row to
+appear.
 
 \section{Editing Users}
 
@@ -2812,7 +2816,7 @@ The table below shows the current effective schema.
     \toprule
     \textbf{Table} & \textbf{Purpose} \\
     \midrule
-    \code{users}                    & User accounts (local + SSO) with role-based access \\
+    \code{users}                    & User accounts with role-based access \\
     \code{categories}               & Product catalogue categories \\
     \code{products}                 & Infrastructure products offered in the catalogue \\
     \code{product\_translations}    & Multi-language name + short/long description per product \\
@@ -2866,7 +2870,7 @@ key, foreign keys, and notable constraints.
     \code{email}         & TEXT      & --- & NOT NULL, UNIQUE \\
     \code{name}          & TEXT      & --- & NOT NULL \\
     \code{role}          & TEXT      & --- & CHECK: \code{admin}, \code{project\_manager}, \code{root} \\
-    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; set for SSO accounts \\
+    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; unused since issue~\#139 removed SSO. Kept so rows an earlier deployment wrote survive and a future implementation can link to them. \\
     \code{password\_hash}& TEXT      & NULL & set for local accounts \\
     \code{active}        & BOOLEAN   & TRUE & soft-disable without deletion \\
     \code{created\_at}   & TIMESTAMPTZ & NOW() & \\
@@ -2875,7 +2879,9 @@ key, foreign keys, and notable constraints.
 \end{table}
 
 \noindent\textbf{Constraint:} \code{sso\_sub IS NOT NULL OR password\_hash IS NOT NULL}
-(every account must have at least one credential).
+(every account must have at least one credential). With SSO removed
+(issue~\#139) nothing writes \code{sso\_sub} any more, so in practice every new
+row satisfies this through \code{password\_hash}.
 
 \subsection*{\texttt{user\_totp}}
 
@@ -4023,9 +4029,6 @@ translation:
   \env{SMTP\_PASS}              & SMTP authentication password                    & No  \\
   \env{SMTP\_TLS}               & \code{true} to enable SMTP TLS                  & No  \\
   \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint URL                 & No  \\
-  \env{ENTRA\_TENANT\_ID}       & Microsoft Entra ID tenant ID (future SSO)       & No  \\
-  \env{ENTRA\_CLIENT\_ID}       & Entra ID application (client) ID                & No  \\
-  \env{ENTRA\_CLIENT\_SECRET}   & Entra ID client secret                          & No  \\
   \bottomrule
   \caption{Backend environment variable reference}
   \label{tab:envvars-backend}

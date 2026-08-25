@@ -45,17 +45,13 @@ spec:
           # in client JavaScript. It carries every dashboard request, so sending
           # it to the backend does not degrade gracefully — the whole UI 404s.
 
-          # Entra ID's OAuth callback is the BACKEND's, and it sits inside the
-          # frontend's NextAuth prefix. Exact, so it wins over /api/auth below
-          # while NextAuth's own /api/auth/callback/credentials does not match.
-          - path: /api/auth/callback
-            pathType: Exact
-            backend:
-              service:
-                name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
-                port:
-                  number: {{ $.Values.backend.service.port }}
-
+          # There used to be an exact-match rule sending /api/auth/callback to the
+          # BACKEND, for Entra ID's OAuth callback. That flow was removed in #139:
+          # nothing on the frontend ever consumed its result, and it handed the
+          # session JWT back in a query string. When SSO is built properly the
+          # rule has to come back — the callback sits inside the frontend's
+          # NextAuth prefix, so only an Exact match outranks /api/auth below,
+          # and without it the callback silently lands on the wrong service.
           {{- range $path := list "/api/auth" "/api/login-challenge" "/api/ping" "/api/proxy" }}
           - path: {{ $path }}
             pathType: Prefix

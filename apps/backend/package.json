@@ -9,6 +9,7 @@
     "lint": "eslint . --max-warnings 0",
     "vendor:swagger-ui": "node scripts/vendor-swagger-ui.mjs",
     "db:generate": "drizzle-kit generate",
+    "db:snapshot": "tsx scripts/refresh-snapshot.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",

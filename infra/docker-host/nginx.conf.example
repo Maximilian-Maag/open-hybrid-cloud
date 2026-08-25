@@ -60,17 +60,12 @@ http {
         set $frontend_upstream "frontend:3000";
         set $backend_upstream  "backend:3001";
 
-        # Backend's own Entra ID (Microsoft SSO) OAuth callback — the browser lands
-        # here directly after Microsoft redirects back. Exact match so it takes
-        # priority over the /api/auth/ NextAuth block below.
-        location = /api/auth/callback {
-            proxy_pass         http://$backend_upstream;
-            proxy_http_version 1.1;
-            proxy_set_header   Host              $host;
-            proxy_set_header   X-Real-IP         $remote_addr;
-            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-            proxy_set_header   X-Forwarded-Proto $scheme;
-        }
+        # There used to be an exact-match block here sending /api/auth/callback to
+        # the backend, for Entra ID's OAuth callback. That flow was removed in
+        # #139: nothing on the frontend ever consumed its result, and it handed
+        # the session JWT back in a query string. When SSO is built properly the
+        # block has to come back — an exact match, so it outranks the /api/auth/
+        # block below, which would otherwise swallow the callback silently.
 
         # NextAuth.js's own routes (csrf, session, callback/credentials, signin,
         # signout, providers, ...) are served by the frontend, not the backend —

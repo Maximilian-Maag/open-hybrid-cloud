@@ -31,7 +31,10 @@ describe('CartLink badge', () => {
 
   it('still prints 99 exactly, not 99+', () => {
     render(<CartLink count={99} lang="en" />)
-    expect(badge()).toHaveTextContent('99')
+    // Anchored: `toHaveTextContent('99')` matches a substring, and '99+' contains
+    // '99' — so the unanchored form passes whether the boundary is `> 99` or
+    // `>= 99`, which is the only thing this test exists to pin down.
+    expect(badge()).toHaveTextContent(/^99$/)
   })
 
   it('hides the badge from assistive tech, which reads the link name instead', () => {

@@ -98,3 +98,17 @@ describe('getLang', () => {
     expect(headerGet).toHaveBeenCalledWith('accept-language')
   })
 })
+
+describe('getLang whitespace', () => {
+  // Browsers write "de-DE, en;q=0.9" with a space after the comma, and some
+  // proxies add one after the semicolon. Without the trim the first entry keeps
+  // its leading space, `isValidLang(' de')` is false, and every such visitor is
+  // served English while their browser plainly asked for German.
+  it('trims the entry before matching it', async () => {
+    headerGet.mockReturnValue('fr-FR;q=0.9')
+    expect(await getLang()).toBe('fr')
+
+    headerGet.mockReturnValue(' de-DE,en;q=0.8')
+    expect(await getLang()).toBe('de')
+  })
+})

@@ -12,9 +12,14 @@ import { useLang } from './useLang'
  */
 
 function setCookie(value: string | null) {
+  setRawCookie(value === null ? '' : `lang=${value}`)
+}
+
+/** The whole cookie string, for the cases where the neighbours are the point. */
+function setRawCookie(raw: string) {
   Object.defineProperty(document, 'cookie', {
     configurable: true,
-    get: () => (value === null ? '' : `lang=${value}`),
+    get: () => raw,
     set: () => {},
   })
 }
@@ -120,5 +125,40 @@ describe('useLang langchange event', () => {
     expect(result.current).toBe('en')
     rerender({ l: 'da' })
     expect(result.current).toBe('da')
+  })
+})
+
+// `document.cookie` is one string holding every cookie for the origin, so the
+// pattern has to find `lang` among neighbours without matching a cookie that
+// merely ends in it.
+describe('useLang cookie parsing', () => {
+  const read = () =>
+    renderHook(() => useLang(), { wrapper: ({ children }: { children: ReactNode }) => <LangProvider value={null}>{children}</LangProvider> })
+
+  it('finds lang after another cookie', () => {
+    setRawCookie('session=abc; lang=fr; theme=dark')
+    const { result } = read()
+    expect(result.current).toBe('fr')
+  })
+
+  it('finds lang when it comes first', () => {
+    setRawCookie('lang=it; session=abc')
+    const { result } = read()
+    expect(result.current).toBe('it')
+  })
+
+  it('stops at the next cookie rather than swallowing it', () => {
+    setRawCookie('lang=nl; session=abc')
+    const { result } = read()
+    expect(result.current).toBe('nl')
+  })
+
+  // `mylang=de` ends in `lang=de`. Without the boundary the hook would adopt
+  // another cookie's value as the interface language.
+  it('does not match a cookie whose name merely ends in lang', () => {
+    setNavigatorLanguage('en')
+    setRawCookie('mylang=de; session=abc')
+    const { result } = read()
+    expect(result.current).not.toBe('de')
   })
 })

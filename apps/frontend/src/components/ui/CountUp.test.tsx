@@ -98,4 +98,33 @@ describe('CountUp', () => {
     expect(cancel).toHaveBeenCalled()
     cancel.mockRestore()
   })
+  // Every test above mounts at t=0, where `now - start` and `now + start` are
+  // the same arithmetic and the difference between them is invisible. Mounting
+  // on a clock that has already run apart tells them apart: with a sign error
+  // the first frame computes a progress far past 1, `Math.min` clamps it, and
+  // the figure snaps to the target instead of counting up to it.
+  it('measures elapsed time, not the time of day', () => {
+    act(() => { vi.advanceTimersByTime(60_000) })
+    const { container } = render(<CountUp value={1000} duration={800} />)
+
+    act(() => { vi.advanceTimersByTime(16) })
+
+    expect(Number(container.textContent)).toBeLessThan(1000)
+  })
+
+  // `Math.min(…, 1)` caps progress AT one, so a loop that continues while
+  // progress is one keeps asking for frames after the number has arrived — for
+  // as long as the dashboard stays open, on every tile.
+  it('stops asking for frames once it has arrived', () => {
+    const raf = vi.spyOn(window, 'requestAnimationFrame')
+    const { container } = render(<CountUp value={42} duration={100} />)
+    runAnimation()
+    expect(container.textContent).toBe('42')
+
+    raf.mockClear()
+    act(() => { vi.advanceTimersByTime(1000) })
+
+    expect(raf).not.toHaveBeenCalled()
+    raf.mockRestore()
+  })
 })

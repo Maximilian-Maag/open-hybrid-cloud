@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const refresh = vi.fn()
@@ -107,6 +107,40 @@ describe('LanguageSwitcher menu', () => {
     await user.click(toggle())
     expect(remove).toHaveBeenCalledWith('keydown', expect.any(Function))
   })
+
+  // The effect returns early while the menu is closed, so nothing is listening.
+  // Registering regardless would still pass the cleanup test above — the handler
+  // is removed either way — and the difference only shows here: a closed
+  // switcher that listens will pull focus to its own toggle when the user
+  // presses Escape to dismiss something else entirely.
+  it('does not grab focus when Escape is pressed with the menu closed', async () => {
+    const user = userEvent.setup()
+    render(
+      <div>
+        <LanguageSwitcher lang="en" />
+        <button type="button">somewhere else</button>
+      </div>,
+    )
+    const elsewhere = screen.getByRole('button', { name: /somewhere else/i })
+    elsewhere.focus()
+
+    await user.keyboard('{Escape}')
+
+    expect(document.activeElement).toBe(elsewhere)
+  })
+
+  // The grid shows the bare code above the language's own name. Lower-casing it
+  // makes 'DE' read as the German word 'de', which is a different word.
+  it('shows each code upper-cased in the grid', async () => {
+    const user = userEvent.setup()
+    render(<LanguageSwitcher lang="en" />)
+    await user.click(toggle())
+
+    const german = screen.getByRole('button', { name: /Deutsch/ })
+    expect(german.textContent).toContain('DE')
+    expect(german.textContent).not.toContain('de<')
+    expect(within(german).getByText('DE')).toBeInTheDocument()
+  })
 })
 
 describe('LanguageSwitcher selection', () => {
@@ -161,5 +195,68 @@ describe('LanguageSwitcher selection', () => {
     expect(overlay).toBeTruthy()
     await user.click(overlay)
     expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+  })
+})
+
+// The grid marks the current language, and reacts to the pointer, with inline
+// background colours and nothing else. That makes those styles behaviour rather
+// than decoration: they are the only thing telling a sighted user which of the
+// 25 is selected, and the only feedback the mouse gets.
+describe('LanguageSwitcher grid states', () => {
+  // The toggle is named "Language: Deutsch", so a loose /Deutsch/ matches two
+  // buttons. The grid options are named by their code and their own spelling.
+  const optionFor = (code: string, name: string) =>
+    screen.getByRole('button', { name: new RegExp(`^${code}\\s*${name}$`) })
+
+  it('paints the current language differently from the rest', async () => {
+    const user = userEvent.setup()
+    render(<LanguageSwitcher lang="de" />)
+    await user.click(toggle())
+
+    const german = optionFor('DE', 'Deutsch')
+    const french = optionFor('FR', 'Français')
+
+    expect(german.style.backgroundColor).not.toBe('')
+    expect(french.style.backgroundColor).toBe('')
+    expect(german.style.color).not.toBe(french.style.color)
+  })
+
+  it('moves the marking when a different language is current', async () => {
+    const user = userEvent.setup()
+    render(<LanguageSwitcher lang="fr" />)
+    await user.click(toggle())
+
+    expect(optionFor('FR', 'Français').style.backgroundColor).not.toBe('')
+    expect(optionFor('DE', 'Deutsch').style.backgroundColor).toBe('')
+  })
+
+  it('tints an option under the pointer and clears it again', async () => {
+    const user = userEvent.setup()
+    render(<LanguageSwitcher lang="de" />)
+    await user.click(toggle())
+    const french = optionFor('FR', 'Français')
+
+    await user.hover(french)
+    expect(french.style.backgroundColor).not.toBe('')
+
+    await user.unhover(french)
+    expect(french.style.backgroundColor).toBe('')
+  })
+
+  // Hovering the selected one must not repaint it: the hover tint is a pale
+  // grey, so applying it would wipe out the marking that says "this is the one
+  // you are on" for as long as the pointer rests there.
+  it('leaves the current language alone under the pointer', async () => {
+    const user = userEvent.setup()
+    render(<LanguageSwitcher lang="de" />)
+    await user.click(toggle())
+    const german = optionFor('DE', 'Deutsch')
+    const before = german.style.backgroundColor
+
+    await user.hover(german)
+    expect(german.style.backgroundColor).toBe(before)
+
+    await user.unhover(german)
+    expect(german.style.backgroundColor).toBe(before)
   })
 })

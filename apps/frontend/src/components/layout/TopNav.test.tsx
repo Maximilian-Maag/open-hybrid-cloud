@@ -96,6 +96,18 @@ describe('TopNav current-page marking', () => {
     expect(resting).not.toHaveClass('brand-state-active')
   })
 
+  // navLinkClass takes `exact` separately from the aria-current call beside it,
+  // and defaults it to false. If that default ever flips, aria-current keeps
+  // saying "you are here" on a detail page while the pill stops looking like it
+  // — the two signals disagree, and the visible one is the wrong one.
+  it('keeps the pill marked on a detail page, not just the section root', () => {
+    renderNav('user', '/orders/42')
+    const orders = screen.getByRole('link', { name: 'Orders' })
+    expect(orders).toHaveAttribute('aria-current', 'page')
+    expect(orders).toHaveClass('brand-state-active')
+    expect(orders).not.toHaveClass('brand-state')
+  })
+
   it('sizes every pill to the 44px target floor (WCAG 2.5.5)', () => {
     renderNav('root', '/')
     for (const link of screen.getAllByRole('link')) expect(link).toHaveClass('min-h-11')

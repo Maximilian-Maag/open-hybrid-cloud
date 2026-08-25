@@ -97,6 +97,18 @@ spec:
                   name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
                   key: TOTP_ENCRYPTION_KEY
             {{- end }}
+            {{- with .Values.backend.webauthn }}
+            {{- if .rpId }}
+            # Plain env, not a secret: these are public identifiers the browser
+            # already knows. Required in production — see values.yaml (#197).
+            - name: WEBAUTHN_RP_ID
+              value: {{ .rpId | quote }}
+            {{- end }}
+            {{- if .rpOrigin }}
+            - name: WEBAUTHN_RP_ORIGIN
+              value: {{ .rpOrigin | quote }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.backend.env.smtp }}
             {{- if .pass }}
             - name: SMTP_PASS

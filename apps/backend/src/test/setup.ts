@@ -25,6 +25,8 @@ const TABLES = [
   schema.sessions,
   schema.userRecoveryCodes,
   schema.userTotp,
+  schema.webauthnChallenges,
+  schema.webauthnCredentials,
   schema.productFavorites,
   schema.orderComments,
   schema.productVersions,
@@ -85,6 +87,29 @@ beforeAll(async () => {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS user_recovery_codes_user_id_code_hash_unique
       ON user_recovery_codes (user_id, code_hash);
+    -- Migration 0030: WebAuthn/FIDO2 credentials and the ceremony challenge (#197).
+    CREATE TABLE IF NOT EXISTS webauthn_credentials (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      credential_id TEXT NOT NULL UNIQUE,
+      public_key TEXT NOT NULL,
+      counter BIGINT NOT NULL DEFAULT 0,
+      transports JSONB NOT NULL DEFAULT '[]'::jsonb,
+      label TEXT NOT NULL,
+      backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+      device_type TEXT NOT NULL DEFAULT 'singleDevice',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS webauthn_credentials_user_idx
+      ON webauthn_credentials (user_id);
+    CREATE TABLE IF NOT EXISTS webauthn_challenges (
+      user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      challenge TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     -- Migration 0019: server-side sessions with revocation (issue #37).
     CREATE TABLE IF NOT EXISTS sessions (
       id BIGSERIAL PRIMARY KEY,

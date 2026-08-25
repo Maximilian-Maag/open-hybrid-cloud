@@ -1580,6 +1580,54 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
+  path: '/dashboard',
+  summary: "The landing page's counters and its five most recent orders",
+  description:
+    'One bounded response for the whole dashboard. It exists because the page used to answer "how ' +
+    'many orders do I have" by calling GET /orders, GET /infrastructure and GET /projects in full ' +
+    'and taking `.length` — for an administrator, the entire history of the installation, on the ' +
+    'page every user lands on immediately after login (#158). ' +
+    'Scoped exactly as those three endpoints are, so the counters agree with the pages they link ' +
+    'to: orders and projects by owner, infrastructure through the element\'s project. Grants no ' +
+    'visibility the caller did not already have. ' +
+    'The response is a fixed size whatever the history behind it: four counts and at most five rows.',
+  tags: ['Dashboard'],
+  security: bearerAuth,
+  request: {
+    query: z.object({
+      lang: z.string().optional().describe('Language for product names. Defaults to en.'),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Counters and recent orders',
+      content: {
+        'application/json': {
+          schema: z.object({
+            orders: z.object({ total: z.number(), pending: z.number() }),
+            infrastructure: z.object({ active: z.number() }),
+            projects: z.object({ total: z.number() }),
+            recentOrders: z.array(
+              z.object({
+                id: z.number(),
+                productId: z.number(),
+                productName: z.string().nullable(),
+                environmentName: z.string().nullable(),
+                projectName: z.string().nullable(),
+                status: z.string(),
+                createdAt: z.string(),
+              }),
+            ),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
   path: '/infrastructure',
   summary: 'List infrastructure elements',
   tags: ['Infrastructure'],

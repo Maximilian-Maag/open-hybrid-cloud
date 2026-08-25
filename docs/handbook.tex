@@ -2139,6 +2139,74 @@ Setup lives under \textbf{Settings → My Profile → Two-factor authentication}
 the end-user steps are in \file{docs/guides/root.md}. What matters at the
 operator level is the following.
 
+\subsection*{Security keys and passkeys (WebAuthn)}
+
+TOTP is one of two factors an account may hold. The other is a WebAuthn
+credential --- a hardware key, or a passkey backed by Touch ID, Windows Hello or
+a phone --- and either satisfies the requirement on its own.
+
+The difference is not convenience. An assertion is signed over the origin the
+browser is actually on, and the server checks it, so a user walked onto a
+lookalike domain cannot produce one that verifies. A six-digit code can be typed
+into anything that asks for one, and \autoref{sec:root-2fa} is not the only place
+this handbook records people ending up on the wrong host.
+
+Nothing secret is stored. A registration leaves the private key on the
+authenticator and hands the server a public key; a dump of
+\code{webauthn\_credentials} authenticates nobody. That is the sharpest
+difference from \code{user\_totp.secret}, which is material a code can be computed
+from and therefore has to be encrypted.
+
+\paragraph{Configuration, and the one way to get it wrong.}
+A credential is scoped to a Relying Party ID, and the assertion names an origin.
+Both are deployment configuration:
+
+\begin{itemize}
+  \item \env{WEBAUTHN\_RP\_ID} --- a \emph{bare domain}. No scheme, no port, no
+    path. \code{portal.example.com}, or \code{example.com} to let one credential
+    work across subdomains.
+  \item \env{WEBAUTHN\_RP\_ORIGIN} --- the full origin the browser sees, with
+    scheme. Comma-separate several if the portal answers on more than one
+    hostname; the RP ID must be a suffix of every one.
+\end{itemize}
+
+Get either wrong and every key fails on the deployed instance while working
+perfectly on localhost. So the backend validates both at first use and refuses to
+start a ceremony rather than minting credentials nobody can ever use --- a
+mistyped variable becomes one loud error for the operator instead of a silent
+failure at every user. Blank values fall back to localhost, which is what makes a
+fresh clone work with a key straight away; both are required when
+\env{NODE\_ENV} is \code{production}.
+
+Changing the RP ID invalidates every registered credential --- they are scoped to
+it. Choose the broadest domain you might want before anyone enrols.
+
+\paragraph{What the server enforces.}
+The library verifies the ceremony; the service around it adds the rules that are
+not its job. A challenge lives in \code{webauthn\_challenges} and is claimed by
+the \code{DELETE ... RETURNING} that reads it, so it is spent exactly once and two
+requests racing on one cannot both proceed --- a signed stateless token, as used
+for the MFA challenge, could be replayed for as long as it was valid. The
+challenge \code{kind} is part of that \code{WHERE}: a registration challenge
+matches nothing on the authentication path, so a ceremony run inside an
+authenticated session cannot be redeemed as the second factor for a session that
+never passed one. The credential lookup is keyed by user \emph{and} credential id,
+or a valid assertion from anybody's key would satisfy a challenge issued for
+somebody else's password.
+
+The signature counter is enforced only where there is one to enforce: a value at
+or below the stored one means two authenticators are answering for one credential,
+but every passkey and much modern hardware reports a constant zero. Enforcing a
+rising counter against those would lock out most users to claim a guarantee the
+portal does not have.
+
+\paragraph{Recovery codes are shared.} Registering a first factor of
+\emph{either} kind issues them; a second key does not reissue, because that would
+silently invalidate the set the user already wrote down. A credential can be
+removed, unlike a confirmed TOTP secret --- a lost key that stays registered keeps
+prompting for something the user no longer has --- but never the last factor an
+administrator holds.
+
 \subsection*{Configuration}
 
 The shared secret is encrypted at rest with AES-256-GCM. The key comes from
@@ -2752,7 +2820,9 @@ The table below shows the current effective schema.
     \code{integrations}             & External system registry: encrypted credentials, health and failure semantics \\
     \code{sessions}                 & Server-side sessions; stores only the SHA-256 of the token, never the token \\
     \code{user\_totp}               & Per-user second-factor secret, kept out of \code{users} so nothing selects it by accident \\
-    \code{user\_recovery\_codes}    & Single-use second-factor recovery codes, stored as SHA-256 hashes \\
+    \code{user\_recovery\_codes}    & Single-use second-factor recovery codes, stored as SHA-256 hashes; shared by both factor kinds \\
+    \code{webauthn\_credentials}    & Registered security keys and passkeys. Public keys only — a dump of this table authenticates nobody \\
+    \code{webauthn\_challenges}     & The in-flight ceremony challenge, one row per user, deleted when it is spent \\
     \code{audit\_log}               & Append-only log of significant user actions \\
     \code{exchange\_rates}          & Cached currency conversion rates \\
     \code{branding}                 & Single-row branding config (logo, colours, texts) \\

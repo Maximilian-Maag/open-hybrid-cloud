@@ -60,10 +60,33 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // the password check, and `code` is the TOTP or recovery code.
         mfaToken: { type: 'text' },
         code: { type: 'text' },
+        // A WebAuthn assertion, JSON-encoded because NextAuth credentials are
+        // form fields and cannot carry an object (#197 part 2).
+        webauthn: { type: 'text' },
       },
       async authorize(credentials) {
         const mfaToken = String(credentials.mfaToken ?? '')
         const code = String(credentials.code ?? '')
+        const webauthn = String(credentials.webauthn ?? '')
+
+        // Redeeming a challenge with a security key. Same challenge, same
+        // endpoint, different proof — the backend's `SecondFactorProof` is a union
+        // so exactly one of the two arrives.
+        if (mfaToken && webauthn) {
+          let parsed: unknown
+          try {
+            parsed = JSON.parse(webauthn)
+          } catch {
+            return null
+          }
+          const res = await fetch(`${API_URL}/api/auth/login/mfa`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mfaToken, webauthn: parsed }),
+          })
+          if (!res.ok) return null
+          return toAuthUser(await res.json())
+        }
 
         // Redeeming a challenge. The password is NOT re-checked here — the
         // challenge is what proves it, and it is bound to the account's current

@@ -111,7 +111,14 @@ export async function POST(req: NextRequest) {
     loginLimit.reset(accountKey)
     return NextResponse.json(
       check.data.mfaRequired
-        ? { mfaRequired: true, mfaToken: check.data.mfaToken, expiresIn: MFA_CHALLENGE_TTL_SECONDS }
+        ? {
+            mfaRequired: true,
+            mfaToken: check.data.mfaToken,
+            expiresIn: MFA_CHALLENGE_TTL_SECONDS,
+            // Which factors this account holds, so the form knows whether to
+            // offer a key, a code, or the choice (#197 part 2).
+            methods: check.data.methods,
+          }
         : { mfaRequired: false },
     )
   }
@@ -141,6 +148,7 @@ export async function POST(req: NextRequest) {
       mfaRequired: true,
       mfaToken: result.data.mfaToken,
       expiresIn: MFA_CHALLENGE_TTL_SECONDS,
+      methods: result.data.methods,
     })
   }
 

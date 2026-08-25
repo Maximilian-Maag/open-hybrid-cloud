@@ -89,11 +89,52 @@ export interface RevokeSessionsResponse {
  * rather than null so a client that forgets to check `mfaRequired` finds nothing
  * it could mistake for a session.
  */
+/** One registered security key or passkey (issue #197, part 2). */
+export interface WebauthnCredential {
+  id: number
+  /** What the user called it — they will have more than one. */
+  label: string
+  createdAt: string
+  lastUsedAt: string | null
+  /** A synced passkey rather than one bound to a single device. */
+  backedUp: boolean
+}
+
+export interface WebauthnCredentialsResponse {
+  credentials: WebauthnCredential[]
+}
+
+/**
+ * What finishing a registration returns.
+ *
+ * `recoveryCodes` is present only when this was the account's FIRST factor of any
+ * kind, and that response is the only copy that will ever exist — they are stored
+ * hashed. A second key does not reissue them, because that would silently
+ * invalidate the set the user already wrote down.
+ */
+export interface WebauthnRegistrationResult {
+  label: string
+  recoveryCodes?: string[]
+}
+
+/** Which second factors an account actually holds (issue #197, part 2). */
+export type SecondFactorMethod = 'totp' | 'webauthn'
+
 export interface MfaChallengeResponse {
   mfaRequired: true
   mfaToken: string
   /** Seconds until the challenge expires. */
   expiresIn: number
+  /**
+   * What this account can present, so the form offers the right thing.
+   *
+   * Told at the challenge and not guessed, because an account may hold a key and
+   * no authenticator app, and a form that always asked for six digits would be
+   * asking for something that does not exist. Disclosed to a caller who has
+   * already proved the password, and it says which KINDS exist — never how many,
+   * and never anything identifying.
+   */
+  methods: SecondFactorMethod[]
 }
 
 export type LoginResult = LoginResponse | MfaChallengeResponse
@@ -215,6 +256,33 @@ export interface CatalogPage {
   total: number
   limit: number
   offset: number
+}
+
+/**
+ * The landing page's counters and its five most recent orders.
+ *
+ * `GET /api/dashboard` exists so the dashboard stops answering "how many orders
+ * do I have" by downloading every order, every infrastructure element and every
+ * project and calling `.length` on the results (issue #158). Fixed size,
+ * whatever the history behind it.
+ */
+export interface DashboardSummary {
+  orders: { total: number; pending: number }
+  infrastructure: { active: number }
+  projects: { total: number }
+  /** Newest first, capped at five — what the page renders. */
+  recentOrders: DashboardOrder[]
+}
+
+/** One row of the dashboard's recent-orders list, with only what it renders. */
+export interface DashboardOrder {
+  id: number
+  productId: number
+  productName: string | null
+  environmentName: string | null
+  projectName: string | null
+  status: OrderStatus
+  createdAt: string
 }
 
 export interface Product {

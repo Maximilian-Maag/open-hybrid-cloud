@@ -8,6 +8,11 @@ import { t } from '@/lib/i18n'
 import { Alert } from '@/components/ui/Alert'
 import { readableInk, readableAccent, AA_LARGE, AA_NON_TEXT } from '@/lib/contrast'
 import { MFA_LOCKED_OUT } from '@/lib/loginErrors'
+import { startAuthentication } from '@simplewebauthn/browser'
+import type { SecondFactorMethod } from '@open-hybrid-cloud/types'
+
+/** The options object `startAuthentication` takes, named from its own signature. */
+type AuthOptions = Parameters<typeof startAuthentication>[0]['optionsJSON']
 
 interface Props {
   shopName: string
@@ -49,6 +54,16 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
    */
   const [mfaToken, setMfaToken] = useState<string | null>(null)
   const [code, setCode] = useState('')
+  /**
+   * The WebAuthn request options, when the account holds a key (#197 part 2).
+   *
+   * Handed over with the challenge in step one, so reaching for the key costs no
+   * extra round trip. Null means the account has no key — or that building them
+   * failed, in which case the code field is still there and still works.
+   */
+  const [webauthnOptions, setWebauthnOptions] = useState<AuthOptions | null>(null)
+  /** Whether the account also holds an authenticator app, so the code field is worth showing. */
+  const [hasTotp, setHasTotp] = useState(true)
 
   const finishSignIn = async (result: { error?: string | null; code?: string } | undefined) => {
     if (result?.error) return false
@@ -80,7 +95,14 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         body: JSON.stringify({ email, password, rememberMe }),
       })
       const data = (await res.json().catch(() => null)) as
-        | { ok?: boolean; mfaRequired?: boolean; mfaToken?: string; error?: string }
+        | {
+            ok?: boolean
+            mfaRequired?: boolean
+            mfaToken?: string
+            methods?: SecondFactorMethod[]
+            webauthnOptions?: unknown
+            error?: string
+          }
         | null
 
       if (!res.ok || !data?.ok) {
@@ -95,6 +117,15 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
       if (data.mfaRequired && data.mfaToken) {
         setMfaToken(data.mfaToken)
         setCode('')
+        setWebauthnOptions((data.webauthnOptions as AuthOptions | null) ?? null)
+        // Two ways this can arrive without naming a method, and both mean "show
+        // the code field", which is what every account had before keys existed:
+        // `methods` absent is an older backend, and `methods: []` is a backend
+        // that requires a second factor and lists none. `!data.methods` covered
+        // only the first — an empty array is truthy, so the second hid the code
+        // field and left the user with no way to finish signing in at all.
+        const named = data.methods ?? []
+        setHasTotp(named.length === 0 || named.includes('totp'))
         return
       }
 
@@ -110,6 +141,38 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         setError(t('invalidCredentials', lang))
       }
     } catch {
+      setError(t('unexpectedError', lang))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  /**
+   * Step two, with a key: run the ceremony and redeem the assertion.
+   *
+   * The browser signs over the origin it is actually on, so this is the half of
+   * the sign-in a lookalike page cannot complete — the assertion it collected
+   * would name the wrong origin and the server would refuse it.
+   */
+  async function handleKeySubmit() {
+    if (!mfaToken || !webauthnOptions) return
+    setError(null)
+    setLoading(true)
+    try {
+      const assertion = await startAuthentication({ optionsJSON: webauthnOptions })
+      const result = await signIn('credentials', {
+        email,
+        mfaToken,
+        webauthn: JSON.stringify(assertion),
+        redirect: false,
+      })
+      if (!(await finishSignIn(result))) setError(t('invalidCredentials', lang))
+    } catch (err) {
+      // Closing the prompt is not a failed sign-in, and saying so would send the
+      // user looking for a problem that is not there.
+      if (err instanceof Error && (err.name === 'NotAllowedError' || err.name === 'AbortError')) {
+        return
+      }
       setError(t('unexpectedError', lang))
     } finally {
       setLoading(false)
@@ -188,8 +251,32 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
           {mfaToken ? (
             <form onSubmit={handleCodeSubmit} className="space-y-4">
               <h2 className="text-base font-semibold text-slate-900">{t('twoFactorAuth', lang)}</h2>
-              <p className="text-sm text-slate-600">{t('twoFactorLoginHint', lang)}</p>
-              <div>
+
+              {/* The key first where the account has one: it is the stronger of
+                  the two, and it is one press against six typed digits. Its own
+                  button rather than the form's submit, because the ceremony is
+                  not a form submission and pressing Enter in the code field must
+                  not start it (#197 part 2). */}
+              {webauthnOptions && (
+                <div className="space-y-2">
+                  <p className="text-sm text-slate-600">{t('twoFactorKeyHint', lang)}</p>
+                  <button
+                    type="button"
+                    onClick={() => void handleKeySubmit()}
+                    disabled={loading}
+                    className="w-full min-h-11 rounded-md border px-3 py-2 text-sm font-medium disabled:opacity-60"
+                    style={{ borderColor: 'var(--bs-edge)', color: 'var(--bp-text)' }}
+                  >
+                    {loading ? t('twoFactorVerifying', lang) : t('useSecurityKey', lang)}
+                  </button>
+                  {hasTotp && (
+                    <p className="text-center text-xs text-slate-500">{t('orUseCode', lang)}</p>
+                  )}
+                </div>
+              )}
+
+              {hasTotp && <p className="text-sm text-slate-600">{t('twoFactorLoginHint', lang)}</p>}
+              <div className={hasTotp ? undefined : 'hidden'}>
                 <label htmlFor="code" className="block text-sm font-medium text-slate-700 mb-1">
                   {t('twoFactorCodeLabel', lang)}
                 </label>
@@ -204,8 +291,11 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                   inputMode="text"
                   spellCheck={false}
                   autoCapitalize="characters"
-                  required
-                  autoFocus
+                  // Never on a hidden field: an account with only a key has this
+                  // input hidden, and a required invisible input is a form the
+                  // browser refuses to submit without saying why.
+                  required={hasTotp}
+                  autoFocus={hasTotp}
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   className="w-full min-h-11 rounded-md border border-slate-200 px-3 py-2 text-sm tracking-widest text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:border-transparent"

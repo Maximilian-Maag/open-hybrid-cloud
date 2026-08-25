@@ -449,6 +449,30 @@ Two kinds of account are outside this:
 * **Project Managers.** The end-user role holds no administrative authority, and
   the server refuses every two-factor endpoint for it.
 
+**Security keys and passkeys**
+
+Alongside the authenticator app you can register a **security key** — a YubiKey or
+similar — or a **passkey** (Touch ID, Windows Hello, a phone). Either satisfies
+the requirement on its own, and it is worth preferring: the key signs in only on
+this site's real address, so a lookalike page cannot use it. A six-digit code can
+be typed into anything that asks for one.
+
+1. Go to **Settings → Profile** and find the **Security keys** card
+2. Give the key a name you will recognise later — you will have more than one,
+   and "YubiKey on my keyring" is the difference between revoking the lost one and
+   the other one
+3. Click **Register a security key** and follow the browser's prompt
+
+**Register more than one.** A single key is a single point of failure, and the
+recovery codes are the only other way in. Registering your first factor of either
+kind — key or authenticator app — issues those codes; registering a second key
+deliberately does not, so the set you already wrote down stays valid.
+
+A key can be removed from the same card, unlike a confirmed authenticator app.
+The one thing you cannot remove is the last factor on the account: the server
+refuses, because an administrator with none can sign in and then do nothing.
+Register the replacement first.
+
 **Setting it up**
 
 1. Go to **Settings → Profile** and find the **Two-factor authentication** card

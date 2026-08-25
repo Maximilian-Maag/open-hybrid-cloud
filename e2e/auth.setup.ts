@@ -1,4 +1,4 @@
-import { test as setup } from '@playwright/test'
+import { test as setup, expect } from '@playwright/test'
 import path from 'path'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import {
@@ -42,6 +42,21 @@ setup('authenticate as root', async ({ page }) => {
   await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 75_000 })
 
   await enrolSecondFactorIfRequired(page)
+
+  // The guarantee every other spec is built on: this session reaches the
+  // dashboard rather than being bounced to the enrolment screen.
+  //
+  // Asserted here because the alternative already happened. The setup's only
+  // check used to be "signing in worked", which is true for an administrator who
+  // owes a second factor — they sign in and are then refused every route. It
+  // reported ✓, saved the storageState, and 330 assertions failed across every
+  // other spec on missing headings, none of which pointed at this file.
+  //
+  // A setup that cannot produce a usable session must fail AS THE SETUP.
+  await page.goto('/')
+  await expect(page.getByRole('link', { name: /browse catalog/i })).toBeVisible({ timeout: 60_000 })
+  expect(page.url(), 'the saved session still owes a second factor').not.toContain('enroll2fa')
+
   await page.context().storageState({ path: rootAuthFile })
 })
 
@@ -59,11 +74,39 @@ setup('authenticate as root', async ({ page }) => {
  * only end-to-end coverage that path has.
  */
 async function enrolSecondFactorIfRequired(page: import('@playwright/test').Page): Promise<void> {
-  // The middleware sends an administrator who owes a factor here, and nowhere
-  // else. Landing anywhere else means nothing is owed.
-  if (!page.url().includes('/settings')) return
+  // Ask for the dashboard, then wait for whichever screen answers.
+  //
+  // This used to read `page.url()` the instant the sign-in navigation left
+  // `/login`, and return early unless it already said `/settings`. The
+  // middleware's redirect to the enrolment screen lands AFTER that — so the
+  // check sampled `/`, concluded nothing was owed, skipped the enrolment, and
+  // saved a storageState for an account with no second factor. Every
+  // authenticated test then bounced to `/settings?enroll2fa=1` and failed on a
+  // missing heading, while this setup reported ✓, because signing in is all it
+  // asserts. One CI run took 11s and skipped it; the next took 32s and did it.
+  //
+  // Racing two locators rather than sleeping: the enrolment prompt and a marker
+  // that only the dashboard has. Whichever appears first is the answer, and
+  // neither appearing is a real failure rather than something to shrug at.
+  await page.goto('/')
   const passwordField = page.getByLabel(/confirm with your password/i)
-  if (!(await passwordField.isVisible().catch(() => false))) return
+  const outcome = await Promise.race([
+    passwordField.waitFor({ state: 'visible', timeout: 60_000 }).then(() => 'enrol' as const, () => null),
+    page
+      .getByRole('link', { name: /browse catalog/i })
+      .waitFor({ state: 'visible', timeout: 60_000 })
+      .then(() => 'ready' as const, () => null),
+  ])
+
+  if (outcome === 'ready') return
+  if (outcome !== 'enrol') {
+    // Neither screen. Saying so here costs one clear error; staying quiet costs
+    // the whole suite failing later on symptoms that point at the wrong file.
+    throw new Error(
+      `After signing in, neither the dashboard nor the second-factor enrolment prompt appeared. ` +
+        `Currently at ${page.url()}.`,
+    )
+  }
 
   await passwordField.fill(rootPassword)
   await page.getByRole('button', { name: /set up/i }).click()

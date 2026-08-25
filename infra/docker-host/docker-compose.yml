@@ -85,6 +85,19 @@ services:
       # Optional — encrypts the integration registry's credentials (issue #111).
       # Blank leaves the feature off; it never falls back to plain text.
       SECRET_ENCRYPTION_KEY: "${SECRET_ENCRYPTION_KEY:-}"
+      # REQUIRED for security keys / passkeys (issue #197). Not optional in
+      # production: the backend refuses to start a WebAuthn ceremony without
+      # them, because an assertion is signed over the origin and the RP ID and
+      # guessing either produces keys that fail on the deployed instance while
+      # working on localhost. No `:-` default for the same reason — a blank one
+      # would be a guess.
+      #
+      # RP_ID is the DOMAIN alone (hcp-dev.example.org), RP_ORIGIN the full
+      # origin the browser sees (https://hcp-dev.example.org). They are derived
+      # from NEXTAUTH_URL, which is already the address the browser uses, so
+      # there is nothing new to decide.
+      WEBAUTHN_RP_ID: "${WEBAUTHN_RP_ID}"
+      WEBAUTHN_RP_ORIGIN: "${WEBAUTHN_RP_ORIGIN}"
     depends_on:
       postgres:
         condition: service_healthy

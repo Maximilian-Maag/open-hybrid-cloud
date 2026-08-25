@@ -81,7 +81,7 @@ export function NewProjectButton({ token }: Props) {
               label={t('costCenter', lang)}
               value={costCenterId}
               onChange={(e) => setCostCenterId(e.target.value)}
-              placeholder="None"
+              placeholder={t('none', lang)}
               options={costCenters.map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}` }))}
             />
           )}

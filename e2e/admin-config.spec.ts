@@ -43,12 +43,40 @@ test.describe('Admin - SMTP Configuration', () => {
     await expect(page.getByRole('button', { name: /save configuration/i })).toBeVisible()
   })
 
+  /**
+   * Puts the configuration back (#156).
+   *
+   * `app_config` is a singleton row shared by the whole deployment, so this test
+   * used to leave `smtp.example.com:587` configured for every run after it — and
+   * for whoever next opened the page by hand. Anything that then tried to send
+   * mail would attempt a connection to a host that does not exist.
+   */
   test('filling SMTP fields and saving shows success', async ({ page }) => {
-    await page.getByLabel(/^host/i).fill('smtp.example.com')
-    await page.getByLabel(/^port/i).fill('587')
-    await page.getByLabel(/from address/i).fill('noreply@example.com')
+    const host = page.getByLabel(/^host/i)
+    const port = page.getByLabel(/^port/i)
+    const from = page.getByLabel(/from address/i)
+    const before = {
+      host: await host.inputValue(),
+      port: await port.inputValue(),
+      from: await from.inputValue(),
+    }
+
+    await host.fill('smtp.example.com')
+    await port.fill('587')
+    await from.fill('noreply@example.com')
     await page.getByRole('button', { name: /save configuration/i }).click()
     await expect(page.getByText(/smtp.*saved|saved.*smtp/i)).toBeVisible({ timeout: 8000 })
+
+    // Restore, and assert the restore itself landed — a silent failure here is
+    // the leak this test is meant to stop having.
+    await host.fill(before.host)
+    await port.fill(before.port)
+    await from.fill(before.from)
+    await page.getByRole('button', { name: /save configuration/i }).click()
+    await expect(page.getByText(/smtp.*saved|saved.*smtp/i)).toBeVisible({ timeout: 8000 })
+
+    await page.reload()
+    await expect(page.getByLabel(/^host/i)).toHaveValue(before.host)
   })
 })
 
@@ -73,10 +101,22 @@ test.describe('Admin - AI Configuration', () => {
     await expect(providerSelect.locator('option', { hasText: /ollama/i })).toBeAttached()
   })
 
+  // Same singleton, same restore (#156): this used to leave the AI model set to
+  // whatever string the test happened to use.
   test('saving AI config shows success toast', async ({ page }) => {
-    await page.getByLabel(/model/i).fill('claude-opus-4-5')
+    const model = page.getByLabel(/model/i)
+    const before = await model.inputValue()
+
+    await model.fill('claude-opus-4-5')
     await page.getByRole('button', { name: /save/i }).click()
     await expect(page.getByText(/ai.*saved|saved.*ai/i)).toBeVisible({ timeout: 8000 })
+
+    await model.fill(before)
+    await page.getByRole('button', { name: /save/i }).click()
+    await expect(page.getByText(/ai.*saved|saved.*ai/i)).toBeVisible({ timeout: 8000 })
+
+    await page.reload()
+    await expect(page.getByLabel(/model/i)).toHaveValue(before)
   })
 })
 

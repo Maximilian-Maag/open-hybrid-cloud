@@ -181,7 +181,9 @@ export async function completeSecondFactor(page: Page): Promise<boolean> {
     const step = totpStepOf()
     lastSpentStep = step
     await codeField.fill(totpCode(secret))
-    await page.getByRole('button', { name: /^sign in$/i }).click()
+    // Not /^sign in$/: the step-two button says "Verify" since #240, because
+    // repeating the password step's wording read as being asked to log in again.
+    await page.getByRole('button', { name: /^verify$/i }).click()
 
     const signedIn = await page
       .waitForURL((url) => !url.pathname.includes('/login'), { timeout: 15_000 })

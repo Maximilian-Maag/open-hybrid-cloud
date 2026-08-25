@@ -59,7 +59,9 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
    *
    * Handed over with the challenge in step one, so reaching for the key costs no
    * extra round trip. Null means the account has no key — or that building them
-   * failed, in which case the code field is still there and still works.
+   * failed, in which case the code field is the fallback wherever the account
+   * has one. Where it does not, the step says so rather than showing nothing
+   * (#240).
    */
   const [webauthnOptions, setWebauthnOptions] = useState<AuthOptions | null>(null)
   /** Whether the account also holds an authenticator app, so the code field is worth showing. */
@@ -313,14 +315,38 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                   placeholder="123456"
                 />
               </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full min-h-11 rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
-              >
-                {loading ? t('twoFactorVerifying', lang) : t('signIn', lang)}
-              </button>
+              {/* The submit button belongs to the code field, so it is gated on the
+                  same condition (#240). An account that holds only a key had it
+                  rendered under the hidden field, where the only thing it could
+                  do was submit an empty code and come back with "invalid
+                  credentials" — a refusal for a control that should not have
+                  been offered.
+
+                  The label is not `signIn` either: those are the words on the
+                  button of the password step the user just pressed, so repeating
+                  them here reads as "you are being asked to log in again"
+                  rather than "confirm this code". */}
+              {hasTotp && (
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full min-h-11 rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                  style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
+                >
+                  {loading ? t('twoFactorVerifying', lang) : t('twoFactorVerify', lang)}
+                </button>
+              )}
+
+              {/* Neither control: a key-only account whose request options failed
+                  to build (login-challenge leaves them null rather than failing
+                  the sign-in). Before #240 the dead submit button at least made
+                  the card look finished; hiding it correctly would otherwise
+                  leave a heading and a Back link with no explanation. A recovery
+                  code is no help here — they live on the TOTP row, which this
+                  account does not have. */}
+              {!hasTotp && !webauthnOptions && (
+                <p className="text-sm text-slate-600">{t('twoFactorNoMethod', lang)}</p>
+              )}
               <button
                 type="button"
                 onClick={() => {

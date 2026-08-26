@@ -10,7 +10,7 @@ import {
   orderComments,
   productVersions,
 } from '@/lib/db/schema'
-import { count, eq, sql } from 'drizzle-orm'
+import { count, eq, sql, and, ne } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
@@ -107,12 +107,37 @@ export const getUserById = async (id: number): Promise<Result<SafeUser>> => {
   return ok(rows[0] as SafeUser)
 }
 
+/** Thrown inside the transaction so the FOR UPDATE lock is released by a rollback. */
+class LastRootError extends Error {}
+
 export const updateUser = async (
   id: number,
   input: UpdateUserInput,
   actorId: number | null = null,
 ): Promise<Result<SafeUser>> => {
   if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
+
+  // You cannot switch off the account you are signed in with.
+  //
+  // `deleteUser` has guarded this since it was written — "Cannot delete your own
+  // account" — and this function, which can do the same damage, did not. Worse,
+  // it is not merely destructive: the transaction below revokes every session of
+  // an account it deactivates, so the request that turns you off also signs you
+  // out, in that order, and the screen that could undo it is behind the login
+  // you no longer pass.
+  //
+  // Every route into here is `requireRole('root')`, so the account doing this is
+  // always a root, and on an installation with one root — the ordinary case, and
+  // what the bootstrap creates — the platform is left with nobody who can
+  // administer it. That happened.
+  if (actorId !== null && id === actorId) {
+    if (input.active === false) {
+      return err(400, 'You cannot deactivate your own account. Ask another administrator to do it.')
+    }
+    if (input.role !== undefined && input.role !== 'root') {
+      return err(400, 'You cannot remove your own root role. Ask another administrator to do it.')
+    }
+  }
 
   const { password, ...rest } = input
   const update: Record<string, unknown> = { ...rest }
@@ -125,38 +150,74 @@ export const updateUser = async (
   // stand or fall together. Revoking after the UPDATE commits means a failure
   // there leaves the account deactivated (or demoted) and still signed in — the
   // exact state this revoke exists to prevent, reached by the error path.
-  const updated = await db.transaction(async (tx) => {
-    // Read inside the transaction and FOR UPDATE, so "the role actually changed"
-    // is answered from the same snapshot the write uses. Read outside, a
-    // concurrent update between the two makes the decision stale in both
-    // directions: revoking for a change that did not happen, or leaving a real
-    // demotion's sessions alive.
-    //
-    // The read still exists at all so that a no-op PUT resending the current role
-    // is not treated as a change — which would sign the user out and write an
-    // audit entry for nothing.
-    const [before] = await tx
-      .select({ role: users.role })
-      .from(users)
-      .where(eq(users.id, id))
-      .limit(1)
-      .for('update')
+  let updated
+  try {
+    updated = await db.transaction(async (tx) => {
+      // Read inside the transaction and FOR UPDATE, so "the role actually changed"
+      // is answered from the same snapshot the write uses. Read outside, a
+      // concurrent update between the two makes the decision stale in both
+      // directions: revoking for a change that did not happen, or leaving a real
+      // demotion's sessions alive.
+      //
+      // The read still exists at all so that a no-op PUT resending the current role
+      // is not treated as a change — which would sign the user out and write an
+      // audit entry for nothing.
+      const [before] = await tx
+        .select({ role: users.role })
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1)
+        .for('update')
 
-    const [row] = await tx
-      .update(users)
-      .set(update)
-      .where(eq(users.id, id))
-      .returning(safeUserColumns)
+      // And the last root standing cannot be switched off by anyone, including
+      // another root.
+      //
+      // The self-guard above stops the common case. It does not stop two roots
+      // deactivating each other, or one root deactivating the other and then
+      // being locked out by something else — and the result is identical: an
+      // installation with no account that can administer it, recoverable only by
+      // an UPDATE against the database.
+      //
+      // Counted inside the same transaction and behind the FOR UPDATE above, so
+      // two concurrent requests cannot each see a second root and both proceed.
+      const losingRoot =
+        before?.role === 'root' &&
+        (input.active === false || (input.role !== undefined && input.role !== 'root'))
 
-    if (!row) return null
+      if (losingRoot) {
+        const [{ remaining }] = await tx
+          .select({ remaining: sql<number>`COUNT(*)::int` })
+          .from(users)
+          .where(and(eq(users.role, 'root'), eq(users.active, true), ne(users.id, id)))
+        if (remaining === 0) {
+          // Thrown rather than returned: this is inside the transaction, and the
+          // FOR UPDATE lock has to be released by a rollback rather than by a
+          // return that leaves the row locked for the rest of it.
+          throw new LastRootError()
+        }
+      }
 
-    if (input.active === false || (input.role !== undefined && input.role !== before?.role)) {
-      const reason = input.active === false ? 'Account deactivated' : 'Role changed'
-      await revokeAllSessionsOf(actorId, id, reason, tx)
+      const [row] = await tx
+        .update(users)
+        .set(update)
+        .where(eq(users.id, id))
+        .returning(safeUserColumns)
+
+      if (!row) return null
+
+      if (input.active === false || (input.role !== undefined && input.role !== before?.role)) {
+        const reason = input.active === false ? 'Account deactivated' : 'Role changed'
+        await revokeAllSessionsOf(actorId, id, reason, tx)
+      }
+
+      return row
+    })
+  } catch (error) {
+    if (error instanceof LastRootError) {
+      return err(400, 'This is the last active root account. Promote another account to root first.')
     }
-
-    return row
-  })
+    throw error
+  }
 
   if (!updated) return err(404, 'Not found')
 

@@ -761,6 +761,104 @@ const elementTriggerVariables = (input: {
  * Create one order, provisioning it immediately for an admin or queueing it for
  * approval for a project manager.
  */
+/**
+ * How long a provisioning order must have gone without any update before root is
+ * allowed to write it off.
+ *
+ * Not a guess at how long a pipeline takes — it is how long silence has to last
+ * before "still running" stops being a possible explanation. The longest real
+ * provisioning run measured on this platform is a few minutes; thirty is the
+ * threshold at which an order is stuck rather than slow, with room to spare.
+ */
+export const STUCK_ORDER_SILENCE_MS = 30 * 60 * 1000
+
+/**
+ * Root writes off an order whose pipeline never reported back (#206, and the
+ * order 37 that prompted this).
+ *
+ * An order goes to `provisioning` when CI is triggered and leaves it when the
+ * callback arrives. If the callback never arrives — the pipeline finished and
+ * nothing posted the result, the token was wrong, the URL was — the order stays
+ * `provisioning` for ever, and every operator action is behind a status it will
+ * never reach:
+ *
+ *   Retry         shown only when `orderStatus === 'failed'`
+ *   Decommission  reachable, but leaves the order itself stuck
+ *
+ * So the platform had a terminal state it could enter and not leave. This is the
+ * way out, and it is deliberately narrow:
+ *
+ *   - root only, enforced by the route AND here, because this writes a status
+ *     nothing observed and the audit entry has to name a person
+ *   - only from `provisioning`; every other status either resolves itself or has
+ *     its own path out
+ *   - only after `STUCK_ORDER_SILENCE_MS` of no update at all, so a pipeline that
+ *     is merely slow cannot be written off out from under itself
+ *
+ * The reason goes in the AUDIT LOG rather than `rejectionNote`: that column
+ * belongs to `status = 'rejected'` and to the approver who wrote it, and
+ * borrowing it here would make a rejected order and a written-off one
+ * indistinguishable to everything that reads it.
+ *
+ * The status it writes is `failed`, not `completed`: nobody observed a success,
+ * and `failed` is also the status that opens Retry — which is what an operator
+ * looking at a stuck order usually wants next.
+ */
+export const markOrderFailed = async (
+  session: SessionUser,
+  orderId: number,
+  reason: string,
+  now: Date = new Date(),
+): Promise<Result<{ id: number; status: string }>> => {
+  if (session.role !== 'root') return err(403, 'Forbidden')
+
+  const trimmed = reason.trim()
+  if (trimmed === '') return err(400, 'Say why the order is being written off — it goes in the audit log.')
+
+  const [order] = await db
+    .select({ id: orders.id, status: orders.status, updatedAt: orders.updatedAt })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1)
+
+  if (!order) return err(404, 'Order not found')
+
+  if (order.status !== 'provisioning') {
+    return err(
+      409,
+      `Only an order stuck in provisioning can be written off; this one is ${order.status}.`,
+    )
+  }
+
+  const silentFor = now.getTime() - order.updatedAt.getTime()
+  if (silentFor < STUCK_ORDER_SILENCE_MS) {
+    const minutes = Math.ceil((STUCK_ORDER_SILENCE_MS - silentFor) / 60_000)
+    return err(
+      409,
+      `This order last reported ${Math.floor(silentFor / 60_000)} minutes ago and may still be running. Try again in ${minutes} minutes.`,
+    )
+  }
+
+  const [updated] = await db
+    .update(orders)
+    .set({ status: 'failed', updatedAt: now })
+    .where(and(eq(orders.id, orderId), eq(orders.status, 'provisioning')))
+    .returning({ id: orders.id, status: orders.status })
+
+  // The WHERE still carries the status, so a callback that landed between the
+  // read and the write wins and this answers 409 rather than overwriting it.
+  if (!updated) return err(409, 'The order changed while you were looking at it. Reload and check again.')
+
+  await logAudit(
+    session.id,
+    'order.written_off',
+    orderId,
+    `Stuck in provisioning for ${Math.floor(silentFor / 60_000)} minutes with no callback; marked failed by ${session.email}: ${trimmed}`,
+  )
+
+  return ok(updated)
+}
+
 export const createOrder = async (
   session: SessionUser,
   input: CreateOrderInput,

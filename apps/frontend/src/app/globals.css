@@ -93,4 +93,16 @@ dialog::backdrop {
    guarantees. --bp-tint is the opposite pole, so these only ever help. */
 .brand-state       { transition: background-color .15s ease; }
 .brand-state:hover { background-color: color-mix(in srgb, var(--bp-tint) 14%, transparent); }
-.brand-state-active { background-color: color-mix(in srgb, var(--bp-tint) 22%, transparent); }
+
+/* The active item is a link like any other and has to answer the mouse like one.
+   It carries `brand-state-active` INSTEAD of `brand-state` (see navLinkClass),
+   which is what it needs to look different at rest — and it also meant it
+   picked up neither the transition nor the :hover rule above, so the pill for
+   the page you are on was the one pill in the nav that did not react to being
+   pointed at. Reported as "some buttons do not respond to hovering".
+
+   Its own hover goes UP from 22% rather than down to the resting 14%: sharing
+   `.brand-state:hover` would have made the current item fade when hovered,
+   which reads as the control switching off under the cursor. */
+.brand-state-active { background-color: color-mix(in srgb, var(--bp-tint) 22%, transparent); transition: background-color .15s ease; }
+.brand-state-active:hover { background-color: color-mix(in srgb, var(--bp-tint) 32%, transparent); }

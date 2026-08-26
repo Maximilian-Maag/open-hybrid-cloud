@@ -11,12 +11,12 @@ vi.mock('@/lib/ci/webhooks', () => ({
   triggerPipelineStacksTracked: vi.fn().mockResolvedValue({ pipelineIds: [], failures: [] }),
 }))
 
-import { listOrders, getOrderById, createOrder } from './orders'
+import { listOrders, getOrderById, createOrder, markOrderFailed, STUCK_ORDER_SILENCE_MS } from './orders'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements, parameters, productEnvironments } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { orders, infrastructureElements, parameters, productEnvironments, auditLog } from '@/lib/db/schema'
+import { eq, desc } from 'drizzle-orm'
 import {
   createUser,
   createCategory,
@@ -1281,5 +1281,139 @@ describe('the project name (#208)', () => {
     if (result.ok) {
       expect(result.data.find((o) => o.id === order.id)?.projectName).toBe(project.name)
     }
+  })
+})
+
+// An order that reaches `provisioning` and never hears back from CI had no way
+// out: Retry is gated on `failed`, which the order can only reach through a
+// callback that is not coming. Seen live as order 37 on the dev instance —
+// provisioning since 24 August, `updated_at` 0.6s after `created_at`,
+// `pipeline_status` empty.
+describe('markOrderFailed (issue #206)', () => {
+  const LONG_AGO = new Date(Date.now() - 90 * 60 * 1000)
+
+  async function stuckOrder(status = 'provisioning', updatedAt: Date = LONG_AGO) {
+    const owner = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(owner.id)
+    const order = await seedOrder(project.id, product.id, env.id, owner.id, { status })
+    await db.update(orders).set({ updatedAt }).where(eq(orders.id, order.id))
+    return order
+  }
+
+  it('lets root write off an order that has gone silent', async () => {
+    const root = await createUser({ role: 'root' })
+    const order = await stuckOrder()
+
+    const result = await markOrderFailed(makeSession(root), order.id, 'Pipeline 740 finished; no callback arrived.')
+
+    expect(result.ok).toBe(true)
+    const [row] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(row.status).toBe('failed')
+  })
+
+  // The whole point is that a person took responsibility for a status nothing
+  // observed, so the entry has to say who and why.
+  it('records who wrote it off and the reason they gave', async () => {
+    const root = await createUser({ role: 'root' })
+    const order = await stuckOrder()
+
+    await markOrderFailed(makeSession(root), order.id, 'Pipeline finished in GitLab, callback never arrived.')
+
+    const [entry] = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, 'order.written_off'))
+      .orderBy(desc(auditLog.id))
+      .limit(1)
+    expect(entry.userId).toBe(root.id)
+    expect(entry.entityId).toBe(order.id)
+    expect(entry.details).toContain(root.email)
+    expect(entry.details).toContain('callback never arrived')
+    expect(entry.details).toMatch(/\d+ minutes/)
+  })
+
+  it('refuses anyone who is not root', async () => {
+    const admin = await createUser({ role: 'admin' })
+    const order = await stuckOrder()
+
+    const result = await markOrderFailed(makeSession(admin), order.id, 'let me')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(403)
+    const [row] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(row.status).toBe('provisioning')
+  })
+
+  // Every other status either resolves itself or has its own way out; this exists
+  // only for the one that does not.
+  it.each(['pending', 'completed', 'failed', 'rejected'])(
+    'refuses to touch an order that is %s',
+    async (status) => {
+      const root = await createUser({ role: 'root' })
+      const order = await stuckOrder(status)
+
+      const result = await markOrderFailed(makeSession(root), order.id, 'reason')
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.status).toBe(409)
+    },
+  )
+
+  // A pipeline that is merely slow must not be written off out from under itself.
+  it('refuses while the order could still be running', async () => {
+    const root = await createUser({ role: 'root' })
+    const order = await stuckOrder('provisioning', new Date(Date.now() - 60 * 1000))
+
+    const result = await markOrderFailed(makeSession(root), order.id, 'impatient')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(409)
+      expect(result.message).toMatch(/may still be running/i)
+    }
+  })
+
+  it('accepts it the moment the silence is long enough', async () => {
+    const root = await createUser({ role: 'root' })
+    const order = await stuckOrder('provisioning', new Date(Date.now() - STUCK_ORDER_SILENCE_MS - 1000))
+
+    const result = await markOrderFailed(makeSession(root), order.id, 'no callback')
+
+    expect(result.ok).toBe(true)
+  })
+
+  it('insists on a reason', async () => {
+    const root = await createUser({ role: 'root' })
+    const order = await stuckOrder()
+
+    const result = await markOrderFailed(makeSession(root), order.id, '   ')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  it('answers 404 for an order that is not there', async () => {
+    const root = await createUser({ role: 'root' })
+    const result = await markOrderFailed(makeSession(root), 999_999, 'reason')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+  })
+
+  // The UPDATE carries the status in its WHERE, so a callback that lands between
+  // the read and the write wins rather than being overwritten by the write-off.
+  it('loses to a callback that arrives first', async () => {
+    const root = await createUser({ role: 'root' })
+    const order = await stuckOrder()
+    await db.update(orders).set({ status: 'completed' }).where(eq(orders.id, order.id))
+
+    const result = await markOrderFailed(makeSession(root), order.id, 'too late')
+
+    expect(result.ok).toBe(false)
+    const [row] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(row.status).toBe('completed')
   })
 })

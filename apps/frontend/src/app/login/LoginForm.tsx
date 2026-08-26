@@ -121,7 +121,13 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         //         know is right, forever. Nothing is disclosed by admitting the
         //         server is broken: it is broken for every email, including ones
         //         that do not exist.
-        const worthRepeating = res.status === 429 || res.status >= 500
+        //   403 — the password was RIGHT and something else is in the way: the
+        //         account is deactivated. Only reachable past a correct
+        //         password, so it discloses nothing to anyone who does not
+        //         already hold the credentials — and rendering it as "invalid
+        //         email or password" is what sent an operator hunting for a
+        //         password problem for an afternoon (#196).
+        const worthRepeating = res.status === 429 || res.status === 403 || res.status >= 500
         setError(worthRepeating && data?.error ? data.error : t('invalidCredentials', lang))
         return
       }

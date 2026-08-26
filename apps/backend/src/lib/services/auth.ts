@@ -158,12 +158,33 @@ export const checkLoginPassword = async (
     .limit(1)
 
   const user = rows[0]
-  if (!user || !user.active || !user.passwordHash) {
+  if (!user || !user.passwordHash) {
     return err(401, 'Invalid credentials')
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash)
   if (!valid) return err(401, 'Invalid credentials')
+
+  /*
+   * Deactivation is reported only AFTER the password verifies.
+   *
+   * It used to share the branch above, so a deactivated account failed as
+   * "Invalid credentials" — and the operator went looking for a password
+   * problem. On the dev instance that cost an afternoon: root had deactivated
+   * its own account (#196), and every screen said the password was wrong.
+   *
+   * Told before the password is checked, this would be an account-enumeration
+   * oracle: anyone could learn which addresses have accounts, and which of them
+   * are switched off. Told after, it discloses nothing — whoever gets this
+   * message already holds the credentials, and the only thing they learn is why
+   * the credentials they have do not work.
+   *
+   * Deliberately after bcrypt rather than before, so the timing does not leak it
+   * either.
+   */
+  if (!user.active) {
+    return err(403, 'This account is deactivated. An administrator has to reactivate it.')
+  }
 
   // The password was right. If a second factor is enrolled, that is ALL that has
   // been established — no session row is written and no session token is signed

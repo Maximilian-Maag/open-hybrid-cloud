@@ -105,13 +105,8 @@ describe('AuditTable', () => {
       return new Promise((resolve) => { resolvePage3 = resolve })
     })
 
-<<<<<<< HEAD
-    render(<AuditTable token="tok" />)
-    await waitFor(() => expect(screen.getByText(/page 1 \/ 3/i)).toBeInTheDocument())
-=======
     render(<AuditTable />)
-    await waitFor(() => expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument())
->>>>>>> origin/dev
+    await waitFor(() => expect(screen.getByText(/page 1 \/ 3/i)).toBeInTheDocument())
 
     const next = screen.getByRole('button', { name: 'Next' })
     fireEvent.click(next) // load() for page 2, held open

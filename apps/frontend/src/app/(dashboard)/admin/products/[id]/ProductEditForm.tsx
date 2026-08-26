@@ -57,8 +57,6 @@ interface Props {
   environments: DeploymentEnvironment[]
   translations: ProductTranslation[]
   costCenters: CostCenter[]
-<<<<<<< HEAD
-  token: string
   /**
    * The language every string on this form renders in. It used to translate only
    * the handful of strings added with the version history, which left the page
@@ -66,9 +64,6 @@ interface Props {
    * Defaults to English for callers that resolve no language — the tests; the
    * page itself always passes what `getLang()` answered.
    */
-=======
-  /** The rest of this form is English-only admin chrome; only the new strings are translated. */
->>>>>>> origin/dev
   lang?: string
 }
 
@@ -1131,11 +1126,7 @@ function EnvironmentRow({
             .map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}${cc.active ? '' : ` ${t('inactiveSuffix', lang)}`}` }))}
         />
       )}
-<<<<<<< HEAD
-      {existing && <SizesEditor productId={productId} envId={env.id} token={token} lang={lang} />}
-=======
-      {existing && <SizesEditor productId={productId} envId={env.id} />}
->>>>>>> origin/dev
+      {existing && <SizesEditor productId={productId} envId={env.id} lang={lang} />}
 
       <div className="flex items-center gap-3">
         <Button type="submit" size="sm" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
@@ -1175,19 +1166,11 @@ function EnvironmentRow({
 function SizesEditor({
   productId,
   envId,
-<<<<<<< HEAD
-  token,
   lang,
 }: {
   productId: number
   envId: number
-  token: string
   lang: string
-=======
-}: {
-  productId: number
-  envId: number
->>>>>>> origin/dev
 }) {
   const [sizes, setSizes] = useState<OfferingSize[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -1205,15 +1188,11 @@ function SizesEditor({
       setError(e instanceof Error ? e.message : t('failedToLoadGeneric', lang))
       setSizes([])
     }
-<<<<<<< HEAD
     // `lang` is in here because the fallback message is translated now. It makes
     // `load` change when the language does, so the sizes are re-fetched on a
     // language switch — one request, and the alternative is a stale error still
     // reading in the previous language.
-  }, [path, token, lang])
-=======
-  }, [path])
->>>>>>> origin/dev
+  }, [path, lang])
 
   useEffect(() => { void load() }, [load])
 

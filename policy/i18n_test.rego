@@ -101,3 +101,51 @@ test_supported_and_tables_agreeing_passes if {
 	denied := policy.deny with input as facts
 	count(denied) == 0
 }
+
+# --- rule 8c: user-facing text goes through t() -----------------------------
+
+hardcoded(hits) := {"hardcodedText": hits}
+
+text_denials(hits) := [v |
+	some v in policy.deny with input as hardcoded(hits)
+	v.rule == "user_facing_text_uses_t"
+]
+
+test_hardcoded_jsx_text_is_denied if {
+	denied := text_denials([{
+		"file": "apps/frontend/src/app/x/Form.tsx",
+		"line": 42,
+		"kind": "text",
+		"text": "Saved.",
+	}])
+	count(denied) == 1
+	denied[0].file == "apps/frontend/src/app/x/Form.tsx"
+	denied[0].line == 42
+	contains(denied[0].detail, "JSX text")
+	contains(denied[0].detail, "Saved.")
+	contains(denied[0].why, "25 languages")
+}
+
+test_hardcoded_attribute_names_the_attribute if {
+	denied := text_denials([{
+		"file": "apps/frontend/src/app/x/Form.tsx",
+		"line": 7,
+		"kind": "@placeholder",
+		"text": "e.g. Platform Networking",
+	}])
+	contains(denied[0].detail, "the placeholder attribute")
+}
+
+# The extractor decides what is prose; the rule denies whatever it is handed. An
+# empty list is the state this rule merged in and the state it has to keep.
+test_no_hardcoded_text_is_allowed if {
+	count(text_denials([])) == 0
+}
+
+test_every_hit_is_reported_not_just_the_first if {
+	count(text_denials([
+		{"file": "a.tsx", "line": 1, "kind": "text", "text": "One"},
+		{"file": "a.tsx", "line": 2, "kind": "@label", "text": "Two"},
+		{"file": "b.tsx", "line": 3, "kind": "@hint", "text": "Three"},
+	])) == 3
+}

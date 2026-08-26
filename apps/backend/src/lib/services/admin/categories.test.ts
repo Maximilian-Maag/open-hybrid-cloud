@@ -25,6 +25,7 @@ import {
   infrastructureElements,
 } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import postgres from 'postgres'
 import {
   createUser,
   createCategory as seedCategory,
@@ -285,6 +286,71 @@ describe('deleteCategory preserves order history (issue #142)', () => {
     const again = await deleteCategory(cat.id)
     expect(again.ok).toBe(false)
     if (!again.ok) expect(again.status).toBe(404)
+  })
+})
+
+/**
+ * The window a row lock cannot see, because a row lock cannot lock a row that
+ * does not exist yet.
+ *
+ * `FOR UPDATE` on the category's products closes "a new ORDER on a product that
+ * already exists". It says nothing about "a new PRODUCT in this category, and an
+ * order on it": the scan returns nothing, `orderCount` stays 0, and the DELETE
+ * cascades categories -> products -> orders, taking the brand-new order with it.
+ * No error, no audit trace, no recovery — the same shape as #195, one level up.
+ *
+ * Proved with two real sessions, because that is the only way to hold an
+ * uncommitted insert open while the delete runs.
+ */
+describe('deleteCategory and a product created while it runs', () => {
+  it('waits for the other session and then keeps its order', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await seedCategory('Contested')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+
+    // A second connection, so this is a genuinely concurrent transaction rather
+    // than a nested one that would see its own writes.
+    const other = postgres(process.env.DATABASE_URL ?? '', { max: 1 })
+    // Assigned inside the other session's transaction, below.
+    let deletion: Promise<Awaited<ReturnType<typeof deleteCategory>>> | undefined
+    try {
+      const inserted = await other.begin(async (tx) => {
+        const [product] = await tx`
+          INSERT INTO products (category_id) VALUES (${cat.id}) RETURNING id`
+
+        // Now the delete starts. It must BLOCK: a product insert takes KEY SHARE
+        // on the categories row, and FOR UPDATE conflicts with that.
+        deletion = deleteCategory(cat.id)
+
+        // Long enough to be a real wait rather than a scheduling accident, short
+        // enough that the suite does not notice.
+        let settled = false
+        void deletion.then(() => { settled = true })
+        await new Promise((r) => setTimeout(r, 400))
+        expect(settled).toBe(false)
+
+        await tx`
+          INSERT INTO orders (project_id, product_id, environment_id, user_id, status, pipeline_id)
+          VALUES (${project.id}, ${product.id}, ${env.id}, ${pm.id}, 'pending', '{}')`
+        return product.id as number
+      })
+
+      if (!deletion) throw new Error('the delete never started')
+      const result = await deletion
+      expect(result.ok).toBe(true)
+
+      // Retired, not deleted: the order it found is history worth keeping.
+      const [row] = await db.select().from(categories).where(eq(categories.id, cat.id))
+      expect(row?.retiredAt).toBeInstanceOf(Date)
+      expect(
+        (await db.select().from(orders).where(eq(orders.productId, inserted))).length,
+      ).toBe(1)
+      expect((await db.select().from(products).where(eq(products.id, inserted))).length).toBe(1)
+    } finally {
+      await other.end()
+    }
   })
 })
 

@@ -84,7 +84,7 @@ export default async function OrderDetailPage({ params }: Props) {
             {/* Only root, and only for the one status that has no other way out
                 — see WriteOffOrder. The server checks both again. */}
             {role === 'root' && order.status === 'provisioning' && (
-              <WriteOffOrder orderId={order.id} token={token} />
+              <WriteOffOrder orderId={order.id} />
             )}
             <ButtonLink href="/orders" variant="secondary" size="sm">
               {t('backToOrders', lang)}

@@ -801,6 +801,16 @@ export interface CostReport {
   byEnvironment: CostBucket[]
   /** Amounts with no stored exchange rate, reported rather than silently dropped. */
   unconverted: { currency: string; amount: number }[]
+  /**
+   * Orders counted in `orderCount` with no recoverable price at all — no snapshot
+   * and no live offering (#189).
+   *
+   * They contribute nothing to `totalEur` because there is nothing to add. What
+   * this field buys is that they do so out loud: an order reaches this state when
+   * it predates snapshots and its offering has since been withdrawn, and before
+   * this the money simply left the total with the order still in the count.
+   */
+  unpricedOrders: number
   /** True when the caller sees every project's spend. */
   global: boolean
 }

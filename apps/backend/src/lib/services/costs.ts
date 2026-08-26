@@ -132,6 +132,24 @@ export interface CostReport {
    * the total quietly wrong.
    */
   unconverted: { currency: string; amount: number }[]
+  /**
+   * Orders counted in `orderCount` for which no price could be recovered at all
+   * — neither a snapshot nor a live offering (#189).
+   *
+   * They contribute nothing to `totalEur`, which is unavoidable: there is no
+   * amount to add. What is avoidable is doing that SILENTLY. An order reaches
+   * this state when it predates `product_snapshot` and the offering it was placed
+   * against has since been withdrawn — `deleteProductEnvironment` and the retire
+   * branches of `deleteCategory` and product retirement all delete the
+   * `product_environments` row, so the `leftJoin` that supplies the fallback
+   * price yields nothing.
+   *
+   * Before this the order still appeared in `orderCount`, still exported with
+   * `price: '0'`, and its historical spend simply left the total. A count is not
+   * the money back, but it is the difference between a total that is wrong and a
+   * total that says how far.
+   */
+  unpricedOrders: number
   /** True when the caller sees every project's spend. */
   global: boolean
 }
@@ -233,6 +251,7 @@ export const getCostReport = async (
 
   let totalEur = 0
   let estimatedOrders = 0
+  let unpricedOrders = 0
   const unconverted = new Map<string, number>()
   const buckets: Record<CostGrouping, Map<string, CostBucket>> = {
     project: new Map(),
@@ -259,7 +278,17 @@ export const getCostReport = async (
     // snapshot because it is a fact about the order, not about what the catalogue
     // offered; a row written before the column existed reads 1 through the
     // column default, which is what it asked for.
-    const unit = Number(rawPrice ?? '0')
+    // `null` is not `'0'`. A free offering is priced; an order whose offering has
+    // been withdrawn and which predates snapshots is UNPRICED, and collapsing the
+    // two makes withdrawn history look like a giveaway (#189).
+    if (rawPrice === null || rawPrice === undefined) {
+      unpricedOrders += 1
+      addTo(buckets, row, 0)
+      bumpMonth(months, row, 0, usingSnapshot, now)
+      continue
+    }
+
+    const unit = Number(rawPrice)
     const quantity = row.quantity !== null && row.quantity >= 1 ? row.quantity : 1
     const amount = Number.isFinite(unit) ? unit * quantity : unit
     // An unparseable or absent price contributes nothing rather than NaN, which
@@ -303,6 +332,7 @@ export const getCostReport = async (
       currency,
       amount: round(amount),
     })),
+    unpricedOrders,
     global: isAdmin,
   })
 }
@@ -495,11 +525,22 @@ export interface CostRowExport {
   price: string
   currency: string
   /**
-   * The unit price in EUR. Kept as it was so an existing consumer of the CSV is
-   * not silently handed a different number under the same name.
+   * The unit price in EUR, ROUNDED. Kept as it was so an existing consumer of the
+   * CSV is not silently handed a different number under the same name.
+   *
+   * Do not multiply this by `quantity` — round-then-multiply and
+   * multiply-then-round disagree by a cent at exactly the rates that make it hard
+   * to spot: 33.33 USD at 1.09, quantity 3, gives 91.74 that way and 91.73 the
+   * right way. `lineTotalEur` below is the right way, and is the field that
+   * reconciles.
    */
   priceEur: number | null
-  /** unit × quantity, in EUR — the figure that reconciles with the report. */
+  /**
+   * unit × quantity, in EUR — the figure that reconciles with the report.
+   *
+   * Computed from the UNROUNDED conversion, so it agrees with the report's
+   * `toEur(unit × quantity)` rather than with `priceEur × quantity`.
+   */
   lineTotalEur: number | null
   /** True when the price came from the live offering, not the order's snapshot. */
   estimated: boolean

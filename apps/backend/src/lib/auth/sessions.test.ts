@@ -12,7 +12,7 @@ import {
 } from './sessions'
 import { verifyToken } from './jwt'
 import { db } from '@/lib/db/client'
-import { sessions } from '@/lib/db/schema'
+import { sessions, users } from '@/lib/db/schema'
 import { createUser } from '@/test/helpers'
 
 afterEach(() => {
@@ -159,5 +159,48 @@ describe('validateSession', () => {
 
     const [row] = await db.select({ lastSeenAt: sessions.lastSeenAt }).from(sessions).where(eq(sessions.id, sessionId))
     expect(row.lastSeenAt.getTime()).toBeGreaterThan(stale.getTime())
+  })
+})
+
+/*
+ * Deactivation can only revoke the sessions that EXIST when it runs (#195).
+ *
+ * `updateUser` revokes in a transaction under FOR UPDATE, correctly. But
+ * `checkLoginPassword` reads the user with a plain SELECT, which that lock does
+ * not block, sees active = true, and then spends ~300 ms in bcrypt at cost 12. A
+ * deactivation committing inside that window leaves behind a session inserted
+ * after the revoke ran — and nothing on the read path looked at `active` again,
+ * so it was good for 8 hours, or 30 days with "remember me". The role comes from
+ * the token, so a demoted admin kept admin for the same span.
+ */
+describe('validateSession and the account behind it', () => {
+  it('refuses a session whose account has been deactivated', async () => {
+    const u = await createUser({ role: 'admin' })
+    const created = await createSession({ user: sessionUser(u.id, u.email) })
+
+    // Exactly the shape of the race: the row exists and is not revoked.
+    await db.update(users).set({ active: false }).where(eq(users.id, u.id))
+
+    expect(await validateSession(created.sessionId, created.token)).toBeNull()
+    const [row] = await db.select().from(sessions).where(eq(sessions.id, created.sessionId))
+    expect(row.revokedAt).toBeNull()
+  })
+
+  it('still accepts a session whose account is active', async () => {
+    const u = await createUser({ role: 'admin' })
+    const created = await createSession({ user: sessionUser(u.id, u.email) })
+
+    expect(await validateSession(created.sessionId, created.token)).toEqual({ userId: u.id })
+  })
+
+  it('accepts it again once the account is reactivated', async () => {
+    const u = await createUser({ role: 'admin' })
+    const created = await createSession({ user: sessionUser(u.id, u.email) })
+    await db.update(users).set({ active: false }).where(eq(users.id, u.id))
+    expect(await validateSession(created.sessionId, created.token)).toBeNull()
+
+    await db.update(users).set({ active: true }).where(eq(users.id, u.id))
+
+    expect(await validateSession(created.sessionId, created.token)).toEqual({ userId: u.id })
   })
 })

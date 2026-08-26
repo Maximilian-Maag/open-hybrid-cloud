@@ -165,6 +165,14 @@ describe('updateProduct', () => {
  * into `product_snapshot` for each new order after that.
  */
 describe("the English mirror does not overwrite a real translation (#161)", () => {
+  // A real row, because `audit_log.user_id` is a foreign key. The test schema was
+  // missing that one constraint (#195) and these cases passed with a `userId` no
+  // account had; in production the id always comes from a session.
+  let editorId = 0
+  beforeEach(async () => {
+    editorId = (await createUser({ role: 'admin' })).id
+  })
+
   const germanProduct = async () => {
     const cat = await createCategory()
     const created = await createProduct({
@@ -189,7 +197,7 @@ describe("the English mirror does not overwrite a real translation (#161)", () =
     const product = await germanProduct()
     await upsertTranslation(product.id, 'en', { name: 'Virtual Machine', description: 'A VM' })
 
-    await updateProduct(product.id, { name: 'Virtuelle Maschine (Linux)', userId: 1 })
+    await updateProduct(product.id, { name: 'Virtuelle Maschine (Linux)', userId: editorId })
 
     const rows = await translationsOf(product.id)
     expect(rows.de.name).toBe('Virtuelle Maschine (Linux)')
@@ -202,7 +210,7 @@ describe("the English mirror does not overwrite a real translation (#161)", () =
     // the cart and the order list go stale instead of blank.
     const product = await germanProduct()
 
-    await updateProduct(product.id, { name: 'Virtuelle Maschine (Linux)', userId: 1 })
+    await updateProduct(product.id, { name: 'Virtuelle Maschine (Linux)', userId: editorId })
 
     const rows = await translationsOf(product.id)
     expect(rows.en.name).toBe('Virtuelle Maschine (Linux)')
@@ -216,7 +224,7 @@ describe("the English mirror does not overwrite a real translation (#161)", () =
     await updateProduct(product.id, {
       name: 'Virtuelle Maschine (Linux)',
       description: 'Eine Linux-VM',
-      userId: 1,
+      userId: editorId,
     })
 
     const rows = await translationsOf(product.id)
@@ -235,7 +243,7 @@ describe("the English mirror does not overwrite a real translation (#161)", () =
         ),
       )
 
-    await updateProduct(product.id, { name: 'Virtuelle Maschine (Linux)', userId: 1 })
+    await updateProduct(product.id, { name: 'Virtuelle Maschine (Linux)', userId: editorId })
 
     const rows = await translationsOf(product.id)
     expect(rows.en?.name).toBe('Virtuelle Maschine (Linux)')
@@ -251,7 +259,7 @@ describe("the English mirror does not overwrite a real translation (#161)", () =
     })
     if (!created.ok) throw new Error('fixture failed')
 
-    await updateProduct(created.data.id, { name: 'Virtual Machine (Linux)', userId: 1 })
+    await updateProduct(created.data.id, { name: 'Virtual Machine (Linux)', userId: editorId })
 
     const rows = await translationsOf(created.data.id)
     expect(rows.en.name).toBe('Virtual Machine (Linux)')

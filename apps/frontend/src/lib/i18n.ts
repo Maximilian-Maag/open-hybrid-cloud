@@ -671,6 +671,9 @@ export type Translations = {
   writeOffReason: string
   writeOffReasonHint: string
   writingOffOrder: string
+  removeSecurityKeyTitle: string
+  removeSecurityKeyIntro: string
+  removeSecurityKeyPasswordHint: string
 }
 
 // English is the complete reference table; every other language may omit keys
@@ -1275,6 +1278,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Основание',
     writeOffReasonHint: 'Влиза в одитния дневник. Посочете какво сте проверили.',
     writingOffOrder: 'Отписване…',
+    removeSecurityKeyTitle: 'Да се премахне ли този ключ за сигурност?',
+    removeSecurityKeyIntro: 'С този ключ вече няма да влизате:',
+    removeSecurityKeyPasswordHint: 'Премахването на ключ не изисква хардуер, затова паролата ви е доказателството, че сте вие.',
   },
   cs: {
     noActiveSessions: 'Žádná aktivní přihlášení.',
@@ -1872,6 +1878,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Důvod',
     writeOffReasonHint: 'Zapíše se do auditního záznamu. Uveďte, co jste ověřili.',
     writingOffOrder: 'Odepisuje se…',
+    removeSecurityKeyTitle: 'Odebrat tento bezpečnostní klíč?',
+    removeSecurityKeyIntro: 'Tímto klíčem se už nepřihlásíte:',
+    removeSecurityKeyPasswordHint: 'Odebrání klíče nevyžaduje žádný hardware, takže vaše heslo je důkazem, že jste to vy.',
   },
   da: {
     noActiveSessions: 'Ingen aktive sessioner.',
@@ -2469,6 +2478,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Begrundelse',
     writeOffReasonHint: 'Havner i revisionsloggen. Skriv, hvad du har kontrolleret.',
     writingOffOrder: 'Afskriver…',
+    removeSecurityKeyTitle: 'Fjern denne sikkerhedsnøgle?',
+    removeSecurityKeyIntro: 'Denne nøgle logger dig ikke længere ind:',
+    removeSecurityKeyPasswordHint: 'At fjerne en nøgle kræver ingen hardware, så din adgangskode er beviset på, at det er dig.',
   },
   de: {
     noActiveSessions: 'Keine aktiven Sitzungen.',
@@ -3066,6 +3078,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Begründung',
     writeOffReasonHint: 'Landet im Audit-Log. Halten Sie fest, was Sie geprüft haben.',
     writingOffOrder: 'Wird abgeschrieben…',
+    removeSecurityKeyTitle: 'Diesen Sicherheitsschlüssel entfernen?',
+    removeSecurityKeyIntro: 'Dieser Schlüssel meldet Sie dann nicht mehr an:',
+    removeSecurityKeyPasswordHint: 'Zum Entfernen wird keine Hardware gebraucht — Ihr Passwort ist der Nachweis, dass Sie es sind.',
   },
   el: {
     noActiveSessions: 'Καμία ενεργή συνεδρία.',
@@ -3663,6 +3678,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Αιτιολόγηση',
     writeOffReasonHint: 'Καταχωρείται στο αρχείο ελέγχου. Αναφέρετε τι ελέγξατε.',
     writingOffOrder: 'Διαγραφή…',
+    removeSecurityKeyTitle: 'Αφαίρεση αυτού του κλειδιού ασφαλείας;',
+    removeSecurityKeyIntro: 'Αυτό το κλειδί δεν θα σας συνδέει πλέον:',
+    removeSecurityKeyPasswordHint: 'Η αφαίρεση κλειδιού δεν απαιτεί υλικό, οπότε ο κωδικός σας είναι η απόδειξη ότι είστε εσείς.',
   },
   en: {
     noActiveSessions: 'No active sessions.',
@@ -4260,6 +4278,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Why',
     writeOffReasonHint: 'Goes in the audit log. Say what you checked.',
     writingOffOrder: 'Writing off…',
+    removeSecurityKeyTitle: 'Remove this security key?',
+    removeSecurityKeyIntro: 'This key will no longer sign you in:',
+    removeSecurityKeyPasswordHint: 'Removing a key needs no hardware, so your password is what proves it is you.',
   },
   es: {
     noActiveSessions: 'No hay sesiones activas.',
@@ -4857,6 +4878,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Motivo',
     writeOffReasonHint: 'Queda en el registro de auditoría. Indique qué comprobó.',
     writingOffOrder: 'Dando de baja…',
+    removeSecurityKeyTitle: '¿Eliminar esta llave de seguridad?',
+    removeSecurityKeyIntro: 'Esta llave ya no le permitirá iniciar sesión:',
+    removeSecurityKeyPasswordHint: 'Eliminar una llave no requiere hardware, así que su contraseña es lo que demuestra que es usted.',
   },
   et: {
     noActiveSessions: 'Aktiivseid sessioone pole.',
@@ -5454,6 +5478,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Põhjus',
     writeOffReasonHint: 'Läheb auditilogisse. Kirjutage, mida kontrollisite.',
     writingOffOrder: 'Kandmine maha…',
+    removeSecurityKeyTitle: 'Kas eemaldada see turvavõti?',
+    removeSecurityKeyIntro: 'See võti ei logi teid enam sisse:',
+    removeSecurityKeyPasswordHint: 'Võtme eemaldamiseks pole riistvara vaja, seega tõendab teie parool, et see olete teie.',
   },
   fi: {
     noActiveSessions: 'Ei aktiivisia istuntoja.',
@@ -6051,6 +6078,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Perustelu',
     writeOffReasonHint: 'Tallentuu valvontalokiin. Kerro, mitä tarkistit.',
     writingOffOrder: 'Kirjataan…',
+    removeSecurityKeyTitle: 'Poistetaanko tämä suojausavain?',
+    removeSecurityKeyIntro: 'Tällä avaimella ei enää kirjauduta sisään:',
+    removeSecurityKeyPasswordHint: 'Avaimen poistaminen ei vaadi laitetta, joten salasanasi on todiste siitä, että kyse on sinusta.',
   },
   fr: {
     noActiveSessions: 'Aucune session active.',
@@ -6648,6 +6678,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Motif',
     writeOffReasonHint: 'Inscrit dans le journal d’audit. Indiquez ce que vous avez vérifié.',
     writingOffOrder: 'Classement…',
+    removeSecurityKeyTitle: 'Supprimer cette clé de sécurité ?',
+    removeSecurityKeyIntro: 'Cette clé ne vous connectera plus :',
+    removeSecurityKeyPasswordHint: 'Supprimer une clé ne demande aucun matériel : votre mot de passe est ce qui prouve que c’est bien vous.',
   },
   ga: {
     noActiveSessions: 'Níl aon seisiún gníomhach.',
@@ -7245,6 +7278,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Cúis',
     writeOffReasonHint: 'Téann sé sa loga iniúchta. Abair cad a sheiceáil tú.',
     writingOffOrder: 'Á dhíscríobh…',
+    removeSecurityKeyTitle: 'An eochair shlándála seo a bhaint?',
+    removeSecurityKeyIntro: 'Ní shíneoidh an eochair seo isteach thú a thuilleadh:',
+    removeSecurityKeyPasswordHint: 'Ní theastaíonn crua-earraí chun eochair a bhaint, mar sin is é do phasfhocal a chruthaíonn gur tusa atá ann.',
   },
   hr: {
     noActiveSessions: 'Nema aktivnih sesija.',
@@ -7842,6 +7878,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Obrazloženje',
     writeOffReasonHint: 'Ide u zapisnik revizije. Navedite što ste provjerili.',
     writingOffOrder: 'Otpisivanje…',
+    removeSecurityKeyTitle: 'Ukloniti ovaj sigurnosni ključ?',
+    removeSecurityKeyIntro: 'Ovim se ključem više nećete prijaviti:',
+    removeSecurityKeyPasswordHint: 'Uklanjanje ključa ne zahtijeva hardver, pa je vaša lozinka dokaz da ste to vi.',
   },
   hu: {
     noActiveSessions: 'Nincsenek aktív munkamenetek.',
@@ -8439,6 +8478,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Indoklás',
     writeOffReasonHint: 'Bekerül az auditnaplóba. Írja le, mit ellenőrzött.',
     writingOffOrder: 'Leírás…',
+    removeSecurityKeyTitle: 'Eltávolítja ezt a biztonsági kulcsot?',
+    removeSecurityKeyIntro: 'Ezzel a kulccsal többé nem tud bejelentkezni:',
+    removeSecurityKeyPasswordHint: 'A kulcs eltávolításához nem kell hardver, ezért a jelszava bizonyítja, hogy Ön az.',
   },
   it: {
     noActiveSessions: 'Nessuna sessione attiva.',
@@ -9036,6 +9078,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Motivo',
     writeOffReasonHint: 'Finisce nel registro di audit. Indichi che cosa ha verificato.',
     writingOffOrder: 'Chiusura…',
+    removeSecurityKeyTitle: 'Rimuovere questa chiave di sicurezza?',
+    removeSecurityKeyIntro: 'Questa chiave non ti farà più accedere:',
+    removeSecurityKeyPasswordHint: 'Rimuovere una chiave non richiede hardware: la password è ciò che dimostra che sei tu.',
   },
   lt: {
     noActiveSessions: 'Nėra aktyvių seansų.',
@@ -9633,6 +9678,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Priežastis',
     writeOffReasonHint: 'Pateks į audito žurnalą. Nurodykite, ką patikrinote.',
     writingOffOrder: 'Nurašoma…',
+    removeSecurityKeyTitle: 'Pašalinti šį saugos raktą?',
+    removeSecurityKeyIntro: 'Šiuo raktu nebebus galima prisijungti:',
+    removeSecurityKeyPasswordHint: 'Rakto pašalinimui įrangos nereikia, todėl jūsų slaptažodis įrodo, kad tai jūs.',
   },
   lv: {
     noActiveSessions: 'Nav aktīvu sesiju.',
@@ -10230,6 +10278,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Pamatojums',
     writeOffReasonHint: 'Nonāk audita žurnālā. Norādiet, ko pārbaudījāt.',
     writingOffOrder: 'Noraksta…',
+    removeSecurityKeyTitle: 'Noņemt šo drošības atslēgu?',
+    removeSecurityKeyIntro: 'Ar šo atslēgu vairs nevarēs pieteikties:',
+    removeSecurityKeyPasswordHint: 'Atslēgas noņemšanai aparatūra nav vajadzīga, tāpēc jūsu parole ir pierādījums, ka tas esat jūs.',
   },
   mt: {
     noActiveSessions: 'Ebda sessjoni attiva.',
@@ -10827,6 +10878,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Raġuni',
     writeOffReasonHint: 'Imur fir-reġistru tal-awditjar. Għid x’iċċekkjajt.',
     writingOffOrder: 'Qed tiġi kkanċellata…',
+    removeSecurityKeyTitle: 'Tneħħi din iċ-ċavetta tas-sigurtà?',
+    removeSecurityKeyIntro: 'Din iċ-ċavetta ma tibqax iddaħħlek:',
+    removeSecurityKeyPasswordHint: 'It-tneħħija ta’ ċavetta ma teħtieġ l-ebda ħardwer, għalhekk il-password tiegħek hija l-prova li int.',
   },
   nl: {
     noActiveSessions: 'Geen actieve sessies.',
@@ -11424,6 +11478,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Reden',
     writeOffReasonHint: 'Komt in het auditlogboek. Vermeld wat u hebt gecontroleerd.',
     writingOffOrder: 'Afschrijven…',
+    removeSecurityKeyTitle: 'Deze beveiligingssleutel verwijderen?',
+    removeSecurityKeyIntro: 'Met deze sleutel kunt u zich niet meer aanmelden:',
+    removeSecurityKeyPasswordHint: 'Voor het verwijderen is geen hardware nodig; uw wachtwoord is het bewijs dat u het bent.',
   },
   pl: {
     noActiveSessions: 'Brak aktywnych sesji.',
@@ -12021,6 +12078,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Uzasadnienie',
     writeOffReasonHint: 'Trafia do dziennika audytu. Napisz, co sprawdziłeś.',
     writingOffOrder: 'Odpisywanie…',
+    removeSecurityKeyTitle: 'Usunąć ten klucz bezpieczeństwa?',
+    removeSecurityKeyIntro: 'Ten klucz nie będzie już logował:',
+    removeSecurityKeyPasswordHint: 'Usunięcie klucza nie wymaga sprzętu, więc to hasło potwierdza, że to Ty.',
   },
   pt: {
     noActiveSessions: 'Nenhuma sessão ativa.',
@@ -12618,6 +12678,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Motivo',
     writeOffReasonHint: 'Fica no registo de auditoria. Indique o que verificou.',
     writingOffOrder: 'A dar baixa…',
+    removeSecurityKeyTitle: 'Remover esta chave de segurança?',
+    removeSecurityKeyIntro: 'Esta chave deixará de o autenticar:',
+    removeSecurityKeyPasswordHint: 'Remover uma chave não exige hardware, por isso a sua palavra-passe é o que prova que é você.',
   },
   ro: {
     noActiveSessions: 'Nicio sesiune activă.',
@@ -13215,6 +13278,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Motiv',
     writeOffReasonHint: 'Ajunge în jurnalul de audit. Precizați ce ați verificat.',
     writingOffOrder: 'Se anulează…',
+    removeSecurityKeyTitle: 'Eliminați această cheie de securitate?',
+    removeSecurityKeyIntro: 'Această cheie nu vă va mai autentifica:',
+    removeSecurityKeyPasswordHint: 'Eliminarea unei chei nu necesită hardware, așa că parola dumneavoastră este dovada că sunteți dumneavoastră.',
   },
   ru: {
     noActiveSessions: 'Активных сеансов нет.',
@@ -13812,6 +13878,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Обоснование',
     writeOffReasonHint: 'Попадёт в журнал аудита. Укажите, что вы проверили.',
     writingOffOrder: 'Списание…',
+    removeSecurityKeyTitle: 'Удалить этот ключ безопасности?',
+    removeSecurityKeyIntro: 'Этот ключ больше не будет выполнять вход:',
+    removeSecurityKeyPasswordHint: 'Для удаления ключа оборудование не нужно, поэтому подтверждением служит ваш пароль.',
   },
   sk: {
     noActiveSessions: 'Žiadne aktívne sedenia.',
@@ -14409,6 +14478,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Dôvod',
     writeOffReasonHint: 'Zapíše sa do auditného záznamu. Uveďte, čo ste overili.',
     writingOffOrder: 'Odpisuje sa…',
+    removeSecurityKeyTitle: 'Odstrániť tento bezpečnostný kľúč?',
+    removeSecurityKeyIntro: 'Týmto kľúčom sa už neprihlásite:',
+    removeSecurityKeyPasswordHint: 'Odstránenie kľúča nevyžaduje žiadny hardvér, takže vaše heslo je dôkazom, že ste to vy.',
   },
   sl: {
     noActiveSessions: 'Ni aktivnih sej.',
@@ -15006,6 +15078,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Razlog',
     writeOffReasonHint: 'Zapiše se v revizijski dnevnik. Navedite, kaj ste preverili.',
     writingOffOrder: 'Odpisovanje…',
+    removeSecurityKeyTitle: 'Odstranim ta varnostni ključ?',
+    removeSecurityKeyIntro: 'S tem ključem se ne boste več prijavili:',
+    removeSecurityKeyPasswordHint: 'Za odstranitev ključa ni potrebna strojna oprema, zato je vaše geslo dokaz, da ste to vi.',
   },
   sv: {
     noActiveSessions: 'Inga aktiva sessioner.',
@@ -15603,6 +15678,9 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     writeOffReason: 'Motivering',
     writeOffReasonHint: 'Hamnar i granskningsloggen. Skriv vad du kontrollerade.',
     writingOffOrder: 'Skriver av…',
+    removeSecurityKeyTitle: 'Ta bort den här säkerhetsnyckeln?',
+    removeSecurityKeyIntro: 'Den här nyckeln loggar inte längre in dig:',
+    removeSecurityKeyPasswordHint: 'Att ta bort en nyckel kräver ingen hårdvara, så ditt lösenord är beviset på att det är du.',
   },
 }
 

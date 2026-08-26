@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs'
 import { and, eq } from 'drizzle-orm'
 import {
   generateRegistrationOptions,
@@ -406,12 +407,42 @@ export const verifyAuthentication = async (
  * excludes, down to none. Re-checking the password here is the fix; it changes
  * the request shape, so it is issue #231 rather than a quiet edit inside #197.
  */
+/**
+ * Remove one security key, on proof of the account password (#231).
+ *
+ * `startRegistration` deliberately does NOT re-check the password, and gives a
+ * good reason: registering a key requires physically touching one, so a stolen
+ * session alone cannot add a factor and then use it. That argument covers
+ * registration. It does not cover REMOVAL, which needs no hardware — so a stolen
+ * session could strip a victim's spare keys one at a time, leaving the
+ * recommended primary-plus-backup setup with no backup, and the owner finding out
+ * only when they reached for it.
+ *
+ * Note the direction it was wrong in: a confirmed TOTP secret cannot be removed
+ * at all, so the weaker factor was the better-protected one.
+ *
+ * The check lives here rather than in the route, like `startEnrollment`'s: it is
+ * what makes the gate hold for any other caller. SSO accounts never reach it —
+ * `loadTwoFactorAccount` refuses them, because their second factor is the
+ * identity provider's to manage and there is no local password to prove.
+ */
 export const removeCredential = async (
   userId: number,
   credentialRowId: number,
+  password: string,
 ): Promise<Result<{ removed: number }>> => {
   const account = await loadTwoFactorAccount(userId)
   if (!account.ok) return account
+
+  if (!(await bcrypt.compare(password, account.data.passwordHash))) {
+    await logAudit(
+      userId,
+      'auth.webauthn.remove_denied',
+      userId,
+      'Security key removal refused: wrong password',
+    )
+    return err(403, 'Current password is incorrect')
+  }
 
   const remaining = (await countWebauthnCredentialsFor(userId)) - 1
   if (remaining === 0 && !(await hasConfirmedTotp(userId)) && canHoldSecondFactor(account.data.role)) {

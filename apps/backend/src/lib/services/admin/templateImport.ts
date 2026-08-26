@@ -65,19 +65,25 @@ export const resolveRepoPath = (from: string, relative: string): string => {
 }
 
 /**
- * Every Terraform variable a template still needs a value for, including the
- * ones declared by the modules it composes.
+ * Every Terraform variable a template still needs a value for.
  *
- * A template built out of modules declares few variables of its own: the root
- * wires the modules together, and the values a person has to choose live in the
- * children. Reading only the root's `variables.tf` — which is all the previous
- * import did — therefore found nothing, and the button looked broken on exactly
- * the templates it was most needed for.
+ * The ROOT is the contract, and modules are followed only if it is silent.
  *
- * A child variable is included only when the caller has NOT already assigned it.
+ * Checked against the real `infra-templates` repository before this was settled.
+ * Every one of its twelve templates is built out of modules AND declares its own
+ * `variables.tf`, under the header "Product parameters (set by users when
+ * ordering)" — the root passes each of them down explicitly. Descending anyway
+ * added 17 more variables across those twelve: `tags`, `deletion_protection`,
+ * `apply_immediately`, `ami_owner`, `user_data`, `windows_time_zone`. Every one
+ * is a module knob the template author deliberately left at its default, and
+ * every one would have arrived as a field on the order form.
+ *
+ * So: if the root declares any variables, they are the answer and the modules are
+ * not read. A root that declares none is the case module traversal exists for,
+ * and only then does it descend — a child variable is included only when the
+ * caller has NOT already assigned it, because
  * `module "compute" { instance_type = var.instance_type }` means the root has
- * answered that one, and offering it to the ordering user a second time would
- * ask them to fill a value the template ignores.
+ * answered that one.
  *
  * Remote sources — the registry, `git::`, anything not a relative path — cannot
  * be read through the CI file API. They are reported in `skippedModules` rather
@@ -121,6 +127,10 @@ export const scanTemplate = async (
   for (const variable of parseTerraformVariables(combined)) {
     scan.variables.push({ ...variable, fromModule: '' })
   }
+
+  // The root has spoken. Its `variables.tf` is what the template promises the
+  // ordering user, and what the modules declare behind it is implementation.
+  if (scan.variables.length > 0) return scan
 
   for (const call of parseTerraformModules(combined)) {
     if (!isLocalSource(call.source)) {

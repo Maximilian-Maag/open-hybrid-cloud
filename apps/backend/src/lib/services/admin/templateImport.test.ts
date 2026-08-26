@@ -144,18 +144,15 @@ describe('scanTemplate', () => {
     expect(scan.skippedModules.some((s) => s.reason.includes('deeper'))).toBe(true)
   })
 
-  // A partial import that says it is partial is usable; one that does not is a trap.
+  // A partial import that says it is partial is usable; one that does not is a
+  // trap. Only reached when the root is silent — a root that declares its own
+  // variables has answered the question and the modules are not read at all.
   it('reports a registry module rather than passing over it', async () => {
-    repo({
-      'templates/vm/main.tf': `
-        module "vpc" { source = "terraform-aws-modules/vpc/aws" }
-        variable "hostname" { type = string }
-      `,
-    })
+    repo({ 'templates/vm/main.tf': 'module "vpc" { source = "terraform-aws-modules/vpc/aws" }' })
 
     const scan = await scanTemplate(source, '1', 'main', 'templates/vm')
 
-    expect(scan.variables.map((v) => v.name)).toEqual(['hostname'])
+    expect(scan.variables).toEqual([])
     expect(scan.skippedModules).toEqual([
       expect.objectContaining({ module: 'vpc', source: 'terraform-aws-modules/vpc/aws' }),
     ])
@@ -167,6 +164,44 @@ describe('scanTemplate', () => {
     const scan = await scanTemplate(source, '1', 'main', 'templates/vm')
 
     expect(scan.skippedModules[0].source).toBe('git::https://e.com/x.git')
+  })
+
+  /*
+   * The rule that decides everything above, checked against the real
+   * `infra-templates` repository. All twelve of its templates are built out of
+   * modules AND declare their own variables.tf, under the header "Product
+   * parameters (set by users when ordering)". Descending anyway added 17 more
+   * variables across those twelve — `tags`, `deletion_protection`, `ami_owner`,
+   * `user_data`, `windows_time_zone` — every one a module knob the template
+   * author deliberately left at its default, and every one of which would have
+   * arrived as a field on the order form.
+   */
+  it('does not read the modules when the root declares its own variables', async () => {
+    repo({
+      'templates/vm/variables.tf': `
+        variable "volume_label" { type = string }
+        variable "region" { type = string }
+      `,
+      'templates/vm/main.tf': `
+        module "volume" {
+          source = "../../modules/volume"
+          label  = var.volume_label
+          region = var.region
+        }
+      `,
+      'modules/volume/variables.tf': `
+        variable "label" { type = string }
+        variable "region" { type = string }
+        variable "tags" { type = list(string) default = [] }
+        variable "deletion_protection" { type = bool default = false }
+      `,
+    })
+
+    const scan = await scanTemplate(source, '1', 'main', 'templates/vm')
+
+    expect(scan.variables.map((v) => v.name)).toEqual(['volume_label', 'region'])
+    // Not even read — the internal knobs never reach the operator's list.
+    expect(scan.filesRead).not.toContain('modules/volume/variables.tf')
   })
 
   // Two directories can reach the same module by different routes.

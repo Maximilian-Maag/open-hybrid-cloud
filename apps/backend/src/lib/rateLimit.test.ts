@@ -88,3 +88,68 @@ describe('createRateLimitBucket', () => {
     expect(bucket.isRateLimited('k0')).toBe(false)
   })
 })
+
+// The split `isRateLimited` used to refuse to have (#199): a caller that must
+// decide between the check and the charge, because charging on the way in made
+// a successful sign-in cost budget it never meant to spend.
+describe('isOverLimit and count', () => {
+  it('isOverLimit reports without consuming anything', () => {
+    const bucket = createRateLimitBucket(2, 60_000)
+
+    for (let i = 0; i < 20; i++) expect(bucket.isOverLimit('k')).toBe(false)
+
+    // Twenty checks spent nothing, so the two attempts are still there.
+    expect(bucket.isRateLimited('k')).toBe(false)
+    expect(bucket.isRateLimited('k')).toBe(false)
+    expect(bucket.isRateLimited('k')).toBe(true)
+  })
+
+  it('count charges without reporting', () => {
+    const bucket = createRateLimitBucket(2, 60_000)
+
+    bucket.count('k')
+    expect(bucket.isOverLimit('k')).toBe(false)
+    bucket.count('k')
+    expect(bucket.isOverLimit('k')).toBe(true)
+  })
+
+  it('counts past the cap without climbing', () => {
+    // The number is only ever compared against `max`. Letting it run would keep
+    // a key limited long after its window should have moved on.
+    vi.useFakeTimers()
+    const bucket = createRateLimitBucket(2, 60_000)
+    for (let i = 0; i < 50; i++) bucket.count('k')
+
+    expect(bucket.isOverLimit('k')).toBe(true)
+    vi.advanceTimersByTime(60_001)
+    expect(bucket.isOverLimit('k')).toBe(false)
+  })
+
+  it('starts a fresh window for a key it has never seen', () => {
+    const bucket = createRateLimitBucket(1, 60_000)
+    bucket.count('fresh')
+    expect(bucket.isOverLimit('fresh')).toBe(true)
+    expect(bucket.isOverLimit('other')).toBe(false)
+  })
+
+  it('forgets a counted key on reset', () => {
+    const bucket = createRateLimitBucket(1, 60_000)
+    bucket.count('k')
+    expect(bucket.isOverLimit('k')).toBe(true)
+
+    bucket.reset('k')
+
+    expect(bucket.isOverLimit('k')).toBe(false)
+  })
+
+  it('lets the window expire a counted key', () => {
+    vi.useFakeTimers()
+    const bucket = createRateLimitBucket(1, 60_000)
+    bucket.count('k')
+    expect(bucket.isOverLimit('k')).toBe(true)
+
+    vi.advanceTimersByTime(60_001)
+
+    expect(bucket.isOverLimit('k')).toBe(false)
+  })
+})

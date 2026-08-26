@@ -38,6 +38,26 @@ export interface RateLimitBucket {
    * call site so far is about to do the expensive thing.
    */
   isRateLimited(key: string): boolean
+  /**
+   * Is `key` already over the cap — without counting anything.
+   *
+   * The doc above used to say a caller wanting this wanted a different function
+   * and there deliberately was not one, because every call site was about to do
+   * the expensive thing. The login route is the exception that earned it (#199):
+   * it has to REFUSE an over-budget attempt before doing any work, and then
+   * charge the buckets only for the attempts that actually failed. Charging on
+   * the way in made every successful sign-in cost spray budget it was never
+   * meant to spend.
+   */
+  isOverLimit(key: string): boolean
+  /**
+   * Count one attempt against `key`, without asking whether it is over.
+   *
+   * The other half of the split. Pairs with `isOverLimit` for a caller that
+   * decides between the check and the charge; `isRateLimited` remains the
+   * one-shot form for everyone else.
+   */
+  count(key: string): void
   /** Forget `key` entirely, e.g. after the attempt it was guarding succeeded. */
   reset(key: string): void
   /**
@@ -94,6 +114,26 @@ export const createRateLimitBucket = (max: number, windowMs: number): RateLimitB
       if (entry.count >= max) return true
       entry.count++
       return false
+    },
+    isOverLimit(key: string): boolean {
+      const now = Date.now()
+      prune(now)
+      const entry = attempts.get(key)
+      if (!entry || entry.resetAt <= now) return false
+      return entry.count >= max
+    },
+    count(key: string): void {
+      const now = Date.now()
+      prune(now)
+      const entry = attempts.get(key)
+      if (!entry || entry.resetAt <= now) {
+        attempts.set(key, { count: 1, resetAt: now + windowMs })
+        return
+      }
+      // Stops at the cap rather than climbing past it: the number is only ever
+      // compared against `max`, and letting it run means a key that flooded for
+      // a while stays limited long after its window should have moved on.
+      if (entry.count < max) entry.count++
     },
     reset(key: string): void {
       attempts.delete(key)

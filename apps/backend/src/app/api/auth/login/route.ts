@@ -18,9 +18,19 @@ const LoginSchema = z.object({
   challengeOnly: z.boolean().optional(),
 })
 
-// Ten attempts per fifteen minutes, per bucket. The counter itself lives in
-// lib/rateLimit.ts — it had a second caller (the outputs refresh) and two
-// hand-rolled copies would drift on the first fix to either.
+/*
+ * Ten attempts per fifteen minutes, per bucket. The counter itself lives in
+ * lib/rateLimit.ts — it had a second caller (the outputs refresh) and two
+ * hand-rolled copies would drift on the first fix to either.
+ *
+ * KNOWN LIMIT, stated because it is documented as a security control and is a
+ * weaker one than it reads as: the counter is an in-process Map, so the cap is
+ * PER BACKEND PROCESS. `docker-host` runs one container and gets what it says.
+ * The Helm chart defaults to `backend.replicaCount: 2` with an HPA above it, and
+ * there the effective cap is ten times the replica count and moves as the HPA
+ * scales. Making it real across replicas needs shared state — Postgres or Redis
+ * — which is a change of a different size than #199 and is not made here.
+ */
 const loginLimit = createRateLimitBucket(10, 15 * 60 * 1000)
 
 /**
@@ -73,27 +83,51 @@ export async function POST(req: NextRequest) {
 
   const { email, password, rememberMe, challengeOnly } = parsed.data
 
-  // Two independent buckets protect different attacks:
-  //   - per-account (accountRateLimitKey): a burst against one account never
-  //     blocks logins for others, and rotating IPs can't refresh its budget.
-  //   - per-IP (ipRateLimitKey, TRUST_PROXY only): caps password spraying,
-  //     where one IP would otherwise get a fresh budget per targeted account.
-  // A request is limited if EITHER bucket is exceeded; count the attempt
-  // against every applicable bucket.
+  /*
+   * Two independent buckets protect different attacks:
+   *   - per-account (accountRateLimitKey): a burst against one account never
+   *     blocks logins for others, and rotating IPs can't refresh its budget.
+   *   - per-IP (ipRateLimitKey, TRUST_PROXY only): caps password spraying,
+   *     where one IP would otherwise get a fresh budget per targeted account.
+   *
+   * CHECKED here, CHARGED only when the attempt fails (#199).
+   *
+   * Charging on the way in made a successful sign-in cost budget, and it cost
+   * TWO: the form makes two POSTs here — one with `challengeOnly` so it can tell
+   * "needs a code" from "wrong password", then the real one from NextAuth's
+   * `authorize`. Only the account bucket is cleared on success, deliberately, so
+   * the IP bucket kept both charges. At ten per fifteen minutes that is five
+   * successful sign-ins per IP per quarter hour, after which correct credentials
+   * get a 429.
+   *
+   * Invisible today only because `TRUST_PROXY` is unset, so there is no IP
+   * bucket at all — which makes turning it on a trap: it is the right setting
+   * for recording real client addresses, and behind NAT every user shares one
+   * bucket.
+   *
+   * Charging failures only is what the IP bucket was always for. Spraying is
+   * failures; a correct password is not the thing it caps. The rule the comment
+   * below states — a success must not wipe accumulated spray counters — still
+   * holds, because success resets the ACCOUNT bucket and never touches this one.
+   *
+   * Counting only on the `challengeOnly` hop, which the issue suggests, would
+   * not do: this route is reachable directly, so an attacker who simply omits
+   * the flag would never be counted at all.
+   */
   const accountKey = accountRateLimitKey(email)
   const ipKey = ipRateLimitKey(req)
   const rlKeys = [accountKey, ipKey].filter((k): k is string => k !== null)
-  let limited = false
-  for (const key of rlKeys) {
-    // Call isRateLimited for every key so the attempt is counted against all
-    // buckets, not just the first that trips.
-    if (loginLimit.isRateLimited(key)) limited = true
-  }
-  if (limited) {
+
+  if (rlKeys.some((key) => loginLimit.isOverLimit(key))) {
     return NextResponse.json(
       { error: 'Too many login attempts. Try again in 15 minutes.' },
       { status: 429 },
     )
+  }
+
+  /** Charge every applicable bucket. Called on each path that did not sign in. */
+  const chargeFailedAttempt = (): void => {
+    for (const key of rlKeys) loginLimit.count(key)
   }
 
   // `challengeOnly` answers one question — is a second factor in the way? — and
@@ -106,6 +140,7 @@ export async function POST(req: NextRequest) {
   if (challengeOnly) {
     const check = await checkLoginPassword(email, password, rememberMe)
     if (!check.ok) {
+      chargeFailedAttempt()
       return NextResponse.json({ error: check.message }, { status: check.status })
     }
     loginLimit.reset(accountKey)
@@ -130,6 +165,7 @@ export async function POST(req: NextRequest) {
   })
 
   if (!result.ok) {
+    chargeFailedAttempt()
     return NextResponse.json({ error: result.message }, { status: result.status })
   }
 

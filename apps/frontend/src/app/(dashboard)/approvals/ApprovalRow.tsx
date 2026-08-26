@@ -88,8 +88,12 @@ export function ApprovalRow({ order, token, currentUserId }: Props) {
             {order.quantity !== undefined && order.quantity > 1 && (
               <> · {t('quantity', lang)}: {order.quantity}</>
             )}
-            {' · '}{order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`} on{' '}
-            {new Date(order.createdAt).toLocaleDateString(lang)}
+            {/* A separator rather than a translated "on": as a bare preposition
+                it takes a different form with the date in several of the 25
+                languages, and the rest of this line already reads as a
+                separated list. */}
+            {' · '}{order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`}
+            {' · '}{new Date(order.createdAt).toLocaleDateString(lang)}
           </p>
         </div>
 

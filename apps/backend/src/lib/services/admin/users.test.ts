@@ -20,6 +20,7 @@ import {
   createCiSource,
   createEnvironment,
   createOrder,
+  createDelegation as seedDelegation,
 } from '@/test/helpers'
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
@@ -222,6 +223,53 @@ describe('deleteUser', () => {
     const rows = await db.select().from(users).where(eq(users.id, target.id))
     expect(rows.length).toBe(0)
   })
+  // #173 added two non-cascading FKs to users.id the same day #171 enumerated
+  // them all, and the enumeration was never updated (#195). An admin nominated
+  // as a substitute who has taken no action is named by none of the other five
+  // counts, so the delete read all zeros and Postgres raised 23503 as an
+  // unhandled 500 — the exact symptom this check exists to prevent.
+  it('refuses to delete an account that was nominated as a substitute', async () => {
+    const root = await createUser({ role: 'root' })
+    const granter = await createUser({ role: 'admin' })
+    const substitute = await createUser({ role: 'admin' })
+    await seedDelegation(granter.id, substitute.id)
+
+    const result = await deleteUser(makeSession(root), substitute.id)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(409)
+      expect(result.message).toMatch(/approval delegation/i)
+    }
+    expect(await db.select().from(users).where(eq(users.id, substitute.id))).toHaveLength(1)
+  })
+
+  it('refuses to delete the account that granted one', async () => {
+    const root = await createUser({ role: 'root' })
+    const granter = await createUser({ role: 'admin' })
+    const substitute = await createUser({ role: 'admin' })
+    await seedDelegation(granter.id, substitute.id)
+
+    const result = await deleteUser(makeSession(root), granter.id)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(409)
+  })
+
+  // A revoked delegation is still a row, and the FK does not care that it is
+  // over — so the block has to hold for it too, or the 500 comes back.
+  it('refuses even when the delegation has been revoked', async () => {
+    const root = await createUser({ role: 'root' })
+    const granter = await createUser({ role: 'admin' })
+    const substitute = await createUser({ role: 'admin' })
+    await seedDelegation(granter.id, substitute.id, { revokedAt: new Date() })
+
+    const result = await deleteUser(makeSession(root), substitute.id)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(409)
+  })
+
 })
 
 describe('deleteUser reference checks (issue #142)', () => {

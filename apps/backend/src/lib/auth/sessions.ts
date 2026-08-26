@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { and, eq, lt } from 'drizzle-orm'
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
-import { sessions } from '@/lib/db/schema'
+import { sessions, users } from '@/lib/db/schema'
 import { signToken } from './jwt'
 
 /**
@@ -164,14 +164,26 @@ export const validateSession = async (
       lastSeenAt: sessions.lastSeenAt,
       expiresAt: sessions.expiresAt,
       revokedAt: sessions.revokedAt,
+      // Joined because revocation alone cannot close the window (#195). Deactivation
+      // revokes in a transaction under FOR UPDATE, correctly — but it can only
+      // revoke rows that EXIST. `checkLoginPassword` reads the user with a plain
+      // SELECT, which that lock does not block, sees `active = true`, and then
+      // spends ~300 ms in bcrypt at cost 12. A deactivation committing inside that
+      // window leaves a session inserted after the revoke ran, which nothing
+      // revoked. Before this, that session was good for 8 hours — 30 days with
+      // "remember me" — because nothing on the read path ever looked at `active`
+      // again and the role comes from the token.
+      active: users.active,
     })
     .from(sessions)
+    .innerJoin(users, eq(sessions.userId, users.id))
     .where(eq(sessions.id, sessionId))
     .limit(1)
 
   const row = rows[0]
   if (!row) return null
   if (row.revokedAt !== null) return null
+  if (!row.active) return null
   if (row.expiresAt.getTime() <= now.getTime()) return null
   if (!hashesMatch(row.tokenHash, hashToken(token))) return null
 

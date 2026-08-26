@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseTerraformVariables } from './index'
+import { parseTerraformVariables, parseTerraformModules } from './index'
 
 describe('parseTerraformVariables', () => {
   it('parses a simple string variable', () => {
@@ -124,5 +124,102 @@ variable "instance_type" {
 `
     const vars = parseTerraformVariables(hcl)
     expect(vars[0].label).toBe('Instance Type')
+  })
+})
+
+describe('parseTerraformModules', () => {
+  it('reads the label and the source', () => {
+    const modules = parseTerraformModules(`
+      module "network" {
+        source = "../modules/network"
+      }
+    `)
+    expect(modules).toEqual([{ name: 'network', source: '../modules/network', assigned: [] }])
+  })
+
+  it('reads every module in the file', () => {
+    const modules = parseTerraformModules(`
+      module "network" { source = "./modules/network" }
+      module "compute" { source = "./modules/compute" }
+    `)
+    expect(modules.map((m) => m.name)).toEqual(['network', 'compute'])
+  })
+
+  // The assigned names are what the caller has already answered, so they are the
+  // child variables the ordering user does NOT have to supply.
+  it('reads the arguments the caller assigns', () => {
+    const [call] = parseTerraformModules(`
+      module "compute" {
+        source        = "../modules/compute"
+        instance_type = var.instance_type
+        region        = "eu-central"
+        count         = 3
+      }
+    `)
+    // `source` and `count` are meta-arguments — how the module is called, not
+    // inputs it declares.
+    expect(call.assigned.sort()).toEqual(['instance_type', 'region'])
+  })
+
+  // A key inside a nested block is not an input the child declares as a
+  // variable, and counting it would wrongly mark a real variable as answered.
+  it('ignores keys nested inside a block argument', () => {
+    const [call] = parseTerraformModules(`
+      module "compute" {
+        source = "../modules/compute"
+        providers = {
+          aws = aws.eu
+          region = "nested-not-an-input"
+        }
+        tags = {
+          owner = "platform"
+        }
+        hostname = var.hostname
+      }
+    `)
+    expect(call.assigned).toContain('tags')
+    expect(call.assigned).toContain('hostname')
+    expect(call.assigned).not.toContain('source')
+    expect(call.assigned).not.toContain('providers')
+    // `region` and `owner` live inside the nested maps.
+    expect(call.assigned).not.toContain('region')
+    expect(call.assigned).not.toContain('owner')
+  })
+
+  it('survives braces inside a nested block', () => {
+    const modules = parseTerraformModules(`
+      module "a" {
+        source = "./a"
+        settings = {
+          inner = {
+            deep = true
+          }
+        }
+      }
+      module "b" { source = "./b" }
+    `)
+    expect(modules.map((m) => m.name)).toEqual(['a', 'b'])
+    expect(modules[1].source).toBe('./b')
+  })
+
+  it('skips a module block with no source', () => {
+    expect(parseTerraformModules(`module "broken" { version = "1.0" }`)).toEqual([])
+  })
+
+  it('finds nothing in a file with no modules', () => {
+    expect(parseTerraformModules(`variable "x" { type = string }`)).toEqual([])
+  })
+
+  // A registry or git source cannot be read through the CI file API; the caller
+  // has to tell them apart, so the raw string is kept rather than normalised.
+  it('keeps a remote source verbatim', () => {
+    const modules = parseTerraformModules(`
+      module "vpc" { source = "terraform-aws-modules/vpc/aws" }
+      module "x"   { source = "git::https://example.com/x.git//sub?ref=v1" }
+    `)
+    expect(modules.map((m) => m.source)).toEqual([
+      'terraform-aws-modules/vpc/aws',
+      'git::https://example.com/x.git//sub?ref=v1',
+    ])
   })
 })

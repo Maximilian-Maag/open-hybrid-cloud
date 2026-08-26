@@ -108,3 +108,31 @@ describe('CartLink chrome', () => {
     expect(screen.getByRole('link', { name: 'Cart' })).toHaveClass('min-h-11')
   })
 })
+
+// Same reasoning as the header bar it sits in: the colours come from the
+// operator's branding and the ink is derived from them, which is what keeps the
+// contrast guarantee when an operator picks a dark palette.
+describe('CartLink branding surface', () => {
+  it('writes the link in the primary ink', () => {
+    render(<CartLink count={0} lang="en" />)
+    const link = screen.getByRole('link', { name: 'Cart' })
+    expect(link.style.color).toBe('var(--bp-ink)')
+  })
+
+  it('paints the badge with the secondary and its own ink', () => {
+    render(<CartLink count={3} lang="en" />)
+    const b = badge() as HTMLElement
+    expect(b.style.backgroundColor).toBe('var(--bs)')
+    expect(b.style.color).toBe('var(--bs-ink)')
+  })
+
+  // The word beside the trolley is hidden on narrow screens, so the icon alone
+  // has to carry the name — which is why the aria-label exists and why it is the
+  // same word rather than a longer one.
+  it('shows the word beside the icon, and names the link the same', () => {
+    render(<CartLink count={0} lang="en" />)
+    const link = screen.getByRole('link', { name: 'Cart' })
+    expect(link).toHaveAttribute('aria-label', 'Cart')
+    expect(link.textContent).toContain('Cart')
+  })
+})

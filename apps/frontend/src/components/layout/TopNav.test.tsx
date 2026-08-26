@@ -122,3 +122,48 @@ describe('TopNav labels', () => {
     expect(screen.getByRole('link', { name: 'Katalog' })).toBeInTheDocument()
   })
 })
+
+// The names were asserted; the destinations were not. A nav link with the right
+// label and an empty href is the whole navigation quietly pointing at the
+// current page — and it renders, and it reads correctly to a screen reader.
+describe('TopNav destinations', () => {
+  const EXPECTED: [string, string][] = [
+    ['Home', '/'],
+    ['Catalog', '/catalog'],
+    ['Orders', '/orders'],
+    ['Projects', '/projects'],
+    ['Infrastructure', '/infrastructure'],
+    ['Costs', '/costs'],
+    ['Approvals', '/approvals'],
+    ['Audit', '/audit'],
+    ['Admin', '/admin'],
+  ]
+
+  it.each(EXPECTED)('points %s at %s', (name, href) => {
+    renderNav('root', '/nowhere')
+    expect(screen.getByRole('link', { name })).toHaveAttribute('href', href)
+  })
+
+  it('gives every link a destination of its own', () => {
+    renderNav('root', '/nowhere')
+    const hrefs = screen.getAllByRole('link').map((l) => l.getAttribute('href'))
+    expect(hrefs).toHaveLength(EXPECTED.length)
+    expect(new Set(hrefs).size).toBe(EXPECTED.length)
+    expect(hrefs).not.toContain('')
+  })
+})
+
+// The chrome is painted from the operator's branding colours, and the ink is
+// derived from them rather than fixed — a hard-coded foreground goes unreadable
+// the moment an operator picks a dark primary. These are the variables that
+// carry readableInk's contrast guarantee, so they are behaviour.
+describe('TopNav branding surface', () => {
+  it('paints the strip with the primary and its readable ink', () => {
+    const { container } = renderNav('user', '/')
+    const strip = container.firstElementChild as HTMLElement
+    const nav = screen.getByRole('navigation')
+
+    expect(strip.style.backgroundColor).toBe('var(--bp)')
+    expect(nav.style.color).toBe('var(--bp-ink)')
+  })
+})

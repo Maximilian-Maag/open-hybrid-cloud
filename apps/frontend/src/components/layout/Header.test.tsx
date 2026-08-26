@@ -288,3 +288,53 @@ describe('Header keyboard scope', () => {
     expect(screen.getByRole('button', { name: /^search$/i })).toBeInTheDocument()
   })
 })
+
+// The chrome is painted from the operator's branding colours and the ink is
+// derived from them by readableInk, not fixed — a hard-coded foreground goes
+// unreadable the moment an operator picks a dark primary. These variables are
+// what carry the 4.5:1 guarantee, so a test that ignores them lets the guarantee
+// be dropped silently.
+describe('Header branding surface', () => {
+  it('paints the bar with the primary', () => {
+    const { container } = render(<Header lang="en" />)
+    const bar = container.querySelector('header') as HTMLElement
+    expect(bar.style.backgroundColor).toBe('var(--bp)')
+  })
+
+  it('writes the wordmark in the ink derived from the primary', () => {
+    render(<Header lang="en" shopName="Contoso" />)
+    expect((screen.getByText('Contoso') as HTMLElement).style.color).toBe('var(--bp-ink)')
+  })
+
+  it('paints the search submit with the secondary and its own ink', () => {
+    render(<Header lang="en" />)
+    const submit = screen.getByRole('button', { name: /^search$/i })
+    expect(submit.style.backgroundColor).toBe('var(--bs)')
+    expect(submit.style.color).toBe('var(--bs-ink)')
+  })
+
+  it('writes the account control in the primary ink', () => {
+    render(<Header userName="Root Admin" lang="en" />)
+    const summary = document.querySelector('summary') as HTMLElement
+    expect(summary.style.color).toBe('var(--bp-ink)')
+  })
+})
+
+describe('Header account menu destinations', () => {
+  it.each([
+    ['orders', '/orders'],
+    ['projects', '/projects'],
+    ['profile', '/settings'],
+  ])('points %s at %s', async (name, href) => {
+    const user = userEvent.setup()
+    render(<Header userName="Root Admin" lang="en" />)
+    await user.click(screen.getByText(/my account/i))
+
+    expect(screen.getByRole('link', { name: new RegExp(`^${name}$`, 'i') })).toHaveAttribute('href', href)
+  })
+
+  it('points the brand at the dashboard', () => {
+    render(<Header lang="en" shopName="Contoso" />)
+    expect(screen.getByText('Contoso').closest('a')).toHaveAttribute('href', '/')
+  })
+})

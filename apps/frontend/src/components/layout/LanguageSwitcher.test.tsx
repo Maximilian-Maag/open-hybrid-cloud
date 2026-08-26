@@ -260,3 +260,24 @@ describe('LanguageSwitcher grid states', () => {
     expect(german.style.backgroundColor).toBe(before)
   })
 })
+
+describe('LanguageSwitcher branding surface', () => {
+  it('writes the toggle in the primary ink', () => {
+    render(<LanguageSwitcher lang="en" />)
+    expect(toggle().style.color).toBe('var(--bp-ink)')
+  })
+
+  // The selected option is marked with the secondary and its derived ink; the
+  // rest take a fixed slate, because they sit on white rather than on branding.
+  it('marks the current option with the secondary, and the rest with slate', async () => {
+    const user = userEvent.setup()
+    render(<LanguageSwitcher lang="de" />)
+    await user.click(toggle())
+
+    const german = screen.getByRole('button', { name: /^DE\s*Deutsch$/ })
+    const french = screen.getByRole('button', { name: /^FR\s*Français$/ })
+    expect(german.style.backgroundColor).toBe('var(--bs)')
+    expect(german.style.color).toBe('var(--bs-ink)')
+    expect(french.style.color).toBe('rgb(71, 85, 105)')
+  })
+})

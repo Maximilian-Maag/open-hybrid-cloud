@@ -95,3 +95,36 @@ describe('Breadcrumbs', () => {
     expect(document.querySelectorAll('[aria-hidden="true"]')).toHaveLength(0)
   })
 })
+
+// The trail sits in a line of text painted in the branding colour, so a link
+// distinguished by colour alone would fail WCAG 1.4.1 — on the default palette
+// the accent measures 1.03:1 against the surrounding slate. The underline is the
+// non-colour signal, and the colour is the branding variable rather than a fixed
+// blue, so both are behaviour.
+describe('Breadcrumbs link affordance', () => {
+  it('underlines the links and paints them from the branding text colour', () => {
+    render(
+      <Breadcrumbs
+        label="Breadcrumb"
+        items={[{ label: 'Catalog', href: '/catalog' }, { label: 'Postgres' }]}
+      />,
+    )
+    const link = screen.getByRole('link', { name: 'Catalog' })
+    expect(link).toHaveClass('underline')
+    expect(link.style.color).toBe('var(--bp-text)')
+  })
+
+  it('keeps each crumb in its own list item', () => {
+    render(
+      <Breadcrumbs
+        label="Breadcrumb"
+        items={[{ label: 'Catalog', href: '/catalog' }, { label: 'Databases', href: '/catalog?c=1' }, { label: 'Postgres' }]}
+      />,
+    )
+    const items = screen.getAllByRole('listitem')
+    expect(items).toHaveLength(3)
+    // The separator lives inside the item it precedes and is hidden, so the
+    // trail does not read as "Catalog chevron Databases".
+    for (const li of items) expect(li).toHaveClass('flex')
+  })
+})

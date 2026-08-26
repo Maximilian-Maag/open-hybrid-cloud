@@ -5,6 +5,8 @@ import {
   products,
   productEnvironments,
   deploymentEnvironments,
+  users,
+  type CartItem,
 } from '@/lib/db/schema'
 import { and, eq, sql, inArray } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
@@ -170,28 +172,50 @@ export const addToCart = async (
   const quantity = validateQuantity(input.quantity)
   if (!quantity.ok) return quantity
 
-  const [{ count }] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(cartItems)
-    .where(eq(cartItems.userId, session.id))
+  /*
+   * Count and insert under a lock on the OWNER row (issue #188).
+   *
+   * The cap used to be a read followed by an unguarded insert: two concurrent
+   * adds at 24 items both saw 24, both passed, and the cart held 26. The same
+   * shape as the gallery upload cap, and the same remedy — an invariant that
+   * spans a SET of rows cannot be guarded by a row-level predicate, and even
+   * `INSERT … SELECT … HAVING COUNT(*) < n` reads its snapshot before either
+   * writer is visible to the other.
+   *
+   * The user row is the natural thing to lock: a cart belongs to exactly one, so
+   * the lock is per shopper and two people adding at once never wait on each
+   * other.
+   */
+  const inserted = await db.transaction(async (tx): Promise<Result<CartItem>> => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, session.id)).for('update').limit(1)
 
-  if (count >= MAX_CART_ITEMS) {
-    return err(400, `A cart can hold at most ${MAX_CART_ITEMS} items`)
-  }
+    const [{ count }] = await tx
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(cartItems)
+      .where(eq(cartItems.userId, session.id))
 
-  // Duplicates are allowed on purpose: two instances of the same product in the
-  // same environment is a normal thing to want, and they differ by parameters.
-  const [item] = await db
-    .insert(cartItems)
-    .values({
-      userId: session.id,
-      productId: input.productId,
-      environmentId: input.environmentId,
-      parameters: input.parameters ?? {},
-      sizeCode: priced.data.sizeCode,
-      quantity: quantity.data,
-    })
-    .returning()
+    if (count >= MAX_CART_ITEMS) {
+      return err(400, `A cart can hold at most ${MAX_CART_ITEMS} items`)
+    }
+
+    // Duplicates are allowed on purpose: two instances of the same product in the
+    // same environment is a normal thing to want, and they differ by parameters.
+    const [row] = await tx
+      .insert(cartItems)
+      .values({
+        userId: session.id,
+        productId: input.productId,
+        environmentId: input.environmentId,
+        parameters: input.parameters ?? {},
+        sizeCode: priced.data.sizeCode,
+        quantity: quantity.data,
+      })
+      .returning()
+    return ok(row)
+  })
+
+  if (!inserted.ok) return inserted
+  const item = inserted.data
 
   const listed = await listCart(session)
   const enriched = listed.ok ? listed.data.find((r) => r.id === item.id) : undefined
@@ -331,6 +355,45 @@ export interface CheckoutResult {
  * residual risk is inherent: once item one's pipeline is running, item two failing
  * cannot undo it. Reporting which items did land is the only honest answer.
  */
+/** One cart row as the claim took it, with everything needed to put it back. */
+interface ClaimedCartItem {
+  id: number
+  productId: number
+  environmentId: number
+  sizeCode: string | null
+  quantity: number
+  parameters: Record<string, string>
+}
+
+/**
+ * Put claimed cart rows back, unchanged.
+ *
+ * With their ORIGINAL ids. That is safe — the sequence has already issued them,
+ * so a later insert cannot collide — and it matters: the caller's own cart list
+ * is keyed by these ids, and a restored item under a new one would read as a
+ * different item. The row the user sees after a failure is the row they had.
+ */
+const restoreCartItems = async (
+  userId: number,
+  items: ClaimedCartItem[],
+  ids: Set<number>,
+): Promise<void> => {
+  const restore = items.filter((item) => ids.has(item.id))
+  if (restore.length === 0) return
+
+  await db.insert(cartItems).values(
+    restore.map((item) => ({
+      id: item.id,
+      userId,
+      productId: item.productId,
+      environmentId: item.environmentId,
+      sizeCode: item.sizeCode,
+      quantity: item.quantity,
+      parameters: item.parameters,
+    })),
+  )
+}
+
 export const checkoutCart = async (
   session: SessionUser,
   input: { projectId: number; items: CheckoutItemInput[] },
@@ -352,6 +415,7 @@ export const checkoutCart = async (
       environmentId: cartItems.environmentId,
       sizeCode: cartItems.sizeCode,
       quantity: cartItems.quantity,
+      parameters: cartItems.parameters,
     })
     .from(cartItems)
     .where(and(eq(cartItems.userId, session.id), inArray(cartItems.id, ids)))
@@ -408,17 +472,49 @@ export const checkoutCart = async (
     )
   }
 
+  /*
+   * Phase one and a half: CLAIM the rows, and let their deletion be the claim
+   * (issue #188).
+   *
+   * Validation above is a read, and creation below spends money. Between the two
+   * there used to be nothing at all: a double-submit — a double-click, or the
+   * checkout open in two tabs — had both requests read the same items, both pass
+   * validation, and both create every order. Six orders from three items, six
+   * sets of pipelines, up to six times `quantity` real machines, and six lines of
+   * spend against the cost centre. The delete came last and the loser's was a
+   * harmless no-op, which is exactly why nothing ever surfaced it.
+   * `MAX_CHECKOUT_ELEMENTS` is evaluated per request, so two requests could
+   * provision two hundred elements from one cart.
+   *
+   * `DELETE … RETURNING` is atomic, so exactly one request gets the rows. Every
+   * other multi-step path in this codebase claims first — `approveOrder`,
+   * `retryProvisioning`, `claimAndDestroy` — and checkout was the one that did
+   * not, and the one that spends money.
+   *
+   * It happens AFTER validation, not before: the all-or-nothing gate above must
+   * be able to reject without emptying the cart.
+   */
+  const claimed = await db
+    .delete(cartItems)
+    .where(and(eq(cartItems.userId, session.id), inArray(cartItems.id, ids)))
+    .returning({ id: cartItems.id })
+
+  if (claimed.length !== owned.length) {
+    // Another request took them between the read and here. Put back whatever we
+    // did take, so a lost race leaves the cart exactly as it found it.
+    await restoreCartItems(session.id, owned, new Set(claimed.map((c) => c.id)))
+    return err(400, 'The cart changed — reload the checkout and try again')
+  }
+
   // Phase two: create. Past this point failures are per item and cannot be undone.
   const orderIds: number[] = []
   const failed: CheckoutFailure[] = []
-  const orderedCartItemIds: number[] = []
 
   for (const { cartItemId, order } of prepared) {
     try {
       const created = await createPreparedOrder(session, order)
       if (created.ok) {
         orderIds.push(created.data.id)
-        orderedCartItemIds.push(cartItemId)
       } else {
         failed.push({ cartItemId, message: created.message })
       }
@@ -427,13 +523,10 @@ export const checkoutCart = async (
     }
   }
 
-  // Only the items that actually became orders leave the cart. A failed item stays
-  // so the user can retry it rather than having to reconstruct it from memory.
-  if (orderedCartItemIds.length > 0) {
-    await db
-      .delete(cartItems)
-      .where(and(eq(cartItems.userId, session.id), inArray(cartItems.id, orderedCartItemIds)))
-  }
+  // The rows left the cart when they were claimed, so this is the opposite of
+  // what it used to be: an item whose order could NOT be created is put back, and
+  // one that succeeded simply stays gone.
+  await restoreCartItems(session.id, owned, new Set(failed.map((f) => f.cartItemId)))
 
   await logAudit(
     session.id,

@@ -204,6 +204,13 @@
       "when": 1788652800000,
       "tag": "0032_hot_path_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788739200000,
+      "tag": "0033_projects_retired_at",
+      "breakpoints": true
     }
   ]
 }

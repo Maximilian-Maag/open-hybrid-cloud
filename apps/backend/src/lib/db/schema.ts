@@ -611,7 +611,27 @@ export const projects = pgTable('projects', {
   ownerId: bigint('owner_id', { mode: 'number' }).notNull().references(() => users.id),
   costCenterId: bigint('cost_center_id', { mode: 'number' }).references(() => costCenters.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+  /**
+   * When the project was retired, or null while it is live.
+   *
+   * The same rule as `products.retiredAt` and `categories.retiredAt`, and this is
+   * the one that needed it most: `orders.project_id` is ON DELETE CASCADE, so
+   * deleting a project deleted every order placed inside it — and with them
+   * `orders.product_snapshot`, the column that exists precisely so a later
+   * catalogue change cannot rewrite what a customer was charged. Proved on a real
+   * Postgres: one project delete took orders, order_comments and
+   * infrastructure_elements to zero (issue #187).
+   *
+   * A project that holds orders is retired instead. One that never held any has
+   * no history to keep and is still deleted outright, so the table does not fill
+   * with tombstones.
+   */
+  retiredAt: timestamp('retired_at', { withTimezone: true }),
+}, (t) => [
+  // Every read filters on this, and after #187 retired rows accumulate rather
+  // than being deleted. Partial, so the filter is answered from the index.
+  index('projects_live_idx').on(t.id).where(sql`retired_at IS NULL`),
+])
 
 export const orders = pgTable('orders', {
   id: bigserial({ mode: 'number' }).primaryKey(),

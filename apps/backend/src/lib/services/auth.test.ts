@@ -25,7 +25,10 @@ describe('loginWithCredentials', () => {
     if (!result.ok) expect(result.status).toBe(401)
   })
 
-  it('returns 401 for an inactive user even with correct password', async () => {
+  // 403 rather than 401, and only past a correct password. Sharing the 401 with
+  // "wrong password" is what sent an operator hunting for a password problem for
+  // an afternoon when root had deactivated its own account (#196).
+  it('says the account is deactivated once the password verifies', async () => {
     const u = await createUser({
       email: 'inactive@test.dev',
       password: 'correct',
@@ -33,7 +36,38 @@ describe('loginWithCredentials', () => {
     })
     const result = await loginWithCredentials(u.email, 'correct')
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.status).toBe(401)
+    if (!result.ok) {
+      expect(result.status).toBe(403)
+      expect(result.message).toMatch(/deactivated/i)
+    }
+  })
+
+  // Told before the password is checked this would be an account-enumeration
+  // oracle: which addresses have accounts, and which of them are switched off.
+  it('does not admit a deactivated account exists to a wrong password', async () => {
+    const u = await createUser({
+      email: 'inactive2@test.dev',
+      password: 'correct',
+      active: false,
+    })
+
+    const result = await loginWithCredentials(u.email, 'wrong')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(401)
+      expect(result.message).not.toMatch(/deactivated/i)
+    }
+  })
+
+  it('says nothing different for an address with no account at all', async () => {
+    const result = await loginWithCredentials('nobody@test.dev', 'whatever')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(401)
+      expect(result.message).not.toMatch(/deactivated/i)
+    }
   })
 
   it('returns ok with a non-empty token for valid credentials', async () => {

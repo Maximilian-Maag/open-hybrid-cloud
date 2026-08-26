@@ -176,11 +176,11 @@ describe('POST /api/auth/login', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns 401 for inactive user', async () => {
+  it('answers 403, not 401, for a deactivated account with the right password', async () => {
     await createUser({ email: 'inactive@test.dev', password: 'correct-pass', active: false })
 
     const res = await POST(makeRequest({ email: 'inactive@test.dev', password: 'correct-pass' }))
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(403)
   })
 
   it('returns 400 for invalid email format', async () => {

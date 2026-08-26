@@ -187,3 +187,45 @@ test_route_at_the_limit_is_fine if {
 	warned := policy.warn with input as {"routes": [route]}
 	count(warned) == 0
 }
+
+# --- server-only modules must not be reachable from a client component ------
+
+client_imports(hits) := {"clientImports": hits}
+
+server_only_denials(hits) := [v |
+	some v in policy.deny with input as client_imports(hits)
+	v.rule == "server_only_module_not_in_client"
+]
+
+test_client_component_importing_serverapi_is_denied if {
+	denied := server_only_denials([{
+		"file": "apps/frontend/src/components/ui/RefreshButton.tsx",
+		"line": 4,
+		"module": "@/lib/serverApi",
+	}])
+	count(denied) == 1
+	denied[0].line == 4
+	contains(denied[0].detail, "@/lib/serverApi")
+	contains(denied[0].why, "browser bundle")
+}
+
+test_client_component_importing_auth_is_denied if {
+	denied := server_only_denials([{
+		"file": "apps/frontend/src/components/x/Thing.tsx",
+		"line": 2,
+		"module": "@/lib/auth",
+	}])
+	count(denied) == 1
+}
+
+# The state this rule merged in, and the state it exists to keep.
+test_no_client_import_of_a_server_module_is_allowed if {
+	count(server_only_denials([])) == 0
+}
+
+test_each_offending_import_is_reported if {
+	count(server_only_denials([
+		{"file": "a.tsx", "line": 1, "module": "@/lib/serverApi"},
+		{"file": "b.tsx", "line": 9, "module": "@/lib/auth"},
+	])) == 2
+}

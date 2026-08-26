@@ -69,7 +69,7 @@ const renderForm = (over?: Partial<ProductDetail>) =>
       environments={environments}
       translations={[]}
       costCenters={costCenters}
-      token="test-token"
+     
     />,
   )
 
@@ -108,7 +108,6 @@ describe('ProductEditForm environment removal', () => {
     await waitFor(() => {
       expect(mockedDel).toHaveBeenCalledWith(
         `/api/admin/products/7/environments/${LINKED_ENV}`,
-        'test-token',
       )
     })
     expect(refresh).toHaveBeenCalled()
@@ -325,7 +324,7 @@ describe('ProductEditForm order callbacks', () => {
     expect(await screen.findByText('Ticketing webhook')).toBeInTheDocument()
     expect(screen.getByText('https://example.com/hook')).toBeInTheDocument()
     expect(screen.queryByText('No callbacks configured.')).not.toBeInTheDocument()
-    expect(mockedGet).toHaveBeenCalledWith('/api/admin/products/7/webhooks', 'test-token')
+    expect(mockedGet).toHaveBeenCalledWith('/api/admin/products/7/webhooks')
   })
 
   it('makes the loaded callback deletable', async () => {
@@ -340,7 +339,7 @@ describe('ProductEditForm order callbacks', () => {
     if (!card) throw new Error('webhook row not found')
     await user.click(within(card).getByRole('button', { name: 'Delete' }))
 
-    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/admin/products/7/webhooks/1', 'test-token'))
+    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/admin/products/7/webhooks/1'))
     await waitFor(() => expect(screen.queryByText('Ticketing webhook')).not.toBeInTheDocument())
   })
 })
@@ -361,7 +360,7 @@ describe('ProductEditForm translations', () => {
       environments={environments}
       translations={translations}
       costCenters={costCenters}
-      token="test-token"
+     
     />
   )
 

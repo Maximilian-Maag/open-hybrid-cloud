@@ -15,10 +15,9 @@ import { t } from '@/lib/i18n'
 
 interface Props {
   initial: Branding
-  token: string
 }
 
-export function BrandingForm({ initial, token }: Props) {
+export function BrandingForm({ initial }: Props) {
   const lang = useLang()
   const router = useRouter()
   const { toast } = useToast()
@@ -53,12 +52,12 @@ export function BrandingForm({ initial, token }: Props) {
         secondaryColor,
         imprintText: imprintText.trim(),
       }
-      await put('/api/admin/branding', body, token)
+      await put('/api/admin/branding', body)
 
       if (logoFile) {
         const fd = new FormData()
         fd.append('logo', logoFile)
-        await apiRequest('/api/admin/branding/logo', { method: 'PUT', body: fd, token, isFormData: true })
+        await apiRequest('/api/admin/branding/logo', { method: 'PUT', body: fd, isFormData: true })
       }
 
       toast(t('brandingSavedToast', lang))

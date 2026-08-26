@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import type { InfrastructureElement, InfraFacets, Role } from '@open-hybrid-cloud/types'
@@ -42,7 +42,6 @@ export default async function InfrastructurePage({ searchParams }: Props) {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await detectLang()
   const params = await searchParams
   // The export endpoint is admin-and-above, so don't offer a button that would
@@ -70,11 +69,11 @@ export default async function InfrastructurePage({ searchParams }: Props) {
   const isFiltered = FILTER_KEYS.some((key) => query.has(key))
 
   const [listRes, facetsRes] = await Promise.allSettled([
-    get<InfrastructureElement[]>(`/api/infrastructure?${qs}`, token),
+    get<InfrastructureElement[]>(`/api/infrastructure?${qs}`),
     // Same language as the rows: the facets are the option list for the filters
     // above them, and a dropdown naming products in another language reads as a
     // list of products the user does not have.
-    get<InfraFacets>(`/api/infrastructure/facets?lang=${lang}`, token),
+    get<InfraFacets>(`/api/infrastructure/facets?lang=${lang}`),
   ])
 
   // A rejected list is NOT an empty inventory. An invalid bookmarked filter comes
@@ -112,7 +111,7 @@ export default async function InfrastructurePage({ searchParams }: Props) {
             {/* `router.refresh()` and not a reload: the rows are disclosures, and
                 a reload would close every one the user had opened. */}
             <RefreshButton />
-            {canExport ? <InfraExport token={token} lang={lang} /> : null}
+            {canExport ? <InfraExport lang={lang} /> : null}
           </>
         }
       />
@@ -134,7 +133,7 @@ export default async function InfrastructurePage({ searchParams }: Props) {
           <Card key={projectName} title={projectName}>
             <div className="space-y-3">
               {items.map((item) => (
-                <InfraRow key={item.id} item={item} token={token} lang={lang} canRetry={canRetry} />
+                <InfraRow key={item.id} item={item} lang={lang} canRetry={canRetry} />
               ))}
             </div>
           </Card>
@@ -143,7 +142,7 @@ export default async function InfrastructurePage({ searchParams }: Props) {
         <Card>
           <div className="space-y-3">
             {elements.map((item) => (
-              <InfraRow key={item.id} item={item} token={token} lang={lang} canRetry={canRetry} showProject />
+              <InfraRow key={item.id} item={item} lang={lang} canRetry={canRetry} showProject />
             ))}
           </div>
         </Card>
@@ -154,13 +153,11 @@ export default async function InfrastructurePage({ searchParams }: Props) {
 
 function InfraRow({
   item,
-  token,
   lang,
   canRetry = false,
   showProject = false,
 }: {
   item: InfrastructureElement
-  token: string
   lang: string
   canRetry?: boolean
   /** Set in the flat (explicitly-sorted) view, where no Card header names it. */
@@ -240,7 +237,7 @@ function InfraRow({
             </details>
           )}
         </div>
-        <InfraActions item={item} token={token} lang={lang} canRetry={canRetry} />
+        <InfraActions item={item} lang={lang} canRetry={canRetry} />
       </div>
     </div>
   )

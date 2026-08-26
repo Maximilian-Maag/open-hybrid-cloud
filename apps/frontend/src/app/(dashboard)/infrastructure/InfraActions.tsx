@@ -12,13 +12,12 @@ import { t } from '@/lib/i18n'
 
 interface Props {
   item: InfrastructureElement
-  token: string
   lang?: string
   /** Retry re-fires CI pipelines, so it is offered to admin and root only. */
   canRetry?: boolean
 }
 
-export function InfraActions({ item, token, lang = 'en', canRetry = false }: Props) {
+export function InfraActions({ item, lang = 'en', canRetry = false }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -42,7 +41,7 @@ export function InfraActions({ item, token, lang = 'en', canRetry = false }: Pro
     setRetrying(true)
     setRetryError(null)
     try {
-      await post(`/api/infrastructure/${item.id}/retry`, {}, token)
+      await post(`/api/infrastructure/${item.id}/retry`, {})
       setRetryOpen(false)
       router.refresh()
     } catch (err) {
@@ -59,7 +58,7 @@ export function InfraActions({ item, token, lang = 'en', canRetry = false }: Pro
     setLoading(true)
     setError(null)
     try {
-      await post(`/api/infrastructure/${item.id}/decommission`, {}, token)
+      await post(`/api/infrastructure/${item.id}/decommission`, {})
       setOpen(false)
       router.refresh()
     } catch (err) {
@@ -77,7 +76,6 @@ export function InfraActions({ item, token, lang = 'en', canRetry = false }: Pro
       await post(
         `/api/infrastructure/${item.id}/schedule-decommission`,
         { scheduledAt: clear ? null : new Date(scheduledAt).toISOString() },
-        token,
       )
       if (clear) setScheduledAt('')
       setScheduleOpen(false)

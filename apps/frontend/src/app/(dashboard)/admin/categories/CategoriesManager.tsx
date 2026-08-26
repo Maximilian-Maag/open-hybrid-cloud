@@ -13,8 +13,6 @@ import { SkeletonListItem } from '@/components/ui/Skeleton'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
-interface Props { token: string }
-
 /**
  * `Number('')` is `0`, not `NaN` — so clearing the Display Order field on a
  * category ordered 40 would silently save it as 0 and jump it to the top of
@@ -30,7 +28,7 @@ function parseDisplayOrder(raw: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-export function CategoriesManager({ token }: Props) {
+export function CategoriesManager() {
   const lang = useLang()
   const { toast } = useToast()
   const [categories, setCategories] = useState<Category[]>([])
@@ -48,7 +46,7 @@ export function CategoriesManager({ token }: Props) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await get<Category[]>('/api/admin/categories', token)
+      const data = await get<Category[]>('/api/admin/categories')
       setCategories(data ?? [])
       setError(null)
     } catch (e) {
@@ -56,7 +54,7 @@ export function CategoriesManager({ token }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [token, lang])
+  }, [lang])
 
   useEffect(() => { void load() }, [load])
 
@@ -80,7 +78,7 @@ export function CategoriesManager({ token }: Props) {
     setFormError(null)
     try {
       const body: CreateCategoryRequest = { name: formName.trim(), displayOrder: parseDisplayOrder(formOrder, 0) }
-      await post('/api/admin/categories', body, token)
+      await post('/api/admin/categories', body)
       setAddOpen(false)
       toast(t('categoryCreatedToast', lang))
       void load()
@@ -102,7 +100,7 @@ export function CategoriesManager({ token }: Props) {
         name: formName.trim(),
         displayOrder: parseDisplayOrder(formOrder, editTarget.displayOrder),
       }
-      await put(`/api/admin/categories/${id}`, body, token)
+      await put(`/api/admin/categories/${id}`, body)
       setEditTarget(null)
       setFlashId(id)
       toast(t('categoryUpdatedToast', lang))
@@ -118,7 +116,7 @@ export function CategoriesManager({ token }: Props) {
     if (!deleteTarget) return
     setSaving(true)
     try {
-      await del(`/api/admin/categories/${deleteTarget.id}`, token)
+      await del(`/api/admin/categories/${deleteTarget.id}`)
       setDeleteTarget(null)
       toast(t('categoryDeletedToast', lang), 'info')
       void load()

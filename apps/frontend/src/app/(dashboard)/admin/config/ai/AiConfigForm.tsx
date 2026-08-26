@@ -23,10 +23,9 @@ const PROVIDERS: { value: AiProviderType; label: string }[] = [
 
 interface Props {
   initial: AiConfig | null
-  token: string
 }
 
-export function AiConfigForm({ initial, token }: Props) {
+export function AiConfigForm({ initial }: Props) {
   const lang = useLang()
   const { toast } = useToast()
   const [provider, setProvider] = useState<AiProviderType>(initial?.provider ?? 'claude')
@@ -44,7 +43,7 @@ export function AiConfigForm({ initial, token }: Props) {
         provider, endpoint: endpoint.trim(), model: model.trim(),
         ...(apiKey ? { apiKey } : {}),
       }
-      await put('/api/admin/config/ai', body, token)
+      await put('/api/admin/config/ai', body)
       toast(t('aiConfigSavedToast', lang))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('failedToSaveAi', lang))

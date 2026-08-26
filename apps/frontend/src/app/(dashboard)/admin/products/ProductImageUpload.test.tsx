@@ -65,19 +65,21 @@ afterEach(() => {
 })
 
 describe('ProductImageUpload — uploading', () => {
-  it('appends the chosen file as multipart with the bearer token', async () => {
+  it('appends the chosen file as multipart, through the proxy and with no token', async () => {
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={7} token="test-token" />)
+    render(<ProductImageUpload productId={7} />)
     await describeIt(user)
 
     await user.upload(fileInput(), file('p.png', 'image/png'))
 
     await waitFor(() => expect(writes()).not.toHaveLength(0))
     const [url, init] = lastWrite()
-    expect(url).toContain('/api/admin/products/7/images')
+    // Through this origin's proxy, which attaches the credential server-side —
+    // the browser holds no API token at all (#146).
+    expect(url).toContain('/api/proxy/api/admin/products/7/images')
     // POST, not PUT: a gallery is appended to, not overwritten (#107).
     expect(init.method).toBe('POST')
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-token')
+    expect(init.headers).toBeUndefined()
     // multipart, not base64 JSON: the endpoint reads formData()
     expect(init.body).toBeInstanceOf(FormData)
     expect((init.body as FormData).get('image')).toBeInstanceOf(File)
@@ -85,7 +87,7 @@ describe('ProductImageUpload — uploading', () => {
 
   it('refuses a file over 10 MB without uploading it', async () => {
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={7} token="t" />)
+    render(<ProductImageUpload productId={7} />)
     await describeIt(user)
 
     await user.upload(fileInput(), file('huge.png', 'image/png', 11 * 1024 * 1024))
@@ -99,7 +101,7 @@ describe('ProductImageUpload — uploading', () => {
     // is exactly how a file reaches the server and fails there: `accept` goes by
     // the declared type, the server goes by the bytes.
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={7} token="t" />)
+    render(<ProductImageUpload productId={7} />)
     await describeIt(user)
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ error: 'Unsupported image type — allowed: image/png' }), { status: 415 }),
@@ -112,7 +114,7 @@ describe('ProductImageUpload — uploading', () => {
 
   it('sends the description with the file', async () => {
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={7} token="t" />)
+    render(<ProductImageUpload productId={7} />)
     await describeIt(user, 'Dashboard with traffic graphs')
 
     await user.upload(fileInput(), file('p.png', 'image/png'))
@@ -126,7 +128,7 @@ describe('ProductImageUpload — uploading', () => {
     // WCAG 1.1.1: an empty alt claims the picture carries no information, and only
     // the person uploading it can make that claim.
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={7} token="t" />)
+    render(<ProductImageUpload productId={7} />)
 
     await user.upload(fileInput(), file('p.png', 'image/png'))
 
@@ -138,7 +140,7 @@ describe('ProductImageUpload — uploading', () => {
     // The next picture is a different picture; reusing the text is how a gallery
     // ends up with the same alt on every image.
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={7} token="t" />)
+    render(<ProductImageUpload productId={7} />)
     await describeIt(user, 'The front of it')
 
     await user.upload(fileInput(), file('p.png', 'image/png'))
@@ -148,7 +150,7 @@ describe('ProductImageUpload — uploading', () => {
 
   it('reports a network failure instead of looking successful', async () => {
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={7} token="t" />)
+    render(<ProductImageUpload productId={7} />)
     await describeIt(user)
     vi.mocked(fetch).mockRejectedValueOnce(new Error('offline'))
 
@@ -160,7 +162,7 @@ describe('ProductImageUpload — uploading', () => {
   it('notifies the parent only after a successful change', async () => {
     const user = userEvent.setup()
     const onChanged = vi.fn()
-    render(<ProductImageUpload productId={7} token="t" onChanged={onChanged} />)
+    render(<ProductImageUpload productId={7} onChanged={onChanged} />)
     await describeIt(user)
 
     await user.upload(fileInput(), file('p.png', 'image/png'))
@@ -182,7 +184,7 @@ describe('ProductImageUpload — an existing gallery', () => {
 
   it('lists the pictures it already has, with their descriptions', async () => {
     stubFetch(two)
-    render(<ProductImageUpload productId={9} token="t" />)
+    render(<ProductImageUpload productId={9} />)
 
     expect(await screen.findByDisplayValue('The front of it')).toBeInTheDocument()
     expect(screen.getByDisplayValue('The back of it')).toBeInTheDocument()
@@ -191,7 +193,7 @@ describe('ProductImageUpload — an existing gallery', () => {
   it('saves a changed description without re-uploading the file', async () => {
     stubFetch(two)
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={9} token="t" />)
+    render(<ProductImageUpload productId={9} />)
 
     const field = await screen.findByDisplayValue('The front of it')
     await user.clear(field)
@@ -208,7 +210,7 @@ describe('ProductImageUpload — an existing gallery', () => {
   it('refuses to save an empty description', async () => {
     stubFetch(two)
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={9} token="t" />)
+    render(<ProductImageUpload productId={9} />)
 
     const field = await screen.findByDisplayValue('The front of it')
     await user.clear(field)
@@ -221,7 +223,7 @@ describe('ProductImageUpload — an existing gallery', () => {
   it('removes one picture with a DELETE naming it', async () => {
     stubFetch(two)
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={12} token="t" />)
+    render(<ProductImageUpload productId={12} />)
 
     await user.click(await screen.findByRole('button', { name: /remove: the back of it/i }))
 
@@ -236,7 +238,7 @@ describe('ProductImageUpload — an existing gallery', () => {
     // which is also what keeps a reorder from half-applying.
     stubFetch(two)
     const user = userEvent.setup()
-    render(<ProductImageUpload productId={4} token="t" />)
+    render(<ProductImageUpload productId={4} />)
 
     await user.click(await screen.findByRole('button', { name: /move down: the front of it/i }))
 
@@ -249,7 +251,7 @@ describe('ProductImageUpload — an existing gallery', () => {
 
   it('cannot move the first picture up or the last one down', async () => {
     stubFetch(two)
-    render(<ProductImageUpload productId={4} token="t" />)
+    render(<ProductImageUpload productId={4} />)
 
     expect(await screen.findByRole('button', { name: /move up: the front of it/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /move down: the back of it/i })).toBeDisabled()
@@ -257,7 +259,7 @@ describe('ProductImageUpload — an existing gallery', () => {
 
   it('says so, rather than showing an empty list, when the gallery cannot be loaded', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 500 })))
-    render(<ProductImageUpload productId={9} token="t" />)
+    render(<ProductImageUpload productId={9} />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not load the gallery/i)
   })

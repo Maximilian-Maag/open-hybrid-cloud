@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AuditEntry, PaginatedResponse } from '@open-hybrid-cloud/types'
-import { get } from '@/lib/api'
+import { get, PROXY_PREFIX } from '@/lib/api'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
@@ -10,13 +10,8 @@ import { Alert } from '@/components/ui/Alert'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
-interface Props {
-  token: string
-}
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
-
-export function AuditTable({ token }: Props) {
+export function AuditTable() {
   const lang = useLang()
   const [entries, setEntries] = useState<AuditEntry[]>([])
   const [total, setTotal] = useState(0)
@@ -66,7 +61,6 @@ export function AuditTable({ token }: Props) {
 
       const result = await get<PaginatedResponse<AuditEntry> | AuditEntry[]>(
         `/api/audit?${params.toString()}`,
-        token,
       )
       // A newer request (another page or filter change) has since gone out —
       // its answer, not this one, must decide what is on screen.
@@ -95,7 +89,7 @@ export function AuditTable({ token }: Props) {
     } finally {
       if (loadGeneration.current === generation) setLoading(false)
     }
-  }, [token, page, debouncedUser, debouncedAction, fromFilter, toFilter, lang])
+  }, [page, debouncedUser, debouncedAction, fromFilter, toFilter, lang])
 
   useEffect(() => { void load() }, [load])
 
@@ -108,12 +102,13 @@ export function AuditTable({ token }: Props) {
     params.set('format', format)
 
     setExportError(null)
-    // The export endpoint authenticates via the Authorization header, which a
-    // plain window.open GET cannot set — fetch it and trigger a download from
-    // the response blob. This also keeps the token out of the URL/history/logs.
+    // Fetched as a blob rather than opened in a tab, so nothing that identifies
+    // the caller ever lands in a URL, in history or in a proxy log. It goes
+    // through /api/proxy like every other call: the session cookie rides along
+    // and the bearer token is attached on the server, out of script's reach
+    // (#146).
     try {
-      const res = await fetch(`${API_URL}/api/audit/export?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await fetch(`${PROXY_PREFIX}/api/audit/export?${params.toString()}`, {
         cache: 'no-store',
       })
       if (!res.ok) {

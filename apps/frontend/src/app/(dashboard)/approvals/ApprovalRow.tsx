@@ -13,7 +13,6 @@ import { t } from '@/lib/i18n'
 
 interface Props {
   order: Order
-  token: string
   /**
    * The viewer. Needed because nobody approves their own order (issue #35) —
    * the backend refuses it, and hiding the button is how the viewer finds that
@@ -22,7 +21,7 @@ interface Props {
   currentUserId: number
 }
 
-export function ApprovalRow({ order, token, currentUserId }: Props) {
+export function ApprovalRow({ order, currentUserId }: Props) {
   const router = useRouter()
   const lang = useLang()
   const [rejecting, setRejecting] = useState(false)
@@ -38,7 +37,7 @@ export function ApprovalRow({ order, token, currentUserId }: Props) {
       // /api/approvals, not /api/orders: the approve and reject endpoints live
       // under the approvals resource, and this pointed at a path the backend has
       // never served.
-      await post(`/api/approvals/${order.id}/approve`, {}, token)
+      await post(`/api/approvals/${order.id}/approve`, {})
       setDone(true)
       router.refresh()
     } catch (err) {
@@ -53,7 +52,7 @@ export function ApprovalRow({ order, token, currentUserId }: Props) {
     setLoading(true)
     setError(null)
     try {
-      await post(`/api/approvals/${order.id}/reject`, { rejectionNote }, token)
+      await post(`/api/approvals/${order.id}/reject`, { rejectionNote })
       setDone(true)
       router.refresh()
     } catch (err) {

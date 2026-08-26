@@ -57,6 +57,7 @@ interface Props {
   environments: DeploymentEnvironment[]
   translations: ProductTranslation[]
   costCenters: CostCenter[]
+<<<<<<< HEAD
   token: string
   /**
    * The language every string on this form renders in. It used to translate only
@@ -65,10 +66,13 @@ interface Props {
    * Defaults to English for callers that resolve no language — the tests; the
    * page itself always passes what `getLang()` answered.
    */
+=======
+  /** The rest of this form is English-only admin chrome; only the new strings are translated. */
+>>>>>>> origin/dev
   lang?: string
 }
 
-export function ProductEditForm({ product, categories, environments, translations: initTranslations, costCenters, token, lang = 'en' }: Props) {
+export function ProductEditForm({ product, categories, environments, translations: initTranslations, costCenters, lang = 'en' }: Props) {
   const router = useRouter()
 
   // Basic info
@@ -175,7 +179,7 @@ export function ProductEditForm({ product, categories, environments, translation
         // change, so carrying it into the next save would misattribute it.
         ...(changelog.trim() ? { changelog: changelog.trim() } : {}),
       }
-      await put(`/api/admin/products/${product.id}`, body, token)
+      await put(`/api/admin/products/${product.id}`, body)
       setChangelog('')
       setHistoryKey((k) => k + 1)
       setSuccess(true)
@@ -190,13 +194,13 @@ export function ProductEditForm({ product, categories, environments, translation
   async function handleSaveEnv(envId: number, data: UpsertProductEnvironmentRequest) {
     // Let failures propagate so the row can show an error instead of a false
     // "Saved!" confirmation.
-    await put(`/api/admin/products/${product.id}/environments/${envId}`, data, token)
+    await put(`/api/admin/products/${product.id}/environments/${envId}`, data)
   }
 
   async function handleDeleteEnv(envId: number) {
     // Propagates so the row surfaces the reason — most often the 409 the backend
     // returns while infrastructure is still deployed in this environment.
-    await del(`/api/admin/products/${product.id}/environments/${envId}`, token)
+    await del(`/api/admin/products/${product.id}/environments/${envId}`)
     router.refresh()
   }
 
@@ -234,8 +238,8 @@ export function ProductEditForm({ product, categories, environments, translation
         // unconditionally only because `loadTranslation` put the stored value in the
         // box first; without that this line is an erase.
         longDescription: translationLongDesc.trim(),
-      }, token)
-      const updated = await post<ProductTranslation[]>(`/api/admin/products/${product.id}/translations`, {}, token)
+      })
+      const updated = await post<ProductTranslation[]>(`/api/admin/products/${product.id}/translations`, {})
         .catch(() => null)
       if (updated) setTranslations(updated)
       else {
@@ -264,7 +268,7 @@ export function ProductEditForm({ product, categories, environments, translation
     setTranslating(true)
     setAiError(null)
     try {
-      await post(`/api/admin/products/${product.id}/translate`, {}, token)
+      await post(`/api/admin/products/${product.id}/translate`, {})
       router.refresh()
     } catch (e) {
       setAiError(e instanceof Error ? e.message : t('aiTranslationFailed', lang))
@@ -285,7 +289,7 @@ export function ProductEditForm({ product, categories, environments, translation
         webhookToken: whToken.trim(),
         execOrder: Number(whOrder),
       }
-      const created = await post<ProductWebhook>(`/api/admin/products/${product.id}/webhooks`, body, token)
+      const created = await post<ProductWebhook>(`/api/admin/products/${product.id}/webhooks`, body)
       setWebhooks((prev) => [...prev, created])
       setWebhookModal(false)
       setWhName(''); setWhUrl(''); setWhToken(''); setWhOrder('0')
@@ -299,7 +303,7 @@ export function ProductEditForm({ product, categories, environments, translation
   async function handleDeleteWebhook(whId: number) {
     setWhDeleteError(null)
     try {
-      await del(`/api/admin/products/${product.id}/webhooks/${whId}`, token)
+      await del(`/api/admin/products/${product.id}/webhooks/${whId}`)
       setWebhooks((prev) => prev.filter((w) => w.id !== whId))
     } catch (e) {
       setWhDeleteError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
@@ -307,20 +311,20 @@ export function ProductEditForm({ product, categories, environments, translation
   }
 
   useEffect(() => {
-    get<PipelineStack[]>(`/api/admin/products/${product.id}/pipeline-stacks`, token)
+    get<PipelineStack[]>(`/api/admin/products/${product.id}/pipeline-stacks`)
       .then(setStacks)
       .catch(() => { /* the section renders empty; the add form below still works */ })
-  }, [product.id, token])
+  }, [product.id])
 
   // Order Callbacks, same shape as the pipeline stacks fetch above. Without
   // this, `webhooks` was only ever written by add/delete — reloading the page
   // made every existing callback invisible and its Delete button unreachable
   // (#145).
   useEffect(() => {
-    get<ProductWebhook[]>(`/api/admin/products/${product.id}/webhooks`, token)
+    get<ProductWebhook[]>(`/api/admin/products/${product.id}/webhooks`)
       .then(setWebhooks)
       .catch(() => { /* the section renders empty; the add form below still works */ })
-  }, [product.id, token])
+  }, [product.id])
 
   function openStackModal() {
     setPsError(null)
@@ -412,7 +416,7 @@ export function ProductEditForm({ product, categories, environments, translation
           stateKeyParam: psStateKey.trim() || 'hostname',
           steps,
         }
-        const updated = await put<PipelineStack>(`/api/admin/products/${product.id}/pipeline-stacks/${editStack.id}`, body, token)
+        const updated = await put<PipelineStack>(`/api/admin/products/${product.id}/pipeline-stacks/${editStack.id}`, body)
         setStacks((prev) => prev.map((s) => s.id === editStack.id ? updated : s))
       } else {
         const body: CreatePipelineStackRequest = {
@@ -421,7 +425,7 @@ export function ProductEditForm({ product, categories, environments, translation
           stateKeyParam: psStateKey.trim() || 'hostname',
           steps,
         }
-        const created = await post<PipelineStack>(`/api/admin/products/${product.id}/pipeline-stacks`, body, token)
+        const created = await post<PipelineStack>(`/api/admin/products/${product.id}/pipeline-stacks`, body)
         setStacks((prev) => [...prev, created])
       }
       setStackModal(false)
@@ -435,7 +439,7 @@ export function ProductEditForm({ product, categories, environments, translation
   async function handleDeleteStack(stackId: number) {
     setStackDeleteError(null)
     try {
-      await del(`/api/admin/products/${product.id}/pipeline-stacks/${stackId}`, token)
+      await del(`/api/admin/products/${product.id}/pipeline-stacks/${stackId}`)
       setStacks((prev) => prev.filter((s) => s.id !== stackId))
     } catch (e) {
       setStackDeleteError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
@@ -448,10 +452,10 @@ export function ProductEditForm({ product, categories, environments, translation
     setParamError(null)
     try {
       const result = await post<{ created: number; skipped: number }>(
-        `/api/admin/products/${product.id}/sync-parameters`, {}, token,
+        `/api/admin/products/${product.id}/sync-parameters`, {},
       )
       const refreshed = await get<Parameter[]>(
-        `/api/admin/parameters?scope=product&scopeId=${product.id}`, token,
+        `/api/admin/parameters?scope=product&scopeId=${product.id}`,
       )
       if (refreshed) setProductParams(refreshed)
       // A label and a number rather than an inflected sentence: "3 parameters"
@@ -499,7 +503,7 @@ export function ProductEditForm({ product, categories, environments, translation
           required: paramForm.required,
           sensitive: paramForm.sensitive,
         }
-        const updated = await put<Parameter>(`/api/admin/parameters/${editParam.id}`, body, token)
+        const updated = await put<Parameter>(`/api/admin/parameters/${editParam.id}`, body)
         setProductParams((prev) => prev.map((p) => p.id === editParam.id ? updated : p))
       } else {
         const body: CreateParameterRequest = {
@@ -513,7 +517,7 @@ export function ProductEditForm({ product, categories, environments, translation
           required: paramForm.required,
           sensitive: paramForm.sensitive,
         }
-        const created = await post<Parameter>('/api/admin/parameters', body, token)
+        const created = await post<Parameter>('/api/admin/parameters', body)
         setProductParams((prev) => [...prev, created])
       }
       setParamModal(false)
@@ -528,7 +532,7 @@ export function ProductEditForm({ product, categories, environments, translation
     setParamError(null)
     setParamSyncMsg(null)
     try {
-      await del(`/api/admin/parameters/${paramId}`, token)
+      await del(`/api/admin/parameters/${paramId}`)
       setProductParams((prev) => prev.filter((p) => p.id !== paramId))
     } catch (e) {
       setParamError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
@@ -600,7 +604,7 @@ export function ProductEditForm({ product, categories, environments, translation
 
       {/* Version history (issue #38) */}
       <Card title={t('versionHistory', lang)}>
-        <ProductVersionHistory key={historyKey} productId={product.id} token={token} lang={lang} />
+        <ProductVersionHistory key={historyKey} productId={product.id} lang={lang} />
       </Card>
 
       {/* Translations */}
@@ -652,7 +656,6 @@ export function ProductEditForm({ product, categories, environments, translation
                   existing={existing}
                   costCenters={costCenters}
                   productId={product.id}
-                  token={token}
                   onSave={(data) => handleSaveEnv(env.id, data)}
                   onDelete={() => handleDeleteEnv(env.id)}
                   lang={lang}
@@ -968,7 +971,6 @@ function EnvironmentRow({
   existing,
   costCenters,
   productId,
-  token,
   onSave,
   onDelete,
   lang,
@@ -985,7 +987,6 @@ function EnvironmentRow({
   }
   costCenters: CostCenter[]
   productId: number
-  token: string
   onSave: (data: UpsertProductEnvironmentRequest) => Promise<void>
   onDelete: () => Promise<void>
   lang: string
@@ -1130,7 +1131,11 @@ function EnvironmentRow({
             .map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}${cc.active ? '' : ` ${t('inactiveSuffix', lang)}`}` }))}
         />
       )}
+<<<<<<< HEAD
       {existing && <SizesEditor productId={productId} envId={env.id} token={token} lang={lang} />}
+=======
+      {existing && <SizesEditor productId={productId} envId={env.id} />}
+>>>>>>> origin/dev
 
       <div className="flex items-center gap-3">
         <Button type="submit" size="sm" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
@@ -1170,6 +1175,7 @@ function EnvironmentRow({
 function SizesEditor({
   productId,
   envId,
+<<<<<<< HEAD
   token,
   lang,
 }: {
@@ -1177,6 +1183,11 @@ function SizesEditor({
   envId: number
   token: string
   lang: string
+=======
+}: {
+  productId: number
+  envId: number
+>>>>>>> origin/dev
 }) {
   const [sizes, setSizes] = useState<OfferingSize[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -1189,16 +1200,20 @@ function SizesEditor({
 
   const load = useCallback(async () => {
     try {
-      setSizes((await get<OfferingSize[]>(path, token)) ?? [])
+      setSizes((await get<OfferingSize[]>(path)) ?? [])
     } catch (e) {
       setError(e instanceof Error ? e.message : t('failedToLoadGeneric', lang))
       setSizes([])
     }
+<<<<<<< HEAD
     // `lang` is in here because the fallback message is translated now. It makes
     // `load` change when the language does, so the sizes are re-fetched on a
     // language switch — one request, and the alternative is a stale error still
     // reading in the previous language.
   }, [path, token, lang])
+=======
+  }, [path])
+>>>>>>> origin/dev
 
   useEffect(() => { void load() }, [load])
 
@@ -1214,7 +1229,7 @@ function SizesEditor({
         // Appended at the end of the list; an admin reorders by editing the value
         // on the row, which upserts on the same code.
         sortOrder: (sizes?.length ?? 0) + 1,
-      }, token)
+      })
       setCode(''); setLabel(''); setPrice('')
       await load()
     } catch (e) {
@@ -1230,7 +1245,7 @@ function SizesEditor({
     setError(null)
     try {
       await post(path, { code: size.code, label: size.label, price: size.price,
-        currency: size.currency, sortOrder: size.sortOrder, active: !size.active }, token)
+        currency: size.currency, sortOrder: size.sortOrder, active: !size.active })
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : t('failedToSave', lang))
@@ -1243,7 +1258,7 @@ function SizesEditor({
     setBusy(true)
     setError(null)
     try {
-      await del(`${path}/${size.id}`, token)
+      await del(`${path}/${size.id}`)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))

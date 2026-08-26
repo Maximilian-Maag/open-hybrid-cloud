@@ -10,9 +10,7 @@ import { Table } from '@/components/ui/Table'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
-interface Props { token: string }
-
-export function ExchangeRatesTable({ token }: Props) {
+export function ExchangeRatesTable() {
   const lang = useLang()
   const [rates, setRates] = useState<ExchangeRate[]>([])
   const [loading, setLoading] = useState(true)
@@ -22,13 +20,13 @@ export function ExchangeRatesTable({ token }: Props) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setRates((await get<ExchangeRate[]>('/api/admin/exchange-rates', token)) ?? [])
+      setRates((await get<ExchangeRate[]>('/api/admin/exchange-rates')) ?? [])
     } catch (e) {
       setError(e instanceof Error ? e.message : t('failedToLoadExchangeRates', lang))
     } finally {
       setLoading(false)
     }
-  }, [token, lang])
+  }, [lang])
 
   useEffect(() => { void load() }, [load])
 
@@ -36,7 +34,7 @@ export function ExchangeRatesTable({ token }: Props) {
     setRefreshing(true)
     setError(null)
     try {
-      await post('/api/admin/exchange-rates/refresh', {}, token)
+      await post('/api/admin/exchange-rates/refresh', {})
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : t('failedToRefreshRates', lang))

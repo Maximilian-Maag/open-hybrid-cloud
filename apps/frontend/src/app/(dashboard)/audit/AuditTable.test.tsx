@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { AuditTable } from './AuditTable'
 
-vi.mock('@/lib/api', () => ({ get: vi.fn() }))
+// PROXY_PREFIX as well as `get`: the export goes through the same-origin
+// proxy now (#146), and a named import missing from a mock factory throws
+// where it is read — inside the try, which would look like a failed export.
+vi.mock('@/lib/api', () => ({ get: vi.fn(), PROXY_PREFIX: '/api/proxy' }))
 import { get } from '@/lib/api'
 
 const mockGet = vi.mocked(get)
@@ -21,7 +24,7 @@ describe('AuditTable', () => {
   it('reports a failed query instead of rendering an empty audit log', async () => {
     mockGet.mockRejectedValue(new Error('500 Internal Server Error'))
 
-    render(<AuditTable token="t" />)
+    render(<AuditTable />)
 
     expect(await screen.findByText('500 Internal Server Error')).toBeInTheDocument()
     expect(screen.queryByText(/no audit entries/i)).not.toBeInTheDocument()
@@ -40,7 +43,7 @@ describe('AuditTable', () => {
       return Promise.reject(new Error('500 Internal Server Error'))
     })
 
-    render(<AuditTable token="t" />)
+    render(<AuditTable />)
     await waitFor(() => expect(screen.getByText('user.login')).toBeInTheDocument())
 
     fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'login' } })
@@ -53,7 +56,7 @@ describe('AuditTable', () => {
   it('still shows the empty state when the query succeeds with nothing in it', async () => {
     mockGet.mockResolvedValue({ data: [], total: 0 })
 
-    render(<AuditTable token="t" />)
+    render(<AuditTable />)
 
     expect(await screen.findByText(/no audit entries/i)).toBeInTheDocument()
   })
@@ -71,7 +74,7 @@ describe('AuditTable', () => {
       return Promise.resolve({ data: [entry], total: 1 })
     })
 
-    render(<AuditTable token="t" />)
+    render(<AuditTable />)
     await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
 
     // A second load — debounced, so `waitFor` covers the 300ms window — which
@@ -102,8 +105,13 @@ describe('AuditTable', () => {
       return new Promise((resolve) => { resolvePage3 = resolve })
     })
 
+<<<<<<< HEAD
     render(<AuditTable token="tok" />)
     await waitFor(() => expect(screen.getByText(/page 1 \/ 3/i)).toBeInTheDocument())
+=======
+    render(<AuditTable />)
+    await waitFor(() => expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument())
+>>>>>>> origin/dev
 
     const next = screen.getByRole('button', { name: 'Next' })
     fireEvent.click(next) // load() for page 2, held open
@@ -121,7 +129,7 @@ describe('AuditTable', () => {
   })
 
   it('debounces the free-text filters instead of fetching per keystroke', async () => {
-    render(<AuditTable token="tok" />)
+    render(<AuditTable />)
 
     // Initial load.
     await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1))
@@ -159,7 +167,7 @@ describe('AuditTable', () => {
       }),
     )
 
-    render(<AuditTable token="tok" />)
+    render(<AuditTable />)
     await waitFor(() => expect(mockGet).toHaveBeenCalled())
 
     fireEvent.click(screen.getByRole('button', { name: /csv/i }))
@@ -176,7 +184,7 @@ describe('AuditTable', () => {
       .spyOn(global, 'fetch')
       .mockResolvedValue(new Response('nope', { status: 500 }))
 
-    render(<AuditTable token="tok" />)
+    render(<AuditTable />)
     await waitFor(() => expect(mockGet).toHaveBeenCalled())
 
     fireEvent.click(screen.getByRole('button', { name: /csv/i }))

@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { Role, Product, Category } from '@open-hybrid-cloud/types'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Table } from '@/components/ui/Table'
 import { ButtonLink } from '@/components/ui/Button'
@@ -15,12 +15,11 @@ export default async function AdminProductsPage() {
   if (!session) redirect('/login')
   const role = (session.user as unknown as { role: Role }).role
   if (role !== 'root') redirect('/admin')
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
 
   const [productsRes, categoriesRes] = await Promise.allSettled([
-    get<Product[]>(`/api/admin/products?lang=${lang}`, token),
-    get<Category[]>('/api/admin/categories', token),
+    get<Product[]>(`/api/admin/products?lang=${lang}`),
+    get<Category[]>('/api/admin/categories'),
   ])
 
   const products = productsRes.status === 'fulfilled' ? (productsRes.value ?? []) : []
@@ -62,7 +61,7 @@ export default async function AdminProductsPage() {
           {
             header: '',
             className: 'text-right',
-            render: (row) => <ProductRowActions product={row} token={token} />,
+            render: (row) => <ProductRowActions product={row} />,
           },
         ]}
         data={products}

@@ -19,7 +19,6 @@ import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
 interface Props {
-  token: string
   ciSources: CiSource[]
 }
 
@@ -27,7 +26,7 @@ const emptyForm = () => ({
   name: '', description: '', ciSourceId: '', webhookUrl: '', webhookToken: '',
 })
 
-export function EnvironmentsManager({ token, ciSources }: Props) {
+export function EnvironmentsManager({ ciSources }: Props) {
   const lang = useLang()
   const [envs, setEnvs] = useState<DeploymentEnvironment[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,7 +41,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setEnvs((await get<DeploymentEnvironment[]>('/api/admin/environments', token)) ?? [])
+      setEnvs((await get<DeploymentEnvironment[]>('/api/admin/environments')) ?? [])
       setLoadError(null)
     } catch (err) {
       // Without this, an admin-API outage left `envs` empty and rendered
@@ -53,7 +52,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [token, lang])
+  }, [lang])
 
   useEffect(() => { void load() }, [load])
 
@@ -91,7 +90,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
         webhookUrl: form.webhookUrl.trim(),
         webhookToken: form.webhookToken.trim(),
       }
-      await post('/api/admin/environments', body, token)
+      await post('/api/admin/environments', body)
       setAddOpen(false)
       void load()
     } catch (err) {
@@ -114,7 +113,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
         ...(form.webhookUrl ? { webhookUrl: form.webhookUrl.trim() } : {}),
         ...(form.webhookToken ? { webhookToken: form.webhookToken.trim() } : {}),
       }
-      await put(`/api/admin/environments/${editTarget.id}`, body, token)
+      await put(`/api/admin/environments/${editTarget.id}`, body)
       closeEdit()
       void load()
     } catch (err) {
@@ -143,7 +142,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
     setSecretBusy(true)
     setSecretError(null)
     try {
-      const res = await get<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`, token)
+      const res = await get<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`)
       setCallbackSecret(res?.callbackSecret ?? null)
     } catch (e) {
       setCallbackSecret(null)
@@ -159,7 +158,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
     setSecretBusy(true)
     setSecretError(null)
     try {
-      const res = await post<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`, {}, token)
+      const res = await post<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`, {})
       setCallbackSecret(res?.callbackSecret ?? null)
     } catch (e) {
       setSecretError(e instanceof Error ? e.message : t('failedToRegenerateSecret', lang))
@@ -184,7 +183,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
     setSaving(true)
     setDeleteError(null)
     try {
-      await del(`/api/admin/environments/${deleteTarget.id}`, token)
+      await del(`/api/admin/environments/${deleteTarget.id}`)
       setDeleteTarget(null)
       void load()
     } catch (e) {

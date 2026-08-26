@@ -6,7 +6,13 @@ import { Alert } from '@/components/ui/Alert'
 import { ProductImagePlaceholder } from '@/components/ui/ProductImage'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
+import { PROXY_PREFIX } from '@/lib/api'
 
+/**
+ * Only for the thumbnail `src` below, which is a plain unauthenticated GET
+ * straight to the API. Everything that needs the caller's identity goes through
+ * PROXY_PREFIX instead (#146).
+ */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
 /** Mirrors ALLOWED_IMAGE_MIMES in the backend service. */
@@ -25,7 +31,6 @@ interface GalleryImage {
 
 interface Props {
   productId: number
-  token: string
   /** Called after any successful change, so the page can refetch what it shows. */
   onChanged?: () => void
 }
@@ -43,7 +48,7 @@ interface Props {
  * reads `formData()` and because a 10 MB image would grow by a third on the way
  * through JSON.
  */
-export function ProductImageUpload({ productId, token, onChanged }: Props) {
+export function ProductImageUpload({ productId, onChanged }: Props) {
   const lang = useLang()
   const inputRef = useRef<HTMLInputElement>(null)
   const [images, setImages] = useState<GalleryImage[]>([])
@@ -55,12 +60,9 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
   // max-age=3600, so a replaced picture at the same id needs a different URL.
   const [version, setVersion] = useState(0)
 
-  const authHeader = { Authorization: `Bearer ${token}` }
-
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images`, {
-        headers: authHeader,
+      const res = await fetch(`${PROXY_PREFIX}/api/admin/products/${productId}/images`, {
         cache: 'no-store',
       })
       if (!res.ok) {
@@ -74,9 +76,7 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
     } catch {
       setError(t('couldNotLoadGallery', lang))
     }
-    // authHeader is derived from `token`, which is what actually changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId, token, lang])
+  }, [productId, lang])
 
   useEffect(() => {
     void load()
@@ -114,9 +114,8 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
       const body = new FormData()
       body.append('image', file)
       body.append('alt', alt.trim())
-      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images`, {
+      const res = await fetch(`${PROXY_PREFIX}/api/admin/products/${productId}/images`, {
         method: 'POST',
-        headers: authHeader,
         body,
         cache: 'no-store',
       })
@@ -147,9 +146,9 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
     setError(null)
     setSaved(null)
     try {
-      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images/${image.id}`, {
+      const res = await fetch(`${PROXY_PREFIX}/api/admin/products/${productId}/images/${image.id}`, {
         method: 'PATCH',
-        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alt: next.trim() }),
         cache: 'no-store',
       })
@@ -171,9 +170,8 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
     setError(null)
     setSaved(null)
     try {
-      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images/${image.id}`, {
+      const res = await fetch(`${PROXY_PREFIX}/api/admin/products/${productId}/images/${image.id}`, {
         method: 'DELETE',
-        headers: authHeader,
         cache: 'no-store',
       })
       if (!res.ok && res.status !== 204) {
@@ -200,9 +198,9 @@ export function ProductImageUpload({ productId, token, onChanged }: Props) {
     setError(null)
     setSaved(null)
     try {
-      const res = await fetch(`${API_URL}/api/admin/products/${productId}/images`, {
+      const res = await fetch(`${PROXY_PREFIX}/api/admin/products/${productId}/images`, {
         method: 'PATCH',
-        headers: { ...authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order }),
         cache: 'no-store',
       })

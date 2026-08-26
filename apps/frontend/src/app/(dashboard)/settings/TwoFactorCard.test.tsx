@@ -49,7 +49,7 @@ beforeEach(() => {
 describe('TwoFactorCard — not yet set up', () => {
   it('offers to set it up, asking only for the password', async () => {
     mockedGet.mockResolvedValue(status())
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
 
     expect(await screen.findByText('Not set up')).toBeInTheDocument()
     expect(screen.getByLabelText(/confirm with your password/i)).toBeInTheDocument()
@@ -60,7 +60,7 @@ describe('TwoFactorCard — not yet set up', () => {
   it('shows the QR code and the setup key after the password is accepted', async () => {
     mockedGet.mockResolvedValue(status())
     mockedPost.mockResolvedValue(OFFER)
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
 
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
@@ -76,7 +76,7 @@ describe('TwoFactorCard — not yet set up', () => {
   it('surfaces a rejected password without leaving the step', async () => {
     mockedGet.mockResolvedValue(status())
     mockedPost.mockRejectedValue(new Error('Current password is incorrect'))
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
 
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(/confirm with your password/i), 'nope')
@@ -90,7 +90,7 @@ describe('TwoFactorCard — not yet set up', () => {
     mockedGet.mockResolvedValue(status())
     mockedPost.mockResolvedValueOnce(OFFER)
     mockedPost.mockResolvedValueOnce({ recoveryCodes: ['AAAAA-BBBBB-CCCCC-DDDDD', 'EEEEE-FFFFF-GGGGG-HHHHH'] })
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
 
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
@@ -110,7 +110,7 @@ describe('TwoFactorCard — not yet set up', () => {
   it('drops the pending secret when the enrollment is cancelled', async () => {
     mockedGet.mockResolvedValue(status())
     mockedPost.mockResolvedValue(OFFER)
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
 
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
@@ -127,7 +127,7 @@ describe('TwoFactorCard — already active', () => {
     mockedGet.mockResolvedValue(
       status({ enabled: true, confirmedAt: new Date().toISOString(), recoveryCodesRemaining: 7 }),
     )
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
 
     expect(await screen.findByText('Active')).toBeInTheDocument()
     expect(screen.getByText('7')).toBeInTheDocument()
@@ -135,7 +135,7 @@ describe('TwoFactorCard — already active', () => {
 
   it('offers only a replacement — never a way to switch it off', async () => {
     mockedGet.mockResolvedValue(status({ enabled: true, recoveryCodesRemaining: 7 }))
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
 
     expect(await screen.findByRole('button', { name: /replace authenticator/i })).toBeInTheDocument()
     for (const label of [/disable/i, /turn off/i, /remove/i, /delete/i]) {
@@ -146,7 +146,7 @@ describe('TwoFactorCard — already active', () => {
   it('demands a current code as well as the password before replacing', async () => {
     mockedGet.mockResolvedValue(status({ enabled: true, recoveryCodesRemaining: 7 }))
     mockedPost.mockResolvedValue(OFFER)
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
 
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
@@ -159,7 +159,7 @@ describe('TwoFactorCard — already active', () => {
 
   it('warns when the recovery codes have run out', async () => {
     mockedGet.mockResolvedValue(status({ enabled: true, recoveryCodesRemaining: 0 }))
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
     // Its own message, not the "save these now — they will not be shown again"
     // one that belongs on the screen that just printed them. There are none on
     // screen here; the count is zero, which is what this says (issue #197).
@@ -170,13 +170,13 @@ describe('TwoFactorCard — already active', () => {
     // The bug this replaced: the count-is-zero warning reused the string that
     // says "save these now", with nothing shown to save.
     mockedGet.mockResolvedValue(status({ enabled: true, recoveryCodesRemaining: 0 }))
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
     expect(await screen.findByRole('alert')).not.toHaveTextContent(/save these now/i)
   })
 
   it('says nothing rather than erroring when the status cannot be read', async () => {
     mockedGet.mockRejectedValue(new Error('boom'))
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
     // The card still renders its intro and the set-up form; it does not take the
     // whole settings page down with it.
     expect(await screen.findByLabelText(/confirm with your password/i)).toBeInTheDocument()
@@ -189,13 +189,13 @@ describe('TwoFactorCard — enrollment is required', () => {
   it('says why the user was sent here', async () => {
     sessionData = { mustEnrollSecondFactor: true }
     mockedGet.mockResolvedValue(status())
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
     expect(await screen.findByText(/required for administrator accounts/i)).toBeInTheDocument()
   })
 
   it('says nothing of the sort when the enrollment is voluntary', async () => {
     mockedGet.mockResolvedValue(status())
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
     await screen.findByLabelText(/confirm with your password/i)
     expect(screen.queryByText(/required for administrator accounts/i)).toBeNull()
   })
@@ -204,7 +204,7 @@ describe('TwoFactorCard — enrollment is required', () => {
     // The requirement is met; the prompt would only be noise.
     sessionData = { mustEnrollSecondFactor: true }
     mockedGet.mockResolvedValue(status({ enabled: true }))
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
     await screen.findByLabelText(/confirm with your password/i)
     expect(screen.queryByText(/required for administrator accounts/i)).toBeNull()
   })
@@ -217,7 +217,7 @@ describe('TwoFactorCard — enrollment is required', () => {
     mockedPost.mockResolvedValueOnce(OFFER)
     mockedPost.mockResolvedValueOnce({ recoveryCodes: ['aaaa-bbbb'] })
 
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
     await user.click(screen.getByRole('button', { name: /set up/i }))
@@ -232,7 +232,7 @@ describe('TwoFactorCard — enrollment is required', () => {
     mockedPost.mockResolvedValueOnce(OFFER)
     mockedPost.mockResolvedValueOnce({ recoveryCodes: ['aaaa-bbbb'] })
 
-    render(<TwoFactorCard token="tok" />)
+    render(<TwoFactorCard />)
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(/confirm with your password/i), 'pw')
     await user.click(screen.getByRole('button', { name: /set up/i }))

@@ -45,7 +45,7 @@ const mockApi = (versions: ProductVersion[], diffResult?: ProductVersionDiff | E
   }) as never)
 }
 
-const renderPanel = () => render(<ProductVersionHistory productId={7} token="t" lang="en" />)
+const renderPanel = () => render(<ProductVersionHistory productId={7} lang="en" />)
 
 beforeEach(() => {
   mockedGet.mockReset()
@@ -186,7 +186,7 @@ describe('ProductVersionHistory', () => {
     await user.click(screen.getByRole('button', { name: /compare/i }))
 
     await waitFor(() =>
-      expect(mockedGet).toHaveBeenCalledWith('/api/admin/products/7/versions/diff?from=7&to=9', 't'),
+      expect(mockedGet).toHaveBeenCalledWith('/api/admin/products/7/versions/diff?from=7&to=9'),
     )
   })
 

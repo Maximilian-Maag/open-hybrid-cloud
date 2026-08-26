@@ -25,7 +25,6 @@ import { t } from '@/lib/i18n'
  */
 
 interface Props {
-  token: string
   /**
    * The list to render immediately. Omit it and the component fetches on mount
    * instead — which is right inside a dialog that was not open when the page
@@ -64,7 +63,7 @@ const describeDevice = (userAgent: string | null): string => {
   return browser ?? os ?? userAgent.slice(0, 40)
 }
 
-export function ActiveSessions({ token, initialSessions, userId }: Props) {
+export function ActiveSessions({ initialSessions, userId }: Props) {
   const lang = useLang()
   const [sessions, setSessions] = useState<SessionInfo[]>(initialSessions ?? [])
   const [busy, setBusy] = useState<number | 'others' | null>(null)
@@ -78,8 +77,8 @@ export function ActiveSessions({ token, initialSessions, userId }: Props) {
   // means a setState on a dead component, and this card is opened in a modal that
   // is closed by clicking away from it.
   const fetchSessions = useCallback(
-    () => get<SessionInfo[]>(`/api/sessions${query}`, token),
-    [query, token],
+    () => get<SessionInfo[]>(`/api/sessions${query}`),
+    [query],
   )
 
   useEffect(() => {
@@ -151,7 +150,7 @@ export function ActiveSessions({ token, initialSessions, userId }: Props) {
             // out" five times with no way to tell them apart.
             aria-label={`${t('signOut', lang)}: ${describeDevice(row.userAgent)}${row.ip ? ` (${row.ip})` : ''}`}
             onClick={() =>
-              run(row.id, () => del<RevokeSessionsResponse>(`/api/sessions/${row.id}`, token))
+              run(row.id, () => del<RevokeSessionsResponse>(`/api/sessions/${row.id}`))
             }
           >
             {busy === row.id ? t('loading', lang) : t('signOut', lang)}
@@ -169,7 +168,7 @@ export function ActiveSessions({ token, initialSessions, userId }: Props) {
             variant="secondary"
             size="sm"
             disabled={busy !== null}
-            onClick={() => run('others', () => del<RevokeSessionsResponse>(`/api/sessions${query}`, token))}
+            onClick={() => run('others', () => del<RevokeSessionsResponse>(`/api/sessions${query}`))}
           >
             {busy === 'others'
               ? t('loading', lang)

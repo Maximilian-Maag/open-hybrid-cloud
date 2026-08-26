@@ -1,12 +1,63 @@
 import { expiredLoginUrl } from '@/lib/session'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? process.env.API_URL ?? ''
+/**
+ * Only the SERVER branch below uses this now, so it prefers the server-reachable
+ * URL — the same order `(dashboard)/layout.tsx` and the login-challenge route
+ * already use. It used to serve both sides and had the precedence the other way
+ * round, which in Docker meant the frontend container calling the address the
+ * BROWSER reaches the API at. The browser no longer comes through here at all:
+ * it goes to PROXY_PREFIX on this origin (#146).
+ */
+const API_URL = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
+
+/**
+ * Where the browser sends an API call: this origin, never the API host.
+ *
+ * The backend JWT used to be handed to client JavaScript so it could set its own
+ * Authorization header — readable from `/api/auth/session` and serialised into
+ * every dashboard page's RSC payload as a `token={token}` prop. Any XSS on this
+ * origin therefore bought 24 hours of full API access as that user, replayable
+ * from anywhere, because a bearer token is not bound to an origin (issue #146).
+ *
+ * Now the browser sends the NextAuth session cookie — HttpOnly, so script cannot
+ * read it — and `app/api/proxy/[...path]/route.ts` attaches the Authorization
+ * header on the server. See that file for what the proxy will and will not do.
+ */
+export const PROXY_PREFIX = '/api/proxy'
+
+/**
+ * Which of the two ways to reach the API this call takes.
+ *
+ * On the server the API is called directly with the bearer token, because there
+ * it is not a leak — it never crosses the wire to a browser. In the browser it
+ * goes through this origin's proxy with no token at all.
+ *
+ * Checked at call time rather than at module load, because this module is
+ * imported by server components and client components alike. Client components
+ * are server-RENDERED too, so the browser branch has to be the one that is safe
+ * when it is wrong — and it is, because it sends no credential of its own.
+ * Nothing here fetches during render in any case: client components load in
+ * `useEffect` or in an event handler.
+ */
+const inBrowser = (): boolean => typeof window !== 'undefined'
 
 type RequestOptions = {
   method?: string
   body?: unknown
-  token?: string
   isFormData?: boolean
+  /**
+   * SERVER ONLY, and set in exactly one place: `lib/serverApi.ts`, which reads it
+   * from the session. It is not on `get`/`post`/`put`/`del`, so client code has
+   * no way to reach it — and no token to put in it, which is the point of #146.
+   * Ignored outright in the browser branch below.
+   *
+   * This module cannot fetch the token itself, however tempting: it is in the
+   * CLIENT bundle, and importing `@/lib/auth` from here — even dynamically —
+   * drags the whole NextAuth server configuration into it. That was measured,
+   * not assumed: the built chunks carried `auth/login/mfa` and the auth config
+   * until this was split out.
+   */
+  token?: string
 }
 
 export class ApiError extends Error {
@@ -56,13 +107,17 @@ const endExpiredSession = async (): Promise<void> => {
 
 export const apiRequest = async <T>(
   path: string,
-  { method = 'GET', body, token, isFormData = false }: RequestOptions = {},
+  { method = 'GET', body, isFormData = false, token }: RequestOptions = {},
 ): Promise<T> => {
+  const browser = inBrowser()
   const headers: Record<string, string> = {}
-  if (token) headers['Authorization'] = `Bearer ${token}`
+  // Never in the browser, whatever was passed. A token reaching client code is
+  // the bug this whole change exists to prevent, so the browser branch does not
+  // send one even if one somehow arrives here (#146).
+  if (token && !browser) headers['Authorization'] = `Bearer ${token}`
   if (body && !isFormData) headers['Content-Type'] = 'application/json'
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${browser ? PROXY_PREFIX : API_URL}${path}`, {
     method,
     headers,
     body: isFormData ? (body as FormData) : body ? JSON.stringify(body) : undefined,
@@ -79,14 +134,12 @@ export const apiRequest = async <T>(
   return res.json()
 }
 
-export const get = <T>(path: string, token?: string) =>
-  apiRequest<T>(path, { token })
+export const get = <T>(path: string) => apiRequest<T>(path)
 
-export const post = <T>(path: string, body: unknown, token?: string) =>
-  apiRequest<T>(path, { method: 'POST', body, token })
+export const post = <T>(path: string, body: unknown) =>
+  apiRequest<T>(path, { method: 'POST', body })
 
-export const put = <T>(path: string, body: unknown, token?: string) =>
-  apiRequest<T>(path, { method: 'PUT', body, token })
+export const put = <T>(path: string, body: unknown) =>
+  apiRequest<T>(path, { method: 'PUT', body })
 
-export const del = <T>(path: string, token?: string) =>
-  apiRequest<T>(path, { method: 'DELETE', token })
+export const del = <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' })

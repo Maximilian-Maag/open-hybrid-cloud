@@ -11,9 +11,7 @@ import { Modal } from '@/components/ui/Modal'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
-interface Props { token: string }
-
-export function CostCentersManager({ token }: Props) {
+export function CostCentersManager() {
   const lang = useLang()
   const [ccs, setCcs] = useState<CostCenter[]>([])
   const [loading, setLoading] = useState(true)
@@ -30,14 +28,14 @@ export function CostCentersManager({ token }: Props) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setCcs((await get<CostCenter[]>('/api/admin/cost-centers', token)) ?? [])
+      setCcs((await get<CostCenter[]>('/api/admin/cost-centers')) ?? [])
       setDeleteError(null)
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : t('failedToLoadCostCenters', lang))
     } finally {
       setLoading(false)
     }
-  }, [token, lang])
+  }, [lang])
 
   useEffect(() => { void load() }, [load])
 
@@ -54,7 +52,7 @@ export function CostCentersManager({ token }: Props) {
     setSaving(true); setFormError(null)
     try {
       const body: CreateCostCenterRequest = { code: formCode.trim(), name: formName.trim(), active: formActive }
-      await post('/api/admin/cost-centers', body, token)
+      await post('/api/admin/cost-centers', body)
       setAddOpen(false); void load()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : t('genericFailed', lang))
@@ -69,7 +67,7 @@ export function CostCentersManager({ token }: Props) {
     setSaving(true); setFormError(null)
     try {
       const body: UpdateCostCenterRequest = { code: formCode.trim(), name: formName.trim(), active: formActive }
-      await put(`/api/admin/cost-centers/${editTarget.id}`, body, token)
+      await put(`/api/admin/cost-centers/${editTarget.id}`, body)
       setEditTarget(null); void load()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : t('genericFailed', lang))
@@ -82,7 +80,7 @@ export function CostCentersManager({ token }: Props) {
     if (!deleteTarget) return
     setSaving(true); setDeleteError(null)
     try {
-      await del(`/api/admin/cost-centers/${deleteTarget.id}`, token)
+      await del(`/api/admin/cost-centers/${deleteTarget.id}`)
       setDeleteTarget(null); void load()
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
@@ -93,7 +91,7 @@ export function CostCentersManager({ token }: Props) {
 
   async function toggleActive(cc: CostCenter) {
     try {
-      await put(`/api/admin/cost-centers/${cc.id}`, { active: !cc.active }, token)
+      await put(`/api/admin/cost-centers/${cc.id}`, { active: !cc.active })
       void load()
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : t('failedToUpdateGeneric', lang))

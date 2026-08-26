@@ -27,7 +27,6 @@ interface OrderFormProps {
   product: ProductDetail
   projects: Project[]
   costCenters: CostCenter[]
-  token: string
   lang?: string
   exchangeRates?: Record<string, number>
   localeCurrency?: string
@@ -44,7 +43,6 @@ export function OrderForm({
   product,
   projects,
   costCenters,
-  token,
   lang = 'en',
   exchangeRates = {},
   localeCurrency = 'EUR',
@@ -84,14 +82,14 @@ export function OrderForm({
   useEffect(() => {
     if (!envId) { setResolvedParameters(product.parameters); return }
     let stale = false
-    get<ProductDetail>(`/api/catalog/${product.id}?lang=${lang}&environmentId=${envId}`, token)
+    get<ProductDetail>(`/api/catalog/${product.id}?lang=${lang}&environmentId=${envId}`)
       // Guard on `parameters`, not just on `detail`: a truthy-but-shapeless
       // response (an error envelope, an empty array) would otherwise store
       // undefined and crash the next render on `.filter`.
       .then((detail) => { if (!stale && detail?.parameters) setResolvedParameters(detail.parameters) })
       .catch(() => { /* keep the unresolved list — submit still validates server-side */ })
     return () => { stale = true }
-  }, [envId, product.id, product.parameters, lang, token])
+  }, [envId, product.id, product.parameters, lang])
 
   const selectedEnv = product.environments.find((e) => String(e.environmentId) === envId)
   // `overhead` used to be lumped in with `select` and rendered a picker, which
@@ -122,7 +120,6 @@ export function OrderForm({
     let stale = false
     get<InfrastructureElement[]>(
       `/api/infrastructure?productId=${product.id}&projectId=${projectId}`,
-      token,
     )
       .then((rows) => {
         if (stale) return
@@ -139,7 +136,7 @@ export function OrderForm({
       })
       .catch(() => { if (!stale) setTemplates([]) })
     return () => { stale = true }
-  }, [projectId, product.id, token])
+  }, [projectId, product.id])
 
   // Quick reorder: once the project's elements have loaded, adopt the one the
   // Sensitive parameter values come back redacted (#131), so a template or a
@@ -218,7 +215,7 @@ export function OrderForm({
         // environments after ticking the box must not smuggle the flag through.
         ...(trialAvailable && trial ? { trial: true } : {}),
       }
-      await post<Order>('/api/orders', body, token)
+      await post<Order>('/api/orders', body)
       setSuccess(true)
       router.push('/orders')
       router.refresh()

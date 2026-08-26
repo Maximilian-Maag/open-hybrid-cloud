@@ -12,11 +12,7 @@ import { Select } from '@/components/ui/Select'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
-interface Props {
-  token: string
-}
-
-export function NewProjectButton({ token }: Props) {
+export function NewProjectButton() {
   const router = useRouter()
   const lang = useLang()
   const [open, setOpen] = useState(false)
@@ -30,7 +26,7 @@ export function NewProjectButton({ token }: Props) {
   async function openModal() {
     setOpen(true)
     try {
-      const ccs = await get<CostCenter[]>('/api/admin/cost-centers', token)
+      const ccs = await get<CostCenter[]>('/api/admin/cost-centers')
       setCostCenters(ccs?.filter((c) => c.active) ?? [])
     } catch { /* ignore */ }
   }
@@ -46,7 +42,7 @@ export function NewProjectButton({ token }: Props) {
         description: description.trim() || undefined,
         costCenterId: costCenterId ? Number(costCenterId) : undefined,
       }
-      await post('/api/projects', body, token)
+      await post('/api/projects', body)
       setOpen(false)
       setName(''); setDescription(''); setCostCenterId('')
       router.refresh()

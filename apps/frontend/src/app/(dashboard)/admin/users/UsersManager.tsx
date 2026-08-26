@@ -15,8 +15,6 @@ import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 import { ActiveSessions } from '@/components/forms/ActiveSessions'
 
-interface Props { token: string }
-
 const ROLE_KEYS: Record<Role, 'roleProjectManager' | 'roleAdmin' | 'roleRoot'> = {
   project_manager: 'roleProjectManager',
   admin: 'roleAdmin',
@@ -29,7 +27,7 @@ const roleBadge: Record<Role, string> = {
   root: 'bg-purple-100 text-purple-700',
 }
 
-export function UsersManager({ token }: Props) {
+export function UsersManager() {
   const lang = useLang()
   const ROLES: { value: Role; label: string }[] = (Object.keys(ROLE_KEYS) as Role[]).map((value) => ({
     value, label: t(ROLE_KEYS[value], lang),
@@ -57,14 +55,14 @@ export function UsersManager({ token }: Props) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setUsers((await get<User[]>('/api/admin/users', token)) ?? [])
+      setUsers((await get<User[]>('/api/admin/users')) ?? [])
       setDeleteError(null)
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : t('failedToLoadUsers', lang))
     } finally {
       setLoading(false)
     }
-  }, [token, lang])
+  }, [lang])
 
   useEffect(() => { void load() }, [load])
 
@@ -86,7 +84,7 @@ export function UsersManager({ token }: Props) {
         role: formRole,
         password: formPassword,
       }
-      await post('/api/admin/users', body, token)
+      await post('/api/admin/users', body)
       setAddOpen(false)
       toast(t('userCreatedToast', lang))
       void load()
@@ -104,7 +102,7 @@ export function UsersManager({ token }: Props) {
     setSaving(true); setFormError(null)
     try {
       const body: UpdateUserRequest = { name: formName.trim(), role: formRole }
-      await put(`/api/admin/users/${id}`, body, token)
+      await put(`/api/admin/users/${id}`, body)
       setEditTarget(null)
       setFlashId(id)
       toast(t('userUpdatedToast', lang))
@@ -120,7 +118,7 @@ export function UsersManager({ token }: Props) {
     if (!deleteTarget) return
     setSaving(true); setDeleteError(null)
     try {
-      await del(`/api/admin/users/${deleteTarget.id}`, token)
+      await del(`/api/admin/users/${deleteTarget.id}`)
       setDeleteTarget(null)
       toast(t('userDeletedToast', lang), 'info')
       void load()
@@ -133,7 +131,7 @@ export function UsersManager({ token }: Props) {
 
   async function toggleActive(user: User) {
     try {
-      await put(`/api/admin/users/${user.id}`, { active: !user.active } satisfies UpdateUserRequest, token)
+      await put(`/api/admin/users/${user.id}`, { active: !user.active } satisfies UpdateUserRequest)
       void load()
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : t('failedToUpdateGeneric', lang))
@@ -229,7 +227,7 @@ export function UsersManager({ token }: Props) {
             dialog was not open when the page rendered, so there is nothing to have
             fetched ahead of time. */}
         {sessionsTarget && (
-          <ActiveSessions key={sessionsTarget.id} token={token} userId={sessionsTarget.id} />
+          <ActiveSessions key={sessionsTarget.id} userId={sessionsTarget.id} />
         )}
       </Modal>
 

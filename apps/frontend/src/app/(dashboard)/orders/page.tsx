@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { Order } from '@open-hybrid-cloud/types'
@@ -14,13 +14,12 @@ export default async function OrdersPage() {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
 
   // Let a genuine fetch failure throw to the (dashboard) error boundary so an
   // outage is not mistaken for an empty list. A successful empty response
   // still renders the empty state below.
-  const orders = (await get<Order[]>(`/api/orders?lang=${lang}`, token)) ?? []
+  const orders = (await get<Order[]>(`/api/orders?lang=${lang}`)) ?? []
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">

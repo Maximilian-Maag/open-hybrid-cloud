@@ -161,7 +161,7 @@ describe('CatalogPage favorites', () => {
 
     // The server answers with what it knew BEFORE the click: nothing starred.
     releaseFavorites([])
-    await waitFor(() => expect(mockedPut).toHaveBeenCalledWith('/api/favorites/10', {}, 'test-token'))
+    await waitFor(() => expect(mockedPut).toHaveBeenCalledWith('/api/favorites/10', {}))
 
     // The star stays filled — and the product now also appears in the favourites
     // section, which is what a reverted state would have hidden. (Its card is a
@@ -181,14 +181,14 @@ describe('CatalogPage favorites', () => {
     const card = screen.getByTestId('product-card-10')
 
     await user.click(within(card).getByRole('button', { name: /add to favorites/i }))
-    expect(mockedPut).toHaveBeenCalledWith('/api/favorites/10', {}, 'test-token')
+    expect(mockedPut).toHaveBeenCalledWith('/api/favorites/10', {})
 
     // The star flips optimistically, so the un-star action is available at once.
     await waitFor(() =>
       expect(within(screen.getAllByTestId('product-card-10')[0]).getByRole('button', { name: /remove from favorites/i })).toBeInTheDocument(),
     )
     await user.click(within(screen.getAllByTestId('product-card-10')[0]).getByRole('button', { name: /remove from favorites/i }))
-    expect(mockedDel).toHaveBeenCalledWith('/api/favorites/10', 'test-token')
+    expect(mockedDel).toHaveBeenCalledWith('/api/favorites/10')
   })
 
   it('reveals the favourites section immediately on the first star', async () => {
@@ -253,7 +253,7 @@ describe('CatalogPage favorites', () => {
     mockApi([])
     render(<CatalogPage />)
 
-    await waitFor(() => expect(mockedGet).toHaveBeenCalledWith('/api/favorites?lang=en', 'test-token'))
+    await waitFor(() => expect(mockedGet).toHaveBeenCalledWith('/api/favorites?lang=en'))
   })
 })
 
@@ -358,7 +358,7 @@ describe('CatalogPage server-side filtering and paging', () => {
     const card = within(section).getByTestId(`product-card-${offPage}`)
     await user.click(within(card).getByRole('button', { name: /remove from favorites/i }))
 
-    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith(`/api/favorites/${offPage}`, 'test-token'))
+    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith(`/api/favorites/${offPage}`))
 
     // Rolled back: the card must still be on the shelf.
     await waitFor(() => expect(favoritesSection()).toBeInTheDocument())

@@ -65,7 +65,7 @@ describe('SecurityKeysCard lifts the enrolment gate (#197)', () => {
       .mockResolvedValueOnce({} as never) // register/options
       .mockResolvedValueOnce({ id: 1, label: 'YubiKey 5C' } as never) // register/verify
 
-    render(<SecurityKeysCard token="t" />)
+    render(<SecurityKeysCard />)
     await registerAKey()
 
     await waitFor(() => expect(updateSession).toHaveBeenCalledWith({ mustEnrollSecondFactor: false }))
@@ -80,7 +80,7 @@ describe('SecurityKeysCard lifts the enrolment gate (#197)', () => {
       .mockResolvedValueOnce({} as never)
       .mockResolvedValueOnce({ id: 1, label: 'YubiKey 5C' } as never)
 
-    render(<SecurityKeysCard token="t" />)
+    render(<SecurityKeysCard />)
     await registerAKey()
 
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2))
@@ -93,7 +93,7 @@ describe('SecurityKeysCard lifts the enrolment gate (#197)', () => {
     sessionData = { mustEnrollSecondFactor: true }
     mockedPost.mockResolvedValueOnce({} as never).mockRejectedValueOnce(new Error('verify failed'))
 
-    render(<SecurityKeysCard token="t" />)
+    render(<SecurityKeysCard />)
     await registerAKey()
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())

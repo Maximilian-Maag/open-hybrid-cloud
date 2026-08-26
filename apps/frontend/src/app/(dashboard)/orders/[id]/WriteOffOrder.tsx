@@ -26,7 +26,7 @@ import { t } from '@/lib/i18n'
  * running — the reason the reason field is mandatory is that this writes a
  * failure nobody observed, and the audit entry has to say who decided that.
  */
-export function WriteOffOrder({ orderId, token }: { orderId: number; token: string }) {
+export function WriteOffOrder({ orderId }: { orderId: number }) {
   const router = useRouter()
   const lang = useLang()
   const [open, setOpen] = useState(false)
@@ -38,7 +38,7 @@ export function WriteOffOrder({ orderId, token }: { orderId: number; token: stri
     setBusy(true)
     setError(null)
     try {
-      await post(`/api/orders/${orderId}/write-off`, { reason }, token)
+      await post(`/api/orders/${orderId}/write-off`, { reason })
       setOpen(false)
       setReason('')
       router.refresh()

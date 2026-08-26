@@ -17,10 +17,6 @@ import { Button } from '@/components/ui/Button'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
-interface Props {
-  token: string
-}
-
 /**
  * Enrollment is a three-screen wizard, and the order is load-bearing.
  *
@@ -35,7 +31,7 @@ interface Props {
  */
 type Step = 'idle' | 'scanning' | 'codes'
 
-export function TwoFactorCard({ token }: Props) {
+export function TwoFactorCard() {
   const lang = useLang()
   // Read from the session rather than passed in: the same flag the middleware
   // redirected on, so the card cannot disagree with the thing that sent the user
@@ -54,7 +50,7 @@ export function TwoFactorCard({ token }: Props) {
 
   const loadStatus = async () => {
     try {
-      setStatus(await get<TwoFactorStatusResponse>('/api/users/me/2fa', token))
+      setStatus(await get<TwoFactorStatusResponse>('/api/users/me/2fa'))
     } catch {
       // A status that cannot be read is not worth an error banner over the whole
       // settings page; the card simply shows nothing until it can.
@@ -62,10 +58,11 @@ export function TwoFactorCard({ token }: Props) {
     }
   }
 
+  // Once, on mount. The dependency this used to have was `token`, and the token
+  // is no longer a prop — the API call carries the session cookie instead (#146).
   useEffect(() => {
     void loadStatus()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token])
+  }, [])
 
   async function handleStart(e: React.FormEvent) {
     e.preventDefault()
@@ -76,7 +73,7 @@ export function TwoFactorCard({ token }: Props) {
         password,
         ...(status?.enabled ? { code: currentCode } : {}),
       }
-      setOffer(await post<StartTotpEnrollmentResponse>('/api/users/me/2fa/enroll', body, token))
+      setOffer(await post<StartTotpEnrollmentResponse>('/api/users/me/2fa/enroll', body))
       setStep('scanning')
       // The password and the current code have done their job; holding them in
       // state for the rest of the wizard serves no purpose.
@@ -98,7 +95,6 @@ export function TwoFactorCard({ token }: Props) {
       const result = await post<ConfirmTotpEnrollmentResponse>(
         '/api/users/me/2fa/confirm',
         body,
-        token,
       )
       setRecoveryCodes(result.recoveryCodes)
       // Drop the secret from memory the moment it is no longer needed on screen.

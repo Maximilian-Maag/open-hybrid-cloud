@@ -664,6 +664,7 @@ export type Translations = {
   moveDown: string
   maxPicturesPerProduct: string
   removeOneToAddAnother: string
+  unpricedNotice: string
 }
 
 // English is the complete reference table; every other language may omit keys
@@ -1261,6 +1262,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Преместване надолу',
     maxPicturesPerProduct: 'Максимален брой изображения на продукт',
     removeOneToAddAnother: 'Премахнете едно, за да добавите друго.',
+    unpricedNotice: 'В тази сума липсват поръчки без възстановима цена:',
   },
   cs: {
     noActiveSessions: 'Žádná aktivní přihlášení.',
@@ -1851,6 +1853,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Posunout dolů',
     maxPicturesPerProduct: 'Maximální počet obrázků na produkt',
     removeOneToAddAnother: 'Chcete-li přidat další, jeden odeberte.',
+    unpricedNotice: 'V tomto součtu chybí objednávky bez zjistitelné ceny:',
   },
   da: {
     noActiveSessions: 'Ingen aktive sessioner.',
@@ -2441,6 +2444,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Flyt ned',
     maxPicturesPerProduct: 'Maksimalt antal billeder pr. produkt',
     removeOneToAddAnother: 'Fjern et for at tilføje et andet.',
+    unpricedNotice: 'Ordrer uden en pris, der kan genfindes, mangler i denne sum:',
   },
   de: {
     noActiveSessions: 'Keine aktiven Sitzungen.',
@@ -3031,6 +3035,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Nach unten',
     maxPicturesPerProduct: 'Maximale Bildanzahl pro Produkt',
     removeOneToAddAnother: 'Entfernen Sie ein Bild, um ein weiteres hinzuzufügen.',
+    unpricedNotice: 'Bestellungen ohne ermittelbaren Preis fehlen in dieser Summe:',
   },
   el: {
     noActiveSessions: 'Καμία ενεργή συνεδρία.',
@@ -3621,6 +3626,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Μετακίνηση κάτω',
     maxPicturesPerProduct: 'Μέγιστος αριθμός εικόνων ανά προϊόν',
     removeOneToAddAnother: 'Αφαιρέστε μία για να προσθέσετε άλλη.',
+    unpricedNotice: 'Λείπουν από αυτό το σύνολο οι παραγγελίες χωρίς ανακτήσιμη τιμή:',
   },
   en: {
     noActiveSessions: 'No active sessions.',
@@ -4211,6 +4217,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Move down',
     maxPicturesPerProduct: 'Maximum pictures per product',
     removeOneToAddAnother: 'Remove one to add another.',
+    unpricedNotice: 'Orders with no recoverable price are missing from this total:',
   },
   es: {
     noActiveSessions: 'No hay sesiones activas.',
@@ -4801,6 +4808,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Mover abajo',
     maxPicturesPerProduct: 'Número máximo de imágenes por producto',
     removeOneToAddAnother: 'Elimine una para añadir otra.',
+    unpricedNotice: 'Faltan en este total los pedidos sin precio recuperable:',
   },
   et: {
     noActiveSessions: 'Aktiivseid sessioone pole.',
@@ -5391,6 +5399,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Liiguta alla',
     maxPicturesPerProduct: 'Piltide ülempiir toote kohta',
     removeOneToAddAnother: 'Eemaldage üks, et lisada teine.',
+    unpricedNotice: 'Tellimused, mille hinda ei õnnestu tuvastada, puuduvad sellest summast:',
   },
   fi: {
     noActiveSessions: 'Ei aktiivisia istuntoja.',
@@ -5981,6 +5990,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Siirrä alas',
     maxPicturesPerProduct: 'Kuvien enimmäismäärä tuotetta kohden',
     removeOneToAddAnother: 'Poista yksi lisätäksesi toisen.',
+    unpricedNotice: 'Tilaukset, joiden hintaa ei saada selville, puuttuvat tästä summasta:',
   },
   fr: {
     noActiveSessions: 'Aucune session active.',
@@ -6571,6 +6581,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Déplacer vers le bas',
     maxPicturesPerProduct: 'Nombre maximal d’images par produit',
     removeOneToAddAnother: 'Supprimez-en une pour en ajouter une autre.',
+    unpricedNotice: 'Des commandes sans prix récupérable manquent dans ce total :',
   },
   ga: {
     noActiveSessions: 'Níl aon seisiún gníomhach.',
@@ -7161,6 +7172,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Bog síos',
     maxPicturesPerProduct: 'Uaslíon íomhánna in aghaidh an táirge',
     removeOneToAddAnother: 'Bain ceann amach chun ceann eile a chur leis.',
+    unpricedNotice: 'Tá orduithe gan praghas inaisghabhála in easnamh ón iomlán seo:',
   },
   hr: {
     noActiveSessions: 'Nema aktivnih sesija.',
@@ -7751,6 +7763,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Pomakni dolje',
     maxPicturesPerProduct: 'Najveći broj slika po proizvodu',
     removeOneToAddAnother: 'Uklonite jednu da biste dodali drugu.',
+    unpricedNotice: 'U ovom zbroju nedostaju narudžbe bez utvrdive cijene:',
   },
   hu: {
     noActiveSessions: 'Nincsenek aktív munkamenetek.',
@@ -8341,6 +8354,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Mozgatás lefelé',
     maxPicturesPerProduct: 'Képek maximális száma termékenként',
     removeOneToAddAnother: 'Távolítson el egyet, hogy másikat adhasson hozzá.',
+    unpricedNotice: 'A hiányzó, visszakereshető ár nélküli rendelések nem szerepelnek ebben az összegben:',
   },
   it: {
     noActiveSessions: 'Nessuna sessione attiva.',
@@ -8931,6 +8945,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Sposta giù',
     maxPicturesPerProduct: 'Numero massimo di immagini per prodotto',
     removeOneToAddAnother: 'Rimuovine una per aggiungerne un’altra.',
+    unpricedNotice: 'In questo totale mancano gli ordini senza prezzo recuperabile:',
   },
   lt: {
     noActiveSessions: 'Nėra aktyvių seansų.',
@@ -9521,6 +9536,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Perkelti žemyn',
     maxPicturesPerProduct: 'Didžiausias paveikslėlių skaičius vienam produktui',
     removeOneToAddAnother: 'Pašalinkite vieną, kad galėtumėte pridėti kitą.',
+    unpricedNotice: 'Šioje sumoje trūksta užsakymų, kurių kainos nepavyksta nustatyti:',
   },
   lv: {
     noActiveSessions: 'Nav aktīvu sesiju.',
@@ -10111,6 +10127,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Pārvietot uz leju',
     maxPicturesPerProduct: 'Maksimālais attēlu skaits vienam produktam',
     removeOneToAddAnother: 'Noņemiet vienu, lai pievienotu citu.',
+    unpricedNotice: 'Šajā kopsummā trūkst pasūtījumu, kuriem cenu nevar atgūt:',
   },
   mt: {
     noActiveSessions: 'Ebda sessjoni attiva.',
@@ -10701,6 +10718,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Mexxi ’l isfel',
     maxPicturesPerProduct: 'Numru massimu ta’ stampi għal kull prodott',
     removeOneToAddAnother: 'Neħħi waħda biex iżżid oħra.',
+    unpricedNotice: 'Nieqsa minn dan it-total l-ordnijiet mingħajr prezz li jista’ jinstab:',
   },
   nl: {
     noActiveSessions: 'Geen actieve sessies.',
@@ -11291,6 +11309,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Omlaag verplaatsen',
     maxPicturesPerProduct: 'Maximaal aantal afbeeldingen per product',
     removeOneToAddAnother: 'Verwijder er een om er een toe te voegen.',
+    unpricedNotice: 'Bestellingen zonder achterhaalbare prijs ontbreken in dit totaal:',
   },
   pl: {
     noActiveSessions: 'Brak aktywnych sesji.',
@@ -11881,6 +11900,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Przenieś w dół',
     maxPicturesPerProduct: 'Maksymalna liczba zdjęć na produkt',
     removeOneToAddAnother: 'Usuń jedno, aby dodać kolejne.',
+    unpricedNotice: 'W tej sumie brakuje zamówień bez możliwej do odtworzenia ceny:',
   },
   pt: {
     noActiveSessions: 'Nenhuma sessão ativa.',
@@ -12471,6 +12491,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Mover para baixo',
     maxPicturesPerProduct: 'Número máximo de imagens por produto',
     removeOneToAddAnother: 'Remova uma para adicionar outra.',
+    unpricedNotice: 'Faltam neste total as encomendas sem preço recuperável:',
   },
   ro: {
     noActiveSessions: 'Nicio sesiune activă.',
@@ -13061,6 +13082,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Mută în jos',
     maxPicturesPerProduct: 'Numărul maxim de imagini per produs',
     removeOneToAddAnother: 'Eliminați una pentru a adăuga alta.',
+    unpricedNotice: 'Din acest total lipsesc comenzile fără preț recuperabil:',
   },
   ru: {
     noActiveSessions: 'Активных сеансов нет.',
@@ -13651,6 +13673,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Переместить вниз',
     maxPicturesPerProduct: 'Максимум изображений на товар',
     removeOneToAddAnother: 'Удалите одно, чтобы добавить другое.',
+    unpricedNotice: 'В этой сумме отсутствуют заказы, цену которых восстановить не удалось:',
   },
   sk: {
     noActiveSessions: 'Žiadne aktívne sedenia.',
@@ -14241,6 +14264,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Posunúť nadol',
     maxPicturesPerProduct: 'Maximálny počet obrázkov na produkt',
     removeOneToAddAnother: 'Ak chcete pridať ďalší, jeden odstráňte.',
+    unpricedNotice: 'V tomto súčte chýbajú objednávky bez zistiteľnej ceny:',
   },
   sl: {
     noActiveSessions: 'Ni aktivnih sej.',
@@ -14831,6 +14855,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Premakni navzdol',
     maxPicturesPerProduct: 'Največje število slik na izdelek',
     removeOneToAddAnother: 'Odstranite eno, da dodate drugo.',
+    unpricedNotice: 'V tej vsoti manjkajo naročila brez ugotovljive cene:',
   },
   sv: {
     noActiveSessions: 'Inga aktiva sessioner.',
@@ -15421,6 +15446,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     moveDown: 'Flytta ned',
     maxPicturesPerProduct: 'Högsta antal bilder per produkt',
     removeOneToAddAnother: 'Ta bort en för att lägga till en annan.',
+    unpricedNotice: 'Order utan återfinnbart pris saknas i denna summa:',
   },
 }
 

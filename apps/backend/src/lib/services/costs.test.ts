@@ -178,6 +178,51 @@ describe('getCostReport — which price', () => {
     expect(result.ok && result.data.orderCount).toBe(1)
   })
 
+  // The combination the existing test above does not cover: no snapshot AND the
+  // offering withdrawn. The order then has no price anywhere, and it used to
+  // contribute a silent 0 while still being counted — historical spend leaving
+  // the total with nothing saying so (#189).
+  it('reports an order with no recoverable price instead of counting it as free', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: 'ignored', noSnapshot: true })
+    await db.delete(productEnvironments).where(eq(productEnvironments.productId, ctx.nginx.id))
+
+    const result = await getCostReport(makeSession(ctx.admin))
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Still counted — the order happened.
+    expect(result.data.orderCount).toBe(1)
+    // And it says so, rather than presenting a total that is quietly short.
+    expect(result.data.unpricedOrders).toBe(1)
+    expect(result.data.totalEur).toBe(0)
+  })
+
+  // `null` is not `'0'`. An offering priced at zero is a decision; an offering
+  // that is gone is a gap, and the report has to tell them apart.
+  it('does not confuse a free offering with an unpriced one', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '0.00' })
+
+    const result = await getCostReport(makeSession(ctx.admin))
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.orderCount).toBe(1)
+    expect(result.data.unpricedOrders).toBe(0)
+    expect(result.data.totalEur).toBe(0)
+  })
+
+  it('counts nothing as unpriced when every order has a price', async () => {
+    const ctx = await setup()
+    await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: '10.00' })
+
+    const result = await getCostReport(makeSession(ctx.admin))
+
+    expect(result.ok && result.data.unpricedOrders).toBe(0)
+    expect(result.ok && result.data.totalEur).toBe(10)
+  })
+
   it('treats an unparseable price as zero rather than NaN', async () => {
     const ctx = await setup()
     await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price: 'twelve' })
@@ -636,6 +681,57 @@ describe('getCostRows', () => {
     const result = await getCostRows(makeSession(ctx.pm))
     expect(result.ok && result.data).toHaveLength(1)
     expect(result.ok && result.data[0].projectName).toBe('Webshop')
+  })
+
+  // The export exists so the report can be reconciled, and the CSV carries two
+  // money columns that do NOT agree with each other by design: `priceEur` is the
+  // rounded unit, `lineTotalEur` is the rounded line. Multiplying the first gives
+  // a different answer from the second at exactly the rates where it is hard to
+  // notice, so which one reconciles has to be pinned rather than assumed (#189).
+  it('reconciles the line total with the report, not the rounded unit', async () => {
+    const ctx = await setup()
+    await db.insert(exchangeRates).values({ currencyCode: 'USD', rate: '1.09' })
+    const order = await spend(ctx, {
+      projectId: ctx.mine.id,
+      productId: ctx.nginx.id,
+      price: '33.33',
+      currency: 'USD',
+    })
+    await db.update(orders).set({ quantity: 3 }).where(eq(orders.id, order.id))
+
+    const rows = await getCostRows(makeSession(ctx.admin))
+    const report = await getCostReport(makeSession(ctx.admin))
+
+    expect(rows.ok).toBe(true)
+    expect(report.ok).toBe(true)
+    if (!rows.ok || !report.ok) return
+
+    const line = rows.data[0]
+    expect(line.quantity).toBe(3)
+    // 33.33 USD at 1.09 is 30.5779… — rounded for display, and that rounding is
+    // exactly what must not be carried into the multiplication.
+    expect(line.priceEur).toBe(30.58)
+    expect(line.lineTotalEur).toBe(91.73)
+    expect((line.priceEur ?? 0) * line.quantity).toBeCloseTo(91.74, 2)
+    // The line total is the one that matches the report.
+    expect(line.lineTotalEur).toBe(report.data.totalEur)
+  })
+
+  it('sums to the report across several lines', async () => {
+    const ctx = await setup()
+    await db.insert(exchangeRates).values({ currencyCode: 'USD', rate: '1.09' })
+    for (const price of ['33.33', '10.01', '7.77']) {
+      await spend(ctx, { projectId: ctx.mine.id, productId: ctx.nginx.id, price, currency: 'USD' })
+    }
+
+    const rows = await getCostRows(makeSession(ctx.admin))
+    const report = await getCostReport(makeSession(ctx.admin))
+    if (!rows.ok || !report.ok) throw new Error('expected both to succeed')
+
+    const summed = rows.data.reduce((a, r) => a + (r.lineTotalEur ?? 0), 0)
+    // Per-line rounding against a rounded grand total: they agree to the cent
+    // here, and this is the test that says so if that ever stops being true.
+    expect(Math.abs(summed - report.data.totalEur)).toBeLessThan(0.02)
   })
 })
 

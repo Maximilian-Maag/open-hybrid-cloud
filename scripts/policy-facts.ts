@@ -1445,17 +1445,39 @@ const SERVER_ONLY_MODULES = ['@/lib/serverApi', '@/lib/auth']
  * at build time, so by the time any code runs the damage is in the bundle. Only
  * reading the imports catches it, and only before the build.
  */
+/**
+ * Whether the file opens with the 'use client' directive.
+ *
+ * Asked of the AST rather than of the text. A directive prologue is defined as
+ * leading expression statements whose expression is a string literal, so the
+ * parser has already dealt with the parts that make this awkward to match:
+ * comments above it are not statements at all, and a `'use client'` further down
+ * the file is an ordinary expression rather than a directive.
+ *
+ * It also avoids a regex over the whole prelude. The first version of this was
+ * one, and CodeQL was right about it: alternation with a nested quantifier over
+ * comment syntax backtracks exponentially on a file full of `*\/\/*`.
+ */
+function hasUseClientDirective(sf: ts.SourceFile): boolean {
+  for (const statement of sf.statements) {
+    if (!ts.isExpressionStatement(statement)) return false
+    const expr = statement.expression
+    if (!ts.isStringLiteral(expr) && !ts.isNoSubstitutionTemplateLiteral(expr)) return false
+    if (expr.text === 'use client') return true
+    // Another directive ('use strict', …) — keep looking through the prologue.
+  }
+  return false
+}
+
 function clientImportFacts(): ClientImportFact[] {
   const out: ClientImportFact[] = []
   const files = walk(`${FRONTEND}/src`, (rel) =>
     (rel.endsWith('.tsx') || rel.endsWith('.ts')) && !rel.includes('.test.'))
 
   for (const rel of files) {
-    const text = read(rel)
-    // The directive is only a directive at the very top of the file.
-    if (!/^\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*)*['"]use client['"]/.test(text)) continue
-
     const sf = parse(rel)
+    if (!hasUseClientDirective(sf)) continue
+
     for (const statement of sf.statements) {
       if (!ts.isImportDeclaration(statement)) continue
       if (!ts.isStringLiteral(statement.moduleSpecifier)) continue

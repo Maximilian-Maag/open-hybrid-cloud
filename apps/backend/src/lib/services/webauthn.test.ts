@@ -35,6 +35,7 @@ const {
   startAuthentication,
   verifyAuthentication: verifyAssertion,
   removeCredential,
+  removeCredentialPasswordLimit,
   listCredentials,
 } = await import('./webauthn')
 
@@ -54,6 +55,8 @@ const response = (id: string) => ({ id, response: { transports: ['usb'] } }) as 
 beforeEach(() => {
   verifyRegistration.mockReset()
   verifyAuthentication.mockReset()
+  // Module-level by design, so one case's wrong guesses would throttle the next.
+  removeCredentialPasswordLimit.clear()
 })
 
 /** An administrator who may hold a factor but has none yet. */
@@ -339,6 +342,80 @@ describe('removal', () => {
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(403)
+  })
+
+  // The check runs inside an authenticated session, which is where a session
+  // thief already is. Without a counter they could grind the account password
+  // against a live bcrypt — worth far more than the key removal it guards.
+  it('stops guessing at the password after five wrong ones', async () => {
+    const u = await admin()
+    await register(u.id, 'key-1')
+    await register(u.id, 'key-2')
+    const [first] = await listCredentials(u.id)
+
+    for (let i = 0; i < 5; i++) {
+      const attempt = await removeCredential(u.id, first.id, `guess-${i}`)
+      expect(attempt.ok).toBe(false)
+      if (!attempt.ok) expect(attempt.status).toBe(403)
+    }
+
+    const blocked = await removeCredential(u.id, first.id, 'guess-6')
+    expect(blocked.ok).toBe(false)
+    if (!blocked.ok) expect(blocked.status).toBe(429)
+
+    // And the RIGHT password is refused too, because the budget is spent — that
+    // is what makes it a limit rather than an inconvenience.
+    const withTruth = await removeCredential(u.id, first.id, 'password123')
+    expect(withTruth.ok).toBe(false)
+    if (!withTruth.ok) expect(withTruth.status).toBe(429)
+    expect(await listCredentials(u.id)).toHaveLength(2)
+  })
+
+  it('counts one account\'s guesses against that account only', async () => {
+    const victim = await admin()
+    const other = await admin()
+    await register(victim.id, 'v-1')
+    await register(victim.id, 'v-2')
+    await register(other.id, 'o-1')
+    await register(other.id, 'o-2')
+    const [victimKey] = await listCredentials(victim.id)
+    const [otherKey] = await listCredentials(other.id)
+
+    for (let i = 0; i < 6; i++) await removeCredential(victim.id, victimKey.id, 'nope')
+
+    const unaffected = await removeCredential(other.id, otherKey.id, 'password123')
+    expect(unaffected.ok).toBe(true)
+  })
+
+  // Someone who mistyped twice and then got it right is not who this is for.
+  it('gives the budget back when the password is right', async () => {
+    const u = await admin()
+    await register(u.id, 'key-1')
+    await register(u.id, 'key-2')
+    await register(u.id, 'key-3')
+    const [first, second] = await listCredentials(u.id)
+
+    for (let i = 0; i < 4; i++) await removeCredential(u.id, first.id, 'nope')
+    expect((await removeCredential(u.id, first.id, 'password123')).ok).toBe(true)
+
+    // Four more would have tripped the old count. The reset means they do not.
+    for (let i = 0; i < 4; i++) await removeCredential(u.id, second.id, 'nope')
+    expect((await removeCredential(u.id, second.id, 'password123')).ok).toBe(true)
+  })
+
+  it('logs the refusal so the burst is visible after the fact', async () => {
+    const u = await admin()
+    await register(u.id, 'key-1')
+    await register(u.id, 'key-2')
+    const [first] = await listCredentials(u.id)
+
+    for (let i = 0; i < 6; i++) await removeCredential(u.id, first.id, 'nope')
+
+    const [entry] = await db
+      .select().from(auditLog)
+      .where(eq(auditLog.action, 'auth.webauthn.remove_denied'))
+      .orderBy(desc(auditLog.id)).limit(1)
+    expect(entry.details).toMatch(/too many/i)
   })
 
   it('will not remove another account\'s credential', async () => {

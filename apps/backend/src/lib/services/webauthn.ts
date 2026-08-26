@@ -14,6 +14,7 @@ import { webauthnChallenges, webauthnCredentials } from '@/lib/db/schema'
 import { logAudit } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 import { resolveRp } from '@/lib/auth/webauthnConfig'
+import { createRateLimitBucket } from '@/lib/rateLimit'
 import {
   canHoldSecondFactor,
   countUnusedRecoveryCodes,
@@ -426,6 +427,22 @@ export const verifyAuthentication = async (
  * `loadTwoFactorAccount` refuses them, because their second factor is the
  * identity provider's to manage and there is no local password to prove.
  */
+/**
+ * Guesses at the account password allowed per account, per window.
+ *
+ * The password check below is reached from an authenticated session, which is
+ * exactly the position a session thief is in — and unlike the login route, this
+ * one had no counter, so a stolen session could grind the password offline-fast
+ * against a live `bcrypt.compare`. Recovering the password is worth far more
+ * than the key removal it is guarding: it is the credential the user reuses.
+ *
+ * Five, not the login route's ten: this is a person who set the password
+ * re-typing it, not someone signing in on a new device with autofill.
+ * Per-account and not per-IP, because the account is what is under attack; the
+ * per-process caveat in `rateLimit.ts` applies here as it does there.
+ */
+export const removeCredentialPasswordLimit = createRateLimitBucket(5, 15 * 60 * 1000)
+
 export const removeCredential = async (
   userId: number,
   credentialRowId: number,
@@ -433,6 +450,17 @@ export const removeCredential = async (
 ): Promise<Result<{ removed: number }>> => {
   const account = await loadTwoFactorAccount(userId)
   if (!account.ok) return account
+
+  // Before the compare, so the cost of a guess is not paid either.
+  if (removeCredentialPasswordLimit.isRateLimited(`webauthn-remove:${userId}`)) {
+    await logAudit(
+      userId,
+      'auth.webauthn.remove_denied',
+      userId,
+      'Security key removal refused: too many wrong passwords',
+    )
+    return err(429, 'Too many attempts. Wait fifteen minutes and try again.')
+  }
 
   if (!(await bcrypt.compare(password, account.data.passwordHash))) {
     await logAudit(
@@ -443,6 +471,10 @@ export const removeCredential = async (
     )
     return err(403, 'Current password is incorrect')
   }
+
+  // The right password spends no budget: someone who mistyped twice and then got
+  // it right is not who the counter is for.
+  removeCredentialPasswordLimit.reset(`webauthn-remove:${userId}`)
 
   const remaining = (await countWebauthnCredentialsFor(userId)) - 1
   if (remaining === 0 && !(await hasConfirmedTotp(userId)) && canHoldSecondFactor(account.data.role)) {

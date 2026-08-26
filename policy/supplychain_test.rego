@@ -103,29 +103,47 @@ image(name, tag, interpolated) := {"imageRefs": [{
 	"interpolated": interpolated,
 }]}
 
-test_latest_warns_and_never_denies if {
+# DENY since #180 pinned the three that floated. The count against the tree was
+# five; it is zero, which is what lets this be a deny rather than a warn.
+test_latest_is_denied if {
 	facts := image("wiremock/wiremock", "latest", false)
-	warned := policy.warn with input as facts
 	denied := policy.deny with input as facts
-	count(denied) == 0
-	some v in warned
+	some v in denied
 	v.rule == "image_tag_is_pinned"
 	v.line == 51
-	contains(v.why, "#180")
+	contains(v.detail, "latest")
 }
 
-test_an_absent_tag_warns_and_says_why if {
+test_an_absent_tag_is_denied_and_says_why if {
 	facts := image("axllent/mailpit", "", false)
-	warned := policy.warn with input as facts
-	some v in warned
+	denied := policy.deny with input as facts
+	some v in denied
 	v.rule == "image_tag_is_pinned"
 	contains(v.detail, "carries no tag")
 }
 
+# The other half of the rule: an operator-supplied tag whose DEFAULT is latest.
+# `${IMAGE_TAG:?…}` refuses instead, and carries no `latest` to match on.
+test_an_interpolated_latest_default_is_denied if {
+	facts := image("acme/frontend", "${IMAGE_TAG:-latest}", true)
+	denied := policy.deny with input as facts
+	some v in denied
+	v.rule == "image_tag_is_pinned"
+	contains(v.detail, "falls back to")
+}
+
+test_an_interpolated_required_tag_passes if {
+	facts := image("acme/frontend", "${IMAGE_TAG:?IMAGE_TAG must be set}", true)
+	denied := policy.deny with input as facts
+	count([v | some v in denied; v.rule == "image_tag_is_pinned"]) == 0
+}
+
 test_a_pinned_tag_passes if {
 	facts := image("structurizr/lite", "2025.11.08", false)
+	denied := policy.deny with input as facts
 	warned := policy.warn with input as facts
-	count(warned) == 0
+	count([v | some v in denied; v.rule == "image_tag_is_pinned"]) == 0
+	count([v | some v in warned; v.rule == "image_tag_is_pinned"]) == 0
 }
 
 # Deliberate: these float only inside a version line, and reporting them would
@@ -136,7 +154,9 @@ test_alpine_style_tags_are_not_reported if {
 	count(warned) == 0
 }
 
-test_an_interpolated_tag_defaulting_to_latest_warns_once if {
+# Once, not twice: `${IMAGE_TAG:-latest}` is not literally `latest`, so only the
+# interpolated branch matches it. Denied since #180.
+test_an_interpolated_tag_defaulting_to_latest_is_reported_once if {
 	facts := {"imageRefs": [{
 		"file": "infra/docker-host/docker-compose.yml",
 		"line": 29,
@@ -145,9 +165,9 @@ test_an_interpolated_tag_defaulting_to_latest_warns_once if {
 		"tag": "${IMAGE_TAG:-latest}",
 		"interpolated": true,
 	}]}
-	warned := policy.warn with input as facts
-	count(warned) == 1
-	some v in warned
+	denied := policy.deny with input as facts
+	count([v | some v in denied; v.rule == "image_tag_is_pinned"]) == 1
+	some v in denied
 	contains(v.detail, "falls back to `latest`")
 }
 

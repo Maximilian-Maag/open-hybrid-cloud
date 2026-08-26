@@ -31,7 +31,10 @@ services:
   # ── SMTP mock (catches all outgoing emails) ───────────────────────────────────
 
   mailpit:
-    image: axllent/mailpit
+    # Pinned, like every other image here: the e2e suite reads mail out of this
+    # container, and a silent upstream bump breaks a suite nobody changed on a
+    # machine nobody touched. v1.30.1 is what the dev stack is running (#180).
+    image: axllent/mailpit:v1.30.1
     container_name: ohc-mailpit
     ports:
       - "1026:1025"   # SMTP
@@ -48,7 +51,10 @@ services:
   # and header: X-Gitlab-Token: dev-webhook-token
 
   wiremock:
-    image: wiremock/wiremock:latest
+    # 3.13.2, the version the stub mappings in ./wiremock/mappings were written
+    # against and the one currently running. This is the pin that matters most:
+    # the e2e suite depends on those stubs answering exactly as they do today.
+    image: wiremock/wiremock:3.13.2
     container_name: ohc-wiremock
     ports:
       - "8080:8080"

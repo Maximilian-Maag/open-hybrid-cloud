@@ -55,6 +55,10 @@ pinned_as(ref) := ref.ref if ref.ref != ""
 # rule 7 — no container image on a floating tag
 # ---------------------------------------------------------------------------
 
+# DENY since #180, which pinned the three that floated — wiremock, mailpit and
+# watchtower — and replaced the `${IMAGE_TAG:-latest}` defaults with the `:?`
+# form that refuses. The count was five; it is zero.
+#
 # `latest` and an absent tag are the same thing to Docker, and both mean "whatever
 # upstream published last". Tags that float only inside a version line —
 # `postgres:16-alpine`, `nginx:alpine` — are deliberately not reported: they are a
@@ -62,7 +66,7 @@ pinned_as(ref) := ref.ref if ref.ref != ""
 # ignore.
 floating_tags := {"latest", ""}
 
-warn contains v if {
+deny contains v if {
 	some image in input.imageRefs
 	floating_tags[image.tag]
 
@@ -74,15 +78,15 @@ warn contains v if {
 		"why": concat("", [
 			"A floating tag means the image changes underneath a file nobody edited. The e2e suite is the ",
 			"sharpest case: the stubs in infra/wiremock/mappings/ are written against one WireMock, so an ",
-			"upstream release breaks a suite nobody changed, on a machine nobody touched. Pin a version. ",
-			"Deny once #180 pins the three images that float.",
+			"upstream release breaks a suite nobody changed, on a machine nobody touched. Pin a version — ",
+			"the one that is running is the honest choice, because it is the one that demonstrably works.",
 		]),
 	}
 }
 
 # `${IMAGE_TAG:-latest}` is a different fault: the tag is operator-supplied and CI
 # sets it on release, so what is wrong is only the default.
-warn contains v if {
+deny contains v if {
 	some image in input.imageRefs
 	image.interpolated
 	contains(image.tag, "latest")
@@ -94,7 +98,7 @@ warn contains v if {
 		"detail": sprintf("`%s` falls back to `latest` when the variable is unset", [image.image]),
 		"why": concat("", [
 			"An operator who forgets to export IMAGE_TAG should get a refusal, not an arbitrary image. ",
-			"Default it to a released version instead. Deny once #180 closes.",
+			"`${IMAGE_TAG:?…}` is the form that refuses; a `:-latest` default is the form that guesses.",
 		]),
 	}
 }

@@ -26,7 +26,7 @@ services:
 
   # ── Frontend (Next.js UI) ──────────────────────────────────────────────────────
   frontend:
-    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-frontend:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-frontend:${IMAGE_TAG:?IMAGE_TAG must be set to the release you intend to run}
     container_name: open-hybrid-cloud-frontend
     expose:
       - "3000"
@@ -56,7 +56,7 @@ services:
 
   # ── Backend (Next.js API) ──────────────────────────────────────────────────────
   backend:
-    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-backend:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-backend:${IMAGE_TAG:?IMAGE_TAG must be set to the release you intend to run}
     container_name: open-hybrid-cloud-backend
     expose:
       - "3001"
@@ -114,7 +114,10 @@ services:
 
   # ── Auto-updater ───────────────────────────────────────────────────────────────
   watchtower:
-    image: containrrr/watchtower:latest
+    # 1.7.1, the version running on the dev host. Watchtower is the component
+    # that PULLS new images, so leaving it on a floating tag means the thing
+    # deciding what to update is itself updated without anyone deciding (#180).
+    image: containrrr/watchtower:1.7.1
     container_name: open-hybrid-cloud-watchtower
     environment:
       DOCKER_API_VERSION: "1.47"

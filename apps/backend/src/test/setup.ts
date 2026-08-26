@@ -53,6 +53,25 @@ const TABLES = [
 ] as const
 
 beforeAll(async () => {
+  /*
+   * A statement that cannot finish must FAIL, not hang.
+   *
+   * Set on the database, so every connection the app opens afterwards inherits
+   * it. Without it a query that blocks on a lock waits for ever: the suite stops
+   * making progress and the CI job dies on its own timeout, minutes later, with
+   * nothing saying which test or which statement. That is what the
+   * `createDelegation` deadlock did once the audit_log FK was added (#195) — an
+   * in-transaction `logAudit` on the pool connection blocks on the transaction's
+   * own `FOR UPDATE`, and only one backend is waiting, so Postgres' deadlock
+   * detector never fires either.
+   *
+   * Fifteen seconds is far past any legitimate statement here — the slowest is
+   * this DDL, which runs once and takes well under a second — and short enough
+   * that the failure names itself: "canceling statement due to statement timeout".
+   */
+  await testDb.execute(sql.raw(`ALTER DATABASE "${acquired.name}" SET statement_timeout = '15s'`))
+  await client.unsafe(`SET statement_timeout = '15s'`)
+
   // Push schema to test DB (idempotent — creates tables that don't exist)
   await testDb.execute(sql`
     CREATE TABLE IF NOT EXISTS users (
@@ -389,9 +408,16 @@ beforeAll(async () => {
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS state_key_namespace TEXT;
     -- Migration 0031: why an element has no Terraform outputs (#215).
     ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS outputs_error TEXT;
+    -- The FK is not decoration. Compared table by table against the migrations,
+    -- audit_log.user_id was the ONE foreign key this file was missing (#195) --
+    -- one precise drift, not general rot. Without it Postgres issues no
+    -- SELECT 1 FROM users ... FOR KEY SHARE on an audit insert, so a logAudit
+    -- called from inside a transaction holding FOR UPDATE on that same user row
+    -- does not deadlock here and does in production. That is how
+    -- createDelegation shipped hanging on 100% of successful creations.
     CREATE TABLE IF NOT EXISTS audit_log (
       id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT,
+      user_id BIGINT REFERENCES users(id),
       action TEXT NOT NULL,
       entity_id BIGINT,
       details TEXT NOT NULL DEFAULT '',

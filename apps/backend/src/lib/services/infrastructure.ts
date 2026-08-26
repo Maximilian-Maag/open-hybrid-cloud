@@ -350,10 +350,24 @@ export const retryProvisioning = async (
   // waiting on that element alone and complete it while nineteen were still
   // broken. For the one-element orders that were the only kind before quantity
   // existed, this loop runs exactly once and does exactly what it always did.
+  //
+  // ACTIVE siblings only (issue #188). An element the operator has already
+  // decommissioned is not part of what failed, and re-firing it did two silent
+  // kinds of damage: the code below writes every element back to 'active' and
+  // overwrites its `pipelineId`, so an in-flight destroy's callback could no
+  // longer match — `handler.ts` requires `status = 'decommissioning'` — leaving
+  // the teardown permanently unreconcilable; and an `apply` then ran
+  // concurrently with that `destroy` against the same TF_STATE_NAME, because
+  // both paths derive the suffix identically by design. An already
+  // 'decommissioned' element was resurrected outright, with an apply fired at a
+  // destroyed state.
   const siblings = await db
     .select()
     .from(infrastructureElements)
-    .where(eq(infrastructureElements.orderId, infra.orderId))
+    .where(and(
+      eq(infrastructureElements.orderId, infra.orderId),
+      eq(infrastructureElements.status, 'active'),
+    ))
     .orderBy(infrastructureElements.sequence, infrastructureElements.id)
 
   const elements = siblings.length ? siblings : [infra]

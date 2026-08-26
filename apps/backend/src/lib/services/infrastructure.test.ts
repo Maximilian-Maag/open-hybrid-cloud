@@ -609,6 +609,75 @@ describe('retryProvisioning', () => {
   const infraRow = async (id: number) =>
     (await db.select().from(infrastructureElements).where(eq(infrastructureElements.id, id)))[0]
 
+  // Retry re-fires EVERY element of the order, and the suite covered that
+  // thoroughly — but never with a sibling that is not active. That is the case
+  // where it did damage (#188).
+  describe('with a sibling the operator has already torn down', () => {
+    const withSibling = async (siblingStatus: 'decommissioning' | 'decommissioned') => {
+      const ctx = await failedDeployment()
+      const sibling = await createInfraElement(ctx.order.id, ctx.project.id, ctx.env.id, ctx.product.id, {
+        status: siblingStatus,
+        parameters: { hostname: 'web-02' },
+        pipelineId: ['destroy-pipe'],
+      })
+      mockedWebhooks.mockClear()
+      return { ...ctx, sibling }
+    }
+
+    // Writing it back to 'active' and overwriting its pipelineId means the
+    // in-flight destroy's callback can no longer match — the handler requires
+    // `status = 'decommissioning'` — so the teardown never reaches
+    // 'decommissioned' and the element becomes permanently unreconcilable.
+    it('leaves a decommissioning sibling alone', async () => {
+      const { admin, el, sibling } = await withSibling('decommissioning')
+
+      const result = await retryProvisioning(makeSession(admin), el.id)
+
+      expect(result.ok).toBe(true)
+      const row = await infraRow(sibling.id)
+      expect(row.status).toBe('decommissioning')
+      expect(row.pipelineId).toEqual(['destroy-pipe'])
+    })
+
+    it('does not resurrect a decommissioned sibling', async () => {
+      const { admin, el, sibling } = await withSibling('decommissioned')
+
+      await retryProvisioning(makeSession(admin), el.id)
+
+      expect((await infraRow(sibling.id)).status).toBe('decommissioned')
+    })
+
+    // An apply and a destroy running against the same TF_STATE_NAME at once —
+    // both paths derive the suffix identically, by design.
+    it('fires no apply for a sibling that is being torn down', async () => {
+      const { admin, el } = await withSibling('decommissioning')
+
+      await retryProvisioning(makeSession(admin), el.id)
+
+      // One trigger, for the failed element only.
+      expect(mockedWebhooks).toHaveBeenCalledTimes(1)
+      for (const call of mockedWebhooks.mock.calls) {
+        expect(call[2]).not.toMatchObject({ TF_ACTION: 'destroy' })
+        expect(call[2]).toMatchObject({ hostname: 'web-01' })
+      }
+    })
+
+    it('still re-fires the active siblings', async () => {
+      const ctx = await failedDeployment()
+      await createInfraElement(ctx.order.id, ctx.project.id, ctx.env.id, ctx.product.id, {
+        status: 'decommissioned', parameters: { hostname: 'gone' },
+      })
+      await createInfraElement(ctx.order.id, ctx.project.id, ctx.env.id, ctx.product.id, {
+        status: 'active', parameters: { hostname: 'web-03' },
+      })
+      mockedWebhooks.mockClear()
+
+      await retryProvisioning(makeSession(ctx.admin), ctx.el.id)
+
+      expect(mockedWebhooks).toHaveBeenCalledTimes(2)
+    })
+  })
+
   it('returns 404 for an unknown element', async () => {
     const { admin } = await failedDeployment()
     const result = await retryProvisioning(makeSession(admin), 999_999)

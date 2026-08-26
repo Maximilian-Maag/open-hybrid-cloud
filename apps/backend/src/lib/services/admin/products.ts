@@ -1146,51 +1146,70 @@ export const deleteProductEnvironment = async (
   envId: number,
   actorId?: number,
 ): Promise<Result<void>> => {
-  // Refuse while infrastructure is still live in this environment. Unlike
-  // deleteProduct there is no cascade to follow here — infrastructure_elements
-  // references products/deployment_environments directly — so removing the
-  // offering would silently strand running infra without the price, currency
-  // and cost-centre config that its order was placed under. Decommission first.
-  const liveInfra = await db
-    .select({ id: infrastructureElements.id })
-    .from(infrastructureElements)
-    .where(
-      and(
-        eq(infrastructureElements.productId, id),
-        eq(infrastructureElements.environmentId, envId),
-        inArray(infrastructureElements.status, ['active', 'decommissioning']),
-      ),
-    )
-    .limit(1)
-
-  if (liveInfra.length) {
-    return err(409, 'Infrastructure is still deployed in this environment — decommission it first')
-  }
-
-  const deleted = await db
-    .delete(productEnvironments)
-    .where(
-      and(
+  /*
+   * Refuse while infrastructure is still live in this environment. Unlike
+   * deleteProduct there is no cascade to follow here — infrastructure_elements
+   * references products/deployment_environments directly — so removing the
+   * offering would silently strand running infra without the price, currency and
+   * cost-centre config that its order was placed under. Decommission first.
+   *
+   * Both statements in ONE transaction, with the offering row locked FOR UPDATE
+   * (issue #188). This used to read, decide, and then delete unconditionally: an
+   * approval inserting an element between the two withdrew the offering out from
+   * under running infrastructure — exactly what the 409 exists to prevent. The
+   * lock is what provisioning contends on, so the check and the delete see the
+   * same world.
+   */
+  return await db.transaction(async (tx): Promise<Result<void>> => {
+    const [offering] = await tx
+      .select({ productId: productEnvironments.productId })
+      .from(productEnvironments)
+      .where(and(
         eq(productEnvironments.productId, id),
         eq(productEnvironments.environmentId, envId),
-      ),
-    )
-    .returning({ productId: productEnvironments.productId })
+      ))
+      .for('update')
+      .limit(1)
 
-  if (!deleted.length) return err(404, 'Not found')
+    if (!offering) return err(404, 'Not found')
 
-  // Recorded without a snapshot: there is no offering left to capture, and the
-  // withdrawal is exactly what a reader of the history needs to see.
-  await recordProductVersion({
-    productId: id,
-    environmentId: null,
-    summary: `Environment #${envId} withdrawn`,
-    userId: null,
+    const liveInfra = await tx
+      .select({ id: infrastructureElements.id })
+      .from(infrastructureElements)
+      .where(
+        and(
+          eq(infrastructureElements.productId, id),
+          eq(infrastructureElements.environmentId, envId),
+          inArray(infrastructureElements.status, ['active', 'decommissioning']),
+        ),
+      )
+      .limit(1)
+
+    if (liveInfra.length) {
+      return err(409, 'Infrastructure is still deployed in this environment — decommission it first')
+    }
+
+    await tx
+      .delete(productEnvironments)
+      .where(and(
+        eq(productEnvironments.productId, id),
+        eq(productEnvironments.environmentId, envId),
+      ))
+
+    // Recorded without a snapshot: there is no offering left to capture, and the
+    // withdrawal is exactly what a reader of the history needs to see.
+    await recordProductVersion({
+      productId: id,
+      environmentId: null,
+      summary: `Environment #${envId} withdrawn`,
+      userId: null,
+    })
+
+    // On the transaction's connection, so it rolls back with the withdrawal.
+    await logAuditWith(tx, actorId ?? null, 'product.offering_withdrawn', id, `Environment #${envId} withdrawn`)
+
+    return ok(undefined)
   })
-
-  await logAudit(actorId ?? null, 'product.offering_withdrawn', id, `Environment #${envId} withdrawn`)
-
-  return ok(undefined)
 }
 
 /**

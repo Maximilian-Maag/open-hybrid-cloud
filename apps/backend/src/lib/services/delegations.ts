@@ -3,7 +3,7 @@ import { db } from '@/lib/db/client'
 import { approvalDelegations, users } from '@/lib/db/schema'
 import { and, eq, isNull, sql, inArray } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
-import { logAudit } from '@/lib/audit'
+import { logAudit, logAuditWith } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 
 /**
@@ -331,7 +331,13 @@ export const createDelegation = async (
       .where(eq(users.id, input.toUserId))
       .limit(1)
 
-    await logAudit(
+    // `logAuditWith(tx, …)`, not `logAudit` — this is inside a transaction, and
+    // the pool connection `logAudit` uses is a different one. An entry written
+    // there would SURVIVE a rollback and claim a delegation that was never
+    // created (#188). Every other transactional path here already does this; this
+    // one was the exception.
+    await logAuditWith(
+      tx,
       session.id,
       'approval_delegation.created',
       created.id,

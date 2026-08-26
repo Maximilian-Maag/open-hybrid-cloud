@@ -40,10 +40,38 @@ const config = {
   timeoutMS: 30000,
   timeoutFactor: 2,
 
+  // The DRY run is a different clock from `timeoutMS`, and its default is five
+  // minutes for the whole suite. This suite is ~2,400 tests against a live
+  // Postgres, instrumented — comfortably inside five minutes on an idle runner
+  // and not on a busy one. Overrunning it fails the same silent way a per-test
+  // timeout does: no mutants, no score, and a `thresholds.break` that enforced
+  // nothing. Twenty minutes is far more than the ~1 minute CI has needed, which
+  // is the point — this number exists to never be the reason there is no score.
+  dryRunTimeoutMinutes: 20,
+
   // 80 is the floor, and it fails the command rather than tutting at it (#127).
   // A score below this means behaviour nobody asserts, and the survivors list in
   // the HTML report is where to look — the number itself is only the alarm.
-  thresholds: { high: 90, low: 80, break: 80 },
+  // 90 is the target the owner set, and it is a long way above where this stands
+  // today: the frontend's last completed run scored 26.80 (54.69 over the code
+  // its tests actually reach, with 4,470 mutants having no test near them at
+  // all), and the backend has never produced a number because its nightly died
+  // in the dry run — see the timeout notes above, which is what this branch
+  // fixes.
+  //
+  // `break` is 90 as well, by the owner's decision, taken with the gap in front
+  // of them. So the nightly FAILS until the score gets there — that is deliberate
+  // and it is the point: the run is a standing statement that the suite is not
+  // yet where it is meant to be, rather than a green tick over 26 percent.
+  //
+  // What that costs, said plainly so nobody mistakes it for a regression: the
+  // Mutation testing workflow is red every night until #245 closes. It is not a
+  // pull-request check and blocks nothing; a red run there means "still climbing",
+  // and the number in the job summary is the thing to read.
+  //
+  // Issue #245 tracks the climb and says where the points are — roughly two
+  // thirds of the frontend gap is files with no test at all, not weak assertions.
+  thresholds: { high: 90, low: 80, break: 90 },
 }
 
 export default config

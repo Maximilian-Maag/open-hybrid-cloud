@@ -41,16 +41,6 @@ spec:
               value: {{ .Values.backend.env.frontendUrl | quote }}
             - name: EXCHANGE_RATE_API_URL
               value: {{ .Values.backend.env.exchangeRateApiUrl | quote }}
-            {{- with .Values.backend.env.entra }}
-            {{- if .tenantId }}
-            - name: ENTRA_TENANT_ID
-              value: {{ .tenantId | quote }}
-            - name: ENTRA_CLIENT_ID
-              value: {{ .clientId | quote }}
-            - name: ENTRA_CLIENT_SECRET
-              value: {{ .clientSecret | quote }}
-            {{- end }}
-            {{- end }}
             {{- if .Values.decommissionSweep.enabled }}
             # Presence of this secret is what enables POST
             # /api/internal/decommission-sweep; without it the endpoint returns

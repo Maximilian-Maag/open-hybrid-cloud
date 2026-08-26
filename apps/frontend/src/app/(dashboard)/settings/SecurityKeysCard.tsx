@@ -204,20 +204,27 @@ export function SecurityKeysCard() {
           title={t('removeSecurityKeyTitle', lang)}
           size="sm"
         >
-          <div className="space-y-3">
-            <p className="text-sm text-slate-600">
-              {t('removeSecurityKeyIntro', lang)} <strong>{removing?.label}</strong>
-            </p>
-            <Input
-              label={t('currentPassword', lang)}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-              hint={t('removeSecurityKeyPasswordHint', lang)}
-            />
-          </div>
+          {/* Mounted only while the dialog is open. A <dialog> keeps its children
+              in the DOM when closed, so an always-rendered password field would
+              sit invisibly on the settings page — a second "current password"
+              for a password manager to offer to fill, and a second match for
+              anything looking the field up by its label. */}
+          {removing !== null && (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600">
+                {t('removeSecurityKeyIntro', lang)} <strong>{removing.label}</strong>
+              </p>
+              <Input
+                label={t('currentPassword', lang)}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                hint={t('removeSecurityKeyPasswordHint', lang)}
+              />
+            </div>
+          )}
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="secondary" onClick={() => setRemoving(null)}>{t('cancel', lang)}</Button>
             <Button

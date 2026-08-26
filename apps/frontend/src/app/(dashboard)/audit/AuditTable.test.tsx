@@ -97,13 +97,13 @@ describe('AuditTable', () => {
     let call = 0
     mockGet.mockImplementation(() => {
       call += 1
-      if (call === 1) return Promise.resolve({ data: [entry(1)], total: 45 }) // initial mount, page 1 of 3
+      if (call === 1) return Promise.resolve({ data: [entry(1)], total: 45 }) // initial mount, page 1 / 3
       if (call === 2) return new Promise((resolve) => { resolvePage2 = resolve })
       return new Promise((resolve) => { resolvePage3 = resolve })
     })
 
     render(<AuditTable token="tok" />)
-    await waitFor(() => expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/page 1 \/ 3/i)).toBeInTheDocument())
 
     const next = screen.getByRole('button', { name: 'Next' })
     fireEvent.click(next) // load() for page 2, held open
@@ -111,13 +111,13 @@ describe('AuditTable', () => {
 
     // The newer request (page 3) answers first...
     resolvePage3({ data: [entry(3)], total: 45 })
-    await waitFor(() => expect(screen.getByText(/page 3 of 3/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/page 3 \/ 3/i)).toBeInTheDocument())
 
     // ...then the stale page-2 request answers, with a `total` that would
     // otherwise change the page count shown underneath "Page 3".
     resolvePage2({ data: [entry(2)], total: 22 })
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(screen.getByText(/page 3 of 3/i)).toBeInTheDocument()
+    expect(screen.getByText(/page 3 \/ 3/i)).toBeInTheDocument()
   })
 
   it('debounces the free-text filters instead of fetching per keystroke', async () => {

@@ -1194,7 +1194,11 @@ function SizesEditor({
       setError(e instanceof Error ? e.message : t('failedToLoadGeneric', lang))
       setSizes([])
     }
-  }, [path, token])
+    // `lang` is in here because the fallback message is translated now. It makes
+    // `load` change when the language does, so the sizes are re-fetched on a
+    // language switch — one request, and the alternative is a stale error still
+    // reading in the previous language.
+  }, [path, token, lang])
 
   useEffect(() => { void load() }, [load])
 

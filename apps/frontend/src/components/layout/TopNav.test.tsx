@@ -1,0 +1,233 @@
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import type { Role } from '@open-hybrid-cloud/types'
+
+let pathname = '/'
+vi.mock('next/navigation', () => ({ usePathname: () => pathname }))
+
+import { TopNav } from './TopNav'
+
+/**
+ * Two things here are worth a test. The role gate decides whether a plain user
+ * is shown the approvals queue, the audit log and the admin area — a link they
+ * cannot use, advertising an area they are not in. And `isActive` decides which
+ * pill carries `aria-current="page"`, which is the only non-colour signal of
+ * where you are.
+ */
+
+function renderNav(role: Role, path = '/') {
+  pathname = path
+  return render(<TopNav role={role} lang="en" />)
+}
+
+const linkNames = () => screen.getAllByRole('link').map((l) => l.textContent)
+
+describe('TopNav role gate', () => {
+  it('shows a plain user the six shared sections and nothing more', () => {
+    renderNav('project_manager')
+    expect(linkNames()).toEqual(['Home', 'Catalog', 'Orders', 'Projects', 'Infrastructure', 'Costs'])
+  })
+
+  it('does not link a plain user to approvals, audit or admin', () => {
+    renderNav('project_manager')
+    expect(screen.queryByRole('link', { name: 'Approvals' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Audit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
+  })
+
+  it('gives an admin approvals and audit but not the admin area', () => {
+    renderNav('admin')
+    expect(screen.getByRole('link', { name: 'Approvals' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Audit' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
+  })
+
+  it('gives root every section including the admin area', () => {
+    renderNav('root')
+    expect(screen.getByRole('link', { name: 'Approvals' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Audit' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument()
+    expect(screen.getAllByRole('link')).toHaveLength(9)
+  })
+})
+
+describe('TopNav current-page marking', () => {
+  it('marks Home current only on the root path', () => {
+    renderNav('project_manager', '/')
+    expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('does not mark Home current on every other page', () => {
+    // Home is matched exactly. A prefix match on "/" makes every path in the app
+    // start with it, so Home would be current everywhere and two pills would
+    // claim the location at once.
+    renderNav('project_manager', '/catalog')
+    expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('link', { name: 'Catalog' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('keeps the section current on its detail pages', () => {
+    // /orders/42 is still "Orders". An exact match would drop the marking as
+    // soon as you opened anything.
+    renderNav('project_manager', '/orders/42')
+    expect(screen.getByRole('link', { name: 'Orders' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('marks exactly one link as current', () => {
+    renderNav('root', '/infrastructure/abc')
+    const current = screen.getAllByRole('link').filter((l) => l.getAttribute('aria-current') === 'page')
+    expect(current.map((l) => l.textContent)).toEqual(['Infrastructure'])
+  })
+
+  it('marks nothing current on a path outside the nav', () => {
+    renderNav('project_manager', '/cart')
+    expect(document.querySelectorAll('[aria-current]')).toHaveLength(0)
+  })
+
+  it('gives the current pill a different class from the resting ones', () => {
+    // aria-current is the signal for assistive tech; the visible signal must not
+    // be colour alone, so the active pill also changes weight and background.
+    renderNav('project_manager', '/costs')
+    const active = screen.getByRole('link', { name: 'Costs' })
+    const resting = screen.getByRole('link', { name: 'Catalog' })
+    expect(active.className).not.toBe(resting.className)
+    expect(active).toHaveClass('brand-state-active')
+    expect(resting).toHaveClass('brand-state')
+    expect(resting).not.toHaveClass('brand-state-active')
+  })
+
+  // navLinkClass takes `exact` separately from the aria-current call beside it,
+  // and defaults it to false. If that default ever flips, aria-current keeps
+  // saying "you are here" on a detail page while the pill stops looking like it
+  // — the two signals disagree, and the visible one is the wrong one.
+  it('keeps the pill marked on a detail page, not just the section root', () => {
+    renderNav('project_manager', '/orders/42')
+    const orders = screen.getByRole('link', { name: 'Orders' })
+    expect(orders).toHaveAttribute('aria-current', 'page')
+    expect(orders).toHaveClass('brand-state-active')
+    expect(orders).not.toHaveClass('brand-state')
+  })
+
+  it('sizes every pill to the 44px target floor (WCAG 2.5.5)', () => {
+    renderNav('root', '/')
+    for (const link of screen.getAllByRole('link')) expect(link).toHaveClass('min-h-11')
+  })
+})
+
+describe('TopNav labels', () => {
+  it('names the navigation landmark and translates the links', () => {
+    pathname = '/'
+    render(<TopNav role="project_manager" lang="de" />)
+    expect(screen.getByRole('navigation', { name: 'Hauptnavigation' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Katalog' })).toBeInTheDocument()
+  })
+})
+
+// The names were asserted; the destinations were not. A nav link with the right
+// label and an empty href is the whole navigation quietly pointing at the
+// current page — and it renders, and it reads correctly to a screen reader.
+describe('TopNav destinations', () => {
+  const EXPECTED: [string, string][] = [
+    ['Home', '/'],
+    ['Catalog', '/catalog'],
+    ['Orders', '/orders'],
+    ['Projects', '/projects'],
+    ['Infrastructure', '/infrastructure'],
+    ['Costs', '/costs'],
+    ['Approvals', '/approvals'],
+    ['Audit', '/audit'],
+    ['Admin', '/admin'],
+  ]
+
+  it.each(EXPECTED)('points %s at %s', (name, href) => {
+    renderNav('root', '/nowhere')
+    expect(screen.getByRole('link', { name })).toHaveAttribute('href', href)
+  })
+
+  it('gives every link a destination of its own', () => {
+    renderNav('root', '/nowhere')
+    const hrefs = screen.getAllByRole('link').map((l) => l.getAttribute('href'))
+    expect(hrefs).toHaveLength(EXPECTED.length)
+    expect(new Set(hrefs).size).toBe(EXPECTED.length)
+    expect(hrefs).not.toContain('')
+  })
+})
+
+// The chrome is painted from the operator's branding colours, and the ink is
+// derived from them rather than fixed — a hard-coded foreground goes unreadable
+// the moment an operator picks a dark primary. These are the variables that
+// carry readableInk's contrast guarantee, so they are behaviour.
+describe('TopNav branding surface', () => {
+  it('paints the strip with the primary and its readable ink', () => {
+    const { container } = renderNav('project_manager', '/')
+    const strip = container.firstElementChild as HTMLElement
+    const nav = screen.getByRole('navigation')
+
+    expect(strip.style.backgroundColor).toBe('var(--bp)')
+    expect(nav.style.color).toBe('var(--bp-ink)')
+  })
+})
+
+// Each nav entry names its path THREE times: once as the href, once to decide
+// aria-current, and once to decide the pill's class. The three have to agree,
+// and only the href was pinned — so a mutation in either of the other two left
+// the marking silently wrong on that one section while every other test passed.
+describe('TopNav marks the section you are in, per section', () => {
+  const SECTIONS: [string, string, string][] = [
+    // name, a path inside the section, a path outside every section
+    ['Catalog', '/catalog', '/nowhere'],
+    ['Orders', '/orders', '/nowhere'],
+    ['Projects', '/projects', '/nowhere'],
+    ['Infrastructure', '/infrastructure', '/nowhere'],
+    ['Costs', '/costs', '/nowhere'],
+    ['Approvals', '/approvals', '/nowhere'],
+    ['Audit', '/audit', '/nowhere'],
+    ['Admin', '/admin', '/nowhere'],
+  ]
+
+  it.each(SECTIONS)('marks %s, and only %s, on %s', (name, inside) => {
+    renderNav('root', inside)
+
+    const current = screen.getAllByRole('link').filter((l) => l.getAttribute('aria-current') === 'page')
+    expect(current.map((l) => l.textContent)).toEqual([name])
+    // The visible signal has to agree with the announced one.
+    expect(current[0]).toHaveClass('brand-state-active')
+    for (const other of screen.getAllByRole('link').filter((l) => l !== current[0])) {
+      expect(other).toHaveClass('brand-state')
+      expect(other).not.toHaveClass('brand-state-active')
+    }
+  })
+
+  it.each(SECTIONS)('leaves %s unmarked when the path is elsewhere', (name, _inside, outside) => {
+    renderNav('root', outside)
+
+    const link = screen.getByRole('link', { name })
+    expect(link).not.toHaveAttribute('aria-current')
+    expect(link).toHaveClass('brand-state')
+    expect(link).not.toHaveClass('brand-state-active')
+  })
+
+  it('marks Home, and only Home, on the root path', () => {
+    renderNav('root', '/')
+
+    const current = screen.getAllByRole('link').filter((l) => l.getAttribute('aria-current') === 'page')
+    expect(current.map((l) => l.textContent)).toEqual(['Home'])
+    expect(current[0]).toHaveClass('brand-state-active')
+  })
+
+  // Home is matched exactly; every other section matches its detail pages too.
+  // Getting that backwards marks Home on every page in the app.
+  it.each([
+    ['/catalog/12', 'Catalog'],
+    ['/orders/42', 'Orders'],
+    ['/projects/7', 'Projects'],
+    ['/infrastructure/3', 'Infrastructure'],
+    ['/admin/products/9', 'Admin'],
+  ])('marks the section on its detail page %s', (path, name) => {
+    renderNav('root', path)
+
+    const current = screen.getAllByRole('link').filter((l) => l.getAttribute('aria-current') === 'page')
+    expect(current.map((l) => l.textContent)).toEqual([name])
+    expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current')
+  })
+})

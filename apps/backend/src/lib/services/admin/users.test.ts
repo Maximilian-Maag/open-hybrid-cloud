@@ -11,7 +11,7 @@ import {
 import { db } from '@/lib/db/client'
 import { createSession } from '@/lib/auth/sessions'
 import { users, sessions, auditLog } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, desc } from 'drizzle-orm'
 import {
   createUser,
   createProject,
@@ -138,6 +138,48 @@ describe('updateUser', () => {
 
     const result = await updateUser(u.id, { role: 'admin', name: 'Renamed' })
     expect(result.ok).toBe(true)
+
+    const rows = await db.select().from(sessions).where(eq(sessions.userId, u.id))
+    expect(rows.filter((r) => r.revokedAt === null)).toHaveLength(1)
+  })
+
+  // An admin setting somebody's password is remediating — usually a suspected
+  // compromise — and leaving the old sessions alive is the one outcome that makes
+  // the remediation pointless (#184). Nothing is spared here, unlike a user
+  // changing their own: the person at the keyboard is not the account owner.
+  it('ends every session when an admin resets the password', async () => {
+    const u = await createUser({ password: 'before' })
+    await createSession({ user: makeSession(u), rememberMe: true })
+    await createSession({ user: makeSession(u), rememberMe: false })
+
+    const live = () =>
+      db.select().from(sessions).where(eq(sessions.userId, u.id))
+    expect((await live()).filter((r) => r.revokedAt === null)).toHaveLength(2)
+
+    const result = await updateUser(u.id, { password: 'after-pw' })
+
+    expect(result.ok).toBe(true)
+    expect((await live()).filter((r) => r.revokedAt === null)).toHaveLength(0)
+  })
+
+  it('says in the audit log that a password reset is what ended them', async () => {
+    const u = await createUser({ password: 'before' })
+    await createSession({ user: makeSession(u), rememberMe: false })
+
+    await updateUser(u.id, { password: 'after-pw' })
+
+    const [entry] = await db
+      .select().from(auditLog)
+      .where(eq(auditLog.action, 'session.revoked_others'))
+      .orderBy(desc(auditLog.id)).limit(1)
+    expect(entry.details).toMatch(/password reset/i)
+  })
+
+  it('leaves sessions alone for an update that is not a password or a role', async () => {
+    const u = await createUser({ password: 'before' })
+    await createSession({ user: makeSession(u), rememberMe: false })
+
+    await updateUser(u.id, { name: 'Renamed' })
 
     const rows = await db.select().from(sessions).where(eq(sessions.userId, u.id))
     expect(rows.filter((r) => r.revokedAt === null)).toHaveLength(1)

@@ -127,4 +127,42 @@ describe('CountUp', () => {
     expect(raf).not.toHaveBeenCalled()
     raf.mockRestore()
   })
+  // Zero short-circuits: it sets the display and returns WITHOUT starting a
+  // loop. Letting it animate would reach the same 0 on screen, so the only
+  // visible difference is the frames — a dashboard of zeroes would otherwise
+  // run one animation loop per tile for nothing.
+  it('starts no animation at all for zero', () => {
+    const raf = vi.spyOn(window, 'requestAnimationFrame')
+    const { container } = render(<CountUp value={0} />)
+
+    expect(container.textContent).toBe('0')
+    expect(raf).not.toHaveBeenCalled()
+
+    runAnimation()
+    expect(raf).not.toHaveBeenCalled()
+    raf.mockRestore()
+  })
+
+  it('starts one for a non-zero value', () => {
+    const raf = vi.spyOn(window, 'requestAnimationFrame')
+    render(<CountUp value={7} duration={100} />)
+
+    expect(raf).toHaveBeenCalled()
+    raf.mockRestore()
+  })
+
+  // Going back to zero has to stop the loop that was counting up, not just
+  // overwrite the number it was writing.
+  it('stops the running animation when the value drops to zero', () => {
+    const { container, rerender } = render(<CountUp value={5000} duration={5000} />)
+    act(() => { vi.advanceTimersByTime(16) })
+
+    rerender(<CountUp value={0} duration={5000} />)
+    const raf = vi.spyOn(window, 'requestAnimationFrame')
+    act(() => { vi.advanceTimersByTime(1000) })
+
+    expect(container.textContent).toBe('0')
+    expect(raf).not.toHaveBeenCalled()
+    raf.mockRestore()
+  })
 })

@@ -167,3 +167,67 @@ describe('TopNav branding surface', () => {
     expect(nav.style.color).toBe('var(--bp-ink)')
   })
 })
+
+// Each nav entry names its path THREE times: once as the href, once to decide
+// aria-current, and once to decide the pill's class. The three have to agree,
+// and only the href was pinned — so a mutation in either of the other two left
+// the marking silently wrong on that one section while every other test passed.
+describe('TopNav marks the section you are in, per section', () => {
+  const SECTIONS: [string, string, string][] = [
+    // name, a path inside the section, a path outside every section
+    ['Catalog', '/catalog', '/nowhere'],
+    ['Orders', '/orders', '/nowhere'],
+    ['Projects', '/projects', '/nowhere'],
+    ['Infrastructure', '/infrastructure', '/nowhere'],
+    ['Costs', '/costs', '/nowhere'],
+    ['Approvals', '/approvals', '/nowhere'],
+    ['Audit', '/audit', '/nowhere'],
+    ['Admin', '/admin', '/nowhere'],
+  ]
+
+  it.each(SECTIONS)('marks %s, and only %s, on %s', (name, inside) => {
+    renderNav('root', inside)
+
+    const current = screen.getAllByRole('link').filter((l) => l.getAttribute('aria-current') === 'page')
+    expect(current.map((l) => l.textContent)).toEqual([name])
+    // The visible signal has to agree with the announced one.
+    expect(current[0]).toHaveClass('brand-state-active')
+    for (const other of screen.getAllByRole('link').filter((l) => l !== current[0])) {
+      expect(other).toHaveClass('brand-state')
+      expect(other).not.toHaveClass('brand-state-active')
+    }
+  })
+
+  it.each(SECTIONS)('leaves %s unmarked when the path is elsewhere', (name, _inside, outside) => {
+    renderNav('root', outside)
+
+    const link = screen.getByRole('link', { name })
+    expect(link).not.toHaveAttribute('aria-current')
+    expect(link).toHaveClass('brand-state')
+    expect(link).not.toHaveClass('brand-state-active')
+  })
+
+  it('marks Home, and only Home, on the root path', () => {
+    renderNav('root', '/')
+
+    const current = screen.getAllByRole('link').filter((l) => l.getAttribute('aria-current') === 'page')
+    expect(current.map((l) => l.textContent)).toEqual(['Home'])
+    expect(current[0]).toHaveClass('brand-state-active')
+  })
+
+  // Home is matched exactly; every other section matches its detail pages too.
+  // Getting that backwards marks Home on every page in the app.
+  it.each([
+    ['/catalog/12', 'Catalog'],
+    ['/orders/42', 'Orders'],
+    ['/projects/7', 'Projects'],
+    ['/infrastructure/3', 'Infrastructure'],
+    ['/admin/products/9', 'Admin'],
+  ])('marks the section on its detail page %s', (path, name) => {
+    renderNav('root', path)
+
+    const current = screen.getAllByRole('link').filter((l) => l.getAttribute('aria-current') === 'page')
+    expect(current.map((l) => l.textContent)).toEqual([name])
+    expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current')
+  })
+})

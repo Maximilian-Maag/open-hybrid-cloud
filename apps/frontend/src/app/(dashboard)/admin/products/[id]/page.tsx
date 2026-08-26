@@ -8,7 +8,7 @@ import type {
   ProductTranslation,
   CostCenter,
 } from '@open-hybrid-cloud/types'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -35,16 +35,15 @@ export default async function AdminProductDetailPage({ params, searchParams }: P
   if (!session) redirect('/login')
   const role = (session.user as unknown as { role: Role }).role
   if (role !== 'root') redirect('/admin')
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
 
   const [productRes, categoriesRes, environmentsRes, translationsRes, costCentersRes] = await Promise.allSettled([
-    get<ProductDetail>(`/api/admin/products/${id}`, token),
-    get<Category[]>('/api/admin/categories', token),
-    get<DeploymentEnvironment[]>('/api/admin/environments', token),
-    get<ProductTranslation[]>(`/api/admin/products/${id}/translations`, token),
+    get<ProductDetail>(`/api/admin/products/${id}`),
+    get<Category[]>('/api/admin/categories'),
+    get<DeploymentEnvironment[]>('/api/admin/environments'),
+    get<ProductTranslation[]>(`/api/admin/products/${id}/translations`),
     // Needed to pick the fixed account for an `overhead` offering (FA-10.4).
-    get<CostCenter[]>('/api/admin/cost-centers', token),
+    get<CostCenter[]>('/api/admin/cost-centers'),
   ])
 
   if (productRes.status === 'rejected') notFound()
@@ -86,7 +85,7 @@ export default async function AdminProductDetailPage({ params, searchParams }: P
             <Alert>{t('productCreatedPrefix', lang)} {imageError}. {t('tryUploadingAgain', lang)}</Alert>
           </div>
         )}
-        <ProductImageUpload productId={product.id} token={token} />
+        <ProductImageUpload productId={product.id} />
       </Card>
 
       <ProductEditForm
@@ -95,7 +94,6 @@ export default async function AdminProductDetailPage({ params, searchParams }: P
         environments={environments}
         translations={translations}
         costCenters={costCenters}
-        token={token}
         lang={lang}
       />
     </div>

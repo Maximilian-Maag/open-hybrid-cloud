@@ -49,7 +49,7 @@ describe('CategoriesManager display order', () => {
     // ordered 40 must not silently save it as 0 and jump it to the top of
     // every catalogue sidebar.
     const user = userEvent.setup()
-    render(<CategoriesManager token="tok" />)
+    render(<CategoriesManager />)
 
     await user.click((await screen.findAllByRole('button', { name: 'Edit' }))[0])
     const dialog = screen.getByRole('dialog', { name: 'Edit Category' })
@@ -60,14 +60,14 @@ describe('CategoriesManager display order', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockedPut).toHaveBeenCalled())
-    expect(mockedPut).toHaveBeenCalledWith('/api/admin/categories/1', { name: 'Databases', displayOrder: 40 }, 'tok')
+    expect(mockedPut).toHaveBeenCalledWith('/api/admin/categories/1', { name: 'Databases', displayOrder: 40 })
   })
 
   it('still saves a genuine 0 typed for a new category', async () => {
     // The fallback must trigger only on an empty field, not treat every 0 as
     // "unset" — Networking's own order really is 0.
     const user = userEvent.setup()
-    render(<CategoriesManager token="tok" />)
+    render(<CategoriesManager />)
 
     await user.click(await screen.findByRole('button', { name: 'Add Category' }))
     const dialog = screen.getByRole('dialog', { name: 'Add Category' })
@@ -76,12 +76,12 @@ describe('CategoriesManager display order', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockedPost).toHaveBeenCalled())
-    expect(mockedPost).toHaveBeenCalledWith('/api/admin/categories', { name: 'Storage', displayOrder: 0 }, 'tok')
+    expect(mockedPost).toHaveBeenCalledWith('/api/admin/categories', { name: 'Storage', displayOrder: 0 })
   })
 
   it('saves a newly typed order normally', async () => {
     const user = userEvent.setup()
-    render(<CategoriesManager token="tok" />)
+    render(<CategoriesManager />)
 
     await user.click((await screen.findAllByRole('button', { name: 'Edit' }))[0])
     const dialog = screen.getByRole('dialog', { name: 'Edit Category' })
@@ -91,6 +91,6 @@ describe('CategoriesManager display order', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockedPut).toHaveBeenCalled())
-    expect(mockedPut).toHaveBeenCalledWith('/api/admin/categories/1', { name: 'Databases', displayOrder: 5 }, 'tok')
+    expect(mockedPut).toHaveBeenCalledWith('/api/admin/categories/1', { name: 'Databases', displayOrder: 5 })
   })
 })

@@ -65,13 +65,20 @@ describe('apiRequest', () => {
     expect(result).toBeUndefined()
   })
 
-  it('sends Authorization header when token is provided', async () => {
+  it('sends no Authorization header from the browser, and goes through the proxy', async () => {
+    // Issue #146: the browser must never hold the backend JWT. It sends the
+    // HttpOnly session cookie to this origin's own /api/proxy, which attaches
+    // the bearer token server-side. These tests run in jsdom, so `window`
+    // exists and this is the browser branch.
     mockFetch.mockResolvedValueOnce(makeResponse({}))
-    await apiRequest('/secured', { token: 'my-jwt-token' })
-    const [, init] = mockFetch.mock.calls[0]
-    expect((init as RequestInit).headers).toMatchObject({
-      Authorization: 'Bearer my-jwt-token',
-    })
+    // A token passed here is ignored rather than sent. The browser branch has to
+    // be the one that is safe when it is wrong, because client components are
+    // server-rendered too — and because the day someone reintroduces a token
+    // prop, this is what has to stop it reaching the wire.
+    await apiRequest('/api/orders', { token: 'must-not-be-sent' })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/proxy/api/orders')
+    expect((init as RequestInit).headers).not.toHaveProperty('Authorization')
   })
 
   it('sets Content-Type for JSON body', async () => {
@@ -103,14 +110,14 @@ describe('apiRequest', () => {
 describe('convenience helpers', () => {
   it('get() calls apiRequest with GET method', async () => {
     mockFetch.mockResolvedValueOnce(makeResponse({ ok: true }))
-    const result = await get<{ ok: boolean }>('/items', 'token')
+    const result = await get<{ ok: boolean }>('/items')
     expect(result.ok).toBe(true)
     expect(mockFetch.mock.calls[0][1]).toMatchObject({ method: 'GET' })
   })
 
   it('post() sends body as JSON', async () => {
     mockFetch.mockResolvedValueOnce(makeResponse({ created: true }))
-    await post('/items', { name: 'new' }, 'token')
+    await post('/items', { name: 'new' })
     const [, init] = mockFetch.mock.calls[0]
     expect((init as RequestInit).method).toBe('POST')
     expect((init as RequestInit).body).toBe(JSON.stringify({ name: 'new' }))
@@ -124,7 +131,7 @@ describe('convenience helpers', () => {
 
   it('del() sends DELETE request', async () => {
     mockFetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
-    await del('/items/1', 'token')
+    await del('/items/1')
     expect(mockFetch.mock.calls[0][1]).toMatchObject({ method: 'DELETE' })
   })
 })
@@ -198,5 +205,44 @@ describe('apiRequest on 401', () => {
     await expect(request('/orders')).rejects.toThrow(FreshApiError)
 
     expect(signOut).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The server half of the same rule (issue #146).
+ *
+ * The token is attached only on the server, and only by `lib/serverApi.ts` — the
+ * `get`/`post`/`put`/`del` exported here do not take one, so client code has no
+ * way to send one and nothing to send. These tests make `typeof window`
+ * undefined so the module takes its server branch.
+ */
+describe('apiRequest on the server', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.stubGlobal('window', undefined)
+  })
+
+  it('calls the API host directly and attaches the token it was given', async () => {
+    const { apiRequest: request } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ ok: true }))
+
+    await request('/api/orders', { token: 'server-side-jwt' })
+
+    const [url, init] = mockFetch.mock.calls[0]
+    // No NEXT_PUBLIC_API_URL in the test env, so the base is '' — what matters
+    // is that it is NOT the proxy prefix, which only the browser uses.
+    expect(url).toBe('/api/orders')
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer server-side-jwt',
+    })
+  })
+
+  it('sends no Authorization header when there is no token', async () => {
+    const { apiRequest: request } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ ok: true }))
+
+    await request('/api/public/branding')
+
+    expect((mockFetch.mock.calls[0][1] as RequestInit).headers).not.toHaveProperty('Authorization')
   })
 })

@@ -13,7 +13,6 @@ import { t } from '@/lib/i18n'
 
 interface Props {
   delegations: ApprovalDelegationsResponse
-  token: string
 }
 
 /**
@@ -54,7 +53,7 @@ const period = (d: ApprovalDelegation, lang: string): string =>
  * `active` is computed by the server at read time; nothing here decides whether a
  * delegation has expired, so the panel cannot disagree with the API about it.
  */
-export function DelegationPanel({ delegations, token }: Props) {
+export function DelegationPanel({ delegations }: Props) {
   const router = useRouter()
   const lang = useLang()
   const [toUserId, setToUserId] = useState('')
@@ -78,7 +77,7 @@ export function DelegationPanel({ delegations, token }: Props) {
     setBusy(true)
     setError(null)
     try {
-      await post('/api/approvals/delegations', { toUserId: Number(toUserId), startsOn, endsOn }, token)
+      await post('/api/approvals/delegations', { toUserId: Number(toUserId), startsOn, endsOn })
       setToUserId('')
       setEndsOn('')
       router.refresh()
@@ -93,7 +92,7 @@ export function DelegationPanel({ delegations, token }: Props) {
     setBusy(true)
     setError(null)
     try {
-      await del(`/api/approvals/delegations/${id}`, token)
+      await del(`/api/approvals/delegations/${id}`)
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : t('unexpectedError', lang))

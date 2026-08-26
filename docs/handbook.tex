@@ -801,10 +801,13 @@ Every backend request follows the same four-step shell:
 \end{enumerate}
 
 User interactions on the frontend are handled by React Server Components or
-client components that call the backend via typed wrappers in
-\file{src/lib/api.ts}. NextAuth v5 stores the JWT in an encrypted
-server-side session cookie and forwards it as a Bearer token on every
-backend call.
+client components that call the backend via typed wrappers. NextAuth v5 stores
+the backend JWT in an encrypted, HttpOnly session cookie, and the token stays on
+the server: a Server Component calls \file{src/lib/serverApi.ts}, which reads it
+from the session and sends it as a Bearer token, while a client component calls
+\file{src/lib/api.ts}, which sends the request to this origin's own
+\code{/api/proxy} route and lets that attach the header server-side. See
+\S\ref{sec:jwt-auth}.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Design Decisions \& Technology Rationale}
@@ -956,6 +959,12 @@ belong to the \emph{frontend} on port 3000:
         \code{session}, \code{callback/credentials}, \code{signin}, \ldots)
   \item \code{/api/login-challenge} --- step one of the two-step sign-in
   \item \code{/api/ping} --- the frontend's liveness route
+  \item \code{/api/proxy/*} --- how the browser reaches the backend API at all
+        (issue~\#146). The browser no longer holds the bearer token; it calls
+        this route with the HttpOnly session cookie and the route attaches the
+        token server-side. Sending this one to port 3001 does not produce a 404
+        --- it produces a 401 on every request the signed-in user makes, which
+        is harder to attribute.
 \end{itemize}
 
 \noindent
@@ -1083,11 +1092,24 @@ complex custom script), whereas passing \code{PIPELINE\_STACK} JSON is a
 simple REST variable and works with any GitLab tier.
 
 \section{JWT Authentication}
+\label{sec:jwt-auth}
 
 \textbf{Decision:} The backend issues signed JWTs (HS256, 24-hour
 expiry) via the \code{jose} library. The frontend stores the JWT in
-a NextAuth v5 server-side session cookie and forwards it as a
-\code{Bearer} token on every backend API call.
+a NextAuth v5 encrypted session cookie and forwards it as a
+\code{Bearer} token on every backend API call --- \emph{from the server only}.
+Client JavaScript never holds the token: the browser calls the frontend's own
+\code{/api/proxy/*} route with the HttpOnly session cookie, and that route adds
+the Authorization header.
+
+\textbf{Why the proxy:} a bearer token is not bound to an origin, so a token in
+client JavaScript is a credential that can be read by any script on the page and
+replayed from anywhere for the rest of its 24 hours. Handing it to the browser
+--- as \code{session.apiToken} on \code{/api/auth/session}, and as a
+\code{token} prop serialised into every page's RSC payload --- turned any XSS on
+this origin into a full account takeover that outlived the page. The proxy costs
+one extra hop inside the cluster and removes the credential from the browser
+entirely.
 
 \textbf{Rationale:}
 \begin{itemize}
@@ -1636,8 +1658,8 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 Nginx routes \code{/api/*} and \code{/api/webhooks/*} to the backend
 container (port 3001), and all other paths to the frontend (port 3000).
 The exceptions are the frontend's own \code{/api/auth},
-\code{/api/login-challenge} and \code{/api/ping}, which go to the frontend
-(see section on the two-container split). \code{/api/auth/callback} used to be
+\code{/api/login-challenge}, \code{/api/ping} and \code{/api/proxy}, which go
+to the frontend (see section on the two-container split). \code{/api/auth/callback} used to be
 the exception to that exception --- Entra ID's callback, matched exactly so it
 outranked the \code{/api/auth} prefix --- but the SSO flow was removed in
 issue~\#139 and the whole prefix is the frontend's again.
@@ -1713,6 +1735,12 @@ belong to the frontend on port 3000:
         (\code{csrf}, \code{session}, \code{callback/credentials}, \ldots)
   \item \code{/api/login-challenge} --- step one of the two-step sign-in
   \item \code{/api/ping} --- the frontend's liveness route
+  \item \code{/api/proxy/*} --- how the browser reaches the backend API at all
+        (issue~\#146). The browser no longer holds the bearer token; it calls
+        this route with the HttpOnly session cookie and the route attaches the
+        token server-side. Sending this one to port 3001 does not produce a 404
+        --- it produces a 401 on every request the signed-in user makes, which
+        is harder to attribute.
 \end{itemize}
 
 \noindent
@@ -3431,19 +3459,27 @@ export async function POST(req: NextRequest) {
 
 \subsection{Step 4: Add the Frontend API Wrapper}
 
-In \file{apps/frontend/src/lib/api.ts}, the generic \code{get} and
-\code{post} wrappers already exist. Call them from any Server Component
-or client action:
+The generic \code{get} and \code{post} wrappers already exist, in two modules.
+Import them from \file{@/lib/serverApi} in a Server Component and from
+\file{@/lib/api} in a client component; neither takes a token, because no caller
+has one to give. The split is deliberate --- \file{@/lib/api} is in the client
+bundle, so it must not import anything that reads the session:
 
 \begin{lstlisting}[style=typescript]
-import { get, post } from '@/lib/api'
+// Server Component
+import { get } from '@/lib/serverApi'
 import type { Widget } from '@open-hybrid-cloud/types'
 
-export const fetchWidgets = (token: string) =>
-  get<Widget[]>('/api/admin/widgets', token)
+export const fetchWidgets = () => get<Widget[]>('/api/admin/widgets')
+\end{lstlisting}
 
-export const createWidget = (name: string, token: string) =>
-  post<Widget>('/api/admin/widgets', { name }, token)
+\begin{lstlisting}[style=typescript]
+// Client component ('use client'). Same path, sent through /api/proxy.
+import { post } from '@/lib/api'
+import type { Widget } from '@open-hybrid-cloud/types'
+
+export const createWidget = (name: string) =>
+  post<Widget>('/api/admin/widgets', { name })
 \end{lstlisting}
 
 \subsection{Step 5: Add the Frontend Page}
@@ -3459,7 +3495,9 @@ export default async function AdminWidgetsPage() {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const widgets = await fetchWidgets(session.apiToken ?? '')
+  // No token argument, and never a token prop into a client component:
+  // serverApi reads it from the session on the server -- see JWT Authentication.
+  const widgets = await fetchWidgets()
 
   return (
     <div className="p-6">

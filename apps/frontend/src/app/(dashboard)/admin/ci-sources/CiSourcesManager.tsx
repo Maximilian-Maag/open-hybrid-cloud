@@ -19,11 +19,9 @@ const PROVIDERS: { value: CiProvider; label: string }[] = [
   { value: 'bitbucket', label: 'Bitbucket' },
 ]
 
-interface Props { token: string }
-
 const emptyForm = () => ({ name: '', url: '', accessToken: '', provider: 'gitlab' as CiProvider })
 
-export function CiSourcesManager({ token }: Props) {
+export function CiSourcesManager() {
   const lang = useLang()
   const [sources, setSources] = useState<CiSource[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,14 +36,14 @@ export function CiSourcesManager({ token }: Props) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setSources((await get<CiSource[]>('/api/admin/ci-sources', token)) ?? [])
+      setSources((await get<CiSource[]>('/api/admin/ci-sources')) ?? [])
       setDeleteError(null)
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : t('failedToLoadCiSources', lang))
     } finally {
       setLoading(false)
     }
-  }, [token, lang])
+  }, [lang])
 
   useEffect(() => { void load() }, [load])
 
@@ -76,7 +74,7 @@ export function CiSourcesManager({ token }: Props) {
         accessToken: form.accessToken.trim(),
         provider: form.provider,
       }
-      await post('/api/admin/ci-sources', body, token)
+      await post('/api/admin/ci-sources', body)
       setAddOpen(false)
       void load()
     } catch (err) {
@@ -98,7 +96,7 @@ export function CiSourcesManager({ token }: Props) {
         provider: form.provider,
         ...(form.accessToken ? { accessToken: form.accessToken.trim() } : {}),
       }
-      await put(`/api/admin/ci-sources/${editTarget.id}`, body, token)
+      await put(`/api/admin/ci-sources/${editTarget.id}`, body)
       setEditTarget(null)
       void load()
     } catch (err) {
@@ -112,7 +110,7 @@ export function CiSourcesManager({ token }: Props) {
     if (!deleteTarget) return
     setSaving(true); setDeleteError(null)
     try {
-      await del(`/api/admin/ci-sources/${deleteTarget.id}`, token)
+      await del(`/api/admin/ci-sources/${deleteTarget.id}`)
       setDeleteTarget(null)
       void load()
     } catch (e) {

@@ -20,7 +20,7 @@ import { t } from '@/lib/i18n'
  * starts nothing and changes no infrastructure, which is why it sits next to the
  * outputs rather than among the destructive actions above.
  */
-export function RereadOutputs({ elementId, token }: { elementId: number; token: string }) {
+export function RereadOutputs({ elementId }: { elementId: number }) {
   const router = useRouter()
   const lang = useLang()
   const [busy, setBusy] = useState(false)
@@ -30,7 +30,7 @@ export function RereadOutputs({ elementId, token }: { elementId: number; token: 
     setBusy(true)
     setError(null)
     try {
-      await post(`/api/infrastructure/${elementId}/outputs`, {}, token)
+      await post(`/api/infrastructure/${elementId}/outputs`, {})
       // The server has stored whatever it read; re-render from it rather than
       // trusting the response, so the page and the database cannot disagree.
       router.refresh()

@@ -13,13 +13,12 @@ import { TwoFactorCard } from './TwoFactorCard'
 import { SecurityKeysCard } from './SecurityKeysCard'
 
 interface Props {
-  token: string
   initialName: string
   email: string
   role: Role | undefined
 }
 
-export function SettingsForms({ token, initialName, email, role }: Props) {
+export function SettingsForms({ initialName, email, role }: Props) {
   const lang = useLang()
   const [name, setName] = useState(initialName)
   const [profileSaving, setProfileSaving] = useState(false)
@@ -40,7 +39,7 @@ export function SettingsForms({ token, initialName, email, role }: Props) {
     setProfileSuccess(false)
     try {
       const body: UpdateProfileRequest = { name: name.trim() }
-      await put('/api/users/me', body, token)
+      await put('/api/users/me', body)
       setProfileSuccess(true)
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : t('failedToUpdateProfile', lang))
@@ -60,7 +59,7 @@ export function SettingsForms({ token, initialName, email, role }: Props) {
     setPwSuccess(false)
     try {
       const body: ChangePasswordRequest = { currentPassword, newPassword }
-      await put('/api/users/me/password', body, token)
+      await put('/api/users/me/password', body)
       setPwSuccess(true)
       setCurrentPassword('')
       setNewPassword('')
@@ -140,12 +139,12 @@ export function SettingsForms({ token, initialName, email, role }: Props) {
           with nowhere to do it. */}
       {(role === 'root' || role === 'admin') && (
         <>
-          <TwoFactorCard token={token} />
+          <TwoFactorCard />
           {/* A sibling, not a tab inside it: the two are not alternatives to pick
               between. Either satisfies the requirement, and holding both is the
               sensible thing — a key for every day, an app for the day the key is
               in the other coat (#197 part 2). */}
-          <SecurityKeysCard token={token} />
+          <SecurityKeysCard />
         </>
       )}
     </div>

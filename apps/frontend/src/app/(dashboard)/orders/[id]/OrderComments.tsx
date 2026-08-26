@@ -14,7 +14,6 @@ interface Props {
   currentUserId: number
   /** Whether the signed-in user may mark a comment internal. */
   canWriteInternal: boolean
-  token: string
   lang: string
 }
 
@@ -33,7 +32,6 @@ export function OrderComments({
   initialComments,
   currentUserId,
   canWriteInternal,
-  token,
   lang,
 }: Props) {
   const [comments, setComments] = useState(initialComments)
@@ -56,7 +54,7 @@ export function OrderComments({
     setError(null)
     try {
       const payload: CreateOrderCommentRequest = { body: body.trim(), ...(internal ? { internal: true } : {}) }
-      const created = await post<OrderComment>(`/api/orders/${orderId}/comments`, payload, token)
+      const created = await post<OrderComment>(`/api/orders/${orderId}/comments`, payload)
       setComments((prev) => [...prev, created])
       setBody('')
       setInternal(false)
@@ -75,7 +73,6 @@ export function OrderComments({
       const updated = await put<OrderComment>(
         `/api/orders/${orderId}/comments/${commentId}`,
         { body: editBody.trim() },
-        token,
       )
       setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)))
       setEditingId(null)
@@ -95,7 +92,7 @@ export function OrderComments({
     setError(null)
     setBusyIds((prev) => new Set(prev).add(commentId))
     try {
-      await del(`/api/orders/${orderId}/comments/${commentId}`, token)
+      await del(`/api/orders/${orderId}/comments/${commentId}`)
       setComments((prev) => prev.filter((c) => c.id !== commentId))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete the comment.')

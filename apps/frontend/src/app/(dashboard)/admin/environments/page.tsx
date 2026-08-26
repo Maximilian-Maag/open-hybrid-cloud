@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import type { Role, CiSource } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EnvironmentsManager } from './EnvironmentsManager'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { t } from '@/lib/i18n'
 import { getLang } from '@/lib/getLang'
 
@@ -12,11 +12,10 @@ export default async function EnvironmentsPage() {
   if (!session) redirect('/login')
   const role = (session.user as unknown as { role: Role }).role
   if (role !== 'root') redirect('/admin')
-  const token = (session as unknown as { apiToken: string }).apiToken
 
   let ciSources: CiSource[] = []
   try {
-    ciSources = (await get<CiSource[]>('/api/admin/ci-sources', token)) ?? []
+    ciSources = (await get<CiSource[]>('/api/admin/ci-sources')) ?? []
   } catch { /* empty */ }
 
   const lang = await getLang()
@@ -24,7 +23,7 @@ export default async function EnvironmentsPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <PageHeader title={t('environments', lang)} subtitle={t('environmentsSubtitle', lang)} />
-      <EnvironmentsManager token={token} ciSources={ciSources} />
+      <EnvironmentsManager ciSources={ciSources} />
     </div>
   )
 }

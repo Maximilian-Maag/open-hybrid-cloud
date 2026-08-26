@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import type { Role, AiConfig } from '@open-hybrid-cloud/types'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { AiConfigForm } from './AiConfigForm'
 import { t } from '@/lib/i18n'
@@ -12,11 +12,10 @@ export default async function AiConfigPage() {
   if (!session) redirect('/login')
   const role = (session.user as unknown as { role: Role }).role
   if (role !== 'root') redirect('/admin')
-  const token = (session as unknown as { apiToken: string }).apiToken
 
   let config: AiConfig | null = null
   try {
-    config = await get<AiConfig>('/api/admin/config/ai', token)
+    config = await get<AiConfig>('/api/admin/config/ai')
   } catch { /* use null */ }
 
   const lang = await getLang()
@@ -24,7 +23,7 @@ export default async function AiConfigPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <PageHeader title={t('aiConfiguration', lang)} subtitle={t('aiSubtitle', lang)} />
-      <AiConfigForm initial={config} token={token} />
+      <AiConfigForm initial={config} />
     </div>
   )
 }

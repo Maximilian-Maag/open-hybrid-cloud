@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { CatalogPage, DashboardSummary, Role } from '@open-hybrid-cloud/types'
@@ -28,7 +28,6 @@ export default async function DashboardHome() {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const role = (session.user as unknown as { role: Role }).role
   const lang = await getLang()
 
@@ -38,10 +37,10 @@ export default async function DashboardHome() {
     // in full — reduced to four integers and a `.slice(0, 5)` in the browser.
     // For an administrator that is the entire history of the installation, on
     // the page every user lands on immediately after login (#158).
-    get<DashboardSummary>(`/api/dashboard?lang=${lang}`, token),
+    get<DashboardSummary>(`/api/dashboard?lang=${lang}`),
     // Eight cards, so ask for eight rows: this used to fetch the whole catalogue
     // and slice it in the browser (#91).
-    get<CatalogPage>(`/api/catalog?lang=${lang}&limit=8`, token),
+    get<CatalogPage>(`/api/catalog?lang=${lang}&limit=8`),
   ])
 
   // A failed summary must not read as an empty installation, so the counters

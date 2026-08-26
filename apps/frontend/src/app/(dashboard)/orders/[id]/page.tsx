@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { redirect, notFound } from 'next/navigation'
 import type { Order, OrderComment, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -23,12 +23,11 @@ export default async function OrderDetailPage({ params }: Props) {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
 
   let order: Order
   try {
-    order = await get<Order>(`/api/orders/${id}?lang=${lang}`, token)
+    order = await get<Order>(`/api/orders/${id}?lang=${lang}`)
   } catch {
     notFound()
   }
@@ -43,7 +42,7 @@ export default async function OrderDetailPage({ params }: Props) {
   // Non-fatal: a comments outage should cost the thread, not the order page.
   let comments: OrderComment[] = []
   try {
-    comments = (await get<OrderComment[]>(`/api/orders/${id}/comments`, token)) ?? []
+    comments = (await get<OrderComment[]>(`/api/orders/${id}/comments`)) ?? []
   } catch {
     /* empty */
   }
@@ -85,7 +84,7 @@ export default async function OrderDetailPage({ params }: Props) {
             {/* Only root, and only for the one status that has no other way out
                 — see WriteOffOrder. The server checks both again. */}
             {role === 'root' && order.status === 'provisioning' && (
-              <WriteOffOrder orderId={order.id} token={token} />
+              <WriteOffOrder orderId={order.id} />
             )}
             <ButtonLink href="/orders" variant="secondary" size="sm">
               {t('backToOrders', lang)}
@@ -227,7 +226,6 @@ export default async function OrderDetailPage({ params }: Props) {
           initialComments={comments}
           currentUserId={currentUserId}
           canWriteInternal={canWriteInternal}
-          token={token}
           lang={lang}
         />
       </Card>

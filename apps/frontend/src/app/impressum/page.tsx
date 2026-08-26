@@ -1,4 +1,4 @@
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import type { Branding } from '@open-hybrid-cloud/types'
 import Link from 'next/link'
 import { getLang } from '@/lib/getLang'

@@ -39,6 +39,11 @@ spec:
           # from authentication. apps/frontend/src/lib/apiRoutes.test.ts fails if
           # the two ever disagree, so a new frontend /api route cannot ship
           # without landing here too.
+          #
+          # /api/proxy is how the BROWSER now reaches the backend API (#146): the
+          # frontend attaches the bearer token server-side, so the token is never
+          # in client JavaScript. It carries every dashboard request, so sending
+          # it to the backend does not degrade gracefully — the whole UI 404s.
 
           # There used to be an exact-match rule sending /api/auth/callback to the
           # BACKEND, for Entra ID's OAuth callback. That flow was removed in #139:
@@ -47,7 +52,7 @@ spec:
           # rule has to come back — the callback sits inside the frontend's
           # NextAuth prefix, so only an Exact match outranks /api/auth below,
           # and without it the callback silently lands on the wrong service.
-          {{- range $path := list "/api/auth" "/api/login-challenge" "/api/ping" }}
+          {{- range $path := list "/api/auth" "/api/login-challenge" "/api/ping" "/api/proxy" }}
           - path: {{ $path }}
             pathType: Prefix
             backend:

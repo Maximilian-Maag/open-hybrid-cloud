@@ -55,7 +55,7 @@ const view = (over?: Partial<ApprovalDelegationsResponse>): ApprovalDelegationsR
 })
 
 const renderPanel = (over?: Partial<ApprovalDelegationsResponse>) =>
-  render(<DelegationPanel delegations={view(over)} token="test-token" />)
+  render(<DelegationPanel delegations={view(over)} />)
 
 beforeEach(() => {
   mockedPost.mockReset().mockResolvedValue(undefined as never)
@@ -125,7 +125,6 @@ describe('DelegationPanel', () => {
     expect(mockedPost).toHaveBeenCalledWith(
       '/api/approvals/delegations',
       { toUserId: 2, startsOn: STARTS_ON, endsOn: ENDS_ON },
-      'test-token',
     )
   })
 
@@ -147,7 +146,7 @@ describe('DelegationPanel', () => {
 
     await user.click(screen.getByRole('button', { name: /remove/i }))
     await waitFor(() => expect(mockedDel).toHaveBeenCalledTimes(1))
-    expect(mockedDel).toHaveBeenCalledWith('/api/approvals/delegations/5', 'test-token')
+    expect(mockedDel).toHaveBeenCalledWith('/api/approvals/delegations/5')
   })
 
   it('says so when there is nobody to nominate instead of an empty select', () => {

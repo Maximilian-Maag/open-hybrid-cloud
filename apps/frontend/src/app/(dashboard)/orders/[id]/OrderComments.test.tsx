@@ -38,7 +38,7 @@ const renderThread = (
       initialComments={initialComments}
       currentUserId={opts.currentUserId ?? ME}
       canWriteInternal={opts.canWriteInternal ?? false}
-      token="test-token"
+     
       lang="en"
     />,
   )
@@ -81,7 +81,7 @@ describe('OrderComments', () => {
     await user.click(screen.getByRole('button', { name: /add comment/i }))
 
     await waitFor(() =>
-      expect(mockedPost).toHaveBeenCalledWith('/api/orders/7/comments', { body: 'New one' }, 'test-token'),
+      expect(mockedPost).toHaveBeenCalledWith('/api/orders/7/comments', { body: 'New one' }),
     )
     expect(await screen.findByTestId('comment-101')).toBeInTheDocument()
     // The box is cleared so the next comment starts empty.
@@ -162,7 +162,7 @@ describe('OrderComments', () => {
     await user.click(screen.getByRole('button', { name: /save changes/i }))
 
     await waitFor(() =>
-      expect(mockedPut).toHaveBeenCalledWith('/api/orders/7/comments/100', { body: 'Revised' }, 'test-token'),
+      expect(mockedPut).toHaveBeenCalledWith('/api/orders/7/comments/100', { body: 'Revised' }),
     )
     expect(await screen.findByText('Revised')).toBeInTheDocument()
     expect(screen.getByText(/\(edited\)/i)).toBeInTheDocument()
@@ -186,7 +186,7 @@ describe('OrderComments', () => {
     renderThread([comment()])
 
     await user.click(within(screen.getByTestId('comment-100')).getByRole('button', { name: /delete/i }))
-    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/orders/7/comments/100', 'test-token'))
+    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/orders/7/comments/100'))
     await waitFor(() => expect(screen.queryByTestId('comment-100')).not.toBeInTheDocument())
     expect(screen.getByText(/no comments yet/i)).toBeInTheDocument()
   })

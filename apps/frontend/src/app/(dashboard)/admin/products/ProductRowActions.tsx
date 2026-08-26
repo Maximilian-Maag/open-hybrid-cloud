@@ -13,10 +13,9 @@ import { t } from '@/lib/i18n'
 
 interface Props {
   product: Product
-  token: string
 }
 
-export function ProductRowActions({ product, token }: Props) {
+export function ProductRowActions({ product }: Props) {
   const lang = useLang()
   const router = useRouter()
   const { toast } = useToast()
@@ -28,7 +27,7 @@ export function ProductRowActions({ product, token }: Props) {
     setDeleting(true)
     setError(null)
     try {
-      await del(`/api/admin/products/${product.id}`, token)
+      await del(`/api/admin/products/${product.id}`)
       setConfirmOpen(false)
       toast(`${t('product', lang)} “${product.name}” ${t('deleted', lang)}.`, 'info')
       router.refresh()

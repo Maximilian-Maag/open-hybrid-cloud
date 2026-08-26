@@ -13,7 +13,6 @@ import { t } from '@/lib/i18n'
 
 interface Props {
   product: ProductDetail
-  token: string
   lang: string
 }
 
@@ -29,7 +28,7 @@ const MAX_QUANTITY = 20
  * the cart as much work as ordering outright. The size is NOT in that category: it
  * decides the price the line is shown at, so a line without one has no price.
  */
-export function AddToCart({ product, token, lang }: Props) {
+export function AddToCart({ product, lang }: Props) {
   const router = useRouter()
   const [environmentId, setEnvironmentId] = useState(
     product.environments.length === 1 ? String(product.environments[0].environmentId) : '',
@@ -64,13 +63,13 @@ export function AddToCart({ product, token, lang }: Props) {
         ...(needsSize ? { sizeCode } : {}),
         ...(parsedQuantity > 1 ? { quantity: parsedQuantity } : {}),
       }
-      await post('/api/cart', body, token)
+      await post('/api/cart', body)
       setAdded(true)
       // Tell the header badge straight away — a shopper's confirmation that the
       // click landed is the count going up, and waiting for the server round trip
       // of router.refresh() to repaint the shell reads as a dead button.
       try {
-        const items = await get<CartItem[]>(`/api/cart?lang=${lang}`, token)
+        const items = await get<CartItem[]>(`/api/cart?lang=${lang}`)
         publishCartCount((items ?? []).length)
       } catch { /* the refresh below still corrects the badge */ }
       router.refresh()

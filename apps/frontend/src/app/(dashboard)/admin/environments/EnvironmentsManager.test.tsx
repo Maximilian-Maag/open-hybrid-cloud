@@ -42,7 +42,7 @@ describe('EnvironmentsManager load failure', () => {
   it('reports a failed load instead of claiming there are no environments', async () => {
     mockedGet.mockRejectedValue(new Error('502 Bad Gateway'))
 
-    render(<EnvironmentsManager token="t" ciSources={[]} />)
+    render(<EnvironmentsManager ciSources={[]} />)
 
     expect(await screen.findByText('502 Bad Gateway')).toBeInTheDocument()
     expect(screen.queryByText(/no environments yet/i)).not.toBeInTheDocument()
@@ -50,13 +50,13 @@ describe('EnvironmentsManager load failure', () => {
 
   it('clears the error once a later load succeeds', async () => {
     mockedGet.mockRejectedValueOnce(new Error('502 Bad Gateway'))
-    render(<EnvironmentsManager token="t" ciSources={[]} />)
+    render(<EnvironmentsManager ciSources={[]} />)
     expect(await screen.findByText('502 Bad Gateway')).toBeInTheDocument()
 
     mockedGet.mockResolvedValue(envs as never)
     // A second mount stands in for the retry path — the point is that the
     // error is cleared by a successful load rather than latched forever.
-    render(<EnvironmentsManager token="t2" ciSources={[]} />)
+    render(<EnvironmentsManager ciSources={[]} />)
 
     await waitFor(() => expect(screen.getByText('Production')).toBeInTheDocument())
   })
@@ -64,7 +64,7 @@ describe('EnvironmentsManager load failure', () => {
   it('still shows the empty state when the load succeeds with nothing in it', async () => {
     mockedGet.mockResolvedValue([] as never)
 
-    render(<EnvironmentsManager token="t" ciSources={[]} />)
+    render(<EnvironmentsManager ciSources={[]} />)
 
     expect(await screen.findByText(/no environments yet/i)).toBeInTheDocument()
   })

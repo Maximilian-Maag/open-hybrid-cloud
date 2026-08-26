@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
 import type { CartItem, Project, CostCenter, ExchangeRate } from '@open-hybrid-cloud/types'
 import { CartView } from './CartView'
@@ -13,14 +13,13 @@ export default async function CartPage() {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
 
   const [cartRes, projectsRes, costCentersRes, ratesRes] = await Promise.allSettled([
-    get<CartItem[]>(`/api/cart?lang=${lang}`, token),
-    get<Project[]>('/api/projects', token),
-    get<CostCenter[]>('/api/admin/cost-centers', token),
-    get<ExchangeRate[]>('/api/public/exchange-rates', token),
+    get<CartItem[]>(`/api/cart?lang=${lang}`),
+    get<Project[]>('/api/projects'),
+    get<CostCenter[]>('/api/admin/cost-centers'),
+    get<ExchangeRate[]>('/api/public/exchange-rates'),
   ])
 
   const items = cartRes.status === 'fulfilled' ? (cartRes.value ?? []) : []
@@ -39,7 +38,6 @@ export default async function CartPage() {
         initialItems={items}
         projects={projects}
         costCenters={costCenters}
-        token={token}
         lang={lang}
         exchangeRates={rates}
         localeCurrency={localeToCurrency(lang)}

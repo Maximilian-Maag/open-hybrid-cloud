@@ -78,3 +78,44 @@ deny contains v if {
 		]),
 	}
 }
+
+# ---------------------------------------------------------------------------
+# rule 8c — user-facing text in a .tsx goes through t()
+# ---------------------------------------------------------------------------
+
+# Rules 8 and 8a/8b are about KEYS: every key in `Translations` exists in all 25
+# tables, and the table set matches the picker. A hardcoded string never becomes
+# a key, so to those rules a fully translated key set and a page written in
+# English are the same picture. That is how the admin product edit page reached
+# 74 untranslated strings (#244) with the i18n gate green the whole way.
+#
+# Counted against dev before it was written: 113 strings in 5 files, 109 of them
+# in ProductEditForm.tsx. This lands with the fix that takes that to zero — a
+# deny rule whose count is not zero on the day it merges is a broken build, not
+# a policy.
+#
+# What counts as user-facing is decided in the extractor
+# (`isUserFacingProse` in scripts/policy-facts.ts), and it is deliberately
+# conservative: codes the pipeline reads verbatim, paths, format examples and
+# single glyphs are all excluded, because a gate that cries wolf gets switched
+# off and a gate that misses one string does not.
+deny contains v if {
+	some hit in input.hardcodedText
+
+	v := {
+		"rule": "user_facing_text_uses_t",
+		"file": hit.file,
+		"line": hit.line,
+		"detail": sprintf("%s is hardcoded English: %q", [text_position(hit), hit.text]),
+		"why": concat("", [
+			"This app ships in 25 languages and switching to any of them leaves this string in ",
+			"English. Route it through `t()` and add the key to every table — rule 8 will tell you ",
+			"which ones you missed. If the string is a code, a path or a format example rather than ",
+			"prose, it belongs in the extractor's exclusion list, not in a table.",
+		]),
+	}
+}
+
+text_position(hit) := "JSX text" if hit.kind == "text"
+
+text_position(hit) := sprintf("the %s attribute", [trim_prefix(hit.kind, "@")]) if hit.kind != "text"

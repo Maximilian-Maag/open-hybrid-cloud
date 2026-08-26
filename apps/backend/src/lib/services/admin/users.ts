@@ -205,8 +205,22 @@ export const updateUser = async (
 
       if (!row) return null
 
-      if (input.active === false || (input.role !== undefined && input.role !== before?.role)) {
-        const reason = input.active === false ? 'Account deactivated' : 'Role changed'
+      // A password reset joins the two that were already here (#184). An admin
+      // setting somebody's password is remediating — usually a suspected
+      // compromise — and leaving the old sessions alive is the one outcome that
+      // makes the remediation pointless. Nothing is spared: unlike a user
+      // changing their own, the person at the keyboard is not the account owner.
+      const passwordReset = input.password !== undefined
+      if (
+        input.active === false ||
+        passwordReset ||
+        (input.role !== undefined && input.role !== before?.role)
+      ) {
+        const reason = input.active === false
+          ? 'Account deactivated'
+          : passwordReset
+            ? 'Password reset by an administrator'
+            : 'Role changed'
         await revokeAllSessionsOf(actorId, id, reason, tx)
       }
 

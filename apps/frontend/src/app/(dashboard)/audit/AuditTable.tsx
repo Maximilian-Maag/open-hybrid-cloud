@@ -229,7 +229,7 @@ export function AuditTable() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-slate-500">
-            Page {page} of {totalPages} ({total} entries)
+            {t('page', lang)} {page} / {totalPages} · {total} {t('entriesLower', lang)}
           </p>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>

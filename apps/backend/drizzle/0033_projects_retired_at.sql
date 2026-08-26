@@ -17,9 +17,5 @@
 --
 -- NULL means live. A project holding orders is retired; an empty one is still
 -- deleted outright, so this does not fill the table with tombstones.
-ALTER TABLE "projects"
-  ADD COLUMN IF NOT EXISTS "retired_at" TIMESTAMP WITH TIME ZONE;
-
--- Every read filters on it, so the filter is answered from the index rather than
--- from a sequential scan that grows with the tombstones.
-CREATE INDEX IF NOT EXISTS "projects_live_idx" ON "projects" ("id") WHERE "retired_at" IS NULL;
+ALTER TABLE "projects" ADD COLUMN "retired_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "projects_live_idx" ON "projects" USING btree ("id") WHERE retired_at IS NULL;

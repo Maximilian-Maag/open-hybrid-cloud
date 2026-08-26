@@ -706,6 +706,16 @@ export interface Order {
   environmentName?: string
   projectName?: string
   userName?: string
+  /**
+   * The cost centre as a person refers to it — `IT-4711 — Platform Networking`.
+   *
+   * The order carries `costCenterId` because that is what it is charged against,
+   * and the detail page printed exactly that: `#3`. A cost centre is the one
+   * field on that page a finance reader has to recognise, and an internal row id
+   * is the one form in which they cannot.
+   */
+  costCenterCode?: string
+  costCenterName?: string
 }
 
 export interface CreateOrderRequest {
@@ -791,6 +801,16 @@ export interface CostReport {
   byEnvironment: CostBucket[]
   /** Amounts with no stored exchange rate, reported rather than silently dropped. */
   unconverted: { currency: string; amount: number }[]
+  /**
+   * Orders counted in `orderCount` with no recoverable price at all — no snapshot
+   * and no live offering (#189).
+   *
+   * They contribute nothing to `totalEur` because there is nothing to add. What
+   * this field buys is that they do so out loud: an order reaches this state when
+   * it predates snapshots and its offering has since been withdrawn, and before
+   * this the money simply left the total with the order still in the count.
+   */
+  unpricedOrders: number
   /** True when the caller sees every project's spend. */
   global: boolean
 }

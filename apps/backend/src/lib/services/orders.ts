@@ -63,6 +63,15 @@ export interface OrderRow {
   projectName: string | null
   userName: string | null
   /**
+   * The cost centre as a person refers to it. Both null when the order has no
+   * cost centre, which is a legitimate state — see `costCenterMode`.
+   *
+   * Selected only by `getOrderById`: the list has no column for it, and joining
+   * a table per row for something nobody reads there is a cost with no reader.
+   */
+  costCenterCode?: string | null
+  costCenterName?: string | null
+  /**
    * Per-pipeline outcome, keyed by pipeline id — `{ "pipe-a": "success" }`.
    *
    * The column has always been written by the webhook handler and was never
@@ -217,11 +226,17 @@ export const getOrderById = async (
       // from a list whose whole job is to show everything the caller may see.
       projectName: projects.name,
       userName: users.name,
+      // The page printed `#3` for the cost centre because the id was all it had.
+      // LEFT, like the other three: `costCenterId` is nullable and an inner join
+      // would make an order without one disappear from its own detail page.
+      costCenterCode: costCenters.code,
+      costCenterName: costCenters.name,
     })
     .from(orders)
     .leftJoin(deploymentEnvironments, eq(orders.environmentId, deploymentEnvironments.id))
     .leftJoin(projects, eq(orders.projectId, projects.id))
     .leftJoin(users, eq(orders.userId, users.id))
+    .leftJoin(costCenters, eq(orders.costCenterId, costCenters.id))
     .where(eq(orders.id, orderId))
     .limit(1)
 

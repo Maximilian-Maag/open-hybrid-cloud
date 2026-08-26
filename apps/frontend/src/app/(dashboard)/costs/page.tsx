@@ -99,6 +99,10 @@ export default async function CostsPage({ searchParams }: Props) {
                 <CostCaveats
                   estimatedOrders={report.estimatedOrders}
                   unconverted={report.unconverted}
+                  // Only on the total card: this caveat is about money missing
+                  // from THE total, and repeating it under every chart would say
+                  // it four times about the same orders.
+                  unpricedOrders={report.unpricedOrders}
                   lang={lang}
                 />
               </div>

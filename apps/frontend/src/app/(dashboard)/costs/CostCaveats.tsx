@@ -5,6 +5,15 @@ interface Props {
   estimatedOrders: number
   /** Amounts with no stored exchange rate; counted at zero, not silently as EUR. */
   unconverted: { currency: string; amount: number }[]
+  /**
+   * Orders with no recoverable price at all — no snapshot, and the offering they
+   * were placed against has since been withdrawn (#189).
+   *
+   * The strongest caveat on this card: an estimated order is counted at a price
+   * that may be wrong, and an unconverted one is reported in its own currency,
+   * but this one is money that is simply missing from the total.
+   */
+  unpricedOrders?: number
   lang: string
   /** The current month is still running, so its figure will grow. Trend/comparison only. */
   monthInProgress?: boolean
@@ -23,7 +32,7 @@ interface Props {
  * can be read, screenshotted or scrolled to on its own, and a caveat that is not
  * attached to the figure is a caveat nobody sees.
  */
-export function CostCaveats({ estimatedOrders, unconverted, lang, monthInProgress }: Props) {
+export function CostCaveats({ estimatedOrders, unconverted, unpricedOrders = 0, lang, monthInProgress }: Props) {
   return (
     <div className="mt-3 space-y-1 border-t border-slate-100 pt-2">
       <p className="text-xs text-slate-500">{t('notAProjection', lang)}</p>
@@ -37,6 +46,11 @@ export function CostCaveats({ estimatedOrders, unconverted, lang, monthInProgres
         <p className="text-xs text-amber-700">
           {t('unconvertedNotice', lang)}{' '}
           {unconverted.map((u) => `${u.amount.toFixed(2)} ${u.currency}`).join(', ')}
+        </p>
+      )}
+      {unpricedOrders > 0 && (
+        <p className="text-xs text-red-700">
+          {t('unpricedNotice', lang)} ({unpricedOrders})
         </p>
       )}
     </div>

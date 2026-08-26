@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ProductVersionHistory } from './ProductVersionHistory'
 import { t, SUPPORTED_LANGUAGES } from '@/lib/i18n'
+import { ImportFromRepo } from './ImportFromRepo'
 
 // All 25, from the single list `SUPPORTED_LANGUAGES` — not the four this used to
 // name. Offering `en`, `de`, `fr` and `es` while the app translates its own UI
@@ -664,6 +665,10 @@ export function ProductEditForm({ product, categories, environments, translation
       {/* Parameters */}
       <Card title={t('parameters', lang)} action={
         <div className="flex gap-2">
+          {/* The path that does not need a pipeline stack (#248): repository,
+              branch and template directory chosen explicitly, so parameters can
+              be imported while the product is still being set up. */}
+          <ImportFromRepo productId={product.id} lang={lang} />
           <Button size="sm" variant="secondary" onClick={handleSyncParams}
             disabled={paramSyncing || stacks.length === 0}
             title={stacks.length === 0 ? t('addPipelineStackFirst', lang) : t('importFromTemplateVariables', lang)}>

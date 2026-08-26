@@ -7,9 +7,9 @@ import {
   changePassword,
 } from './auth'
 import { db } from '@/lib/db/client'
-import { users } from '@/lib/db/schema'
+import { users, sessions } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { createUser } from '@/test/helpers'
+import { createUser, makeSession } from '@/test/helpers'
 
 describe('loginWithCredentials', () => {
   it('returns 401 for an unknown email', async () => {
@@ -25,7 +25,10 @@ describe('loginWithCredentials', () => {
     if (!result.ok) expect(result.status).toBe(401)
   })
 
-  it('returns 401 for an inactive user even with correct password', async () => {
+  // 403 rather than 401, and only past a correct password. Sharing the 401 with
+  // "wrong password" is what sent an operator hunting for a password problem for
+  // an afternoon when root had deactivated its own account (#196).
+  it('says the account is deactivated once the password verifies', async () => {
     const u = await createUser({
       email: 'inactive@test.dev',
       password: 'correct',
@@ -33,7 +36,38 @@ describe('loginWithCredentials', () => {
     })
     const result = await loginWithCredentials(u.email, 'correct')
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.status).toBe(401)
+    if (!result.ok) {
+      expect(result.status).toBe(403)
+      expect(result.message).toMatch(/deactivated/i)
+    }
+  })
+
+  // Told before the password is checked this would be an account-enumeration
+  // oracle: which addresses have accounts, and which of them are switched off.
+  it('does not admit a deactivated account exists to a wrong password', async () => {
+    const u = await createUser({
+      email: 'inactive2@test.dev',
+      password: 'correct',
+      active: false,
+    })
+
+    const result = await loginWithCredentials(u.email, 'wrong')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(401)
+      expect(result.message).not.toMatch(/deactivated/i)
+    }
+  })
+
+  it('says nothing different for an address with no account at all', async () => {
+    const result = await loginWithCredentials('nobody@test.dev', 'whatever')
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(401)
+      expect(result.message).not.toMatch(/deactivated/i)
+    }
   })
 
   it('returns ok with a non-empty token for valid credentials', async () => {
@@ -91,14 +125,16 @@ describe('updateMe', () => {
 describe('changePassword', () => {
   it('returns 400 when current password is wrong', async () => {
     const u = await createUser({ password: 'good' })
-    const result = await changePassword(u.id, 'bad', 'new-password')
+    const mine = await makeSession(u)
+    const result = await changePassword({ id: u.id, sessionId: mine.sessionId }, 'bad', 'new-password')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(400)
   })
 
   it('updates passwordHash in DB when current password is correct, verifiable with bcrypt', async () => {
     const u = await createUser({ password: 'old-pw' })
-    const result = await changePassword(u.id, 'old-pw', 'brand-new')
+    const mine = await makeSession(u)
+    const result = await changePassword({ id: u.id, sessionId: mine.sessionId }, 'old-pw', 'brand-new')
     expect(result.ok).toBe(true)
 
     const [dbU] = await db.select().from(users).where(eq(users.id, u.id))
@@ -107,6 +143,62 @@ describe('changePassword', () => {
       expect(await bcrypt.compare('brand-new', dbU.passwordHash)).toBe(true)
       expect(await bcrypt.compare('old-pw', dbU.passwordHash)).toBe(false)
     }
+  })
+
+  // Changing the password is the one remediation every user and every helpdesk
+  // reaches for after a suspected compromise, and it used to leave every session
+  // alive — an attacker holding a stolen token kept it, up to thirty days with
+  // "remember me" (#184).
+  it('ends the account\'s other sessions', async () => {
+    const u = await createUser({ password: 'old-pw' })
+    const mine = await makeSession(u)
+    const laptop = await makeSession(u)
+    const phone = await makeSession(u)
+
+    const result = await changePassword({ id: u.id, sessionId: mine.sessionId }, 'old-pw', 'brand-new')
+
+    expect(result.ok).toBe(true)
+    const rows = await db.select().from(sessions).where(eq(sessions.userId, u.id))
+    const live = rows.filter((r) => r.revokedAt === null).map((r) => r.id)
+    expect(live).toEqual([mine.sessionId])
+    expect(rows.filter((r) => r.revokedAt !== null).map((r) => r.id).sort())
+      .toEqual([laptop.sessionId, phone.sessionId].sort())
+  })
+
+  // They just proved the old password and are sitting in that tab. Signing them
+  // out of it would make the remediation feel like a failure.
+  it('keeps the session the change was made from', async () => {
+    const u = await createUser({ password: 'old-pw' })
+    const mine = await makeSession(u)
+
+    await changePassword({ id: u.id, sessionId: mine.sessionId }, 'old-pw', 'brand-new')
+
+    const [row] = await db.select().from(sessions).where(eq(sessions.id, mine.sessionId))
+    expect(row.revokedAt).toBeNull()
+  })
+
+  it('leaves every session alone when the current password is wrong', async () => {
+    const u = await createUser({ password: 'good' })
+    const mine = await makeSession(u)
+    const other = await makeSession(u)
+
+    await changePassword({ id: u.id, sessionId: mine.sessionId }, 'bad', 'new-password')
+
+    const rows = await db.select().from(sessions).where(eq(sessions.userId, u.id))
+    expect(rows.every((r) => r.revokedAt === null)).toBe(true)
+    expect(rows.map((r) => r.id).sort()).toEqual([mine.sessionId, other.sessionId].sort())
+  })
+
+  it('does not touch another account\'s sessions', async () => {
+    const u = await createUser({ password: 'old-pw' })
+    const bystander = await createUser({ password: 'x', email: 'bystander@test.dev' })
+    const mine = await makeSession(u)
+    const theirs = await makeSession(bystander)
+
+    await changePassword({ id: u.id, sessionId: mine.sessionId }, 'old-pw', 'brand-new')
+
+    const [row] = await db.select().from(sessions).where(eq(sessions.id, theirs.sessionId))
+    expect(row.revokedAt).toBeNull()
   })
 
   it('returns 400 for SSO accounts without a password hash', async () => {
@@ -120,7 +212,8 @@ describe('changePassword', () => {
         active: true,
       })
       .returning()
-    const result = await changePassword(sso.id, 'whatever', 'new')
+    const mine = await makeSession(sso)
+    const result = await changePassword({ id: sso.id, sessionId: mine.sessionId }, 'whatever', 'new')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(400)
   })

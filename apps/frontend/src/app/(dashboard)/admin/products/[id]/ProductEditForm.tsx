@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ProductVersionHistory } from './ProductVersionHistory'
 import { t, SUPPORTED_LANGUAGES } from '@/lib/i18n'
+import { ImportFromRepo } from './ImportFromRepo'
 
 // All 25, from the single list `SUPPORTED_LANGUAGES` — not the four this used to
 // name. Offering `en`, `de`, `fr` and `es` while the app translates its own UI
@@ -41,11 +42,15 @@ import { t, SUPPORTED_LANGUAGES } from '@/lib/i18n'
 // for it (#162).
 const LANGUAGES = SUPPORTED_LANGUAGES.map((l) => ({ value: l.code, label: l.name }))
 
-const COST_CENTER_MODES: { value: CostCenterMode; label: string }[] = [
-  { value: 'project', label: 'From Project' },
-  { value: 'select', label: 'User Selection' },
-  { value: 'overhead', label: 'Overhead' },
-]
+// Built per render rather than once at module load: the labels go through t(),
+// so they depend on the language this page is being rendered in (#244).
+function costCenterModes(lang: string): { value: CostCenterMode; label: string }[] {
+  return [
+    { value: 'project', label: t('costCenterModeProject', lang) },
+    { value: 'select', label: t('costCenterModeSelect', lang) },
+    { value: 'overhead', label: t('costCenterModeOverhead', lang) },
+  ]
+}
 
 interface Props {
   product: ProductDetail
@@ -53,7 +58,13 @@ interface Props {
   environments: DeploymentEnvironment[]
   translations: ProductTranslation[]
   costCenters: CostCenter[]
-  /** The rest of this form is English-only admin chrome; only the new strings are translated. */
+  /**
+   * The language every string on this form renders in. It used to translate only
+   * the handful of strings added with the version history, which left the page
+   * reading as half-translated rather than as an untranslated corner (#244).
+   * Defaults to English for callers that resolve no language — the tests; the
+   * page itself always passes what `getLang()` answered.
+   */
   lang?: string
 }
 
@@ -170,7 +181,7 @@ export function ProductEditForm({ product, categories, environments, translation
       setSuccess(true)
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save.')
+      setError(err instanceof Error ? err.message : t('failedToSave', lang))
     } finally {
       setSaving(false)
     }
@@ -243,7 +254,7 @@ export function ProductEditForm({ product, categories, environments, translation
       }
       setTransModal(false)
     } catch (err) {
-      setTransError(err instanceof Error ? err.message : 'Failed to save translation.')
+      setTransError(err instanceof Error ? err.message : t('failedToSave', lang))
     } finally {
       setTransSaving(false)
     }
@@ -256,7 +267,7 @@ export function ProductEditForm({ product, categories, environments, translation
       await post(`/api/admin/products/${product.id}/translate`, {})
       router.refresh()
     } catch (e) {
-      setAiError(e instanceof Error ? e.message : 'AI translation failed.')
+      setAiError(e instanceof Error ? e.message : t('aiTranslationFailed', lang))
     } finally {
       setTranslating(false)
     }
@@ -279,7 +290,7 @@ export function ProductEditForm({ product, categories, environments, translation
       setWebhookModal(false)
       setWhName(''); setWhUrl(''); setWhToken(''); setWhOrder('0')
     } catch (err) {
-      setWhError(err instanceof Error ? err.message : 'Failed to create webhook.')
+      setWhError(err instanceof Error ? err.message : t('failedToCreateGeneric', lang))
     } finally {
       setWhSaving(false)
     }
@@ -291,7 +302,7 @@ export function ProductEditForm({ product, categories, environments, translation
       await del(`/api/admin/products/${product.id}/webhooks/${whId}`)
       setWebhooks((prev) => prev.filter((w) => w.id !== whId))
     } catch (e) {
-      setWhDeleteError(e instanceof Error ? e.message : 'Failed to delete webhook.')
+      setWhDeleteError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
     }
   }
 
@@ -415,7 +426,7 @@ export function ProductEditForm({ product, categories, environments, translation
       }
       setStackModal(false)
     } catch (err) {
-      setPsError(err instanceof Error ? err.message : 'Failed to save pipeline stack.')
+      setPsError(err instanceof Error ? err.message : t('failedToSave', lang))
     } finally {
       setPsSaving(false)
     }
@@ -427,7 +438,7 @@ export function ProductEditForm({ product, categories, environments, translation
       await del(`/api/admin/products/${product.id}/pipeline-stacks/${stackId}`)
       setStacks((prev) => prev.filter((s) => s.id !== stackId))
     } catch (e) {
-      setStackDeleteError(e instanceof Error ? e.message : 'Failed to delete pipeline stack.')
+      setStackDeleteError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
     }
   }
 
@@ -443,12 +454,15 @@ export function ProductEditForm({ product, categories, environments, translation
         `/api/admin/parameters?scope=product&scopeId=${product.id}`,
       )
       if (refreshed) setProductParams(refreshed)
+      // A label and a number rather than an inflected sentence: "3 parameters"
+      // takes a different plural form in most of the 25 languages and the table
+      // has no placeholder syntax to carry one.
       setParamSyncMsg(
-        `Imported ${result.created} parameter${result.created !== 1 ? 's' : ''}` +
-        (result.skipped ? `, ${result.skipped} already existed.` : '.'),
+        `${t('parametersImported', lang)}: ${result.created}` +
+        (result.skipped ? ` · ${t('alreadyExisted', lang)}: ${result.skipped}` : ''),
       )
     } catch (e) {
-      setParamError(e instanceof Error ? e.message : 'Sync failed.')
+      setParamError(e instanceof Error ? e.message : t('genericFailed', lang))
     } finally {
       setParamSyncing(false)
     }
@@ -504,7 +518,7 @@ export function ProductEditForm({ product, categories, environments, translation
       }
       setParamModal(false)
     } catch (err) {
-      setParamError(err instanceof Error ? err.message : 'Failed to save parameter.')
+      setParamError(err instanceof Error ? err.message : t('failedToSave', lang))
     } finally {
       setParamSaving(false)
     }
@@ -517,26 +531,26 @@ export function ProductEditForm({ product, categories, environments, translation
       await del(`/api/admin/parameters/${paramId}`)
       setProductParams((prev) => prev.filter((p) => p.id !== paramId))
     } catch (e) {
-      setParamError(e instanceof Error ? e.message : 'Failed to delete parameter.')
+      setParamError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
     }
   }
 
   return (
     <div className="space-y-6">
       {/* Basic Info */}
-      <Card title="Basic Information">
+      <Card title={t('basicInformation', lang)}>
         <form onSubmit={handleSaveBasic} className="space-y-4">
           {error && <Alert>{error}</Alert>}
-          {success && <Alert tone="success">Saved.</Alert>}
+          {success && <Alert tone="success">{t('saved', lang)}</Alert>}
           <div className="grid grid-cols-2 gap-4">
-            <Select label="Category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required
+            <Select label={t('category', lang)} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required
               options={categories.map((c) => ({ value: c.id, label: c.name }))} />
-            <Select label="Base Language" value={baseLanguage} onChange={(e) => setBaseLanguage(e.target.value)}
+            <Select label={t('baseLanguage', lang)} value={baseLanguage} onChange={(e) => setBaseLanguage(e.target.value)}
               options={LANGUAGES} />
           </div>
-          <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+          <Input label={t('name', lang)} value={name} onChange={(e) => setName(e.target.value)} required />
           <div className="flex flex-col gap-1">
-            <label htmlFor="product-description" className="text-sm font-medium text-slate-700">Description</label>
+            <label htmlFor="product-description" className="text-sm font-medium text-slate-700">{t('description', lang)}</label>
             <textarea id="product-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
@@ -545,20 +559,21 @@ export function ProductEditForm({ product, categories, environments, translation
               blank row. */}
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Owner"
+              label={t('owner', lang)}
               value={owner}
               maxLength={200}
               onChange={(e) => setOwner(e.target.value)}
-              placeholder="e.g. Platform Networking"
-              hint="The team that runs this product, shown on its page."
+              placeholder={t('ownerPlaceholder', lang)}
+              hint={t('ownerHint', lang)}
             />
             <Input
-              label="Documentation link"
+              label={t('documentationLink', lang)}
               value={docsUrl}
               maxLength={2000}
               onChange={(e) => setDocsUrl(e.target.value)}
+              // A URL scheme, not prose: the same in every language.
               placeholder="https://…"
-              hint="Must start with http:// or https://."
+              hint={t('docsUrlHint', lang)}
             />
           </div>
           {/* Optional, per the issue. Cleared after saving, since a note describes
@@ -578,7 +593,7 @@ export function ProductEditForm({ product, categories, environments, translation
             <p className="text-xs text-slate-500">{t('changelogHint', lang)}</p>
           </div>
           <div className="flex justify-end">
-            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button type="submit" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
           </div>
         </form>
       </Card>
@@ -589,13 +604,13 @@ export function ProductEditForm({ product, categories, environments, translation
       </Card>
 
       {/* Translations */}
-      <Card title="Translations" action={
+      <Card title={t('translationsTitle', lang)} action={
         <div className="flex gap-2">
           <Button size="sm" variant="secondary" onClick={handleAiTranslate} disabled={translating}>
-            {translating ? 'Translating…' : 'AI Translate'}
+            {translating ? t('translating', lang) : t('aiTranslate', lang)}
           </Button>
           <Button size="sm" onClick={() => { loadTranslation(translationLang); setTransError(null); setTransModal(true) }}>
-            Add Translation
+            {t('addTranslation', lang)}
           </Button>
         </div>
       }>
@@ -605,7 +620,7 @@ export function ProductEditForm({ product, categories, environments, translation
           </Alert>
         )}
         {translations.length === 0 ? (
-          <p className="text-sm text-slate-600">No translations yet.</p>
+          <p className="text-sm text-slate-600">{t('noTranslationsYet', lang)}</p>
         ) : (
           <div className="space-y-2">
             {translations.map((tr) => (
@@ -623,9 +638,9 @@ export function ProductEditForm({ product, categories, environments, translation
       </Card>
 
       {/* Environments */}
-      <Card title="Environments">
+      <Card title={t('environments', lang)}>
         {environments.length === 0 ? (
-          <p className="text-sm text-slate-600">No environments configured.</p>
+          <p className="text-sm text-slate-600">{t('noEnvironmentsConfigured', lang)}</p>
         ) : (
           <div className="space-y-4">
             {environments.map((env) => {
@@ -639,6 +654,7 @@ export function ProductEditForm({ product, categories, environments, translation
                   productId={product.id}
                   onSave={(data) => handleSaveEnv(env.id, data)}
                   onDelete={() => handleDeleteEnv(env.id)}
+                  lang={lang}
                 />
               )
             })}
@@ -647,14 +663,18 @@ export function ProductEditForm({ product, categories, environments, translation
       </Card>
 
       {/* Parameters */}
-      <Card title="Parameters" action={
+      <Card title={t('parameters', lang)} action={
         <div className="flex gap-2">
+          {/* The path that does not need a pipeline stack (#248): repository,
+              branch and template directory chosen explicitly, so parameters can
+              be imported while the product is still being set up. */}
+          <ImportFromRepo productId={product.id} lang={lang} />
           <Button size="sm" variant="secondary" onClick={handleSyncParams}
             disabled={paramSyncing || stacks.length === 0}
-            title={stacks.length === 0 ? 'Add a pipeline stack first' : 'Import from template variables.tf'}>
-            {paramSyncing ? 'Syncing…' : 'Sync from template'}
+            title={stacks.length === 0 ? t('addPipelineStackFirst', lang) : t('importFromTemplateVariables', lang)}>
+            {paramSyncing ? t('syncing', lang) : t('syncFromTemplate', lang)}
           </Button>
-          <Button size="sm" onClick={openAddParamModal}>Add Parameter</Button>
+          <Button size="sm" onClick={openAddParamModal}>{t('addParameter', lang)}</Button>
         </div>
       }>
         {paramSyncMsg && <Alert tone="success" className="mb-3">{paramSyncMsg}</Alert>}
@@ -662,7 +682,7 @@ export function ProductEditForm({ product, categories, environments, translation
             and two role="alert" regions with the same text are announced twice. */}
         {paramError && !paramModal && <Alert className="mb-3">{paramError}</Alert>}
         {productParams.length === 0 ? (
-          <p className="text-sm text-slate-600">No parameters yet. Use &quot;Sync from template&quot; to import from the template&apos;s variables.tf, or add manually.</p>
+          <p className="text-sm text-slate-600">{t('noParametersYetHint', lang)}</p>
         ) : (
           <div className="space-y-2">
             {productParams.map((p) => (
@@ -675,15 +695,15 @@ export function ProductEditForm({ product, categories, environments, translation
                     {/* red-700, not red-600: this 12px badge sits on red-100 (#ffe2e2), where
                         red-600 (#e7000b) measures 3.91:1 — below the 4.5:1 AA needs for text
                         this size. red-700 (#c10007) on the same ground is 5.27:1. */}
-                    {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">required</span>}
-                    {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">sensitive</span>}
+                    {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">{t('requiredBadge', lang)}</span>}
+                    {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">{t('sensitiveBadge', lang)}</span>}
                   </div>
                   {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
-                  {p.defaultValue && <p className="text-xs text-slate-600 font-mono">default: {p.defaultValue}</p>}
+                  {p.defaultValue && <p className="text-xs text-slate-600 font-mono">{t('defaultPrefix', lang)}: {p.defaultValue}</p>}
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEditParamModal(p)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => handleDeleteParam(p.id)}>Delete</Button>
+                  <Button size="sm" variant="secondary" onClick={() => openEditParamModal(p)}>{t('edit', lang)}</Button>
+                  <Button size="sm" variant="danger" onClick={() => handleDeleteParam(p.id)}>{t('delete', lang)}</Button>
                 </div>
               </div>
             ))}
@@ -692,13 +712,13 @@ export function ProductEditForm({ product, categories, environments, translation
       </Card>
 
       {/* Order Callbacks */}
-      <Card title="Order Callbacks" action={
-        <Button size="sm" onClick={() => { setWhError(null); setWebhookModal(true) }}>Add Webhook</Button>
+      <Card title={t('orderCallbacks', lang)} action={
+        <Button size="sm" onClick={() => { setWhError(null); setWebhookModal(true) }}>{t('addWebhook', lang)}</Button>
       }>
-        <p className="text-xs text-slate-500 mb-3">Optional HTTP callbacks the platform calls after an order is processed — use these to notify external systems such as ticketing or monitoring tools. Pipeline Stacks handle the actual provisioning.</p>
+        <p className="text-xs text-slate-500 mb-3">{t('orderCallbacksIntro', lang)}</p>
         {whDeleteError && <Alert className="mb-3">{whDeleteError}</Alert>}
         {webhooks.length === 0 ? (
-          <p className="text-sm text-slate-600">No callbacks configured.</p>
+          <p className="text-sm text-slate-600">{t('noCallbacksConfigured', lang)}</p>
         ) : (
           <div className="space-y-2">
             {webhooks.map((wh) => (
@@ -707,7 +727,7 @@ export function ProductEditForm({ product, categories, environments, translation
                   <p className="font-medium text-slate-900">{wh.name}</p>
                   <p className="text-xs text-slate-500 font-mono">{wh.webhookUrl}</p>
                 </div>
-                <Button size="sm" variant="danger" onClick={() => handleDeleteWebhook(wh.id)}>Delete</Button>
+                <Button size="sm" variant="danger" onClick={() => handleDeleteWebhook(wh.id)}>{t('delete', lang)}</Button>
               </div>
             ))}
           </div>
@@ -715,12 +735,12 @@ export function ProductEditForm({ product, categories, environments, translation
       </Card>
 
       {/* Pipeline Stacks */}
-      <Card title="Pipeline Stacks" action={
-        <Button size="sm" onClick={openStackModal}>Add Stack</Button>
+      <Card title={t('pipelineStacks', lang)} action={
+        <Button size="sm" onClick={openStackModal}>{t('addStack', lang)}</Button>
       }>
         {stackDeleteError && <Alert className="mb-3">{stackDeleteError}</Alert>}
         {stacks.length === 0 ? (
-          <p className="text-sm text-slate-600">No pipeline stacks configured. Click &quot;Add Stack&quot; to configure one.</p>
+          <p className="text-sm text-slate-600">{t('noPipelineStacksYet', lang)}</p>
         ) : (
           <div className="space-y-2">
             {stacks.map((s) => {
@@ -729,11 +749,14 @@ export function ProductEditForm({ product, categories, environments, translation
                 <div key={s.id} data-testid="stack-item" className="flex items-center justify-between rounded-lg border border-slate-100 p-3">
                   <div>
                     <p className="font-medium text-slate-900">{s.name}</p>
-                    <p className="text-xs text-slate-500">{env?.name ?? `env #${s.environmentId}`} &middot; {s.steps.length} step{s.steps.length !== 1 ? 's' : ''} &middot; key: <span className="font-mono">{s.stateKeyParam}</span></p>
+                    {/* A bare count rather than an inflected "1 step / 2 steps":
+                        the plural rules differ across the 25 languages and the
+                        table has no placeholder syntax to carry them. */}
+                    <p className="text-xs text-slate-500">{env?.name ?? `${t('environment', lang)} #${s.environmentId}`} &middot; {s.steps.length} {t('stepsLower', lang)} &middot; {t('stateKeyShort', lang)}: <span className="font-mono">{s.stateKeyParam}</span></p>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => openEditStackModal(s)}>Edit</Button>
-                    <Button size="sm" variant="danger" onClick={() => handleDeleteStack(s.id)}>Delete</Button>
+                    <Button size="sm" variant="secondary" onClick={() => openEditStackModal(s)}>{t('edit', lang)}</Button>
+                    <Button size="sm" variant="danger" onClick={() => handleDeleteStack(s.id)}>{t('delete', lang)}</Button>
                   </div>
                 </div>
               )
@@ -746,105 +769,111 @@ export function ProductEditForm({ product, categories, environments, translation
       <Modal
         open={transModal}
         onClose={() => setTransModal(false)}
-        title={translations.some((x) => x.languageCode === translationLang) ? 'Edit Translation' : 'Add Translation'}
+        title={translations.some((x) => x.languageCode === translationLang) ? t('editTranslation', lang) : t('addTranslation', lang)}
         size="md"
       >
         <form onSubmit={handleAddTranslation} className="space-y-4">
           {transError && <Alert>{transError}</Alert>}
           {/* Switching language re-points the whole form, so the fields keep
               describing the language named above them. */}
-          <Select label="Language" value={translationLang} onChange={(e) => loadTranslation(e.target.value)} options={LANGUAGES} />
-          <Input label="Name" value={translationName} onChange={(e) => setTranslationName(e.target.value)} required />
+          <Select label={t('language', lang)} value={translationLang} onChange={(e) => loadTranslation(e.target.value)} options={LANGUAGES} />
+          <Input label={t('name', lang)} value={translationName} onChange={(e) => setTranslationName(e.target.value)} required />
           <div className="flex flex-col gap-1">
-            <label htmlFor="translation-description" className="text-sm font-medium text-slate-700">Description</label>
+            <label htmlFor="translation-description" className="text-sm font-medium text-slate-700">{t('description', lang)}</label>
             <textarea id="translation-description" value={translationDesc} onChange={(e) => setTranslationDesc(e.target.value)} rows={3}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <p className="text-xs text-slate-500">The short text on the catalogue tile. Keep it to a line or two.</p>
+            <p className="text-xs text-slate-500">{t('translationDescriptionHint', lang)}</p>
           </div>
           <div className="flex flex-col gap-1">
             <label htmlFor="translation-long-description" className="text-sm font-medium text-slate-700">
-              Long description
+              {t('longDescription', lang)}
             </label>
             <textarea id="translation-long-description" value={translationLongDesc}
               onChange={(e) => setTranslationLongDesc(e.target.value)} rows={6} maxLength={20000}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <p className="text-xs text-slate-500">
-              The product story, shown only on the product page. Blank lines start a new paragraph; markup is
-              not rendered.
-            </p>
+            <p className="text-xs text-slate-500">{t('longDescriptionHint', lang)}</p>
           </div>
           <div className="flex justify-end gap-3">
-            <Button type="button" variant="secondary" onClick={() => setTransModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={transSaving}>{transSaving ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" variant="secondary" onClick={() => setTransModal(false)}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={transSaving}>{transSaving ? t('saving', lang) : t('save', lang)}</Button>
           </div>
         </form>
       </Modal>
 
       {/* Pipeline Stack Modal */}
-      <Modal open={stackModal} onClose={() => setStackModal(false)} title={editStack ? 'Edit Pipeline Stack' : 'Add Pipeline Stack'} size="lg">
+      <Modal open={stackModal} onClose={() => setStackModal(false)} title={editStack ? t('editPipelineStack', lang) : t('addPipelineStack', lang)} size="lg">
         <form onSubmit={handleSaveStack} className="space-y-4">
           {psError && <Alert>{psError}</Alert>}
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Name" value={psName} onChange={(e) => setPsName(e.target.value)} required />
-            <Select label="Environment" required={!editStack} value={psEnvId} onChange={(e) => setPsEnvId(e.target.value)}
-              placeholder="Select environment…" options={environments.map((e) => ({ value: e.id, label: e.name }))}
+            <Input label={t('name', lang)} value={psName} onChange={(e) => setPsName(e.target.value)} required />
+            <Select label={t('environment', lang)} required={!editStack} value={psEnvId} onChange={(e) => setPsEnvId(e.target.value)}
+              placeholder={t('selectEnvironment', lang)} options={environments.map((e) => ({ value: e.id, label: e.name }))}
               disabled={!!editStack} />
           </div>
           <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
-            Trigger URL and token are inherited from the selected deployment environment.
-            Manage them in <strong>Admin → Environments</strong>.
+            {t('pipelineStackInheritNotice', lang)}{' '}
+            {t('manageThemIn', lang)} <strong>{t('admin', lang)} → {t('environments', lang)}</strong>.
           </div>
-          <Input label="State Key Parameter" value={psStateKey} onChange={(e) => setPsStateKey(e.target.value)}
+          {/* `hostname` is the parameter name the pipeline actually reads, not
+              prose — it stays as it is in every language. */}
+          <Input label={t('stateKeyParameter', lang)} value={psStateKey} onChange={(e) => setPsStateKey(e.target.value)}
             placeholder="hostname" />
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-slate-700">Steps</label>
-              <Button type="button" size="sm" variant="secondary" onClick={addStep}>+ Add Step</Button>
+              <label className="text-sm font-medium text-slate-700">{t('steps', lang)}</label>
+              <Button type="button" size="sm" variant="secondary" onClick={addStep}>{t('addStep', lang)}</Button>
             </div>
             {psSteps.length === 0 && (
-              <p className="text-sm text-slate-600">No steps yet. Add at least one step.</p>
+              <p className="text-sm text-slate-600">{t('noStepsYet', lang)}</p>
             )}
             {psSteps.map((step, i) => (
               <div key={i} className="rounded-lg border border-slate-200 p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-500">Step {i + 1}</span>
-                  <Button type="button" size="sm" variant="danger" onClick={() => removeStep(i)}>Remove</Button>
+                  <span className="text-xs font-medium text-slate-500">{t('step', lang)} {i + 1}</span>
+                  <Button type="button" size="sm" variant="danger" onClick={() => removeStep(i)}>{t('remove', lang)}</Button>
                 </div>
+                {/* The placeholders here are template paths, state suffixes and an
+                    index — values the pipeline consumes verbatim, so they are the
+                    same in every language. The hints beside them are prose. */}
                 <div className="grid grid-cols-3 gap-2">
-                  <Input label="Template" placeholder="linode/virtual-machine" value={step.template}
+                  <Input label={t('template', lang)} placeholder="linode/virtual-machine" value={step.template}
                     onChange={(e) => updateStep(i, 'template', e.target.value)} required
-                    hint="Path under templates/ in your infra-templates repo" />
-                  <Input label="State Suffix" placeholder="-vm" value={step.stateSuffix}
+                    hint={t('templateHint', lang)} />
+                  <Input label={t('stateSuffix', lang)} placeholder="-vm" value={step.stateSuffix}
                     onChange={(e) => updateStep(i, 'stateSuffix', e.target.value)} required
-                    hint="Appended to the state key to form TF_STATE_NAME" />
-                  <Input label="Exec Order" type="number" min={0} placeholder="0" value={step.execOrder}
+                    hint={t('stateSuffixHint', lang)} />
+                  <Input label={t('execOrder', lang)} type="number" min={0} placeholder="0" value={step.execOrder}
                     onChange={(e) => updateStep(i, 'execOrder', e.target.value)}
-                    hint="Steps with the same value run in parallel; lower values run first" />
+                    hint={t('execOrderHint', lang)} />
                 </div>
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-slate-700">Upstream State Refs</label>
-                    <Button type="button" size="sm" variant="secondary" onClick={() => addUpstreamRef(i)}>+ Add Ref</Button>
+                    <label className="text-sm font-medium text-slate-700">{t('upstreamStateRefs', lang)}</label>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => addUpstreamRef(i)}>{t('addRef', lang)}</Button>
                   </div>
-                  <p className="text-xs text-slate-500">Expose an earlier step&apos;s Terraform state to this step as a CI variable (promoted to TF_VAR_*). varName must be UPPER_SNAKE_CASE.</p>
+                  <p className="text-xs text-slate-500">{t('upstreamStateRefsHint', lang)}</p>
                   {step.upstreamRefs.length === 0 && (
-                    <p className="text-xs text-slate-600 italic">No upstream refs.</p>
+                    <p className="text-xs text-slate-600 italic">{t('noUpstreamRefs', lang)}</p>
                   )}
                   {step.upstreamRefs.map((ref, ri) => (
                     <div key={ri} className="flex gap-2 items-end">
-                      <Input label="Var Name" placeholder="VM_STATE_NAME" value={ref.varName}
+                      <Input label={t('varName', lang)} placeholder="VM_STATE_NAME" value={ref.varName}
                         onChange={(e) => updateUpstreamRef(i, ri, 'varName', e.target.value)} />
-                      <Input label="From Suffix" placeholder="-vm" value={ref.suffix}
+                      <Input label={t('fromSuffix', lang)} placeholder="-vm" value={ref.suffix}
                         onChange={(e) => updateUpstreamRef(i, ri, 'suffix', e.target.value)} />
-                      <Button type="button" size="sm" variant="danger" onClick={() => removeUpstreamRef(i, ri)}>×</Button>
+                      {/* The visible label is a multiplication sign, which is the
+                          whole accessible name a screen reader would otherwise
+                          announce — so the name is spelled out separately. */}
+                      <Button type="button" size="sm" variant="danger" aria-label={t('remove', lang)}
+                        onClick={() => removeUpstreamRef(i, ri)}>×</Button>
                     </div>
                   ))}
                 </div>
                 <div className="flex flex-col gap-1">
                   {/* Indexed id: this block is rendered once per pipeline step, so a
                       fixed one would tie every step's label to the first textarea. */}
-                  <label htmlFor={`step-fixed-params-${i}`} className="text-sm font-medium text-slate-700">Fixed Parameters (optional)</label>
-                  <p className="text-xs text-slate-500">Override or hardcode order parameters for this step only — one KEY=value per line</p>
+                  <label htmlFor={`step-fixed-params-${i}`} className="text-sm font-medium text-slate-700">{t('fixedParametersOptional', lang)}</label>
+                  <p className="text-xs text-slate-500">{t('fixedParametersHint', lang)}</p>
                   <textarea id={`step-fixed-params-${i}`} value={step.fixedParams} onChange={(e) => updateStep(i, 'fixedParams', e.target.value)}
                     rows={2} placeholder="REGION=eu-central"
                     className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -853,81 +882,83 @@ export function ProductEditForm({ product, categories, environments, translation
             ))}
           </div>
           <div className="flex justify-end gap-3">
-            <Button type="button" variant="secondary" onClick={() => setStackModal(false)}>Cancel</Button>
+            <Button type="button" variant="secondary" onClick={() => setStackModal(false)}>{t('cancel', lang)}</Button>
             <Button type="button" variant="secondary" disabled={psSteps.length === 0}
-              onClick={() => setPreviewOpen(true)}>Preview YAML</Button>
-            <Button type="submit" disabled={psSaving || psSteps.length === 0}>{psSaving ? 'Saving…' : editStack ? 'Save' : 'Add'}</Button>
+              onClick={() => setPreviewOpen(true)}>{t('previewYaml', lang)}</Button>
+            <Button type="submit" disabled={psSaving || psSteps.length === 0}>{psSaving ? t('saving', lang) : editStack ? t('save', lang) : t('add', lang)}</Button>
           </div>
         </form>
       </Modal>
 
       {/* Pipeline YAML Preview Modal */}
-      <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title="Generated Pipeline YAML (apply)" size="lg">
+      <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title={t('generatedPipelineYaml', lang)} size="lg">
         <pre className="rounded-lg bg-slate-900 text-slate-100 text-xs font-mono p-4 overflow-x-auto max-h-[60vh] overflow-y-auto whitespace-pre">
 {generatePipelineYaml(psSteps, psStateKey || 'hostname', 'apply')}
         </pre>
         <div className="flex justify-end mt-4">
-          <Button type="button" variant="secondary" onClick={() => setPreviewOpen(false)}>Close</Button>
+          <Button type="button" variant="secondary" onClick={() => setPreviewOpen(false)}>{t('close', lang)}</Button>
         </div>
       </Modal>
 
       {/* Webhook Modal */}
-      <Modal open={webhookModal} onClose={() => setWebhookModal(false)} title="Add Webhook" size="md">
+      <Modal open={webhookModal} onClose={() => setWebhookModal(false)} title={t('addWebhook', lang)} size="md">
         <form onSubmit={handleAddWebhook} className="space-y-4">
           {whError && <Alert>{whError}</Alert>}
-          <Select label="Environment" required value={whEnvId} onChange={(e) => setWhEnvId(e.target.value)}
-            placeholder="Select environment…" options={environments.map((e) => ({ value: e.id, label: e.name }))} />
-          <Input label="Name" value={whName} onChange={(e) => setWhName(e.target.value)} required />
-          <Input label="Webhook URL" type="url" value={whUrl} onChange={(e) => setWhUrl(e.target.value)} required />
-          <Input label="Webhook Token" value={whToken} onChange={(e) => setWhToken(e.target.value)} />
-          <Input label="Execution Order" type="number" value={whOrder} onChange={(e) => setWhOrder(e.target.value)} />
+          <Select label={t('environment', lang)} required value={whEnvId} onChange={(e) => setWhEnvId(e.target.value)}
+            placeholder={t('selectEnvironment', lang)} options={environments.map((e) => ({ value: e.id, label: e.name }))} />
+          <Input label={t('name', lang)} value={whName} onChange={(e) => setWhName(e.target.value)} required />
+          <Input label={t('webhookUrl', lang)} type="url" value={whUrl} onChange={(e) => setWhUrl(e.target.value)} required />
+          <Input label={t('webhookToken', lang)} value={whToken} onChange={(e) => setWhToken(e.target.value)} />
+          <Input label={t('executionOrder', lang)} type="number" value={whOrder} onChange={(e) => setWhOrder(e.target.value)} />
           <div className="flex justify-end gap-3">
-            <Button type="button" variant="secondary" onClick={() => setWebhookModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={whSaving}>{whSaving ? 'Saving…' : 'Add'}</Button>
+            <Button type="button" variant="secondary" onClick={() => setWebhookModal(false)}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={whSaving}>{whSaving ? t('saving', lang) : t('add', lang)}</Button>
           </div>
         </form>
       </Modal>
 
       {/* Parameter Modal */}
-      <Modal open={paramModal} onClose={() => setParamModal(false)} title={editParam ? 'Edit Parameter' : 'Add Parameter'} size="md">
+      <Modal open={paramModal} onClose={() => setParamModal(false)} title={editParam ? t('editParameter', lang) : t('addParameter', lang)} size="md">
         <form onSubmit={handleSaveParam} className="space-y-4">
           {paramError && <Alert>{paramError}</Alert>}
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Variable Name" value={paramForm.name} onChange={(e) => setParamForm((f) => ({ ...f, name: e.target.value }))} required
-              hint="Terraform variable name — sent as TF_VAR_name" />
-            <Input label="Display Label" value={paramForm.label} onChange={(e) => setParamForm((f) => ({ ...f, label: e.target.value }))}
-              hint="User-facing name shown in the order form" />
+            {/* The same keys the global parameters admin uses for the same two
+                fields — one wording for one concept. */}
+            <Input label={t('variableName', lang)} value={paramForm.name} onChange={(e) => setParamForm((f) => ({ ...f, name: e.target.value }))} required
+              hint={t('variableNameHint', lang)} />
+            <Input label={t('displayLabel', lang)} value={paramForm.label} onChange={(e) => setParamForm((f) => ({ ...f, label: e.target.value }))}
+              hint={t('displayLabelHint', lang)} />
           </div>
-          <Select label="Type" value={paramForm.type}
+          <Select label={t('type', lang)} value={paramForm.type}
             onChange={(e) => setParamForm((f) => ({ ...f, type: e.target.value as ParameterType }))}
             options={[
-              { value: 'string', label: 'String' },
-              { value: 'number', label: 'Number' },
-              { value: 'bool', label: 'Boolean' },
-              { value: 'dropdown', label: 'Dropdown' },
+              { value: 'string', label: t('typeString', lang) },
+              { value: 'number', label: t('typeNumber', lang) },
+              { value: 'bool', label: t('typeBoolean', lang) },
+              { value: 'dropdown', label: t('typeDropdown', lang) },
             ]} />
-          <Input label="Description" value={paramForm.description}
+          <Input label={t('description', lang)} value={paramForm.description}
             onChange={(e) => setParamForm((f) => ({ ...f, description: e.target.value }))} />
-          <Input label="Default Value" value={paramForm.defaultValue}
+          <Input label={t('defaultValue', lang)} value={paramForm.defaultValue}
             onChange={(e) => setParamForm((f) => ({ ...f, defaultValue: e.target.value }))}
-            hint={paramForm.type === 'dropdown' ? 'Comma-separated options' : undefined} />
+            hint={paramForm.type === 'dropdown' ? t('commaSeparatedOptions', lang) : undefined} />
           <div className="flex gap-6">
             <div className="flex items-center gap-2">
               <input type="checkbox" id="param-required" checked={paramForm.required}
                 onChange={(e) => setParamForm((f) => ({ ...f, required: e.target.checked }))}
                 className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-              <label htmlFor="param-required" className="text-sm font-medium text-slate-700">Required</label>
+              <label htmlFor="param-required" className="text-sm font-medium text-slate-700">{t('required', lang)}</label>
             </div>
             <div className="flex items-center gap-2">
               <input type="checkbox" id="param-sensitive" checked={paramForm.sensitive}
                 onChange={(e) => setParamForm((f) => ({ ...f, sensitive: e.target.checked }))}
                 className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-              <label htmlFor="param-sensitive" className="text-sm font-medium text-slate-700">Sensitive</label>
+              <label htmlFor="param-sensitive" className="text-sm font-medium text-slate-700">{t('sensitive', lang)}</label>
             </div>
           </div>
           <div className="flex justify-end gap-3">
-            <Button type="button" variant="secondary" onClick={() => setParamModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={paramSaving}>{paramSaving ? 'Saving…' : editParam ? 'Save' : 'Add'}</Button>
+            <Button type="button" variant="secondary" onClick={() => setParamModal(false)}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={paramSaving}>{paramSaving ? t('saving', lang) : editParam ? t('save', lang) : t('add', lang)}</Button>
           </div>
         </form>
       </Modal>
@@ -942,6 +973,7 @@ function EnvironmentRow({
   productId,
   onSave,
   onDelete,
+  lang,
 }: {
   env: DeploymentEnvironment
   existing?: {
@@ -957,6 +989,7 @@ function EnvironmentRow({
   productId: number
   onSave: (data: UpsertProductEnvironmentRequest) => Promise<void>
   onDelete: () => Promise<void>
+  lang: string
 }) {
   const [price, setPrice] = useState(existing?.price ?? '')
   const [currency, setCurrency] = useState(existing?.currency ?? 'EUR')
@@ -1001,7 +1034,7 @@ function EnvironmentRow({
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save.')
+      setSaveError(err instanceof Error ? err.message : t('failedToSave', lang))
     } finally {
       setSaving(false)
     }
@@ -1016,7 +1049,7 @@ function EnvironmentRow({
     } catch (err) {
       // Keep the dialog open so the reason stays next to the action that failed
       // — a 409 here means the operator has to decommission first.
-      setSaveError(err instanceof Error ? err.message : 'Failed to remove environment.')
+      setSaveError(err instanceof Error ? err.message : t('failedToDeleteGeneric', lang))
     } finally {
       setRemoving(false)
     }
@@ -1028,21 +1061,23 @@ function EnvironmentRow({
         <h4 className="font-medium text-slate-900">{env.name}</h4>
         {existing && (
           <Button type="button" size="sm" variant="danger" onClick={() => { setSaveError(null); setConfirmRemove(true) }}>
-            Remove
+            {t('remove', lang)}
           </Button>
         )}
       </div>
+      {/* The placeholders are a number format and a currency code, neither of
+          which changes with the interface language. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Input label="Price" value={price} onChange={(e) => setPrice(e.target.value)} required placeholder="0.00"
-          hint="Used only while this offering has no sizes — a size's own price wins." />
-        <Input label="Currency" value={currency} onChange={(e) => setCurrency(e.target.value)} required placeholder="EUR" />
-        <Select label="Cost Center Mode" value={costCenterMode}
-          onChange={(e) => setCostCenterMode(e.target.value as CostCenterMode)} options={COST_CENTER_MODES} />
+        <Input label={t('price', lang)} value={price} onChange={(e) => setPrice(e.target.value)} required placeholder="0.00"
+          hint={t('priceSizesHint', lang)} />
+        <Input label={t('currency', lang)} value={currency} onChange={(e) => setCurrency(e.target.value)} required placeholder="EUR" />
+        <Select label={t('costCenterMode', lang)} value={costCenterMode}
+          onChange={(e) => setCostCenterMode(e.target.value as CostCenterMode)} options={costCenterModes(lang)} />
         <div className="flex flex-col gap-1 justify-end">
           {/* Per-environment id, like `trial-${env.id}` below: this form is rendered
               once per environment, so a fixed id would point every "Forced CC" label
               at the first environment's checkbox. */}
-          <label htmlFor={`forced-cc-${env.id}`} className="text-sm font-medium text-slate-700">Forced CC</label>
+          <label htmlFor={`forced-cc-${env.id}`} className="text-sm font-medium text-slate-700">{t('forcedCostCenterShort', lang)}</label>
           <div className="flex items-center h-9">
             <input type="checkbox" id={`forced-cc-${env.id}`} checked={forcedCostCenter} onChange={(e) => setForcedCostCenter(e.target.checked)}
               className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
@@ -1062,17 +1097,17 @@ function EnvironmentRow({
             className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
           />
           <label htmlFor={`trial-${env.id}`} className="text-sm font-medium text-slate-700">
-            Offer as trial
+            {t('offerAsTrial', lang)}
           </label>
         </div>
         {trialEnabled && (
           <Input
-            label="Trial duration (minutes)"
+            label={t('trialDurationLabel', lang)}
             type="number"
             min={1}
             value={trialDurationMinutes}
             onChange={(e) => setTrialDurationMinutes(e.target.value)}
-            hint="The element is decommissioned automatically after this long. Needs the sweep configured — see README."
+            hint={t('trialDurationHint', lang)}
             className="w-64"
           />
         )}
@@ -1082,41 +1117,39 @@ function EnvironmentRow({
           needs to name which one — the other two modes never use it. */}
       {costCenterMode === 'overhead' && (
         <Select
-          label="Overhead Cost Center"
+          label={t('overheadCostCenter', lang)}
           value={overheadCostCenterId}
           onChange={(e) => setOverheadCostCenterId(e.target.value)}
-          placeholder="Select cost center…"
+          placeholder={t('selectCostCenter', lang)}
           hint={
             forcedCostCenter
-              ? 'Required: orders in this environment are rejected until an account is chosen.'
-              : 'Without one, orders in this environment are recorded with no cost centre.'
+              ? t('overheadForcedHint', lang)
+              : t('overheadOptionalHint', lang)
           }
           options={costCenters
             .filter((cc) => cc.active || String(cc.id) === overheadCostCenterId)
-            .map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}${cc.active ? '' : ' (inactive)'}` }))}
+            .map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}${cc.active ? '' : ` ${t('inactiveSuffix', lang)}`}` }))}
         />
       )}
-      {existing && <SizesEditor productId={productId} envId={env.id} />}
+      {existing && <SizesEditor productId={productId} envId={env.id} lang={lang} />}
 
       <div className="flex items-center gap-3">
-        <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-        {saved && <span className="text-xs text-green-600">Saved!</span>}
+        <Button type="submit" size="sm" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
+        {saved && <span className="text-xs text-green-600">{t('saved', lang)}</span>}
         {/* Only when the dialog is closed: the dialog renders saveError itself,
             and two live regions with the same text are announced twice. */}
         {saveError && !confirmRemove && <span className="text-xs text-red-600" role="alert">{saveError}</span>}
       </div>
 
-      <Modal open={confirmRemove} onClose={() => setConfirmRemove(false)} title={`Remove ${env.name}?`} size="md">
+      <Modal open={confirmRemove} onClose={() => setConfirmRemove(false)} title={`${t('remove', lang)} ${env.name}?`} size="md">
         {saveError && <Alert className="mb-3">{saveError}</Alert>}
         <p className="text-sm text-slate-600">
-          This product will no longer be orderable in <strong>{env.name}</strong>. Its price, currency and
-          cost-centre settings for this environment are discarded. Already provisioned infrastructure is not
-          touched — remove the environment only once nothing is deployed in it.
+          {t('removeEnvironmentIntro', lang)} <strong>{env.name}</strong>. {t('removeEnvironmentWarning', lang)}
         </p>
         <div className="flex justify-end gap-3 mt-4">
-          <Button type="button" variant="secondary" onClick={() => setConfirmRemove(false)}>Cancel</Button>
+          <Button type="button" variant="secondary" onClick={() => setConfirmRemove(false)}>{t('cancel', lang)}</Button>
           <Button type="button" variant="danger" disabled={removing} onClick={handleRemove}>
-            {removing ? 'Removing…' : 'Remove'}
+            {removing ? t('removing', lang) : t('remove', lang)}
           </Button>
         </div>
       </Modal>
@@ -1138,9 +1171,11 @@ function EnvironmentRow({
 function SizesEditor({
   productId,
   envId,
+  lang,
 }: {
   productId: number
   envId: number
+  lang: string
 }) {
   const [sizes, setSizes] = useState<OfferingSize[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -1155,10 +1190,14 @@ function SizesEditor({
     try {
       setSizes((await get<OfferingSize[]>(path)) ?? [])
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load sizes.')
+      setError(e instanceof Error ? e.message : t('failedToLoadGeneric', lang))
       setSizes([])
     }
-  }, [path])
+    // `lang` is in here because the fallback message is translated now. It makes
+    // `load` change when the language does, so the sizes are re-fetched on a
+    // language switch — one request, and the alternative is a stale error still
+    // reading in the previous language.
+  }, [path, lang])
 
   useEffect(() => { void load() }, [load])
 
@@ -1178,7 +1217,7 @@ function SizesEditor({
       setCode(''); setLabel(''); setPrice('')
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save the size.')
+      setError(e instanceof Error ? e.message : t('failedToSave', lang))
     } finally {
       setBusy(false)
     }
@@ -1193,7 +1232,7 @@ function SizesEditor({
         currency: size.currency, sortOrder: size.sortOrder, active: !size.active })
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save the size.')
+      setError(e instanceof Error ? e.message : t('failedToSave', lang))
     } finally {
       setBusy(false)
     }
@@ -1206,7 +1245,7 @@ function SizesEditor({
       await del(`${path}/${size.id}`)
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to remove the size.')
+      setError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
     } finally {
       setBusy(false)
     }
@@ -1214,14 +1253,13 @@ function SizesEditor({
 
   return (
     <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
-      <p className="text-sm font-medium text-slate-700">Sizes</p>
+      <p className="text-sm font-medium text-slate-700">{t('sizes', lang)}</p>
       <p className="text-xs text-slate-500">
-        Each size carries its own price, and a customer must pick one. Leave the list empty to keep pricing
-        the offering as a whole. The size code reaches the pipeline as <code>SIZE</code>.
+        {t('sizesHint', lang)} <code>SIZE</code>.
       </p>
       {error && <Alert>{error}</Alert>}
       {sizes !== null && sizes.length === 0 && (
-        <p className="text-xs text-slate-600">No sizes — this offering is priced by its own price above.</p>
+        <p className="text-xs text-slate-600">{t('noSizes', lang)}</p>
       )}
       {sizes?.map((size) => (
         <div key={size.id} className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2">
@@ -1229,26 +1267,26 @@ function SizesEditor({
           <span className="text-sm text-slate-900">{size.label}</span>
           <span className="text-sm font-medium text-slate-900">{size.price} {size.currency}</span>
           {!size.active && (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">retired</span>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{t('retiredBadge', lang)}</span>
           )}
           <span className="ml-auto flex gap-2">
             <Button type="button" size="sm" variant="secondary" disabled={busy}
               onClick={() => handleToggleActive(size)}>
-              {size.active ? 'Retire' : 'Restore'}
+              {size.active ? t('retire', lang) : t('restore', lang)}
             </Button>
             <Button type="button" size="sm" variant="danger" disabled={busy}
-              onClick={() => handleDelete(size)}>Delete</Button>
+              onClick={() => handleDelete(size)}>{t('delete', lang)}</Button>
           </span>
         </div>
       ))}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <Input label="Code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="XL" />
-        <Input label="Label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Extra large" />
-        <Input label="Price" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" />
-        <Input label="Currency" value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder="EUR" />
+        <Input label={t('code', lang)} value={code} onChange={(e) => setCode(e.target.value)} placeholder="XL" />
+        <Input label={t('label', lang)} value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('sizeLabelPlaceholder', lang)} />
+        <Input label={t('price', lang)} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" />
+        <Input label={t('currency', lang)} value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder="EUR" />
       </div>
       <Button type="button" size="sm" disabled={busy || code.trim() === ''} onClick={handleAdd}>
-        {busy ? 'Saving…' : 'Add / update size'}
+        {busy ? t('saving', lang) : t('addOrUpdateSize', lang)}
       </Button>
     </div>
   )

@@ -1419,6 +1419,117 @@ function migrationColumnFacts(): MigrationColumnFact[] {
 }
 
 // ---------------------------------------------------------------------------
+// hardcoded user-facing text
+// ---------------------------------------------------------------------------
+
+interface HardcodedTextFact {
+  file: string
+  line: number
+  /** 'text' for a JSX child, '@label' etc. for an attribute. */
+  kind: string
+  text: string
+}
+
+/**
+ * JSX attributes whose string value is read out to a person rather than to the
+ * machine. `className`, `href`, `id`, `name`, `type` and friends are absent on
+ * purpose — those are markup, not prose.
+ */
+const TEXT_ATTRS = new Set([
+  'label', 'placeholder', 'title', 'hint', 'alt', 'aria-label',
+  'emptyMessage', 'confirmLabel', 'summary',
+])
+
+/**
+ * Prose, as opposed to a value something downstream consumes verbatim.
+ *
+ * Every exclusion below was put there by a false positive found while counting
+ * this against `dev`, and each one is a category rather than a special case:
+ * codes the pipeline reads (`EUR`, `SIZE`, `REGION=eu-central`), paths and
+ * templates (`linode/virtual-machine`), format examples the field is showing
+ * the shape of (`smtp.example.com`, `you@example.com`), and single glyphs
+ * (`&ldquo;`). Getting this wrong in the permissive direction costs a missed
+ * string; getting it wrong the other way makes the gate cry wolf, which is
+ * worse, so the doubtful cases are excluded.
+ */
+function isUserFacingProse(raw: string, kind: string): boolean {
+  const s = raw.trim()
+  if (s.length < 2) return false
+  if (!/[A-Za-z]{2}/.test(s)) return false
+  if (/^[A-Z0-9_]+$/.test(s)) return false
+  if (/[/\\]|:\/\/|^\.|\{|\}/.test(s)) return false
+  if (/^&[a-z]+;$/.test(s)) return false
+  if (/^\S+@\S+\.\S+$/.test(s)) return false
+  if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(s)) return false
+  if (/^[A-Z][A-Z0-9_]*=/.test(s)) return false
+
+  // Casing tells a variable name from a word — `hostname`, `-vm`, `instanceType`
+  // against `save`, `cancel` — and it tells them apart badly: both shapes are
+  // lowercase. So it is applied ONLY to `placeholder`, which is where this app
+  // shows the SHAPE of a value rather than saying something.
+  //
+  // Review of this PR was right to push on it. Applied everywhere, the rule hid
+  // a genuine defect: `{t('orderedBy')} {name} on {date}` in the approvals list,
+  // where `on` is a hardcoded English word in the middle of a translated
+  // sentence. In JSX text and in `label`, a lowercase word is a word.
+  if (kind === '@placeholder') {
+    if (/^[a-z]+([A-Z][a-z]+)+$/.test(s)) return false
+    if (/^[a-z-]+$/.test(s) && !s.includes(' ')) return false
+  }
+  return true
+}
+
+function hardcodedTextFacts(): HardcodedTextFact[] {
+  const out: HardcodedTextFact[] = []
+  const files = walk(`${FRONTEND}/src`, (rel) => rel.endsWith('.tsx') && !rel.includes('.test.'))
+
+  for (const rel of files) {
+    const sf = parse(rel)
+    visit(sf, (node) => {
+      if (ts.isJsxText(node)) {
+        const text = node.text.replace(/\s+/g, ' ').trim()
+        if (isUserFacingProse(text, 'text')) out.push({ file: rel, line: lineOf(sf, node), kind: 'text', text })
+        return
+      }
+      // `<span>{'Saved.'}</span>` — a literal wrapped in braces is still a
+      // literal, and the plain-text branch above never sees it. Caught in review
+      // of this PR: without this the rule is one pair of braces away from being
+      // bypassed, deliberately or by habit.
+      if (ts.isJsxExpression(node)) {
+        const inner = node.expression
+        if (!inner) return
+        if (!ts.isStringLiteral(inner) && !ts.isNoSubstitutionTemplateLiteral(inner)) return
+        // An expression-valued ATTRIBUTE is only interesting for the attributes
+        // that are spoken; `className={'x'}` is not.
+        const attribute = ts.isJsxAttribute(node.parent) ? node.parent.name.getText(sf) : null
+        if (attribute !== null && !TEXT_ATTRS.has(attribute)) return
+        if (isUserFacingProse(inner.text, attribute === null ? 'text' : `@${attribute}`)) {
+          out.push({
+            file: rel,
+            line: lineOf(sf, node),
+            kind: attribute === null ? 'text' : `@${attribute}`,
+            text: inner.text,
+          })
+        }
+        return
+      }
+
+      if (!ts.isJsxAttribute(node)) return
+      const name = node.name.getText(sf)
+      if (!TEXT_ATTRS.has(name)) return
+      // Only a bare string literal. `label={t('name', lang)}` is an expression
+      // and is exactly what this rule is asking for. The braced-literal form is
+      // handled above.
+      if (!node.initializer || !ts.isStringLiteral(node.initializer)) return
+      if (isUserFacingProse(node.initializer.text, `@${name}`)) {
+        out.push({ file: rel, line: lineOf(sf, node), kind: `@${name}`, text: node.initializer.text })
+      }
+    })
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
 // server-only modules in the client bundle
 // ---------------------------------------------------------------------------
 
@@ -1505,6 +1616,7 @@ export function collectFacts(): Record<string, unknown> {
     secretColumns: SECRET_SQL_COLUMNS,
     selects: selectFacts(secretProperties),
     i18n: i18nFacts(),
+    hardcodedText: hardcodedTextFacts(),
     migrations: migrationFacts(),
     actionRefs: actionRefs(),
     imageRefs: imageRefs(),

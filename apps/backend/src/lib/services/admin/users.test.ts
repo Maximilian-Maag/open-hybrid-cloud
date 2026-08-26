@@ -11,7 +11,7 @@ import {
 import { db } from '@/lib/db/client'
 import { createSession } from '@/lib/auth/sessions'
 import { users, sessions, auditLog } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, desc } from 'drizzle-orm'
 import {
   createUser,
   createProject,
@@ -20,6 +20,7 @@ import {
   createCiSource,
   createEnvironment,
   createOrder,
+  createDelegation as seedDelegation,
 } from '@/test/helpers'
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
@@ -143,6 +144,48 @@ describe('updateUser', () => {
     expect(rows.filter((r) => r.revokedAt === null)).toHaveLength(1)
   })
 
+  // An admin setting somebody's password is remediating — usually a suspected
+  // compromise — and leaving the old sessions alive is the one outcome that makes
+  // the remediation pointless (#184). Nothing is spared here, unlike a user
+  // changing their own: the person at the keyboard is not the account owner.
+  it('ends every session when an admin resets the password', async () => {
+    const u = await createUser({ password: 'before' })
+    await createSession({ user: makeSession(u), rememberMe: true })
+    await createSession({ user: makeSession(u), rememberMe: false })
+
+    const live = () =>
+      db.select().from(sessions).where(eq(sessions.userId, u.id))
+    expect((await live()).filter((r) => r.revokedAt === null)).toHaveLength(2)
+
+    const result = await updateUser(u.id, { password: 'after-pw' })
+
+    expect(result.ok).toBe(true)
+    expect((await live()).filter((r) => r.revokedAt === null)).toHaveLength(0)
+  })
+
+  it('says in the audit log that a password reset is what ended them', async () => {
+    const u = await createUser({ password: 'before' })
+    await createSession({ user: makeSession(u), rememberMe: false })
+
+    await updateUser(u.id, { password: 'after-pw' })
+
+    const [entry] = await db
+      .select().from(auditLog)
+      .where(eq(auditLog.action, 'session.revoked_others'))
+      .orderBy(desc(auditLog.id)).limit(1)
+    expect(entry.details).toMatch(/password reset/i)
+  })
+
+  it('leaves sessions alone for an update that is not a password or a role', async () => {
+    const u = await createUser({ password: 'before' })
+    await createSession({ user: makeSession(u), rememberMe: false })
+
+    await updateUser(u.id, { name: 'Renamed' })
+
+    const rows = await db.select().from(sessions).where(eq(sessions.userId, u.id))
+    expect(rows.filter((r) => r.revokedAt === null)).toHaveLength(1)
+  })
+
   it('hashes the new password when provided', async () => {
     const u = await createUser({ password: 'before' })
     const result = await updateUser(u.id, { password: 'after-pw' })
@@ -180,6 +223,53 @@ describe('deleteUser', () => {
     const rows = await db.select().from(users).where(eq(users.id, target.id))
     expect(rows.length).toBe(0)
   })
+  // #173 added two non-cascading FKs to users.id the same day #171 enumerated
+  // them all, and the enumeration was never updated (#195). An admin nominated
+  // as a substitute who has taken no action is named by none of the other five
+  // counts, so the delete read all zeros and Postgres raised 23503 as an
+  // unhandled 500 — the exact symptom this check exists to prevent.
+  it('refuses to delete an account that was nominated as a substitute', async () => {
+    const root = await createUser({ role: 'root' })
+    const granter = await createUser({ role: 'admin' })
+    const substitute = await createUser({ role: 'admin' })
+    await seedDelegation(granter.id, substitute.id)
+
+    const result = await deleteUser(makeSession(root), substitute.id)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(409)
+      expect(result.message).toMatch(/approval delegation/i)
+    }
+    expect(await db.select().from(users).where(eq(users.id, substitute.id))).toHaveLength(1)
+  })
+
+  it('refuses to delete the account that granted one', async () => {
+    const root = await createUser({ role: 'root' })
+    const granter = await createUser({ role: 'admin' })
+    const substitute = await createUser({ role: 'admin' })
+    await seedDelegation(granter.id, substitute.id)
+
+    const result = await deleteUser(makeSession(root), granter.id)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(409)
+  })
+
+  // A revoked delegation is still a row, and the FK does not care that it is
+  // over — so the block has to hold for it too, or the 500 comes back.
+  it('refuses even when the delegation has been revoked', async () => {
+    const root = await createUser({ role: 'root' })
+    const granter = await createUser({ role: 'admin' })
+    const substitute = await createUser({ role: 'admin' })
+    await seedDelegation(granter.id, substitute.id, { revokedAt: new Date() })
+
+    const result = await deleteUser(makeSession(root), substitute.id)
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(409)
+  })
+
 })
 
 describe('deleteUser reference checks (issue #142)', () => {

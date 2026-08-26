@@ -176,11 +176,11 @@ describe('POST /api/auth/login', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns 401 for inactive user', async () => {
+  it('answers 403, not 401, for a deactivated account with the right password', async () => {
     await createUser({ email: 'inactive@test.dev', password: 'correct-pass', active: false })
 
     const res = await POST(makeRequest({ email: 'inactive@test.dev', password: 'correct-pass' }))
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(403)
   })
 
   it('returns 400 for invalid email format', async () => {
@@ -310,6 +310,74 @@ describe('POST /api/auth/login', () => {
     }
   })
 
+  // The defect (#199): the buckets were charged on the way IN, so a sign-in cost
+  // budget — and it cost two, because the form posts here twice: once with
+  // `challengeOnly` to tell "needs a code" from "wrong password", then the real
+  // one from NextAuth's `authorize`. Only the account bucket is cleared on
+  // success, so the IP bucket kept both. Ten per fifteen minutes became five
+  // sign-ins per IP per quarter hour, after which correct credentials got a 429.
+  it('a successful sign-in costs no per-IP budget at all', async () => {
+    const prev = process.env.TRUST_PROXY
+    process.env.TRUST_PROXY = '1'
+    try {
+      await createUser({ email: 'nocost@test.dev', password: 'correct-pass' })
+      const ip = `10.9.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
+      const attempt = async (email: string, password: string, challengeOnly = false) =>
+        POST(
+          new NextRequest('http://localhost/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password, ...(challengeOnly ? { challengeOnly } : {}) }),
+            headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+          }),
+        )
+
+      // Twenty sign-ins, each the two hops the form actually makes. Under the old
+      // behaviour the sixth would have been refused.
+      for (let i = 0; i < 20; i++) {
+        expect((await attempt('nocost@test.dev', 'correct-pass', true)).status).toBe(200)
+        expect((await attempt('nocost@test.dev', 'correct-pass')).status).toBe(200)
+      }
+
+      // And the bucket is untouched: a fresh account still gets its full budget
+      // of failures from this address.
+      for (let i = 0; i < 10; i++) {
+        expect((await attempt(`after-${i}@test.dev`, 'wrong')).status).toBe(401)
+      }
+      expect((await attempt('after-x@test.dev', 'wrong')).status).toBe(429)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
+  // The other half, which the issue asked to pin because neither is obvious from
+  // reading: a FAILED attempt costs exactly one, not two. The second hop is never
+  // reached when the first refuses.
+  it('a failed sign-in costs exactly one attempt', async () => {
+    const prev = process.env.TRUST_PROXY
+    process.env.TRUST_PROXY = '1'
+    try {
+      const ip = `10.11.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
+      const attempt = async (email: string) =>
+        POST(
+          new NextRequest('http://localhost/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password: 'wrong' }),
+            headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+          }),
+        )
+
+      // Exactly ten fit before the cap; an eleventh does not.
+      for (let i = 0; i < 10; i++) {
+        expect((await attempt(`one-${i}@test.dev`)).status).toBe(401)
+      }
+      expect((await attempt('one-last@test.dev')).status).toBe(429)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
   it('a successful login does not reset the per-IP spraying bucket (NFA-05.1)', async () => {
     const prev = process.env.TRUST_PROXY
     process.env.TRUST_PROXY = '1'
@@ -325,15 +393,15 @@ describe('POST /api/auth/login', () => {
           }),
         )
 
-      // 9 failed sprays across different accounts from this IP (IP bucket → 9).
-      for (let i = 0; i < 9; i++) {
+      // 10 failed sprays across different accounts from this IP fills the bucket.
+      for (let i = 0; i < 10; i++) {
         expect((await attempt(`ips-${i}@test.dev`, 'wrong')).status).toBe(401)
       }
-      // A successful login from the same IP (IP bucket → 10) resets only the
-      // account bucket — not the IP bucket.
-      expect((await attempt('ipreset@test.dev', 'correct-pass')).status).toBe(200)
-      // The next attempt from this IP is still blocked: the success did not
-      // clear the accumulated per-IP failures.
+      // Correct credentials from that IP are refused too, and stay refused. That
+      // is what the spraying cap is for, and it is unchanged: nothing a caller
+      // can do from this address clears the accumulated failures inside the
+      // window.
+      expect((await attempt('ipreset@test.dev', 'correct-pass')).status).toBe(429)
       expect((await attempt('another@test.dev', 'whatever')).status).toBe(429)
     } finally {
       if (prev === undefined) delete process.env.TRUST_PROXY

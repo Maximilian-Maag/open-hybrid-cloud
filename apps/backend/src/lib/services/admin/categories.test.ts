@@ -25,6 +25,7 @@ import {
   infrastructureElements,
 } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import postgres from 'postgres'
 import {
   createUser,
   createCategory as seedCategory,
@@ -288,6 +289,71 @@ describe('deleteCategory preserves order history (issue #142)', () => {
   })
 })
 
+/**
+ * The window a row lock cannot see, because a row lock cannot lock a row that
+ * does not exist yet.
+ *
+ * `FOR UPDATE` on the category's products closes "a new ORDER on a product that
+ * already exists". It says nothing about "a new PRODUCT in this category, and an
+ * order on it": the scan returns nothing, `orderCount` stays 0, and the DELETE
+ * cascades categories -> products -> orders, taking the brand-new order with it.
+ * No error, no audit trace, no recovery — the same shape as #195, one level up.
+ *
+ * Proved with two real sessions, because that is the only way to hold an
+ * uncommitted insert open while the delete runs.
+ */
+describe('deleteCategory and a product created while it runs', () => {
+  it('waits for the other session and then keeps its order', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await seedCategory('Contested')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await createProject(pm.id)
+
+    // A second connection, so this is a genuinely concurrent transaction rather
+    // than a nested one that would see its own writes.
+    const other = postgres(process.env.DATABASE_URL ?? '', { max: 1 })
+    // Assigned inside the other session's transaction, below.
+    let deletion: Promise<Awaited<ReturnType<typeof deleteCategory>>> | undefined
+    try {
+      const inserted = await other.begin(async (tx) => {
+        const [product] = await tx`
+          INSERT INTO products (category_id) VALUES (${cat.id}) RETURNING id`
+
+        // Now the delete starts. It must BLOCK: a product insert takes KEY SHARE
+        // on the categories row, and FOR UPDATE conflicts with that.
+        deletion = deleteCategory(cat.id)
+
+        // Long enough to be a real wait rather than a scheduling accident, short
+        // enough that the suite does not notice.
+        let settled = false
+        void deletion.then(() => { settled = true })
+        await new Promise((r) => setTimeout(r, 400))
+        expect(settled).toBe(false)
+
+        await tx`
+          INSERT INTO orders (project_id, product_id, environment_id, user_id, status, pipeline_id)
+          VALUES (${project.id}, ${product.id}, ${env.id}, ${pm.id}, 'pending', '{}')`
+        return product.id as number
+      })
+
+      if (!deletion) throw new Error('the delete never started')
+      const result = await deletion
+      expect(result.ok).toBe(true)
+
+      // Retired, not deleted: the order it found is history worth keeping.
+      const [row] = await db.select().from(categories).where(eq(categories.id, cat.id))
+      expect(row?.retiredAt).toBeInstanceOf(Date)
+      expect(
+        (await db.select().from(orders).where(eq(orders.productId, inserted))).length,
+      ).toBe(1)
+      expect((await db.select().from(products).where(eq(products.id, inserted))).length).toBe(1)
+    } finally {
+      await other.end()
+    }
+  })
+})
+
 describe('category audit trail (issue #137)', () => {
   it('records create, update and delete against the acting admin', async () => {
     const actor = await createUser({ role: 'admin' })
@@ -314,5 +380,71 @@ describe('category audit trail (issue #137)', () => {
     const result = await updateCategory(created.data.id, {})
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(400)
+  })
+})
+
+/*
+ * Deciding retire-vs-delete inside the deleting transaction (#195).
+ *
+ * The issue describes the window as "seconds to minutes": count, then one
+ * destroy-trigger HTTP call per active element, then DELETE. Checked, and that
+ * premise does not hold — `infrastructure_elements.order_id` is NOT NULL, so a
+ * category with elements to tear down is always a category with orders, and
+ * `retire` is already true before the loop starts. A category with no orders has
+ * no elements, so its loop is empty and takes no time.
+ *
+ * The window is real but narrow: the microseconds of JS between the count and
+ * the DELETE. The fix is worth making anyway — it is the same remedy
+ * `deleteProduct` documents one level down, and a count that decides a
+ * destructive branch belongs in the transaction that acts on it — but the
+ * scenario is not the one the issue paints, and the tests below say what is
+ * actually guaranteed rather than staging a race that cannot happen.
+ */
+describe('deleteCategory decides under a lock (issue #195)', () => {
+  const seedCategoryWithProduct = async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await seedCategory('Locked')
+    const product = await seedProduct(cat.id, 'P')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id)
+    const project = await createProject(pm.id)
+    return { pm, cat, product, env, project }
+  }
+
+  it('sees an order that arrived after the caller last looked', async () => {
+    const { pm, cat, product, env, project } = await seedCategoryWithProduct()
+    // Nothing ordered yet — the state in which the old code decided to delete.
+    expect(await db.select().from(orders)).toHaveLength(0)
+
+    const late = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
+    const result = await deleteCategory(cat.id)
+
+    expect(result.ok).toBe(true)
+    expect(await db.select().from(orders).where(eq(orders.id, late.id))).toHaveLength(1)
+    const [row] = await db.select().from(categories).where(eq(categories.id, cat.id))
+    expect(row.retiredAt).toBeInstanceOf(Date)
+  })
+
+  it('still deletes outright when nothing was ever ordered', async () => {
+    const { cat } = await seedCategoryWithProduct()
+
+    const result = await deleteCategory(cat.id)
+
+    expect(result.ok).toBe(true)
+    expect(await db.select().from(categories).where(eq(categories.id, cat.id))).toHaveLength(0)
+  })
+
+  // The entry has to roll back with the branch it describes, which it cannot do
+  // on the pool connection the old code used.
+  it('writes its audit entry on the transaction', async () => {
+    const { pm, cat, product, env, project } = await seedCategoryWithProduct()
+    await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
+
+    await deleteCategory(cat.id)
+
+    const rows = await db.select().from(auditLog).where(eq(auditLog.action, 'category.retired'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].details).toMatch(/1 order/)
   })
 })

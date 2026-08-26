@@ -109,11 +109,24 @@ export const revokeAllSessionsOf = async (
   // account disabled and still signed in, which is the failure this exists to
   // prevent.
   executor: Parameters<typeof logAuditWith>[0] = db,
+  /**
+   * One session to leave alive — the caller's own.
+   *
+   * For the case where the user themselves caused this and is still sitting in
+   * the tab: changing a password should end every OTHER session, not sign the
+   * person out of the one they just re-authenticated in (#184). Omitted for
+   * anything done TO an account, where nothing is spared.
+   */
+  keepSessionId?: number,
 ): Promise<number> => {
   const revoked = await executor
     .update(sessions)
     .set({ revokedAt: new Date() })
-    .where(liveSessionsOf(userId))
+    .where(
+      keepSessionId === undefined
+        ? liveSessionsOf(userId)
+        : and(liveSessionsOf(userId), ne(sessions.id, keepSessionId)),
+    )
     .returning({ id: sessions.id })
 
   if (revoked.length === 0) return 0
@@ -123,7 +136,8 @@ export const revokeAllSessionsOf = async (
     actorId,
     'session.revoked_others',
     userId,
-    `${reason}: signed out ${revoked.length} session(s) of user ${userId}`,
+    `${reason}: signed out ${revoked.length} session(s) of user ${userId}` +
+      (keepSessionId === undefined ? '' : `, kept ${keepSessionId}`),
   )
 
   return revoked.length

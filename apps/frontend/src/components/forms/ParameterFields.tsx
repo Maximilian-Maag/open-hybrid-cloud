@@ -2,6 +2,8 @@
 
 import type { Parameter } from '@open-hybrid-cloud/types'
 import { Input } from '@/components/ui/Input'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface ParameterFieldsProps {
   parameters: Parameter[]
@@ -18,6 +20,7 @@ interface ParameterFieldsProps {
 // disabled the Cost Center Select ("cannot be selected"). Removing the
 // internal state and the sync effect fixes both.
 export function ParameterFields({ parameters, values, onChange }: ParameterFieldsProps) {
+  const lang = useLang()
   if (parameters.length === 0) return null
 
   const getValue = (p: Parameter): string => values?.[p.name] ?? p.defaultValue ?? ''
@@ -73,7 +76,7 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
                 required={param.required}
                 className="min-h-11 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Select…</option>
+                <option value="">{t('selectPlaceholder', lang)}</option>
                 {options.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}

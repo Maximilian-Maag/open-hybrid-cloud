@@ -20,6 +20,7 @@ import {
 import { getBranding } from '@/lib/services/admin/branding'
 import { logAudit } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
+import { revokeAllSessionsOf } from '@/lib/services/sessions'
 
 export interface UserProfile {
   id: number
@@ -157,12 +158,33 @@ export const checkLoginPassword = async (
     .limit(1)
 
   const user = rows[0]
-  if (!user || !user.active || !user.passwordHash) {
+  if (!user || !user.passwordHash) {
     return err(401, 'Invalid credentials')
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash)
   if (!valid) return err(401, 'Invalid credentials')
+
+  /*
+   * Deactivation is reported only AFTER the password verifies.
+   *
+   * It used to share the branch above, so a deactivated account failed as
+   * "Invalid credentials" — and the operator went looking for a password
+   * problem. On the dev instance that cost an afternoon: root had deactivated
+   * its own account (#196), and every screen said the password was wrong.
+   *
+   * Told before the password is checked, this would be an account-enumeration
+   * oracle: anyone could learn which addresses have accounts, and which of them
+   * are switched off. Told after, it discloses nothing — whoever gets this
+   * message already holds the credentials, and the only thing they learn is why
+   * the credentials they have do not work.
+   *
+   * Deliberately after bcrypt rather than before, so the timing does not leak it
+   * either.
+   */
+  if (!user.active) {
+    return err(403, 'This account is deactivated. An administrator has to reactivate it.')
+  }
 
   // The password was right. If a second factor is enrolled, that is ALL that has
   // been established — no session row is written and no session token is signed
@@ -334,15 +356,33 @@ export const updateMe = async (
   return ok(updated as UserProfile)
 }
 
+/**
+ * Change your own password, and end every other session while doing it (#184).
+ *
+ * Changing the password is the one remediation every user and every helpdesk
+ * reaches for after a suspected compromise, and it used to do nothing to the
+ * sessions: an attacker holding a stolen token kept it — up to thirty days with
+ * "remember me". `updateUser` already revoked on deactivation and on a role
+ * change, with a well-argued comment about exactly this; the password path was
+ * simply missed.
+ *
+ * Everything EXCEPT the caller's own session. They just proved the old password
+ * and are sitting in that tab; signing them out of it would make the remediation
+ * feel like a failure and teach people not to do it.
+ *
+ * One transaction, for the reason `updateUser` gives: a hash that commits while
+ * the revoke fails leaves a changed password and every old session alive, which
+ * is the exact state this exists to prevent.
+ */
 export const changePassword = async (
-  userId: number,
+  caller: { id: number; sessionId: number },
   currentPassword: string,
   newPassword: string,
 ): Promise<Result<void>> => {
   const rows = await db
     .select({ passwordHash: users.passwordHash })
     .from(users)
-    .where(eq(users.id, userId))
+    .where(eq(users.id, caller.id))
     .limit(1)
 
   const user = rows[0]
@@ -354,7 +394,11 @@ export const changePassword = async (
   if (!valid) return err(400, 'Current password is incorrect')
 
   const newHash = await bcrypt.hash(newPassword, 12)
-  await db.update(users).set({ passwordHash: newHash }).where(eq(users.id, userId))
+
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({ passwordHash: newHash }).where(eq(users.id, caller.id))
+    await revokeAllSessionsOf(caller.id, caller.id, 'Password changed', tx, caller.sessionId)
+  })
 
   return ok(undefined)
 }

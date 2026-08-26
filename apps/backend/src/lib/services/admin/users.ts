@@ -9,8 +9,9 @@ import {
   projects,
   orderComments,
   productVersions,
+  approvalDelegations,
 } from '@/lib/db/schema'
-import { count, eq, sql, and, ne } from 'drizzle-orm'
+import { count, eq, sql, and, ne, or } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
@@ -205,8 +206,22 @@ export const updateUser = async (
 
       if (!row) return null
 
-      if (input.active === false || (input.role !== undefined && input.role !== before?.role)) {
-        const reason = input.active === false ? 'Account deactivated' : 'Role changed'
+      // A password reset joins the two that were already here (#184). An admin
+      // setting somebody's password is remediating — usually a suspected
+      // compromise — and leaving the old sessions alive is the one outcome that
+      // makes the remediation pointless. Nothing is spared: unlike a user
+      // changing their own, the person at the keyboard is not the account owner.
+      const passwordReset = input.password !== undefined
+      if (
+        input.active === false ||
+        passwordReset ||
+        (input.role !== undefined && input.role !== before?.role)
+      ) {
+        const reason = input.active === false
+          ? 'Account deactivated'
+          : passwordReset
+            ? 'Password reset by an administrator'
+            : 'Role changed'
         await revokeAllSessionsOf(actorId, id, reason, tx)
       }
 
@@ -270,6 +285,18 @@ export const deleteUser = async (session: SessionUser, id: number): Promise<Resu
     const projectCount = await countWhere(tx.select({ n: count() }).from(projects).where(eq(projects.ownerId, id)))
     const commentCount = await countWhere(tx.select({ n: count() }).from(orderComments).where(eq(orderComments.userId, id)))
     const versionCount = await countWhere(tx.select({ n: count() }).from(productVersions).where(eq(productVersions.createdBy, id)))
+    // Both directions, and both were missing (#195). The list above enumerated
+    // every non-cascading FK to users.id as it stood when it was written; #173
+    // added these two the same day, deliberately without ON DELETE. An admin
+    // nominated as a substitute who has taken no action is named by none of the
+    // other five counts, so deleting them read all zeros and Postgres raised
+    // 23503 as an unhandled 500 — exactly the symptom this check exists to
+    // prevent.
+    const delegationCount = await countWhere(
+      tx.select({ n: count() }).from(approvalDelegations).where(
+        or(eq(approvalDelegations.fromUserId, id), eq(approvalDelegations.toUserId, id)),
+      ),
+    )
 
     const blockers: string[] = []
     if (auditCount > 0) blockers.push(`${auditCount} audit log entr${auditCount === 1 ? 'y' : 'ies'}`)
@@ -277,6 +304,7 @@ export const deleteUser = async (session: SessionUser, id: number): Promise<Resu
     if (projectCount > 0) blockers.push(`${projectCount} owned project(s)`)
     if (commentCount > 0) blockers.push(`${commentCount} order comment(s)`)
     if (versionCount > 0) blockers.push(`${versionCount} catalogue version(s)`)
+    if (delegationCount > 0) blockers.push(`${delegationCount} approval delegation(s)`)
 
     if (blockers.length > 0) {
       // Deactivating is the intended answer, not a workaround: the audit log is

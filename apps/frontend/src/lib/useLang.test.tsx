@@ -132,8 +132,9 @@ describe('useLang langchange event', () => {
 // pattern has to find `lang` among neighbours without matching a cookie that
 // merely ends in it.
 describe('useLang cookie parsing', () => {
-  const read = () =>
-    renderHook(() => useLang(), { wrapper: ({ children }: { children: ReactNode }) => <LangProvider value={null}>{children}</LangProvider> })
+  // No provider at all, which is what the login page renders: `useServerLang()`
+  // answers null there, so the cookie is what decides.
+  const read = () => renderHook(() => useLang())
 
   it('finds lang after another cookie', () => {
     setRawCookie('session=abc; lang=fr; theme=dark')

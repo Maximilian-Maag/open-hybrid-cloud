@@ -24,12 +24,12 @@ const linkNames = () => screen.getAllByRole('link').map((l) => l.textContent)
 
 describe('TopNav role gate', () => {
   it('shows a plain user the six shared sections and nothing more', () => {
-    renderNav('user')
+    renderNav('project_manager')
     expect(linkNames()).toEqual(['Home', 'Catalog', 'Orders', 'Projects', 'Infrastructure', 'Costs'])
   })
 
   it('does not link a plain user to approvals, audit or admin', () => {
-    renderNav('user')
+    renderNav('project_manager')
     expect(screen.queryByRole('link', { name: 'Approvals' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Audit' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument()
@@ -53,7 +53,7 @@ describe('TopNav role gate', () => {
 
 describe('TopNav current-page marking', () => {
   it('marks Home current only on the root path', () => {
-    renderNav('user', '/')
+    renderNav('project_manager', '/')
     expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page')
   })
 
@@ -61,7 +61,7 @@ describe('TopNav current-page marking', () => {
     // Home is matched exactly. A prefix match on "/" makes every path in the app
     // start with it, so Home would be current everywhere and two pills would
     // claim the location at once.
-    renderNav('user', '/catalog')
+    renderNav('project_manager', '/catalog')
     expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current')
     expect(screen.getByRole('link', { name: 'Catalog' })).toHaveAttribute('aria-current', 'page')
   })
@@ -69,7 +69,7 @@ describe('TopNav current-page marking', () => {
   it('keeps the section current on its detail pages', () => {
     // /orders/42 is still "Orders". An exact match would drop the marking as
     // soon as you opened anything.
-    renderNav('user', '/orders/42')
+    renderNav('project_manager', '/orders/42')
     expect(screen.getByRole('link', { name: 'Orders' })).toHaveAttribute('aria-current', 'page')
   })
 
@@ -80,14 +80,14 @@ describe('TopNav current-page marking', () => {
   })
 
   it('marks nothing current on a path outside the nav', () => {
-    renderNav('user', '/cart')
+    renderNav('project_manager', '/cart')
     expect(document.querySelectorAll('[aria-current]')).toHaveLength(0)
   })
 
   it('gives the current pill a different class from the resting ones', () => {
     // aria-current is the signal for assistive tech; the visible signal must not
     // be colour alone, so the active pill also changes weight and background.
-    renderNav('user', '/costs')
+    renderNav('project_manager', '/costs')
     const active = screen.getByRole('link', { name: 'Costs' })
     const resting = screen.getByRole('link', { name: 'Catalog' })
     expect(active.className).not.toBe(resting.className)
@@ -101,7 +101,7 @@ describe('TopNav current-page marking', () => {
   // saying "you are here" on a detail page while the pill stops looking like it
   // — the two signals disagree, and the visible one is the wrong one.
   it('keeps the pill marked on a detail page, not just the section root', () => {
-    renderNav('user', '/orders/42')
+    renderNav('project_manager', '/orders/42')
     const orders = screen.getByRole('link', { name: 'Orders' })
     expect(orders).toHaveAttribute('aria-current', 'page')
     expect(orders).toHaveClass('brand-state-active')
@@ -117,7 +117,7 @@ describe('TopNav current-page marking', () => {
 describe('TopNav labels', () => {
   it('names the navigation landmark and translates the links', () => {
     pathname = '/'
-    render(<TopNav role="user" lang="de" />)
+    render(<TopNav role="project_manager" lang="de" />)
     expect(screen.getByRole('navigation', { name: 'Hauptnavigation' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Katalog' })).toBeInTheDocument()
   })
@@ -159,7 +159,7 @@ describe('TopNav destinations', () => {
 // carry readableInk's contrast guarantee, so they are behaviour.
 describe('TopNav branding surface', () => {
   it('paints the strip with the primary and its readable ink', () => {
-    const { container } = renderNav('user', '/')
+    const { container } = renderNav('project_manager', '/')
     const strip = container.firstElementChild as HTMLElement
     const nav = screen.getByRole('navigation')
 

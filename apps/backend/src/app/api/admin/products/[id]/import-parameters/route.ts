@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
 import { parseRouteId, invalidId, toResponse } from '@/lib/http'
 import { db } from '@/lib/db/client'
-import { ciSources } from '@/lib/db/schema'
+import { ciSources, products } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { ok, err } from '@/lib/services/result'
 import { scanTemplate, importScannedParameters } from '@/lib/services/admin/templateImport'
@@ -46,6 +46,17 @@ export async function POST(
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
+
+  // `parameters.scopeId` is polymorphic — global, category or product — so it
+  // carries no foreign key and the database will accept a product that does not
+  // exist. Without this the route answers 200 to a typo in the URL and leaves
+  // orphan rows behind that nothing will ever show or clean up.
+  const [product] = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1)
+  if (!product) return toResponse(err(404, 'Product not found'))
 
   const [src] = await db
     .select()

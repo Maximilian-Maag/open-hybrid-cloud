@@ -96,15 +96,32 @@ export const scanTemplate = async (
   ref: string,
   path: string,
   depth = 0,
-  seen: Set<string> = new Set(),
+  seen: Map<string, TemplateScan> = new Map(),
 ): Promise<TemplateScan> => {
   const scan: TemplateScan = { variables: [], skippedModules: [], filesRead: [] }
 
   // Two directories can reach the same module by different relative routes, and
-  // a diamond would otherwise be read — and reported — twice.
+  // a diamond should be READ once. It must not be ANSWERED once: whether a
+  // variable is already covered is decided per caller, below, so returning
+  // nothing to the second caller made a shared module's variable vanish
+  // whenever the first caller happened to assign it —
+  //
+  //   module "a" { source = "../modules/shared"  size = "small" }
+  //   module "b" { source = "../modules/shared" }
+  //
+  // filtered `size` out for `a`, which answers it, and handed `b` an empty
+  // scan. `b` still needs a size and the order form had no field for one.
+  //
+  // So the scan is cached and replayed. `filesRead` and `skippedModules` come
+  // back empty on a hit, because those are a record of work done and it was
+  // done the first time.
   const key = path || '.'
-  if (seen.has(key)) return scan
-  seen.add(key)
+  const cached = seen.get(key)
+  if (cached) return { variables: cached.variables, skippedModules: [], filesRead: [] }
+
+  // Stored before it is filled, so a module that reaches itself terminates on
+  // the empty scan rather than recursing forever.
+  seen.set(key, scan)
 
   const entries = await listFiles(source, projectId, ref, path)
   const tfFiles = entries

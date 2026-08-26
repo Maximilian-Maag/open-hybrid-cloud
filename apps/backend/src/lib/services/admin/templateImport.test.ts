@@ -222,6 +222,63 @@ describe('scanTemplate', () => {
     expect(scan.filesRead.filter((f) => f.startsWith('modules/shared/'))).toHaveLength(1)
   })
 
+  // Read once, but answered per caller. Skipping the second caller entirely
+  // handed it an empty scan, so a variable the FIRST caller happened to assign
+  // disappeared for the second one too — and the order form had no field for a
+  // value the second module still needs.
+  it('still offers a shared variable the other caller answers', async () => {
+    repo({
+      'templates/vm/main.tf': `
+        module "a" {
+          source = "../../modules/shared"
+          size   = "small"
+        }
+        module "b" {
+          source = "../../modules/shared"
+        }
+      `,
+      'modules/shared/variables.tf': 'variable "size" { type = string }',
+    })
+
+    const scan = await scanTemplate(source, '1', 'main', 'templates/vm')
+
+    expect(scan.variables.map((v) => v.name)).toEqual(['size'])
+    expect(scan.variables[0].fromModule).toBe('b')
+    // Still read once, which is the whole point of the cache.
+    expect(scan.filesRead).toEqual(['templates/vm/main.tf', 'modules/shared/variables.tf'])
+  })
+
+  // The mirror image: when EVERY caller answers it, it is not asked for.
+  it('leaves out a shared variable both callers answer', async () => {
+    repo({
+      'templates/vm/main.tf': `
+        module "a" {
+          source = "../../modules/shared"
+          size   = "small"
+        }
+        module "b" {
+          source = "../../modules/shared"
+          size   = "large"
+        }
+      `,
+      'modules/shared/variables.tf': 'variable "size" { type = string }',
+    })
+
+    expect((await scanTemplate(source, '1', 'main', 'templates/vm')).variables).toEqual([])
+  })
+
+  // Stored before it is filled, so this terminates instead of recursing forever.
+  it('terminates on a module that reaches itself', async () => {
+    repo({
+      'modules/loop/main.tf': 'module "self" { source = "../loop" }',
+      'modules/loop/variables.tf': 'variable "x" { type = string }',
+    })
+
+    const scan = await scanTemplate(source, '1', 'main', 'modules/loop')
+
+    expect(scan.variables.map((v) => v.name)).toEqual(['x'])
+  })
+
   // The root declares what the template promises; a module's own declaration of
   // the same name is the implementation detail behind it.
   it('prefers the root declaration over a module of the same name', async () => {

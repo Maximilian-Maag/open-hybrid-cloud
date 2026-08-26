@@ -27,13 +27,27 @@ const extractVariableBlocks = (content: string): Array<{ name: string; body: str
   return results
 }
 
+// The key has to START here. Without the lookbehind, `source` matches inside
+// `image_source`, and `String.match` returns the FIRST hit anywhere in the body:
+//
+//   module "vm" {
+//     image_source = "ubuntu-24"
+//     source       = "../modules/vm"
+//   }
+//
+// read its source as `ubuntu-24`, which is not a local path, so the module was
+// reported as unreadable and every variable behind it was lost. The same slip
+// costs a `type` or a `description` its value wherever an argument ends in one.
+// `.` and `-` are excluded too, so `local.source` and `my-source` do not match.
+const keyPattern = (key: string, value: string) => new RegExp(`(?<![\\w.-])${key}\\s*=\\s*${value}`, 'm')
+
 const extractStringValue = (body: string, key: string): string | undefined => {
-  const match = body.match(new RegExp(`${key}\\s*=\\s*"([^"]*)"`, 'm'))
+  const match = body.match(keyPattern(key, '"([^"]*)"'))
   return match?.[1]
 }
 
 const extractBareValue = (body: string, key: string): string | undefined => {
-  const match = body.match(new RegExp(`${key}\\s*=\\s*([^\\n\\r]+)`, 'm'))
+  const match = body.match(keyPattern(key, '([^\\n\\r]+)'))
   return match?.[1]?.trim()
 }
 

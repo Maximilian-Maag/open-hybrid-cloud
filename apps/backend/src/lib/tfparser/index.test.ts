@@ -125,6 +125,30 @@ variable "instance_type" {
     const vars = parseTerraformVariables(hcl)
     expect(vars[0].label).toBe('Instance Type')
   })
+
+  // The same unanchored match that lost a module's source takes a variable's
+  // description and default from any argument whose name happens to end in one.
+  it('does not take the description from an argument ending in description', () => {
+    const vars = parseTerraformVariables(`
+variable "size" {
+  type            = string
+  long_description = "the wrong one"
+  description      = "the right one"
+}
+`)
+    expect(vars[0].description).toBe('the right one')
+  })
+
+  it('does not take the default from an argument ending in default', () => {
+    const vars = parseTerraformVariables(`
+variable "size" {
+  type        = string
+  has_default = "yes"
+  default     = "small"
+}
+`)
+    expect(vars[0].defaultValue).toBe('small')
+  })
 })
 
 describe('parseTerraformModules', () => {
@@ -208,6 +232,30 @@ describe('parseTerraformModules', () => {
 
   it('finds nothing in a file with no modules', () => {
     expect(parseTerraformModules(`variable "x" { type = string }`)).toEqual([])
+  })
+
+  // `String.match` returns the first hit anywhere in the body, so an unanchored
+  // `source` matched inside `image_source` and the module's real source was
+  // never reached. `isLocalSource` then said no and every child variable behind
+  // it was lost.
+  it('does not read an argument ending in source as the module source', () => {
+    const modules = parseTerraformModules(`
+      module "vm" {
+        image_source = "ubuntu-24"
+        source       = "../modules/vm"
+      }
+    `)
+    expect(modules[0].source).toBe('../modules/vm')
+  })
+
+  it('does not read a dotted reference as the key either', () => {
+    const modules = parseTerraformModules(`
+      module "vm" {
+        upstream = local.source
+        source   = "../modules/vm"
+      }
+    `)
+    expect(modules[0].source).toBe('../modules/vm')
   })
 
   // A registry or git source cannot be read through the CI file API; the caller

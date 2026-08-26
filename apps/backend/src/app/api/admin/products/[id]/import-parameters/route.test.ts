@@ -225,6 +225,25 @@ describe('POST /api/admin/products/[id]/import-parameters', () => {
     expect(res.status).toBe(422)
   })
 
+  // `parameters.scopeId` is polymorphic, so it carries no foreign key: without
+  // the check the database accepts the write and a typo in the URL leaves orphan
+  // rows behind a 200.
+  it('answers 404 for a product that is not there, and writes nothing', async () => {
+    const { ci, auth } = await setup()
+    repo({ 'templates/vm/variables.tf': 'variable "hostname" { type = string }' })
+
+    const res = await POST(
+      makeReq(999_999, { ciSourceId: ci.id, projectId: '1', ref: 'main', path: 'templates/vm' }, auth),
+      ctx(999_999),
+    )
+
+    expect(res.status).toBe(404)
+    const rows = await db.select().from(parameters).where(eq(parameters.scopeId, 999_999))
+    expect(rows).toEqual([])
+    // It did not even reach the repository.
+    expect(listMock).not.toHaveBeenCalled()
+  })
+
   it('answers 404 for a CI source that is not there', async () => {
     const { product, auth } = await setup()
 

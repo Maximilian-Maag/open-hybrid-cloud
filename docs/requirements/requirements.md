@@ -221,7 +221,7 @@
 | NFA-01.4 | **Kubernetes:** Nginx Ingress Controller + cert-manager handle TLS termination (Let's Encrypt or internal CA). No `imagePullSecret` is required; the image is public. | Shipped — `infra/helm/open-hybrid-cloud/templates/ingress.yaml`, `values.yaml` |
 | NFA-01.5 | Configuration is done exclusively via environment variables (12-Factor App). No configuration files inside the container. | Shipped, with the documented exception that SMTP/AI (and, per this pass, nothing else) can also be set at runtime in the database, overriding the env var — see NFA-06 |
 | NFA-01.6 | The GitLab server is reachable via a configurable URL. | Shipped, and broader than written — any of GitLab/GitHub/Bitbucket, via CI Sources (see FA-05.1) |
-| NFA-01.7 | The deployment configuration for the Docker Host is located under `infra/docker-host/` and contains: `docker-compose.yml`, `nginx.conf.example`, and `setup.sh`. | Shipped, but this is only one of two Docker Host deployment paths that exist — `infra/docker-compose.yml` (build from source) is the other, and this requirement does not mention it. See README "Docker Host". |
+| NFA-01.7 | The deployment configuration for the Docker Host is located under `infra/docker-host/` and contains: `docker-compose.yml`, `nginx.conf.template`, and `setup.sh`. | Shipped, but this is only one of two Docker Host deployment paths that exist — `infra/docker-compose.yml` (build from source) is the other, and this requirement does not mention it. See README "Docker Host". |
 
 ---
 

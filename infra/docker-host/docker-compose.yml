@@ -2,7 +2,7 @@
 # Prerequisites:
 #   - docker login (to pull images from Docker Hub)
 #   - .env filled in (see .env.example)
-#   - nginx.conf in place (see nginx.conf.example)
+#   - SERVER_NAME in .env (nginx.conf.template is mounted, never copied)
 #   - TLS certificates in ./certs/ (fullchain.pem + privkey.pem)
 
 services:
@@ -14,8 +14,22 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      # The one host-specific value in the template. It must match NEXTAUTH_URL
+      # and the name on the certificate.
+      SERVER_NAME: ${SERVER_NAME:?SERVER_NAME must be your public domain, e.g. hcp.example.com}
+      # Where the image writes the rendered template. Default is conf.d, which is
+      # included from inside `http` — this template IS the whole nginx.conf.
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+      # Substitute SERVER_NAME and nothing else. Without the filter, envsubst
+      # also eats $$host, $$scheme, $$remote_addr and the upstream variables, and
+      # nginx cannot parse what comes out.
+      NGINX_ENVSUBST_FILTER: "^SERVER_NAME$$"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # Mounted as a TEMPLATE, so the deployed config is this repository's file
+      # and cannot drift from it. See the header of nginx.conf.template for the
+      # outage that made this necessary.
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
       - ./certs:/etc/nginx/certs:ro
     depends_on:
       frontend:

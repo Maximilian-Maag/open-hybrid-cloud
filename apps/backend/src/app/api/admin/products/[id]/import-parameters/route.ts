@@ -16,6 +16,14 @@ const ImportSchema = z.object({
   ref: z.string().min(1),
   /** Directory of the root template, repository-relative. '' is the repository root. */
   path: z.string(),
+  /**
+   * Which environment the imported template should become a pipeline stack for.
+   *
+   * Optional, so an import that only wants the variables still works — but the
+   * dialog sends it, because a product with parameters and no way to provision
+   * them is the state that made an imported Kubernetes product unorderable.
+   */
+  environmentId: z.number().int().positive().optional(),
 })
 
 /**
@@ -29,6 +37,11 @@ const ImportSchema = z.object({
  *
  * The scan reads every `.tf` in the directory and follows local `module` sources,
  * because a template built out of modules declares few variables of its own.
+ *
+ * Given an `environmentId` it also gives the product a PIPELINE STACK for that
+ * environment, built from the same path. Importing the variables alone left the
+ * product looking finished and unorderable — a product is provisioned by a
+ * webhook or a stack, and a freshly imported one had neither.
  */
 export async function POST(
   req: NextRequest,
@@ -72,7 +85,18 @@ export async function POST(
     // An empty scan is not an error, and saying which files were read is what
     // tells the operator whether the path was wrong or the template simply
     // declares nothing.
-    return toResponse(ok(await importScannedParameters(productId, scan, session.id)))
+    return toResponse(
+      ok(
+        await importScannedParameters(
+          productId,
+          scan,
+          session.id,
+          parsed.data.environmentId !== undefined
+            ? { environmentId: parsed.data.environmentId, path: parsed.data.path }
+            : undefined,
+        ),
+      ),
+    )
   } catch (e) {
     console.error('[import-parameters]', e)
     return toResponse(

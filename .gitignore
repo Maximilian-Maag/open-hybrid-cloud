@@ -1,7 +1,13 @@
 # Dependencies
-node_modules/
-apps/*/node_modules/
-packages/*/node_modules/
+# No trailing slash, deliberately. `node_modules/` matches a DIRECTORY only, so
+# a symlink of that name slips straight past it — which is what happens the
+# moment anyone runs `git worktree add` and links the dependencies in rather
+# than installing them again. `git add -A` then commits the links, and CI dies
+# on `ENOTDIR: not a directory, mkdir '.../node_modules'` in `pnpm install`,
+# several confusing steps away from the cause.
+node_modules
+apps/*/node_modules
+packages/*/node_modules
 
 # Next.js build output
 apps/*/.next/
@@ -94,4 +100,5 @@ test-results/
 playwright-report/
 
 # The pinned opa binary for `make policy` (50 MB, fetched by `make policy-install-opa`)
-.opa/
+# Same reason as node_modules above: no trailing slash.
+.opa

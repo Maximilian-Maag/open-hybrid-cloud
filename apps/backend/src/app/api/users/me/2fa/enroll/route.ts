@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import bcrypt from 'bcryptjs'
 import { requireAuthPendingSecondFactor, isAuth } from '@/lib/auth/middleware'
 import { logAudit } from '@/lib/audit'
+import { recheckPassword } from '@/lib/auth/passwordRecheck'
 import { getBranding } from '@/lib/services/admin/branding'
 import {
   loadTwoFactorAccount,
@@ -58,8 +58,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: account.message }, { status: account.status })
   }
 
-  const passwordOk = await bcrypt.compare(parsed.data.password, account.data.passwordHash)
-  if (!passwordOk) {
+  const recheck = await recheckPassword(session.id, parsed.data.password, account.data.passwordHash)
+  if (recheck === 'throttled') {
+    await logAudit(
+      session.id,
+      'auth.2fa.enroll_denied',
+      session.id,
+      'Enrollment refused: too many wrong passwords',
+    )
+    return NextResponse.json(
+      { error: 'Too many attempts. Wait fifteen minutes and try again.' },
+      { status: 429 },
+    )
+  }
+  if (recheck === 'wrong') {
     await logAudit(
       session.id,
       'auth.2fa.enroll_denied',

@@ -1,18 +1,27 @@
-# Reverse proxy for the single-Docker-host deployment.
+# nginx reverse proxy for the Docker-host deployment.
 #
-#   cp nginx.conf.example nginx.conf
-#   # edit the ONE line marked "CHANGE THIS" below
-#   docker compose up -d --force-recreate nginx
+# ── This file is MOUNTED, not copied ─────────────────────────────────────────
 #
-# Nothing else in this file is site-specific: the upstreams are container names
-# from docker-compose.yml and the certificate paths are the mount point defined
-# there. If you change nothing but the domain, this file is complete.
+# It used to be `nginx.conf.example`, and every host kept a hand-made
+# `nginx.conf` beside it. That copy drifts, silently, and on 2026-08-27 the
+# consequence was found the hard way: hcp-dev's copy predated the `/api/proxy/`
+# block, which since #146 is the ONLY route by which the browser reaches the
+# backend. `location /api/` swallowed it, so every dashboard action — opening the
+# catalogue, adding to cart, ordering, decommissioning, writing off a stuck
+# order, deleting a project — answered 404. The repository was correct and green
+# the whole time, including the `apiRoutes.test.ts` gate written for exactly this
+# class of bug: it checks THIS file, which nothing deployed.
 #
-# Do not simplify the /api routing. Both the frontend and the backend are
-# Next.js applications and BOTH serve routes under /api; sending all of /api to
-# the backend breaks sign-in with a 404 (#196). The ordering of the location
-# blocks below is what keeps them apart, and it is load-bearing.
-
+# So there is no copy any more. The nginx image runs envsubst over
+# /etc/nginx/templates/*.template at startup, and docker-compose.yml mounts this
+# file there. The one host-specific value, the public domain, comes from
+# SERVER_NAME in .env.
+#
+# NGINX_ENVSUBST_FILTER in docker-compose.yml restricts the substitution to
+# SERVER_NAME. Without it envsubst would also eat $host, $scheme, $remote_addr
+# and the upstream variables below, and produce a config that is valid YAML-free
+# nonsense nginx cannot parse.
+#
 events {
     worker_connections 1024;
 }
@@ -36,11 +45,10 @@ http {
 
     # HTTPS
     server {
-        # ─────────────────────────────────────────────────────────────────────
-        # CHANGE THIS — your public domain, and the only edit this file needs.
-        # It must match NEXTAUTH_URL in .env and the name on the certificate.
-        # ─────────────────────────────────────────────────────────────────────
-        server_name your-domain.example.com;
+        # Filled in by the nginx image's own envsubst pass from SERVER_NAME in
+        # .env — see the header of this file. It must match NEXTAUTH_URL and the
+        # name on the certificate.
+        server_name ${SERVER_NAME};
 
         listen 443 ssl;
 

@@ -287,11 +287,46 @@ export const getOrderById = async (
 const validateAndApplyParameters = (
   defs: Parameter[],
   submitted: Record<string, string>,
+  sizeCode: string | null,
 ): Result<Record<string, string>> => {
   const resolved = resolveParameterDefs(defs)
   const result: Record<string, string> = {}
 
   for (const def of resolved) {
+    /*
+     * A `size` variable is not something the customer types (#251-adjacent).
+     * Its value is whatever the size they picked says it is, and `submitted` is
+     * ignored entirely — the order form does not render an input for it, and a
+     * hand-written request must not be able to buy an S and provision an XL.
+     * That is the whole point of putting the mapping on the server: the price
+     * and the hardware are decided by one choice.
+     *
+     * `instance_type` on an AWS VM is one of these. vSphere has three, all
+     * driven by the same size, which is why the map lives on the VARIABLE.
+     */
+    if (def.type === 'size') {
+      if (sizeCode === null) {
+        // An offering with no sizes cannot answer a size variable, and guessing
+        // would provision something nobody chose.
+        return err(
+          400,
+          `Parameter ${def.name} is set by the size, and this offering has no sizes. ` +
+            'Give the offering sizes, or change the parameter to another type.',
+        )
+      }
+      const forSize = def.sizeValues?.[sizeCode]
+      if (forSize === undefined || forSize === '') {
+        // A size added after the mapping was written. Refusing beats
+        // provisioning an empty instance_type and letting Terraform decide.
+        return err(
+          400,
+          `Size ${sizeCode} has no value for ${def.name}. An administrator has to say what ${def.name} is at that size.`,
+        )
+      }
+      result[def.name] = forSize
+      continue
+    }
+
     // Silently, and including when the definition is `required`: the name is one
     // the server decides, so there is nothing for the customer to supply and an
     // error would only make such a product unorderable.
@@ -511,7 +546,9 @@ export const prepareOrder = async (
 
   // Server-side parameter validation (required/type checks + defaults).
   const defs = await loadApplicableParameters(productId, product.categoryId, environmentId)
-  const validated = validateAndApplyParameters(defs, input.parameters)
+  // `priced.data.sizeCode` and not `input.sizeCode`: the former has been through
+  // `resolveOfferingPrice`, so it is a size that actually exists and is active.
+  const validated = validateAndApplyParameters(defs, input.parameters, priced.data.sizeCode)
   if (!validated.ok) return validated
   const parameters = validated.data
 

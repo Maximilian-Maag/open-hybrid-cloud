@@ -7,10 +7,11 @@ import { updateParameter, deleteParameter } from '@/lib/services/admin/parameter
 const UpdateParameterSchema = z.object({
   name: z.string().min(1).optional(),
   label: z.string().optional(),
-  type: z.enum(['string', 'number', 'bool', 'dropdown']).optional(),
+  type: z.enum(['string', 'number', 'bool', 'dropdown', 'size']).optional(),
   description: z.string().optional(),
   defaultValue: z.string().optional(),
   required: z.boolean().optional(),
+  sizeValues: z.record(z.string(), z.string()).optional(),
   sensitive: z.boolean().optional(),
   environmentId: z.number().int().positive().nullable().optional(),
 })

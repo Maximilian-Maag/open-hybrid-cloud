@@ -11,12 +11,18 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { t } from '@/lib/i18n'
 
+type StackOutcome =
+  | { created: true; name: string; stateKeyParam: string; template: string }
+  | { created: false; reason: 'already-configured'; name: string }
+  | { created: false; reason: 'no-template-path' }
+
 interface ImportOutcome {
   created: number
   skipped: number
   createdNames: string[]
   skippedModules: { module: string; source: string; reason: string }[]
   filesRead: string[]
+  stack?: StackOutcome
 }
 
 /**
@@ -30,7 +36,16 @@ interface ImportOutcome {
  * built and nothing ever called them: the capability was missing from the
  * interface, not from the backend.
  */
-export function ImportFromRepo({ productId, lang }: { productId: number; lang: string }) {
+export function ImportFromRepo({
+  productId,
+  environments,
+  lang,
+}: {
+  productId: number
+  /** The environments this product is OFFERED in — the stack goes in one of them. */
+  environments: { id: number; name: string }[]
+  lang: string
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [sources, setSources] = useState<CiSource[] | null>(null)
@@ -40,6 +55,11 @@ export function ImportFromRepo({ productId, lang }: { productId: number; lang: s
   const [projectId, setProjectId] = useState('')
   const [ref, setRef] = useState('')
   const [path, setPath] = useState('')
+  // Preselected when there is only one offering, because then there is no
+  // decision to make and one fewer field to forget.
+  const [environmentId, setEnvironmentId] = useState(
+    environments.length === 1 ? String(environments[0].id) : '',
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<ImportOutcome | null>(null)
@@ -93,6 +113,11 @@ export function ImportFromRepo({ productId, lang }: { productId: number; lang: s
         projectId,
         ref,
         path,
+        // Given one, the import also creates the pipeline stack. Without a stack
+        // (or a webhook) the product has nothing to provision it and ordering
+        // fails at the till — which is how an imported Kubernetes product came
+        // to be unorderable.
+        ...(environmentId !== '' ? { environmentId: Number(environmentId) } : {}),
       })
       setOutcome(result)
       // The list on the page behind the dialog is server-rendered.
@@ -140,6 +165,15 @@ export function ImportFromRepo({ productId, lang }: { productId: number; lang: s
               options={(branches ?? []).map((b) => ({ value: b.name, label: b.name }))}
             />
 
+            <Select
+              label={t('environment', lang)}
+              value={environmentId}
+              onChange={(e) => setEnvironmentId(e.target.value)}
+              placeholder={t('selectEnvironment', lang)}
+              options={environments.map((e) => ({ value: String(e.id), label: e.name }))}
+              hint={t('importCreatesStackHint', lang)}
+            />
+
             {/* A repository path, the same in every language — see the template
                 repository's own layout, e.g. templates/linode/virtual-machine. */}
             <Input
@@ -165,6 +199,20 @@ export function ImportFromRepo({ productId, lang }: { productId: number; lang: s
                 {outcome.filesRead.length > 0 && (
                   <span className="block text-xs mt-1 text-slate-600">
                     {t('filesRead', lang)}: {outcome.filesRead.join(', ')}
+                  </span>
+                )}
+                {/* The stack is what makes the product orderable, so it is
+                    reported as plainly as the parameters are. */}
+                {outcome.stack?.created === true && (
+                  <span className="block text-xs mt-1">
+                    {t('pipelineStackCreated', lang)}: <span className="font-mono">{outcome.stack.template}</span>
+                    {' · '}
+                    {t('stateKeyShort', lang)}: <span className="font-mono">{outcome.stack.stateKeyParam}</span>
+                  </span>
+                )}
+                {outcome.stack?.created === false && outcome.stack.reason === 'already-configured' && (
+                  <span className="block text-xs mt-1 text-slate-600">
+                    {t('pipelineStackKept', lang)}: <span className="font-mono">{outcome.stack.name}</span>
                   </span>
                 )}
                 {outcome.skippedModules.length > 0 && (

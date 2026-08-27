@@ -143,6 +143,18 @@ export const linkProductEnvironment = async (
     overheadCostCenterId?: number | null
     trialEnabled?: boolean
     trialDurationMinutes?: number
+    /**
+     * Also give the product a webhook here, so it can actually be ordered.
+     *
+     * Default true, because that is what an offering means in production: a
+     * product offered in an environment with no webhook and no pipeline stack
+     * has nothing to provision it, and `prepareOrder` refuses it outright rather
+     * than letting it fail at the till with a 502 (which is how an imported
+     * Kubernetes product came to be unorderable).
+     *
+     * Pass false to build exactly that broken state on purpose.
+     */
+    deployable?: boolean
   },
 ) => {
   const [row] = await db
@@ -160,6 +172,20 @@ export const linkProductEnvironment = async (
     })
     .onConflictDoNothing()
     .returning()
+
+  if (overrides?.deployable !== false) {
+    await db
+      .insert(schema.productWebhooks)
+      .values({
+        productId,
+        environmentId,
+        name: 'test webhook',
+        webhookUrl: 'https://ci.test.invalid/trigger',
+        webhookToken: 'test-token',
+      })
+      .onConflictDoNothing()
+  }
+
   return row
 }
 

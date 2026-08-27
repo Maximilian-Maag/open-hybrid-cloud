@@ -6,6 +6,7 @@ import { recordProductVersion } from '@/lib/services/versions'
 import { logAudit, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 import { isReservedCiVariable } from '@/lib/ci/reserved'
+import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
 /**
  * A parameter's name becomes a CI trigger variable verbatim, so a definition
@@ -23,6 +24,37 @@ const reservedNameError = (name: string | undefined): Result<never> | null =>
     ? err(400, `Parameter name "${name}" is reserved for a CI variable the server sets`)
     : null
 
+export type ParameterType = 'string' | 'number' | 'bool' | 'dropdown' | 'size'
+
+/**
+ * A `size` parameter's map has to be usable, and the checks are cheap.
+ *
+ * Nothing here validates the keys against the offering's actual size codes: a
+ * parameter is scoped to a product (or a category, or globally) and the sizes
+ * belong to one product+environment offering, so the two do not line up at write
+ * time. A size with no value is caught where it matters, at order time, naming
+ * both the size and the parameter — see `validateAndApplyParameters`.
+ */
+export const sizeValuesError = (
+  type: ParameterType | undefined,
+  sizeValues: Record<string, string> | undefined,
+): Result<never> | null => {
+  if (sizeValues === undefined) return null
+  if (type !== undefined && type !== 'size' && Object.keys(sizeValues).length > 0) {
+    return err(400, 'Only a size parameter can carry per-size values')
+  }
+  for (const [code, value] of Object.entries(sizeValues)) {
+    if (code.trim() === '') return err(400, 'A per-size value needs a size code')
+    if (code.length > SIZE_CODE_MAX_LENGTH) {
+      return err(400, `Size code ${code} is longer than ${SIZE_CODE_MAX_LENGTH} characters`)
+    }
+    // Bounded for the same reason a parameter value is: it becomes a CI trigger
+    // variable, and an unbounded one is an unbounded request body.
+    if (value.length > 4096) return err(400, `The value for size ${code} is too long`)
+  }
+  return null
+}
+
 export interface ParameterFilters {
   scope?: 'global' | 'category' | 'product'
   scopeId?: number
@@ -34,22 +66,25 @@ export interface CreateParameterInput {
   environmentId?: number | null
   name: string
   label?: string
-  type: 'string' | 'number' | 'bool' | 'dropdown'
+  type: ParameterType
   description?: string
   defaultValue?: string
   required?: boolean
   sensitive?: boolean
+  /** Required, and only meaningful, when `type` is `size`. See `sizeValuesError`. */
+  sizeValues?: Record<string, string>
 }
 
 export interface UpdateParameterInput {
   name?: string
   label?: string
-  type?: 'string' | 'number' | 'bool' | 'dropdown'
+  type?: ParameterType
   description?: string
   defaultValue?: string
   required?: boolean
   sensitive?: boolean
   environmentId?: number | null
+  sizeValues?: Record<string, string>
 }
 
 export const listParameters = async (filters: ParameterFilters): Promise<Result<Parameter[]>> => {
@@ -72,6 +107,8 @@ export const createParameter = async (
 ): Promise<Result<Parameter>> => {
   const reserved = reservedNameError(input.name)
   if (reserved) return reserved
+  const badSizes = sizeValuesError(input.type, input.sizeValues)
+  if (badSizes) return badSizes
 
   const [param] = await db
     .insert(parameters)
@@ -86,6 +123,7 @@ export const createParameter = async (
       defaultValue: input.defaultValue ?? '',
       required: input.required ?? false,
       sensitive: input.sensitive ?? false,
+      sizeValues: input.sizeValues ?? {},
     })
     .returning()
 
@@ -111,6 +149,9 @@ export const updateParameter = async (
   // Renames too, or the check would only cost an attacker one extra request.
   const reserved = reservedNameError(input.name)
   if (reserved) return reserved
+
+  const badSizes = sizeValuesError(input.type, input.sizeValues)
+  if (badSizes) return badSizes
 
   // Read the row first: an edit that MOVES the parameter to another environment
   // changes two sets of offerings, and the old one is only knowable from before.

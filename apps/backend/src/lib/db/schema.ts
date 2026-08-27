@@ -325,11 +325,44 @@ export const parameters = pgTable('parameters', {
   environmentId: bigint('environment_id', { mode: 'number' }),
   name: text().notNull(),
   label: text().notNull().default(''),
-  type: text({ enum: ['string', 'number', 'bool', 'dropdown'] }).notNull(),
+  /**
+   * How the ordering user supplies this variable — or, for `size`, how the
+   * platform supplies it for them.
+   *
+   * `size` is a T-shirt size (#251-adjacent): the variable is not typed in at
+   * all, its value is decided by which size the customer picked. `instance_type`
+   * on an AWS VM is one of these; vSphere needs three (`num_cpus`, `memory_mb`,
+   * `disk_size_gb`), which is exactly why the mapping belongs on the VARIABLE
+   * rather than on the size — one size can drive as many variables as the
+   * template needs.
+   *
+   * Combined with `environmentId` below, "different values in different
+   * environments" costs nothing extra: `instance_type` for the AWS offering and
+   * `instance_type` for the Linode one are two rows with two maps, and the
+   * existing scope resolution already prefers the environment-specific one.
+   */
+  type: text({ enum: ['string', 'number', 'bool', 'dropdown', 'size'] }).notNull(),
   description: text().notNull().default(''),
   defaultValue: text('default_value').notNull().default(''),
   required: boolean().notNull().default(false),
   sensitive: boolean().notNull().default(false),
+  /**
+   * For a `size` parameter: what each size code means for this variable.
+   *
+   *     { "S": "t3.micro", "M": "t3.large", "XL": "m6i.2xlarge" }
+   *
+   * Keys are `product_environment_sizes.code` values. Empty for every other
+   * type, and there is deliberately no foreign key: a size that is retired must
+   * not silently drop the mapping that explains what an existing order was.
+   *
+   * A column rather than the comma-separated encoding `dropdown` uses in
+   * `default_value`. That trick is already the reason `orders.ts` says of
+   * dropdowns "no stored option list in the schema, so there is no allowed-value
+   * constraint to enforce" — and this one decides what hardware gets
+   * provisioned, next to the price charged for it. Not a place to keep guessing
+   * at a string's shape.
+   */
+  sizeValues: jsonb('size_values').$type<Record<string, string>>().notNull().default({}),
 })
 
 export const ciSources = pgTable('ci_sources', {

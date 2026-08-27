@@ -39,11 +39,27 @@ interface ImportOutcome {
 export function ImportFromRepo({
   productId,
   environments,
+  offeredIn,
   lang,
 }: {
   productId: number
-  /** The environments this product is OFFERED in — the stack goes in one of them. */
+  /**
+   * EVERY deployment environment.
+   *
+   * This used to be only the ones the product was offered in, which left the
+   * list empty on exactly the product that needs the import most — a new one,
+   * with no offerings yet. The environment could not be chosen at all.
+   */
   environments: { id: number; name: string }[]
+  /**
+   * Which of them the product is already offered in.
+   *
+   * Not a filter, a warning. A stack for an environment with no offering is
+   * inert rather than wrong — it fires only for an order, and an order needs an
+   * offering — so building the pipeline first is fine. Discovering the missing
+   * offering at the till is not.
+   */
+  offeredIn: number[]
   lang: string
 }) {
   const router = useRouter()
@@ -173,6 +189,10 @@ export function ImportFromRepo({
               options={environments.map((e) => ({ value: String(e.id), label: e.name }))}
               hint={t('importCreatesStackHint', lang)}
             />
+
+            {environmentId !== '' && !offeredIn.includes(Number(environmentId)) && (
+              <Alert tone="warning">{t('notOfferedHereYet', lang)}</Alert>
+            )}
 
             {/* A repository path, the same in every language — see the template
                 repository's own layout, e.g. templates/linode/virtual-machine. */}

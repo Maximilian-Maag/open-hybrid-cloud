@@ -10,10 +10,11 @@ const CreateParameterSchema = z.object({
   environmentId: z.number().int().positive().nullable().optional(),
   name: z.string().min(1),
   label: z.string().default(''),
-  type: z.enum(['string', 'number', 'bool', 'dropdown']),
+  type: z.enum(['string', 'number', 'bool', 'dropdown', 'size']),
   description: z.string().default(''),
   defaultValue: z.string().default(''),
   required: z.boolean().default(false),
+  sizeValues: z.record(z.string(), z.string()).optional(),
   sensitive: z.boolean().default(false),
 })
 

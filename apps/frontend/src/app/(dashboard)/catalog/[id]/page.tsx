@@ -271,16 +271,15 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
         {cheapest && (
           <div className="lg:col-span-3">
             <div className="rounded-lg border border-slate-200 bg-white p-4 lg:sticky lg:top-28">
-              <p className="text-2xl font-bold text-slate-900">{priceOf(cheapestOf(cheapest)).display}</p>
-              {product.environments.length > 1 && (
-                <p className="mt-1 text-xs text-slate-500">
-                  {cheapest.environmentName ?? `Env ${cheapest.environmentId}`}
-                </p>
-              )}
-              <div className="mt-4 space-y-3">
+              <div className="space-y-3">
+                {/* The price used to be rendered here, server-side, as the
+                    cheapest thing the product could be bought for — a figure
+                    that never moved while the shopper picked a size. Since the
+                    size IS the price, it belongs with the picker: AddToCart
+                    renders it and it follows the choice. */}
                 {/* Environment plus one click, and nothing else: parameters are
                     what checkout is for (issue #28). */}
-                <AddToCart product={product} lang={lang} />
+                <AddToCart product={product} ratesMap={ratesMap} lang={lang} />
                 {/* Styled as a link, not a Button inside a Link: nested
                     interactives fail the axe gate in e2e/a11y.spec.ts. Outlined
                     rather than filled — it is the second action, and it only jumps

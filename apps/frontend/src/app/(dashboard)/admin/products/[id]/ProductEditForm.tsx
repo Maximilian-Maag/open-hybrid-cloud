@@ -668,14 +668,20 @@ export function ProductEditForm({ product, categories, environments, translation
           {/* The path that does not need a pipeline stack (#248): repository,
               branch and template directory chosen explicitly, so parameters can
               be imported while the product is still being set up. */}
-          {/* Only the environments the product is OFFERED in: a stack for an
-              environment it is not offered in is unreachable. */}
+          {/* EVERY environment, not only the ones the product is already
+              offered in. Filtering to the offerings left the list empty on
+              exactly the product that needs this most — a new one, which has
+              none yet — so the environment could not be chosen at all.
+
+              A stack for an environment with no offering is inert rather than
+              wrong: it fires only for an order, and an order needs an offering.
+              So the pipeline can be built first and priced after, which is the
+              order the work actually happens in. `offeredIn` turns that into a
+              warning in the dialog rather than a surprise at the till. */}
           <ImportFromRepo
             productId={product.id}
-            environments={product.environments
-              .map((pe) => environments.find((e) => e.id === pe.environmentId))
-              .filter((e): e is DeploymentEnvironment => e !== undefined)
-              .map((e) => ({ id: e.id, name: e.name }))}
+            environments={environments.map((e) => ({ id: e.id, name: e.name }))}
+            offeredIn={product.environments.map((pe) => pe.environmentId)}
             lang={lang}
           />
           <Button size="sm" variant="secondary" onClick={handleSyncParams}

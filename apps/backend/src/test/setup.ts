@@ -194,11 +194,13 @@ beforeAll(async () => {
       environment_id BIGINT,
       name TEXT NOT NULL,
       label TEXT NOT NULL DEFAULT '',
-      type TEXT NOT NULL CHECK (type IN ('string','number','bool','dropdown')),
+      type TEXT NOT NULL CHECK (type IN ('string','number','bool','dropdown','size')),
       description TEXT NOT NULL DEFAULT '',
       default_value TEXT NOT NULL DEFAULT '',
       required BOOLEAN NOT NULL DEFAULT FALSE,
-      sensitive BOOLEAN NOT NULL DEFAULT FALSE
+      sensitive BOOLEAN NOT NULL DEFAULT FALSE,
+      -- Migration 0034: what each size code means for a size-typed variable.
+      size_values JSONB NOT NULL DEFAULT '{}'::jsonb
     );
     CREATE TABLE IF NOT EXISTS ci_sources (
       id BIGSERIAL PRIMARY KEY,
@@ -470,6 +472,22 @@ beforeAll(async () => {
     INSERT INTO exchange_rates (currency_code, rate) VALUES ('EUR', 1.000000) ON CONFLICT DO NOTHING;
     INSERT INTO branding (id) VALUES (1) ON CONFLICT DO NOTHING;
     INSERT INTO app_config (id) VALUES (1) ON CONFLICT DO NOTHING;
+  `)
+
+  // The CREATE TABLE above is IF NOT EXISTS, so a test database from before
+  // migration 0034 keeps the old shape: no `size_values`, and a `type` CHECK
+  // that rejects 'size'. Both are realigned here.
+  //
+  // Worth naming what this is: that CHECK exists in NO migration. The test
+  // schema is stricter than the database it stands in for, which is the wrong
+  // direction for a test double — an out-of-range enum is refused under test and
+  // stored happily in production. Issue #147, and the reason a new parameter
+  // type had to be added in two places at once.
+  await testDb.execute(sql`
+    ALTER TABLE parameters ADD COLUMN IF NOT EXISTS size_values JSONB NOT NULL DEFAULT '{}'::jsonb;
+    ALTER TABLE parameters DROP CONSTRAINT IF EXISTS parameters_type_check;
+    ALTER TABLE parameters ADD CONSTRAINT parameters_type_check
+      CHECK (type IN ('string','number','bool','dropdown','size'));
   `)
 
   // Realign orders.product_id FK with schema.ts (ON DELETE CASCADE). Older

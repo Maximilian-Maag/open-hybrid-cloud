@@ -3055,7 +3055,8 @@ registry.registerPath({
             scopeId: z.number().int().optional(),
             environmentId: z.number().int().positive().nullable().optional(),
             name: z.string().min(1),
-            type: z.enum(['string', 'number', 'bool', 'dropdown']),
+            type: z.enum(['string', 'number', 'bool', 'dropdown', 'size']),
+            sizeValues: z.record(z.string(), z.string()).optional(),
             description: z.string().optional(),
             defaultValue: z.string().optional(),
             required: z.boolean().optional(),
@@ -3089,7 +3090,8 @@ registry.registerPath({
         'application/json': {
           schema: z.object({
             name: z.string().min(1).optional(),
-            type: z.enum(['string', 'number', 'bool', 'dropdown']).optional(),
+            type: z.enum(['string', 'number', 'bool', 'dropdown', 'size']).optional(),
+            sizeValues: z.record(z.string(), z.string()).optional(),
             description: z.string().optional(),
             defaultValue: z.string().optional(),
             required: z.boolean().optional(),

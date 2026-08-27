@@ -6,7 +6,7 @@ import { and, eq } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { isReservedCiVariable } from '@/lib/ci/reserved'
 
-type ParsedParameter = Omit<Parameter, 'id' | 'scope' | 'scopeId' | 'environmentId'>
+type ParsedParameter = Omit<Parameter, 'id' | 'scope' | 'scopeId' | 'environmentId' | 'sizeValues'>
 
 /** A variable the scan found, and where it came from. */
 export interface ScannedVariable extends ParsedParameter {

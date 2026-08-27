@@ -8,11 +8,12 @@ import type {
   WebauthnCredentialsResponse,
   WebauthnRegistrationResult,
 } from '@open-hybrid-cloud/types'
-import { get, post, del } from '@/lib/api'
+import { get, post } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
@@ -36,6 +37,9 @@ export function SecurityKeysCard() {
   const [credentials, setCredentials] = useState<WebauthnCredential[] | null>(null)
   const [label, setLabel] = useState('')
   const [busy, setBusy] = useState(false)
+  /** The key the confirmation modal is about, or null while it is closed. */
+  const [removing, setRemoving] = useState<{ id: number; label: string } | null>(null)
+  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([])
 
@@ -115,15 +119,30 @@ export function SecurityKeysCard() {
     }
   }
 
-  async function handleRemove(id: number) {
+  /*
+   * Removal asks for the account password (#231).
+   *
+   * Registering a key can argue that touching the hardware is the proof.
+   * Removing one cannot, and a stolen session could otherwise strip the spare
+   * key out of the recommended primary-plus-backup setup, one at a time, with
+   * the owner finding out only when they reached for it.
+   *
+   * A POST rather than the DELETE this replaces: the browser reaches the API
+   * through `/api/proxy`, which drops the body of a DELETE, so the password
+   * would arrive as undefined and every removal would fail.
+   */
+  async function handleRemove() {
+    if (removing === null) return
     setError(null)
     setBusy(true)
     try {
-      await del(`/api/users/me/webauthn/${id}`)
+      await post(`/api/users/me/webauthn/${removing.id}/remove`, { password })
+      setRemoving(null)
+      setPassword('')
       await load()
     } catch (err) {
-      // Includes the 409 for removing the last factor an account has, whose
-      // message says what to do instead.
+      // Includes the 403 for a wrong password and the 409 for removing the last
+      // factor an account has, whose message says what to do instead.
       setError(err instanceof Error ? err.message : t('unexpectedError', lang))
     } finally {
       setBusy(false)
@@ -168,7 +187,7 @@ export function SecurityKeysCard() {
                 <Button
                   variant="danger"
                   disabled={busy}
-                  onClick={() => void handleRemove(c.id)}
+                  onClick={() => { setError(null); setPassword(''); setRemoving({ id: c.id, label: c.label }) }}
                 >
                   {t('remove', lang)}
                 </Button>
@@ -178,6 +197,46 @@ export function SecurityKeysCard() {
         ) : (
           credentials !== null && <p className="text-sm text-slate-600">{t('noSecurityKeys', lang)}</p>
         )}
+
+        <Modal
+          open={removing !== null}
+          onClose={() => setRemoving(null)}
+          title={t('removeSecurityKeyTitle', lang)}
+          size="sm"
+        >
+          {/* Mounted only while the dialog is open. A <dialog> keeps its children
+              in the DOM when closed, so an always-rendered password field would
+              sit invisibly on the settings page — a second "current password"
+              for a password manager to offer to fill, and a second match for
+              anything looking the field up by its label. */}
+          {removing !== null && (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600">
+                {t('removeSecurityKeyIntro', lang)} <strong>{removing.label}</strong>
+              </p>
+              <Input
+                label={t('currentPassword', lang)}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                hint={t('removeSecurityKeyPasswordHint', lang)}
+              />
+            </div>
+          )}
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="secondary" onClick={() => setRemoving(null)}>{t('cancel', lang)}</Button>
+            <Button
+              variant="danger"
+              disabled={busy || password === ''}
+              aria-busy={busy}
+              onClick={() => void handleRemove()}
+            >
+              {t('remove', lang)}
+            </Button>
+          </div>
+        </Modal>
 
         <form onSubmit={handleRegister} className="space-y-4">
           <Input

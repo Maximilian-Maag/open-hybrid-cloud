@@ -16,16 +16,24 @@ import path from 'node:path'
  * So: derive the list from the frontend build, and fail if either config is
  * missing one. This is the gate that #196 did not have.
  *
+ * It was also, until 2026-08-27, a gate over a file nobody deployed. The Docker
+ * host kept a hand-made `nginx.conf` beside the `.example` this test reads, and
+ * that copy predated `/api/proxy/` — the only route by which the browser reaches
+ * the backend since #146. So this test was green while every dashboard action on
+ * the deployed instance answered 404. The example is now a TEMPLATE that
+ * docker-compose mounts directly, which is what makes this assertion worth
+ * anything: the file it checks is the file that runs.
+ *
  * Both configs are checked, because they are deployed independently and were
  * wrong in DIFFERENT ways — the Helm ingress sent all of /api to the backend
- * including NextAuth, while nginx.conf.example had already special-cased
+ * including NextAuth, while nginx.conf.template had already special-cased
  * /api/auth/ and only missed the two routes added after it was written.
  */
 
 const REPO_ROOT = path.resolve(__dirname, '../../../..')
 const API_DIR = path.join(REPO_ROOT, 'apps/frontend/src/app/api')
 const INGRESS = path.join(REPO_ROOT, 'infra/helm/open-hybrid-cloud/templates/ingress.yaml')
-const NGINX = path.join(REPO_ROOT, 'infra/docker-host/nginx.conf.example')
+const NGINX = path.join(REPO_ROOT, 'infra/docker-host/nginx.conf.template')
 
 /**
  * Every /api path the frontend actually serves, as the proxy sees it.
@@ -89,7 +97,7 @@ function ingressExactBackendPaths(): string[] {
   return found
 }
 
-/** Paths nginx.conf.example proxies to the backend by an exact match. */
+/** Paths nginx.conf.template proxies to the backend by an exact match. */
 function nginxExactBackendPaths(): string[] {
   const src = readFileSync(NGINX, 'utf8')
   const found: string[] = []
@@ -99,7 +107,7 @@ function nginxExactBackendPaths(): string[] {
   return found
 }
 
-/** Paths nginx.conf.example proxies to the frontend upstream. */
+/** Paths nginx.conf.template proxies to the frontend upstream. */
 function nginxFrontendPaths(): string[] {
   const src = readFileSync(NGINX, 'utf8')
   const paths: string[] = []
@@ -127,7 +135,7 @@ describe('the proxy configs know which /api routes are the frontend’s', () => 
     expect(ingressFrontendPaths()).toContain(p)
   })
 
-  it.each(frontendApiPaths())('nginx.conf.example proxies %s to the frontend', (p) => {
+  it.each(frontendApiPaths())('nginx.conf.template proxies %s to the frontend', (p) => {
     // An exact-match block for the path itself, or a prefix block that covers
     // it — `/api/auth` is served as `location /api/auth/`.
     const covered = nginxFrontendPaths().some((f) => f === p || p.startsWith(`${f}/`))
@@ -136,7 +144,7 @@ describe('the proxy configs know which /api routes are the frontend’s', () => 
 
   it.each([
     ['the Helm ingress', ingressExactBackendPaths],
-    ['nginx.conf.example', nginxExactBackendPaths],
+    ['nginx.conf.template', nginxExactBackendPaths],
   ])('%s no longer sends /api/auth/callback to the backend (#139)', (_name, exactBackendPaths) => {
     // The backend does not serve that path any more. A rule still pointing at it
     // is a 404 waiting for whoever reinstates the Entra app registration, and it
@@ -165,5 +173,41 @@ describe('the proxy configs know which /api routes are the frontend’s', () => 
     for (const p of ['/api/not-a-frontend-route', '/costs', '/admin/users']) {
       expect(guard.test(p), `${p} should be protected`).toBe(true)
     }
+  })
+})
+
+/**
+ * The gate above is only worth something if the file it reads is the file that
+ * runs. It was not, for months.
+ *
+ * `nginx.conf.template` used to be `nginx.conf.example`, and each host kept a
+ * hand-made copy beside it. The copy on hcp-dev predated the `/api/proxy/`
+ * block, so every browser-initiated call — catalogue, cart, order, decommission,
+ * write-off, project delete — got a 404 from the backend, while this suite was
+ * green and the repository was correct.
+ *
+ * The copy is gone: docker-compose mounts the template and the nginx image
+ * renders it. These assertions are what keeps it that way.
+ */
+describe('the deployed proxy config is the one this suite checks', () => {
+  const compose = readFileSync(path.join(REPO_ROOT, 'infra/docker-host/docker-compose.yml'), 'utf8')
+
+  it('mounts the template the tests above read', () => {
+    expect(compose).toContain('./nginx.conf.template:/etc/nginx/templates/nginx.conf.template')
+  })
+
+  it('mounts no hand-copied nginx.conf beside it', () => {
+    // `./nginx.conf:` — the old mount. Anchored on the `./` and the colon so the
+    // template mount and the prose in the comments do not match it.
+    expect(compose).not.toMatch(/\.\/nginx\.conf:/)
+  })
+
+  it('renders the template with SERVER_NAME and nothing else', () => {
+    // Without the filter, envsubst also replaces $host, $scheme and the upstream
+    // variables, and nginx cannot parse the result — a config that fails to
+    // start is at least loud, but this is the line that keeps it from happening.
+    expect(compose).toContain('NGINX_ENVSUBST_FILTER')
+    expect(compose).toContain('NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx')
+    expect(readFileSync(NGINX, 'utf8')).toContain('server_name ${SERVER_NAME}')
   })
 })

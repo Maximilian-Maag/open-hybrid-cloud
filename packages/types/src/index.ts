@@ -4,7 +4,11 @@ export type OrderStatus = 'pending' | 'provisioning' | 'completed' | 'failed' | 
 export type InfraStatus = 'active' | 'decommissioning' | 'decommissioned'
 export type CostCenterMode = 'project' | 'select' | 'overhead'
 export type ParameterScope = 'global' | 'category' | 'product'
-export type ParameterType = 'string' | 'number' | 'bool' | 'dropdown'
+/**
+ * `size` is a T-shirt size: the variable is not typed in by the customer at
+ * all, its value comes from the size they picked. See `Parameter.sizeValues`.
+ */
+export type ParameterType = 'string' | 'number' | 'bool' | 'dropdown' | 'size'
 export type CiProvider = 'gitlab' | 'github' | 'bitbucket'
 export type AiProviderType = 'claude' | 'openai' | 'azure_openai' | 'ollama' | 'localai'
 
@@ -371,6 +375,16 @@ export interface Parameter {
   defaultValue: string
   required: boolean
   sensitive: boolean
+  /**
+   * For a `size` parameter: what each size code means for this variable.
+   *
+   *     { "S": "t3.micro", "M": "t3.large", "XL": "m6i.2xlarge" }
+   *
+   * Empty for every other type. One size can drive several variables — vSphere
+   * moves `num_cpus`, `memory_mb` and `disk_size_gb` together — which is why the
+   * map is on the VARIABLE rather than on the size.
+   */
+  sizeValues: Record<string, string>
 }
 
 export interface CreateParameterRequest {
@@ -380,6 +394,7 @@ export interface CreateParameterRequest {
   name: string
   label?: string
   type: ParameterType
+  sizeValues?: Record<string, string>
   description?: string
   defaultValue?: string
   required?: boolean
@@ -394,6 +409,7 @@ export interface UpdateParameterRequest {
   defaultValue?: string
   required?: boolean
   sensitive?: boolean
+  sizeValues?: Record<string, string>
 }
 
 // CI Sources

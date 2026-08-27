@@ -11,17 +11,19 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
+import { sizeValuesToText, parseSizeValues } from '@/lib/sizeValues'
 
-const TYPE_KEYS: Record<ParameterType, 'typeString' | 'typeNumber' | 'typeBoolean' | 'typeDropdown'> = {
+const TYPE_KEYS: Record<ParameterType, 'typeString' | 'typeNumber' | 'typeBoolean' | 'typeDropdown' | 'typeSize'> = {
   string: 'typeString',
   number: 'typeNumber',
   bool: 'typeBoolean',
   dropdown: 'typeDropdown',
+  size: 'typeSize',
 }
 
 const emptyForm = () => ({
   name: '', label: '', type: 'string' as ParameterType, description: '',
-  defaultValue: '', required: false, sensitive: false,
+  defaultValue: '', required: false, sensitive: false, sizeValues: '',
 })
 
 export function ParametersManager() {
@@ -66,6 +68,7 @@ export function ParametersManager() {
     setForm({
       name: param.name, label: param.label ?? '', type: param.type, description: param.description,
       defaultValue: param.defaultValue, required: param.required, sensitive: param.sensitive,
+      sizeValues: sizeValuesToText(param.sizeValues),
     })
     setFormError(null); setEditTarget(param)
   }
@@ -80,6 +83,7 @@ export function ParametersManager() {
         description: form.description.trim() || undefined,
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
+        sizeValues: form.type === 'size' ? parseSizeValues(form.sizeValues) : {},
       }
       await post('/api/admin/parameters', body)
       setAddOpen(false); void load()
@@ -100,6 +104,7 @@ export function ParametersManager() {
         description: form.description.trim() || undefined,
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
+        sizeValues: form.type === 'size' ? parseSizeValues(form.sizeValues) : {},
       }
       await put(`/api/admin/parameters/${editTarget.id}`, body)
       setEditTarget(null); void load()
@@ -171,6 +176,25 @@ export function ParametersManager() {
           <Input label={t('description', lang)} value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Input label={t('defaultValue', lang)} value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
             hint={form.type === 'dropdown' ? t('commaSeparatedOptions', lang) : undefined} />
+          {/* A `size` variable is not typed in by the customer: the size they
+              pick decides it. One size can drive several variables, so the map
+              lives on the variable. */}
+          {form.type === 'size' && (
+            <div className="flex flex-col gap-1">
+              <label htmlFor={`add-size-values`} className="text-sm font-medium text-slate-700">
+                {t('valuePerSize', lang)}
+              </label>
+              <p className="text-xs text-slate-500">{t('valuePerSizeHint', lang)}</p>
+              <textarea
+                id={`add-size-values`}
+                rows={4}
+                value={form.sizeValues}
+                onChange={(e) => setField('sizeValues', e.target.value)}
+                placeholder={'S=t3.micro\nM=t3.large\nXL=m6i.2xlarge'}
+                className="rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
           <div className="flex gap-6">
             <div className="flex items-center gap-2">
               <input type="checkbox" id="add-required" checked={form.required} onChange={(e) => setField('required', e.target.checked)}
@@ -200,6 +224,25 @@ export function ParametersManager() {
           <Input label={t('description', lang)} value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Input label={t('defaultValue', lang)} value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
             hint={form.type === 'dropdown' ? t('commaSeparatedOptions', lang) : undefined} />
+          {/* A `size` variable is not typed in by the customer: the size they
+              pick decides it. One size can drive several variables, so the map
+              lives on the variable. */}
+          {form.type === 'size' && (
+            <div className="flex flex-col gap-1">
+              <label htmlFor={`edit-size-values`} className="text-sm font-medium text-slate-700">
+                {t('valuePerSize', lang)}
+              </label>
+              <p className="text-xs text-slate-500">{t('valuePerSizeHint', lang)}</p>
+              <textarea
+                id={`edit-size-values`}
+                rows={4}
+                value={form.sizeValues}
+                onChange={(e) => setField('sizeValues', e.target.value)}
+                placeholder={'S=t3.micro\nM=t3.large\nXL=m6i.2xlarge'}
+                className="rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
           <div className="flex gap-6">
             <div className="flex items-center gap-2">
               <input type="checkbox" id="edit-required" checked={form.required} onChange={(e) => setField('required', e.target.checked)}

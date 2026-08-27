@@ -140,6 +140,79 @@ describe('updateParameter', () => {
   })
 })
 
+/**
+ * A T-shirt size is a variable TYPE. `instance_type` is one of these: the
+ * customer never types it, the size they picked decides it, and the map from
+ * size code to value lives on the variable — because one size can drive several
+ * of them (vSphere moves num_cpus, memory_mb and disk_size_gb together).
+ */
+describe('a size parameter', () => {
+  it('stores the value for each size', async () => {
+    const result = await createParameter({
+      scope: 'global', name: 'instance_type', type: 'size',
+      sizeValues: { S: 't3.micro', XL: 'm6i.2xlarge' },
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.sizeValues).toEqual({ S: 't3.micro', XL: 'm6i.2xlarge' })
+  })
+
+  it('defaults to an empty map', async () => {
+    const result = await createParameter({ scope: 'global', name: 'hostname', type: 'string' })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.sizeValues).toEqual({})
+  })
+
+  // A map on a string parameter is a mistake with consequences: nothing would
+  // ever read it, so it would sit there looking like configuration.
+  it('refuses per-size values on a parameter that is not a size', async () => {
+    const result = await createParameter({
+      scope: 'global', name: 'hostname', type: 'string', sizeValues: { S: 'x' },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/Only a size parameter/)
+    }
+  })
+
+  it('refuses a value keyed by nothing', async () => {
+    const result = await createParameter({
+      scope: 'global', name: 'instance_type', type: 'size', sizeValues: { '  ': 'x' },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toMatch(/needs a size code/)
+  })
+
+  it('refuses a size code longer than a size code can be', async () => {
+    const result = await createParameter({
+      scope: 'global', name: 'instance_type', type: 'size', sizeValues: { ['x'.repeat(40)]: 'v' },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toMatch(/longer than/)
+  })
+
+  // It becomes a CI trigger variable, so an unbounded value is an unbounded
+  // request body — the same reason a parameter value is bounded.
+  it('refuses a value that is too long', async () => {
+    const result = await createParameter({
+      scope: 'global', name: 'instance_type', type: 'size', sizeValues: { S: 'x'.repeat(5000) },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toMatch(/too long/)
+  })
+
+  it('updates the map', async () => {
+    const created = await createParameter({
+      scope: 'global', name: 'instance_type', type: 'size', sizeValues: { S: 't3.micro' },
+    })
+    if (!created.ok) throw new Error('seed failed')
+
+    const updated = await updateParameter(created.data.id, { sizeValues: { S: 't3.small', XL: 'm6i.large' } })
+    expect(updated.ok).toBe(true)
+    if (updated.ok) expect(updated.data.sizeValues).toEqual({ S: 't3.small', XL: 'm6i.large' })
+  })
+})
+
 describe('deleteParameter', () => {
   it('returns 404 for unknown id', async () => {
     const result = await deleteParameter(999_999)

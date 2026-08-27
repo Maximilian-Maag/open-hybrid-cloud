@@ -32,6 +32,7 @@ import { ActiveSessions } from './forms/ActiveSessions'
 import userEvent from '@testing-library/user-event'
 import { ProductGallery } from './ui/ProductGallery'
 import { ProductSpecs } from './ui/ProductSpecs'
+import { SizeSwatches } from './forms/SizeSwatches'
 
 /**
  * Component-level accessibility checks (issue #102).
@@ -698,6 +699,7 @@ describe('ParameterFields', () => {
     defaultValue: '',
     required: false,
     sensitive: false,
+    sizeValues: {},
     ...over,
   })
 
@@ -770,6 +772,7 @@ describe('ProductSpecs', () => {
     defaultValue: 'web-01',
     required: true,
     sensitive: false,
+    sizeValues: {},
   }
 
   it('is accessible as a specification table', async () => {
@@ -787,6 +790,28 @@ describe('ProductSpecs', () => {
           lang="en"
         />,
       ),
+    ).toHaveNoViolations()
+  })
+})
+
+describe('SizeSwatches', () => {
+  const sizes = [
+    { id: 1, code: 'S', label: 'Small', price: '10.00', currency: 'EUR', sortOrder: 0, active: true },
+    { id: 2, code: 'XL', label: 'Extra large', price: '80.00', currency: 'EUR', sortOrder: 1, active: true },
+  ]
+
+  // The visible control is a <label>; the radio it wraps is `sr-only`, which is
+  // focusable — `hidden` or `display: none` would not be, and would take the
+  // keyboard support away while still looking right.
+  it('labels every swatch and names the group', async () => {
+    expect(
+      await check(<SizeSwatches sizes={sizes} value="" onChange={() => {}} lang="en" />),
+    ).toHaveNoViolations()
+  })
+
+  it('is clean with one selected too', async () => {
+    expect(
+      await check(<SizeSwatches sizes={sizes} value="XL" onChange={() => {}} lang="en" />),
     ).toHaveNoViolations()
   })
 })

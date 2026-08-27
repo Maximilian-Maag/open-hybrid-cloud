@@ -9,10 +9,15 @@ import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
+import { SizeDerivedValues } from '@/components/forms/ParameterFields'
+import { SizeSwatches } from '@/components/forms/SizeSwatches'
 import { t } from '@/lib/i18n'
+import { localeToCurrency, convertPrice, sortByValue } from '@/lib/locale'
 
 interface Props {
   product: ProductDetail
+  /** Fetched server-side; needed here because the price now follows the choice. */
+  ratesMap: Record<string, number>
   lang: string
 }
 
@@ -28,7 +33,7 @@ const MAX_QUANTITY = 20
  * the cart as much work as ordering outright. The size is NOT in that category: it
  * decides the price the line is shown at, so a line without one has no price.
  */
-export function AddToCart({ product, lang }: Props) {
+export function AddToCart({ product, ratesMap, lang }: Props) {
   const router = useRouter()
   const [environmentId, setEnvironmentId] = useState(
     product.environments.length === 1 ? String(product.environments[0].environmentId) : '',
@@ -80,8 +85,58 @@ export function AddToCart({ product, lang }: Props) {
     }
   }
 
+  /*
+   * The headline price, following the selection.
+   *
+   * It used to be rendered by the page, server-side, as the cheapest thing the
+   * product could be bought for — a "from" price that never moved. But the size
+   * IS the price here, so picking XL and watching the figure stay at the S price
+   * is the one thing a buy box must not do.
+   *
+   * Three cases, narrowing as the shopper decides: the chosen size's price; the
+   * cheapest in the chosen environment; the cheapest anywhere. Each is exactly
+   * the answer to "what would this cost me right now".
+   */
+  const chosenSize = sizes.find((size) => size.code === sizeCode)
+  const amountsIn = (env: typeof product.environments[number]) =>
+    env.sizes && env.sizes.length > 0
+      ? env.sizes.map((size) => ({ price: size.price, currency: size.currency }))
+      : [{ price: env.price, currency: env.currency }]
+
+  const amount = chosenSize
+    ? { price: chosenSize.price, currency: chosenSize.currency }
+    : sortByValue(
+        selectedEnv ? amountsIn(selectedEnv) : product.environments.flatMap(amountsIn),
+        ratesMap,
+      )[0]
+
+  const shown = amount
+    ? convertPrice(amount.price, amount.currency, localeToCurrency(lang), ratesMap, lang)
+    : null
+  // Kept when the viewer's currency is not the one the offering is priced in:
+  // the converted figure is a courtesy, the stored one is what is charged.
+  const original =
+    amount && shown && shown.currency !== amount.currency
+      ? `${amount.price} ${amount.currency}`
+      : null
+
   return (
     <div className="space-y-3">
+      {shown && (
+        <div>
+          <p className="text-2xl font-bold text-slate-900">
+            {shown.amount} {shown.currency}
+          </p>
+          {original && <p className="text-xs text-slate-700">{original}</p>}
+          {/* slate-700, not the slate-500 this replaced: 4.76:1 is under the 7:1
+              this repo holds itself to, and 12px text is not large text. */}
+          {product.environments.length > 1 && selectedEnv && (
+            <p className="mt-0.5 text-xs text-slate-700">
+              {selectedEnv.environmentName ?? `Env ${selectedEnv.environmentId}`}
+            </p>
+          )}
+        </div>
+      )}
       {error && <Alert>{error}</Alert>}
       {added && <Alert tone="success">{t('addedToCart', lang)}</Alert>}
       <Select
@@ -103,21 +158,24 @@ export function AddToCart({ product, lang }: Props) {
         ]}
       />
 
+      {/* Swatches, not a dropdown. The size IS the price, and a dropdown shows
+          one option at a time — so comparing what S, M and XL cost meant opening
+          it and reading down a list. Every option and its price are visible at
+          once, and which one is selected is visible without opening anything. */}
       {needsSize && (
-        <Select
-          label={t('size', lang)}
+        <SizeSwatches
+          sizes={sizes}
           value={sizeCode}
-          onChange={(e) => { setSizeCode(e.target.value); setAdded(false) }}
-          options={[
-            { value: '', label: t('selectSize', lang) },
-            // The price is in the option label: the size IS the price now, and a
-            // picker of bare letters asks the shopper to guess what XL costs.
-            ...sizes.map((size) => ({
-              value: size.code,
-              label: `${size.label || size.code} — ${size.price} ${size.currency}`,
-            })),
-          ]}
+          onChange={(code) => { setSizeCode(code); setAdded(false) }}
+          lang={lang}
         />
+      )}
+
+      {/* What the chosen size actually sets. A `size` parameter has no input —
+          the picker above IS its control — but "M" should not be a word the
+          shopper has to take on trust. */}
+      {needsSize && (
+        <SizeDerivedValues parameters={product.parameters} sizeCode={sizeCode} />
       )}
 
       <Input

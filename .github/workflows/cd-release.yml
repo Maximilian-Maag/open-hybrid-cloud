@@ -37,11 +37,42 @@ jobs:
               ;;
           esac
 
-  # ── Build & Push — Backend ───────────────────────────────────────────────────
-  build-backend:
-    name: Build & Push Backend
-    runs-on: ubuntu-latest
+  # ── Build & Push — one native runner per architecture ───────────────────────
+  #
+  # Both images used to be built for linux/amd64,linux/arm64 on one amd64 runner,
+  # which means the arm64 half ran under QEMU. Node does not survive that: the
+  # frontend release of 2026-08-26 died with
+  #
+  #   qemu: uncaught target signal 4 (Illegal instruction) - core dumped
+  #   [ERROR] Command was killed with SIGILL … pnpm install
+  #
+  # partway through `pnpm --filter frontend build`. The backend got through, so
+  # the two images went out of step: the dev host ran a frontend image an hour
+  # older than its backend, and every fix merged in between was simply not there.
+  # That is the worst shape this failure can take — a red workflow that still
+  # deploys something.
+  #
+  # GitHub gives public repositories free native arm64 runners, so neither
+  # architecture needs emulating. Each leg pushes BY DIGEST — no tag — and the
+  # merge job below assembles the multi-arch manifest. A leg that fails therefore
+  # publishes nothing at all, rather than half an image under a real tag.
+  build:
+    name: Build ${{ matrix.image }} (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     needs: [tags]
+    strategy:
+      # Both architectures are reported, so one failure does not hide the other.
+      fail-fast: false
+      matrix:
+        image: [backend, frontend]
+        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -56,28 +87,57 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push backend image
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          file: apps/backend/Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-backend:${{ needs.tags.outputs.tag }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-backend:${{ needs.tags.outputs.sha-tag }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
+          file: apps/${{ matrix.image }}/Dockerfile
+          platforms: ${{ matrix.platform }}
+          # No tags here on purpose: a tag would make this leg's single-arch
+          # image the thing `:dev` points at, and the second leg would then
+          # overwrite it. The manifest below is what gets tagged.
+          outputs: type=image,name=${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          # Per architecture, or the two legs overwrite each other's cache.
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
 
-  # ── Build & Push — Frontend ──────────────────────────────────────────────────
-  build-frontend:
-    name: Build & Push Frontend
-    runs-on: ubuntu-latest
-    needs: [tags]
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      # The filename IS the digest, minus the `sha256:` prefix — the merge job
+      # rebuilds the reference from it, so nothing has to be passed between jobs
+      # as an output.
+      - name: Export the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          persist-credentials: false
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── Assemble the multi-arch manifest ────────────────────────────────────────
+  #
+  # `needs: build` waits for EVERY leg of the matrix, so a tag is only ever moved
+  # once both architectures exist. This is what replaces the old behaviour where
+  # a half-failed release still published one image.
+  manifest:
+    name: Manifest ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    needs: [tags, build]
+    strategy:
+      matrix:
+        image: [backend, frontend]
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
+          path: /tmp/digests
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -88,24 +148,31 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push frontend image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          file: apps/frontend/Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-frontend:${{ needs.tags.outputs.tag }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-frontend:${{ needs.tags.outputs.sha-tag }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+      - name: Create and push the manifest list
+        working-directory: /tmp/digests
+        env:
+          REPO: ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-${{ matrix.image }}
+          TAG: ${{ needs.tags.outputs.tag }}
+          SHA_TAG: ${{ needs.tags.outputs.sha-tag }}
+        run: |
+          set -euo pipefail
+          # One -t per tag, one image reference per digest file.
+          docker buildx imagetools create \
+            -t "$REPO:$TAG" \
+            -t "$REPO:$SHA_TAG" \
+            $(printf "$REPO@sha256:%s " *)
+
+      - name: Show what was published
+        env:
+          REPO: ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-${{ matrix.image }}
+          TAG: ${{ needs.tags.outputs.tag }}
+        run: docker buildx imagetools inspect "$REPO:$TAG"
 
   # ── Publish GitHub Release (main only) ───────────────────────────────────────
   release:
     name: Publish GitHub Release
     if: github.ref_name == 'main'
-    needs: [tags, build-backend, build-frontend]
+    needs: [tags, manifest]
     runs-on: ubuntu-latest
     permissions:
       contents: write

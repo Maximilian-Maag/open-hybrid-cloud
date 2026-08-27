@@ -389,11 +389,12 @@ Configuration comes from `infra/docker-host/.env` (`env_file:` on every service,
 
 ```bash
 cd infra/docker-host
-cp .env.example .env            # fill in DOCKERHUB_USERNAME, secrets, etc.
-cp nginx.conf.example nginx.conf # fill in your domain
-mkdir -p certs                   # place fullchain.pem + privkey.pem here
+cp .env.example .env            # fill in DOCKERHUB_USERNAME, SERVER_NAME, secrets
+mkdir -p certs                  # place fullchain.pem + privkey.pem here
 sudo ./setup.sh --install        # Debian only; also installs Docker itself
 ```
+
+There is deliberately no `nginx.conf` to copy: `nginx.conf.template` is mounted straight into the container and rendered with `SERVER_NAME` at start-up. A copied config drifts from the repository and nothing notices — on 2026-08-27 one had fallen behind the `/api/proxy/` block, which since #146 is the only route by which the browser reaches the backend, and every dashboard action on that host answered 404 while CI stayed green.
 
 `setup.sh` also supports `--upgrade` (pull the newer images), `--logs [service]` and `--status` — see the script for what each does. Path A passes the backend container everything in `docker-host/.env` via `env_file:`, so adding `TRUST_PROXY` or `DECOMMISSION_SWEEP_SECRET` there is enough. Path B's `docker-compose.yml` instead lists each backend variable individually under `environment:`, and does **not** list `TRUST_PROXY` or `DECOMMISSION_SWEEP_SECRET` — setting them in that directory's `.env` has no effect until the compose file's backend `environment:` block also names them.
 

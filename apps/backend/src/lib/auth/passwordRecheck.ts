@@ -37,9 +37,10 @@ export type PasswordRecheck = 'ok' | 'wrong' | 'throttled'
 /**
  * Check `password` against `passwordHash` for `userId`, under the shared limit.
  *
- * The limit is consulted BEFORE the compare, so an over-budget guess does not
+ * The attempt is RESERVED before the compare, so an over-budget guess does not
  * even cost the bcrypt round — which is the half of a lockout that protects the
- * server rather than the account.
+ * server rather than the account — and concurrent guesses cannot slip past a
+ * check none of them has charged for yet.
  *
  * A correct password clears the counter: someone who mistyped twice and then got
  * it right is not who this is for.
@@ -54,12 +55,23 @@ export const recheckPassword = async (
   passwordHash: string,
 ): Promise<PasswordRecheck> => {
   const key = `password-recheck:${userId}`
-  if (passwordRecheckLimit.isOverLimit(key)) return 'throttled'
 
-  if (!(await bcrypt.compare(password, passwordHash))) {
-    passwordRecheckLimit.count(key)
-    return 'wrong'
-  }
+  /*
+   * `isRateLimited`, which counts AND checks in one call, and not the
+   * `isOverLimit` / `count` pair around the compare.
+   *
+   * The pair looks equivalent and is not: `bcrypt.compare` is awaited between
+   * them, so six concurrent requests all read a count under the cap, all pass,
+   * and only then does the first of them charge anything. The cap becomes a cap
+   * on SEQUENTIAL guessing and no cap at all on parallel guessing, which is the
+   * shape an attacker with a stolen session would use.
+   *
+   * Reserving up front costs a successful attempt one slot for the duration of
+   * one comparison, and the reset below gives it straight back.
+   */
+  if (passwordRecheckLimit.isRateLimited(key)) return 'throttled'
+
+  if (!(await bcrypt.compare(password, passwordHash))) return 'wrong'
 
   passwordRecheckLimit.reset(key)
   return 'ok'

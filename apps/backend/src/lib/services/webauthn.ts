@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs'
 import { and, eq } from 'drizzle-orm'
 import {
   generateRegistrationOptions,
@@ -14,7 +13,7 @@ import { webauthnChallenges, webauthnCredentials } from '@/lib/db/schema'
 import { logAudit } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 import { resolveRp } from '@/lib/auth/webauthnConfig'
-import { createRateLimitBucket } from '@/lib/rateLimit'
+import { recheckPassword } from '@/lib/auth/passwordRecheck'
 import {
   canHoldSecondFactor,
   countUnusedRecoveryCodes,
@@ -427,22 +426,6 @@ export const verifyAuthentication = async (
  * `loadTwoFactorAccount` refuses them, because their second factor is the
  * identity provider's to manage and there is no local password to prove.
  */
-/**
- * Guesses at the account password allowed per account, per window.
- *
- * The password check below is reached from an authenticated session, which is
- * exactly the position a session thief is in — and unlike the login route, this
- * one had no counter, so a stolen session could grind the password offline-fast
- * against a live `bcrypt.compare`. Recovering the password is worth far more
- * than the key removal it is guarding: it is the credential the user reuses.
- *
- * Five, not the login route's ten: this is a person who set the password
- * re-typing it, not someone signing in on a new device with autofill.
- * Per-account and not per-IP, because the account is what is under attack; the
- * per-process caveat in `rateLimit.ts` applies here as it does there.
- */
-export const removeCredentialPasswordLimit = createRateLimitBucket(5, 15 * 60 * 1000)
-
 export const removeCredential = async (
   userId: number,
   credentialRowId: number,
@@ -451,8 +434,18 @@ export const removeCredential = async (
   const account = await loadTwoFactorAccount(userId)
   if (!account.ok) return account
 
-  // Before the compare, so the cost of a guess is not paid either.
-  if (removeCredentialPasswordLimit.isRateLimited(`webauthn-remove:${userId}`)) {
+  /*
+   * The counter this shares with 2FA enrolment and `changePassword`.
+   *
+   * It had its own until this branch, which was a budget of five HERE and five
+   * at each of the others — fifteen to anyone willing to alternate between the
+   * doors, and the attacker picks the door. The account is what is under
+   * attack, so the account is what holds the budget. See
+   * `lib/auth/passwordRecheck.ts`.
+   */
+  const recheck = await recheckPassword(userId, password, account.data.passwordHash)
+
+  if (recheck === 'throttled') {
     await logAudit(
       userId,
       'auth.webauthn.remove_denied',
@@ -462,7 +455,7 @@ export const removeCredential = async (
     return err(429, 'Too many attempts. Wait fifteen minutes and try again.')
   }
 
-  if (!(await bcrypt.compare(password, account.data.passwordHash))) {
+  if (recheck === 'wrong') {
     await logAudit(
       userId,
       'auth.webauthn.remove_denied',
@@ -471,10 +464,6 @@ export const removeCredential = async (
     )
     return err(403, 'Current password is incorrect')
   }
-
-  // The right password spends no budget: someone who mistyped twice and then got
-  // it right is not who the counter is for.
-  removeCredentialPasswordLimit.reset(`webauthn-remove:${userId}`)
 
   const remaining = (await countWebauthnCredentialsFor(userId)) - 1
   if (remaining === 0 && !(await hasConfirmedTotp(userId)) && canHoldSecondFactor(account.data.role)) {

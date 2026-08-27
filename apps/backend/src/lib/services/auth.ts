@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs'
+import { recheckPassword } from '@/lib/auth/passwordRecheck'
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
@@ -390,8 +391,13 @@ export const changePassword = async (
     return err(400, 'Password change not allowed for SSO accounts')
   }
 
-  const valid = await bcrypt.compare(currentPassword, user.passwordHash)
-  if (!valid) return err(400, 'Current password is incorrect')
+  // Shared with 2FA enrolment and security-key removal, so an attacker cannot
+  // spread guesses across the three doors. See `passwordRecheck.ts`.
+  const recheck = await recheckPassword(caller.id, currentPassword, user.passwordHash)
+  if (recheck === 'throttled') {
+    return err(429, 'Too many attempts. Wait fifteen minutes and try again.')
+  }
+  if (recheck === 'wrong') return err(400, 'Current password is incorrect')
 
   const newHash = await bcrypt.hash(newPassword, 12)
 

@@ -35,9 +35,12 @@ const {
   startAuthentication,
   verifyAuthentication: verifyAssertion,
   removeCredential,
-  removeCredentialPasswordLimit,
   listCredentials,
 } = await import('./webauthn')
+
+// Shared with 2FA enrolment and `changePassword` since the counter was
+// consolidated — one budget per account, not one per door.
+const { passwordRecheckLimit } = await import('@/lib/auth/passwordRecheck')
 
 const SHOP = 'Acme'
 
@@ -56,7 +59,7 @@ beforeEach(() => {
   verifyRegistration.mockReset()
   verifyAuthentication.mockReset()
   // Module-level by design, so one case's wrong guesses would throttle the next.
-  removeCredentialPasswordLimit.clear()
+  passwordRecheckLimit.clear()
 })
 
 /** An administrator who may hold a factor but has none yet. */

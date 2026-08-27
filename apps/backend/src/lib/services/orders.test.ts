@@ -492,6 +492,45 @@ describe('createOrder — validation & ownership', () => {
     }
   })
 
+  /*
+   * A product is provisioned by a webhook or a pipeline stack, per environment.
+   * With neither, `provisionOrderElements` starts nothing, notices, deletes the
+   * element rows it just wrote and answers 502 "Could not start the deployment"
+   * — which reads as "CI is down" when the truth is "nobody configured a
+   * pipeline". An imported Kubernetes product was found in exactly that state:
+   * catalogued, parameters imported, a full order form, and a 502 at the till.
+   */
+  it('refuses a product with nothing to provision it, before the order exists', async () => {
+    const admin = await createUser({ role: 'admin', email: 'nodeploy@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'nodeploy-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Undeployable')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    // Offered, but with no webhook and no pipeline stack.
+    await linkProductEnvironment(product.id, env.id, { deployable: false })
+    const project = await createProject(pm.id)
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    // 409 and not 502: nothing failed, the product is not set up.
+    expect(result.status).toBe(409)
+    expect(result.message).toMatch(/no pipeline configured/i)
+    // It says who has to fix it and what they have to add.
+    expect(result.message).toMatch(/administrator/i)
+    expect(result.message).toMatch(/pipeline stack or a webhook/i)
+
+    // And no order row was written, so there is nothing to roll back.
+    expect(await db.select().from(orders).where(eq(orders.productId, product.id))).toEqual([])
+  })
+
   it('still refuses a required parameter that has no default to fall back on', async () => {
     const { admin, product, env, project } = await buildBase()
     await db.insert(parameters).values({

@@ -668,7 +668,16 @@ export function ProductEditForm({ product, categories, environments, translation
           {/* The path that does not need a pipeline stack (#248): repository,
               branch and template directory chosen explicitly, so parameters can
               be imported while the product is still being set up. */}
-          <ImportFromRepo productId={product.id} lang={lang} />
+          {/* Only the environments the product is OFFERED in: a stack for an
+              environment it is not offered in is unreachable. */}
+          <ImportFromRepo
+            productId={product.id}
+            environments={product.environments
+              .map((pe) => environments.find((e) => e.id === pe.environmentId))
+              .filter((e): e is DeploymentEnvironment => e !== undefined)
+              .map((e) => ({ id: e.id, name: e.name }))}
+            lang={lang}
+          />
           <Button size="sm" variant="secondary" onClick={handleSyncParams}
             disabled={paramSyncing || stacks.length === 0}
             title={stacks.length === 0 ? t('addPipelineStackFirst', lang) : t('importFromTemplateVariables', lang)}>

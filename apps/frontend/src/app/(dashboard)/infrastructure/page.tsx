@@ -189,10 +189,13 @@ function InfraRow({
 }) {
   const outputs = Object.entries(item.outputs ?? {})
   const outputLabel = outputs.length === 1 ? t('output', lang) : t('outputs', lang)
-  // An element whose provisioning pipeline failed is still stored as 'active' —
-  // it is created when provisioning starts. Showing only that badge claims
-  // infrastructure that was never successfully deployed, so say so explicitly.
-  const deploymentFailed = item.orderStatus === 'failed'
+  // The server derives what to show (#287): the stored column is 'active' from
+  // the moment provisioning starts, so it cannot tell a machine still being
+  // built from one that is running, nor either from one whose pipeline failed.
+  // This page used to derive half of that itself and the detail page derived
+  // the same half again, which is how the provisioning case stayed missing in
+  // both.
+  const deploymentFailed = item.displayStatus === 'failed'
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="flex items-start justify-between">
@@ -210,7 +213,7 @@ function InfraRow({
                   id is what distinguishes them, and it is already in the URL. */}
               <span className="sr-only"> #{item.id}</span>
             </Link>
-            <StatusBadge status={deploymentFailed ? 'failed' : item.status} lang={lang} />
+            <StatusBadge status={item.displayStatus ?? item.status} lang={lang} />
             {deploymentFailed && (
               <span className="text-xs text-slate-500">
                 {t('deploymentFailed', lang)} · #{item.orderId}

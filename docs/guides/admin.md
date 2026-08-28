@@ -107,6 +107,23 @@ Under **Infrastructure**:
 - Grouped by project and deployment environment
 - Per element: product, parameters, status, price, cost center, order date, ordered by; a "deployment failed" note when the underlying order's status is `failed`; a "scheduled for" note once a decommission is scheduled (5.2)
 
+The **status badge is not the stored column.** `infrastructure_elements.status`
+holds only `active`, `decommissioning` and `decommissioned`, and the row is
+created `active` the moment provisioning *starts* — before the pipeline has been
+triggered. So the badge is derived from the element together with its order:
+
+| Badge | When |
+|---|---|
+| *Provisioning* | the order is awaiting approval or its pipeline is still running |
+| *Failed* | the order failed — the element is still stored `active` |
+| *Active* | the order completed and the element has not been torn down |
+| *Decommissioning* / *Decommissioned* | the element's own column, once the order is done with |
+
+The status filter offers exactly these, so anything the list can show can also be
+filtered for. **Decommission and Auto-decommission are offered only for *Active***
+— tearing down a half-applied state is not a no-op, and there is nothing yet to
+tear down while a machine is still being built.
+
 The element's own detail page adds:
 - **Outputs**: the OpenTofu outputs written after a successful apply (e.g. IP addresses, hostnames, resource IDs) — parsed from the pipeline's job trace, and only ever populated for a **GitLab**-backed deployment environment; GitHub- and Bitbucket-backed ones never get outputs here (`supportsJobTrace` in `apps/backend/src/lib/ci/index.ts`)
 - **Parameters**: the values the order was placed with, with a note listing which parameter names were redacted as sensitive

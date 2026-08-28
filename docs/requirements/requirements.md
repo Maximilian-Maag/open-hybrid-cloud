@@ -96,7 +96,7 @@
 |----|-------------|--------------|
 | FA-08.1 | Deployed infrastructure elements are displayed grouped by project and deployment environment. | Shipped |
 | FA-08.2 | Admins and Root users can see all projects. Project Managers only see their own. | Shipped |
-| FA-08.3 | Each infrastructure element shows: product, environment, order parameters, status, price, cost center. | Shipped, and the detail page shows more than listed: OpenTofu outputs, pipeline ids/status, redacted-parameter notes, and a scheduled-decommission time. See `docs/guides/admin.md` §5. |
+| FA-08.3 | Each infrastructure element shows: product, environment, order parameters, status, price, cost center. | Shipped, and the detail page shows more than listed: OpenTofu outputs, pipeline ids/status, redacted-parameter notes, and a scheduled-decommission time. See `docs/guides/admin.md` §5. **"Status" is not the stored column**: `infrastructure_elements.status` holds only `active`/`decommissioning`/`decommissioned` and the row is inserted `active` when provisioning *starts*, so the displayed status is derived by the server from the element and its order together — `provisioning` while the order is pending or running, `failed` when it did not finish (#287, #29). |
 
 ---
 

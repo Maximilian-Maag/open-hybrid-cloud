@@ -2,6 +2,11 @@
 export type Role = 'admin' | 'project_manager' | 'root'
 export type OrderStatus = 'pending' | 'provisioning' | 'completed' | 'failed' | 'rejected'
 export type InfraStatus = 'active' | 'decommissioning' | 'decommissioned'
+/**
+ * What an element can be SHOWN as — the stored statuses plus the two that live
+ * on its order. See `InfrastructureElement.displayStatus`.
+ */
+export type InfraDisplayStatus = InfraStatus | 'provisioning' | 'failed'
 export type CostCenterMode = 'project' | 'select' | 'overhead'
 export type ParameterScope = 'global' | 'category' | 'product'
 /**
@@ -1149,6 +1154,17 @@ export interface InfrastructureElement {
    * `status: 'active'` with `orderStatus: 'failed'`.
    */
   orderStatus?: OrderStatus | null
+  /**
+   * What to SHOW as this element's status, derived by the server.
+   *
+   * The stored column cannot express either end of an element's life: the row
+   * is inserted `active` when provisioning starts, so a machine still being
+   * built and one whose pipeline failed both read as running (#287, #29).
+   *
+   * Prefer this over `status` anywhere a person will read it. `status` remains
+   * the column, for the places that act on it rather than display it.
+   */
+  displayStatus?: InfraDisplayStatus
 }
 
 /**

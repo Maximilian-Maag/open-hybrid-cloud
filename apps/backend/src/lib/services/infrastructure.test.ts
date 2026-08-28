@@ -19,6 +19,7 @@ import {
   sweepDueDecommissions,
 } from './infrastructure'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
+import { INFRA_STATUS_FILTERS, INFRA_DISPLAY_STATUSES } from '@/lib/services/infrastructure'
 import { db } from '@/lib/db/client'
 import { infrastructureElements, orders, auditLog } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -139,8 +140,16 @@ describe('listInfrastructure — search, filtering and sorting', () => {
       env: { id: number },
       project: { id: number },
       over?: Parameters<typeof createInfraElement>[4],
+      /** The order's status, which the row's DISPLAYED status now follows. */
+      orderStatus: 'pending' | 'provisioning' | 'completed' | 'failed' = 'completed',
     ) => {
-      const order = await seedOrder(project.id, product.id, env.id, pm.id)
+      // Completed, not the helper's `pending` default. These tests are about the
+      // element's own lifecycle, and an element hanging off a pending order is a
+      // state the real system does not produce — the row is created inside the
+      // provisioning path, after approval. It only ever passed because the
+      // element's stored column was the whole story; since #287 the displayed
+      // status follows the order, so the fixture has to be one that could exist.
+      const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: orderStatus })
       return createInfraElement(order.id, project.id, env.id, product.id, over)
     }
 
@@ -163,7 +172,11 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     // provisioning starts — so without this the Failed badge on the row could not
     // be filtered for, and 'Active' silently included it.
     const ctx = await searchable()
-    const okOrder = await seedOrder(ctx.webshop.id, ctx.nginx.id, ctx.frankfurt.id, ctx.pm.id)
+    // Completed: the helper defaults to 'pending', which since #287 displays as
+    // Provisioning and would put this row in neither bucket.
+    const okOrder = await seedOrder(ctx.webshop.id, ctx.nginx.id, ctx.frankfurt.id, ctx.pm.id, {
+      status: 'completed',
+    })
     await createInfraElement(okOrder.id, ctx.webshop.id, ctx.frankfurt.id, ctx.nginx.id)
     const badOrder = await seedOrder(ctx.billing.id, ctx.postgres.id, ctx.frankfurt.id, ctx.pm.id, {
       status: 'failed',
@@ -424,6 +437,138 @@ describe('listInfrastructure — paging (#158)', () => {
     // Not 2 — a total over the whole table would tell a project manager how
     // much infrastructure exists in projects they cannot see.
     if (result.ok) expect(result.data.total).toBe(1)
+  })
+})
+
+/*
+ * #287. Reported from the dev server: an ordered VM is listed Active while it
+ * is still being provisioned.
+ *
+ * `infrastructure_elements.status` has no 'provisioning' value and the row is
+ * inserted 'active' the moment provisioning STARTS — before the pipeline has
+ * been triggered. So the column is not a status that goes wrong later; it is
+ * one that is never right at the beginning. The list and the detail page each
+ * patched the failed case at the leaf, independently, and neither handled this
+ * one.
+ */
+describe('listInfrastructure — the status a person reads (#287)', () => {
+  const elementFor = async (orderStatus: 'pending' | 'provisioning' | 'completed' | 'failed') => {
+    const base = await setup()
+    const order = await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, {
+      status: orderStatus,
+    })
+    await createInfraElement(order.id, base.project.id, base.env.id, base.product.id)
+    return base
+  }
+
+  const only = async (session: SessionUser, filters = {}) => {
+    const result = await listInfrastructure(session, filters)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    return result.data
+  }
+
+  it('says provisioning while the pipeline is still running', async () => {
+    const { admin } = await elementFor('provisioning')
+
+    const [row] = await only(makeSession(admin))
+    // The stored column still reads 'active'. That is the whole point: it is
+    // what the badge used to show.
+    expect(row.status).toBe('active')
+    expect(row.displayStatus).toBe('provisioning')
+  })
+
+  /*
+   * An order awaiting approval has not started building anything either. If an
+   * element exists for it, claiming the machine is running is the same lie one
+   * step earlier.
+   */
+  it('says provisioning while the order is still awaiting approval', async () => {
+    const { admin } = await elementFor('pending')
+
+    const [row] = await only(makeSession(admin))
+    expect(row.displayStatus).toBe('provisioning')
+  })
+
+  it('says active once the order completed', async () => {
+    const { admin } = await elementFor('completed')
+
+    const [row] = await only(makeSession(admin))
+    expect(row.displayStatus).toBe('active')
+  })
+
+  it('still says failed when the pipeline failed', async () => {
+    const { admin } = await elementFor('failed')
+
+    const [row] = await only(makeSession(admin))
+    expect(row.displayStatus).toBe('failed')
+  })
+
+  /*
+   * The element's own column wins once the order is done with: a
+   * decommissioning element belongs to a completed order, and reading the
+   * order would put it back to Active.
+   */
+  it('lets the element speak for itself after provisioning', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
+    const el = await createInfraElement(order.id, project.id, env.id, product.id)
+    await db.update(infrastructureElements)
+      .set({ status: 'decommissioning' })
+      .where(eq(infrastructureElements.id, el.id))
+
+    const [row] = await only(makeSession(admin))
+    expect(row.displayStatus).toBe('decommissioning')
+  })
+
+  /*
+   * The filter and the badge read the same expression, so they cannot disagree.
+   * Before this, `status=active` matched the column and excluded only
+   * failures — so filtering the list down to Active returned infrastructure
+   * that did not exist yet, and there was no way to filter FOR the ones still
+   * running.
+   */
+  describe('the filter offers exactly what the badge shows', () => {
+    const seedOneOfEach = async () => {
+      const base = await setup()
+      const made: Record<string, number> = {}
+      for (const status of ['provisioning', 'completed', 'failed'] as const) {
+        const order = await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, { status })
+        const el = await createInfraElement(order.id, base.project.id, base.env.id, base.product.id)
+        made[status] = el.id
+      }
+      return { ...base, made }
+    }
+
+    it('finds the still-provisioning ones, which had no filter value at all', async () => {
+      const { admin, made } = await seedOneOfEach()
+
+      const rows = await only(makeSession(admin), { status: 'provisioning' })
+      expect(rows.map((r) => r.id)).toEqual([made.provisioning])
+    })
+
+    it('no longer counts a still-provisioning element as active', async () => {
+      const { admin, made } = await seedOneOfEach()
+
+      const rows = await only(makeSession(admin), { status: 'active' })
+      expect(rows.map((r) => r.id)).toEqual([made.completed])
+    })
+
+    it('still finds the failed ones', async () => {
+      const { admin, made } = await seedOneOfEach()
+
+      const rows = await only(makeSession(admin), { status: 'failed' })
+      expect(rows.map((r) => r.id)).toEqual([made.failed])
+    })
+
+    /*
+     * Every value the list can display is a value it can be filtered by. A
+     * badge with no filter is a dead end — which is what 'provisioning' was,
+     * because nothing produced it.
+     */
+    it('offers a filter for every status a row can show', () => {
+      expect([...INFRA_STATUS_FILTERS].sort()).toEqual([...INFRA_DISPLAY_STATUSES].sort())
+    })
   })
 })
 

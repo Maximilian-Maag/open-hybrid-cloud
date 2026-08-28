@@ -5,6 +5,7 @@ import {
   getProductImage,
   getProductImageById,
   CATALOG_MAX_LIMIT,
+  CATALOG_COUNT_CAP,
 } from './catalog'
 import { db } from '@/lib/db/client'
 import {
@@ -154,6 +155,59 @@ describe('listCatalog', () => {
       expect(result.data.items).toEqual([])
       expect(result.data.total).toBe(1)
     }
+  })
+
+  /*
+   * #236. The count is the expensive half of a searched request: the predicate
+   * is a leading-wildcard ILIKE over a COALESCE of correlated per-language
+   * subqueries, so it cannot use an index and every row is evaluated in full —
+   * and the count used to do that a second time with no LIMIT to stop it.
+   *
+   * Capped now. Under the cap nothing changes and the number is exact, which
+   * for the catalogue this portal is for is every real search.
+   */
+  describe('the match count is bounded (#236)', () => {
+    it('is exact, and says so, for a result set under the cap', async () => {
+      const cat = await createCategory()
+      for (let i = 0; i < 3; i++) await createProduct(cat.id, `Widget ${i}`)
+
+      const result = await listCatalog('en', { search: 'Widget', limit: 2 })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+
+      expect(result.data.total).toBe(3)
+      expect(result.data.totalIsExact).toBe(true)
+    })
+
+    it('reports a floor, not a total, once the cap is reached', async () => {
+      const cat = await createCategory()
+      // One more than the cap. Slow to seed and worth it: this is the only way
+      // to reach the branch, and a cap nobody crosses in a test is a cap
+      // nobody has checked.
+      for (let i = 0; i <= CATALOG_COUNT_CAP; i++) await createProduct(cat.id, `Capped ${i}`)
+
+      const result = await listCatalog('en', { search: 'Capped', limit: 5 })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+
+      // Not CATALOG_COUNT_CAP + 1: the extra row exists only to detect that
+      // there are more, and reporting it would be a different wrong number.
+      expect(result.data.total).toBe(CATALOG_COUNT_CAP)
+      expect(result.data.totalIsExact).toBe(false)
+      expect(result.data.items).toHaveLength(5)
+    }, 120_000)
+
+    it('still counts an unsearched catalogue exactly', async () => {
+      const cat = await createCategory()
+      for (let i = 0; i < 4; i++) await createProduct(cat.id, `Plain ${i}`)
+
+      const result = await listCatalog('en', { limit: 2 })
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data.total).toBe(4)
+        expect(result.data.totalIsExact).toBe(true)
+      }
+    })
   })
 
   it('caps the page size rather than honouring an unbounded limit', async () => {

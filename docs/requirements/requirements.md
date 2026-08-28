@@ -233,6 +233,7 @@
 | NFA-02.2 | Sessions are stored in encrypted HttpOnly cookies — no server-side session store required. | Shipped |
 | NFA-02.3 | No polling service is used. CI providers push status updates via webhook callbacks — stateless and safe with multiple container replicas. | Shipped |
 | NFA-02.4 | Horizontal scaling (multiple replicas) must work without any configuration changes. | Shipped in the sense the app doesn't require per-replica config, though see NFA-02.1 for the one place replica count actually changes observed behavior |
+| NFA-02.5 | A list endpoint's response size must not grow with the size of the installation. | Shipped for the catalogue (#91), the audit log, the dashboard (#158) and, since #158, the order and infrastructure lists — `GET /api/orders` and `GET /api/infrastructure` take `limit`/`offset` and answer `{ items, total, limit, offset }`, with a server-side ceiling a client cannot raise. The remaining list services named in #158 (approvals, projects, cart, favourites, comments, product versions, admin products, cost rows) still return whole tables. |
 
 ---
 

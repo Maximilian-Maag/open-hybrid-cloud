@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/serverApi'
 import { redirect, notFound } from 'next/navigation'
-import type { Project, Order, CostCenter } from '@open-hybrid-cloud/types'
+import type { Project, Order, CostCenter, OrderPage } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
@@ -32,11 +32,16 @@ export default async function ProjectDetailPage({ params }: Props) {
   }
 
   const [ordersRes, costCentersRes] = await Promise.allSettled([
-    get<Order[]>(`/api/orders?projectId=${id}`),
+    // The filter was already in this URL and the backend ignored it, so this
+    // card listed every order the viewer could see — for an administrator, the
+    // whole installation, each row linking off into somebody else's project
+    // (#158). It is honoured now. One page of it: a project with more orders
+    // than that has its own list, and this is a summary card.
+    get<OrderPage>(`/api/orders?projectId=${id}`),
     get<CostCenter[]>('/api/admin/cost-centers'),
   ])
 
-  const orders = ordersRes.status === 'fulfilled' ? (ordersRes.value ?? []) : []
+  const orders = ordersRes.status === 'fulfilled' ? (ordersRes.value?.items ?? []) : []
   const costCenters = costCentersRes.status === 'fulfilled' ? (costCentersRes.value ?? []) : []
 
   return (

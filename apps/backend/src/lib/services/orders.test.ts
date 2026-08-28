@@ -17,6 +17,7 @@ import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/l
 import { db } from '@/lib/db/client'
 import { orders, infrastructureElements, parameters, productEnvironments, auditLog } from '@/lib/db/schema'
 import { STATE_KEY_NAMESPACE_VAR, stateKeyNamespaceFor } from '@/lib/ci/stateKey'
+import { LIST_MAX_LIMIT } from '@/lib/services/page'
 import { eq, desc } from 'drizzle-orm'
 import {
   createUser,
@@ -61,6 +62,137 @@ const buildBase = async () => {
 }
 
 describe('listOrders', () => {
+  /*
+   * #158. This list used to return every order the caller could see, and the
+   * row is not small — `parameters` and `productSnapshot` are both jsonb, and a
+   * snapshot carrying ten parameter definitions is around 1.5 KB. For an
+   * administrator of a busy installation that was tens of megabytes assembled
+   * whole in Node, on the page people land on after login.
+   */
+  describe('pages instead of returning everything (#158)', () => {
+    const seedMany = async (count: number) => {
+      const base = await buildBase()
+      for (let i = 0; i < count; i++) {
+        await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id)
+      }
+      return base
+    }
+
+    it('returns one window and says how many rows there are behind it', async () => {
+      const { admin } = await seedMany(5)
+
+      const result = await listOrders(makeSession(admin), 'en', { limit: 2 })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+
+      expect(result.data.items).toHaveLength(2)
+      // The count is of MATCHES, not of the window — it is what "page 1 of 3"
+      // is computed from, so counting the rows in hand would say one page.
+      expect(result.data.total).toBe(5)
+      expect(result.data.limit).toBe(2)
+      expect(result.data.offset).toBe(0)
+    })
+
+    it('walks the whole list across pages without repeating or skipping a row', async () => {
+      const { admin } = await seedMany(5)
+
+      const seen: number[] = []
+      for (let offset = 0; offset < 5; offset += 2) {
+        const page = await listOrders(makeSession(admin), 'en', { limit: 2, offset })
+        if (page.ok) seen.push(...page.data.items.map((o) => o.id))
+      }
+
+      // The reason the sort is tie-broken on id: `created_at` is not unique, and
+      // seeded orders land in the same millisecond. Without the tie-break
+      // Postgres may order two equal keys differently between two queries, and
+      // then a row appears on both page 1 and page 2 while another appears on
+      // neither.
+      expect(seen).toHaveLength(5)
+      expect(new Set(seen).size).toBe(5)
+    })
+
+    it('caps a limit that would put the unbounded read straight back', async () => {
+      const { admin } = await seedMany(2)
+
+      const result = await listOrders(makeSession(admin), 'en', { limit: 1_000_000 })
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.data.limit).toBe(LIST_MAX_LIMIT)
+    })
+
+    it('counts only what the caller may see', async () => {
+      const { pm, product, env, project } = await buildBase()
+      const otherPm = await createUser({ role: 'project_manager', email: 'other@test.dev' })
+      const otherProject = await createProject(otherPm.id)
+      await seedOrder(project.id, product.id, env.id, pm.id)
+      await seedOrder(otherProject.id, product.id, env.id, otherPm.id)
+
+      const result = await listOrders(makeSession(pm), 'en', { limit: 1 })
+      expect(result.ok).toBe(true)
+      // Not 2. A total that ignored the visibility scope would tell a project
+      // manager how many orders exist in projects they cannot see.
+      if (result.ok) expect(result.data.total).toBe(1)
+    })
+  })
+
+  /*
+   * `/projects/7` has always fetched `/api/orders?projectId=7`, and the route
+   * has never read a query string — so the card headed "Orders in this project"
+   * listed every order the viewer could see. For an administrator that is the
+   * whole installation, each row linking off into somebody else's project. A
+   * filter nobody applies is indistinguishable from one that matched everything
+   * (#158).
+   */
+  describe('filters in SQL rather than in the caller (#158)', () => {
+    it('narrows to one project', async () => {
+      const { admin, pm, product, env, project } = await buildBase()
+      const otherProject = await createProject(pm.id)
+      await seedOrder(project.id, product.id, env.id, pm.id)
+      await seedOrder(otherProject.id, product.id, env.id, pm.id)
+
+      const result = await listOrders(makeSession(admin), 'en', { projectId: project.id })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+
+      expect(result.data.items).toHaveLength(1)
+      expect(result.data.items[0].projectId).toBe(project.id)
+      // Counted under the filter too, or "page 1 of 40" on a one-page list.
+      expect(result.data.total).toBe(1)
+    })
+
+    it('narrows to one status, which is what the approvals page needs', async () => {
+      const { admin, pm, product, env, project } = await buildBase()
+      const pending = await seedOrder(project.id, product.id, env.id, pm.id)
+      const done = await seedOrder(project.id, product.id, env.id, pm.id)
+      await db.update(orders).set({ status: 'completed' }).where(eq(orders.id, done.id))
+
+      const result = await listOrders(makeSession(admin), 'en', { status: 'pending' })
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+
+      expect(result.data.items.map((o) => o.id)).toEqual([pending.id])
+      expect(result.data.total).toBe(1)
+    })
+
+    /*
+     * A filter must narrow what the caller may see, never widen it. Passing
+     * another manager's project id has to come back empty rather than granting
+     * a look at it.
+     */
+    it('cannot be used to reach past the caller\'s own scope', async () => {
+      const { pm, product, env } = await buildBase()
+      const otherPm = await createUser({ role: 'project_manager', email: 'other@test.dev' })
+      const otherProject = await createProject(otherPm.id)
+      await seedOrder(otherProject.id, product.id, env.id, otherPm.id)
+
+      const result = await listOrders(makeSession(pm), 'en', { projectId: otherProject.id })
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.data.items).toEqual([])
+        expect(result.data.total).toBe(0)
+      }
+    })
+  })
+
   it('admin sees orders from all users', async () => {
     const { admin, pm, product, env, project } = await buildBase()
     const otherPm = await createUser({ role: 'project_manager', email: 'other@test.dev' })
@@ -72,7 +204,7 @@ describe('listOrders', () => {
     const result = await listOrders(makeSession(admin))
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(2)
+      expect(result.data.items.length).toBe(2)
     }
   })
 
@@ -87,8 +219,8 @@ describe('listOrders', () => {
     const result = await listOrders(makeSession(pm))
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(1)
-      expect(result.data[0].userId).toBe(pm.id)
+      expect(result.data.items.length).toBe(1)
+      expect(result.data.items[0].userId).toBe(pm.id)
     }
   })
 
@@ -99,7 +231,7 @@ describe('listOrders', () => {
     const result = await listOrders(makeSession(pm))
     expect(result.ok).toBe(true)
     if (result.ok) {
-      const row = result.data[0]
+      const row = result.data.items[0]
       expect(row.productName).toBe('Product A')
       expect(row.environmentName).toBe('Test Env')
       expect(row.userName).toBe('PM')
@@ -222,7 +354,7 @@ describe('getOrderById', () => {
 
     const result = await listOrders(makeSession(admin))
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.data.find((o) => o.id === order.id)?.elements).toBeUndefined()
+    if (result.ok) expect(result.data.items.find((o) => o.id === order.id)?.elements).toBeUndefined()
   })
 
   it('still gives a project manager their own order, elements and all', async () => {
@@ -1364,7 +1496,7 @@ describe('createOrder — product snapshot', () => {
     expect(detail.ok && detail.data.productSnapshot?.price).toBe('10.00')
 
     const listed = await listOrders(makeSession(ctx.admin))
-    expect(listed.ok && listed.data[0].productSnapshot?.price).toBe('10.00')
+    expect(listed.ok && listed.data.items[0].productSnapshot?.price).toBe('10.00')
   })
 })
 
@@ -1540,7 +1672,7 @@ describe('the project name (#208)', () => {
     const result = await listOrders(makeSession(admin))
     expect(result.ok).toBe(true)
     if (result.ok) {
-      const row = result.data.find((o) => o.id === order.id)
+      const row = result.data.items.find((o) => o.id === order.id)
       expect(row?.projectName).toBe(project.name)
     }
   })
@@ -1575,7 +1707,7 @@ describe('the project name (#208)', () => {
     const result = await listOrders(makeSession(pm))
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.find((o) => o.id === order.id)?.projectName).toBe(project.name)
+      expect(result.data.items.find((o) => o.id === order.id)?.projectName).toBe(project.name)
     }
   })
 })

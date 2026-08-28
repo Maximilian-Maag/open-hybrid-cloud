@@ -1,4 +1,4 @@
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser, OrderStatus } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
 import {
   orders,
@@ -27,6 +27,7 @@ import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR, stateKeyNamespaceFor } f
 import { isReservedCiVariable, withoutReservedCiVariables } from '@/lib/ci/reserved'
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
+import { pageWindow, toPage, type Page } from '@/lib/services/page'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
 import { redactParametersForOrders, REDACTED } from '@/lib/services/parameterRedaction'
 import { resolveTrial, trialVariables, trialExpiry } from '@/lib/services/trial'
@@ -149,8 +150,71 @@ export interface CreatedOrder {
   infraIds?: number[]
 }
 
-export const listOrders = async (session: SessionUser, lang = 'en'): Promise<Result<OrderRow[]>> => {
+/**
+ * `Page<OrderRow>`, not `Page<Order>`: the service row carries the joined
+ * display names the shared type does not.
+ */
+export type OrderPage = Page<OrderRow>
+
+/**
+ * What one request may narrow the order list to.
+ *
+ * `projectId` and `status` are here because two callers were ALREADY sending
+ * them and the route was already ignoring them: the project detail page asks
+ * for `/api/orders?projectId=7` and the approvals page fetches every order to
+ * keep the pending ones. The first is a correctness bug — that page's "Orders
+ * in this project" card was listing every order the viewer may see, which for
+ * an administrator is the whole installation, each row linking off to an order
+ * in some other project. The second is #158's shape exactly: download
+ * everything, throw most of it away in JavaScript.
+ *
+ * Filtering in SQL fixes both, and it is what makes the page window mean
+ * something — page 2 of the orders for one project is not page 2 of all orders
+ * with the others dropped.
+ */
+export interface OrderFilters {
+  limit?: number
+  offset?: number
+  projectId?: number
+  status?: OrderStatus
+}
+
+/**
+ * A window onto the orders the caller may see, newest first.
+ *
+ * It used to return every one of them. The row is not small — `parameters` and
+ * `productSnapshot` are both jsonb, and a snapshot carrying ten parameter
+ * definitions is around 1.5 KB — so for an administrator of a busy
+ * installation this was tens of megabytes assembled in Node by
+ * `NextResponse.json`, with no streaming, parsed whole again by the frontend
+ * server, on every visit to the orders page (#158).
+ *
+ * `total` counts the matches and not the window, so a caller can say "1–50 of
+ * 3,914" without asking for 3,914 rows to find out.
+ */
+export const listOrders = async (
+  session: SessionUser,
+  lang = 'en',
+  filters: OrderFilters = {},
+): Promise<Result<OrderPage>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
+  const window = pageWindow(filters.limit, filters.offset)
+
+  const conditions = [
+    isAdmin ? undefined : eq(orders.userId, session.id),
+    filters.projectId ? eq(orders.projectId, filters.projectId) : undefined,
+    filters.status ? eq(orders.status, filters.status) : undefined,
+  ].filter((c) => c !== undefined)
+  const where = conditions.length > 0 ? and(...conditions) : undefined
+
+  // Counted separately rather than with a window function over the page, because
+  // `COUNT(*)` over the join needs none of the jsonb columns and none of the
+  // per-row name subqueries — it is the cheap half of the request, and making it
+  // ride along with the expensive half would only make the expensive half wider.
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(orders)
+    .where(where)
 
   const rows = await db
     .select({
@@ -185,14 +249,21 @@ export const listOrders = async (session: SessionUser, lang = 'en'): Promise<Res
     .leftJoin(deploymentEnvironments, eq(orders.environmentId, deploymentEnvironments.id))
     .leftJoin(projects, eq(orders.projectId, projects.id))
     .leftJoin(users, eq(orders.userId, users.id))
-    .where(isAdmin ? undefined : eq(orders.userId, session.id))
-    .orderBy(sql`${orders.createdAt} DESC`)
+    .where(where)
+    // Tie-broken on id, because `created_at` is not unique — two orders placed in
+    // the same millisecond can otherwise swap places between two requests, which
+    // in a paged list means a row appears on both page 1 and page 2 while another
+    // appears on neither.
+    .orderBy(sql`${orders.createdAt} DESC`, sql`${orders.id} DESC`)
+    .limit(window.limit)
+    .offset(window.offset)
 
   // Server-side, because the only masking used to be the order detail page's
   // `def?.sensitive ? '••••••'` — which reads the definition off the order's
   // snapshot, so an order placed before snapshots existed rendered the secret in
   // plaintext, and the raw value was in the JSON either way (issue #131).
-  return ok(await redactParametersForOrders(rows as OrderRow[], (row) => row.id))
+  const items = await redactParametersForOrders(rows as OrderRow[], (row) => row.id)
+  return ok(toPage(items, total, window))
 }
 
 export const getOrderById = async (

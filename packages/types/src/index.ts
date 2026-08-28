@@ -254,13 +254,29 @@ export interface UpdateCategoryRequest {
  * and pages in the database now, so the caller needs to know how many matches
  * there are beyond the page it was given (issue #91).
  */
-export interface CatalogPage {
-  items: Product[]
+/**
+ * One window onto a list the server refuses to send whole.
+ *
+ * The catalogue was paginated first (#91) and everything else was left
+ * unbounded, so a dashboard for an installation with fifty thousand orders
+ * tried to serialise all of them (#158). This is that same shape, named once,
+ * so the next list to grow teeth has a contract to adopt rather than invent.
+ *
+ * `total` counts the rows MATCHING THE FILTERS and ignores the window — it is
+ * what a "page 3 of 40" reads from, so counting the window instead would always
+ * say one.
+ */
+export interface Page<T> {
+  items: T[]
   /** Matches for the filters, ignoring the page window. */
   total: number
   limit: number
   offset: number
 }
+
+export type CatalogPage = Page<Product>
+export type OrderPage = Page<Order>
+export type InfrastructurePage = Page<InfrastructureElement>
 
 /**
  * The landing page's counters and its five most recent orders.

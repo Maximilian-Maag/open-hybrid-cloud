@@ -22,32 +22,46 @@ import { eq, inArray, sql } from 'drizzle-orm'
  * full attribution from the dashboard for the same period, with the export
  * looking like the inventory of record.
  */
+/**
+ * How many ids one `IN (...)` may carry.
+ *
+ * postgres.js binds one parameter per element and the wire protocol allows
+ * 65,535 of them in a statement, so a single list past that does not run slowly
+ * — it fails outright, and the export it belongs to fails with it (#158). Well
+ * under the limit rather than at it, because the same statement binds a handful
+ * of other parameters and a ceiling that is exactly the breaking point is one
+ * off from being wrong.
+ */
+const MAX_IDS_PER_QUERY = 30_000
+
 export const getCostCentersForInfra = async (
   orderIds: number[],
 ): Promise<Map<number, string>> => {
   const unique = [...new Set(orderIds)]
   if (unique.length === 0) return new Map()
 
-  const rows = await db
-    .select({
-      orderId: orders.id,
-      code: costCenters.code,
-      name: costCenters.name,
-    })
-    .from(orders)
-    .leftJoin(projects, eq(orders.projectId, projects.id))
-    // The same COALESCE getInfrastructureElement uses, for the same reason.
-    .leftJoin(
-      costCenters,
-      eq(sql`COALESCE(${orders.costCenterId}, ${projects.costCenterId})`, costCenters.id),
-    )
-    .where(inArray(orders.id, unique))
-
   const byOrder = new Map<number, string>()
-  for (const row of rows) {
-    // Empty only when neither the order nor its project has one, which is a real
-    // state rather than a default.
-    if (row.code) byOrder.set(row.orderId, `${row.code} — ${row.name}`)
+  for (let start = 0; start < unique.length; start += MAX_IDS_PER_QUERY) {
+    const rows = await db
+      .select({
+        orderId: orders.id,
+        code: costCenters.code,
+        name: costCenters.name,
+      })
+      .from(orders)
+      .leftJoin(projects, eq(orders.projectId, projects.id))
+      // The same COALESCE getInfrastructureElement uses, for the same reason.
+      .leftJoin(
+        costCenters,
+        eq(sql`COALESCE(${orders.costCenterId}, ${projects.costCenterId})`, costCenters.id),
+      )
+      .where(inArray(orders.id, unique.slice(start, start + MAX_IDS_PER_QUERY)))
+
+    for (const row of rows) {
+      // Empty only when neither the order nor its project has one, which is a real
+      // state rather than a default.
+      if (row.code) byOrder.set(row.orderId, `${row.code} — ${row.name}`)
+    }
   }
   return byOrder
 }

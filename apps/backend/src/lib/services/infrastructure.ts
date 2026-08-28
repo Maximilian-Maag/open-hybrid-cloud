@@ -20,6 +20,7 @@ import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/l
 import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR } from '@/lib/ci/stateKey'
 import { withoutReservedCiVariables } from '@/lib/ci/reserved'
 import { ok, err, type Result } from '@/lib/services/result'
+import { pageWindow, toPage, LIST_MAX_LIMIT, type Page } from '@/lib/services/page'
 import { trialVariables, trialExpiry } from '@/lib/services/trial'
 import {
   loadSensitiveParameterNames,
@@ -98,6 +99,8 @@ export interface InfraFilters {
   deployedTo?: Date
   sort?: InfraSortField
   direction?: 'asc' | 'desc'
+  limit?: number
+  offset?: number
 }
 
 // Built per request rather than once at module scope, because it now depends on
@@ -112,13 +115,34 @@ export interface InfraFilters {
 // turn the filter into an oracle for confirming a secret's value.
 const elementProductName = (lang: string) => productNameFor(lang, infrastructureElements.productId)
 
+/**
+ * `Page<InfraRow>`, not `Page<InfrastructureElement>`: the service row carries
+ * the joined display names and the order's status, which the shared type does
+ * not.
+ */
+export type InfraPage = Page<InfraRow>
+
+/**
+ * A window onto the infrastructure the caller may see.
+ *
+ * Unbounded until #158, and the second-largest response in the application
+ * after the order list for the same reason: `parameters` is jsonb and every row
+ * carries three correlated name subqueries. An installation is expected to
+ * accumulate elements forever — decommissioned ones stay for the history — so
+ * this is the list that grows without anybody placing an order.
+ *
+ * The export goes through here too, with its own much larger ceiling, so the
+ * file and the list can never disagree about what the filters mean.
+ */
 export const listInfrastructure = async (
   session: SessionUser,
   filters: InfraFilters,
   lang = 'en',
-): Promise<Result<InfraRow[]>> => {
+  maxLimit: number = LIST_MAX_LIMIT,
+): Promise<Result<InfraPage>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
   const productNameSql = elementProductName(lang)
+  const window = pageWindow(filters.limit, filters.offset, maxLimit)
 
   const conditions: ReturnType<typeof sql>[] = []
   if (!isAdmin) conditions.push(sql`${projects.ownerId} = ${session.id}`)
@@ -158,6 +182,21 @@ export const listInfrastructure = async (
   const where = conditions.length > 0
     ? conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`)
     : undefined
+
+  // The same three joins as the page query, because the WHERE reaches into all
+  // of them: the non-admin scope is `projects.owner_id`, the status filter reads
+  // `orders.status`, and the search matches the environment's name. A count over
+  // the bare element table would answer a different question than the list.
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(infrastructureElements)
+    .leftJoin(
+      deploymentEnvironments,
+      eq(infrastructureElements.environmentId, deploymentEnvironments.id),
+    )
+    .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
+    .leftJoin(orders, eq(infrastructureElements.orderId, orders.id))
+    .where(where)
 
   // Whitelisted rather than interpolated — the sort field reaches this from a
   // query string.
@@ -201,6 +240,8 @@ export const listInfrastructure = async (
     // deploy timestamp) comes back in a stable order across requests — an
     // export is expected to match the list it was taken from.
     .orderBy(orderBy, sql`${infrastructureElements.id} DESC`)
+    .limit(window.limit)
+    .offset(window.offset)
 
   // The list is an API endpoint in its own right (GET /api/infrastructure), so it
   // cannot rely on a consumer redacting: the CSV export happens to do it, which
@@ -208,7 +249,8 @@ export const listInfrastructure = async (
   // values in cleartext (issue #131). Redacting here makes the export's own pass a
   // harmless no-op, and matches the search filter above — which already excludes
   // `parameters` precisely because these values are secret.
-  return ok(await redactParametersForOrders(rows as InfraRow[], (row) => row.orderId))
+  const items = await redactParametersForOrders(rows as InfraRow[], (row) => row.orderId)
+  return ok(toPage(items, total, window))
 }
 
 export interface InfraFacets {

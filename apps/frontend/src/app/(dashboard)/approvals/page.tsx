@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
-import type { Order, Role, ApprovalDelegationsResponse } from '@open-hybrid-cloud/types'
+import type { Order, Role, ApprovalDelegationsResponse, OrderPage } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ApprovalRow } from './ApprovalRow'
 import { DelegationPanel } from './DelegationPanel'
@@ -22,8 +22,12 @@ export default async function ApprovalsPage() {
 
   let orders: Order[] = []
   try {
-    const all = (await get<Order[]>(`/api/orders?lang=${lang}`)) ?? []
-    orders = all.filter((o) => o.status === 'pending')
+    // Asked for by status rather than fetched whole and filtered here (#158).
+    // This page is admin-only, so "every order" was every order in the
+    // installation — downloaded in full to keep the handful still awaiting a
+    // decision.
+    const pending = await get<OrderPage>(`/api/orders?lang=${lang}&status=pending`)
+    orders = pending?.items ?? []
   } catch {
     /* empty */
   }

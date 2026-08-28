@@ -461,11 +461,16 @@ describe('listInfrastructure — the status a person reads (#287)', () => {
     return base
   }
 
+  // `.items`, because #158 landed between this helper being written and being
+  // merged: `listInfrastructure` answers a page now, not an array. Both PRs
+  // were green on their own — git merged them without a conflict because they
+  // touch different lines, and nothing recompiled the combination until it was
+  // already on dev.
   const only = async (session: SessionUser, filters = {}) => {
     const result = await listInfrastructure(session, filters)
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('unreachable')
-    return result.data
+    return result.data.items
   }
 
   it('says provisioning while the pipeline is still running', async () => {

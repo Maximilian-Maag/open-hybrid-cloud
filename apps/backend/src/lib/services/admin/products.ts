@@ -12,8 +12,6 @@ import {
   infrastructureElements,
   parameters,
   orders,
-  cartItems,
-  productFavorites,
   type Product,
   type ProductTranslation,
   type ProductEnvironment,

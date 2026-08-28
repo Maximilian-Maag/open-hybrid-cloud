@@ -354,9 +354,22 @@ test.describe('Accessibility — branding colours cannot break the chrome', () =
 
   test.afterAll(async ({ browser }) => {
     if (originalColour === null) return
-    // Its own context: the test's page is gone by now, and a torn-down one is
-    // exactly the case this hook exists for.
-    const context = await browser.newContext()
+
+    /*
+     * Its own context: the test's page is gone by now, and a torn-down one is
+     * exactly the case this hook exists for.
+     *
+     * `browser.newContext()` inherits NOTHING from the project — not the
+     * baseURL, so `/admin/branding` is not a URL it can navigate to, and not the
+     * storageState, so it would arrive signed out and be bounced to /login.
+     * A restore hook that cannot restore is worse than none: it reads as though
+     * the colour was put back.
+     *
+     * Taken from `test.info().project.use` rather than repeated as literals,
+     * because a second copy of the baseURL is a second thing to keep in step.
+     */
+    const { baseURL, storageState } = test.info().project.use
+    const context = await browser.newContext({ baseURL, storageState })
     const page = await context.newPage()
     try {
       await writeColour(page, originalColour)

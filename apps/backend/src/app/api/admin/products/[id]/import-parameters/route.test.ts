@@ -289,7 +289,19 @@ describe('POST /api/admin/products/[id]/import-parameters', () => {
 
     // A re-import picks up new VARIABLES. It does not flatten an arrangement of
     // steps somebody built by hand.
-    it('never overwrites a stack that is already there', async () => {
+    /*
+     * Rewritten for #288. This asserted `already-configured` for a stack whose
+     * steps have NOTHING to do with the imported template — which is the bug:
+     * "kept" was the only thing a second import could say, whether the stack
+     * matched or not, so an operator correcting a path was reassured and
+     * nothing changed.
+     *
+     * The half of it that was right is kept and made explicit: the stack is
+     * still not overwritten. Its steps decide the Terraform state key each
+     * element is stood up under, and existing infrastructure was applied
+     * against the old one.
+     */
+    it('reports a stack that runs something else, and still does not touch it', async () => {
       const { product, ci, env, auth } = await withEnvironment()
       await db.insert(pipelineStacks).values({
         productId: product.id, environmentId: env.id, name: 'Hand-built',
@@ -306,10 +318,38 @@ describe('POST /api/admin/products/[id]/import-parameters', () => {
         ctx(product.id),
       )
 
-      expect((await res.json()).stack).toMatchObject({ created: false, reason: 'already-configured' })
+      expect((await res.json()).stack).toMatchObject({
+        created: false,
+        reason: 'points-elsewhere',
+        name: 'Hand-built',
+        // Both sides named, because "kept" without them is indistinguishable
+        // from "already right".
+        existingTemplates: ['linode/virtual-machine', 'linode/block-storage'],
+        importedTemplate: 'linode/kubernetes-cluster',
+      })
       const rows = await db.select().from(pipelineStacks).where(eq(pipelineStacks.productId, product.id))
       expect(rows).toHaveLength(1)
       expect(rows[0].steps).toHaveLength(2)
+    })
+
+    it('says already-configured when the stack does run the imported template', async () => {
+      const { product, ci, env, auth } = await withEnvironment()
+      await db.insert(pipelineStacks).values({
+        productId: product.id, environmentId: env.id, name: 'linode/kubernetes-cluster',
+        stateKeyParam: 'cluster_label',
+        steps: [{ template: 'linode/kubernetes-cluster', stateSuffix: '-lke' }],
+      })
+      repo({ 'templates/linode/kubernetes-cluster/variables.tf': 'variable "cluster_label" { type = string }' })
+
+      const res = await POST(
+        makeReq(product.id, {
+          ciSourceId: ci.id, projectId: '1', ref: 'main',
+          path: 'templates/linode/kubernetes-cluster', environmentId: env.id,
+        }, auth),
+        ctx(product.id),
+      )
+
+      expect((await res.json()).stack).toMatchObject({ created: false, reason: 'already-configured' })
     })
 
     it('imports the variables and no stack when no environment is named', async () => {

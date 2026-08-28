@@ -18,7 +18,25 @@ import { t } from '@/lib/i18n'
 type StackOutcome =
   | { created: true; name: string; stateKeyParam: string; template: string }
   | { created: false; reason: 'already-configured'; name: string }
+  | {
+      created: false
+      reason: 'points-elsewhere'
+      name: string
+      existingTemplates: string[]
+      importedTemplate: string
+    }
   | { created: false; reason: 'no-template-path' }
+
+/**
+ * Whether the product came out of this able to be provisioned.
+ *
+ * `undefined` is the case that used to be invisible — no environment was
+ * chosen, so no stack was even attempted — and 'points-elsewhere' is the one
+ * that used to read as "kept". Neither leaves the product any more orderable
+ * than it was, so neither is a success (#288).
+ */
+const stackIsSettled = (stack?: StackOutcome): boolean =>
+  stack !== undefined && (stack.created === true || stack.reason === 'already-configured')
 
 interface ImportOutcome {
   created: number
@@ -146,7 +164,14 @@ export function ImportFromRepo({
             )}
 
             {outcome && (
-              <Alert tone={outcome.created > 0 ? 'success' : 'warning'}>
+              /* Success is "the product can now be provisioned", not "some rows
+                 were written". An import that created no stack, or kept one
+                 pointing elsewhere, leaves the product exactly as unorderable as
+                 it was — a green alert over that reads as done (#288).
+
+                 A plain block comment, not `{/* … *\/}`: this is an expression
+                 position inside `{outcome && (…)}`, not JSX children. */
+              <Alert tone={outcome.created > 0 && stackIsSettled(outcome.stack) ? 'success' : 'warning'}>
                 <span className="block">
                   {outcome.created > 0
                     ? `${t('parametersImported', lang)}: ${outcome.created}${outcome.skipped > 0 ? ` · ${t('alreadyExisted', lang)}: ${outcome.skipped}` : ''}`
@@ -175,6 +200,33 @@ export function ImportFromRepo({
                   <span className="block text-xs mt-1 text-slate-600">
                     {t('pipelineStackKept', lang)}: <span className="font-mono">{outcome.stack.name}</span>
                   </span>
+                )}
+                {/* Kept, but pointing somewhere else. This used to be the same
+                    message as the line above, so an operator correcting a path
+                    was told "kept" and could not tell whether that meant "already
+                    right" or "not looked at" (#288). Nothing is rewritten: the
+                    stack's steps decide the Terraform state key, and repointing
+                    it silently would leave running infrastructure addressed by a
+                    name its teardown no longer derives. */}
+                {outcome.stack?.created === false && outcome.stack.reason === 'points-elsewhere' && (
+                  <span className="block text-xs mt-1">
+                    {t('pipelineStackPointsElsewhere', lang)}
+                    {': '}
+                    <span className="font-mono">{outcome.stack.existingTemplates.join(', ') || '—'}</span>
+                    {' → '}
+                    <span className="font-mono">{outcome.stack.importedTemplate}</span>
+                  </span>
+                )}
+                {outcome.stack?.created === false && outcome.stack.reason === 'no-template-path' && (
+                  <span className="block text-xs mt-1">{t('noStackNoTemplatePath', lang)}</span>
+                )}
+                {/* The silent case, and the likeliest one: the environment field
+                    preselects only when there is exactly one, so with two or more
+                    it starts empty and is easy to walk past. The import then
+                    reported a clean success and never attempted the stack — which
+                    is the thing that makes the product orderable at all. */}
+                {outcome.stack === undefined && (
+                  <span className="block text-xs mt-1">{t('noStackNoEnvironment', lang)}</span>
                 )}
                 {outcome.skippedModules.length > 0 && (
                   <span className="block text-xs mt-1">

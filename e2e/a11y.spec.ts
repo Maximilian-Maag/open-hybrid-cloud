@@ -169,9 +169,17 @@ const scan = async (page: Page) =>
  *
  *   * no placeholder is left — `data-loading` is put there by the skeletons for
  *     exactly this purpose;
- *   * `main` has rendered something. Without it a page that failed to load at
+ *   * the page rendered SOMETHING. Without that a page which failed to load at
  *     all also has no placeholders, and would sail through as "clean" for the
  *     same reason the skeletons did.
+ *
+ * The second check is on the body's text and not on `main`, which was the first
+ * attempt and was wrong: `/login` has no `main` landmark at all, and
+ * `/impressum` renders without one when no imprint text is configured — which
+ * is every CI database. Requiring one would have failed the gate for a layout
+ * choice rather than for an accessibility defect. (A missing `main` is
+ * `landmark-one-main`, a best-practice rule outside the WCAG A/AA tags this
+ * gate requests, so axe does not ask for one either.)
  *
  * The spec already knew about this race: its detail-page block documents it
  * ("the catalogue fetches its products after hydration"). The 23 static pages
@@ -181,10 +189,15 @@ const settled = async (page: Page, where: string) => {
   await expect(page.locator('[data-loading]'), `${where} still showing loading placeholders`)
     .toHaveCount(0, { timeout: 15_000 })
 
-  // Not a specific string — 23 pages have 23 different first paragraphs — but
-  // SOMETHING. An empty main is a page that did not render, and scanning it
-  // proves nothing.
-  await expect(page.locator('main'), `${where} rendered an empty main`).not.toBeEmpty()
+  // Not a specific string — 25 pages have 25 different first paragraphs — but
+  // some rendered text. A blank page is a page that did not load, and scanning
+  // it proves nothing.
+  await expect
+    .poll(
+      async () => (await page.locator('body').innerText()).trim().length,
+      { message: `${where} rendered no text at all`, timeout: 15_000 },
+    )
+    .toBeGreaterThan(0)
 }
 
 /** Scan and judge, including the review-only rules. `where` names the page. */

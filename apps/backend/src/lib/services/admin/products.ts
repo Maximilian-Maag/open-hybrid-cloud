@@ -12,8 +12,6 @@ import {
   infrastructureElements,
   parameters,
   orders,
-  cartItems,
-  productFavorites,
   type Product,
   type ProductTranslation,
   type ProductEnvironment,
@@ -51,6 +49,14 @@ export interface ProductAdminRow {
   /** Trust content shown on the product page (issue #107); null when unset. */
   owner: string | null
   docsUrl: string | null
+  /**
+   * When the product was taken out of the catalogue, or null while it is live.
+   *
+   * The admin list SHOWS retired products (#251) — it is the one place someone
+   * needs to see them, because it is the only place they can be put back. The
+   * catalogue keeps filtering them out.
+   */
+  retiredAt: Date | null
 }
 
 export interface CreateProductInput {
@@ -142,6 +148,7 @@ const adminProductSelect = (lang: string) => ({
   docsUrl: products.docsUrl,
   name: productNameSql(lang),
   description: productDescriptionSql(lang),
+  retiredAt: products.retiredAt,
 })
 
 export const listProducts = async (lang = 'en'): Promise<Result<ProductAdminRow[]>> => {
@@ -149,9 +156,10 @@ export const listProducts = async (lang = 'en'): Promise<Result<ProductAdminRow[
     .select(adminProductSelect(lang))
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id))
-    // Retired products are gone as far as every catalogue and admin screen is
-    // concerned; the row only survives so its orders keep a referent (issue #142).
-    .where(isNull(products.retiredAt))
+    // No filter. Retired products belong on the ADMIN list — marked — because it
+    // is the only screen from which they can be put back (#251). Hiding them here
+    // was what made retirement a one-way trapdoor. `listCatalog` and `getProduct`
+    // still filter, which is the filter that was always meant.
     .orderBy(products.id)
 
   return ok(rows as ProductAdminRow[])
@@ -194,7 +202,9 @@ export const getProductAdmin = async (id: number, lang = 'en'): Promise<Result<P
     .select(adminProductSelect(lang))
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id))
-    .where(and(eq(products.id, id), isNull(products.retiredAt)))
+    // Retired products are editable (#251): fixing a product and putting it back
+    // is one action in two steps, and a 404 in between makes it impossible.
+    .where(eq(products.id, id))
     .limit(1)
 
   if (!rows.length) return err(404, 'Not found')
@@ -418,6 +428,65 @@ const describeProductChange = (input: UpdateProductInput): string => {
   return changed.length > 0 ? `Product updated: ${changed.join(', ')}` : 'Product updated'
 }
 
+/**
+ * Take a product out of the catalogue, or put it back (#251).
+ *
+ * `retiredAt` already meant exactly "not in the catalogue" — it was simply not a
+ * control anyone could reach. Nothing set it deliberately (it was a side effect
+ * of `deleteProduct` refusing to destroy order history), nothing cleared it, and
+ * the admin screens hid what it marked. A root administrator who pressed Delete
+ * on a product that had ever been ordered got it withdrawn, removed from every
+ * admin list, and no way back short of a database update.
+ *
+ * So: the same column, both directions, said out loud. No migration, and
+ * deliberately no second boolean beside it — two columns meaning "not in the
+ * catalogue" is the drift this repo has a policy rule against, and this one is
+ * load-bearing for #142's order history.
+ *
+ * Offerings, cart lines and favourites are left alone in BOTH directions. That is
+ * what makes it reversible in any useful sense: a product put back is the product
+ * it was, at the price it was. What stops it being ordered meanwhile is the flag
+ * itself, checked in `addToCart` and `prepareOrder`.
+ */
+export const setProductRetired = async (
+  id: number,
+  retired: boolean,
+  actorId?: number,
+): Promise<Result<{ retiredAt: Date | null }>> => {
+  // Under a row lock, and the current state re-read inside it: two admins hitting
+  // Disable and Enable at once would otherwise both succeed, and the audit log
+  // would record two changes where the second is a no-op or, worse, record
+  // "enabled" for a product that ended up disabled.
+  return db.transaction(async (tx): Promise<Result<{ retiredAt: Date | null }>> => {
+    const [locked] = await tx
+      .select({ id: products.id, retiredAt: products.retiredAt })
+      .from(products)
+      .where(eq(products.id, id))
+      .for('update')
+      .limit(1)
+    if (!locked) return err(404, 'Not found')
+
+    // Already in the asked-for state. Not an error — the caller wanted it
+    // disabled and it is disabled — but not an audit entry either.
+    if ((locked.retiredAt !== null) === retired) return ok({ retiredAt: locked.retiredAt })
+
+    const retiredAt = retired ? new Date() : null
+    await tx.update(products).set({ retiredAt }).where(eq(products.id, id))
+
+    await logAuditWith(
+      tx,
+      actorId ?? null,
+      retired ? 'product.disabled' : 'product.enabled',
+      id,
+      retired
+        ? 'Product withdrawn from the catalogue; offerings and order history kept'
+        : 'Product returned to the catalogue',
+    )
+
+    return ok({ retiredAt })
+  })
+}
+
 export const deleteProduct = async (id: number, actorId?: number): Promise<Result<void>> => {
   // An already-retired product is gone from every screen, so asking to delete it
   // again is a 404 like any other missing product.
@@ -447,7 +516,7 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
    * outright, which keeps the table from filling up with tombstones.
    */
   const activeInfra = await db
-    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters, sequence: infrastructureElements.sequence, sizeCode: infrastructureElements.sizeCode, stateKeyNamespace: infrastructureElements.stateKeyNamespace })
+    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters, sequence: infrastructureElements.sequence, sizeCode: infrastructureElements.sizeCode, stateKeyNamespace: infrastructureElements.stateKeyNamespace, stateKeys: infrastructureElements.stateKeys })
     .from(infrastructureElements)
     .where(and(eq(infrastructureElements.productId, id), eq(infrastructureElements.status, 'active')))
 
@@ -516,10 +585,34 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
    * currency, cost-center mode — with nothing to restore them from.
    */
   return db.transaction(async (tx): Promise<Result<void>> => {
+    /*
+     * Locked on the id ALONE — deliberately not `AND retired_at IS NULL`, which
+     * is what the pre-check at the top of this function uses.
+     *
+     * #251 gave retirement a second writer, `setProductRetired`, and it does
+     * not hold this lock while the destroy triggers above are running. So a
+     * root who disables the product in that window used to turn this select
+     * into a miss, and the delete answered 404 — after it had already claimed
+     * every infrastructure row and started tearing them down. The caller was
+     * told nothing happened while the installation was being decommissioned.
+     *
+     * Matching on the id makes the two orderings agree instead: whoever set the
+     * flag, the decision below is the same one this call came to make. An
+     * ordered product ends up retired either way, and an unordered one is
+     * deleted, which is what a root asking to delete a product with no history
+     * asked for.
+     *
+     * This does not make retirement and deletion mutually exclusive — the
+     * triggers still fire before any lock is held, and an Enable that commits
+     * after this transaction would leave the product available with its
+     * infrastructure gone. Closing that needs a deletion-in-progress state on
+     * the row, which is a larger change than this one; what it does close is
+     * the case where destruction happens and the answer says it did not.
+     */
     const locked = await tx
       .select({ id: products.id })
       .from(products)
-      .where(and(eq(products.id, id), isNull(products.retiredAt)))
+      .where(eq(products.id, id))
       .for('update')
       .limit(1)
     if (!locked.length) return err(404, 'Not found')
@@ -530,20 +623,24 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
     const orderCount = await countWhere(tx.select({ n: count() }).from(orders).where(eq(orders.productId, id)))
 
     if (orderCount > 0) {
-      // Withdraw every offering in the same transaction as the retirement flag. Both
-      // cart-add and order creation require a matching product_environments row, so
-      // removing them is what actually makes a retired product unorderable — the flag
-      // only keeps it out of the catalogue's reads.
+      // The flag, and NOTHING else (#251).
+      //
+      // This used to withdraw every offering as well, because the flag only kept
+      // the product out of the catalogue's reads and the missing
+      // product_environments row was what actually made it unorderable. That made
+      // retirement destructive and therefore irreversible: price, currency and
+      // cost-centre mode were gone, with nothing to restore them from — so
+      // pressing Delete on an ordered product silently destroyed its pricing and
+      // there was no way back.
+      //
+      // `retiredAt` is now the check itself, in `addToCart` and `prepareOrder`.
+      // Retiring is reversible, the offerings survive it, and a product put back
+      // is the product it was.
       //
       // The infrastructure_elements rows are left in place, unlike the old cascade:
       // they are mid-decommission, and their pipelines report back to the callback
       // that reconciles them. That is what the note above wished for.
       await tx.update(products).set({ retiredAt: new Date() }).where(eq(products.id, id))
-      await tx.delete(productEnvironments).where(eq(productEnvironments.productId, id))
-      // Transient rows that would otherwise dangle against something nobody can
-      // order any more. Both cascade on a hard delete today.
-      await tx.delete(cartItems).where(eq(cartItems.productId, id))
-      await tx.delete(productFavorites).where(eq(productFavorites.productId, id))
 
       // On the transaction's own connection, so it rolls back with the retirement.
       await logAuditWith(
@@ -551,7 +648,7 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
         actorId ?? null,
         'product.retired',
         id,
-        `Retired product (${orderCount} order(s) keep their history), withdrew all offerings, decommissioning ${activeInfra.length} infrastructure element(s)`,
+        `Retired product (${orderCount} order(s) keep their history), decommissioning ${activeInfra.length} infrastructure element(s)`,
       )
 
       return ok(undefined)

@@ -797,6 +797,32 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   // before #183: its state exists under the raw parameter value, so its teardown
   // and its retries have to keep deriving the key that way.
   stateKeyNamespace: text('state_key_namespace'),
+  /**
+   * The Terraform state key this element was actually provisioned under, per
+   * pipeline stack: `{ "<stackId>": "web-01-o42" }`.
+   *
+   * RECORDED, not recomputed (#200). The key used to be derived afresh at every
+   * trigger from `variables[stack.stateKeyParam]` and the stack row as it is
+   * NOW — so an admin editing `stateKeyParam` moved the key of every element
+   * already running under it. Their destroy then addressed a state that was
+   * never created, reported success, and left the infrastructure up with the
+   * portal showing it torn down. Refusing that edit while elements live narrowed
+   * it; a rule that freezes an input is weaker than a recorded result, because
+   * it has to hold at every path that could change the input.
+   *
+   * Written before the trigger fires, not after it succeeds: a trigger whose
+   * HTTP call fails may still have started the pipeline, and a key that was not
+   * recorded is a state with no teardown.
+   *
+   * An EMPTY map means the element predates this column, and every path falls
+   * back to deriving as before — the only way their teardown keeps pointing at
+   * the state their own apply created.
+   *
+   * A stack absent from a non-empty map was added after this element was
+   * provisioned, so nothing applied it here and its destroy is skipped rather
+   * than fired at a state that never existed.
+   */
+  stateKeys: jsonb('state_keys').$type<Record<string, string>>().notNull().default({}),
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
   pipelineId: jsonb('pipeline_id').$type<string[]>().notNull().default([]),
   // Per-pipeline terminal status for the current decommission run, keyed by

@@ -1,4 +1,4 @@
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser, OrderStatus } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
 import {
   orders,
@@ -23,10 +23,11 @@ import {
   finishOrderTriggerRun,
   clearOrderTriggerRun,
 } from '@/lib/services/pipelineTracking'
-import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR } from '@/lib/ci/stateKey'
+import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR, stateKeyNamespaceFor } from '@/lib/ci/stateKey'
 import { isReservedCiVariable, withoutReservedCiVariables } from '@/lib/ci/reserved'
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
+import { pageWindow, toPage, type Page } from '@/lib/services/page'
 import { loadApplicableParameters, resolveParameterDefs } from '@/lib/services/catalog'
 import { redactParametersForOrders, REDACTED } from '@/lib/services/parameterRedaction'
 import { resolveTrial, trialVariables, trialExpiry } from '@/lib/services/trial'
@@ -149,8 +150,71 @@ export interface CreatedOrder {
   infraIds?: number[]
 }
 
-export const listOrders = async (session: SessionUser, lang = 'en'): Promise<Result<OrderRow[]>> => {
+/**
+ * `Page<OrderRow>`, not `Page<Order>`: the service row carries the joined
+ * display names the shared type does not.
+ */
+export type OrderPage = Page<OrderRow>
+
+/**
+ * What one request may narrow the order list to.
+ *
+ * `projectId` and `status` are here because two callers were ALREADY sending
+ * them and the route was already ignoring them: the project detail page asks
+ * for `/api/orders?projectId=7` and the approvals page fetches every order to
+ * keep the pending ones. The first is a correctness bug — that page's "Orders
+ * in this project" card was listing every order the viewer may see, which for
+ * an administrator is the whole installation, each row linking off to an order
+ * in some other project. The second is #158's shape exactly: download
+ * everything, throw most of it away in JavaScript.
+ *
+ * Filtering in SQL fixes both, and it is what makes the page window mean
+ * something — page 2 of the orders for one project is not page 2 of all orders
+ * with the others dropped.
+ */
+export interface OrderFilters {
+  limit?: number
+  offset?: number
+  projectId?: number
+  status?: OrderStatus
+}
+
+/**
+ * A window onto the orders the caller may see, newest first.
+ *
+ * It used to return every one of them. The row is not small — `parameters` and
+ * `productSnapshot` are both jsonb, and a snapshot carrying ten parameter
+ * definitions is around 1.5 KB — so for an administrator of a busy
+ * installation this was tens of megabytes assembled in Node by
+ * `NextResponse.json`, with no streaming, parsed whole again by the frontend
+ * server, on every visit to the orders page (#158).
+ *
+ * `total` counts the matches and not the window, so a caller can say "1–50 of
+ * 3,914" without asking for 3,914 rows to find out.
+ */
+export const listOrders = async (
+  session: SessionUser,
+  lang = 'en',
+  filters: OrderFilters = {},
+): Promise<Result<OrderPage>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
+  const window = pageWindow(filters.limit, filters.offset)
+
+  const conditions = [
+    isAdmin ? undefined : eq(orders.userId, session.id),
+    filters.projectId ? eq(orders.projectId, filters.projectId) : undefined,
+    filters.status ? eq(orders.status, filters.status) : undefined,
+  ].filter((c) => c !== undefined)
+  const where = conditions.length > 0 ? and(...conditions) : undefined
+
+  // Counted separately rather than with a window function over the page, because
+  // `COUNT(*)` over the join needs none of the jsonb columns and none of the
+  // per-row name subqueries — it is the cheap half of the request, and making it
+  // ride along with the expensive half would only make the expensive half wider.
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(orders)
+    .where(where)
 
   const rows = await db
     .select({
@@ -185,14 +249,21 @@ export const listOrders = async (session: SessionUser, lang = 'en'): Promise<Res
     .leftJoin(deploymentEnvironments, eq(orders.environmentId, deploymentEnvironments.id))
     .leftJoin(projects, eq(orders.projectId, projects.id))
     .leftJoin(users, eq(orders.userId, users.id))
-    .where(isAdmin ? undefined : eq(orders.userId, session.id))
-    .orderBy(sql`${orders.createdAt} DESC`)
+    .where(where)
+    // Tie-broken on id, because `created_at` is not unique — two orders placed in
+    // the same millisecond can otherwise swap places between two requests, which
+    // in a paged list means a row appears on both page 1 and page 2 while another
+    // appears on neither.
+    .orderBy(sql`${orders.createdAt} DESC`, sql`${orders.id} DESC`)
+    .limit(window.limit)
+    .offset(window.offset)
 
   // Server-side, because the only masking used to be the order detail page's
   // `def?.sensitive ? '••••••'` — which reads the definition off the order's
   // snapshot, so an order placed before snapshots existed rendered the secret in
   // plaintext, and the raw value was in the JSON either way (issue #131).
-  return ok(await redactParametersForOrders(rows as OrderRow[], (row) => row.id))
+  const items = await redactParametersForOrders(rows as OrderRow[], (row) => row.id)
+  return ok(toPage(items, total, window))
 }
 
 export const getOrderById = async (
@@ -525,11 +596,20 @@ export const prepareOrder = async (
 
   // The product must be resolvable (needed for parameter scope) …
   const [product] = await db
-    .select({ categoryId: products.categoryId })
+    .select({ categoryId: products.categoryId, retiredAt: products.retiredAt })
     .from(products)
     .where(eq(products.id, productId))
     .limit(1)
   if (!product) return err(404, 'Product not found')
+
+  // Retirement is the check now, not the absence of an offering (#251). Disabling
+  // a product used to work by DELETING its product_environments rows, which made
+  // it unorderable and also destroyed its pricing — so it could never be undone.
+  // The offerings survive a withdrawal today, which means this is the only thing
+  // standing between a disabled product and an order for it.
+  if (product.retiredAt !== null) {
+    return err(400, 'This product is no longer available to order')
+  }
 
   // … and must actually be offered in the chosen environment. The offering row
   // also carries the cost-centre rules, which are validated below.
@@ -725,7 +805,7 @@ export const provisionOrderElements = async (
         status: 'active',
         sizeCode,
         sequence,
-        stateKeyNamespace: String(orderId),
+        stateKeyNamespace: stateKeyNamespaceFor(orderId),
         parameters,
         pipelineId: [],
         // The trial's clock starts here, at provisioning. The scheduled-decommission
@@ -753,6 +833,7 @@ export const provisionOrderElements = async (
     const onStarted = (pipelineId: string) => recordOrderPipelineId(orderId, pipelineId)
 
     let elementPipelineIds: string[]
+    let elementStateKeys: Record<string, string> = {}
     try {
       // The *Tracked variants, because a trigger that fails without throwing is
       // exactly the case that reported a half-deployed order as completed
@@ -760,6 +841,10 @@ export const provisionOrderElements = async (
       // waiting on the stack alone.
       const webhooks = await triggerProductWebhooksTracked(productId, environmentId, triggerVars, onStarted)
       const stacks = await triggerPipelineStacksTracked(productId, environmentId, triggerVars, onStarted, parameters)
+      // What each stack actually used, so retry and teardown address the state
+      // this apply created rather than re-deriving it from a stack row that can
+      // have moved since (#200).
+      elementStateKeys = stacks.stateKeys ?? {}
       elementPipelineIds = [...webhooks.pipelineIds, ...stacks.pipelineIds]
       failures.push(
         ...[...webhooks.failures, ...stacks.failures].map((f) => `element ${sequence}: ${f}`),
@@ -774,10 +859,16 @@ export const provisionOrderElements = async (
       continue
     }
 
-    if (elementPipelineIds.length > 0) {
+    // The state keys are written even when nothing started: a trigger whose HTTP
+    // call failed may still have started the pipeline, and a key nobody recorded
+    // is a state with no teardown.
+    if (elementPipelineIds.length > 0 || Object.keys(elementStateKeys).length > 0) {
       await db
         .update(infrastructureElements)
-        .set({ pipelineId: elementPipelineIds })
+        .set({
+          ...(elementPipelineIds.length > 0 ? { pipelineId: elementPipelineIds } : {}),
+          ...(Object.keys(elementStateKeys).length > 0 ? { stateKeys: elementStateKeys } : {}),
+        })
         .where(eq(infrastructureElements.id, element.id))
       pipelineIds.push(...elementPipelineIds)
     }
@@ -860,8 +951,9 @@ const elementTriggerVariables = (input: {
   ...withoutReservedCiVariables(input.parameters),
   ORDER_ID: String(input.orderId),
   // Namespaces this element's Terraform state key, and is stored on the element
-  // row so its teardown derives the same one.
-  [STATE_KEY_NAMESPACE_VAR]: String(input.orderId),
+  // row so its teardown derives the same one. Same function as the row above,
+  // because the two must not drift.
+  [STATE_KEY_NAMESPACE_VAR]: stateKeyNamespaceFor(input.orderId),
   // The size has to reach the CI run (issue #98) — it is what decides how much
   // machine the template asks for. Absent, not empty, for an offering with no
   // sizes, so a template can tell "no sizing" from "a size called ''".

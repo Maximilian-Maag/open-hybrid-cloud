@@ -10,6 +10,7 @@ import {
   type CreateOrderRequest,
   type Order,
   type InfrastructureElement,
+  type InfrastructurePage,
 } from '@open-hybrid-cloud/types'
 import { post, get } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
@@ -118,12 +119,16 @@ export function OrderForm({
     // elements land in the list — they belong to a project the user left, and
     // the selection would then be validated against the wrong set.
     let stale = false
-    get<InfrastructureElement[]>(
+    get<InfrastructurePage>(
       `/api/infrastructure?productId=${product.id}&projectId=${projectId}`,
     )
-      .then((rows) => {
+      .then((page) => {
         if (stale) return
-        setTemplates(rows ?? [])
+        // One page of the elements for this product in this project. The list is
+        // a "copy the settings from" picker, and it was already unusable as a
+        // scroll long before it was unbounded — the default window is the
+        // honest shape for it.
+        setTemplates(page?.items ?? [])
         // Keep the current selection if it is still in the list. Clearing
         // unconditionally discarded a quick-reorder prefill whenever this effect
         // ran a second time (projectId settles after the projects load), and the
@@ -131,7 +136,7 @@ export function OrderForm({
         // so the form kept the environment and parameters but lost the template,
         // and with it the "pre-filled from this element" confirmation.
         setTemplateId((current) =>
-          current !== '' && (rows ?? []).some((row) => String(row.id) === current) ? current : '',
+          current !== '' && (page?.items ?? []).some((row) => String(row.id) === current) ? current : '',
         )
       })
       .catch(() => { if (!stale) setTemplates([]) })

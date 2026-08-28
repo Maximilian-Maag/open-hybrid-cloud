@@ -164,6 +164,21 @@ describe('addToCart', () => {
   })
 })
 
+describe('addToCart and a withdrawn product', () => {
+  // The offering existing no longer means the product can be ordered.
+  it('refuses to add one', async () => {
+    const { pm, nginx, env } = await setup()
+    await db.update(products).set({ retiredAt: new Date() }).where(eq(products.id, nginx.id))
+
+    const result = await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(400)
+    expect(result.message).toMatch(/no longer available to order/i)
+  })
+})
+
 describe('listCart', () => {
   it('returns only the caller\'s items, oldest first', async () => {
     const { pm, other, nginx, postgres, env } = await setup()
@@ -188,6 +203,38 @@ describe('listCart', () => {
     if (!result.ok) return
     expect(result.data).toHaveLength(1)
     expect(result.data[0].stillOffered).toBe(false)
+  })
+
+  /*
+   * A withdrawn product keeps its offerings, so it can be put back at the price
+   * it had (#251) — which means the price still resolves and the line still
+   * looks orderable. `retiredAt` is the third way a line can have become
+   * unorderable, and it has to say so here rather than at the till.
+   */
+  it('marks a line unavailable when its product has been withdrawn', async () => {
+    const { pm, nginx, env } = await setup()
+    await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+    await db.update(products).set({ retiredAt: new Date() }).where(eq(products.id, nginx.id))
+
+    const result = await listCart(makeSession(pm))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data).toHaveLength(1)
+    expect(result.data[0].stillOffered).toBe(false)
+    // The offering survived, which is what makes putting it back worth anything.
+    expect(result.data[0].price).not.toBeNull()
+  })
+
+  it('offers it again once the product is put back', async () => {
+    const { pm, nginx, env } = await setup()
+    await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+    await db.update(products).set({ retiredAt: new Date() }).where(eq(products.id, nginx.id))
+    await db.update(products).set({ retiredAt: null }).where(eq(products.id, nginx.id))
+
+    const result = await listCart(makeSession(pm))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data[0].stillOffered).toBe(true)
   })
 
   it('returns an empty cart rather than an error', async () => {

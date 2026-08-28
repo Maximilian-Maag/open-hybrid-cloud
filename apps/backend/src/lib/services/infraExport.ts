@@ -5,7 +5,8 @@ import {
   loadSnapshotSensitiveNames,
   union,
 } from '@/lib/services/parameterRedaction'
-import { ok, type Result } from '@/lib/services/result'
+import { ok, err, type Result } from '@/lib/services/result'
+import { EXPORT_MAX_ROWS } from '@/lib/services/page'
 import { listInfrastructure, type InfraFilters } from '@/lib/services/infrastructure'
 import { getCostCentersForInfra } from '@/lib/services/infraCostCenters'
 
@@ -41,10 +42,30 @@ export const buildInfraExportRows = async (
   filters: InfraFilters,
   options: { includeParameters?: boolean } = {},
 ): Promise<Result<InfraExportRow[]>> => {
-  const listed = await listInfrastructure(session, filters)
+  // The export asks for one window as wide as an export is allowed to be. It is
+  // not the list's ceiling — a CSV legitimately wants more than a screenful —
+  // but it is a ceiling, which is what stands between a large download and the
+  // container running out of memory building it (#158).
+  const listed = await listInfrastructure(
+    session,
+    { ...filters, limit: EXPORT_MAX_ROWS, offset: 0 },
+    'en',
+    EXPORT_MAX_ROWS,
+  )
   if (!listed.ok) return listed
 
-  const elements = listed.data
+  // Refused rather than truncated, the way the audit export already does it: a
+  // file that quietly stops at ten thousand rows looks like a complete
+  // inventory, and an operator reconciling chargeback against it would find
+  // nothing wrong with it.
+  if (listed.data.total > EXPORT_MAX_ROWS) {
+    return err(
+      413,
+      `This export matches ${listed.data.total.toLocaleString('en-US')} elements, which is more than one export can carry. Narrow it with the project, environment or deployed-date filters and take the inventory a slice at a time.`,
+    )
+  }
+
+  const elements = listed.data.items
   const costCenters = await getCostCentersForInfra(elements.map((e) => e.orderId))
   // Two sources, unioned per row: the live catalogue, and the sensitivity recorded
   // in each order's own snapshot. The catalogue alone loses the flag as soon as a

@@ -2,6 +2,11 @@
 export type Role = 'admin' | 'project_manager' | 'root'
 export type OrderStatus = 'pending' | 'provisioning' | 'completed' | 'failed' | 'rejected'
 export type InfraStatus = 'active' | 'decommissioning' | 'decommissioned'
+/**
+ * What an element can be SHOWN as — the stored statuses plus the two that live
+ * on its order. See `InfrastructureElement.displayStatus`.
+ */
+export type InfraDisplayStatus = InfraStatus | 'provisioning' | 'failed'
 export type CostCenterMode = 'project' | 'select' | 'overhead'
 export type ParameterScope = 'global' | 'category' | 'product'
 /**
@@ -254,13 +259,29 @@ export interface UpdateCategoryRequest {
  * and pages in the database now, so the caller needs to know how many matches
  * there are beyond the page it was given (issue #91).
  */
-export interface CatalogPage {
-  items: Product[]
+/**
+ * One window onto a list the server refuses to send whole.
+ *
+ * The catalogue was paginated first (#91) and everything else was left
+ * unbounded, so a dashboard for an installation with fifty thousand orders
+ * tried to serialise all of them (#158). This is that same shape, named once,
+ * so the next list to grow teeth has a contract to adopt rather than invent.
+ *
+ * `total` counts the rows MATCHING THE FILTERS and ignores the window — it is
+ * what a "page 3 of 40" reads from, so counting the window instead would always
+ * say one.
+ */
+export interface Page<T> {
+  items: T[]
   /** Matches for the filters, ignoring the page window. */
   total: number
   limit: number
   offset: number
 }
+
+export type CatalogPage = Page<Product>
+export type OrderPage = Page<Order>
+export type InfrastructurePage = Page<InfrastructureElement>
 
 /**
  * The landing page's counters and its five most recent orders.
@@ -304,6 +325,19 @@ export interface Product {
    * decorative — which is what every one of them used to do differently.
    */
   imageAlt?: string | null
+  /**
+   * When the product was taken out of the catalogue, or null while it is live.
+   *
+   * Set and cleared deliberately since #251 — before that it was a side effect
+   * of `deleteProduct` refusing to destroy order history, one-way, and hidden
+   * from every admin screen, so a product withdrawn by pressing Delete could not
+   * be brought back. The catalogue still filters on it; the ADMIN list shows it,
+   * because that is the only place it can be reversed from.
+   *
+   * Optional on the wire: the catalogue's own payloads never carry it, since
+   * they only ever contain live products.
+   */
+  retiredAt?: string | null
 }
 
 /** One picture of a product's gallery; the bytes come from the image routes. */
@@ -1120,6 +1154,17 @@ export interface InfrastructureElement {
    * `status: 'active'` with `orderStatus: 'failed'`.
    */
   orderStatus?: OrderStatus | null
+  /**
+   * What to SHOW as this element's status, derived by the server.
+   *
+   * The stored column cannot express either end of an element's life: the row
+   * is inserted `active` when provisioning starts, so a machine still being
+   * built and one whose pipeline failed both read as running (#287, #29).
+   *
+   * Prefer this over `status` anywhere a person will read it. `status` remains
+   * the column, for the places that act on it rather than display it.
+   */
+  displayStatus?: InfraDisplayStatus
 }
 
 /**

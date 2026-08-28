@@ -13,7 +13,7 @@ import { Input } from './ui/Input'
 import { Modal } from './ui/Modal'
 import { ProductImage } from './ui/ProductImage'
 import { Select } from './ui/Select'
-import { SkeletonCard, SkeletonListItem, SkeletonRow } from './ui/Skeleton'
+import { SkeletonCard, SkeletonListItem, SkeletonRow, LoadingRegion } from './ui/Skeleton'
 import { StatusBadge } from './ui/StatusBadge'
 import { Table } from './ui/Table'
 // Not primitives, but the same argument applies: a chart is drawn markup, and the
@@ -654,11 +654,25 @@ describe('TrialBadge', () => {
 describe('Skeleton', () => {
   it('is accessible in all three shapes', async () => {
     // Pure decoration, and that is the point worth locking in: a placeholder must
-    // not announce itself as content or as an unlabelled control.
+    // not announce itself as content or as an unlabelled control. They are
+    // `aria-hidden` for that reason — a page renders four to eight of them.
     expect(await check(<SkeletonCard />)).toHaveNoViolations()
     expect(await check(<SkeletonListItem />)).toHaveNoViolations()
     expect(
       await check(<table><tbody><SkeletonRow cols={3} /></tbody></table>),
+    ).toHaveNoViolations()
+  })
+
+  // The one thing that does speak while a page loads (#155). Before it, a
+  // client-rendered page was silent: the pulse animation says "loading"
+  // exclusively to people who can see it.
+  it('announces the wait without failing anything', async () => {
+    expect(
+      await check(
+        <LoadingRegion label="Loading">
+          {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
+        </LoadingRegion>,
+      ),
     ).toHaveNoViolations()
   })
 })

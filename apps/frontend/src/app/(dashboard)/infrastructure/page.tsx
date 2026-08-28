@@ -2,10 +2,11 @@ import { auth } from '@/lib/auth'
 import { get } from '@/lib/serverApi'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import type { InfrastructureElement, InfraFacets, Role } from '@open-hybrid-cloud/types'
+import type { InfrastructureElement, InfraFacets, Role, InfrastructurePage } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { RefreshButton } from '@/components/ui/RefreshButton'
 import { Card } from '@/components/ui/Card'
+import { Pager } from '@/components/ui/Pager'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from './InfraActions'
 import { InfraFilters } from './InfraFilters'
@@ -63,13 +64,18 @@ export default async function InfrastructurePage({ searchParams }: Props) {
     const value = Array.isArray(raw) ? raw[0] : raw
     if (value) query.set(key, value)
   }
+  // Not one of FILTER_KEYS: `isFiltered` drives the "clear filters" affordance,
+  // and page two of an unfiltered list is not a filtered list.
+  const rawOffset = Array.isArray(params.offset) ? params.offset[0] : params.offset
+  if (rawOffset) query.set('offset', rawOffset)
+
   const qs = query.toString()
   // `lang` is not a filter — it is always present now, so asking whether the
   // query string is empty would report every page as filtered.
   const isFiltered = FILTER_KEYS.some((key) => query.has(key))
 
   const [listRes, facetsRes] = await Promise.allSettled([
-    get<InfrastructureElement[]>(`/api/infrastructure?${qs}`),
+    get<InfrastructurePage>(`/api/infrastructure?${qs}`),
     // Same language as the rows: the facets are the option list for the filters
     // above them, and a dropdown naming products in another language reads as a
     // list of products the user does not have.
@@ -81,7 +87,13 @@ export default async function InfrastructurePage({ searchParams }: Props) {
   // and a backend outage rejects too; showing "nothing matches" for either claims
   // the infrastructure is gone.
   const listFailed = listRes.status === 'rejected'
-  const elements = listRes.status === 'fulfilled' ? (listRes.value ?? []) : []
+  // One window, not every element ever provisioned (#158). An installation
+  // accumulates these forever — decommissioned rows stay for the history — so
+  // this is the list that grows without anybody placing an order.
+  const page = listRes.status === 'fulfilled'
+    ? (listRes.value ?? { items: [], total: 0, limit: 0, offset: 0 })
+    : { items: [], total: 0, limit: 0, offset: 0 }
+  const elements = page.items
   // Empty facets degrade to unpopulated dropdowns rather than a broken page —
   // the free-text search and date filters still work.
   const facets = facetsRes.status === 'fulfilled'
@@ -147,6 +159,18 @@ export default async function InfrastructurePage({ searchParams }: Props) {
           </div>
         </Card>
       )}
+
+      {/* Below the grouping, not inside it: the project cards group ONE page of
+          elements, so a project's rows can legitimately continue on the next
+          page and a pager per card would claim otherwise. */}
+      <Pager
+        total={page.total}
+        limit={page.limit}
+        offset={page.offset}
+        basePath="/infrastructure"
+        params={Object.fromEntries(query)}
+        lang={lang}
+      />
     </div>
   )
 }
@@ -165,10 +189,13 @@ function InfraRow({
 }) {
   const outputs = Object.entries(item.outputs ?? {})
   const outputLabel = outputs.length === 1 ? t('output', lang) : t('outputs', lang)
-  // An element whose provisioning pipeline failed is still stored as 'active' —
-  // it is created when provisioning starts. Showing only that badge claims
-  // infrastructure that was never successfully deployed, so say so explicitly.
-  const deploymentFailed = item.orderStatus === 'failed'
+  // The server derives what to show (#287): the stored column is 'active' from
+  // the moment provisioning starts, so it cannot tell a machine still being
+  // built from one that is running, nor either from one whose pipeline failed.
+  // This page used to derive half of that itself and the detail page derived
+  // the same half again, which is how the provisioning case stayed missing in
+  // both.
+  const deploymentFailed = item.displayStatus === 'failed'
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <div className="flex items-start justify-between">
@@ -186,7 +213,7 @@ function InfraRow({
                   id is what distinguishes them, and it is already in the URL. */}
               <span className="sr-only"> #{item.id}</span>
             </Link>
-            <StatusBadge status={deploymentFailed ? 'failed' : item.status} lang={lang} />
+            <StatusBadge status={item.displayStatus ?? item.status} lang={lang} />
             {deploymentFailed && (
               <span className="text-xs text-slate-500">
                 {t('deploymentFailed', lang)} · #{item.orderId}

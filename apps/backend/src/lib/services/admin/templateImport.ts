@@ -225,7 +225,27 @@ export const importableVariables = (scan: TemplateScan): ScannedVariable[] =>
  */
 export type StackOutcome =
   | { created: true; name: string; stateKeyParam: string; template: string }
+  /** A stack is here and it already runs the template that was just imported. */
   | { created: false; reason: 'already-configured'; name: string }
+  /**
+   * A stack is here and it runs something ELSE.
+   *
+   * Reported rather than rewritten. A stack's steps decide the Terraform state
+   * key each element is stood up under, and existing infrastructure was applied
+   * against the old one — silently repointing the stack would leave a running
+   * machine addressed by a name its teardown no longer derives. So the operator
+   * is told exactly what is there and what was imported, and edits the stack
+   * themselves if that is what they meant (#288).
+   */
+  | {
+      created: false
+      reason: 'points-elsewhere'
+      name: string
+      /** The templates the stack runs today, in step order. */
+      existingTemplates: string[]
+      /** The template this import scanned. */
+      importedTemplate: string
+    }
   | { created: false; reason: 'no-template-path' }
 
 export interface ImportOutcome {
@@ -305,13 +325,29 @@ const ensurePipelineStack = async (
   if (template === '') return { created: false, reason: 'no-template-path' }
 
   const [existing] = await db
-    .select({ id: pipelineStacks.id, name: pipelineStacks.name })
+    .select({ id: pipelineStacks.id, name: pipelineStacks.name, steps: pipelineStacks.steps })
     .from(pipelineStacks)
     .where(
       and(eq(pipelineStacks.productId, productId), eq(pipelineStacks.environmentId, environmentId)),
     )
     .limit(1)
-  if (existing) return { created: false, reason: 'already-configured', name: existing.name }
+  if (existing) {
+    // "Kept" used to be the only thing a second import could say, whether the
+    // stack matched the template or had nothing to do with it. So an operator
+    // correcting a path, or re-importing after the template moved, got a
+    // reassuring message and no change — and no way to tell the two apart
+    // without opening the stack editor (#288).
+    const existingTemplates = existing.steps.map((step) => step.template)
+    return existingTemplates.includes(template)
+      ? { created: false, reason: 'already-configured', name: existing.name }
+      : {
+          created: false,
+          reason: 'points-elsewhere',
+          name: existing.name,
+          existingTemplates,
+          importedTemplate: template,
+        }
+  }
 
   const stateKeyParam = detectStateKeyParam(scan)
   // The last path segment: unique per step within a stack, which is all the

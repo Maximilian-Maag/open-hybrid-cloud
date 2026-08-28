@@ -93,6 +93,18 @@ test.describe('Infrastructure filtering', () => {
     await expectNoServerError(page)
   })
 
+  /*
+   * #287. The badge existed, with its own colour, label and pulse, and nothing
+   * ever produced it — the element is stored 'active' from the moment
+   * provisioning starts, and the filter had no value for the state in between.
+   * A badge the list cannot filter for is a dead end.
+   */
+  test('Provisioning is offered as a status and reaches the URL', async ({ page }) => {
+    await page.getByLabel(/^status$/i).selectOption('provisioning')
+    await expect(page).toHaveURL(/[?&]status=provisioning/)
+    await expectNoServerError(page)
+  })
+
   test('the "all" option is selectable, so a filter can be undone in place', async ({ page }) => {
     await page.goto('/infrastructure?status=active')
     // Select's own placeholder renders disabled; the filter bar uses a real
@@ -275,6 +287,27 @@ test.describe('Infrastructure retry', () => {
     // would fire a destroy against nothing.
     const row = page.locator('div').filter({ has: failedBadge }).last()
     await expect(row.getByRole('button', { name: /decommission/i })).toHaveCount(0)
+  })
+
+  /*
+   * The same promise as the failed case above, one step earlier: an element
+   * still being built is stored 'active' too, so Decommission used to be
+   * offered for a machine that did not exist yet. Tearing down a half-applied
+   * Terraform state is not a no-op (#287).
+   */
+  test('a machine still being provisioned is not offered for teardown', async ({ page }) => {
+    await page.goto('/infrastructure?status=provisioning')
+
+    // The same shape as the test above: a row is identifiable by its Reorder
+    // link, and an empty result is a skip rather than a pass — asserting "no
+    // Decommission buttons" on an empty list proves nothing.
+    const anyRow = page.getByRole('link', { name: /^reorder\b/i }).first()
+    const nothingMatches = page.getByText(/no infrastructure matches|no infrastructure elements yet/i)
+    await expect(anyRow.or(nothingMatches).first()).toBeVisible({ timeout: 10000 })
+    if (await nothingMatches.isVisible()) { test.skip(); return }
+
+    await expect(page.getByRole('button', { name: /^decommission$/i })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /automatic decommissioning/i })).toHaveCount(0)
   })
 
   test('Retry asks for confirmation and says the parameters are reused', async ({ page }) => {

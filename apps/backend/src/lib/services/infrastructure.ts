@@ -20,6 +20,7 @@ import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/l
 import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR } from '@/lib/ci/stateKey'
 import { withoutReservedCiVariables } from '@/lib/ci/reserved'
 import { ok, err, type Result } from '@/lib/services/result'
+import { pageWindow, toPage, LIST_MAX_LIMIT, type Page } from '@/lib/services/page'
 import { trialVariables, trialExpiry } from '@/lib/services/trial'
 import {
   loadSensitiveParameterNames,
@@ -66,6 +67,22 @@ export interface InfraRow {
    * has nothing to key off.
    */
   orderStatus: string | null
+  /**
+   * The status to SHOW, which is not the column and never was.
+   *
+   * `infrastructure_elements.status` cannot express either end of an element's
+   * life. The row is inserted `active` the moment provisioning starts — before
+   * the pipeline has been triggered — so a machine still being built reads
+   * exactly like one that finished (#287), and one whose pipeline failed reads
+   * the same again (#29).
+   *
+   * Both used to be patched at the leaf: the list component and the detail page
+   * each derived `orderStatus === 'failed' ? 'failed' : element.status`,
+   * independently, and neither handled provisioning. Derived here instead, once
+   * and in SQL, so the badge, the filter and the sort cannot disagree — a
+   * fourth copy is how the next case gets missed.
+   */
+  displayStatus: InfraDisplayStatus
 }
 
 /** The `status` values an infrastructure element can actually hold. */
@@ -73,15 +90,42 @@ export const INFRA_STATUSES = ['active', 'decommissioning', 'decommissioned'] as
 export type InfraStatus = (typeof INFRA_STATUSES)[number]
 
 /**
- * What the list can be filtered by, which is NOT the same set.
+ * What a row can be shown as, which is NOT the same set.
  *
- * 'failed' is not a stored status — a failed deployment is an `active` element
- * whose ORDER failed (see orderStatus above), which is what the row already
- * displays. Without it in the filter vocabulary the list showed a Failed badge it
- * could not filter for, and 'active' silently included those rows.
+ * Two of these are states of the ORDER: 'provisioning' while the pipeline is
+ * still running or the order is still awaiting approval, and 'failed' when it
+ * did not finish. Neither is storable on the element, and both are what a
+ * person means when they ask what that machine is doing.
  */
-export const INFRA_STATUS_FILTERS = [...INFRA_STATUSES, 'failed'] as const
-export type InfraStatusFilter = (typeof INFRA_STATUS_FILTERS)[number]
+export const INFRA_DISPLAY_STATUSES = [...INFRA_STATUSES, 'provisioning', 'failed'] as const
+export type InfraDisplayStatus = (typeof INFRA_DISPLAY_STATUSES)[number]
+
+/**
+ * What the list can be filtered by: exactly what it can display.
+ *
+ * They have to be the same set. A badge the list cannot filter for is a dead
+ * end, and a filter value that shows rows badged as something else — which
+ * 'active' did, silently including everything still provisioning — is worse,
+ * because it looks like it worked.
+ */
+export const INFRA_STATUS_FILTERS = INFRA_DISPLAY_STATUSES
+export type InfraStatusFilter = InfraDisplayStatus
+
+/**
+ * The display status, as one SQL expression.
+ *
+ * Used by the SELECT, the status filter and the status sort, so all three
+ * necessarily agree. `orders.status` is nullable here — the join is LEFT, and
+ * an element whose order was purged keeps its own column rather than
+ * disappearing from the list.
+ */
+export const displayStatusSql = sql<InfraDisplayStatus>`
+  CASE
+    WHEN ${orders.status} = 'failed' THEN 'failed'
+    WHEN ${orders.status} IN ('pending', 'provisioning') THEN 'provisioning'
+    ELSE ${infrastructureElements.status}
+  END
+`
 
 export const INFRA_SORT_FIELDS = ['date', 'name', 'status'] as const
 export type InfraSortField = (typeof INFRA_SORT_FIELDS)[number]
@@ -98,6 +142,8 @@ export interface InfraFilters {
   deployedTo?: Date
   sort?: InfraSortField
   direction?: 'asc' | 'desc'
+  limit?: number
+  offset?: number
 }
 
 // Built per request rather than once at module scope, because it now depends on
@@ -112,29 +158,47 @@ export interface InfraFilters {
 // turn the filter into an oracle for confirming a secret's value.
 const elementProductName = (lang: string) => productNameFor(lang, infrastructureElements.productId)
 
+/**
+ * `Page<InfraRow>`, not `Page<InfrastructureElement>`: the service row carries
+ * the joined display names and the order's status, which the shared type does
+ * not.
+ */
+export type InfraPage = Page<InfraRow>
+
+/**
+ * A window onto the infrastructure the caller may see.
+ *
+ * Unbounded until #158, and the second-largest response in the application
+ * after the order list for the same reason: `parameters` is jsonb and every row
+ * carries three correlated name subqueries. An installation is expected to
+ * accumulate elements forever — decommissioned ones stay for the history — so
+ * this is the list that grows without anybody placing an order.
+ *
+ * The export goes through here too, with its own much larger ceiling, so the
+ * file and the list can never disagree about what the filters mean.
+ */
 export const listInfrastructure = async (
   session: SessionUser,
   filters: InfraFilters,
   lang = 'en',
-): Promise<Result<InfraRow[]>> => {
+  maxLimit: number = LIST_MAX_LIMIT,
+): Promise<Result<InfraPage>> => {
   const isAdmin = session.role === 'admin' || session.role === 'root'
   const productNameSql = elementProductName(lang)
+  const window = pageWindow(filters.limit, filters.offset, maxLimit)
 
   const conditions: ReturnType<typeof sql>[] = []
   if (!isAdmin) conditions.push(sql`${projects.ownerId} = ${session.id}`)
   if (filters.productId) conditions.push(sql`${infrastructureElements.productId} = ${filters.productId}`)
   if (filters.projectId) conditions.push(sql`${infrastructureElements.projectId} = ${filters.projectId}`)
   if (filters.environmentId) conditions.push(sql`${infrastructureElements.environmentId} = ${filters.environmentId}`)
-  if (filters.status === 'failed') {
-    // The failure lives on the order, not the element.
-    conditions.push(sql`${orders.status} = 'failed'`)
-  } else if (filters.status === 'active') {
-    // A failed deployment is stored 'active', and the row shows it as Failed — so
-    // including it here would contradict the badge the user is looking at.
-    conditions.push(sql`${infrastructureElements.status} = 'active'`)
-    conditions.push(sql`(${orders.status} IS NULL OR ${orders.status} <> 'failed')`)
-  } else if (filters.status) {
-    conditions.push(sql`${infrastructureElements.status} = ${filters.status}`)
+  // One comparison for every value, against the same expression the badge
+  // renders. It used to be three branches — a special case for 'failed', a
+  // special case for 'active' that excluded failures, and the column for the
+  // rest — which is precisely how 'active' came to include everything still
+  // provisioning: nobody added a fourth branch for a state nothing produced.
+  if (filters.status) {
+    conditions.push(sql`${displayStatusSql} = ${filters.status}`)
   }
 
   if (filters.search) {
@@ -159,13 +223,30 @@ export const listInfrastructure = async (
     ? conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`)
     : undefined
 
+  // The same three joins as the page query, because the WHERE reaches into all
+  // of them: the non-admin scope is `projects.owner_id`, the status filter reads
+  // `orders.status`, and the search matches the environment's name. A count over
+  // the bare element table would answer a different question than the list.
+  const [{ total }] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(infrastructureElements)
+    .leftJoin(
+      deploymentEnvironments,
+      eq(infrastructureElements.environmentId, deploymentEnvironments.id),
+    )
+    .leftJoin(projects, eq(infrastructureElements.projectId, projects.id))
+    .leftJoin(orders, eq(infrastructureElements.orderId, orders.id))
+    .where(where)
+
   // Whitelisted rather than interpolated — the sort field reaches this from a
   // query string.
   const direction = filters.direction === 'asc' ? sql`ASC` : sql`DESC`
   const orderBy = {
     date: sql`${infrastructureElements.deployedAt} ${direction}`,
     name: sql`${productNameSql} ${direction}`,
-    status: sql`${infrastructureElements.status} ${direction}`,
+    // The displayed status, not the column: sorting a list by a value it does
+    // not show puts Failed rows in among the Active ones for no visible reason.
+    status: sql`${displayStatusSql} ${direction}`,
   }[filters.sort ?? 'date']
 
   const rows = await db
@@ -188,6 +269,7 @@ export const listInfrastructure = async (
       environmentName: deploymentEnvironments.name,
       projectName: projects.name,
       orderStatus: orders.status,
+      displayStatus: displayStatusSql,
     })
     .from(infrastructureElements)
     .leftJoin(
@@ -201,6 +283,8 @@ export const listInfrastructure = async (
     // deploy timestamp) comes back in a stable order across requests — an
     // export is expected to match the list it was taken from.
     .orderBy(orderBy, sql`${infrastructureElements.id} DESC`)
+    .limit(window.limit)
+    .offset(window.offset)
 
   // The list is an API endpoint in its own right (GET /api/infrastructure), so it
   // cannot rely on a consumer redacting: the CSV export happens to do it, which
@@ -208,7 +292,8 @@ export const listInfrastructure = async (
   // values in cleartext (issue #131). Redacting here makes the export's own pass a
   // harmless no-op, and matches the search filter above — which already excludes
   // `parameters` precisely because these values are secret.
-  return ok(await redactParametersForOrders(rows as InfraRow[], (row) => row.orderId))
+  const items = await redactParametersForOrders(rows as InfraRow[], (row) => row.orderId)
+  return ok(toPage(items, total, window))
 }
 
 export interface InfraFacets {
@@ -411,6 +496,10 @@ export const retryProvisioning = async (
         // Unfiltered, for state-key derivation only — a legacy stack keyed on a
         // reserved name would otherwise retry against the wrong state.
         element.parameters as Record<string, string>,
+        // The keys this element was provisioned under. A retry re-applies the
+        // SAME element, so it has to address the state that already exists —
+        // not whatever the stack row would derive today (#200).
+        element.stateKeys as Record<string, string> | undefined,
       )
       const started = [...webhooks.pipelineIds, ...stacks.pipelineIds]
       perElementPipelines.set(element.id, started)
@@ -1020,6 +1109,7 @@ export const getInfrastructureElement = async (
       environmentName: deploymentEnvironments.name,
       projectName: projects.name,
       orderStatus: orders.status,
+      displayStatus: displayStatusSql,
       orderCreatedAt: orders.createdAt,
       isTrial: orders.isTrial,
       projectOwnerId: projects.ownerId,

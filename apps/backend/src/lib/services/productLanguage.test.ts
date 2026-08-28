@@ -92,7 +92,7 @@ describe('every surface that names a product honours the reader\'s language (#16
 
     const list = await listOrders(session(pm), 'de')
     expect(list.ok).toBe(true)
-    if (list.ok) expect(list.data.find((o) => o.id === order.id)?.productName).toBe(NAME_DE)
+    if (list.ok) expect(list.data.items.find((o) => o.id === order.id)?.productName).toBe(NAME_DE)
 
     const detail = await getOrderById(session(pm), order.id, 'de')
     expect(detail.ok).toBe(true)
@@ -115,7 +115,7 @@ describe('every surface that names a product honours the reader\'s language (#16
 
     const list = await listInfrastructure(session(pm), {}, 'de')
     expect(list.ok).toBe(true)
-    if (list.ok) expect(list.data[0].productName).toBe(NAME_DE)
+    if (list.ok) expect(list.data.items[0].productName).toBe(NAME_DE)
 
     // The facets are the option list for the filters above those rows; a
     // dropdown naming products in another language reads as a list of products
@@ -139,12 +139,12 @@ describe('every surface that names a product honours the reader\'s language (#16
 
     const found = await listInfrastructure(session(pm), { search: 'Virtuelle' }, 'de')
     expect(found.ok).toBe(true)
-    if (found.ok) expect(found.data).toHaveLength(1)
+    if (found.ok) expect(found.data.items).toHaveLength(1)
 
     // And the English term no longer matches a row that is not showing it.
     const notFound = await listInfrastructure(session(pm), { search: 'Virtual Machine' }, 'de')
     expect(notFound.ok).toBe(true)
-    if (notFound.ok) expect(notFound.data).toHaveLength(0)
+    if (notFound.ok) expect(notFound.data.items).toHaveLength(0)
   })
 
   it('the cost report and its export', async () => {

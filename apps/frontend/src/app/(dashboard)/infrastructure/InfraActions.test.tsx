@@ -32,6 +32,11 @@ const element = (over?: Partial<InfrastructureElement>) => ({
   environmentId: 2,
   productId: 3,
   status: 'active',
+  // The stored column and the derived one. `status` is 'active' from the moment
+  // provisioning starts, so it cannot say whether the machine exists yet —
+  // `displayStatus` is what the server derives and what this component reads
+  // (#287). Both are set here because both are what the API sends.
+  displayStatus: 'active',
   parameters: {},
   pipelineId: [],
   outputs: {},
@@ -50,35 +55,36 @@ beforeEach(() => {
 
 describe('InfraActions retry', () => {
   it('offers Retry only when the deployment failed', () => {
-    // The element is 'active' either way — it is created when provisioning
-    // starts — so the failure is only visible on the order.
-    const { unmount } = renderActions({ orderStatus: 'completed' })
+    // The element's own column is 'active' either way — it is created when
+    // provisioning starts — so the failure is only visible in what the server
+    // derived from the order.
+    const { unmount } = renderActions({ displayStatus: 'active', orderStatus: 'completed' })
     expect(screen.queryByRole('button', { name: /^retry$/i })).not.toBeInTheDocument()
     unmount()
 
-    renderActions({ orderStatus: 'failed' })
+    renderActions({ displayStatus: 'failed', orderStatus: 'failed' })
     expect(screen.getByRole('button', { name: /^retry$/i })).toBeInTheDocument()
   })
 
   it('hides Retry from a user who may not trigger pipelines', () => {
-    renderActions({ orderStatus: 'failed' }, false)
+    renderActions({ displayStatus: 'failed', orderStatus: 'failed' }, false)
     expect(screen.queryByRole('button', { name: /^retry$/i })).not.toBeInTheDocument()
   })
 
   it('replaces Decommission with Retry for a failed deployment', () => {
     // Tearing down something that was never provisioned is not the action the
     // operator wants, and would fire a destroy against nothing.
-    renderActions({ orderStatus: 'failed' })
+    renderActions({ displayStatus: 'failed', orderStatus: 'failed' })
     expect(screen.queryByRole('button', { name: /decommission/i })).not.toBeInTheDocument()
 
-    const { unmount } = renderActions({ orderStatus: 'completed' })
+    const { unmount } = renderActions({ displayStatus: 'active', orderStatus: 'completed' })
     expect(screen.getAllByRole('button', { name: /decommission/i }).length).toBeGreaterThan(0)
     unmount()
   })
 
   it('posts the retry once confirmed and refreshes', async () => {
     const user = userEvent.setup()
-    renderActions({ orderStatus: 'failed' })
+    renderActions({ displayStatus: 'failed', orderStatus: 'failed' })
 
     await user.click(screen.getByRole('button', { name: /^retry$/i }))
     expect(mockedPost).not.toHaveBeenCalled()
@@ -94,7 +100,7 @@ describe('InfraActions retry', () => {
 
   it('sends nothing when the confirmation is cancelled', async () => {
     const user = userEvent.setup()
-    renderActions({ orderStatus: 'failed' })
+    renderActions({ displayStatus: 'failed', orderStatus: 'failed' })
 
     await user.click(screen.getByRole('button', { name: /^retry$/i }))
     const dialog = await screen.findByRole('dialog', { name: /retry deployment/i })
@@ -110,7 +116,7 @@ describe('InfraActions retry', () => {
     mockedPost.mockRejectedValue(
       new Error('Retry started 1 pipeline(s), but 1 could not be started: pipeline stack "b" (#2): boom'),
     )
-    renderActions({ orderStatus: 'failed' })
+    renderActions({ displayStatus: 'failed', orderStatus: 'failed' })
 
     await user.click(screen.getByRole('button', { name: /^retry$/i }))
     const dialog = await screen.findByRole('dialog', { name: /retry deployment/i })
@@ -123,7 +129,7 @@ describe('InfraActions retry', () => {
 
   it('explains that the original parameters are reused', async () => {
     const user = userEvent.setup()
-    renderActions({ orderStatus: 'failed' })
+    renderActions({ displayStatus: 'failed', orderStatus: 'failed' })
 
     await user.click(screen.getByRole('button', { name: /^retry$/i }))
     const dialog = await screen.findByRole('dialog', { name: /retry deployment/i })
@@ -160,16 +166,40 @@ describe('InfraActions scheduled decommissioning', () => {
   }
 
   it('offers the schedule control only for a healthy active element', () => {
-    const { unmount } = renderActions({ status: 'decommissioned' } as Partial<InfrastructureElement>)
+    // Both, because both are what the API sends: once the order is done with,
+    // the derived status falls through to the element's own column.
+    const { unmount } = renderActions(
+      { status: 'decommissioned', displayStatus: 'decommissioned' } as Partial<InfrastructureElement>,
+    )
     expect(screen.queryByRole('button', { name: /automatic decommissioning/i })).not.toBeInTheDocument()
     unmount()
 
-    const failed = renderActions({ orderStatus: 'failed' })
+    const failed = renderActions({ displayStatus: 'failed', orderStatus: 'failed' })
     expect(screen.queryByRole('button', { name: /automatic decommissioning/i })).not.toBeInTheDocument()
     failed.unmount()
 
+    /*
+     * Still building. `status` is 'active' here too, which is exactly how
+     * Decommission came to be offered for a machine that did not exist yet —
+     * and tearing down a half-applied Terraform state is not a no-op (#287).
+     */
+    const building = renderActions({ displayStatus: 'provisioning', orderStatus: 'provisioning' })
+    expect(screen.queryByRole('button', { name: /automatic decommissioning/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^decommission$/i })).not.toBeInTheDocument()
+    building.unmount()
+
     renderActions()
     expect(screen.getByRole('button', { name: /automatic decommissioning/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^decommission$/i })).toBeInTheDocument()
+  })
+
+  /*
+   * Retry is for a run that finished and failed. Offering it while the pipeline
+   * is still going would fire a second one against the same state.
+   */
+  it('does not offer Retry while the pipeline is still running', () => {
+    renderActions({ displayStatus: 'provisioning', orderStatus: 'provisioning' })
+    expect(screen.queryByRole('button', { name: /^retry$/i })).not.toBeInTheDocument()
   })
 
   it('sends the chosen local time as ISO-8601', async () => {

@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import type { Role, Category } from '@open-hybrid-cloud/types'
+import type { Role, Category, DeploymentEnvironment } from '@open-hybrid-cloud/types'
 import { get } from '@/lib/serverApi'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
@@ -21,6 +21,14 @@ export default async function NewProductPage() {
     categories = (await get<Category[]>('/api/admin/categories')) ?? []
   } catch { /* empty */ }
 
+  // For the optional template import below the form. An empty list degrades to
+  // "import the parameters only" rather than to a broken page — the import still
+  // works, it just has no environment to build a pipeline stack for.
+  let environments: DeploymentEnvironment[] = []
+  try {
+    environments = (await get<DeploymentEnvironment[]>('/api/admin/environments')) ?? []
+  } catch { /* empty */ }
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <Breadcrumbs
@@ -39,7 +47,7 @@ export default async function NewProductPage() {
           </ButtonLink>
         }
       />
-      <NewProductForm categories={categories} />
+      <NewProductForm categories={categories} environments={environments} />
     </div>
   )
 }

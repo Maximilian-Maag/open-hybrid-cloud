@@ -231,8 +231,32 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
+      # Without this the e2e database holds a root user, default branding and
+      # nothing else: `runBootstrap()` is all the app does on start, and
+      # `make db-seed-demo` was never called here. So 56 of 283 tests skipped —
+      # order-flow, every pipeline-stack test, most of admin-products, the cart,
+      # the order comments — and a run that executed almost nothing reported
+      # green (#152). The five detail pages in the accessibility gate skipped for
+      # the same reason (#223): each walks in from a list, and an empty list has
+      # nothing to walk to.
+      #
+      # `seed-demo.ts` runs its own bootstrap, so it does not need the app up —
+      # which is why this can sit before the webServer Playwright starts. Not
+      # `make db-seed-demo`: that passes `--env-file=.env`, and CI has its
+      # configuration in the job env rather than in a file.
+      - name: Seed the demo catalogue
+        working-directory: apps/backend
+        run: ../../node_modules/.bin/tsx --tsconfig tsconfig.json src/seed-demo.ts
+
       - name: Run E2E tests
-        run: pnpm exec playwright test --grep-invert "Accessibility"
+        run: pnpm exec playwright test --grep-invert "Accessibility" --reporter=list,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-results.json
+
+      # A skip is invisible in a green summary, which is how the gap above went
+      # unnoticed for as long as it did. This makes it loud.
+      - name: Check the skip budget
+        run: node scripts/skip-budget.mjs e2e-results.json 3
 
       # Separate step so a red pipeline says which of the two broke. Covers
       # WCAG 2.1 A/AA on every page and dialog, plus the things axe cannot see:
@@ -241,7 +265,15 @@ jobs:
       # branding colour, because the chrome is painted on an operator-chosen
       # value and default-config scanning hid 235 of 246 failures.
       - name: Run accessibility gate (WCAG 2.1 AA)
-        run: pnpm exec playwright test e2e/a11y.spec.ts
+        run: pnpm exec playwright test e2e/a11y.spec.ts --reporter=list,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: a11y-results.json
+
+      # Zero, not three: every page in this spec is reachable on a seeded
+      # database, and a skipped scan is a page nobody checked reported as a page
+      # that passed (#223).
+      - name: Check the accessibility skip budget
+        run: node scripts/skip-budget.mjs a11y-results.json 0
 
       - name: Upload Playwright report
         if: failure()

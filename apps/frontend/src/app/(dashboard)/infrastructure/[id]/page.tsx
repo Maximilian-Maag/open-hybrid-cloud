@@ -44,7 +44,8 @@ export default async function InfrastructureDetailPage({ params }: Props) {
     notFound()
   }
 
-  const deploymentFailed = element.orderStatus === 'failed'
+  // Derived by the server, so this page and the list cannot disagree (#287).
+  const deploymentFailed = element.displayStatus === 'failed'
   const outputs = Object.entries(element.outputs ?? {})
   const parameters = Object.entries(element.parameters ?? {})
   const pipelines = element.pipelineId ?? []
@@ -92,7 +93,7 @@ export default async function InfrastructureDetailPage({ params }: Props) {
           <dl className="grid flex-1 grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
             <Field label={t('status', lang)}>
               <span className="flex items-center gap-2">
-                <StatusBadge status={deploymentFailed ? 'failed' : element.status} lang={lang} />
+                <StatusBadge status={element.displayStatus ?? element.status} lang={lang} />
                 {deploymentFailed && (
                   <span className="text-xs text-slate-500">{t('deploymentFailed', lang)}</span>
                 )}

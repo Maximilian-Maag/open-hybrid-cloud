@@ -94,7 +94,7 @@ export default async function OrderDetailPage({ params }: Props) {
       />
 
       <Card title={t('orderDetails', lang)}>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 text-sm">
           <div>
             <dt className="font-medium text-slate-500">{t('product', lang)}</dt>
             <dd className="text-slate-900">{snapshot?.productName ?? order.productName ?? `#${order.productId}`}</dd>

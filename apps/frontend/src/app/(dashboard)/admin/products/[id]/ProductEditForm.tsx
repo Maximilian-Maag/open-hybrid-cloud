@@ -542,7 +542,7 @@ export function ProductEditForm({ product, categories, environments, translation
         <form onSubmit={handleSaveBasic} className="space-y-4">
           {error && <Alert>{error}</Alert>}
           {success && <Alert tone="success">{t('saved', lang)}</Alert>}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Select label={t('category', lang)} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required
               options={categories.map((c) => ({ value: c.id, label: c.name }))} />
             <Select label={t('baseLanguage', lang)} value={baseLanguage} onChange={(e) => setBaseLanguage(e.target.value)}
@@ -557,7 +557,7 @@ export function ProductEditForm({ product, categories, environments, translation
           {/* What the product page shows under "Good to know" (issue #107). Both
               optional: the page omits whichever is empty rather than showing a
               blank row. */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label={t('owner', lang)}
               value={owner}
@@ -701,9 +701,13 @@ export function ProductEditForm({ product, categories, environments, translation
         ) : (
           <div className="space-y-2">
             {productParams.map((p) => (
-              <div key={p.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-0.5">
+              /* Wraps on both axes (#168): the badge row alone — name, machine
+                 name, type, plus the required and sensitive chips — forced a
+                 384px line, and the Edit/Delete cluster then measured
+                 left: 442 on a 375px viewport. */
+              <div key={p.id} className="flex flex-wrap items-center justify-between gap-y-2 rounded-lg border border-slate-100 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-0.5">
                     <p className="font-medium text-slate-900">{p.label || p.name}</p>
                     <span className="font-mono text-xs text-slate-600">{p.name}</span>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{p.type}</span>
@@ -737,7 +741,7 @@ export function ProductEditForm({ product, categories, environments, translation
         ) : (
           <div className="space-y-2">
             {webhooks.map((wh) => (
-              <div key={wh.id} className="flex items-center justify-between rounded-lg border border-slate-100 p-3">
+              <div key={wh.id} className="flex flex-wrap items-center justify-between gap-y-2 rounded-lg border border-slate-100 p-3">
                 <div>
                   <p className="font-medium text-slate-900">{wh.name}</p>
                   <p className="text-xs text-slate-500 font-mono">{wh.webhookUrl}</p>
@@ -761,7 +765,7 @@ export function ProductEditForm({ product, categories, environments, translation
             {stacks.map((s) => {
               const env = environments.find((e) => e.id === s.environmentId)
               return (
-                <div key={s.id} data-testid="stack-item" className="flex items-center justify-between rounded-lg border border-slate-100 p-3">
+                <div key={s.id} data-testid="stack-item" className="flex flex-wrap items-center justify-between gap-y-2 rounded-lg border border-slate-100 p-3">
                   <div>
                     <p className="font-medium text-slate-900">{s.name}</p>
                     {/* A bare count rather than an inflected "1 step / 2 steps":
@@ -819,7 +823,7 @@ export function ProductEditForm({ product, categories, environments, translation
       <Modal open={stackModal} onClose={() => setStackModal(false)} title={editStack ? t('editPipelineStack', lang) : t('addPipelineStack', lang)} size="lg">
         <form onSubmit={handleSaveStack} className="space-y-4">
           {psError && <Alert>{psError}</Alert>}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input label={t('name', lang)} value={psName} onChange={(e) => setPsName(e.target.value)} required />
             <Select label={t('environment', lang)} required={!editStack} value={psEnvId} onChange={(e) => setPsEnvId(e.target.value)}
               placeholder={t('selectEnvironment', lang)} options={environments.map((e) => ({ value: e.id, label: e.name }))}
@@ -850,7 +854,7 @@ export function ProductEditForm({ product, categories, environments, translation
                 {/* The placeholders here are template paths, state suffixes and an
                     index — values the pipeline consumes verbatim, so they are the
                     same in every language. The hints beside them are prose. */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <Input label={t('template', lang)} placeholder="linode/virtual-machine" value={step.template}
                     onChange={(e) => updateStep(i, 'template', e.target.value)} required
                     hint={t('templateHint', lang)} />
@@ -936,7 +940,7 @@ export function ProductEditForm({ product, categories, environments, translation
       <Modal open={paramModal} onClose={() => setParamModal(false)} title={editParam ? t('editParameter', lang) : t('addParameter', lang)} size="md">
         <form onSubmit={handleSaveParam} className="space-y-4">
           {paramError && <Alert>{paramError}</Alert>}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* The same keys the global parameters admin uses for the same two
                 fields — one wording for one concept. */}
             <Input label={t('variableName', lang)} value={paramForm.name} onChange={(e) => setParamForm((f) => ({ ...f, name: e.target.value }))} required

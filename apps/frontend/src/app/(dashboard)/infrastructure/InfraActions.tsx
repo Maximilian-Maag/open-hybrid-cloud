@@ -107,7 +107,12 @@ export function InfraActions({ item, lang = 'en', canRetry = false }: Props) {
     `/catalog/${item.productId}?fromInfra=${item.id}&projectId=${item.projectId}`
 
   return (
-    <div className="flex items-center gap-2">
+    /*
+      Wraps. Up to four buttons on one row measured left: 209, right: 531 on a
+      375px viewport — 156px off-screen on EVERY card, which put Decommission
+      out of reach with no way to pan to it (#168).
+    */
+    <div className="flex flex-wrap items-center gap-2">
       {/* An <a> painted like a button, not an <a> wrapping one — see ButtonLink
           for why no gate catches that wrap. The classes were copied out of Button
           by hand here until ButtonLink existed. */}

@@ -155,7 +155,7 @@ export function UsersManager() {
         ) : (
           <div className="space-y-2">
             {users.map((user) => (
-              <div key={user.id} className={`flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3 ${user.id === flashId ? 'animate-flash-row' : ''}`}>
+              <div key={user.id} className={`flex flex-wrap items-center justify-between gap-y-2 rounded-lg border border-slate-100 px-4 py-3 ${user.id === flashId ? 'animate-flash-row' : ''}`}>
                 <div className="flex items-center gap-3">
                   <span className={`inline-block h-2 w-2 rounded-full ${user.active ? 'bg-green-500' : 'bg-slate-300'}`} />
                   <div>
@@ -168,7 +168,9 @@ export function UsersManager() {
                     <p className="text-xs text-slate-500">{user.email}</p>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                {/* Wraps: three buttons on one row measured 489px on a 320px
+                    viewport, 169px past the edge with no way to scroll to it (#168). */}
+                <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="ghost" onClick={() => toggleActive(user)}>
                     {user.active ? t('deactivate', lang) : t('activate', lang)}
                   </Button>

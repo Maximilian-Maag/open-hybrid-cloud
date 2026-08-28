@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { Product } from '@open-hybrid-cloud/types'
-import { del } from '@/lib/api'
+import { del, put } from '@/lib/api'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { Modal } from '@/components/ui/Modal'
@@ -12,6 +12,7 @@ import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
 interface Props {
+  /** Carries `retiredAt`, which is what the toggle below reads and writes. */
   product: Product
 }
 
@@ -21,7 +22,36 @@ export function ProductRowActions({ product }: Props) {
   const { toast } = useToast()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [toggling, setToggling] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const retired = product.retiredAt !== null
+
+  /*
+   * Disable and re-enable, the control #251 asked for.
+   *
+   * `retiredAt` already meant "not in the catalogue"; it was a side effect of
+   * Delete refusing to destroy order history, it was one-way, and the admin
+   * screens hid what it marked. So a root administrator who pressed Delete on a
+   * product that had ever been ordered got it withdrawn, removed from every
+   * list, and no way back short of a database update.
+   */
+  async function toggleRetired() {
+    setToggling(true)
+    setError(null)
+    try {
+      await put(`/api/admin/products/${product.id}/retired`, { retired: !retired })
+      toast(
+        `${t('product', lang)} “${product.name}” ${retired ? t('enabledToast', lang) : t('disabledToast', lang)}.`,
+        'info',
+      )
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('genericFailed', lang))
+    } finally {
+      setToggling(false)
+    }
+  }
 
   async function handleDelete() {
     setDeleting(true)
@@ -46,7 +76,16 @@ export function ProductRowActions({ product }: Props) {
       <ButtonLink href={`/admin/products/${product.id}`} size="sm" variant="secondary">
         {t('edit', lang)}<span className="sr-only"> {product.name}</span>
       </ButtonLink>
-      <Button size="sm" variant="danger" onClick={() => setConfirmOpen(true)}>{t('delete', lang)}</Button>
+      {/* The name is in the button for the same reason it is in Edit: a screen
+          reader's list of controls is otherwise "Disable, Disable, Disable". */}
+      <Button size="sm" variant="secondary" onClick={() => void toggleRetired()} disabled={toggling}>
+        {retired ? t('enable', lang) : t('disable', lang)}
+        <span className="sr-only"> {product.name}</span>
+      </Button>
+      <Button size="sm" variant="danger" onClick={() => setConfirmOpen(true)}>
+        {t('delete', lang)}<span className="sr-only"> {product.name}</span>
+      </Button>
+      {error && <Alert className="w-full">{error}</Alert>}
 
       <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title={t('deleteProductPrompt', lang)} size="sm">
         <p className="text-sm text-slate-700 mb-3">

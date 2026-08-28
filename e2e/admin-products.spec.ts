@@ -19,7 +19,9 @@ test.describe('Admin - Product Delete Button', () => {
     if (await noProducts.isVisible()) { test.skip(); return }
 
     // At least one row exposes a Delete button next to the Edit link
-    await expect(page.getByRole('button', { name: /^delete$/i }).first()).toBeVisible()
+    // Anchored on a word boundary, not on the end: the row's Delete carries the
+    // product name in an sr-only span, exactly as the Edit link above does.
+    await expect(page.getByRole('button', { name: /^delete\b/i }).first()).toBeVisible()
   })
 
   test('clicking Delete opens confirmation modal warning about cascade decommission', async ({ page }) => {
@@ -28,7 +30,7 @@ test.describe('Admin - Product Delete Button', () => {
     await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
-    await page.getByRole('button', { name: /^delete$/i }).first().click()
+    await page.getByRole('button', { name: /^delete\b/i }).first().click()
 
     const dialog = page.locator('dialog[open]')
     await expect(dialog).toBeVisible()
@@ -44,16 +46,16 @@ test.describe('Admin - Product Delete Button', () => {
     await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
-    const productCountBefore = await page.getByRole('button', { name: /^delete$/i }).count()
+    const productCountBefore = await page.getByRole('button', { name: /^delete\b/i }).count()
 
-    await page.getByRole('button', { name: /^delete$/i }).first().click()
+    await page.getByRole('button', { name: /^delete\b/i }).first().click()
     const dialog = page.locator('dialog[open]')
     await expect(dialog).toBeVisible()
     await dialog.getByRole('button', { name: /cancel/i }).click()
     await expect(dialog).not.toBeVisible()
 
     // Row count unchanged
-    await expect(page.getByRole('button', { name: /^delete$/i })).toHaveCount(productCountBefore)
+    await expect(page.getByRole('button', { name: /^delete\b/i })).toHaveCount(productCountBefore)
   })
 
   // Happy path: create a throw-away product, delete via UI, verify it's gone.
@@ -88,7 +90,11 @@ test.describe('Admin - Product Delete Button', () => {
 
     // Confirm-delete the product
     const productRow = page.locator('tr').filter({ has: page.getByRole('link', { name: productName, exact: true }) })
-    await productRow.getByRole('button', { name: /^delete$/i }).click()
+    // `\b`, not `$`: every row action carries the product name in an sr-only
+    // span, because a screen reader's list of controls is otherwise "Delete,
+    // Delete, Delete" with nothing to tell the rows apart. The Edit link above
+    // is matched the same way for the same reason.
+    await productRow.getByRole('button', { name: /^delete\b/i }).click()
 
     dialog = page.locator('dialog[open]')
     await expect(dialog.getByRole('heading', { name: /delete product/i })).toBeVisible()

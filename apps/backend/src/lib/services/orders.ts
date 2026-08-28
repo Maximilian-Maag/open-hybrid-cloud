@@ -525,11 +525,20 @@ export const prepareOrder = async (
 
   // The product must be resolvable (needed for parameter scope) …
   const [product] = await db
-    .select({ categoryId: products.categoryId })
+    .select({ categoryId: products.categoryId, retiredAt: products.retiredAt })
     .from(products)
     .where(eq(products.id, productId))
     .limit(1)
   if (!product) return err(404, 'Product not found')
+
+  // Retirement is the check now, not the absence of an offering (#251). Disabling
+  // a product used to work by DELETING its product_environments rows, which made
+  // it unorderable and also destroyed its pricing — so it could never be undone.
+  // The offerings survive a withdrawal today, which means this is the only thing
+  // standing between a disabled product and an order for it.
+  if (product.retiredAt !== null) {
+    return err(400, 'This product is no longer available to order')
+  }
 
   // … and must actually be offered in the chosen environment. The offering row
   // also carries the cost-centre rules, which are validated below.

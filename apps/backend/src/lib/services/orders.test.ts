@@ -15,7 +15,7 @@ import { listOrders, getOrderById, createOrder, markOrderFailed, STUCK_ORDER_SIL
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements, parameters, productEnvironments, auditLog } from '@/lib/db/schema'
+import { orders, infrastructureElements, parameters, productEnvironments, products, auditLog } from '@/lib/db/schema'
 import { STATE_KEY_NAMESPACE_VAR, stateKeyNamespaceFor } from '@/lib/ci/stateKey'
 import { eq, desc } from 'drizzle-orm'
 import {
@@ -677,6 +677,38 @@ describe('createOrder — validation & ownership', () => {
       expect(a.parameters).toEqual({ instance_type: 'm6i.2xlarge' })
       expect(b.parameters).toEqual({ instance_type: 'g6-dedicated-16' })
     })
+  })
+
+  /*
+   * A withdrawn product keeps its offerings so it can be put back unchanged
+   * (#251) — which means the offering existing no longer implies it can be
+   * ordered. `retiredAt` is the check now, and it is the only thing standing
+   * between a disabled product and an order for it.
+   */
+  it('refuses an order for a product that has been withdrawn', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.update(products).set({ retiredAt: new Date() }).where(eq(products.id, product.id))
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id, productId: product.id, environmentId: env.id, parameters: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(400)
+    expect(result.message).toMatch(/no longer available to order/i)
+  })
+
+  it('takes it again once it is put back', async () => {
+    const { admin, product, env, project } = await buildBase()
+    await db.update(products).set({ retiredAt: new Date() }).where(eq(products.id, product.id))
+    await db.update(products).set({ retiredAt: null }).where(eq(products.id, product.id))
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id, productId: product.id, environmentId: env.id, parameters: {},
+    })
+
+    expect(result.ok).toBe(true)
   })
 
   /*

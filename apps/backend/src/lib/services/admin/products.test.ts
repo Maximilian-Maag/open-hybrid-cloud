@@ -19,6 +19,7 @@ import {
   getProductAdmin,
   updateProduct,
   deleteProduct,
+  setProductRetired,
   addProductImage,
   updateProductImageAlt,
   listProductImages,
@@ -426,7 +427,7 @@ describe('deleteProduct preserves order history (issue #142)', () => {
     await linkProductEnvironment(product.id, env.id, { price: '9.99' })
     const project = await createProject(pm.id)
     const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
-    return { pm, product, env, order }
+    return { pm, product, env, order, project }
   }
 
   // orders.product_id is ON DELETE CASCADE, so the delete used to take the order
@@ -452,7 +453,18 @@ describe('deleteProduct preserves order history (issue #142)', () => {
     expect(productRows[0].retiredAt).toBeInstanceOf(Date)
   })
 
-  it('withdraws every offering, so nothing can be ordered from it again', async () => {
+  /*
+   * This used to assert the opposite — that every offering was DELETED — and
+   * that was the mechanism: the flag only kept the product out of the
+   * catalogue's reads, and the missing `product_environments` row was what
+   * actually made it unorderable.
+   *
+   * It also made the withdrawal irreversible. Price, currency and cost-centre
+   * mode were gone with nothing to restore them from, so a product put back was
+   * not the product it had been — and #251 asks for a withdrawal that can be
+   * undone. `retiredAt` is the check now, in `addToCart` and `prepareOrder`.
+   */
+  it('keeps every offering, so the product can be put back at the price it had', async () => {
     const { product } = await seedOrderedProduct()
 
     const result = await deleteProduct(product.id)
@@ -462,16 +474,39 @@ describe('deleteProduct preserves order history (issue #142)', () => {
       .select()
       .from(productEnvironments)
       .where(eq(productEnvironments.productId, product.id))
-    expect(offerings.length).toBe(0)
+    expect(offerings.length).toBeGreaterThan(0)
   })
 
-  it('takes the retired product out of the catalogue and the admin list', async () => {
+  // And it is still unorderable, which is the property the deletion of the
+  // offerings used to provide.
+  it('is unorderable while withdrawn, by the flag rather than by the missing offering', async () => {
+    const { product } = await seedOrderedProduct()
+    await deleteProduct(product.id)
+
+    const [row] = await db.select().from(products).where(eq(products.id, product.id))
+    expect(row.retiredAt).toBeInstanceOf(Date)
+  })
+
+  /*
+   * The catalogue, yes. The admin list, no — and that reversal is the whole of
+   * #251.
+   *
+   * Hiding a withdrawn product from the ADMIN list is what made retirement a
+   * one-way trapdoor: it is the only screen it can be brought back from, so a
+   * product withdrawn by pressing Delete could not be reached again short of a
+   * database update.
+   */
+  it('takes the retired product out of the catalogue but leaves it on the admin list', async () => {
     const { product } = await seedOrderedProduct()
     await deleteProduct(product.id)
 
     const admin = await listProducts()
     expect(admin.ok).toBe(true)
-    if (admin.ok) expect(admin.data.map((p) => p.id)).not.toContain(product.id)
+    if (admin.ok) {
+      expect(admin.data.map((p) => p.id)).toContain(product.id)
+      // Marked, so the list does not read as though it were live.
+      expect(admin.data.find((p) => p.id === product.id)?.retiredAt).toBeInstanceOf(Date)
+    }
 
     const shop = await listCatalog('en')
     expect(shop.ok).toBe(true)
@@ -485,7 +520,12 @@ describe('deleteProduct preserves order history (issue #142)', () => {
     expect(detail.ok).toBe(false)
     if (!detail.ok) expect(detail.status).toBe(404)
 
-    expect((await getProductAdmin(product.id)).ok).toBe(false)
+    // And the admin READ succeeds too, for the same reason the list shows it:
+    // fixing a product and putting it back is one action in two steps, and a
+    // 404 in between makes the second step impossible.
+    const adminDetail = await getProductAdmin(product.id)
+    expect(adminDetail.ok).toBe(true)
+    if (adminDetail.ok) expect(adminDetail.data.retiredAt).toBeInstanceOf(Date)
   })
 
   it('returns 404 when the same product is deleted twice', async () => {
@@ -495,6 +535,40 @@ describe('deleteProduct preserves order history (issue #142)', () => {
     const again = await deleteProduct(product.id)
     expect(again.ok).toBe(false)
     if (!again.ok) expect(again.status).toBe(404)
+  })
+
+  /*
+   * From review. #251 gave `retiredAt` a second writer — `setProductRetired`,
+   * the Disable button — and `deleteProduct` fires its destroy triggers BEFORE
+   * it takes the product-row lock. A disable landing in that window used to
+   * turn the delete's locked select into a miss, so the call answered 404 after
+   * it had already claimed every infrastructure row and started tearing them
+   * down. "Nothing happened" while the installation is being decommissioned is
+   * the worst answer available.
+   *
+   * The window is real time, so this drives it rather than approximating it:
+   * the destroy trigger is mocked, and the mock disables the product while the
+   * delete is inside its trigger loop. That is exactly where a concurrent
+   * request would land.
+   */
+  it('does not answer 404 when the product is disabled mid-delete', async () => {
+    const { product, env, project, order } = await seedOrderedProduct()
+    // An active element, so the delete actually enters its destroy loop — the
+    // loop is the window this test drives.
+    await createInfraElement(order.id, project.id, env.id, product.id)
+
+    mockedWebhooks.mockImplementationOnce(async () => {
+      await setProductRetired(product.id, true)
+      return { pipelineIds: ['pipe-destroy'], failures: [] }
+    })
+
+    const result = await deleteProduct(product.id)
+
+    // Not 404. The destroy triggers fired, so an answer of "no such product"
+    // would be a lie about what the call had already done.
+    expect(result.ok).toBe(true)
+    const [row] = await db.select().from(products).where(eq(products.id, product.id))
+    expect(row.retiredAt).toBeInstanceOf(Date)
   })
 
   it('records the retirement in the audit log', async () => {

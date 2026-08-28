@@ -304,6 +304,19 @@ export interface Product {
    * decorative — which is what every one of them used to do differently.
    */
   imageAlt?: string | null
+  /**
+   * When the product was taken out of the catalogue, or null while it is live.
+   *
+   * Set and cleared deliberately since #251 — before that it was a side effect
+   * of `deleteProduct` refusing to destroy order history, one-way, and hidden
+   * from every admin screen, so a product withdrawn by pressing Delete could not
+   * be brought back. The catalogue still filters on it; the ADMIN list shows it,
+   * because that is the only place it can be reversed from.
+   *
+   * Optional on the wire: the catalogue's own payloads never carry it, since
+   * they only ever contain live products.
+   */
+  retiredAt?: string | null
 }
 
 /** One picture of a product's gallery; the bytes come from the image routes. */

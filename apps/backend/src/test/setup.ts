@@ -3,6 +3,8 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from '@/lib/db/schema'
 import { getTableName, sql } from 'drizzle-orm'
+import { migrate } from 'drizzle-orm/postgres-js/migrator'
+import { join } from 'node:path'
 import { acquireTestDatabase } from './database'
 
 // Claimed at MODULE scope, before any test file is imported: the app's db
@@ -50,6 +52,12 @@ const TABLES = [
   schema.users,
   schema.costCenters,
   schema.exchangeRates,
+  // Singleton tables. In the list because a test that rewrites the branding or
+  // the AI config must not leak it into the next one — the quietest failure
+  // there is, a suite that passes alone and fails in a full run. Their one row
+  // is put back by `beforeEach`, below, so "truncated" does not mean "absent".
+  schema.branding,
+  schema.appConfig,
 ] as const
 
 beforeAll(async () => {
@@ -72,432 +80,38 @@ beforeAll(async () => {
   await testDb.execute(sql.raw(`ALTER DATABASE "${acquired.name}" SET statement_timeout = '15s'`))
   await client.unsafe(`SET statement_timeout = '15s'`)
 
-  // Push schema to test DB (idempotent — creates tables that don't exist)
-  await testDb.execute(sql`
-    CREATE TABLE IF NOT EXISTS users (
-      id BIGSERIAL PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('admin','project_manager','root')),
-      active BOOLEAN NOT NULL DEFAULT TRUE,
-      sso_sub TEXT UNIQUE,
-      password_hash TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    -- Migration 0018: TOTP second factor for the local root account.
-    CREATE TABLE IF NOT EXISTS user_totp (
-      user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-      secret TEXT,
-      pending_secret TEXT,
-      pending_created_at TIMESTAMPTZ,
-      confirmed_at TIMESTAMPTZ,
-      last_used_step BIGINT,
-      failed_attempts INTEGER NOT NULL DEFAULT 0,
-      locked_until TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS user_recovery_codes (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      code_hash TEXT NOT NULL,
-      used_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS user_recovery_codes_user_id_code_hash_unique
-      ON user_recovery_codes (user_id, code_hash);
-    -- Migration 0030: WebAuthn/FIDO2 credentials and the ceremony challenge (#197).
-    CREATE TABLE IF NOT EXISTS webauthn_credentials (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      credential_id TEXT NOT NULL UNIQUE,
-      public_key TEXT NOT NULL,
-      counter BIGINT NOT NULL DEFAULT 0,
-      transports JSONB NOT NULL DEFAULT '[]'::jsonb,
-      label TEXT NOT NULL,
-      backed_up BOOLEAN NOT NULL DEFAULT FALSE,
-      device_type TEXT NOT NULL DEFAULT 'singleDevice',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      last_used_at TIMESTAMPTZ
-    );
-    CREATE INDEX IF NOT EXISTS webauthn_credentials_user_idx
-      ON webauthn_credentials (user_id);
-    CREATE TABLE IF NOT EXISTS webauthn_challenges (
-      user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-      challenge TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    -- Migration 0019: server-side sessions with revocation (issue #37).
-    CREATE TABLE IF NOT EXISTS sessions (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      token_hash TEXT NOT NULL,
-      ip TEXT,
-      user_agent TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      expires_at TIMESTAMPTZ NOT NULL,
-      revoked_at TIMESTAMPTZ
-    );
-    CREATE INDEX IF NOT EXISTS sessions_user_live_idx
-      ON sessions (user_id, last_seen_at DESC) WHERE revoked_at IS NULL;
-    CREATE TABLE IF NOT EXISTS categories (
-      id BIGSERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      display_order INT NOT NULL DEFAULT 0
-    );
-    -- Migration 0017: a category holding an ordered product is retired, not deleted.
-    ALTER TABLE categories ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ;
-    CREATE TABLE IF NOT EXISTS products (
-      id BIGSERIAL PRIMARY KEY,
-      category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-      base_language TEXT NOT NULL DEFAULT 'de',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS owner TEXT;
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS docs_url TEXT;
-    -- Migration 0017: a product that has been ordered is retired, not deleted.
-    ALTER TABLE products ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ;
-    -- Migration 0021 moved the single picture into product_images and dropped
-    -- these. Dropped here too rather than simply left out of the CREATE above: a
-    -- reused test database still has them, and a stale NOT NULL-free column is
-    -- exactly the second source of truth 0021 exists to remove.
-    ALTER TABLE products DROP COLUMN IF EXISTS image;
-    ALTER TABLE products DROP COLUMN IF EXISTS image_mime;
-    ALTER TABLE products DROP COLUMN IF EXISTS image_alt;
-    CREATE TABLE IF NOT EXISTS product_images (
-      id BIGSERIAL PRIMARY KEY,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      position INT NOT NULL DEFAULT 0,
-      data BYTEA NOT NULL,
-      mime TEXT NOT NULL,
-      alt TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS product_images_product_position_idx
-      ON product_images (product_id, position);
-    CREATE TABLE IF NOT EXISTS product_translations (
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      language_code TEXT NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      PRIMARY KEY (product_id, language_code)
-    );
-    ALTER TABLE product_translations
-      ADD COLUMN IF NOT EXISTS long_description TEXT NOT NULL DEFAULT '';
-    CREATE TABLE IF NOT EXISTS parameters (
-      id BIGSERIAL PRIMARY KEY,
-      scope TEXT NOT NULL CHECK (scope IN ('global','category','product')),
-      scope_id BIGINT NOT NULL DEFAULT 0,
-      environment_id BIGINT,
-      name TEXT NOT NULL,
-      label TEXT NOT NULL DEFAULT '',
-      type TEXT NOT NULL CHECK (type IN ('string','number','bool','dropdown','size')),
-      description TEXT NOT NULL DEFAULT '',
-      default_value TEXT NOT NULL DEFAULT '',
-      required BOOLEAN NOT NULL DEFAULT FALSE,
-      sensitive BOOLEAN NOT NULL DEFAULT FALSE,
-      -- Migration 0034: what each size code means for a size-typed variable.
-      size_values JSONB NOT NULL DEFAULT '{}'::jsonb
-    );
-    CREATE TABLE IF NOT EXISTS ci_sources (
-      id BIGSERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      url TEXT NOT NULL,
-      access_token TEXT NOT NULL,
-      provider TEXT NOT NULL DEFAULT 'gitlab' CHECK (provider IN ('gitlab','github','bitbucket'))
-    );
-    CREATE TABLE IF NOT EXISTS deployment_environments (
-      id BIGSERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      ci_source_id BIGINT NOT NULL REFERENCES ci_sources(id),
-      webhook_url TEXT NOT NULL,
-      webhook_token TEXT NOT NULL,
-      callback_secret TEXT NOT NULL DEFAULT ''
-    );
-    -- Older test DBs may not have callback_secret; add and backfill.
-    ALTER TABLE deployment_environments ADD COLUMN IF NOT EXISTS callback_secret TEXT NOT NULL DEFAULT '';
-    UPDATE deployment_environments SET callback_secret = webhook_token WHERE callback_secret = '';
-    -- Migration 0006: the callback secret identifies the calling environment on
-    -- an inbound callback, so it must be unique. Dropped first so re-running
-    -- setup against an existing test DB is idempotent.
-    ALTER TABLE deployment_environments
-      DROP CONSTRAINT IF EXISTS deployment_environments_callback_secret_unique;
-    ALTER TABLE deployment_environments
-      ADD CONSTRAINT deployment_environments_callback_secret_unique UNIQUE (callback_secret);
-    -- Migration 0023: the integration registry (issue #111). Placed after
-    -- deployment_environments because environment_id references it.
-    CREATE TABLE IF NOT EXISTS integrations (
-      id BIGSERIAL PRIMARY KEY,
-      kind TEXT NOT NULL CHECK (kind IN ('foreman','ansible','nexus','pulp','loki','grafana')),
-      name TEXT NOT NULL,
-      base_url TEXT NOT NULL,
-      auth_type TEXT NOT NULL DEFAULT 'bearer' CHECK (auth_type IN ('none','bearer','basic','token_header')),
-      username TEXT NOT NULL DEFAULT '',
-      credential TEXT,
-      environment_id BIGINT REFERENCES deployment_environments(id) ON DELETE CASCADE,
-      enabled BOOLEAN NOT NULL DEFAULT TRUE,
-      failure_mode TEXT NOT NULL DEFAULT 'best_effort' CHECK (failure_mode IN ('blocking','best_effort')),
-      last_contacted_at TIMESTAMPTZ,
-      last_error TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS integrations_kind_env_key
-      ON integrations (kind, environment_id) WHERE environment_id IS NOT NULL;
-    CREATE UNIQUE INDEX IF NOT EXISTS integrations_kind_global_key
-      ON integrations (kind) WHERE environment_id IS NULL;
-    CREATE INDEX IF NOT EXISTS integrations_kind_enabled_idx
-      ON integrations (kind, enabled);
-    CREATE TABLE IF NOT EXISTS product_environments (
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
-      price NUMERIC(12,2) NOT NULL DEFAULT 0,
-      currency TEXT NOT NULL DEFAULT 'EUR',
-      cost_center_mode TEXT NOT NULL DEFAULT 'project' CHECK (cost_center_mode IN ('project','select','overhead')),
-      forced_cost_center BOOLEAN NOT NULL DEFAULT FALSE,
-      PRIMARY KEY (product_id, environment_id)
-    );
-    CREATE TABLE IF NOT EXISTS product_webhooks (
-      id BIGSERIAL PRIMARY KEY,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
-      name TEXT NOT NULL,
-      webhook_url TEXT NOT NULL,
-      webhook_token TEXT NOT NULL,
-      exec_order INT NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS pipeline_stacks (
-      id BIGSERIAL PRIMARY KEY,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      state_key_param TEXT NOT NULL DEFAULT 'hostname',
-      steps JSONB NOT NULL DEFAULT '[]'
-    );
-    -- Existing test DBs may have webhook_url/webhook_token columns; align with migration 0003.
-    ALTER TABLE pipeline_stacks DROP COLUMN IF EXISTS webhook_url;
-    ALTER TABLE pipeline_stacks DROP COLUMN IF EXISTS webhook_token;
-    CREATE TABLE IF NOT EXISTS cost_centers (
-      id BIGSERIAL PRIMARY KEY,
-      code TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      active BOOLEAN NOT NULL DEFAULT TRUE
-    );
-    -- Added here rather than in the product_environments block above: the FK
-    -- target has to exist first, and cost_centers is created after it.
-    ALTER TABLE product_environments
-      ADD COLUMN IF NOT EXISTS overhead_cost_center_id BIGINT
-      REFERENCES cost_centers(id) ON DELETE SET NULL;
-    -- Migration 0011: time-boxed trials.
-    ALTER TABLE product_environments
-      ADD COLUMN IF NOT EXISTS trial_enabled BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE product_environments
-      ADD COLUMN IF NOT EXISTS trial_duration_minutes INTEGER NOT NULL DEFAULT 30;
-    -- Migration 0020: t-shirt sizes per offering (issue #98). Declared here rather
-    -- than with the other tables because the composite FK needs
-    -- product_environments to exist first.
-    CREATE TABLE IF NOT EXISTS product_environment_sizes (
-      id BIGSERIAL PRIMARY KEY,
-      product_id BIGINT NOT NULL,
-      environment_id BIGINT NOT NULL,
-      code TEXT NOT NULL,
-      label TEXT NOT NULL DEFAULT '',
-      price NUMERIC(12,2) NOT NULL DEFAULT 0,
-      currency TEXT NOT NULL DEFAULT 'EUR',
-      sort_order INT NOT NULL DEFAULT 0,
-      active BOOLEAN NOT NULL DEFAULT TRUE,
-      CONSTRAINT product_environment_sizes_offering_fk
-        FOREIGN KEY (product_id, environment_id)
-        REFERENCES product_environments(product_id, environment_id) ON DELETE CASCADE,
-      CONSTRAINT product_environment_sizes_offering_code_unique
-        UNIQUE (product_id, environment_id, code)
-    );
-    CREATE TABLE IF NOT EXISTS product_favorites (
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (user_id, product_id)
-    );
-    CREATE TABLE IF NOT EXISTS projects (
-      id BIGSERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      owner_id BIGINT NOT NULL REFERENCES users(id),
-      cost_center_id BIGINT REFERENCES cost_centers(id),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      retired_at TIMESTAMPTZ
-    );
-    CREATE TABLE IF NOT EXISTS orders (
-      id BIGSERIAL PRIMARY KEY,
-      project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
-      user_id BIGINT NOT NULL REFERENCES users(id),
-      status TEXT NOT NULL DEFAULT 'pending',
-      parameters JSONB NOT NULL DEFAULT '{}',
-      cost_center_id BIGINT REFERENCES cost_centers(id),
-      rejection_note TEXT,
-      pipeline_id JSONB NOT NULL DEFAULT '[]',
-      pipeline_status JSONB NOT NULL DEFAULT '{}',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    -- Older test DBs may not have pipeline_status; add it (migration 0005).
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
-    -- Migration 0011: the order carries the trial intent to approval time.
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_trial BOOLEAN NOT NULL DEFAULT FALSE;
-    -- Migration 0013: what the customer was offered when the order was placed.
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_snapshot JSONB;
-    -- Migration 0020: the order line is product × environment × size × quantity.
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS size_code TEXT;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity INT NOT NULL DEFAULT 1;
-    CREATE TABLE IF NOT EXISTS cart_items (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id) ON DELETE CASCADE,
-      parameters JSONB NOT NULL DEFAULT '{}',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    -- Migration 0020: a cart line carries its size and quantity.
-    ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS size_code TEXT;
-    ALTER TABLE cart_items ADD COLUMN IF NOT EXISTS quantity INT NOT NULL DEFAULT 1;
-    CREATE TABLE IF NOT EXISTS product_versions (
-      id BIGSERIAL PRIMARY KEY,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT REFERENCES deployment_environments(id) ON DELETE SET NULL,
-      changelog TEXT NOT NULL DEFAULT '',
-      summary TEXT NOT NULL DEFAULT '',
-      snapshot JSONB,
-      created_by BIGINT REFERENCES users(id),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS order_comments (
-      id BIGSERIAL PRIMARY KEY,
-      order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-      user_id BIGINT NOT NULL REFERENCES users(id),
-      body TEXT NOT NULL,
-      internal BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS infrastructure_elements (
-      id BIGSERIAL PRIMARY KEY,
-      order_id BIGINT NOT NULL REFERENCES orders(id),
-      project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      status TEXT NOT NULL DEFAULT 'active',
-      parameters JSONB NOT NULL DEFAULT '{}',
-      outputs JSONB NOT NULL DEFAULT '{}',
-      pipeline_id JSONB NOT NULL DEFAULT '[]',
-      pipeline_status JSONB NOT NULL DEFAULT '{}',
-      deployed_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    -- Older test DBs may not have pipeline_status; add it (migration 0007).
-    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
-    -- Migration 0010: scheduled automatic teardown.
-    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS scheduled_decommission_at TIMESTAMPTZ;
-    -- Migration 0020: the element's own size, and which of the order's N it is.
-    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS size_code TEXT;
-    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS sequence INT NOT NULL DEFAULT 1;
-    -- Migration 0028: what namespaces the element's Terraform state key. NULL is
-    -- "provisioned before issue #183", so no default here either.
-    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS state_key_namespace TEXT;
-    -- Migration 0031: why an element has no Terraform outputs (#215).
-    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS outputs_error TEXT;
-    -- The FK is not decoration. Compared table by table against the migrations,
-    -- audit_log.user_id was the ONE foreign key this file was missing (#195) --
-    -- one precise drift, not general rot. Without it Postgres issues no
-    -- SELECT 1 FROM users ... FOR KEY SHARE on an audit insert, so a logAudit
-    -- called from inside a transaction holding FOR UPDATE on that same user row
-    -- does not deadlock here and does in production. That is how
-    -- createDelegation shipped hanging on 100% of successful creations.
-    CREATE TABLE IF NOT EXISTS audit_log (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT REFERENCES users(id),
-      action TEXT NOT NULL,
-      entity_id BIGINT,
-      details TEXT NOT NULL DEFAULT '',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    -- Migration 0022: out-of-office substitute approver (issue #35).
-    CREATE TABLE IF NOT EXISTS approval_delegations (
-      id BIGSERIAL PRIMARY KEY,
-      from_user_id BIGINT NOT NULL REFERENCES users(id),
-      to_user_id BIGINT NOT NULL REFERENCES users(id),
-      starts_on DATE NOT NULL,
-      ends_on DATE NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      revoked_at TIMESTAMPTZ,
-      CONSTRAINT approval_delegations_period_check CHECK (ends_on >= starts_on),
-      CONSTRAINT approval_delegations_not_self_check CHECK (from_user_id <> to_user_id)
-    );
-    CREATE INDEX IF NOT EXISTS approval_delegations_from_idx
-      ON approval_delegations (from_user_id, starts_on, ends_on);
-    CREATE INDEX IF NOT EXISTS approval_delegations_to_idx
-      ON approval_delegations (to_user_id, starts_on, ends_on);
-    CREATE TABLE IF NOT EXISTS exchange_rates (
-      currency_code TEXT PRIMARY KEY,
-      rate NUMERIC(18,6) NOT NULL DEFAULT 1,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS branding (
-      id INT PRIMARY KEY DEFAULT 1,
-      logo_data BYTEA,
-      logo_mime TEXT,
-      primary_color TEXT NOT NULL DEFAULT '#1e40af',
-      secondary_color TEXT NOT NULL DEFAULT '#3b82f6',
-      shop_name TEXT NOT NULL DEFAULT 'Open Hybrid Cloud',
-      shop_subtitle TEXT NOT NULL DEFAULT '',
-      imprint_text TEXT NOT NULL DEFAULT ''
-    );
-    CREATE TABLE IF NOT EXISTS app_config (
-      id INT PRIMARY KEY DEFAULT 1,
-      smtp_host TEXT,
-      smtp_port INT,
-      smtp_from TEXT,
-      smtp_user TEXT,
-      smtp_pass TEXT,
-      smtp_tls BOOLEAN DEFAULT TRUE,
-      ai_provider TEXT,
-      ai_endpoint TEXT,
-      ai_api_key TEXT,
-      ai_model TEXT
-    );
-    INSERT INTO exchange_rates (currency_code, rate) VALUES ('EUR', 1.000000) ON CONFLICT DO NOTHING;
-    INSERT INTO branding (id) VALUES (1) ON CONFLICT DO NOTHING;
-    INSERT INTO app_config (id) VALUES (1) ON CONFLICT DO NOTHING;
-  `)
+  /*
+   * The schema comes from the MIGRATIONS, not from a copy of them (#147).
+   *
+   * This used to be ~400 lines of hand-written DDL — a third definition of the
+   * schema beside `lib/db/schema.ts` and `drizzle/*.sql`, and the only one of
+   * the three that had drifted. Column by column it was:
+   *
+   *   * CHECK constraints on five tables that exist in no migration, so an
+   *     out-of-range enum was REFUSED under test and stored happily in
+   *     production — a test double stricter than the thing it stands in for,
+   *     which is the wrong direction;
+   *   * `callback_secret DEFAULT ''` and `rate DEFAULT 1`, neither of them real,
+   *     so a row the suite could insert was one production would reject;
+   *   * a different `branding.primary_color` default;
+   *   * nine indexes missing, so query plans under test were not the deployed
+   *     ones.
+   *
+   * And the cost of keeping it: every new column had to be added in two places,
+   * which is how migration 0034 came to need a second edit here on the same day
+   * it was written.
+   *
+   * Running the real files removes the copy AND buys something the copy never
+   * could — the migrations are now exercised on every suite run, so one that
+   * does not apply fails here rather than in a deployment.
+   *
+   * Idempotent by construction: the migrator reads `drizzle.__drizzle_migrations`
+   * and applies only what is missing, so the cost after the first file in a
+   * worker is one SELECT. Each worker holds its own database under an advisory
+   * lock (see `acquireTestDatabase`), so no two of them migrate the same one.
+   */
+  await migrate(testDb, { migrationsFolder: join(process.cwd(), 'drizzle') })
 
-  // The CREATE TABLE above is IF NOT EXISTS, so a test database from before
-  // migration 0034 keeps the old shape: no `size_values`, and a `type` CHECK
-  // that rejects 'size'. Both are realigned here.
-  //
-  // Worth naming what this is: that CHECK exists in NO migration. The test
-  // schema is stricter than the database it stands in for, which is the wrong
-  // direction for a test double — an out-of-range enum is refused under test and
-  // stored happily in production. Issue #147, and the reason a new parameter
-  // type had to be added in two places at once.
-  await testDb.execute(sql`
-    ALTER TABLE parameters ADD COLUMN IF NOT EXISTS size_values JSONB NOT NULL DEFAULT '{}'::jsonb;
-    ALTER TABLE parameters DROP CONSTRAINT IF EXISTS parameters_type_check;
-    ALTER TABLE parameters ADD CONSTRAINT parameters_type_check
-      CHECK (type IN ('string','number','bool','dropdown','size'));
-  `)
-
-  // Realign orders.product_id FK with schema.ts (ON DELETE CASCADE). Older
-  // test databases created before this constraint change still have the
-  // non-cascading FK, so drop-and-recreate keeps local dev in sync with CI.
-  await testDb.execute(sql`
-    ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_product_id_fkey;
-    ALTER TABLE orders ADD CONSTRAINT orders_product_id_fkey
-      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE;
-  `)
 })
 
 /**
@@ -512,8 +126,29 @@ beforeAll(async () => {
  */
 const TRUNCATE_ALL = `TRUNCATE TABLE ${TABLES.map((table) => `"${getTableName(table)}"`).join(', ')} RESTART IDENTITY CASCADE`
 
+/**
+ * The two singleton rows the app assumes exist, put back after the truncate.
+ *
+ * `getBranding` and the config reader both read row 1 and have no answer for its
+ * absence, so these are part of an empty database rather than fixtures. They are
+ * in TABLES as well, so a test that rewrites the branding does not leak it into
+ * the next one.
+ *
+ * NOT `exchange_rates`, deliberately. It was seeded once in `beforeAll` and has
+ * been in TABLES all along, so the EUR row survived exactly one test — and the
+ * suite is written against that: `exchangeRates.test.ts` asserts an empty table
+ * ("empty after truncate") and exact row sets. A missing rate degrades to the
+ * original currency rather than breaking anything, so there is nothing to put
+ * back.
+ *
+ * In the same statement as the truncate, so it is still one round trip per test.
+ */
+const RESET_ALL = `${TRUNCATE_ALL};
+  INSERT INTO branding (id) VALUES (1) ON CONFLICT DO NOTHING;
+  INSERT INTO app_config (id) VALUES (1) ON CONFLICT DO NOTHING`
+
 beforeEach(async () => {
-  await testDb.execute(sql.raw(TRUNCATE_ALL))
+  await testDb.execute(sql.raw(RESET_ALL))
 })
 
 afterAll(async () => {

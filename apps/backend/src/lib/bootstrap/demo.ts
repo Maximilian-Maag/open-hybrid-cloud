@@ -1,4 +1,5 @@
 import zlib from 'node:zlib'
+import { randomBytes } from 'node:crypto'
 import { db } from '@/lib/db/client'
 import {
   categories,
@@ -31,6 +32,40 @@ import { eq } from 'drizzle-orm'
  * so it is safe to run against a database that already has real data.
  */
 const MARKER_CATEGORY = 'Demo — Compute'
+
+/**
+ * A credential nobody can guess, for data nobody should be able to use.
+ *
+ * These used to be the literals `demo-token` and `demo-callback-1`. That is a
+ * live, guessable callback secret the moment this runs anywhere real — and a
+ * pipeline callback authenticated by a secret an attacker can type is a pipeline
+ * callback an attacker can forge (#147). Generated, so the worst case of the
+ * seed running where it should not is dead demo rows rather than a way in.
+ */
+const demoSecret = (): string => randomBytes(24).toString('base64url')
+
+/**
+ * Refuse to seed a production database.
+ *
+ * The guard used to be the marker category alone, which answers "has this run
+ * before" and not "should it run at all". `NODE_ENV` answers the second, and the
+ * escape hatch is explicit rather than absent: an operator who genuinely wants
+ * demo rows in a production-mode database has to say so in a variable named
+ * after what it does.
+ */
+const refusedByEnvironment = (): boolean => {
+  if (process.env.NODE_ENV !== 'production') return false
+  if (process.env.ALLOW_DEMO_SEED_IN_PRODUCTION === '1') {
+    console.warn('[demo] NODE_ENV=production, seeding anyway because ALLOW_DEMO_SEED_IN_PRODUCTION=1.')
+    return false
+  }
+  console.error(
+    '[demo] Refusing to seed demo data with NODE_ENV=production. ' +
+      'It writes a catalogue, a CI source and two environments that are not real. ' +
+      'Set ALLOW_DEMO_SEED_IN_PRODUCTION=1 if that is genuinely what you want.',
+  )
+  return true
+}
 
 /** A small PNG, generated rather than committed as a binary blob. */
 const gradientPng = (hue: 'blue' | 'green' | 'amber'): Buffer => {
@@ -150,6 +185,8 @@ const CATALOGUE: DemoProduct[] = [
 ]
 
 export const seedDemoData = async (): Promise<{ created: boolean }> => {
+  if (refusedByEnvironment()) return { created: false }
+
   // One transaction around the marker lookup AND every write. Without it a
   // failure halfway through left the marker category behind, so the next run
   // found it, reported "already present" and skipped a dataset that had never
@@ -175,7 +212,7 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
     const [category] = await tx.insert(categories).values({ name: MARKER_CATEGORY }).returning()
     const [ci] = await tx
       .insert(ciSources)
-      .values({ name: 'Demo GitLab', url: 'https://gitlab.example.invalid', accessToken: 'demo-token', provider: 'gitlab' })
+      .values({ name: 'Demo GitLab', url: 'https://gitlab.example.invalid', accessToken: demoSecret(), provider: 'gitlab' })
       .returning()
 
     const [frankfurt] = await tx
@@ -186,7 +223,7 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
         ciSourceId: ci.id,
         webhookUrl: 'https://gitlab.example.invalid/api/v4/projects/1/trigger/pipeline',
         webhookToken: 'demo-trigger-1',
-        callbackSecret: 'demo-callback-1',
+        callbackSecret: demoSecret(),
       })
       .returning()
 
@@ -198,7 +235,7 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
         ciSourceId: ci.id,
         webhookUrl: 'https://gitlab.example.invalid/api/v4/projects/2/trigger/pipeline',
         webhookToken: 'demo-trigger-2',
-        callbackSecret: 'demo-callback-2',
+        callbackSecret: demoSecret(),
       })
       .returning()
 

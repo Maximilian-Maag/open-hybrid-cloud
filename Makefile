@@ -30,7 +30,7 @@ help:
 	@echo "  db-push               push Drizzle schema to the database"
 	@echo "  db-studio             open Drizzle Studio"
 	@echo "  db-seed               seed the database with the initial admin user"
-	@echo "  db-seed-demo          add a small demo catalogue (products, orders, infrastructure)"
+	@echo "  db-seed-demo          add a small demo catalogue (refused when NODE_ENV=production)"
 	@echo "  handbook              compile technical handbook to PDF (not committed — see README)"
 	@echo "  handbook-clean        remove LaTeX auxiliary files"
 	@echo "  clean                 remove build artifacts"

@@ -307,7 +307,6 @@ interface TableFact {
   export: string
   name: string
   secretColumns: { property: string; column: string }[]
-  inTestDdl: boolean
   inTestTables: boolean
 }
 
@@ -316,9 +315,6 @@ function tableFacts(): TableFact[] {
   const tables: TableFact[] = []
 
   const setup = read(TEST_SETUP_FILE)
-  const ddlTables = new Set(
-    [...setup.matchAll(/CREATE TABLE(?:\s+IF NOT EXISTS)?\s+"?(\w+)"?/gi)].map((m) => m[1]),
-  )
   const truncated = new Set(
     [...setup.matchAll(/^\s*schema\.(\w+),/gm)].map((m) => m[1]),
   )
@@ -351,7 +347,6 @@ function tableFacts(): TableFact[] {
       export: node.name.text,
       name: nameArg.text,
       secretColumns,
-      inTestDdl: ddlTables.has(nameArg.text),
       inTestTables: truncated.has(node.name.text),
     })
   })

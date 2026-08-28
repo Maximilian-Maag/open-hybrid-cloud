@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
 import { toResponse, requestLang } from '@/lib/http'
 import { listOrders, createOrder } from '@/lib/services/orders'
+import { parseOrderFilters } from '@/lib/services/orderFilters'
 import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
 const CreateOrderSchema = z.object({
@@ -27,7 +28,10 @@ export async function GET(req: NextRequest) {
   const session = await requireAuth(req)
   if (!isAuth(session)) return session
 
-  return toResponse(await listOrders(session, requestLang(req)))
+  const filters = parseOrderFilters(new URL(req.url).searchParams)
+  if (!filters.ok) return NextResponse.json({ error: filters.message }, { status: filters.status })
+
+  return toResponse(await listOrders(session, requestLang(req), filters.data))
 }
 
 export async function POST(req: NextRequest) {

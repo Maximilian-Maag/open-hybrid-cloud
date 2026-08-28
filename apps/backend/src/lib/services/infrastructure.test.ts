@@ -22,6 +22,7 @@ import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/l
 import { db } from '@/lib/db/client'
 import { infrastructureElements, orders, auditLog } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { LIST_MAX_LIMIT } from '@/lib/services/page'
 import {
   createUser,
   createCategory,
@@ -69,7 +70,7 @@ describe('listInfrastructure', () => {
 
     const result = await listInfrastructure(makeSession(admin), {})
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.data.length).toBe(2)
+    if (result.ok) expect(result.data.items.length).toBe(2)
   })
 
   it('PM only sees infra from their own projects', async () => {
@@ -82,8 +83,8 @@ describe('listInfrastructure', () => {
     const result = await listInfrastructure(makeSession(pm), {})
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(1)
-      expect(result.data[0].projectId).toBe(project.id)
+      expect(result.data.items.length).toBe(1)
+      expect(result.data.items[0].projectId).toBe(project.id)
     }
   })
 
@@ -97,8 +98,8 @@ describe('listInfrastructure', () => {
     const result = await listInfrastructure(makeSession(admin), { productId: product.id })
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(1)
-      expect(result.data[0].productId).toBe(product.id)
+      expect(result.data.items.length).toBe(1)
+      expect(result.data.items[0].productId).toBe(product.id)
     }
   })
 
@@ -112,8 +113,8 @@ describe('listInfrastructure', () => {
     const result = await listInfrastructure(makeSession(admin), { projectId: otherProject.id })
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(1)
-      expect(result.data[0].projectId).toBe(otherProject.id)
+      expect(result.data.items.length).toBe(1)
+      expect(result.data.items[0].projectId).toBe(otherProject.id)
     }
   })
 })
@@ -154,7 +155,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.frankfurt, ctx.webshop)
 
     const result = await listInfrastructure(makeSession(ctx.admin), { search: 'nginx' })
-    expect(result.ok && names(result.data)).toEqual(['Nginx Gateway'])
+    expect(result.ok && names(result.data.items)).toEqual(['Nginx Gateway'])
   })
 
   it("filters for failed deployments, which are stored 'active'", async () => {
@@ -170,11 +171,11 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await createInfraElement(badOrder.id, ctx.billing.id, ctx.frankfurt.id, ctx.postgres.id)
 
     const failed = await listInfrastructure(makeSession(ctx.admin), { status: 'failed' })
-    expect(failed.ok && names(failed.data)).toEqual(['Managed Postgres'])
+    expect(failed.ok && names(failed.data.items)).toEqual(['Managed Postgres'])
 
     // And 'active' means what the badge beside it says.
     const active = await listInfrastructure(makeSession(ctx.admin), { status: 'active' })
-    expect(active.ok && names(active.data)).toEqual(['Nginx Gateway'])
+    expect(active.ok && names(active.data.items)).toEqual(['Nginx Gateway'])
   })
 
   it('matches the search term against the environment and project name too', async () => {
@@ -183,10 +184,10 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.frankfurt, ctx.billing)
 
     const byEnv = await listInfrastructure(makeSession(ctx.admin), { search: 'vienna' })
-    expect(byEnv.ok && names(byEnv.data)).toEqual(['Nginx Gateway'])
+    expect(byEnv.ok && names(byEnv.data.items)).toEqual(['Nginx Gateway'])
 
     const byProject = await listInfrastructure(makeSession(ctx.admin), { search: 'billing' })
-    expect(byProject.ok && names(byProject.data)).toEqual(['Managed Postgres'])
+    expect(byProject.ok && names(byProject.data.items)).toEqual(['Managed Postgres'])
   })
 
   it('searches case-insensitively', async () => {
@@ -194,7 +195,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.nginx, ctx.frankfurt, ctx.webshop)
 
     const result = await listInfrastructure(makeSession(ctx.admin), { search: 'NGINX gateway' })
-    expect(result.ok && result.data.length).toBe(1)
+    expect(result.ok && result.data.items.length).toBe(1)
   })
 
   it('treats LIKE metacharacters in the search term literally', async () => {
@@ -206,7 +207,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
 
     for (const search of ['%', '_', 'Nginx%Gateway']) {
       const result = await listInfrastructure(makeSession(ctx.admin), { search })
-      expect(result.ok && result.data.length, search).toBe(0)
+      expect(result.ok && result.data.items.length, search).toBe(0)
     }
   })
 
@@ -220,8 +221,8 @@ describe('listInfrastructure — search, filtering and sorting', () => {
 
     // 'webshop' matches both projects by name, but scope wins over the filter.
     const result = await listInfrastructure(makeSession(ctx.pm), { search: 'webshop' })
-    expect(result.ok && result.data.length).toBe(1)
-    if (result.ok) expect(result.data[0].projectId).toBe(ctx.webshop.id)
+    expect(result.ok && result.data.items.length).toBe(1)
+    if (result.ok) expect(result.data.items[0].projectId).toBe(ctx.webshop.id)
   })
 
   it('filters by status', async () => {
@@ -230,10 +231,10 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.frankfurt, ctx.webshop, { status: 'decommissioned' })
 
     const active = await listInfrastructure(makeSession(ctx.admin), { status: 'active' })
-    expect(active.ok && names(active.data)).toEqual(['Nginx Gateway'])
+    expect(active.ok && names(active.data.items)).toEqual(['Nginx Gateway'])
 
     const gone = await listInfrastructure(makeSession(ctx.admin), { status: 'decommissioned' })
-    expect(gone.ok && names(gone.data)).toEqual(['Managed Postgres'])
+    expect(gone.ok && names(gone.data.items)).toEqual(['Managed Postgres'])
   })
 
   it('filters by environment', async () => {
@@ -242,7 +243,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.vienna, ctx.webshop)
 
     const result = await listInfrastructure(makeSession(ctx.admin), { environmentId: ctx.vienna.id })
-    expect(result.ok && names(result.data)).toEqual(['Managed Postgres'])
+    expect(result.ok && names(result.data.items)).toEqual(['Managed Postgres'])
   })
 
   it('filters by deployed-at range, inclusive of both bounds', async () => {
@@ -254,14 +255,14 @@ describe('listInfrastructure — search, filtering and sorting', () => {
       deployedFrom: new Date('2026-04-01T00:00:00.000Z'),
       deployedTo: new Date('2026-06-01T00:00:00.000Z'),
     })
-    expect(inRange.ok && names(inRange.data)).toEqual(['Managed Postgres'])
+    expect(inRange.ok && names(inRange.data.items)).toEqual(['Managed Postgres'])
 
     // The lower bound matches the row's exact timestamp — it must be included.
     const onBoundary = await listInfrastructure(makeSession(ctx.admin), {
       deployedFrom: new Date('2026-03-01T00:00:00.000Z'),
       deployedTo: new Date('2026-03-01T00:00:00.000Z'),
     })
-    expect(onBoundary.ok && names(onBoundary.data)).toEqual(['Nginx Gateway'])
+    expect(onBoundary.ok && names(onBoundary.data.items)).toEqual(['Nginx Gateway'])
   })
 
   it('combines filters conjunctively', async () => {
@@ -275,7 +276,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
       environmentId: ctx.frankfurt.id,
       status: 'active',
     })
-    expect(result.ok && result.data.length).toBe(1)
+    expect(result.ok && result.data.items.length).toBe(1)
   })
 
   it('defaults to newest-deployed first', async () => {
@@ -284,7 +285,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.frankfurt, ctx.webshop, { deployedAt: new Date('2026-06-01T00:00:00.000Z') })
 
     const result = await listInfrastructure(makeSession(ctx.admin), {})
-    expect(result.ok && result.data.map((r) => r.productName)).toEqual(['Managed Postgres', 'Nginx Gateway'])
+    expect(result.ok && result.data.items.map((r) => r.productName)).toEqual(['Managed Postgres', 'Nginx Gateway'])
   })
 
   it('sorts by name and by status in both directions', async () => {
@@ -293,13 +294,13 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.frankfurt, ctx.webshop, { status: 'active' })
 
     const byName = await listInfrastructure(makeSession(ctx.admin), { sort: 'name', direction: 'asc' })
-    expect(byName.ok && byName.data.map((r) => r.productName)).toEqual(['Managed Postgres', 'Nginx Gateway'])
+    expect(byName.ok && byName.data.items.map((r) => r.productName)).toEqual(['Managed Postgres', 'Nginx Gateway'])
 
     const byNameDesc = await listInfrastructure(makeSession(ctx.admin), { sort: 'name', direction: 'desc' })
-    expect(byNameDesc.ok && byNameDesc.data.map((r) => r.productName)).toEqual(['Nginx Gateway', 'Managed Postgres'])
+    expect(byNameDesc.ok && byNameDesc.data.items.map((r) => r.productName)).toEqual(['Nginx Gateway', 'Managed Postgres'])
 
     const byStatus = await listInfrastructure(makeSession(ctx.admin), { sort: 'status', direction: 'asc' })
-    expect(byStatus.ok && byStatus.data.map((r) => r.status)).toEqual(['active', 'decommissioned'])
+    expect(byStatus.ok && byStatus.data.items.map((r) => r.status)).toEqual(['active', 'decommissioned'])
   })
 
   it('orders rows sharing a sort key deterministically', async () => {
@@ -313,8 +314,8 @@ describe('listInfrastructure — search, filtering and sorting', () => {
 
     const first = await listInfrastructure(makeSession(ctx.admin), {})
     const second = await listInfrastructure(makeSession(ctx.admin), {})
-    expect(first.ok && second.ok && first.data.map((r) => r.id)).toEqual(
-      second.ok ? second.data.map((r) => r.id) : [],
+    expect(first.ok && second.ok && first.data.items.map((r) => r.id)).toEqual(
+      second.ok ? second.data.items.map((r) => r.id) : [],
     )
   })
 
@@ -328,7 +329,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     const result = await listInfrastructure(makeSession(ctx.admin), {})
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    const row = result.data.find((r) => r.id === el.id)
+    const row = result.data.items.find((r) => r.id === el.id)
     expect(row?.status).toBe('active')
     expect(row?.orderStatus).toBe('failed')
   })
@@ -339,7 +340,90 @@ describe('listInfrastructure — search, filtering and sorting', () => {
 
     const result = await listInfrastructure(makeSession(ctx.admin), { search: 'no-such-thing' })
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.data).toEqual([])
+    // An empty page, not a bare empty array (#158). The window is still
+    // reported, so a client laying out its pager has nothing to special-case.
+    if (result.ok) expect(result.data.items).toEqual([])
+  })
+})
+
+/*
+ * #158. The second-largest response in the application after the order list,
+ * and the one that grows without anybody placing an order: decommissioned
+ * elements stay for the history, so an installation accumulates these forever.
+ */
+describe('listInfrastructure — paging (#158)', () => {
+  const seedMany = async (count: number) => {
+    const base = await setup()
+    for (let i = 0; i < count; i++) {
+      const order = await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id)
+      await createInfraElement(order.id, base.project.id, base.env.id, base.product.id)
+    }
+    return base
+  }
+
+  it('returns one window and the count behind it', async () => {
+    const { admin } = await seedMany(5)
+
+    const result = await listInfrastructure(makeSession(admin), { limit: 2 })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data.items).toHaveLength(2)
+    expect(result.data.total).toBe(5)
+    expect(result.data.limit).toBe(2)
+  })
+
+  it('walks every element across pages without repeating one', async () => {
+    const { admin } = await seedMany(5)
+
+    const seen: number[] = []
+    for (let offset = 0; offset < 5; offset += 2) {
+      const page = await listInfrastructure(makeSession(admin), { limit: 2, offset })
+      if (page.ok) seen.push(...page.data.items.map((e) => e.id))
+    }
+
+    expect(new Set(seen).size).toBe(5)
+  })
+
+  it('caps a limit that would put the unbounded read back', async () => {
+    const { admin } = await seedMany(2)
+
+    const result = await listInfrastructure(makeSession(admin), { limit: 1_000_000 })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.limit).toBe(LIST_MAX_LIMIT)
+  })
+
+  /*
+   * The count runs the same three joins as the page, because the WHERE reaches
+   * into all of them — the non-admin scope is `projects.owner_id`, the status
+   * filter reads `orders.status`, the search matches the environment name. A
+   * count over the bare element table would answer a different question than
+   * the list beneath it.
+   */
+  it('counts under the filters, not over the whole table', async () => {
+    const { admin, pm, product, product2, env, project } = await setup()
+    const o1 = await seedOrder(project.id, product.id, env.id, pm.id)
+    const o2 = await seedOrder(project.id, product2.id, env.id, pm.id)
+    await createInfraElement(o1.id, project.id, env.id, product.id)
+    await createInfraElement(o2.id, project.id, env.id, product2.id)
+
+    const result = await listInfrastructure(makeSession(admin), { productId: product.id, limit: 1 })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.total).toBe(1)
+  })
+
+  it('counts only what the caller may see', async () => {
+    const { pm, otherPm, product, env, project, otherProject } = await setup()
+    const mine = await seedOrder(project.id, product.id, env.id, pm.id)
+    const theirs = await seedOrder(otherProject.id, product.id, env.id, otherPm.id)
+    await createInfraElement(mine.id, project.id, env.id, product.id)
+    await createInfraElement(theirs.id, otherProject.id, env.id, product.id)
+
+    const result = await listInfrastructure(makeSession(pm), { limit: 1 })
+    expect(result.ok).toBe(true)
+    // Not 2 — a total over the whole table would tell a project manager how
+    // much infrastructure exists in projects they cannot see.
+    if (result.ok) expect(result.data.total).toBe(1)
   })
 })
 

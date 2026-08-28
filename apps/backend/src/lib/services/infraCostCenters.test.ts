@@ -109,4 +109,25 @@ describe('getCostCentersForInfra', () => {
 
     expect(map.size).toBe(1)
   })
+
+  /*
+   * #158. postgres.js binds one parameter per element of an `IN (...)`, and the
+   * wire protocol allows 65,535 in a statement — so a single list past that
+   * does not run slowly, it fails outright, and the export it belongs to fails
+   * with it.
+   *
+   * 70,000 ids, which is over that line and under it once chunked. Almost none
+   * of them exist, and that is fine: what is being exercised is the statement
+   * being sent at all. Before the chunking this call raised rather than
+   * returning a small map.
+   */
+  it('survives more ids than one statement may bind', async () => {
+    const cc = await createCostCenter({ code: 'E-1', name: 'Epsilon' })
+    const order = await orderIn({ orderCc: cc.id })
+
+    const padding = Array.from({ length: 70_000 }, (_, i) => order.id + i + 1)
+    const map = await getCostCentersForInfra([order.id, ...padding])
+
+    expect(map.get(order.id)).toBe('E-1 — Epsilon')
+  }, 60_000)
 })

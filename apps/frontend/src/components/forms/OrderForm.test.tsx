@@ -200,7 +200,11 @@ describe('OrderForm parameter resolution', () => {
 
   const mockReorderApi = (elements: unknown[] = [infraElement]) => {
     mockedGet.mockImplementation((async (path: string) => {
-      if (path.startsWith('/api/infrastructure')) return elements
+      // A page, not a bare array: /api/infrastructure stopped returning every
+      // element ever provisioned (#158). This picker reads one window of it.
+      if (path.startsWith('/api/infrastructure')) {
+        return { items: elements, total: elements.length, limit: 50, offset: 0 }
+      }
       if (path.startsWith('/api/catalog/')) {
         return { ...product, parameters: [param({ id: 2, name: 'REGION', environmentId: 2, scope: 'product', scopeId: 7, label: 'Region (env two)' })] }
       }

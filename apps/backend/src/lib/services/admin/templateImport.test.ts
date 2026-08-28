@@ -6,7 +6,24 @@ vi.mock('@/lib/ci', () => ({
 }))
 
 import { listFiles, getFileContent, type CiSourceInfo } from '@/lib/ci'
-import { scanTemplate, resolveRepoPath, MAX_MODULE_DEPTH } from './templateImport'
+import {
+  scanTemplate,
+  resolveRepoPath,
+  importScannedParameters,
+  MAX_MODULE_DEPTH,
+  type TemplateScan,
+  type ScannedVariable,
+} from './templateImport'
+import { db } from '@/lib/db/client'
+import { pipelineStacks } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
+import {
+  createUser,
+  createCategory,
+  createProduct,
+  createCiSource,
+  createEnvironment,
+} from '@/test/helpers'
 
 /**
  * Reading a template's inputs out of a repository (reported: "I cannot import
@@ -317,5 +334,163 @@ describe('scanTemplate', () => {
 
     expect(listMock).toHaveBeenCalledWith(source, '42', 'release/2026-08', 'templates/vm')
     expect(contentMock).toHaveBeenCalledWith(source, '42', 'release/2026-08', 'templates/vm/variables.tf')
+  })
+})
+
+/*
+ * #288. Reported: variables re-imported for a Kubernetes product, and the
+ * pipeline stack does not come up.
+ *
+ * `importScannedParameters` had no tests at all — `scanTemplate` above is the
+ * part that was ever exercised — so the stack half of the import was covered
+ * only by whatever the operator noticed.
+ */
+describe('importScannedParameters — the pipeline stack half', () => {
+  const scanOf = (variables: ScannedVariable[] = []): TemplateScan => ({
+    variables,
+    skippedModules: [],
+    filesRead: ['templates/linode/kubernetes-cluster/variables.tf'],
+  })
+
+  const variable = (name: string, description = ''): ScannedVariable => ({
+    name,
+    label: name,
+    type: 'string',
+    description,
+    defaultValue: '',
+    required: false,
+    sensitive: false,
+    // Declared by the template itself rather than reached through a module call.
+    fromModule: '',
+  })
+
+  const setup = async () => {
+    const root = await createUser({ role: 'root' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'K8s Cluster')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    return { root, product, env }
+  }
+
+  const stacksFor = async (productId: number) =>
+    db.select().from(pipelineStacks).where(eq(pipelineStacks.productId, productId))
+
+  it('creates the stack the product needs to be orderable at all', async () => {
+    const { root, product, env } = await setup()
+
+    const outcome = await importScannedParameters(
+      product.id,
+      scanOf([variable('cluster_label', 'TF_STATE_NAME')]),
+      root.id,
+      { environmentId: env.id, path: 'templates/linode/kubernetes-cluster' },
+    )
+
+    expect(outcome.stack).toEqual({
+      created: true,
+      name: 'linode/kubernetes-cluster',
+      stateKeyParam: 'cluster_label',
+      template: 'linode/kubernetes-cluster',
+    })
+    expect(await stacksFor(product.id)).toHaveLength(1)
+  })
+
+  it('keeps a stack that already runs the template that was imported', async () => {
+    const { root, product, env } = await setup()
+    const args = [
+      product.id,
+      scanOf([variable('cluster_label', 'TF_STATE_NAME')]),
+      root.id,
+      { environmentId: env.id, path: 'templates/linode/kubernetes-cluster' },
+    ] as const
+
+    await importScannedParameters(...args)
+    const second = await importScannedParameters(...args)
+
+    expect(second.stack).toMatchObject({ created: false, reason: 'already-configured' })
+    // Not a second stack for the same pair.
+    expect(await stacksFor(product.id)).toHaveLength(1)
+  })
+
+  /*
+   * The reported case. A second import used to answer "kept" whether the stack
+   * matched the template or had nothing to do with it, so an operator
+   * correcting a path was reassured and nothing changed — and there was no way
+   * to tell "already right" from "not looked at" without opening the stack
+   * editor.
+   */
+  it('says so when the stack here runs something else entirely', async () => {
+    const { root, product, env } = await setup()
+    await importScannedParameters(
+      product.id,
+      scanOf([variable('hostname')]),
+      root.id,
+      { environmentId: env.id, path: 'templates/linode/virtual-machine' },
+    )
+
+    const second = await importScannedParameters(
+      product.id,
+      scanOf([variable('cluster_label')]),
+      root.id,
+      { environmentId: env.id, path: 'templates/linode/kubernetes-cluster' },
+    )
+
+    expect(second.stack).toEqual({
+      created: false,
+      reason: 'points-elsewhere',
+      name: 'linode/virtual-machine',
+      existingTemplates: ['linode/virtual-machine'],
+      importedTemplate: 'linode/kubernetes-cluster',
+    })
+  })
+
+  /*
+   * Reported, not rewritten. A stack's steps decide the Terraform state key
+   * each element is stood up under, and existing infrastructure was applied
+   * against the old one — repointing it silently would leave a running machine
+   * addressed by a name its teardown no longer derives.
+   */
+  it('changes nothing when it reports pointing elsewhere', async () => {
+    const { root, product, env } = await setup()
+    await importScannedParameters(product.id, scanOf([variable('hostname')]), root.id, {
+      environmentId: env.id,
+      path: 'templates/linode/virtual-machine',
+    })
+    const [before] = await stacksFor(product.id)
+
+    await importScannedParameters(product.id, scanOf([variable('cluster_label')]), root.id, {
+      environmentId: env.id,
+      path: 'templates/linode/kubernetes-cluster',
+    })
+
+    const [after] = await stacksFor(product.id)
+    expect(after.steps).toEqual(before.steps)
+    expect(after.stateKeyParam).toBe(before.stateKeyParam)
+  })
+
+  /*
+   * The silent case, and the likeliest one: the environment field preselects
+   * only when there is exactly one, so with two or more it starts empty and is
+   * easy to walk past. The import then reported a clean success and never
+   * attempted the stack.
+   */
+  it('leaves the stack absent — not "kept" — when no environment was chosen', async () => {
+    const { root, product } = await setup()
+
+    const outcome = await importScannedParameters(product.id, scanOf([variable('hostname')]), root.id)
+
+    expect(outcome.stack).toBeUndefined()
+    expect(await stacksFor(product.id)).toHaveLength(0)
+  })
+
+  it('reports a path that names no template', async () => {
+    const { root, product, env } = await setup()
+
+    const outcome = await importScannedParameters(product.id, scanOf(), root.id, {
+      environmentId: env.id,
+      path: 'templates/',
+    })
+
+    expect(outcome.stack).toEqual({ created: false, reason: 'no-template-path' })
   })
 })

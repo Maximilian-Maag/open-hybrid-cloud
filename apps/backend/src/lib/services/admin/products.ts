@@ -585,10 +585,34 @@ export const deleteProduct = async (id: number, actorId?: number): Promise<Resul
    * currency, cost-center mode — with nothing to restore them from.
    */
   return db.transaction(async (tx): Promise<Result<void>> => {
+    /*
+     * Locked on the id ALONE — deliberately not `AND retired_at IS NULL`, which
+     * is what the pre-check at the top of this function uses.
+     *
+     * #251 gave retirement a second writer, `setProductRetired`, and it does
+     * not hold this lock while the destroy triggers above are running. So a
+     * root who disables the product in that window used to turn this select
+     * into a miss, and the delete answered 404 — after it had already claimed
+     * every infrastructure row and started tearing them down. The caller was
+     * told nothing happened while the installation was being decommissioned.
+     *
+     * Matching on the id makes the two orderings agree instead: whoever set the
+     * flag, the decision below is the same one this call came to make. An
+     * ordered product ends up retired either way, and an unordered one is
+     * deleted, which is what a root asking to delete a product with no history
+     * asked for.
+     *
+     * This does not make retirement and deletion mutually exclusive — the
+     * triggers still fire before any lock is held, and an Enable that commits
+     * after this transaction would leave the product available with its
+     * infrastructure gone. Closing that needs a deletion-in-progress state on
+     * the row, which is a larger change than this one; what it does close is
+     * the case where destruction happens and the answer says it did not.
+     */
     const locked = await tx
       .select({ id: products.id })
       .from(products)
-      .where(and(eq(products.id, id), isNull(products.retiredAt)))
+      .where(eq(products.id, id))
       .for('update')
       .limit(1)
     if (!locked.length) return err(404, 'Not found')

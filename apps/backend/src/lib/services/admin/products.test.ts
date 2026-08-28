@@ -19,6 +19,7 @@ import {
   getProductAdmin,
   updateProduct,
   deleteProduct,
+  setProductRetired,
   addProductImage,
   updateProductImageAlt,
   listProductImages,
@@ -426,7 +427,7 @@ describe('deleteProduct preserves order history (issue #142)', () => {
     await linkProductEnvironment(product.id, env.id, { price: '9.99' })
     const project = await createProject(pm.id)
     const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
-    return { pm, product, env, order }
+    return { pm, product, env, order, project }
   }
 
   // orders.product_id is ON DELETE CASCADE, so the delete used to take the order
@@ -534,6 +535,40 @@ describe('deleteProduct preserves order history (issue #142)', () => {
     const again = await deleteProduct(product.id)
     expect(again.ok).toBe(false)
     if (!again.ok) expect(again.status).toBe(404)
+  })
+
+  /*
+   * From review. #251 gave `retiredAt` a second writer — `setProductRetired`,
+   * the Disable button — and `deleteProduct` fires its destroy triggers BEFORE
+   * it takes the product-row lock. A disable landing in that window used to
+   * turn the delete's locked select into a miss, so the call answered 404 after
+   * it had already claimed every infrastructure row and started tearing them
+   * down. "Nothing happened" while the installation is being decommissioned is
+   * the worst answer available.
+   *
+   * The window is real time, so this drives it rather than approximating it:
+   * the destroy trigger is mocked, and the mock disables the product while the
+   * delete is inside its trigger loop. That is exactly where a concurrent
+   * request would land.
+   */
+  it('does not answer 404 when the product is disabled mid-delete', async () => {
+    const { product, env, project, order } = await seedOrderedProduct()
+    // An active element, so the delete actually enters its destroy loop — the
+    // loop is the window this test drives.
+    await createInfraElement(order.id, project.id, env.id, product.id)
+
+    mockedWebhooks.mockImplementationOnce(async () => {
+      await setProductRetired(product.id, true)
+      return { pipelineIds: ['pipe-destroy'], failures: [] }
+    })
+
+    const result = await deleteProduct(product.id)
+
+    // Not 404. The destroy triggers fired, so an answer of "no such product"
+    // would be a lie about what the call had already done.
+    expect(result.ok).toBe(true)
+    const [row] = await db.select().from(products).where(eq(products.id, product.id))
+    expect(row.retiredAt).toBeInstanceOf(Date)
   })
 
   it('records the retirement in the audit log', async () => {

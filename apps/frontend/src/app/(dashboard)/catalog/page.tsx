@@ -6,7 +6,7 @@ import type { Product, Category, CatalogPage as CatalogPageData, FavoriteProduct
 import { get, put, del } from '@/lib/api'
 import { t } from '@/lib/i18n'
 import { useLang } from '@/lib/useLang'
-import { SkeletonCard } from '@/components/ui/Skeleton'
+import { SkeletonCard, LoadingRegion } from '@/components/ui/Skeleton'
 import { ProductCard } from './ProductCard'
 
 /** One screenful of cards. The endpoint caps what it will serve at 100. */
@@ -355,9 +355,11 @@ export default function CatalogPage() {
         )}
 
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
-          </div>
+          <LoadingRegion label={t('loading', lang)}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+          </LoadingRegion>
         ) : error ? (
           <div className="text-center py-20 bg-white rounded-lg border border-slate-200">
             <p className="font-semibold text-slate-700">{t('somethingWentWrong', lang)}</p>

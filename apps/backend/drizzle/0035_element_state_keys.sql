@@ -1,0 +1,13 @@
+-- The Terraform state key an element was provisioned under, per pipeline stack.
+--
+-- It used to be derived afresh at every trigger, from the stack row as it is NOW
+-- (#200). An admin editing `stateKeyParam` therefore moved the key of every
+-- element already running under it: their destroy addressed a state that was
+-- never created, reported success, and left the infrastructure up while the
+-- portal showed it torn down.
+--
+-- Empty means the element predates this column, and every path keeps deriving as
+-- before — the only way their teardown stays pointed at the state their own
+-- apply created. No backfill for the same reason 0026 did not backfill the
+-- namespace: the old keys are only knowable from the state bucket.
+ALTER TABLE "infrastructure_elements" ADD COLUMN "state_keys" jsonb DEFAULT '{}'::jsonb NOT NULL;

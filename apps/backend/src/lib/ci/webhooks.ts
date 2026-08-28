@@ -21,6 +21,14 @@ export interface TriggerOutcome {
   pipelineIds: string[]
   /** One human-readable entry per configured trigger that could not be started. */
   failures: string[]
+  /**
+   * The Terraform state key used for each pipeline stack, keyed by stack id.
+   *
+   * Returned so provisioning can RECORD it on the element instead of leaving
+   * every later trigger to derive it again from inputs that can move underneath
+   * (#200). Empty for the webhook path, which sends no TF_STATE_NAME at all.
+   */
+  stateKeys?: Record<string, string>
 }
 
 /**
@@ -54,6 +62,33 @@ const reportStarted = async (
   }
 }
 
+/**
+ * The state key a stack WOULD derive right now.
+ *
+ * Only reached for an element with no recorded key — one provisioned before
+ * `state_keys` existed, or the provisioning run that is about to record it.
+ */
+const derivedStateName = (
+  stack: { stateKeyParam: string },
+  variables: Record<string, string>,
+  unfilteredParameters: Record<string, string> | undefined,
+  suffix: string,
+): string => {
+  const base = stateKeyBase({
+    // See `unfilteredParameters`: a reserved name is absent from `variables` by
+    // design, and for a legacy element that name may be what its state key was.
+    param: variables[stack.stateKeyParam] ?? unfilteredParameters?.[stack.stateKeyParam],
+    orderId: variables['ORDER_ID'],
+    // Server-owned and per element, so a stack's stateKeyParam value can no
+    // longer name another order's state — see `stateKeyBase` for why an element
+    // without one keeps deriving its key the old way.
+    namespace: variables[STATE_KEY_NAMESPACE_VAR],
+  })
+  // Never suffix an empty base: `-2` on its own is not a state name, and an
+  // empty TF_STATE_NAME is the existing signal that nothing identified a state.
+  return base === '' ? '' : `${base}${suffix}`
+}
+
 export const triggerPipelineStacksTracked = async (
   productId: number,
   environmentId: number,
@@ -73,9 +108,24 @@ export const triggerPipelineStacksTracked = async (
    * ordinary parameter name.
    */
   unfilteredParameters?: Record<string, string>,
+  /**
+   * The keys this element was PROVISIONED under, by stack id.
+   *
+   * Passed by retry and teardown, which must address the state that already
+   * exists rather than whatever the stack row would derive today. Two rules,
+   * and the difference between them is the whole point:
+   *
+   *   * empty — the element predates the column, so every stack derives as
+   *     before. Their state exists under the old key and nothing else can find
+   *     it;
+   *   * non-empty and a stack is missing from it — that stack was added after
+   *     this element was provisioned, so nothing here was ever applied by it and
+   *     firing a destroy would address a state that never existed.
+   */
+  recordedStateKeys?: Record<string, string>,
 ): Promise<TriggerOutcome> => {
   const ciSource = await findCiSourceForEnv(environmentId)
-  if (!ciSource) return { pipelineIds: [], failures: [] }
+  if (!ciSource) return { pipelineIds: [], failures: [], stateKeys: {} }
 
   // Stack rows carry their JSON step definition; the trigger URL + token are
   // owned by the deployment environment (single source of truth — see
@@ -85,7 +135,7 @@ export const triggerPipelineStacksTracked = async (
     .from(deploymentEnvironments)
     .where(eq(deploymentEnvironments.id, environmentId))
     .limit(1)
-  if (!env) return { pipelineIds: [], failures: [] }
+  if (!env) return { pipelineIds: [], failures: [], stateKeys: {} }
 
   const stacks = await db
     .select()
@@ -94,6 +144,8 @@ export const triggerPipelineStacksTracked = async (
 
   const pipelineIds: string[] = []
   const failures: string[] = []
+  const stateKeys: Record<string, string> = {}
+  const hasRecord = recordedStateKeys !== undefined && Object.keys(recordedStateKeys).length > 0
   // Appended to whichever base the state key is derived from, so two elements of
   // one order never share a state file — including when the base comes from the
   // stack's own stateKeyParam, which is a user-supplied parameter and therefore
@@ -101,19 +153,18 @@ export const triggerPipelineStacksTracked = async (
   const suffix = elementStateSuffix(variables[ELEMENT_SEQUENCE_VAR])
   for (const stack of stacks) {
     if (!stack.steps || (stack.steps as unknown[]).length === 0) continue
-    const base = stateKeyBase({
-      // See `unfilteredParameters`: a reserved name is absent from `variables` by
-      // design, and for a legacy element that name may be what its state key was.
-      param: variables[stack.stateKeyParam] ?? unfilteredParameters?.[stack.stateKeyParam],
-      orderId: variables['ORDER_ID'],
-      // Server-owned and per element, so a stack's stateKeyParam value can no
-      // longer name another order's state — see `stateKeyBase` for why an element
-      // without one keeps deriving its key the old way.
-      namespace: variables[STATE_KEY_NAMESPACE_VAR],
-    })
-    // Never suffix an empty base: `-2` on its own is not a state name, and an
-    // empty TF_STATE_NAME is the existing signal that nothing identified a state.
-    const tfStateName = base === '' ? '' : `${base}${suffix}`
+
+    const recorded = recordedStateKeys?.[String(stack.id)]
+    // Known not to have provisioned this element: the stack was added after it.
+    // Firing a destroy would address a state that was never created, and the
+    // pipeline would report success for having done nothing.
+    if (hasRecord && recorded === undefined) continue
+
+    const tfStateName = recorded ?? derivedStateName(stack, variables, unfilteredParameters, suffix)
+    // Recorded BEFORE the trigger, not after it succeeds: a trigger whose HTTP
+    // call fails may still have started the pipeline, and a key nobody wrote
+    // down is a state with no teardown.
+    stateKeys[String(stack.id)] = tfStateName
     try {
       const pid = await triggerPipeline(ciSource, env.webhookUrl, env.webhookToken, {
         ...variables,
@@ -128,7 +179,7 @@ export const triggerPipelineStacksTracked = async (
       failures.push(`pipeline stack "${stack.name}" (#${stack.id}): ${errMessage(err)}`)
     }
   }
-  return { pipelineIds, failures }
+  return { pipelineIds, failures, stateKeys }
 }
 
 export const triggerProductWebhooksTracked = async (

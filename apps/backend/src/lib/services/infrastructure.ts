@@ -411,6 +411,10 @@ export const retryProvisioning = async (
         // Unfiltered, for state-key derivation only — a legacy stack keyed on a
         // reserved name would otherwise retry against the wrong state.
         element.parameters as Record<string, string>,
+        // The keys this element was provisioned under. A retry re-applies the
+        // SAME element, so it has to address the state that already exists —
+        // not whatever the stack row would derive today (#200).
+        element.stateKeys as Record<string, string> | undefined,
       )
       const started = [...webhooks.pipelineIds, ...stacks.pipelineIds]
       perElementPipelines.set(element.id, started)

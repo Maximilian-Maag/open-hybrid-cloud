@@ -150,14 +150,22 @@ test_the_allowlist_does_not_travel_to_another_route if {
 
 # --- rule 10 ---------------------------------------------------------------
 
-test_route_without_a_test_warns_and_never_denies if {
+# A deny since #181: the count reached zero — the two size routes it named, plus
+# five more that had appeared since — and a rule that has ever been at zero can
+# be held there.
+test_a_route_with_no_test_is_denied if {
 	route := object.union(clean_route, {"testFiles": []})
-	warned := policy.warn with input as {"routes": [route]}
 	denied := policy.deny with input as {"routes": [route]}
-	"route_has_a_test" in rules(warned)
-	count(denied) == 0
-	some v in warned
-	contains(v.why, "#181")
+	"route_has_a_test" in rules(denied)
+	some v in denied
+	contains(v.detail, "no route.test.ts imports this module")
+}
+
+# A module that exports no handler is not a route, whatever it is called.
+test_a_module_with_no_methods_is_not_a_route if {
+	route := object.union(clean_route, {"testFiles": [], "methods": []})
+	denied := policy.deny with input as {"routes": [route]}
+	count([v | some v in denied; v.rule == "route_has_a_test"]) == 0
 }
 
 test_route_covered_from_a_sibling_directory_passes if {
@@ -169,7 +177,9 @@ test_route_covered_from_a_sibling_directory_passes if {
 		"testFiles": ["apps/backend/src/app/api/sessions/route.test.ts"],
 	})
 	warned := policy.warn with input as {"routes": [route]}
+	denied := policy.deny with input as {"routes": [route]}
 	count(warned) == 0
+	count([v | some v in denied; v.rule == "route_has_a_test"]) == 0
 }
 
 # --- rule 11 ---------------------------------------------------------------

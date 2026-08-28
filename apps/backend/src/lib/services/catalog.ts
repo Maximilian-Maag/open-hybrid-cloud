@@ -149,6 +149,22 @@ export const CATALOG_DEFAULT_LIMIT = 24
 /** Ceiling on what one request may ask for, so `limit=100000` cannot be a denial of service. */
 export const CATALOG_MAX_LIMIT = 100
 
+/**
+ * How far the match count will look before it gives up and says "at least".
+ *
+ * The search predicate cannot use an index — `ILIKE '%term%'` over a COALESCE
+ * of correlated subqueries — so counting the matches costs a full evaluation
+ * per row. This bounds that: the count stops at the cap, and above it `total`
+ * is a floor with `totalIsExact: false` beside it (#236).
+ *
+ * 500 is chosen against the catalogue this portal is for — hundreds to a few
+ * thousand products — where a search matching more than 500 is a search nobody
+ * would page through, and every real one is counted exactly. A catalogue an
+ * order of magnitude larger needs a trigram or full-text index rather than a
+ * larger number here; see #236 for what each of those costs.
+ */
+export const CATALOG_COUNT_CAP = 500
+
 export interface CatalogFilters {
   /** Free text matched against the product's translated name and description. */
   search?: string
@@ -159,8 +175,21 @@ export interface CatalogFilters {
 
 export interface CatalogPage {
   items: CatalogItem[]
-  /** Rows matching the filters, ignoring the page window — what the UI counts. */
+  /**
+   * Rows matching the filters, ignoring the page window — what the UI counts.
+   *
+   * Capped at `CATALOG_COUNT_CAP`. When the cap was reached this is a floor,
+   * not a total, and `totalIsExact` is false.
+   */
   total: number
+  /**
+   * Whether `total` is the real number of matches.
+   *
+   * False only when the search matched more rows than the count was willing to
+   * walk. A UI that prints "1–24 of 500" for a result set of 4,000 is stating
+   * something untrue; this is what lets it print "500+" instead (#236).
+   */
+  totalIsExact: boolean
   limit: number
   offset: number
 }
@@ -232,17 +261,46 @@ export const listCatalog = async (
     .limit(limit)
     .offset(offset)
 
-  // Counted separately rather than with a window function: a page past the end of
-  // the result set returns no rows, and "no rows" must not be reported as
-  // "nothing matched".
+  /*
+   * Counted separately rather than with a window function: a page past the end
+   * of the result set returns no rows, and "no rows" must not be reported as
+   * "nothing matched".
+   *
+   * Counted through a CAPPED subquery, because this count is the expensive half
+   * of a searched request and it used to be unbounded (#236).
+   *
+   * `name` is a four-branch COALESCE of correlated subqueries over
+   * `product_translations` (requested language → en → de → any) and
+   * `description` is three. They are deliberately the same expressions the rows
+   * display — searching against something other than what you can see is how a
+   * result becomes inexplicable — but it means the planner evaluates all seven
+   * for every row before it can decide whether the row matches. The
+   * `ILIKE '%term%'` around them cannot use a btree at all: a leading wildcard
+   * rules it out. So a searched page paid for that twice, once for the rows and
+   * once for a COUNT(*) with no LIMIT to stop it early.
+   *
+   * `LIMIT cap + 1` inside the subquery lets Postgres stop as soon as it has
+   * enough, which turns the count from "proportional to the catalogue" into
+   * "proportional to the cap". Above the cap the number is a floor, and
+   * `totalIsExact` says so rather than letting the UI print a confident lie.
+   */
   const [counted] = await db
     .select({ total: sql<number>`COUNT(*)::int` })
-    .from(products)
-    .where(where)
+    .from(
+      db
+        .select({ one: sql`1` })
+        .from(products)
+        .where(where)
+        .limit(CATALOG_COUNT_CAP + 1)
+        .as('capped'),
+    )
+
+  const total = counted?.total ?? 0
 
   return ok({
     items: rows as CatalogItem[],
-    total: counted?.total ?? 0,
+    total: Math.min(total, CATALOG_COUNT_CAP),
+    totalIsExact: total <= CATALOG_COUNT_CAP,
     limit,
     offset,
   })

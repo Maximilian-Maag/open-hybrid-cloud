@@ -22,6 +22,10 @@ export default function CatalogPage() {
   const [products, setProducts] = useState<Product[]>([])
   // Matches for the current filters, which is more than the page in hand.
   const [total, setTotal] = useState(0)
+  // False when the search matched more rows than the server was willing to
+  // count. The number is then a floor, and printing it bare would state
+  // something untrue (#236).
+  const [totalIsExact, setTotalIsExact] = useState(true)
   const [categories, setCategories] = useState<Category[]>([])
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
@@ -109,6 +113,7 @@ export default function CatalogPage() {
       if (loadGeneration.current !== generation) return
       setProducts(page?.items ?? [])
       setTotal(page?.total ?? 0)
+      setTotalIsExact(page?.totalIsExact ?? true)
       setCategories(cats ?? [])
       // Separately and non-fatally: a favourites outage should cost the stars,
       // not the whole catalogue.
@@ -142,6 +147,7 @@ export default function CatalogPage() {
       const page = await get<CatalogPageData>(pageUrl(products.length))
       setProducts((prev) => [...prev, ...(page?.items ?? [])])
       setTotal(page?.total ?? 0)
+      setTotalIsExact(page?.totalIsExact ?? true)
     } catch {
       // Keep what is on screen; the button stays available for another go.
     } finally {
@@ -324,9 +330,12 @@ export default function CatalogPage() {
           </div>
           {total > 0 && (
             <span className="text-sm text-slate-500">
+              {/* "500+" rather than "500" once the count hit its cap: the
+                  number is a floor there, and a bare figure claims a precision
+                  the server did not spend the work to have (#236). */}
               {products.length < total
-                ? `${products.length} / ${total} ${t('products', lang)}`
-                : `${total} ${t('products', lang)}`}
+                ? `${products.length} / ${total}${totalIsExact ? '' : '+'} ${t('products', lang)}`
+                : `${total}${totalIsExact ? '' : '+'} ${t('products', lang)}`}
             </span>
           )}
         </div>

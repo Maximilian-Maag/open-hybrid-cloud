@@ -156,8 +156,53 @@ type Page = import('@playwright/test').Page
 const scan = async (page: Page) =>
   await new AxeBuilder({ page }).withTags(WCAG).disableRules(RULES_OUT_OF_SCOPE).analyze()
 
+/**
+ * Wait until the page is actually the page, not its loading placeholders.
+ *
+ * `goto` resolves on `load`, which is BEFORE hydration has fired the fetch. A
+ * client-rendered page — `/catalog`, `/admin/users`, `/admin/products` and most
+ * of the rest — is still showing `SkeletonCard`/`SkeletonListItem` at that
+ * moment, and a skeleton has no form controls, no headings and no text to fail
+ * contrast on. So the gate reported clean and meant nothing (#155).
+ *
+ * Two halves, and the second is what makes it honest:
+ *
+ *   * no placeholder is left — `data-loading` is put there by the skeletons for
+ *     exactly this purpose;
+ *   * the page rendered SOMETHING. Without that a page which failed to load at
+ *     all also has no placeholders, and would sail through as "clean" for the
+ *     same reason the skeletons did.
+ *
+ * The second check is on the body's text and not on `main`, which was the first
+ * attempt and was wrong: `/login` has no `main` landmark at all, and
+ * `/impressum` renders without one when no imprint text is configured — which
+ * is every CI database. Requiring one would have failed the gate for a layout
+ * choice rather than for an accessibility defect. (A missing `main` is
+ * `landmark-one-main`, a best-practice rule outside the WCAG A/AA tags this
+ * gate requests, so axe does not ask for one either.)
+ *
+ * The spec already knew about this race: its detail-page block documents it
+ * ("the catalogue fetches its products after hydration"). The 23 static pages
+ * never got the wait.
+ */
+const settled = async (page: Page, where: string) => {
+  await expect(page.locator('[data-loading]'), `${where} still showing loading placeholders`)
+    .toHaveCount(0, { timeout: 15_000 })
+
+  // Not a specific string — 25 pages have 25 different first paragraphs — but
+  // some rendered text. A blank page is a page that did not load, and scanning
+  // it proves nothing.
+  await expect
+    .poll(
+      async () => (await page.locator('body').innerText()).trim().length,
+      { message: `${where} rendered no text at all`, timeout: 15_000 },
+    )
+    .toBeGreaterThan(0)
+}
+
 /** Scan and judge, including the review-only rules. `where` names the page. */
 const expectAccessible = async (page: Page, where: string) => {
+  await settled(page, where)
   const { violations, incomplete } = await scan(page)
   expect(violations, `${where}\n${format(violations)}`).toEqual([])
 
@@ -281,16 +326,73 @@ test.describe('Accessibility — branding colours cannot break the chrome', () =
   // has to stay AA-clean.
   const HOSTILE = '#ca8a04' // amber-600 — the value that produced 246 failures
 
+  /*
+   * What the colour was before this file touched it.
+   *
+   * Captured once and restored in `afterAll` as well as in the test's own
+   * `finally`, because the two fail in different ways. A `finally` covers an
+   * assertion that throws; it does NOT cover a test that times out, a run
+   * stopped by `--max-failures`, or a worker that is torn down — and the amber
+   * left behind by any of those persists in the database. That amber primary is
+   * known to fail axe on `/`, so with `retries: 1` the retry then scans a
+   * poisoned database and fails for the wrong reason, on a page this test never
+   * touched (#155).
+   *
+   * Belt and braces on purpose: neither hook survives a SIGKILL, and a shared
+   * mutable colour is what this test is. The pair closes every failure mode
+   * short of that.
+   */
+  let originalColour: string | null = null
+
+  const HEX_FIELD = /primary color — hex value/i
+
+  const writeColour = async (page: Page, value: string) => {
+    await page.goto('/admin/branding')
+    await page.getByRole('textbox', { name: HEX_FIELD }).fill(value)
+    await page.getByRole('button', { name: /save branding/i }).click()
+  }
+
+  test.afterAll(async ({ browser }) => {
+    if (originalColour === null) return
+
+    /*
+     * Its own context: the test's page is gone by now, and a torn-down one is
+     * exactly the case this hook exists for.
+     *
+     * `browser.newContext()` inherits NOTHING from the project — not the
+     * baseURL, so `/admin/branding` is not a URL it can navigate to, and not the
+     * storageState, so it would arrive signed out and be bounced to /login.
+     * A restore hook that cannot restore is worse than none: it reads as though
+     * the colour was put back.
+     *
+     * Taken from `test.info().project.use` rather than repeated as literals,
+     * because a second copy of the baseURL is a second thing to keep in step.
+     */
+    const { baseURL, storageState } = test.info().project.use
+    const context = await browser.newContext({ baseURL, storageState })
+    const page = await context.newPage()
+    try {
+      await writeColour(page, originalColour)
+      await page.reload()
+      await expect(page.getByRole('textbox', { name: HEX_FIELD })).toHaveValue(originalColour)
+    } finally {
+      await context.close()
+    }
+  })
+
   test('a mid-tone primary colour keeps the dashboard AA-clean', async ({ page }) => {
     // This test mutates shared server state, so it reads the current value from
-    // the FORM (not an API call that might fail) and restores it in an
-    // afterEach-style finally. Serial mode keeps a parallel worker from seeing
-    // the hostile colour mid-flight.
+    // the FORM (not an API call that might fail) and restores it both in the
+    // finally below and in the afterAll above. Serial mode keeps a parallel
+    // worker from seeing the hostile colour mid-flight.
     test.slow()
     await page.goto('/admin/branding')
-    const hex = page.getByRole('textbox', { name: /primary color — hex value/i })
+    const hex = page.getByRole('textbox', { name: HEX_FIELD })
     const original = await hex.inputValue()
     expect(original, 'could not read the current branding colour to restore later').toMatch(/^#[0-9a-fA-F]{3,6}$/)
+    // Recorded BEFORE the write, so the hook can undo it even if everything
+    // below this line is skipped.
+    originalColour = original
 
     const save = () => page.getByRole('button', { name: /save branding/i }).click()
 
@@ -300,17 +402,21 @@ test.describe('Accessibility — branding colours cannot break the chrome', () =
 
       for (const path of ['/', '/catalog', '/admin']) {
         await page.goto(path)
+        // The same wait every other scan takes: with the hostile colour applied,
+        // a skeleton has nothing coloured to fail on, so scanning one would
+        // report clean and prove nothing.
+        await settled(page, `${path} with primary ${HOSTILE}`)
         const { violations } = await scan(page)
         const contrast = violations.filter((v) => v.id === 'color-contrast')
         expect(contrast, `${path} with primary ${HOSTILE}:\n${format(contrast)}`).toEqual([])
       }
     } finally {
-      await page.goto('/admin/branding')
-      await page.getByRole('textbox', { name: /primary color — hex value/i }).fill(original)
-      await save()
+      await writeColour(page, original)
       // Prove the restore landed rather than assuming it did.
       await page.reload()
-      await expect(page.getByRole('textbox', { name: /primary color — hex value/i })).toHaveValue(original)
+      await expect(page.getByRole('textbox', { name: HEX_FIELD })).toHaveValue(original)
+      // The afterAll hook has nothing left to undo.
+      originalColour = null
     }
   })
 

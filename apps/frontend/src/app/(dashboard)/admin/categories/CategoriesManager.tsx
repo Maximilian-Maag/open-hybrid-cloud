@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
-import { SkeletonListItem } from '@/components/ui/Skeleton'
+import { SkeletonListItem, LoadingRegion } from '@/components/ui/Skeleton'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
@@ -137,9 +137,11 @@ export function CategoriesManager() {
           <Alert className="mb-4">{error}</Alert>
         )}
         {loading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
-          </div>
+          <LoadingRegion label={t('loading', lang)}>
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
+            </div>
+          </LoadingRegion>
         ) : categories.length === 0 ? (
           <p className="text-center py-6 text-slate-600">{t('noCategoriesYet', lang)}</p>
         ) : (

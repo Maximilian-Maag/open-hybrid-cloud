@@ -10,7 +10,7 @@ import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
-import { SkeletonListItem } from '@/components/ui/Skeleton'
+import { SkeletonListItem, LoadingRegion } from '@/components/ui/Skeleton'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 import { ActiveSessions } from '@/components/forms/ActiveSessions'
@@ -145,9 +145,11 @@ export function UsersManager() {
           <Alert className="mb-3">{deleteError}</Alert>
         )}
         {loading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
-          </div>
+          <LoadingRegion label={t('loading', lang)}>
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => <SkeletonListItem key={i} />)}
+            </div>
+          </LoadingRegion>
         ) : users.length === 0 ? (
           <p className="text-center py-6 text-slate-600">{t('noUsersYet', lang)}</p>
         ) : (

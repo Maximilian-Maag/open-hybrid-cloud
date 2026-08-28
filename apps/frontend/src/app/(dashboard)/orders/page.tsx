@@ -2,24 +2,38 @@ import { auth } from '@/lib/auth'
 import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import type { Order } from '@open-hybrid-cloud/types'
+import type { Order, OrderPage } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { TrialBadge } from '@/components/ui/TrialBadge'
 import { Table } from '@/components/ui/Table'
+import { Pager } from '@/components/ui/Pager'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 
-export default async function OrdersPage() {
+interface Props {
+  searchParams: Promise<{ offset?: string }>
+}
+
+export default async function OrdersPage({ searchParams }: Props) {
   const session = await auth()
   if (!session) redirect('/login')
 
   const lang = await getLang()
+  const { offset } = await searchParams
 
   // Let a genuine fetch failure throw to the (dashboard) error boundary so an
   // outage is not mistaken for an empty list. A successful empty response
   // still renders the empty state below.
-  const orders = (await get<Order[]>(`/api/orders?lang=${lang}`)) ?? []
+  //
+  // One page, not the whole history: this endpoint used to return every order
+  // the viewer could see, each carrying two jsonb columns (#158). The offset is
+  // passed through as the browser sent it — the backend clamps it, and a page
+  // that second-guessed it here would only disagree with the count it renders.
+  const page = (await get<OrderPage>(
+    `/api/orders?lang=${lang}${offset ? `&offset=${encodeURIComponent(offset)}` : ''}`,
+  )) ?? { items: [], total: 0, limit: 0, offset: 0 }
+  const orders = page.items
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -65,6 +79,14 @@ export default async function OrdersPage() {
         ]}
         data={orders}
         emptyMessage={t('noOrders', lang)}
+      />
+
+      <Pager
+        total={page.total}
+        limit={page.limit}
+        offset={page.offset}
+        basePath="/orders"
+        lang={lang}
       />
     </div>
   )

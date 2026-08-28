@@ -96,7 +96,7 @@
 |----|-------------|--------------|
 | FA-08.1 | Deployed infrastructure elements are displayed grouped by project and deployment environment. | Shipped |
 | FA-08.2 | Admins and Root users can see all projects. Project Managers only see their own. | Shipped |
-| FA-08.3 | Each infrastructure element shows: product, environment, order parameters, status, price, cost center. | Shipped, and the detail page shows more than listed: OpenTofu outputs, pipeline ids/status, redacted-parameter notes, and a scheduled-decommission time. See `docs/guides/admin.md` §5. |
+| FA-08.3 | Each infrastructure element shows: product, environment, order parameters, status, price, cost center. | Shipped, and the detail page shows more than listed: OpenTofu outputs, pipeline ids/status, redacted-parameter notes, and a scheduled-decommission time. See `docs/guides/admin.md` §5. **"Status" is not the stored column**: `infrastructure_elements.status` holds only `active`/`decommissioning`/`decommissioned` and the row is inserted `active` when provisioning *starts*, so the displayed status is derived by the server from the element and its order together — `provisioning` while the order is pending or running, `failed` when it did not finish (#287, #29). |
 
 ---
 
@@ -233,6 +233,7 @@
 | NFA-02.2 | Sessions are stored in encrypted HttpOnly cookies — no server-side session store required. | Shipped |
 | NFA-02.3 | No polling service is used. CI providers push status updates via webhook callbacks — stateless and safe with multiple container replicas. | Shipped |
 | NFA-02.4 | Horizontal scaling (multiple replicas) must work without any configuration changes. | Shipped in the sense the app doesn't require per-replica config, though see NFA-02.1 for the one place replica count actually changes observed behavior |
+| NFA-02.5 | A list endpoint's response size must not grow with the size of the installation. | Shipped for the catalogue (#91), the audit log, the dashboard (#158) and, since #158, the order and infrastructure lists — `GET /api/orders` and `GET /api/infrastructure` take `limit`/`offset` and answer `{ items, total, limit, offset }`, with a server-side ceiling a client cannot raise. The remaining list services named in #158 (approvals, projects, cart, favourites, comments, product versions, admin products, cost rows) still return whole tables. |
 
 ---
 

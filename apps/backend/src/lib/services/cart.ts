@@ -101,6 +101,7 @@ export const listCart = async (session: SessionUser, lang = 'en'): Promise<Resul
         cartItems.environmentId,
         cartItems.sizeCode,
       ),
+      productRetiredAt: products.retiredAt,
     })
     .from(cartItems)
     // The image description is read by a subquery correlated on `products.id`, so
@@ -122,12 +123,18 @@ export const listCart = async (session: SessionUser, lang = 'en'): Promise<Resul
     .orderBy(cartItems.createdAt, cartItems.id)
 
   return ok(
-    rows.map(({ sizeStillOffered, ...row }) => ({
+    rows.map(({ sizeStillOffered, productRetiredAt, ...row }) => ({
       ...row,
-      // Two ways a line can have become unorderable, and both have to say so here
-      // rather than at checkout: the offering was withdrawn (no price resolves at
-      // all) or the size it names was retired.
-      stillOffered: row.price !== null && sizeStillOffered,
+      // THREE ways a line can have become unorderable, and all of them have to say
+      // so here rather than at checkout: the offering was withdrawn (no price
+      // resolves at all), the size it names was retired, or the product itself was
+      // taken out of the catalogue (#251).
+      //
+      // The third is new because a withdrawn product now KEEPS its offerings, so
+      // it can be put back at the price it had. That is what makes disabling
+      // reversible, and it is also why the price still resolving no longer means
+      // the line can be ordered.
+      stillOffered: row.price !== null && sizeStillOffered && productRetiredAt === null,
     })),
   )
 }
@@ -151,8 +158,9 @@ export const addToCart = async (
   },
 ): Promise<Result<CartRow>> => {
   const [offering] = await db
-    .select({ productId: productEnvironments.productId })
+    .select({ productId: productEnvironments.productId, retiredAt: products.retiredAt })
     .from(productEnvironments)
+    .innerJoin(products, eq(products.id, productEnvironments.productId))
     .where(
       and(
         eq(productEnvironments.productId, input.productId),
@@ -162,6 +170,12 @@ export const addToCart = async (
     .limit(1)
 
   if (!offering) return err(400, 'Product is not offered in the selected environment')
+
+  // A withdrawn product keeps its offerings so it can be put back unchanged
+  // (#251), so the offering existing no longer means it can be ordered.
+  if (offering.retiredAt !== null) {
+    return err(400, 'This product is no longer available to order')
+  }
 
   // The size and quantity ARE validated on the way in, unlike the parameters: they
   // are not something the user fills in later at checkout, they are what the line

@@ -68,8 +68,11 @@ describe('GET /api/orders', () => {
     const adminAuth = await makeAuthHeader(admin)
     const res = await GET(makeReq('http://localhost/api/orders', undefined, adminAuth))
     expect(res.status).toBe(200)
+    // A page, not a bare array (#158). The endpoint used to serialise every
+    // order the caller could see, each carrying two jsonb columns.
     const body = await res.json()
-    expect(body.length).toBeGreaterThanOrEqual(1)
+    expect(body.items.length).toBeGreaterThanOrEqual(1)
+    expect(body.total).toBeGreaterThanOrEqual(1)
   })
 
   it('project_manager only sees own orders', async () => {
@@ -104,8 +107,83 @@ describe('GET /api/orders', () => {
     const res = await GET(makeReq('http://localhost/api/orders', undefined, auth1))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.length).toBe(1)
-    expect(body[0].userId).toBe(pm1.id)
+    expect(body.items.length).toBe(1)
+    expect(body.items[0].userId).toBe(pm1.id)
+    // The count is scoped too, or it would tell a project manager how many
+    // orders exist in projects they cannot see.
+    expect(body.total).toBe(1)
+  })
+
+  /*
+   * The route reads the query string now. `/projects/7` has always fetched
+   * `/api/orders?projectId=7` and nothing has ever read it, so that page's
+   * "Orders in this project" card listed every order the viewer could see
+   * (#158).
+   */
+  it('honours the projectId the project page has always been sending', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id)
+    const mine = await createProject(pm.id)
+    const other = await createProject(pm.id)
+
+    const auth = await makeAuthHeader(pm)
+    for (const projectId of [mine.id, other.id]) {
+      await POST(
+        makeReq(
+          'http://localhost/api/orders',
+          { projectId, productId: product.id, environmentId: env.id, parameters: {} },
+          auth,
+        ),
+      )
+    }
+
+    const res = await GET(makeReq(`http://localhost/api/orders?projectId=${mine.id}`, undefined, auth))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.items).toHaveLength(1)
+    expect(body.items[0].projectId).toBe(mine.id)
+  })
+
+  it('refuses a malformed filter rather than quietly ignoring it', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const auth = await makeAuthHeader(pm)
+
+    const res = await GET(makeReq('http://localhost/api/orders?projectId=abc', undefined, auth))
+
+    // 400, not "here is everything": a dropped filter is indistinguishable from
+    // one that matched the whole table.
+    expect(res.status).toBe(400)
+  })
+
+  it('takes a page window off the query string', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id)
+    const proj = await createProject(pm.id)
+
+    const auth = await makeAuthHeader(pm)
+    for (let i = 0; i < 3; i++) {
+      await POST(
+        makeReq(
+          'http://localhost/api/orders',
+          { projectId: proj.id, productId: product.id, environmentId: env.id, parameters: {} },
+          auth,
+        ),
+      )
+    }
+
+    const res = await GET(makeReq('http://localhost/api/orders?limit=2', undefined, auth))
+    const body = await res.json()
+    expect(body.items).toHaveLength(2)
+    expect(body.total).toBe(3)
+    expect(body.limit).toBe(2)
   })
 })
 

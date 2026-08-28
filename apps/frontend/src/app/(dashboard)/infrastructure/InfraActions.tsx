@@ -33,9 +33,22 @@ export function InfraActions({ item, lang = 'en', canRetry = false }: Props) {
   // ISO string, which would silently shift the value by the UTC offset.
   const [scheduledAt, setScheduledAt] = useState(() => toLocalInput(item.scheduledDecommissionAt))
 
-  // The element is 'active' whether or not provisioning succeeded — it is created
-  // when provisioning starts — so the failure lives on the order.
-  const deploymentFailed = item.orderStatus === 'failed'
+  // The element is 'active' whether or not provisioning has finished — it is
+  // created when provisioning STARTS — so both ends of that live on the order.
+  // Derived by the server now, once, for the badge and these actions alike
+  // (#287).
+  const status = item.displayStatus ?? item.status
+  const deploymentFailed = status === 'failed'
+  /*
+   * Running, and finished running.
+   *
+   * This used to be `item.status === 'active' && !deploymentFailed`, which is
+   * true of an element whose pipeline is still building it — so Decommission
+   * and Auto-decommission were offered for a machine that did not exist yet.
+   * Tearing down a half-applied Terraform state is not a no-op; it is the
+   * worst moment to do it.
+   */
+  const deployed = status === 'active'
 
   async function handleRetry() {
     setRetrying(true)
@@ -114,12 +127,12 @@ export function InfraActions({ item, lang = 'en', canRetry = false }: Props) {
           {t('retry', lang)}
         </Button>
       )}
-      {item.status === 'active' && !deploymentFailed && (
+      {deployed && (
         <Button variant="secondary" size="sm" onClick={() => { setScheduleError(null); setScheduleOpen(true) }}>
           {t('autoDecommission', lang)}
         </Button>
       )}
-      {item.status === 'active' && !deploymentFailed && (
+      {deployed && (
         <Button variant="danger" size="sm" onClick={() => setOpen(true)}>
           {t('decommission', lang)}
         </Button>

@@ -42,9 +42,23 @@ export default async function AdminProductsPage() {
           {
             header: t('name', lang),
             render: (row) => (
-              <Link href={`/admin/products/${row.id}`} className="font-medium text-blue-600 hover:underline">
-                {row.name}
-              </Link>
+              <span className="flex items-center gap-2">
+                <Link href={`/admin/products/${row.id}`} className="font-medium text-blue-600 hover:underline">
+                  {row.name}
+                </Link>
+                {/* Withdrawn products are LISTED here, marked — this is the only
+                    screen they can be brought back from, and hiding them is what
+                    made retirement a one-way trapdoor (#251). The catalogue still
+                    filters them out, which is the filter that was always meant.
+
+                    A badge and not a colour: the state has to survive being read
+                    aloud, and greying the row would say it to nobody else. */}
+                {row.retiredAt && (
+                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">
+                    {t('disabledBadge', lang)}
+                  </span>
+                )}
+              </span>
             ),
           },
           {

@@ -218,6 +218,10 @@ describe('deleteProject', () => {
       // state key. A legacy stack keyed on a reserved name has no other way to
       // find the value its own apply used.
       expect.anything(),
+      // Sixth: the keys this element was PROVISIONED under (#200). The destroy
+      // has to address the state that exists, not one re-derived from a stack
+      // row that may have moved since.
+      expect.anything(),
     )
     // The elements are NOT gone. An infrastructure element always has an order
     // (`order_id` is NOT NULL), so a project holding infrastructure is always a

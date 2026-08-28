@@ -211,14 +211,14 @@ describe('TF_STATE_NAME per element (issue #104)', () => {
     const product = await createProduct(cat.id)
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
-    await db.insert(pipelineStacks).values({
+    const [stack] = await db.insert(pipelineStacks).values({
       productId: product.id,
       environmentId: env.id,
       name: 'stack',
       stateKeyParam,
       steps: [{ template: 'vm', suffix: 'vm' }] as never,
-    })
-    return { product, env }
+    }).returning()
+    return { product, env, stack }
   }
 
   const stateNameOf = () =>
@@ -293,6 +293,84 @@ describe('TF_STATE_NAME per element (issue #104)', () => {
 
     expect(stateNameOf()).not.toBe(first)
     expect(stateNameOf()).toBe('web-01-43')
+  })
+
+  /*
+   * #200. The key used to be derived afresh at every trigger, from the stack row
+   * AS IT IS NOW. An admin editing `stateKeyParam` therefore moved the key of
+   * every element already running under it: the destroy addressed a state that
+   * was never created, reported success, and left the infrastructure up while
+   * the portal showed it torn down.
+   */
+  describe('a recorded state key', () => {
+    it('is returned so provisioning can record what it used', async () => {
+      const { product, env, stack } = await seedStack('hostname')
+
+      const outcome = await triggerPipelineStacksTracked(product.id, env.id, {
+        hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: 'o42',
+      })
+
+      expect(outcome.stateKeys).toEqual({ [String(stack.id)]: 'web-01-o42' })
+    })
+
+    // The point of recording it: the stack now says something different, and the
+    // element still gets the state its own apply created.
+    it('wins over what the stack would derive today', async () => {
+      const { product, env, stack } = await seedStack('vm_name')
+
+      await triggerPipelineStacksTracked(
+        product.id, env.id,
+        { hostname: 'web-01', vm_name: 'renamed', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: 'o42' },
+        undefined,
+        undefined,
+        { [String(stack.id)]: 'web-01-o42' },
+      )
+
+      expect(stateNameOf()).toBe('web-01-o42')
+    })
+
+    // An element provisioned before the column. Deriving is the only way to
+    // reach the state its own apply created.
+    it('falls back to deriving when the element has none', async () => {
+      const { product, env } = await seedStack('hostname')
+
+      await triggerPipelineStacksTracked(
+        product.id, env.id,
+        { hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: 'o42' },
+        undefined,
+        undefined,
+        {},
+      )
+
+      expect(stateNameOf()).toBe('web-01-o42')
+    })
+
+    /*
+     * A stack added AFTER this element was provisioned. Nothing here was ever
+     * applied by it, so a destroy would address a state that never existed — and
+     * the pipeline would report success for having done nothing.
+     */
+    it('skips a stack it was never provisioned by', async () => {
+      const { product, env, stack } = await seedStack('hostname')
+      await db.insert(pipelineStacks).values({
+        productId: product.id,
+        environmentId: env.id,
+        name: 'added later',
+        stateKeyParam: 'hostname',
+        steps: [{ template: 'disk', suffix: 'disk' }] as never,
+      })
+
+      const outcome = await triggerPipelineStacksTracked(
+        product.id, env.id,
+        { hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: 'o42' },
+        undefined,
+        undefined,
+        { [String(stack.id)]: 'web-01-o42' },
+      )
+
+      expect(mockedTriggerPipeline).toHaveBeenCalledTimes(1)
+      expect(outcome.stateKeys).toEqual({ [String(stack.id)]: 'web-01-o42' })
+    })
   })
 
   it('strips what a state key may not contain from the typed value', async () => {

@@ -104,7 +104,25 @@ export const fireDestroyTriggers = async (
   // is not sent anywhere: the stack trigger reads it only to derive the state key
   // for a legacy element whose stack is keyed on a reserved name, which the
   // filtered `variables` cannot answer. See `triggerPipelineStacksTracked`.
-  infra: { id: number; productId: number; environmentId: number; parameters?: Record<string, string> | unknown },
+  infra: {
+    id: number
+    productId: number
+    environmentId: number
+    parameters?: Record<string, string> | unknown
+    /**
+     * The keys this element was PROVISIONED under, by stack id (#200).
+     *
+     * A destroy must address the state that exists, not whatever the stack row
+     * would derive today — an admin editing `stateKeyParam` used to move the key
+     * of every element already running under it, so the destroy addressed a
+     * state that was never created and reported success.
+     *
+     * Absent or empty for an element provisioned before the column, which keeps
+     * deriving as before: their state exists under the old key and nothing else
+     * can find it.
+     */
+    stateKeys?: Record<string, string> | unknown
+  },
   variables: Record<string, string>,
 ): Promise<DestroyOutcome> => {
   // Switches the element's pipeline tracking from its provisioning run to this
@@ -125,6 +143,7 @@ export const fireDestroyTriggers = async (
     variables,
     onStarted,
     infra.parameters as Record<string, string> | undefined,
+    infra.stateKeys as Record<string, string> | undefined,
   )
 
   const pipelineIds = [...webhookOutcome.pipelineIds, ...stackOutcome.pipelineIds]

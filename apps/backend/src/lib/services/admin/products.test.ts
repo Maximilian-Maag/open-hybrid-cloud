@@ -318,6 +318,10 @@ describe('deleteProduct', () => {
       // state key. A legacy stack keyed on a reserved name has no other way to
       // find the value its own apply used.
       expect.anything(),
+      // Sixth: the keys this element was PROVISIONED under (#200). The destroy
+      // has to address the state that exists, not one re-derived from a stack
+      // row that may have moved since.
+      expect.anything(),
     )
     // The product was ordered, so it is retired rather than deleted (issue #142)
     // and its infrastructure rows stay put, mid-decommission, for the callback that

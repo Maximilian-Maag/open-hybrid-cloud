@@ -16,6 +16,7 @@ import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
 import { orders, infrastructureElements, parameters, productEnvironments, products, auditLog } from '@/lib/db/schema'
+import { STATE_KEY_NAMESPACE_VAR, stateKeyNamespaceFor } from '@/lib/ci/stateKey'
 import { eq, desc } from 'drizzle-orm'
 import {
   createUser,
@@ -708,6 +709,115 @@ describe('createOrder — validation & ownership', () => {
     })
 
     expect(result.ok).toBe(true)
+  })
+
+  /*
+   * The element's state-key namespace, stored and sent, has to be the SAME
+   * string (#200).
+   *
+   * The row is what the teardown derives from and the variable is what the apply
+   * used. A drift between them stands the state up under one name and tears it
+   * down under another — which reports success and leaves the infrastructure
+   * running.
+   */
+  it('stores the same state-key namespace it sends to the pipeline', async () => {
+    const { admin, product, env, project } = await buildBase()
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id, productId: product.id, environmentId: env.id, parameters: {},
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [element] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, result.data.id))
+
+    const sent = mockedTriggerWebhooks.mock.calls.at(-1)?.[2] as Record<string, string>
+    expect(element.stateKeyNamespace).toBe(sent[STATE_KEY_NAMESPACE_VAR])
+    expect(element.stateKeyNamespace).toBe(stateKeyNamespaceFor(result.data.id))
+  })
+
+  // Not a bare order id: a pre-#183 element's key is the raw value the orderer
+  // typed, so `web-01-42` typed back then is indistinguishable from `web-01`
+  // namespaced by order 42. The letter is what tells them apart.
+  it('namespaces with something no legacy key can produce', async () => {
+    const { admin, product, env, project } = await buildBase()
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id, productId: product.id, environmentId: env.id, parameters: {},
+    })
+    if (!result.ok) return
+
+    const [element] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, result.data.id))
+
+    expect(element.stateKeyNamespace).not.toMatch(/^\d+$/)
+    expect(element.stateKeyNamespace).toBe(`o${result.data.id}`)
+  })
+
+  /*
+   * #200. The trigger layer reports which state key each stack actually used and
+   * provisioning WRITES IT DOWN — the derivation itself is webhooks.test.ts's
+   * job, and it is mocked here. What this proves is the wiring, which is the
+   * half that makes the recorded key exist at all.
+   *
+   * Recorded, so a later retry or teardown addresses the state this apply
+   * created rather than re-deriving it from a stack row that may have moved.
+   */
+  it('writes down the state key each stack reported using', async () => {
+    const { admin, product, env, project } = await buildBase()
+    mockedTriggerStacks.mockResolvedValueOnce({
+      pipelineIds: ['pipe-stack'],
+      failures: [],
+      stateKeys: { '7': 'web-01-o99' },
+    })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id, productId: product.id, environmentId: env.id,
+      parameters: { hostname: 'web-01' },
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const [element] = await db
+      .select()
+      .from(infrastructureElements)
+      .where(eq(infrastructureElements.orderId, result.data.id))
+
+    expect(element.stateKeys).toEqual({ '7': 'web-01-o99' })
+  })
+
+  /*
+   * A stack whose trigger FAILED still gets its key written down.
+   *
+   * The trigger layer records before it fires, not after it succeeds, because an
+   * HTTP call that failed may still have started the pipeline — and a key nobody
+   * recorded is a state with no teardown. Here one stack started and one did
+   * not; both keys survive.
+   *
+   * (An order where NOTHING started is a different case: #206 deletes the
+   * element rows and refuses the order, so there is no row left to carry a key.)
+   */
+  it('keeps the key of a stack whose trigger failed, alongside one that started', async () => {
+    const { admin, product, env, project } = await buildBase()
+    mockedTriggerStacks.mockResolvedValueOnce({
+      pipelineIds: ['pipe-stack'],
+      failures: ['pipeline stack "disk" (#8): boom'],
+      stateKeys: { '7': 'web-01-o99', '8': 'web-01-o99-disk' },
+    })
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id, productId: product.id, environmentId: env.id,
+      parameters: { hostname: 'web-01' },
+    })
+    expect(result.ok).toBe(true)
+
+    const [element] = await db.select().from(infrastructureElements)
+    expect(element.stateKeys).toEqual({ '7': 'web-01-o99', '8': 'web-01-o99-disk' })
   })
 
   it('still refuses a required parameter that has no default to fall back on', async () => {

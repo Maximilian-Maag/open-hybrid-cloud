@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { db } from '@/lib/db/client'
-import { categories, costCenters, productImages, products } from '@/lib/db/schema'
+import { categories, ciSources, costCenters, deploymentEnvironments, productImages, products } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { createUser } from '@/test/helpers'
 import { seedDemoData } from './demo'
@@ -63,5 +63,78 @@ describe('seedDemoData', () => {
     await expect(seedDemoData()).rejects.toThrow()
     expect(await marker()).toHaveLength(0)
     expect(await db.select({ id: products.id }).from(products)).toHaveLength(0)
+  })
+})
+
+/**
+ * The seed writes a CI source and two environments. Both carry credentials, and
+ * both used to carry LITERAL ones — `demo-token`, `demo-callback-1`.
+ *
+ * A callback secret an attacker can type is a pipeline callback an attacker can
+ * forge. It only takes this running once somewhere real, and the old guard —
+ * the marker category — answers "has this run before", not "should it run at
+ * all" (#147).
+ */
+describe('the credentials it writes', () => {
+  const seeded = async () => {
+    await createUser({ role: 'root' })
+    expect(await seedDemoData()).toEqual({ created: true })
+  }
+
+  it('generates them rather than using a literal anyone can read here', async () => {
+    await seeded()
+
+    const [source] = await db.select().from(ciSources)
+    const envs = await db.select().from(deploymentEnvironments)
+
+    for (const secret of [source.accessToken, ...envs.map((e) => e.callbackSecret)]) {
+      expect(secret).not.toMatch(/^demo-/)
+      // base64url of 24 bytes. Long enough that guessing is not the attack.
+      expect(secret.length).toBeGreaterThanOrEqual(32)
+    }
+  })
+
+  it('gives the two environments different secrets', async () => {
+    await seeded()
+    const envs = await db.select().from(deploymentEnvironments)
+    expect(envs).toHaveLength(2)
+    expect(envs[0].callbackSecret).not.toBe(envs[1].callbackSecret)
+  })
+})
+
+describe('where it will and will not run', () => {
+  const withEnv = async (env: Record<string, string | undefined>, work: () => Promise<void>) => {
+    const before = { ...process.env }
+    Object.assign(process.env, env)
+    try {
+      await work()
+    } finally {
+      process.env = before
+    }
+  }
+
+  it('refuses a production database outright', async () => {
+    await createUser({ role: 'root' })
+
+    await withEnv({ NODE_ENV: 'production', ALLOW_DEMO_SEED_IN_PRODUCTION: undefined }, async () => {
+      expect(await seedDemoData()).toEqual({ created: false })
+    })
+
+    // Nothing written, not even the marker — so a later run in the right
+    // environment is not fooled into thinking the work is done.
+    expect(await marker()).toEqual([])
+  })
+
+  // Explicit, and named after what it does. An operator who genuinely wants demo
+  // rows in a production-mode database can have them; nobody gets them by
+  // accident.
+  it('seeds a production database when told to in so many words', async () => {
+    await createUser({ role: 'root' })
+
+    await withEnv({ NODE_ENV: 'production', ALLOW_DEMO_SEED_IN_PRODUCTION: '1' }, async () => {
+      expect(await seedDemoData()).toEqual({ created: true })
+    })
+
+    expect(await marker()).toHaveLength(1)
   })
 })

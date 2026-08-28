@@ -33,7 +33,7 @@ test_every_violation_has_a_rule_a_file_and_a_reason if {
 			"columns": [],
 			"secretColumns": ["accessToken"],
 		}],
-		"tables": [{"export": "x", "name": "x", "secretColumns": [], "inTestDdl": false, "inTestTables": false}],
+		"tables": [{"export": "x", "name": "x", "secretColumns": [], "inTestTables": false}],
 		"testSetupFile": "apps/backend/src/test/setup.ts",
 		"schemaFile": "apps/backend/src/lib/db/schema.ts",
 		"i18n": {

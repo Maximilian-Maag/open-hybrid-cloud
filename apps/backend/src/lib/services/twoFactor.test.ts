@@ -29,11 +29,25 @@ const auditActions = async (userId: number): Promise<string[]> => {
   return rows.map((r) => r.action)
 }
 
+/**
+ * One user's audit entries for an action, oldest first.
+ *
+ * `orderBy` is not decoration: the tests below assert that the FIRST entry says
+ * "1 of 5" and the last "4 of 5", and a query with no ORDER BY returns whatever
+ * order the plan happens to yield. That went unnoticed for as long as the test
+ * schema had no index on `audit_log` — a sequential scan gives insertion order
+ * by luck. The real schema has `audit_log_user_created_at_idx` on
+ * `(user_id, created_at DESC)`, so the same query can come back reversed, which
+ * is what surfaced when the test database started being built from the
+ * migrations (#147). By id, because that is insertion order and what the
+ * assertions actually mean — `created_at` can tie at this resolution.
+ */
 const auditDetails = async (userId: number, action: string): Promise<string[]> => {
   const rows = await db
     .select({ details: auditLog.details, action: auditLog.action })
     .from(auditLog)
     .where(eq(auditLog.userId, userId))
+    .orderBy(auditLog.id)
   return rows.filter((r) => r.action === action).map((r) => r.details)
 }
 

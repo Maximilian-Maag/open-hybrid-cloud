@@ -68,7 +68,7 @@ export function ApprovalRow({ order, currentUserId }: Props) {
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-1">
             <span className="font-mono text-xs text-slate-600">#{order.id}</span>
@@ -97,7 +97,12 @@ export function ApprovalRow({ order, currentUserId }: Props) {
         </div>
 
         {!rejecting && (
-          <div className="flex items-center gap-2 shrink-0">
+          /* `shrink-0` on a cluster of two buttons pinned the row 70px past a
+             320px viewport. It may wrap onto its own line instead (#168).
+
+             A plain block comment: this is an expression position inside
+             `{!rejecting && (…)}`, where `{/* … *\/}` is not valid JSX. */
+          <div className="flex flex-wrap items-center gap-2">
             {ownOrder ? (
               <span className="text-sm text-slate-500">{t('cannotApproveOwnOrder', lang)}</span>
             ) : (
@@ -143,7 +148,8 @@ export function ApprovalRow({ order, currentUserId }: Props) {
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
             />
           </div>
-          <div className="flex gap-2">
+          {/* Wraps (#168). */}
+          <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="danger" size="sm" disabled={loading}>
               {loading ? t('rejecting', lang) : t('confirmRejection', lang)}
             </Button>

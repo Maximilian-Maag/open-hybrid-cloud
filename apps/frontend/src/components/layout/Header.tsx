@@ -70,19 +70,37 @@ export function Header({
 
   return (
     <header className="sticky top-0 z-50" style={{ backgroundColor: 'var(--bp)' }}>
-      <div className="max-w-screen-2xl mx-auto px-4 h-14 flex items-center gap-4">
-        {/* Brand */}
-        <Link href="/" className="flex items-center gap-2 shrink-0 mr-2">
+      {/*
+        Two rows on a phone, one from `md:` up.
+
+        The single row had a 669px floor and could not shrink: the brand was
+        `shrink-0` with `whitespace-nowrap`, and the search form was `flex-1`
+        without `min-w-0`, so its `<input>` kept its default `size=20` intrinsic
+        width. Every authenticated page therefore overflowed a 375px viewport by
+        294px, and the account menu — which is where Sign out lives — sat
+        entirely off-screen with no way to scroll to it (#167).
+
+        Search moves to its own row below `md:` rather than collapsing to an
+        icon: this is a shop, and search is not a secondary action. The top row
+        then holds only the brand and the controls, which fit.
+      */}
+      <div className="max-w-screen-2xl mx-auto px-4 py-2 md:py-0 md:h-14 flex flex-wrap md:flex-nowrap items-center gap-x-4 gap-y-2">
+        {/* Brand. `min-w-0` + `truncate` so a long shop name yields instead of
+            pinning the row open; the logo variant is already bounded. */}
+        <Link href="/" className="flex items-center gap-2 min-w-0 shrink md:shrink-0 mr-2">
           {logoDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoDataUrl} alt={shopName} className="h-8 max-w-[120px] object-contain" />
           ) : (
-            <span className="font-bold text-lg tracking-tight whitespace-nowrap" style={{ color: 'var(--bp-ink)' }}>{shopName}</span>
+            <span className="font-bold text-lg tracking-tight truncate" style={{ color: 'var(--bp-ink)' }}>{shopName}</span>
           )}
         </Link>
 
-        {/* Search */}
-        <form onSubmit={handleSearch} className="flex-1 max-w-xl">
+        {/* Search. `order-last` puts it on the second row on a phone; from `md:`
+            it returns to the middle. `min-w-0` is what lets `flex-1` actually
+            shrink — without it the flex item's automatic minimum size is the
+            input's intrinsic width and the row cannot narrow at all. */}
+        <form onSubmit={handleSearch} className="order-last md:order-none w-full md:w-auto flex-1 min-w-0 max-w-xl">
           <div className="flex items-center bg-white rounded-md overflow-hidden">
             <input
               type="text"
@@ -93,7 +111,10 @@ export function Header({
               // min-h-11 sizes the whole search control: the submit button is
               // self-stretch, so the field is what decides whether either of them
               // clears the 44px WCAG 2.5.5 target. It was 36px.
-              className="min-h-11 flex-1 bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+              // `min-w-0` for the same reason as the form: an <input> defaults
+              // to `size=20`, which is a ~226px floor the flex row cannot get
+              // under.
+              className="min-h-11 w-full min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
             />
             <button
               type="submit"
@@ -110,7 +131,7 @@ export function Header({
 
         {/* Right controls, ending in the cart — the one control a shop is built
             around belongs at the far right, not among the section links below. */}
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-2 sm:gap-3 shrink-0">
           <LanguageSwitcher lang={lang} />
 
           {/* User dropdown */}

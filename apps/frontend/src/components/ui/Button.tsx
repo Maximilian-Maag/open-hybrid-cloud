@@ -60,8 +60,24 @@ const sizeClass: Record<Size, string> = {
 // min-h-11/min-w-11 is 44px: the WCAG 2.5.5 target size. It is a MINIMUM, so a
 // wide button keeps its width and an icon-only one gets squared off — which is
 // where the old sizes hurt most (a 20px close icon in a 28px box).
+// `relative` is load-bearing and easy to delete by accident.
+//
+// Buttons in this app carry `sr-only` text to distinguish repeated controls —
+// "Delete Web Server" rather than three buttons all called Delete (WCAG 2.4.9).
+// Tailwind's `sr-only` is `position: absolute`, and an absolutely positioned box
+// with no positioned ancestor is laid out against the initial containing block,
+// which means it ESCAPES an `overflow-x-auto` scroll container instead of being
+// clipped by it.
+//
+// On /admin/products that put three 1px spans at x=456, 522 and 595 outside the
+// table's scroll box and made the whole document 595px wide on a 320px viewport
+// — the page panned sideways by 275px, with nothing visible out there. An
+// accessible name silently broke WCAG 1.4.10 Reflow (#167).
+//
+// `relative` gives them a containing block inside the button, so they are
+// clipped with everything else. No offsets are set, so nothing moves.
 const base =
-  'inline-flex items-center justify-center gap-2 min-h-11 min-w-11 rounded-md font-medium transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
+  'relative inline-flex items-center justify-center gap-2 min-h-11 min-w-11 rounded-md font-medium transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100'
 
 // Affordance, not just semantics. `danger` and `ghost` used to be bare text —
 // real <button> elements, so axe was satisfied and a screen reader announced them

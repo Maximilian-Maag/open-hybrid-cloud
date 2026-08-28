@@ -15,11 +15,25 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
+/**
+ * How wide the dialog may get — and, from the second class, how narrow it must.
+ *
+ * None of these clamped below a phone. `md` is 448px, so on a 375px viewport
+ * the default dialog measured `left: 111, right: 559`: field labels sheared off
+ * the left edge and 184px hanging past the right, with no way to scroll to it
+ * (#167). That reached all 11 call sites, which is where most of this app's
+ * forms live.
+ *
+ * `calc(100vw-2rem)` leaves a 1rem gutter either side. It wins because
+ * `max-width` resolves to the smaller of the two.
+ */
+const CLAMP_TO_VIEWPORT = 'max-w-[calc(100vw-2rem)]'
+
 const sizeClass: Record<string, string> = {
-  sm: 'max-w-sm',
-  md: 'max-w-md',
-  lg: 'max-w-lg',
-  xl: 'max-w-2xl',
+  sm: `max-w-sm ${CLAMP_TO_VIEWPORT}`,
+  md: `max-w-md ${CLAMP_TO_VIEWPORT}`,
+  lg: `max-w-lg ${CLAMP_TO_VIEWPORT}`,
+  xl: `max-w-2xl ${CLAMP_TO_VIEWPORT}`,
 }
 
 export function Modal({ open, onClose, title, ariaLabel, children, size = 'md', lang }: ModalProps) {

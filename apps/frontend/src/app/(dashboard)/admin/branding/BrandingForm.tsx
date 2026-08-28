@@ -74,12 +74,12 @@ export function BrandingForm({ initial }: Props) {
       <form onSubmit={handleSubmit} className="space-y-5">
         {error && <Alert>{error}</Alert>}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input label={t('shopName', lang)} value={shopName} onChange={(e) => setShopName(e.target.value)} required />
           <Input label={t('subtitleLabel', lang)} value={shopSubtitle} onChange={(e) => setShopSubtitle(e.target.value)} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <ColorField
             label={t('primaryColor', lang)}
             hint={t('primaryColorHint', lang)}

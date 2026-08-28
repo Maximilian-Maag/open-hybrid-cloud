@@ -1,5 +1,5 @@
 import { createHash, randomInt } from 'node:crypto'
-import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { userRecoveryCodes, userTotp, users, webauthnCredentials } from '@/lib/db/schema'
 import { logAudit } from '@/lib/audit'
@@ -450,15 +450,19 @@ export const confirmEnrollment = async (
     return err(400, 'This enrollment has expired. Start again.')
   }
 
-  const lock = lockState(row)
-  if (lock.locked) {
+  // Same gate as the login path, for the same reason: this endpoint checks a
+  // six-digit code too, and a lock that is read and then decided in JavaScript
+  // is no lock at all against parallel requests (#195).
+  const claim = await claimAttempt(userId)
+  if (!claim) {
+    const until = lockState(await loadRow(userId)).until
     await logAudit(
       userId,
       'auth.2fa.enroll_confirm_blocked',
       userId,
-      `Confirmation attempted while locked out; lock expires ${lock.until.toISOString()}`,
+      `Confirmation attempted while locked out; lock expires ${until.toISOString()}`,
     )
-    return err(429, lockMessage(lock.until))
+    return err(429, lockMessage(until))
   }
 
   let pendingSecret: Buffer
@@ -475,7 +479,7 @@ export const confirmEnrollment = async (
 
   const verification = verifyTotp(pendingSecret, code, Math.floor(Date.now() / 1000))
   if (!verification.valid) {
-    const failure = await recordFailure(userId, 'enroll_confirm')
+    const failure = await recordFailure(userId, 'enroll_confirm', claim)
     return failureResult(failure, 'That code is not valid.')
   }
 
@@ -573,31 +577,79 @@ const failureResult = (
   failure.locked ? err(429, lockMessage(failure.lockedUntil)) : err(400, message)
 
 /**
- * Count a failure and lock the factor once the allowance is gone.
+ * Take one attempt slot, atomically, BEFORE the submitted code is looked at.
  *
- * The increment and the lock decision are one UPDATE so two requests racing each
- * other cannot both read "4 failures" and each write "5" — which is how a
- * counter-based limit becomes twice as generous under exactly the concurrency an
- * attacker would use.
+ * Returns null when the factor is locked, and that is the whole point. The gate
+ * used to be `SELECT`, evaluate `locked_until` in JavaScript, check the code,
+ * and only then count the attempt — so N requests arriving together all read
+ * `locked_until = NULL`, all passed the gate, and all had their codes checked.
+ * The lock engaged afterwards, against attempts that had already happened.
+ *
+ * That collapses the bound this file's own arithmetic rests on. Five attempts
+ * per fifteen minutes puts a 10^6 code space at 5.7 years; the limit an attacker
+ * actually meets is their own parallelism, and there is no other rate limit on
+ * the path — `completeMfaLogin` has none, and the MFA challenge token is not
+ * single-use, so one phished password buys a window to drive it from (#195).
+ *
+ * Charging first has three consequences worth stating:
+ *
+ *  - A CORRECT code still works on the fifth attempt: it is counted, then
+ *    checked, and success clears the counter.
+ *  - An attempt that dies on a server error (an unreadable secret) is charged.
+ *    That is deliberate — fail closed — and five such errors lock the factor,
+ *    which is the right outcome for a key that cannot be read.
+ *  - An expired lock resets the counter rather than leaving it at five, or the
+ *    first attempt after the fifteen minutes would re-lock immediately.
+ */
+const lockExpired = sql`${userTotp.lockedUntil} IS NOT NULL AND ${userTotp.lockedUntil} <= NOW()`
+
+const claimAttempt = async (
+  userId: number,
+): Promise<{ attempts: number; locked: boolean; lockedUntil: Date | null } | null> => {
+  // The count this attempt lands on: 1 if the previous lock has just expired,
+  // otherwise one more than the last.
+  const nextCount = sql`CASE WHEN ${lockExpired} THEN 1 ELSE ${userTotp.failedAttempts} + 1 END`
+
+  const [claimed] = await db
+    .update(userTotp)
+    .set({
+      failedAttempts: nextCount,
+      lockedUntil: sql`CASE WHEN ${nextCount} >= ${MFA_MAX_FAILED_ATTEMPTS}
+        THEN NOW() + ${sql.raw(`INTERVAL '${MFA_LOCKOUT_MS} milliseconds'`)}
+        ELSE NULL END`,
+      updatedAt: new Date(),
+    })
+    // The lock is enforced HERE, in the same statement that charges the attempt.
+    // Zero rows means locked, and no two callers can both see an unlocked row.
+    .where(
+      and(
+        eq(userTotp.userId, userId),
+        or(isNull(userTotp.lockedUntil), lte(userTotp.lockedUntil, sql`NOW()`)),
+      ),
+    )
+    .returning({ failedAttempts: userTotp.failedAttempts, lockedUntil: userTotp.lockedUntil })
+
+  if (!claimed) return null
+  return {
+    attempts: claimed.failedAttempts,
+    locked: Boolean(claimed.lockedUntil && claimed.lockedUntil.getTime() > Date.now()),
+    lockedUntil: claimed.lockedUntil,
+  }
+}
+
+/**
+ * Write the audit entry for an attempt that has already been counted.
+ *
+ * The increment moved to `claimAttempt`, which runs before the code is checked.
+ * This is what is left: naming the outcome, which "one wrong code" and "the
+ * fifth wrong code in a row, factor now locked" need to be distinguishable by.
  */
 const recordFailure = async (
   userId: number,
   stage: string,
+  claim: { attempts: number; locked: boolean; lockedUntil: Date | null },
 ): Promise<{ attempts: number; locked: boolean; lockedUntil: Date | null }> => {
-  const [updated] = await db
-    .update(userTotp)
-    .set({
-      failedAttempts: sql`${userTotp.failedAttempts} + 1`,
-      lockedUntil: sql`CASE WHEN ${userTotp.failedAttempts} + 1 >= ${MFA_MAX_FAILED_ATTEMPTS}
-        THEN NOW() + ${sql.raw(`INTERVAL '${MFA_LOCKOUT_MS} milliseconds'`)}
-        ELSE ${userTotp.lockedUntil} END`,
-      updatedAt: new Date(),
-    })
-    .where(eq(userTotp.userId, userId))
-    .returning({ failedAttempts: userTotp.failedAttempts, lockedUntil: userTotp.lockedUntil })
-
-  const attempts = updated?.failedAttempts ?? 0
-  const locked = Boolean(updated?.lockedUntil && updated.lockedUntil.getTime() > Date.now())
+  const { attempts, locked } = claim
 
   // The audit entry names the count and whether the lock engaged: "one wrong
   // code" and "the fifth wrong code in a row, factor now locked" are the same
@@ -607,11 +659,11 @@ const recordFailure = async (
     locked ? 'auth.2fa.locked' : 'auth.2fa.failed',
     userId,
     locked
-      ? `Second factor locked after ${attempts} consecutive failures (${stage}); locked until ${updated?.lockedUntil?.toISOString() ?? 'unknown'}`
+      ? `Second factor locked after ${attempts} consecutive failures (${stage}); locked until ${claim.lockedUntil?.toISOString() ?? 'unknown'}`
       : `Invalid second factor (${stage}); ${attempts} of ${MFA_MAX_FAILED_ATTEMPTS} consecutive failures`,
   )
 
-  return { attempts, locked, lockedUntil: updated?.lockedUntil ?? null }
+  return claim
 }
 
 const clearFailures = async (userId: number, extra: Record<string, unknown> = {}): Promise<void> => {
@@ -650,18 +702,22 @@ export const verifySecondFactor = async (
     return err(400, 'No second factor is set up for this account.')
   }
 
-  const lock = lockState(row)
-  if (lock.locked) {
+  // The slot is taken before the code is read, so parallel guesses are counted
+  // rather than merely raced (#195). Recovery codes go through the same gate:
+  // they are the same brute-force surface, entered at the same prompt.
+  const claim = await claimAttempt(userId)
+  if (!claim) {
     // A blocked attempt is logged too. Without it the log shows five failures
     // and then silence, and the operator cannot tell whether the attacker gave
     // up or simply kept hammering a locked door.
+    const until = lockState(await loadRow(userId)).until
     await logAudit(
       userId,
       'auth.2fa.blocked',
       userId,
-      `Attempt while locked out (${stage}); lock expires ${lock.until.toISOString()}`,
+      `Attempt while locked out (${stage}); lock expires ${until.toISOString()}`,
     )
-    return err(429, lockMessage(lock.until))
+    return err(429, lockMessage(until))
   }
 
   const normalized = normalizeRecoveryCode(submitted)
@@ -669,7 +725,7 @@ export const verifySecondFactor = async (
   // Recovery code first, by shape: a 20-character alphanumeric is never a TOTP
   // code, so this cannot shadow one.
   if (normalized.length === RECOVERY_CODE_LENGTH) {
-    return verifyRecoveryCode(userId, normalized, stage)
+    return verifyRecoveryCode(userId, normalized, stage, claim)
   }
 
   let secret: Buffer
@@ -686,7 +742,7 @@ export const verifySecondFactor = async (
 
   const verification = verifyTotp(secret, submitted, Math.floor(Date.now() / 1000))
   if (!verification.valid || verification.step === null) {
-    const failure = await recordFailure(userId, stage)
+    const failure = await recordFailure(userId, stage, claim)
     return failureResult(failure, 'That code is not valid.')
   }
 
@@ -712,7 +768,7 @@ export const verifySecondFactor = async (
     .returning({ userId: userTotp.userId })
 
   if (!claimed) {
-    const failure = await recordFailure(userId, `${stage}:replay`)
+    const failure = await recordFailure(userId, `${stage}:replay`, claim)
     return failureResult(failure, 'That code has already been used. Wait for the next one.')
   }
   await logAudit(userId, 'auth.2fa.verified', userId, `Second factor accepted (${stage}, TOTP)`)
@@ -732,6 +788,8 @@ const verifyRecoveryCode = async (
   userId: number,
   normalized: string,
   stage: string,
+  /** The attempt already charged by `claimAttempt`, so this only reports it. */
+  claim: { attempts: number; locked: boolean; lockedUntil: Date | null },
 ): Promise<Result<SecondFactorSuccess>> => {
   const now = new Date()
   const [spent] = await db
@@ -747,7 +805,7 @@ const verifyRecoveryCode = async (
     .returning({ id: userRecoveryCodes.id })
 
   if (!spent) {
-    const failure = await recordFailure(userId, `${stage}:recovery_code`)
+    const failure = await recordFailure(userId, `${stage}:recovery_code`, claim)
     return failureResult(failure, 'That recovery code is not valid.')
   }
 

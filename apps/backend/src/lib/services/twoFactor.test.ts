@@ -558,6 +558,65 @@ describe('verifySecondFactor — recovery codes', () => {
 })
 
 describe('rate limiting', () => {
+  /*
+   * #195, finding 6. The gate used to be: SELECT the row, evaluate
+   * `locked_until` in JavaScript, check the submitted code, and only then count
+   * the attempt. N requests arriving together all read the same unlocked row,
+   * all passed, and all had their codes CHECKED — the lock engaged afterwards,
+   * against guesses that had already happened.
+   *
+   * That is not a small window. It replaces the 5-per-15-minutes bound the whole
+   * scheme rests on with the attacker's parallelism, and there is no other rate
+   * limit on this path.
+   *
+   * Twenty at once against a five-attempt allowance: at most five may be
+   * evaluated, and this asserts the counter, not just the answers — a run where
+   * all twenty were checked and the lock merely reported afterwards would
+   * otherwise look identical from the outside.
+   */
+  it('cannot be outrun by sending the guesses at the same time', async () => {
+    const u = await createRoot()
+    await enrollTotp(u.id)
+
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => verifySecondFactor(u.id, '000000')),
+    )
+
+    const refusedAsWrong = results.filter((r) => !r.ok && r.status === 400).length
+    const refusedAsLocked = results.filter((r) => !r.ok && r.status === 429).length
+
+    expect(results.every((r) => !r.ok)).toBe(true)
+    // At most the allowance was ever evaluated; the rest never reached the code.
+    expect(refusedAsWrong).toBeLessThanOrEqual(MFA_MAX_FAILED_ATTEMPTS)
+    expect(refusedAsLocked).toBeGreaterThanOrEqual(20 - MFA_MAX_FAILED_ATTEMPTS)
+
+    // And the stored counter agrees: it stopped at the allowance rather than
+    // climbing to twenty, which is what "the lock engaged after the fact" looks
+    // like in the row.
+    const stored = await row(u.id)
+    expect(stored.failedAttempts).toBeLessThanOrEqual(MFA_MAX_FAILED_ATTEMPTS)
+    expect(stored.lockedUntil).not.toBeNull()
+  })
+
+  /*
+   * The other half of charging first: a correct code on the LAST allowed attempt
+   * must still be accepted. It is counted, then checked, and success clears the
+   * counter — so a user who mistypes four times and gets the fifth right is let
+   * in, which is the behaviour the allowance was chosen for.
+   */
+  it('still accepts a correct code on the last allowed attempt', async () => {
+    const u = await createRoot()
+    const secret = await enrollTotp(u.id)
+    for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS - 1; i++) await verifySecondFactor(u.id, '000000')
+
+    const good = await verifySecondFactor(u.id, totp(secret, Math.floor(Date.now() / 1000)))
+
+    expect(good.ok).toBe(true)
+    const stored = await row(u.id)
+    expect(stored.failedAttempts).toBe(0)
+    expect(stored.lockedUntil).toBeNull()
+  })
+
   it('locks the factor after the allowed number of consecutive failures', async () => {
     const u = await createRoot()
     const secret = await enrollTotp(u.id)

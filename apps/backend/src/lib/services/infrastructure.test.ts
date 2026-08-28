@@ -726,6 +726,40 @@ describe('retryProvisioning', () => {
       expect.objectContaining({ hostname: 'web-01' }),
       expect.any(Function),
       expect.objectContaining({ hostname: 'web-01' }),
+      // And a sixth: the keys this element was PROVISIONED under (#200). A retry
+      // re-applies the SAME element, so it has to address the state that already
+      // exists rather than one the stack row would derive today.
+      expect.anything(),
+    )
+  })
+
+  /*
+   * #200. A retry re-applies the SAME element, so it must address the state that
+   * already exists — not one the stack row would derive today.
+   *
+   * The key used to be recomputed at every trigger from `stack.stateKeyParam` as
+   * it is NOW, so an admin editing that field moved the key of every element
+   * already running under it: the retry then applied to a state nothing had
+   * created, and the destroy afterwards addressed a state that was never there.
+   */
+  it('hands the retry the state keys the element was provisioned under', async () => {
+    const { admin, el } = await failedDeployment()
+    await db
+      .update(infrastructureElements)
+      .set({ stateKeys: { '7': 'web-01-o1' } })
+      .where(eq(infrastructureElements.id, el.id))
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-webhook'], failures: [] })
+    mockedStacks.mockResolvedValue({ pipelineIds: ['new-stack'], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    expect(mockedStacks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.any(Function),
+      expect.anything(),
+      { '7': 'web-01-o1' },
     )
   })
 

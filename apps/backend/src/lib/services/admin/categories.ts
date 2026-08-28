@@ -124,6 +124,9 @@ export const deleteCategory = async (id: number, actorId?: number): Promise<Resu
       // key", and a destroy pointed at the wrong state name destroys nothing
       // while reporting success.
       stateKeyNamespace: infrastructureElements.stateKeyNamespace,
+      // #200: the destroy addresses the state this element was provisioned
+      // under, not one re-derived from a stack row that may have moved.
+      stateKeys: infrastructureElements.stateKeys,
     })
     .from(infrastructureElements)
     .innerJoin(products, eq(infrastructureElements.productId, products.id))

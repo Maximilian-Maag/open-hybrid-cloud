@@ -24,6 +24,34 @@ export const ELEMENT_SEQUENCE_VAR = 'ELEMENT_SEQUENCE'
 export const STATE_KEY_NAMESPACE_VAR = 'TF_STATE_NAMESPACE'
 
 /**
+ * The namespace stored on an element and sent with its trigger, from its order.
+ *
+ * `o` in front of the order id, and that one letter is the whole point (#200).
+ *
+ * The namespaced key is `${readable}-${namespace}`, and the readable half is
+ * whatever the orderer typed. With a bare number as the namespace, an element
+ * provisioned BEFORE #183 — whose key is the raw typed value, unsuffixed — is
+ * indistinguishable from a namespaced one: somebody who typed `web-01-42` back
+ * then has state `web-01-42`, and a new order 42 typing `web-01` derives exactly
+ * that. The new element's destroy then addresses the old element's state, which
+ * is the one thing #183 exists to prevent.
+ *
+ * `o42` is not a number, so no legacy value produces it except by someone having
+ * typed a hostname ending in `-o42`. Legacy rows are deliberately not backfilled
+ * (see 0026_state_key_namespace.sql), so the two schemes coexist for good and the
+ * new one has to be the one that is recognisable.
+ *
+ * ONE function, used by both the row and the trigger variable, because they have
+ * to agree: the row is what the teardown derives from and the variable is what
+ * the apply used. A drift between them stands the state up under one name and
+ * tears it down under another.
+ *
+ * Elements already provisioned keep the bare number they were given. Their
+ * namespace is stored, never recomputed, so nothing here reaches them.
+ */
+export const stateKeyNamespaceFor = (orderId: number | string): string => `o${orderId}`
+
+/**
  * The suffix that makes one element's state key differ from its siblings'.
  *
  * One order now provisions N elements, and every one of them fans out to the same

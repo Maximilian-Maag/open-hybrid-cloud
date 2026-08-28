@@ -23,7 +23,7 @@ import {
   finishOrderTriggerRun,
   clearOrderTriggerRun,
 } from '@/lib/services/pipelineTracking'
-import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR } from '@/lib/ci/stateKey'
+import { ELEMENT_SEQUENCE_VAR, STATE_KEY_NAMESPACE_VAR, stateKeyNamespaceFor } from '@/lib/ci/stateKey'
 import { isReservedCiVariable, withoutReservedCiVariables } from '@/lib/ci/reserved'
 import { findProductName, findUserEmail, findUserName, findAdminEmails } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
@@ -725,7 +725,7 @@ export const provisionOrderElements = async (
         status: 'active',
         sizeCode,
         sequence,
-        stateKeyNamespace: String(orderId),
+        stateKeyNamespace: stateKeyNamespaceFor(orderId),
         parameters,
         pipelineId: [],
         // The trial's clock starts here, at provisioning. The scheduled-decommission
@@ -753,6 +753,7 @@ export const provisionOrderElements = async (
     const onStarted = (pipelineId: string) => recordOrderPipelineId(orderId, pipelineId)
 
     let elementPipelineIds: string[]
+    let elementStateKeys: Record<string, string> = {}
     try {
       // The *Tracked variants, because a trigger that fails without throwing is
       // exactly the case that reported a half-deployed order as completed
@@ -760,6 +761,10 @@ export const provisionOrderElements = async (
       // waiting on the stack alone.
       const webhooks = await triggerProductWebhooksTracked(productId, environmentId, triggerVars, onStarted)
       const stacks = await triggerPipelineStacksTracked(productId, environmentId, triggerVars, onStarted, parameters)
+      // What each stack actually used, so retry and teardown address the state
+      // this apply created rather than re-deriving it from a stack row that can
+      // have moved since (#200).
+      elementStateKeys = stacks.stateKeys ?? {}
       elementPipelineIds = [...webhooks.pipelineIds, ...stacks.pipelineIds]
       failures.push(
         ...[...webhooks.failures, ...stacks.failures].map((f) => `element ${sequence}: ${f}`),
@@ -774,10 +779,16 @@ export const provisionOrderElements = async (
       continue
     }
 
-    if (elementPipelineIds.length > 0) {
+    // The state keys are written even when nothing started: a trigger whose HTTP
+    // call failed may still have started the pipeline, and a key nobody recorded
+    // is a state with no teardown.
+    if (elementPipelineIds.length > 0 || Object.keys(elementStateKeys).length > 0) {
       await db
         .update(infrastructureElements)
-        .set({ pipelineId: elementPipelineIds })
+        .set({
+          ...(elementPipelineIds.length > 0 ? { pipelineId: elementPipelineIds } : {}),
+          ...(Object.keys(elementStateKeys).length > 0 ? { stateKeys: elementStateKeys } : {}),
+        })
         .where(eq(infrastructureElements.id, element.id))
       pipelineIds.push(...elementPipelineIds)
     }
@@ -860,8 +871,9 @@ const elementTriggerVariables = (input: {
   ...withoutReservedCiVariables(input.parameters),
   ORDER_ID: String(input.orderId),
   // Namespaces this element's Terraform state key, and is stored on the element
-  // row so its teardown derives the same one.
-  [STATE_KEY_NAMESPACE_VAR]: String(input.orderId),
+  // row so its teardown derives the same one. Same function as the row above,
+  // because the two must not drift.
+  [STATE_KEY_NAMESPACE_VAR]: stateKeyNamespaceFor(input.orderId),
   // The size has to reach the CI run (issue #98) — it is what decides how much
   // machine the template asks for. Absent, not empty, for an offering with no
   // sizes, so a template can tell "no sizing" from "a size called ''".

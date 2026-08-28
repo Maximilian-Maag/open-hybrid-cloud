@@ -13,6 +13,7 @@ import { webauthnChallenges, webauthnCredentials } from '@/lib/db/schema'
 import { logAudit } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 import { resolveRp } from '@/lib/auth/webauthnConfig'
+import { recheckPassword } from '@/lib/auth/passwordRecheck'
 import {
   canHoldSecondFactor,
   countUnusedRecoveryCodes,
@@ -406,12 +407,63 @@ export const verifyAuthentication = async (
  * excludes, down to none. Re-checking the password here is the fix; it changes
  * the request shape, so it is issue #231 rather than a quiet edit inside #197.
  */
+/**
+ * Remove one security key, on proof of the account password (#231).
+ *
+ * `startRegistration` deliberately does NOT re-check the password, and gives a
+ * good reason: registering a key requires physically touching one, so a stolen
+ * session alone cannot add a factor and then use it. That argument covers
+ * registration. It does not cover REMOVAL, which needs no hardware — so a stolen
+ * session could strip a victim's spare keys one at a time, leaving the
+ * recommended primary-plus-backup setup with no backup, and the owner finding out
+ * only when they reached for it.
+ *
+ * Note the direction it was wrong in: a confirmed TOTP secret cannot be removed
+ * at all, so the weaker factor was the better-protected one.
+ *
+ * The check lives here rather than in the route, like `startEnrollment`'s: it is
+ * what makes the gate hold for any other caller. SSO accounts never reach it —
+ * `loadTwoFactorAccount` refuses them, because their second factor is the
+ * identity provider's to manage and there is no local password to prove.
+ */
 export const removeCredential = async (
   userId: number,
   credentialRowId: number,
+  password: string,
 ): Promise<Result<{ removed: number }>> => {
   const account = await loadTwoFactorAccount(userId)
   if (!account.ok) return account
+
+  /*
+   * The counter this shares with 2FA enrolment and `changePassword`.
+   *
+   * It had its own until this branch, which was a budget of five HERE and five
+   * at each of the others — fifteen to anyone willing to alternate between the
+   * doors, and the attacker picks the door. The account is what is under
+   * attack, so the account is what holds the budget. See
+   * `lib/auth/passwordRecheck.ts`.
+   */
+  const recheck = await recheckPassword(userId, password, account.data.passwordHash)
+
+  if (recheck === 'throttled') {
+    await logAudit(
+      userId,
+      'auth.webauthn.remove_denied',
+      userId,
+      'Security key removal refused: too many wrong passwords',
+    )
+    return err(429, 'Too many attempts. Wait fifteen minutes and try again.')
+  }
+
+  if (recheck === 'wrong') {
+    await logAudit(
+      userId,
+      'auth.webauthn.remove_denied',
+      userId,
+      'Security key removal refused: wrong password',
+    )
+    return err(403, 'Current password is incorrect')
+  }
 
   const remaining = (await countWebauthnCredentialsFor(userId)) - 1
   if (remaining === 0 && !(await hasConfirmedTotp(userId)) && canHoldSecondFactor(account.data.role)) {

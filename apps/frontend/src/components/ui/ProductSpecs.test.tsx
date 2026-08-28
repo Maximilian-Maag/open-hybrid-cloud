@@ -15,6 +15,7 @@ const param = (over: Partial<Parameter> = {}): Parameter => ({
   defaultValue: 'small',
   required: false,
   sensitive: false,
+  sizeValues: {},
   ...over,
 })
 

@@ -46,13 +46,15 @@ test_allowlist_does_not_cover_a_different_column_in_the_same_file if {
 # --- rule 3 ----------------------------------------------------------------
 
 table(overrides) := object.union(
-	{"export": "widgets", "name": "widgets", "secretColumns": [], "inTestDdl": true, "inTestTables": true},
+	{"export": "widgets", "name": "widgets", "secretColumns": [], "inTestTables": true},
 	overrides,
 )
 
-test_table_missing_from_the_ddl_is_denied if {
+# A deny since #147. The other half of this rule — a table with no CREATE TABLE
+# in the test setup — is gone with the hand-written DDL it checked.
+test_table_never_truncated_is_denied if {
 	facts := {
-		"tables": [table({"inTestDdl": false, "inTestTables": false})],
+		"tables": [table({"inTestTables": false})],
 		"testSetupFile": "apps/backend/src/test/setup.ts",
 		"schemaFile": "apps/backend/src/lib/db/schema.ts",
 	}
@@ -60,23 +62,21 @@ test_table_missing_from_the_ddl_is_denied if {
 	some v in denied
 	v.rule == "table_in_test_setup"
 	contains(v.detail, "widgets")
+	contains(v.detail, "never truncated")
 }
 
-test_table_missing_only_from_TABLES_warns if {
+# Nothing warns any more: the half that warned is the half that was promoted.
+test_table_never_truncated_does_not_merely_warn if {
 	facts := {
 		"tables": [table({"inTestTables": false})],
 		"testSetupFile": "apps/backend/src/test/setup.ts",
 		"schemaFile": "apps/backend/src/lib/db/schema.ts",
 	}
 	warned := policy.warn with input as facts
-	denied := policy.deny with input as facts
-	count(denied) == 0
-	some v in warned
-	v.rule == "table_in_test_setup"
-	contains(v.why, "#147")
+	count([v | some v in warned; v.rule == "table_in_test_setup"]) == 0
 }
 
-test_table_in_both_places_passes if {
+test_table_in_TABLES_passes if {
 	facts := {
 		"tables": [table({})],
 		"testSetupFile": "apps/backend/src/test/setup.ts",

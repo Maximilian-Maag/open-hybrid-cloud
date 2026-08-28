@@ -19,6 +19,51 @@ interface ParameterFieldsProps {
 // re-render loop swallowed keystrokes ("hostname does not update") and
 // disabled the Cost Center Select ("cannot be selected"). Removing the
 // internal state and the sync effect fixes both.
+/**
+ * What the chosen size sets, shown rather than hidden.
+ *
+ * A `size` parameter has no input — its value follows from the size — but the
+ * customer should still be able to see that "M" means two vCPUs and eight
+ * gigabytes rather than having to trust the label. Read-only: the size picker
+ * above it is the control.
+ *
+ * Renders nothing when no size is chosen, when the offering has none, or when
+ * no parameter is driven by it, so it costs an ordinary product nothing.
+ */
+export function SizeDerivedValues({
+  parameters,
+  sizeCode,
+}: {
+  parameters: Parameter[]
+  sizeCode: string | null | undefined
+}) {
+  const lang = useLang()
+  if (!sizeCode) return null
+
+  const driven = parameters
+    .filter((p) => p.type === 'size')
+    .map((p) => ({ param: p, value: p.sizeValues?.[sizeCode] ?? '' }))
+  if (driven.length === 0) return null
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-xs font-medium text-slate-700">{t('setByTheSize', lang)}</p>
+      <dl className="mt-1 space-y-0.5">
+        {driven.map(({ param, value }) => (
+          <div key={param.id} className="flex justify-between gap-4 text-xs">
+            <dt className="text-slate-600">{param.label?.trim() || param.name}</dt>
+            <dd className={value === '' ? 'font-mono text-red-600' : 'font-mono text-slate-900'}>
+              {/* A size added after the mapping was written. The order would be
+                  refused, so saying so here beats a surprise at checkout. */}
+              {value === '' ? t('noValueForThisSize', lang) : value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
 export function ParameterFields({ parameters, values, onChange }: ParameterFieldsProps) {
   const lang = useLang()
   if (parameters.length === 0) return null
@@ -36,6 +81,13 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
     <div className="space-y-4">
       {parameters.map((param) => {
         const value = getValue(param)
+
+        // Decided by the chosen size, so there is nothing here to fill in — and
+        // a field the customer could contradict would let them buy an S and
+        // provision an XL. The values are shown, read-only, by
+        // `SizeDerivedValues` beside the size picker, where the choice that
+        // produced them is.
+        if (param.type === 'size') return null
 
         if (param.type === 'bool') {
           return (

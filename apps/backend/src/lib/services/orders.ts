@@ -9,6 +9,8 @@ import {
   projects,
   users,
   costCenters,
+  productWebhooks,
+  pipelineStacks,
   type Parameter,
 } from '@/lib/db/schema'
 import { eq, and, sql, inArray } from 'drizzle-orm'
@@ -287,11 +289,46 @@ export const getOrderById = async (
 const validateAndApplyParameters = (
   defs: Parameter[],
   submitted: Record<string, string>,
+  sizeCode: string | null,
 ): Result<Record<string, string>> => {
   const resolved = resolveParameterDefs(defs)
   const result: Record<string, string> = {}
 
   for (const def of resolved) {
+    /*
+     * A `size` variable is not something the customer types (#251-adjacent).
+     * Its value is whatever the size they picked says it is, and `submitted` is
+     * ignored entirely — the order form does not render an input for it, and a
+     * hand-written request must not be able to buy an S and provision an XL.
+     * That is the whole point of putting the mapping on the server: the price
+     * and the hardware are decided by one choice.
+     *
+     * `instance_type` on an AWS VM is one of these. vSphere has three, all
+     * driven by the same size, which is why the map lives on the VARIABLE.
+     */
+    if (def.type === 'size') {
+      if (sizeCode === null) {
+        // An offering with no sizes cannot answer a size variable, and guessing
+        // would provision something nobody chose.
+        return err(
+          400,
+          `Parameter ${def.name} is set by the size, and this offering has no sizes. ` +
+            'Give the offering sizes, or change the parameter to another type.',
+        )
+      }
+      const forSize = def.sizeValues?.[sizeCode]
+      if (forSize === undefined || forSize === '') {
+        // A size added after the mapping was written. Refusing beats
+        // provisioning an empty instance_type and letting Terraform decide.
+        return err(
+          400,
+          `Size ${sizeCode} has no value for ${def.name}. An administrator has to say what ${def.name} is at that size.`,
+        )
+      }
+      result[def.name] = forSize
+      continue
+    }
+
     // Silently, and including when the definition is `required`: the name is one
     // the server decides, so there is nothing for the customer to supply and an
     // error would only make such a product unorderable.
@@ -434,6 +471,40 @@ export interface PreparedOrder {
   quantity: number
 }
 
+/**
+ * Does anything exist that could provision this product in this environment?
+ *
+ * The same two sources `provisionOrderElements` triggers, asked as a question
+ * instead of an attempt. Two cheap existence checks rather than one join or a
+ * count: the answer is a boolean, the second query only runs when the first
+ * finds nothing, and `LIMIT 1` stops at the first row either way.
+ */
+const hasSomethingToTrigger = async (
+  productId: number,
+  environmentId: number,
+): Promise<boolean> => {
+  const [webhook] = await db
+    .select({ id: productWebhooks.id })
+    .from(productWebhooks)
+    .where(
+      and(
+        eq(productWebhooks.productId, productId),
+        eq(productWebhooks.environmentId, environmentId),
+      ),
+    )
+    .limit(1)
+  if (webhook) return true
+
+  const [stack] = await db
+    .select({ id: pipelineStacks.id })
+    .from(pipelineStacks)
+    .where(
+      and(eq(pipelineStacks.productId, productId), eq(pipelineStacks.environmentId, environmentId)),
+    )
+    .limit(1)
+  return stack !== undefined
+}
+
 export const prepareOrder = async (
   session: SessionUser,
   input: CreateOrderInput,
@@ -488,6 +559,33 @@ export const prepareOrder = async (
     .limit(1)
   if (!offered) return err(400, 'Product is not offered in the selected environment')
 
+  /*
+   * Is there anything that could actually provision this?
+   *
+   * A product is provisioned by a product webhook or a pipeline stack, per
+   * environment. With neither, `provisionOrderElements` starts nothing, notices
+   * that nothing started, deletes the element rows it had already inserted and
+   * answers 502 "Could not start the deployment" — which reads as "the CI system
+   * is down" when the truth is "nobody has configured a pipeline for this".
+   *
+   * That is the shape a Kubernetes product was found in: offered in the
+   * catalogue with its parameters freshly imported, a whole order form filled
+   * in, and a 502 at the till. #206 made that failure loud rather than leaving
+   * the order stuck in 'provisioning' for ever, which was right — but loud and
+   * misleading is only half the fix.
+   *
+   * Checked HERE, before the order row exists, so nothing has to be rolled back
+   * and the message can name the actual missing thing and who has to add it.
+   */
+  const deployable = await hasSomethingToTrigger(productId, environmentId)
+  if (!deployable) {
+    return err(
+      409,
+      'This product has no pipeline configured for the selected environment, so there is nothing to provision it. ' +
+        'An administrator has to add a pipeline stack or a webhook to the product before it can be ordered.',
+    )
+  }
+
   // Size and quantity (issues #98 / #104), both server-side for the same reason
   // the cost-centre rules are: the size picker does not exist in the browser for
   // an offering with no sizes, and a quantity field is trivially edited. An
@@ -520,7 +618,9 @@ export const prepareOrder = async (
 
   // Server-side parameter validation (required/type checks + defaults).
   const defs = await loadApplicableParameters(productId, product.categoryId, environmentId)
-  const validated = validateAndApplyParameters(defs, input.parameters)
+  // `priced.data.sizeCode` and not `input.sizeCode`: the former has been through
+  // `resolveOfferingPrice`, so it is a size that actually exists and is active.
+  const validated = validateAndApplyParameters(defs, input.parameters, priced.data.sizeCode)
   if (!validated.ok) return validated
   const parameters = validated.data
 

@@ -25,6 +25,7 @@ import {
   createEnvironment,
   createProject,
   linkProductEnvironment,
+  createSize,
   createOrder as seedOrder,
   createInfraElement,
   createCostCenter,
@@ -490,6 +491,191 @@ describe('createOrder — validation & ownership', () => {
       const [dbOrder] = await db.select().from(orders).where(eq(orders.id, result.data.id))
       expect(dbOrder.parameters).toEqual({ API_KEY: 'the-real-secret' })
     }
+  })
+
+  /*
+   * A product is provisioned by a webhook or a pipeline stack, per environment.
+   * With neither, `provisionOrderElements` starts nothing, notices, deletes the
+   * element rows it just wrote and answers 502 "Could not start the deployment"
+   * — which reads as "CI is down" when the truth is "nobody configured a
+   * pipeline". An imported Kubernetes product was found in exactly that state:
+   * catalogued, parameters imported, a full order form, and a 502 at the till.
+   */
+  it('refuses a product with nothing to provision it, before the order exists', async () => {
+    const admin = await createUser({ role: 'admin', email: 'nodeploy@test.dev' })
+    const pm = await createUser({ role: 'project_manager', email: 'nodeploy-pm@test.dev' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Undeployable')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    // Offered, but with no webhook and no pipeline stack.
+    await linkProductEnvironment(product.id, env.id, { deployable: false })
+    const project = await createProject(pm.id)
+
+    const result = await createOrder(makeSession(admin), {
+      projectId: project.id,
+      productId: product.id,
+      environmentId: env.id,
+      parameters: {},
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    // 409 and not 502: nothing failed, the product is not set up.
+    expect(result.status).toBe(409)
+    expect(result.message).toMatch(/no pipeline configured/i)
+    // It says who has to fix it and what they have to add.
+    expect(result.message).toMatch(/administrator/i)
+    expect(result.message).toMatch(/pipeline stack or a webhook/i)
+
+    // And no order row was written, so there is nothing to roll back.
+    expect(await db.select().from(orders).where(eq(orders.productId, product.id))).toEqual([])
+  })
+
+  /*
+   * A T-shirt size is a variable TYPE, alongside string / number / bool /
+   * dropdown. `instance_type` is one of these: the customer never types it, the
+   * size they picked decides it.
+   *
+   * Before this, a size was a code, a label and a price. It reached the pipeline
+   * as SIZE=M, which the CI base promoted to TF_VAR_size — and no template in
+   * the reference repository declares `variable "size"`, so OpenTofu dropped it.
+   * Choosing XL changed the price and nothing about the machine.
+   */
+  describe('a size-typed parameter', () => {
+    const withSizes = async () => {
+      const base = await buildBase()
+      await createSize(base.product.id, base.env.id, { code: 'S', price: '10.00' })
+      await createSize(base.product.id, base.env.id, { code: 'XL', price: '80.00' })
+      return base
+    }
+
+    it('takes its value from the chosen size', async () => {
+      const { admin, product, env, project } = await withSizes()
+      await db.insert(parameters).values({
+        scope: 'product', scopeId: product.id, name: 'instance_type', type: 'size',
+        sizeValues: { S: 't3.micro', XL: 'm6i.2xlarge' },
+      })
+
+      const result = await createOrder(makeSession(admin), {
+        projectId: project.id, productId: product.id, environmentId: env.id,
+        sizeCode: 'XL', parameters: {},
+      })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+      expect(row.parameters).toEqual({ instance_type: 'm6i.2xlarge' })
+    })
+
+    // The whole point of deciding it on the server: one choice fixes both the
+    // price and the hardware, and a hand-written request cannot separate them.
+    it('ignores a value the caller submits for it', async () => {
+      const { admin, product, env, project } = await withSizes()
+      await db.insert(parameters).values({
+        scope: 'product', scopeId: product.id, name: 'instance_type', type: 'size',
+        sizeValues: { S: 't3.micro', XL: 'm6i.2xlarge' },
+      })
+
+      const result = await createOrder(makeSession(admin), {
+        projectId: project.id, productId: product.id, environmentId: env.id,
+        sizeCode: 'S', parameters: { instance_type: 'm6i.32xlarge' },
+      })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+      // Bought an S, gets an S.
+      expect(row.parameters).toEqual({ instance_type: 't3.micro' })
+    })
+
+    // vSphere needs three values from one size, which is why the map lives on
+    // the VARIABLE and not on the size.
+    it('drives as many variables as the template needs', async () => {
+      const { admin, product, env, project } = await withSizes()
+      await db.insert(parameters).values([
+        { scope: 'product', scopeId: product.id, name: 'num_cpus', type: 'size', sizeValues: { S: '2', XL: '16' } },
+        { scope: 'product', scopeId: product.id, name: 'memory_mb', type: 'size', sizeValues: { S: '4096', XL: '65536' } },
+        { scope: 'product', scopeId: product.id, name: 'disk_size_gb', type: 'size', sizeValues: { S: '40', XL: '500' } },
+      ])
+
+      const result = await createOrder(makeSession(admin), {
+        projectId: project.id, productId: product.id, environmentId: env.id,
+        sizeCode: 'XL', parameters: {},
+      })
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const [row] = await db.select().from(orders).where(eq(orders.id, result.data.id))
+      expect(row.parameters).toEqual({ num_cpus: '16', memory_mb: '65536', disk_size_gb: '500' })
+    })
+
+    // A size added after the mapping was written. Refusing beats provisioning an
+    // empty instance_type and letting Terraform pick.
+    it('refuses a size the mapping has no value for, and says which', async () => {
+      const { admin, product, env, project } = await withSizes()
+      await db.insert(parameters).values({
+        scope: 'product', scopeId: product.id, name: 'instance_type', type: 'size',
+        sizeValues: { S: 't3.micro' },
+      })
+
+      const result = await createOrder(makeSession(admin), {
+        projectId: project.id, productId: product.id, environmentId: env.id,
+        sizeCode: 'XL', parameters: {},
+      })
+
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.status).toBe(400)
+      expect(result.message).toMatch(/Size XL has no value for instance_type/)
+    })
+
+    it('refuses a size variable on an offering that has no sizes', async () => {
+      const { admin, product, env, project } = await buildBase()
+      await db.insert(parameters).values({
+        scope: 'product', scopeId: product.id, name: 'instance_type', type: 'size',
+        sizeValues: { M: 't3.large' },
+      })
+
+      const result = await createOrder(makeSession(admin), {
+        projectId: project.id, productId: product.id, environmentId: env.id, parameters: {},
+      })
+
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.message).toMatch(/set by the size, and this offering has no sizes/)
+    })
+
+    /*
+     * The second half of what the user asked for: different values in different
+     * environments. It costs nothing extra, because `parameters.environment_id`
+     * already exists and the resolution already prefers the specific row.
+     */
+    it('gives one size different values in different environments', async () => {
+      const { admin, product, env, ci, project } = await withSizes()
+      const other = await createEnvironment(ci.id, 'Second')
+      await linkProductEnvironment(product.id, other.id)
+      await createSize(product.id, other.id, { code: 'XL', price: '90.00' })
+
+      await db.insert(parameters).values([
+        { scope: 'product', scopeId: product.id, environmentId: env.id, name: 'instance_type', type: 'size', sizeValues: { XL: 'm6i.2xlarge' } },
+        { scope: 'product', scopeId: product.id, environmentId: other.id, name: 'instance_type', type: 'size', sizeValues: { XL: 'g6-dedicated-16' } },
+      ])
+
+      const first = await createOrder(makeSession(admin), {
+        projectId: project.id, productId: product.id, environmentId: env.id, sizeCode: 'XL', parameters: {},
+      })
+      const second = await createOrder(makeSession(admin), {
+        projectId: project.id, productId: product.id, environmentId: other.id, sizeCode: 'XL', parameters: {},
+      })
+
+      expect(first.ok && second.ok).toBe(true)
+      if (!first.ok || !second.ok) return
+      const [a] = await db.select().from(orders).where(eq(orders.id, first.data.id))
+      const [b] = await db.select().from(orders).where(eq(orders.id, second.data.id))
+      expect(a.parameters).toEqual({ instance_type: 'm6i.2xlarge' })
+      expect(b.parameters).toEqual({ instance_type: 'g6-dedicated-16' })
+    })
   })
 
   it('still refuses a required parameter that has no default to fall back on', async () => {

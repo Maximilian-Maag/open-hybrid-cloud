@@ -169,8 +169,50 @@ This only works today when the pipeline stack's environment uses a **GitLab** CI
 
 *Option B: Manual entry*
 - Click **Add Parameter**
-- Set **Variable Name** (must match the Terraform variable name), **Display Label** (user-facing), type (string, number, bool, dropdown), description, default value, and the required/sensitive flags
+- Set **Variable Name** (must match the Terraform variable name), **Display Label** (user-facing), type (string, number, bool, dropdown, size), description, default value, and the required/sensitive flags
 - Click **Edit** on any existing parameter to modify it
+
+*Type `size` — the variable a T-shirt size decides*
+
+A size used to be nothing but a code, a label and a price. It reached the pipeline
+as `SIZE=M`, which the CI base promotes to `TF_VAR_size` — and no template in
+`infra-templates` declares `variable "size"`, so OpenTofu dropped it. Choosing XL
+changed the price and nothing about the machine.
+
+Give the variable type **size** instead, and say what each size code means for it:
+
+```
+S=t3.micro
+M=t3.large
+XL=m6i.2xlarge
+```
+
+The customer never sees a field for it — the size picker is its control — and the
+values it sets are shown, read-only, beside that picker. A submitted value is
+ignored, so nobody can buy an S and provision an XL.
+
+Which variable this is depends on the template:
+
+| Template | Variable(s) |
+|---|---|
+| `aws/virtual-machine` | `instance_type`, and `root_volume_size_gb` if disk should scale too |
+| `linode/virtual-machine` | `instance_type` |
+| `vsphere/virtual-machine` | `num_cpus`, `memory_mb`, `disk_size_gb` — all three |
+
+vSphere is why the map lives on the **variable** and not on the size: one size has
+to drive three variables, so each is its own `size` parameter with its own map.
+
+*Different values in different environments*
+
+A parameter can be scoped to one environment, and an environment-specific row wins
+over one that applies to all of them (product beats category beats global, and
+within a scope, specific beats general). So `instance_type` can be `m6i.2xlarge` at
+size XL on AWS and `g6-dedicated-16` at size XL on Linode: two parameter rows, one
+per environment, each with its own map.
+
+A size that the map has no value for is **refused at order time**, naming both the
+size and the parameter, rather than provisioning an empty `instance_type` and
+letting Terraform choose.
 
 *Reserved parameter names*
 

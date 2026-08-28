@@ -46,46 +46,35 @@ deny contains v if {
 }
 
 # ---------------------------------------------------------------------------
-# rule 3 — every table is in src/test/setup.ts, in both places
+# rule 3 — every table is truncated between tests
 # ---------------------------------------------------------------------------
 
-# The DDL half is a deny: a table missing from it does not exist in the test
-# database, so every test touching it fails immediately and loudly.
+# This rule used to have two halves, and the other one is gone with #147.
+#
+# It checked that every table had a CREATE TABLE in src/test/setup.ts, because
+# that file was a hand-maintained third copy of the schema and a table missing
+# from it simply did not exist under test. The copy is gone: the suite now runs
+# the real migrations, so there is nothing left to fall behind and nothing left
+# to check.
+#
+# What remains is the half that was never about the copy. A table declared in
+# schema.ts and absent from TABLES is never emptied between tests, so rows leak
+# into the next one — a suite that passes alone and fails in a full run, or the
+# reverse, which is the most expensive kind of failure to chase. A deny now,
+# which is what this rule's own comment said it should become once #147 landed.
 deny contains v if {
 	some table in input.tables
-	not table.inTestDdl
-
-	v := {
-		"rule": "table_in_test_setup",
-		"file": input.testSetupFile,
-		"line": 0,
-		"detail": sprintf("`%s` is declared in %s but has no CREATE TABLE here", [table.name, input.schemaFile]),
-		"why": concat("", [
-			"src/test/setup.ts is a hand-maintained third copy of the schema (#147). A table that is not ",
-			"created here does not exist in the test database, and every test that touches it fails with ",
-			"a relation-does-not-exist error that reads like a connection problem.",
-		]),
-	}
-}
-
-# The TRUNCATE half is a warn until #147 lands: `branding` and `app_config` are
-# in the DDL and missing from TABLES on dev today. This is the quieter failure of
-# the two — the table simply never gets emptied between tests, so a suite passes
-# alone and fails in a full run.
-warn contains v if {
-	some table in input.tables
-	table.inTestDdl
 	not table.inTestTables
 
 	v := {
 		"rule": "table_in_test_setup",
 		"file": input.testSetupFile,
 		"line": 0,
-		"detail": sprintf("`schema.%s` is created here but is not in the TABLES list, so it is never truncated", [table.export]),
+		"detail": sprintf("`schema.%s` is not in the TABLES list, so it is never truncated between tests", [table.export]),
 		"why": concat("", [
 			"Rows left behind leak into the next test. The symptom is a test that passes on its own and ",
-			"fails in a full run, or vice versa, which is the most expensive kind of failure to chase. ",
-			"Deny once #147 makes this file stop being a third schema definition.",
+			"fails in a full run, or vice versa. Add it to TABLES in src/test/setup.ts; a singleton row ",
+			"the app needs is put back by the seed in `beforeEach` alongside the truncate.",
 		]),
 	}
 }

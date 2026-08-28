@@ -126,7 +126,7 @@ also_parsed(route) := sprintf(" (%s does)", [concat(", ", route.safeIdSegments)]
 # ---------------------------------------------------------------------------
 
 # Warn, not deny, until #181 adds the two missing tests.
-warn contains v if {
+deny contains v if {
 	some route in input.routes
 	count(route.methods) > 0
 	count(route.testFiles) == 0
@@ -139,7 +139,8 @@ warn contains v if {
 		"why": concat("", [
 			"The service underneath is usually tested; the HTTP surface — the role check, the id parsing, ",
 			"the Zod schema, the status codes — is what goes untested and what breaks. ",
-			"Deny once #181 closes. Membership is by import edge, not by sibling filename, because ",
+			"A deny since #181: the count reached zero, and a rule that has ever been at zero can be ",
+			"held there. Membership is by import edge, not by sibling filename, because ",
 			"sessions/route.test.ts legitimately covers sessions/[id]/route.ts from one directory over.",
 		]),
 	}

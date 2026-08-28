@@ -17,7 +17,7 @@ import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
-import { ParameterFields } from '@/components/forms/ParameterFields'
+import { ParameterFields, SizeDerivedValues } from '@/components/forms/ParameterFields'
 import { publishCartCount } from '@/components/layout/CartLink'
 import { t } from '@/lib/i18n'
 import { convertPrice } from '@/lib/locale'
@@ -479,7 +479,13 @@ function CartItemRow({
         {/* Kept on the row rather than hidden behind a disclosure: unlike a retail
             cart, these are required to provision and checkout validates them. */}
         {applicable.length > 0 && (
-          <ParameterFields parameters={applicable} values={values} onChange={onValues} />
+          <>
+            <ParameterFields parameters={applicable} values={values} onChange={onValues} />
+            {/* What the line's size sets. No input for these — the size was
+                chosen when the line was added — but checkout refuses a size the
+                mapping has no value for, so it has to be visible before then. */}
+            <SizeDerivedValues parameters={applicable} sizeCode={item.sizeCode} />
+          </>
         )}
 
         {/* Per item, because the cost-centre rules live on the offering and two

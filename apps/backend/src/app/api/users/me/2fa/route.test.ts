@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -10,6 +10,12 @@ import { base32Decode } from '@/lib/auth/totp'
 import { MFA_MAX_FAILED_ATTEMPTS, RECOVERY_CODE_COUNT } from '@/lib/services/twoFactor'
 import { db } from '@/lib/db/client'
 import { branding } from '@/lib/db/schema'
+import { passwordRecheckLimit } from '@/lib/auth/passwordRecheck'
+
+beforeEach(() => {
+  // Module-level by design, so one case's wrong guesses would throttle the next.
+  passwordRecheckLimit.clear()
+})
 
 const makeReq = (path: string, method = 'GET', body?: unknown, auth?: string) =>
   new NextRequest(`http://localhost${path}`, {
@@ -106,6 +112,25 @@ describe('POST /api/users/me/2fa/enroll', () => {
     // mistyped password must not become a surprise logout.
     expect(res.status).toBe(403)
     expect((await res.json()).error).toMatch(/password is incorrect/)
+  })
+
+  // One counter across all three in-session password re-checks — enrolment,
+  // `changePassword` and security-key removal. Three separate budgets of five
+  // would be fifteen to anyone willing to alternate between the doors, and the
+  // attacker picks the door.
+  it('stops answering after five wrong passwords', async () => {
+    const u = await createUser({ password: 'right-one', role: 'root', secondFactor: false })
+    const auth = await makeAuthHeader(u)
+
+    for (let i = 0; i < 5; i++) {
+      expect((await ENROLL(makeReq('/x', 'POST', { password: `wrong-${i}` }, auth))).status).toBe(403)
+    }
+
+    const blocked = await ENROLL(makeReq('/x', 'POST', { password: 'wrong-6' }, auth))
+    expect(blocked.status).toBe(429)
+
+    // And the right one, because a spent budget is what makes it a limit.
+    expect((await ENROLL(makeReq('/x', 'POST', { password: 'right-one' }, auth))).status).toBe(429)
   })
 
   it('offers a QR code, a key URI and a typable secret', async () => {

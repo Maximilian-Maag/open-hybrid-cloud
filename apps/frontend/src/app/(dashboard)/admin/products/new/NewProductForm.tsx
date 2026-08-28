@@ -2,24 +2,32 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Category, CreateProductRequest, Product } from '@open-hybrid-cloud/types'
+import type { Category, CreateProductRequest, Product, DeploymentEnvironment } from '@open-hybrid-cloud/types'
 import { post, PROXY_PREFIX } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
+import {
+  TemplateSourceFields,
+  emptyTemplateSource,
+  templateSourceComplete,
+  type TemplateSource,
+} from '@/components/forms/TemplateSourceFields'
 import { useLang } from '@/lib/useLang'
 import { t, SUPPORTED_LANGUAGES } from '@/lib/i18n'
 
 interface Props {
   categories: Category[]
+  /** For the optional template import. Empty is fine — see the section below. */
+  environments: DeploymentEnvironment[]
 }
 
 const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp'
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
-export function NewProductForm({ categories }: Props) {
+export function NewProductForm({ categories, environments }: Props) {
   const lang = useLang()
   // All 25, from the single list `SUPPORTED_LANGUAGES` — not the four this used
   // to name. Offering `en`, `de`, `fr` and `es` while the app translates its own
@@ -37,6 +45,20 @@ export function NewProductForm({ categories }: Props) {
   const [baseLanguage, setBaseLanguage] = useState('en')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /*
+   * Building the product from a template (#248).
+   *
+   * The import endpoint is keyed by an existing product id, so this cannot be
+   * part of the create call — it runs straight after, the same way the image
+   * upload does, and for the same reason. What that buys is the sequence the
+   * issue says nothing on either screen explained: create, then a pipeline
+   * stack, then parameters. All three now happen on one submit.
+   */
+  const [fromTemplate, setFromTemplate] = useState(false)
+  const [source, setSource] = useState<TemplateSource>(emptyTemplateSource)
+  const [environmentId, setEnvironmentId] = useState(
+    environments.length === 1 ? String(environments[0].id) : '',
+  )
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -84,7 +106,33 @@ export function NewProductForm({ categories }: Props) {
         }
       }
 
-      router.push(`/admin/products/${created.id}${imageError ? `?imageError=${encodeURIComponent(imageError)}` : ''}`)
+      /*
+       * The template, after the product exists and before we leave the page.
+       *
+       * Same shape as the image above, and the same rule: a failure here must
+       * not lose the product that was just created. The edit page can retry the
+       * import; it cannot un-lose a product. So the message is carried over
+       * rather than thrown.
+       */
+      let importError: string | null = null
+      if (fromTemplate && templateSourceComplete(source)) {
+        try {
+          await post(`/api/admin/products/${created.id}/import-parameters`, {
+            ciSourceId: Number(source.ciSourceId),
+            projectId: source.projectId,
+            ref: source.ref,
+            path: source.path,
+            // With one, the import also builds the pipeline stack — which is
+            // what makes the product orderable rather than merely described.
+            ...(environmentId !== '' ? { environmentId: Number(environmentId) } : {}),
+          })
+        } catch (err) {
+          importError = err instanceof Error ? err.message : t('failedToImportTemplate', lang)
+        }
+      }
+
+      const problem = imageError ?? importError
+      router.push(`/admin/products/${created.id}${problem ? `?imageError=${encodeURIComponent(problem)}` : ''}`)
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : t('failedToCreateProduct', lang))
@@ -158,8 +206,55 @@ export function NewProductForm({ categories }: Props) {
             hint={t('imageDescriptionHint', lang)}
           />
         )}
+        {/* Build it from a template (#248).
+            Optional and off by default: a product does not have to come from
+            one. Opened, it turns "create the product" into "create the product,
+            import its parameters and give it a pipeline" — which is the sequence
+            nothing on either screen used to explain, and which had to be
+            discovered by pressing a button that could not yet work. */}
+        <div className="rounded-lg border border-slate-200 p-3">
+          <div className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              id="new-product-from-template"
+              checked={fromTemplate}
+              onChange={(e) => setFromTemplate(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div>
+              <label htmlFor="new-product-from-template" className="text-sm font-medium text-slate-700">
+                {t('createFromTemplate', lang)}
+              </label>
+              <p className="text-xs text-slate-700">{t('createFromTemplateHint', lang)}</p>
+            </div>
+          </div>
+
+          {fromTemplate && (
+            <div className="mt-3 space-y-4">
+              <TemplateSourceFields value={source} onChange={setSource} onError={setError} lang={lang} />
+              <Select
+                label={t('environment', lang)}
+                value={environmentId}
+                onChange={(e) => setEnvironmentId(e.target.value)}
+                placeholder={t('selectEnvironment', lang)}
+                options={environments.map((e) => ({ value: String(e.id), label: e.name }))}
+                hint={t('importCreatesStackHint', lang)}
+              />
+              {/* Said here rather than after the redirect: the product will
+                  exist and have a pipeline, and still not be orderable until it
+                  is offered in an environment with a price. */}
+              <Alert tone="warning">{t('priceItAfterwards', lang)}</Alert>
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-end">
-          <Button type="submit" disabled={saving}>{saving ? t('creating', lang) : t('createProductButton', lang)}</Button>
+          <Button
+            type="submit"
+            disabled={saving || (fromTemplate && !templateSourceComplete(source))}
+          >
+            {saving ? t('creating', lang) : t('createProductButton', lang)}
+          </Button>
         </div>
       </form>
     </Card>

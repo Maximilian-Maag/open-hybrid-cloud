@@ -1,12 +1,12 @@
 import { listFiles, getFileContent, type CiSourceInfo } from '@/lib/ci'
 import { parseTerraformVariables, parseTerraformModules } from '@/lib/tfparser'
-import { parameters, type Parameter } from '@/lib/db/schema'
+import { parameters, pipelineStacks, type Parameter } from '@/lib/db/schema'
 import { db } from '@/lib/db/client'
 import { and, eq } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { isReservedCiVariable } from '@/lib/ci/reserved'
 
-type ParsedParameter = Omit<Parameter, 'id' | 'scope' | 'scopeId' | 'environmentId'>
+type ParsedParameter = Omit<Parameter, 'id' | 'scope' | 'scopeId' | 'environmentId' | 'sizeValues'>
 
 /** A variable the scan found, and where it came from. */
 export interface ScannedVariable extends ParsedParameter {
@@ -219,6 +219,15 @@ export const importableVariables = (scan: TemplateScan): ScannedVariable[] =>
     (v) => !v.sensitive && !CI_INTERNAL_VARS.has(v.name) && !isReservedCiVariable(v.name),
   )
 
+/**
+ * What became of the pipeline stack, so the dialog can say it rather than
+ * leaving the operator to check the stack list.
+ */
+export type StackOutcome =
+  | { created: true; name: string; stateKeyParam: string; template: string }
+  | { created: false; reason: 'already-configured'; name: string }
+  | { created: false; reason: 'no-template-path' }
+
 export interface ImportOutcome {
   created: number
   /** Already defined on this product, left as they are. */
@@ -226,6 +235,8 @@ export interface ImportOutcome {
   createdNames: string[]
   skippedModules: SkippedModule[]
   filesRead: string[]
+  /** Absent when the caller did not ask for a stack (no environment chosen). */
+  stack?: StackOutcome
 }
 
 /**
@@ -236,10 +247,104 @@ export interface ImportOutcome {
  * narrowed a type or set a different default has made a decision, and a
  * re-import is a request to pick up what is NEW — not to undo that.
  */
+/**
+ * The value of `TEMPLATE` for a template at this repository path.
+ *
+ * The dispatch rules in the repository root switch on `linode/kubernetes-cluster`,
+ * while the import is given `templates/linode/kubernetes-cluster` — the directory
+ * it reads. One leading `templates/` is the whole difference.
+ */
+export const templateNameFromPath = (path: string): string =>
+  path.replace(/^\/+/, '').replace(/^templates\//, '').replace(/\/+$/, '')
+
+/**
+ * Which variable names the Terraform state, read out of the template itself.
+ *
+ * Every template in the reference repository says so in the description of the
+ * variable concerned:
+ *
+ *   variable "cluster_label" {
+ *     description = "Unique cluster label — also used as the Terraform state key (TF_STATE_NAME)"
+ *   }
+ *
+ * so the state key does not have to be guessed or typed in. `hostname` is the
+ * fallback because it is what the majority use and what `pipeline_stacks`
+ * already defaults to — a wrong guess here is visible immediately (the state key
+ * comes out empty and the trigger says so) rather than silently wrong.
+ */
+export const detectStateKeyParam = (scan: TemplateScan): string => {
+  const named = scan.variables.find((v) => /TF_STATE_NAME|terraform state key/i.test(v.description))
+  return named?.name ?? 'hostname'
+}
+
+/**
+ * Give the product a pipeline stack for this environment, if it has none.
+ *
+ * Importing a template used to bring back its variables and nothing else, which
+ * left the product in a state that looks finished and is not: offered in the
+ * catalogue, a full order form, and a 502 at the till because a product is
+ * provisioned by a webhook or a stack and it had neither. That is how a
+ * Kubernetes product came to be unorderable straight after its import.
+ *
+ * Everything the stack needs is already known at import time — the environment,
+ * the repository path, and which variable names the state — so there is nothing
+ * to ask for. One step, because one imported template is one step; more are
+ * added by hand afterwards, which is what the stack editor is for.
+ *
+ * Never overwrites. An existing stack is somebody's arrangement of steps, and
+ * a re-import is a request to pick up new VARIABLES, not to flatten that.
+ */
+const ensurePipelineStack = async (
+  productId: number,
+  environmentId: number,
+  path: string,
+  scan: TemplateScan,
+  actorId: number,
+): Promise<StackOutcome> => {
+  const template = templateNameFromPath(path)
+  if (template === '') return { created: false, reason: 'no-template-path' }
+
+  const [existing] = await db
+    .select({ id: pipelineStacks.id, name: pipelineStacks.name })
+    .from(pipelineStacks)
+    .where(
+      and(eq(pipelineStacks.productId, productId), eq(pipelineStacks.environmentId, environmentId)),
+    )
+    .limit(1)
+  if (existing) return { created: false, reason: 'already-configured', name: existing.name }
+
+  const stateKeyParam = detectStateKeyParam(scan)
+  // The last path segment: unique per step within a stack, which is all the
+  // suffix has to be, and readable in a state name.
+  const stateSuffix = `-${template.split('/').pop()}`
+
+  const [stack] = await db
+    .insert(pipelineStacks)
+    .values({
+      productId,
+      environmentId,
+      name: template,
+      stateKeyParam,
+      steps: [{ template, stateSuffix }],
+    })
+    .returning({ id: pipelineStacks.id, name: pipelineStacks.name })
+
+  await logAudit(
+    actorId,
+    'product.pipeline_stack_created',
+    productId,
+    `Created pipeline stack "${stack.name}" for environment #${environmentId} from the imported template, state key ${stateKeyParam}`,
+  )
+
+  return { created: true, name: stack.name, stateKeyParam, template }
+}
+
 export const importScannedParameters = async (
   productId: number,
   scan: TemplateScan,
   actorId: number,
+  /** Where the stack goes. Omitted, only the parameters are imported. */
+  stackFor?: { environmentId: number; path: string },
 ): Promise<ImportOutcome> => {
   const importable = importableVariables(scan)
 
@@ -277,11 +382,16 @@ export const importScannedParameters = async (
     )
   }
 
+  const stack = stackFor
+    ? await ensurePipelineStack(productId, stackFor.environmentId, stackFor.path, scan, actorId)
+    : undefined
+
   return {
     created: fresh.length,
     skipped: importable.length - fresh.length,
     createdNames: fresh.map((v) => v.name),
     skippedModules: scan.skippedModules,
     filesRead: scan.filesRead,
+    stack,
   }
 }

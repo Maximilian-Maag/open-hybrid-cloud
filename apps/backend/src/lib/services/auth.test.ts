@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import bcrypt from 'bcryptjs'
 import {
   loginWithCredentials,
@@ -10,6 +10,12 @@ import { db } from '@/lib/db/client'
 import { users, sessions } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { createUser, makeSession } from '@/test/helpers'
+import { passwordRecheckLimit } from '@/lib/auth/passwordRecheck'
+
+beforeEach(() => {
+  // Module-level by design, so one case's wrong guesses would throttle the next.
+  passwordRecheckLimit.clear()
+})
 
 describe('loginWithCredentials', () => {
   it('returns 401 for an unknown email', async () => {
@@ -143,6 +149,31 @@ describe('changePassword', () => {
       expect(await bcrypt.compare('brand-new', dbU.passwordHash)).toBe(true)
       expect(await bcrypt.compare('old-pw', dbU.passwordHash)).toBe(false)
     }
+  })
+
+  // Reached from an authenticated session, and until #266's follow-up nothing
+  // counted the attempts: a stolen session could grind the account password
+  // against a live bcrypt. The password is worth more than the change it guards.
+  it('stops answering after five wrong current passwords', async () => {
+    const u = await createUser({ password: 'good' })
+    const mine = await makeSession(u)
+
+    for (let i = 0; i < 5; i++) {
+      const attempt = await changePassword({ id: u.id, sessionId: mine.sessionId }, `bad-${i}`, 'new-password')
+      expect(attempt.ok).toBe(false)
+      if (!attempt.ok) expect(attempt.status).toBe(400)
+    }
+
+    const blocked = await changePassword({ id: u.id, sessionId: mine.sessionId }, 'bad-6', 'new-password')
+    expect(blocked.ok).toBe(false)
+    if (!blocked.ok) expect(blocked.status).toBe(429)
+
+    // The right one too — and the password is unchanged.
+    const withTruth = await changePassword({ id: u.id, sessionId: mine.sessionId }, 'good', 'new-password')
+    expect(withTruth.ok).toBe(false)
+    if (!withTruth.ok) expect(withTruth.status).toBe(429)
+    const [row] = await db.select().from(users).where(eq(users.id, u.id))
+    if (row.passwordHash) expect(await bcrypt.compare('good', row.passwordHash)).toBe(true)
   })
 
   // Changing the password is the one remediation every user and every helpdesk

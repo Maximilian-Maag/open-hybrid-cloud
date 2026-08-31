@@ -1,7 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { Parameter, ParameterType, CreateParameterRequest, UpdateParameterRequest } from '@open-hybrid-cloud/types'
+import type {
+  Parameter,
+  ParameterType,
+  CreateParameterRequest,
+  UpdateParameterRequest,
+  DeploymentEnvironment,
+} from '@open-hybrid-cloud/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
@@ -24,6 +30,10 @@ const TYPE_KEYS: Record<ParameterType, 'typeString' | 'typeNumber' | 'typeBoolea
 const emptyForm = () => ({
   name: '', label: '', type: 'string' as ParameterType, description: '',
   defaultValue: '', required: false, sensitive: false, sizeValues: '',
+  // '' is "all environments", which is what a global parameter has always been
+  // and stays the default. The column and the resolution behind it have existed
+  // all along; this form was the only reason they were unreachable (#275).
+  environmentId: '' as string,
 })
 
 export function ParametersManager() {
@@ -32,6 +42,7 @@ export function ParametersManager() {
     value, label: t(TYPE_KEYS[value], lang),
   }))
   const [params, setParams] = useState<Parameter[]>([])
+  const [environments, setEnvironments] = useState<DeploymentEnvironment[]>([])
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Parameter | null>(null)
@@ -44,8 +55,15 @@ export function ParametersManager() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = (await get<Parameter[]>('/api/admin/parameters')) ?? []
-      setParams(all.filter((p) => p.scope === 'global'))
+      const [all, envs] = await Promise.all([
+        get<Parameter[]>('/api/admin/parameters'),
+        // Degrades to "all environments only" rather than breaking the screen:
+        // without the list there is nothing to choose from, but every existing
+        // parameter still edits and saves.
+        get<DeploymentEnvironment[]>('/api/admin/environments').catch(() => [] as DeploymentEnvironment[]),
+      ])
+      setParams((all ?? []).filter((p) => p.scope === 'global'))
+      setEnvironments(envs ?? [])
       setDeleteError(null)
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : t('failedToLoadParameters', lang))
@@ -69,6 +87,7 @@ export function ParametersManager() {
       name: param.name, label: param.label ?? '', type: param.type, description: param.description,
       defaultValue: param.defaultValue, required: param.required, sensitive: param.sensitive,
       sizeValues: sizeValuesToText(param.sizeValues),
+      environmentId: param.environmentId === null ? '' : String(param.environmentId),
     })
     setFormError(null); setEditTarget(param)
   }
@@ -84,6 +103,7 @@ export function ParametersManager() {
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
         sizeValues: form.type === 'size' ? parseSizeValues(form.sizeValues) : {},
+        ...(form.environmentId !== '' ? { environmentId: Number(form.environmentId) } : {}),
       }
       await post('/api/admin/parameters', body)
       setAddOpen(false); void load()
@@ -105,6 +125,9 @@ export function ParametersManager() {
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
         sizeValues: form.type === 'size' ? parseSizeValues(form.sizeValues) : {},
+        // Sent explicitly as null when cleared, not omitted: omitting it would
+        // leave a parameter pinned to an environment with no way back to "all".
+        environmentId: form.environmentId === '' ? null : Number(form.environmentId),
       }
       await put(`/api/admin/parameters/${editTarget.id}`, body)
       setEditTarget(null); void load()
@@ -151,6 +174,18 @@ export function ParametersManager() {
                         this size. red-700 (#c10007) on the same ground is 5.27:1. */}
                     {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">{t('requiredBadge', lang)}</span>}
                     {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">{t('sensitiveBadge', lang)}</span>}
+                    {/* Only when it is narrowed. A badge on every row saying "all
+                        environments" would be noise on the common case and would
+                        stop the narrowed ones standing out, which is the whole
+                        reason to show it (#275). The id is the fallback for an
+                        environment that has since been deleted — better than a
+                        blank where a name should be. */}
+                    {p.environmentId !== null && (
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
+                        {environments.find((env) => env.id === p.environmentId)?.name
+                          ?? `${t('environment', lang)} #${p.environmentId}`}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs font-mono text-slate-600">{p.name}</p>
                   {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
@@ -173,6 +208,21 @@ export function ParametersManager() {
             <Input label={t('displayLabel', lang)} value={form.label} onChange={(e) => setField('label', e.target.value)} hint={t('displayLabelHint', lang)} />
           </div>
           <Select label={t('type', lang)} value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
+          {/* Where this parameter applies. `parameters.environment_id` and the
+              resolution behind it — an environment-specific row preferred over an
+              all-environments one — have been implemented and correct all along;
+              no form ever offered the field, so the capability was unreachable
+              (#275). "All environments" is first and is what an existing global
+              parameter already is. */}
+          <Select
+            label={t('environment', lang)}
+            value={form.environmentId}
+            onChange={(e) => setField('environmentId', e.target.value)}
+            options={[
+              { value: '', label: t('allEnvironments', lang) },
+              ...environments.map((env) => ({ value: String(env.id), label: env.name })),
+            ]}
+          />
           <Input label={t('description', lang)} value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Input label={t('defaultValue', lang)} value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
             hint={form.type === 'dropdown' ? t('commaSeparatedOptions', lang) : undefined} />
@@ -221,6 +271,21 @@ export function ParametersManager() {
             <Input label={t('displayLabel', lang)} value={form.label} onChange={(e) => setField('label', e.target.value)} hint={t('displayLabelHint', lang)} />
           </div>
           <Select label={t('type', lang)} value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
+          {/* Where this parameter applies. `parameters.environment_id` and the
+              resolution behind it — an environment-specific row preferred over an
+              all-environments one — have been implemented and correct all along;
+              no form ever offered the field, so the capability was unreachable
+              (#275). "All environments" is first and is what an existing global
+              parameter already is. */}
+          <Select
+            label={t('environment', lang)}
+            value={form.environmentId}
+            onChange={(e) => setField('environmentId', e.target.value)}
+            options={[
+              { value: '', label: t('allEnvironments', lang) },
+              ...environments.map((env) => ({ value: String(env.id), label: env.name })),
+            ]}
+          />
           <Input label={t('description', lang)} value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Input label={t('defaultValue', lang)} value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
             hint={form.type === 'dropdown' ? t('commaSeparatedOptions', lang) : undefined} />

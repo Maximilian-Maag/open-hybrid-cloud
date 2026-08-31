@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/client'
 import { products, productImages, productEnvironments, deploymentEnvironments, costCenters, parameters, type Parameter } from '@/lib/db/schema'
-import { eq, or, and, isNull, sql } from 'drizzle-orm'
+import { eq, or, and, isNull, sql, getTableColumns } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { withoutSensitiveDefaults } from '@/lib/services/parameterRedaction'
 import { safeImageContentType } from '@/lib/services/imageUpload'
@@ -22,10 +22,23 @@ import type { ProductImageMeta } from '@open-hybrid-cloud/types'
  * validate submitted parameters server-side) so both agree on which
  * definitions are in scope.
  */
+/**
+ * A parameter row plus what the load learned about it.
+ *
+ * `projectScoped` is not a column — it is whether `parameter_projects` names
+ * any project for this parameter, which is what the resolver needs in order to
+ * prefer a narrowed row over an unnarrowed one of the same name and scope
+ * (#275). Optional so a caller assembling rows by hand, and every test that
+ * already does, keeps compiling; absent reads as "not narrowed", which is what
+ * every parameter was before this existed.
+ */
+export type ApplicableParameter = Parameter & { projectScoped?: boolean }
+
 export const loadApplicableParameters = async (
   productId: number,
   categoryId: number,
   environmentId?: number,
+  projectId?: number,
 ): Promise<Parameter[]> => {
   const scopeWhere = or(
     eq(parameters.scope, 'global'),
@@ -33,15 +46,49 @@ export const loadApplicableParameters = async (
     and(eq(parameters.scope, 'product'), eq(parameters.scopeId, productId)),
   )
 
-  const paramWhere =
-    environmentId !== undefined
-      ? and(
-          scopeWhere,
-          or(sql`${parameters.environmentId} IS NULL`, eq(parameters.environmentId, environmentId)),
+  /*
+   * Narrowing to projects, when the parameter says so (#275).
+   *
+   * `parameter_projects` is empty for every parameter that has not been
+   * narrowed, and empty means "every project" — so the condition is "this
+   * parameter names no projects at all, OR it names this one". A parameter
+   * narrowed to projects the caller is not ordering for drops out entirely.
+   *
+   * Written as NOT EXISTS / EXISTS rather than a LEFT JOIN because a join would
+   * multiply a parameter by its project count and then need distinguishing
+   * again; these two are index lookups on the composite key and the project
+   * index respectively.
+   *
+   * Skipped when no project is known. The catalogue renders the order form
+   * before a project is chosen, and filtering to "unnarrowed only" there would
+   * hide a control the order will still validate.
+   */
+  const projectWhere =
+    projectId === undefined
+      ? undefined
+      : or(
+          sql`NOT EXISTS (SELECT 1 FROM parameter_projects pp WHERE pp.parameter_id = ${parameters.id})`,
+          sql`EXISTS (SELECT 1 FROM parameter_projects pp WHERE pp.parameter_id = ${parameters.id} AND pp.project_id = ${projectId})`,
         )
-      : scopeWhere
 
-  return db.select().from(parameters).where(paramWhere)
+  const environmentWhere =
+    environmentId === undefined
+      ? undefined
+      : or(sql`${parameters.environmentId} IS NULL`, eq(parameters.environmentId, environmentId))
+
+  const conditions = [scopeWhere, environmentWhere, projectWhere].filter((c) => c !== undefined)
+
+  return db
+    .select({
+      ...getTableColumns(parameters),
+      // Whether this row was narrowed to specific projects at all. The filter
+      // above has already decided that it APPLIES; this is what lets the
+      // resolver prefer it over an unnarrowed row of the same name and scope,
+      // the same way an environment-specific row is preferred (#275).
+      projectScoped: sql<boolean>`EXISTS (SELECT 1 FROM parameter_projects pp WHERE pp.parameter_id = ${parameters.id})`,
+    })
+    .from(parameters)
+    .where(and(...conditions))
 }
 
 /**
@@ -50,9 +97,9 @@ export const loadApplicableParameters = async (
  * environment-specific row over an all-environments (NULL) row. This is the
  * effective definition a submitted value is validated against.
  */
-export const resolveParameterDefs = (rows: Parameter[]): Parameter[] => {
+export const resolveParameterDefs = (rows: ApplicableParameter[]): ApplicableParameter[] => {
   const scopeRank: Record<string, number> = { global: 0, category: 1, product: 2 }
-  const byName = new Map<string, Parameter>()
+  const byName = new Map<string, ApplicableParameter>()
 
   for (const row of rows) {
     const current = byName.get(row.name)
@@ -60,12 +107,36 @@ export const resolveParameterDefs = (rows: Parameter[]): Parameter[] => {
       byName.set(row.name, row)
       continue
     }
+    const sameScope = scopeRank[row.scope] === scopeRank[current.scope]
     const moreSpecificScope = scopeRank[row.scope] > scopeRank[current.scope]
     const sameScopeButEnvSpecific =
-      scopeRank[row.scope] === scopeRank[current.scope] &&
-      row.environmentId !== null &&
-      current.environmentId === null
-    if (moreSpecificScope || sameScopeButEnvSpecific) {
+      sameScope && row.environmentId !== null && current.environmentId === null
+    /*
+     * Project narrowing is the third tie-break, below the environment (#275).
+     *
+     * The owner's decision is `product > category > project > global`, and the
+     * scope rank above already delivers it: a product-scoped row out-ranks a
+     * global one whether or not the global one names projects.
+     *
+     * What is left is two rows of the SAME scope where one is narrowed — a
+     * global `region` for everybody and a global `region` for one project. The
+     * narrowed one is the more specific statement and wins, exactly as the
+     * environment-specific row does.
+     *
+     * Below the environment rather than above it, and this is a judgement
+     * rather than a decision handed down: the environment decides which cloud
+     * the value is even valid for, so a value that is wrong for the target
+     * environment cannot be the right answer no matter which project asked. It
+     * only matters when one row is env-specific and the other project-narrowed,
+     * which no configuration in this repository produces yet.
+     */
+    const sameScopeAndEnvButProjectScoped =
+      sameScope &&
+      row.environmentId === current.environmentId &&
+      row.projectScoped === true &&
+      current.projectScoped !== true
+
+    if (moreSpecificScope || sameScopeButEnvSpecific || sameScopeAndEnvButProjectScoped) {
       byName.set(row.name, row)
     }
   }

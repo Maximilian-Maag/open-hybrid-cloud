@@ -14,6 +14,11 @@ const UpdateParameterSchema = z.object({
   sizeValues: z.record(z.string(), z.string()).optional(),
   sensitive: z.boolean().optional(),
   environmentId: z.number().int().positive().nullable().optional(),
+  // Which projects this parameter is narrowed to; absent means "leave alone" on
+  // an update and "all projects" on a create, and `[]` clears the narrowing
+  // (#275). `positive()` because a project id is a bigserial and 0 is the
+  // "no scope" sentinel `scopeId` uses.
+  projectIds: z.array(z.number().int().positive()).optional(),
 })
 
 export async function PUT(

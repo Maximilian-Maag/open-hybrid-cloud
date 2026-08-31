@@ -1,7 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { Parameter, ParameterType, CreateParameterRequest, UpdateParameterRequest } from '@open-hybrid-cloud/types'
+import type {
+  Parameter,
+  ParameterType,
+  CreateParameterRequest,
+  UpdateParameterRequest,
+  Project,
+} from '@open-hybrid-cloud/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
@@ -24,6 +30,9 @@ const TYPE_KEYS: Record<ParameterType, 'typeString' | 'typeNumber' | 'typeBoolea
 const emptyForm = () => ({
   name: '', label: '', type: 'string' as ParameterType, description: '',
   defaultValue: '', required: false, sensitive: false, sizeValues: '',
+  // Empty is "every project", which is what every parameter is until somebody
+  // narrows it, and what an existing one already is (#275).
+  projectIds: [] as number[],
 })
 
 export function ParametersManager() {
@@ -32,6 +41,7 @@ export function ParametersManager() {
     value, label: t(TYPE_KEYS[value], lang),
   }))
   const [params, setParams] = useState<Parameter[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Parameter | null>(null)
@@ -44,8 +54,15 @@ export function ParametersManager() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const all = (await get<Parameter[]>('/api/admin/parameters')) ?? []
-      setParams(all.filter((p) => p.scope === 'global'))
+      const [all, projectList] = await Promise.all([
+        get<Parameter[]>('/api/admin/parameters'),
+        // Degrades to "every project only" rather than breaking the screen:
+        // without the list there is nothing to narrow to, but every existing
+        // parameter still edits and saves.
+        get<Project[]>('/api/projects').catch(() => [] as Project[]),
+      ])
+      setParams((all ?? []).filter((p) => p.scope === 'global'))
+      setProjects(projectList ?? [])
       setDeleteError(null)
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : t('failedToLoadParameters', lang))
@@ -69,6 +86,7 @@ export function ParametersManager() {
       name: param.name, label: param.label ?? '', type: param.type, description: param.description,
       defaultValue: param.defaultValue, required: param.required, sensitive: param.sensitive,
       sizeValues: sizeValuesToText(param.sizeValues),
+      projectIds: param.projectIds ?? [],
     })
     setFormError(null); setEditTarget(param)
   }
@@ -84,6 +102,7 @@ export function ParametersManager() {
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
         sizeValues: form.type === 'size' ? parseSizeValues(form.sizeValues) : {},
+        ...(form.projectIds.length > 0 ? { projectIds: form.projectIds } : {}),
       }
       await post('/api/admin/parameters', body)
       setAddOpen(false); void load()
@@ -105,6 +124,10 @@ export function ParametersManager() {
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
         sizeValues: form.type === 'size' ? parseSizeValues(form.sizeValues) : {},
+        // Always sent on update, including as []: omitting it means "leave the
+        // narrowing alone", so a parameter cleared back to every project would
+        // silently stay narrowed.
+        projectIds: form.projectIds,
       }
       await put(`/api/admin/parameters/${editTarget.id}`, body)
       setEditTarget(null); void load()
@@ -151,6 +174,17 @@ export function ParametersManager() {
                         this size. red-700 (#c10007) on the same ground is 5.27:1. */}
                     {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">{t('requiredBadge', lang)}</span>}
                     {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">{t('sensitiveBadge', lang)}</span>}
+                    {/* Only on a narrowed row. A badge on every row saying
+                        "all projects" would be noise on the common case and
+                        would stop the narrowed ones standing out, which is the
+                        only reason to show it (#275). */}
+                    {(p.projectIds ?? []).length > 0 && (
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-800">
+                        {(p.projectIds ?? [])
+                          .map((id) => projects.find((project) => project.id === id)?.name ?? `#${id}`)
+                          .join(', ')}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs font-mono text-slate-600">{p.name}</p>
                   {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
@@ -173,6 +207,37 @@ export function ParametersManager() {
             <Input label={t('displayLabel', lang)} value={form.label} onChange={(e) => setField('label', e.target.value)} hint={t('displayLabelHint', lang)} />
           </div>
           <Select label={t('type', lang)} value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
+          {/* Checkboxes, not a multi-select. "One or several projects" is a set,
+              and a <select multiple> hides the unselected options behind a
+              scroll and needs ctrl-click to build a set at all — which is the
+              kind of control people get wrong without noticing (#275).
+              Rendered only when there are projects to narrow to. */}
+          {projects.length > 0 && (
+            <fieldset className="rounded-lg border border-slate-200 p-3">
+              <legend className="px-1 text-sm font-medium text-slate-700">{t('projects', lang)}</legend>
+              <p className="mb-2 text-xs text-slate-500">{t('parameterProjectsHint', lang)}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                {projects.map((project) => (
+                  <label key={project.id} className="flex min-h-11 items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={form.projectIds.includes(project.id)}
+                      onChange={(e) =>
+                        setField(
+                          'projectIds',
+                          e.target.checked
+                            ? [...form.projectIds, project.id]
+                            : form.projectIds.filter((id) => id !== project.id),
+                        )
+                      }
+                    />
+                    {project.name}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
           <Input label={t('description', lang)} value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Input label={t('defaultValue', lang)} value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
             hint={form.type === 'dropdown' ? t('commaSeparatedOptions', lang) : undefined} />
@@ -221,6 +286,37 @@ export function ParametersManager() {
             <Input label={t('displayLabel', lang)} value={form.label} onChange={(e) => setField('label', e.target.value)} hint={t('displayLabelHint', lang)} />
           </div>
           <Select label={t('type', lang)} value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
+          {/* Checkboxes, not a multi-select. "One or several projects" is a set,
+              and a <select multiple> hides the unselected options behind a
+              scroll and needs ctrl-click to build a set at all — which is the
+              kind of control people get wrong without noticing (#275).
+              Rendered only when there are projects to narrow to. */}
+          {projects.length > 0 && (
+            <fieldset className="rounded-lg border border-slate-200 p-3">
+              <legend className="px-1 text-sm font-medium text-slate-700">{t('projects', lang)}</legend>
+              <p className="mb-2 text-xs text-slate-500">{t('parameterProjectsHint', lang)}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                {projects.map((project) => (
+                  <label key={project.id} className="flex min-h-11 items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={form.projectIds.includes(project.id)}
+                      onChange={(e) =>
+                        setField(
+                          'projectIds',
+                          e.target.checked
+                            ? [...form.projectIds, project.id]
+                            : form.projectIds.filter((id) => id !== project.id),
+                        )
+                      }
+                    />
+                    {project.name}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
           <Input label={t('description', lang)} value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Input label={t('defaultValue', lang)} value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
             hint={form.type === 'dropdown' ? t('commaSeparatedOptions', lang) : undefined} />

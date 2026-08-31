@@ -174,13 +174,24 @@ const focusProbe = () => {
     // `oklch(...)` verbatim in `fillStyle`, which is how the first version of
     // this probe reported every Tailwind v4 ring — they are all oklch — as no
     // ring at all. A pixel is always sRGB bytes.
-    probeCtx.clearRect(0, 0, 1, 1)
-    const before = probeCtx.fillStyle
-    probeCtx.fillStyle = value
-    if (probeCtx.fillStyle === before && value !== before) {
-      // Assignment ignored: not a colour this engine understands.
-      return null
+    /*
+     * Two sentinels, because one cannot tell "ignored" from "black".
+     *
+     * `fillStyle` defaults to `#000000`, and Chromium normalises `rgb(0, 0, 0)`
+     * to exactly that — so a single-sentinel check reads a perfectly valid
+     * black as an assignment the engine refused, and every black indicator and
+     * every black backdrop would have been skipped. Assigning against two
+     * different starting values leaves no colour that can impersonate both.
+     */
+    const ignored = (sentinel: string): boolean => {
+      probeCtx.fillStyle = sentinel
+      probeCtx.fillStyle = value
+      return probeCtx.fillStyle === sentinel
     }
+    if (ignored('#000000') && ignored('#ffffff')) return null
+
+    probeCtx.clearRect(0, 0, 1, 1)
+    probeCtx.fillStyle = value
     probeCtx.fillRect(0, 0, 1, 1)
     const [r, g, b, a] = probeCtx.getImageData(0, 0, 1, 1).data
     return [r, g, b, a / 255]

@@ -40,9 +40,11 @@ export default async function AdminPage() {
             href={section.href}
             className="group block rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300 hover:shadow-md transition-all"
           >
-            <h3 className="font-semibold text-slate-900 group-hover:text-blue-700 transition-colors mb-1">
+            {/* h2, not h3: these tiles hang straight off the PageHeader's <h1>
+                with nothing between, so h3 skipped a level (#185). */}
+            <h2 className="font-semibold text-slate-900 group-hover:text-blue-700 transition-colors mb-1">
               {section.title}
-            </h3>
+            </h2>
             <p className="text-sm text-slate-500">{section.description}</p>
           </Link>
         ))}

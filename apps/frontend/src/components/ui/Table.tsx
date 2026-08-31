@@ -1,6 +1,14 @@
 import type { ReactNode } from 'react'
 
 interface Column<T> {
+  /**
+   * The column's heading. An empty string means the column genuinely has none
+   * — the row-actions column is the only case — and it is then rendered as a
+   * `<td>` rather than a `<th>`, which is the HTML way of saying "no header
+   * here". An empty `<th>` is a header cell that announces nothing, which is
+   * what `empty-table-header` flags (#185); a `<td>` in the header row is the
+   * long-standing corner-cell idiom and carries no such claim.
+   */
   header: string
   accessor?: keyof T
   render?: (row: T) => ReactNode
@@ -35,15 +43,16 @@ export function Table<T extends { id?: number | string }>({
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50">
           <tr>
-            {columns.map((col) => (
-              <th
-                key={col.header}
-                scope="col"
-                className={`px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider ${col.className ?? ''}`}
-              >
-                {col.header}
-              </th>
-            ))}
+            {columns.map((col) => {
+              const cls = `px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider ${col.className ?? ''}`
+              return col.header ? (
+                <th key={col.header} scope="col" className={cls}>
+                  {col.header}
+                </th>
+              ) : (
+                <td key={col.header} className={cls} />
+              )
+            })}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">

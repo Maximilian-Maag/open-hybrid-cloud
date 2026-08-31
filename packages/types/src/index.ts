@@ -279,7 +279,21 @@ export interface Page<T> {
   offset: number
 }
 
-export type CatalogPage = Page<Product>
+export interface CatalogPage extends Page<Product> {
+  /**
+   * Whether `total` is the real number of matches, or a floor.
+   *
+   * The catalogue search cannot use an index — a leading-wildcard `ILIKE` over
+   * a COALESCE of per-language subqueries — so counting the matches costs a
+   * full evaluation per row, and the count stops at a cap. False means "at
+   * least `total`", and a UI printing a confident "of 500" for a result set of
+   * 4,000 would be stating something untrue (#236).
+   *
+   * Optional so a client written before the cap keeps compiling; absent reads
+   * as exact, which is what it was.
+   */
+  totalIsExact?: boolean
+}
 export type OrderPage = Page<Order>
 export type InfrastructurePage = Page<InfrastructureElement>
 

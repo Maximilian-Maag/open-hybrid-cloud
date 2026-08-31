@@ -147,12 +147,13 @@ export function CategoriesManager() {
         ) : (
           <div className="space-y-2">
             {categories.map((cat) => (
-              <div key={cat.id} className={`flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3 ${cat.id === flashId ? 'animate-flash-row' : ''}`}>
+              <div key={cat.id} className={`flex flex-wrap items-center justify-between gap-y-2 rounded-lg border border-slate-100 px-4 py-3 ${cat.id === flashId ? 'animate-flash-row' : ''}`}>
                 <div>
                   <span className="font-medium text-slate-900">{cat.name}</span>
                   <span className="ml-2 text-xs text-slate-600">{t('displayOrder', lang)}: {cat.displayOrder}</span>
                 </div>
-                <div className="flex gap-2">
+                {/* Wraps, for the same reason as the user rows (#168). */}
+                <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(cat)}>{t('edit', lang)}</Button>
                   <Button size="sm" variant="danger" onClick={() => { setError(null); setDeleteTarget(cat) }}>{t('delete', lang)}</Button>
                 </div>

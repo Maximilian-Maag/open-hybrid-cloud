@@ -274,6 +274,91 @@ test.describe('Accessibility — authenticated pages', () => {
   }
 })
 
+/*
+ * WCAG 1.4.10 Reflow (AA).
+ *
+ * Content must be usable at a 320px CSS width without scrolling in two
+ * directions. Nothing in this suite ever narrowed the viewport, so the app
+ * shipped with a 669px hard floor on every authenticated page: the header row
+ * could not shrink, and the account menu — which is where Sign out lives — sat
+ * entirely off-screen with `scrollLeft` pinned at 0, so there was no way to
+ * reach it at all (#167, #169).
+ *
+ * 320px because that is the number the criterion names: 1280px at 400% zoom.
+ *
+ * The document is what must not scroll sideways. A wide table inside its own
+ * `overflow-x-auto` box is fine and deliberate — the criterion allows content
+ * that genuinely requires two dimensions to scroll within its own container.
+ * So this measures the scrolling ELEMENT, not every descendant.
+ */
+test.describe('Reflow (1.4.10) — nothing scrolls sideways at 320px', () => {
+  test.use({ viewport: { width: 320, height: 800 } })
+
+  const overflowOf = (page: Page) =>
+    page.evaluate(() => {
+      const doc = document.documentElement
+      return {
+        overflow: doc.scrollWidth - doc.clientWidth,
+        // Named so a failure says WHAT is sticking out rather than only by how
+        // much — a bare number sends the next person measuring by hand.
+        widest: [...document.querySelectorAll('body *')]
+          .map((el) => {
+            const r = el.getBoundingClientRect()
+            return { right: Math.round(r.right), tag: el.tagName.toLowerCase(), cls: el.className?.toString().slice(0, 80) ?? '' }
+          })
+          .filter((e) => e.right > doc.clientWidth + 1)
+          .sort((a, b) => b.right - a.right)
+          .slice(0, 3),
+      }
+    })
+
+  for (const path of PUBLIC_PAGES) {
+    test(`${path} fits a phone, signed out`, async ({ browser }) => {
+      const context = await browser.newContext({
+        viewport: { width: 320, height: 800 },
+        baseURL: test.info().project.use.baseURL,
+      })
+      const page = await context.newPage()
+      try {
+        await page.goto(path)
+        await settled(page, path)
+        const { overflow, widest } = await overflowOf(page)
+        expect(overflow, `${path} overflows 320px by ${overflow}px — widest: ${JSON.stringify(widest)}`).toBeLessThanOrEqual(0)
+      } finally {
+        await context.close()
+      }
+    })
+  }
+
+  for (const path of AUTHED_PAGES) {
+    test(`${path} fits a phone`, async ({ page }) => {
+      await page.goto(path)
+      await settled(page, path)
+      const { overflow, widest } = await overflowOf(page)
+      expect(overflow, `${path} overflows 320px by ${overflow}px — widest: ${JSON.stringify(widest)}`).toBeLessThanOrEqual(0)
+    })
+  }
+
+  /*
+   * The dialogs are where most of this app's forms live, and none of the four
+   * `Modal` sizes clamped below a phone: the default 448px measured
+   * `left: 111, right: 559` at 375px, with its field labels sheared off the
+   * left edge (#167).
+   */
+  test('an open dialog fits a phone', async ({ page }) => {
+    await page.goto('/admin/users')
+    await settled(page, '/admin/users')
+    await page.getByRole('button', { name: /add user/i }).first().click()
+
+    const dialog = page.locator('dialog[open]')
+    await expect(dialog).toBeVisible()
+    const box = await dialog.boundingBox()
+    expect(box, 'the dialog has no box').not.toBeNull()
+    expect(box!.x, 'the dialog starts off the left edge').toBeGreaterThanOrEqual(0)
+    expect(box!.x + box!.width, 'the dialog runs past the right edge').toBeLessThanOrEqual(320)
+  })
+})
+
 test.describe('Accessibility — dialogs', () => {
   // Most forms in this app live inside a modal, so scanning only the closed page
   // leaves the majority of the form controls unchecked.

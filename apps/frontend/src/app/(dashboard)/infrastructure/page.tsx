@@ -198,8 +198,10 @@ function InfraRow({
   const deploymentFailed = item.displayStatus === 'failed'
   return (
     <div className="rounded-lg border border-slate-200 p-4">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
+      {/* Wraps, and the text column may shrink: the actions cluster beside it
+          is itself several buttons wide (#168). */}
+      <div className="flex flex-wrap items-start justify-between gap-y-3">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-1">
             {/* The row's own heading is the way in: the outputs, parameters and
                 pipeline runs are on the detail page, not in this list. */}

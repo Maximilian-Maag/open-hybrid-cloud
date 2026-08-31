@@ -51,7 +51,7 @@ export function SmtpForm({ initial }: Props) {
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert>{error}</Alert>}
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="col-span-2">
             <Input label={t('host', lang)} value={host} onChange={(e) => setHost(e.target.value)} required placeholder="smtp.example.com" />
           </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { render, screen, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ToastProvider, useToast } from './Toast'
 
@@ -81,6 +81,40 @@ describe('Toast timing', () => {
     act(() => { (screen.getByText('fire') as HTMLElement).focus() })
     act(() => { vi.advanceTimersByTime(3500) })
     expect(screen.queryByText('Hello')).not.toBeInTheDocument()
+  })
+
+  /*
+   * From review. The two holds are independent inputs and used to share one
+   * flag, so whichever handler fired last won: moving the pointer away while
+   * focus was still on Dismiss cleared the hold and restarted the timer under
+   * a keyboard user reaching for that exact button (#186).
+   *
+   * `fireEvent` rather than userEvent, because the point is a mouseleave with
+   * focus deliberately left where it is — a real pointer move would not do
+   * that, and here the unnatural combination is the bug.
+   */
+  it('keeps holding while focus is inside, even after the pointer leaves', () => {
+    raise('success')
+    const bubble = screen.getByText('Hello').closest('[role="status"]') as HTMLElement
+
+    fireEvent.mouseEnter(bubble)
+    act(() => { screen.getByRole('button', { name: 'Dismiss' }).focus() })
+    fireEvent.mouseLeave(bubble)
+
+    act(() => { vi.advanceTimersByTime(60_000) })
+    expect(screen.getByText('Hello')).toBeInTheDocument()
+  })
+
+  it('keeps holding while the pointer is over it, even after focus leaves', () => {
+    raise('success')
+    const bubble = screen.getByText('Hello').closest('[role="status"]') as HTMLElement
+
+    act(() => { screen.getByRole('button', { name: 'Dismiss' }).focus() })
+    fireEvent.mouseEnter(bubble)
+    act(() => { (screen.getByText('fire') as HTMLElement).focus() })
+
+    act(() => { vi.advanceTimersByTime(60_000) })
+    expect(screen.getByText('Hello')).toBeInTheDocument()
   })
 
   it('puts the dismiss button ahead of the page, not behind all of it', async () => {

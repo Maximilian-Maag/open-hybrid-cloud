@@ -105,6 +105,9 @@ export default function CatalogPage() {
     const generation = ++loadGeneration.current
     setLoading(true)
     setError(false)
+    // The append failure belonged to the query being replaced. Left standing it
+    // would sit above a grid it has nothing to do with (#186).
+    setLoadMoreError(false)
     try {
       const [page, cats] = await Promise.all([
         get<CatalogPageData>(pageUrl(0)),
@@ -148,18 +151,32 @@ export default function CatalogPage() {
     if (loadingMore) return
     setLoadingMore(true)
     setLoadMoreError(false)
+    /*
+     * The same generation guard `load` uses, for the same reason.
+     *
+     * A search, a category or a language change while this request is in flight
+     * replaces the grid with the new query's first page. Without the guard this
+     * completion then appends the OLD query's products to it, overwrites its
+     * total, or reports an append failure that belongs to a query nobody is
+     * looking at any more.
+     */
+    const generation = loadGeneration.current
     try {
       const page = await get<CatalogPageData>(pageUrl(products.length))
+      if (loadGeneration.current !== generation) return
       setProducts((prev) => [...prev, ...(page?.items ?? [])])
       setTotal(page?.total ?? 0)
       setTotalIsExact(page?.totalIsExact ?? true)
     } catch {
+      if (loadGeneration.current !== generation) return
       // Keep what is on screen; the button stays available for another go — but
       // say so. Swallowed, the failure and a successful append that happened to
       // return nothing look identical, and to anyone not counting cards the
       // button simply did nothing (#186).
       setLoadMoreError(true)
     } finally {
+      // Not guarded: this button belongs to the grid on screen whichever query
+      // filled it, and leaving it spinning forever would be the worse failure.
       setLoadingMore(false)
     }
   }

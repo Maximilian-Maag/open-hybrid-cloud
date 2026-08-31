@@ -77,11 +77,24 @@ const DISMISS_AFTER_MS = 3500
 
 function ToastBubble({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) {
   const lang = useLang()
-  // Held while the pointer is over the bubble or focus is inside it. Reading a
-  // message and dismissing it both take longer than the timer, and a message
-  // that vanishes out from under the user is the timing failure WCAG 2.2.1 is
-  // about (#186).
-  const [held, setHeld] = useState(false)
+  /*
+   * Held while the pointer is over the bubble OR focus is inside it. Reading a
+   * message and dismissing it both take longer than the timer, and a message
+   * that vanishes out from under the user is the timing failure WCAG 2.2.1 is
+   * about (#186).
+   *
+   * Two pieces of state, not one. A single `held` flag is written by four
+   * handlers that do not know about each other, so whichever fires last wins:
+   * move the pointer away while focus is still on the Dismiss button and
+   * `onMouseLeave` clears the hold, restarting the timer under a keyboard user
+   * who is reaching for that very button. The mirror case is real too — tab
+   * away while the pointer is still over the toast.
+   *
+   * Derived as the OR, so each input only ever describes itself.
+   */
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const held = hovered || focused
 
   // Through a ref, because the parent hands down a fresh arrow on every render.
   // As a dependency it would restart the timer each time and the toast would
@@ -102,13 +115,13 @@ function ToastBubble({ item, onDismiss }: { item: ToastItem; onDismiss: () => vo
   return (
     <div
       role={item.type === 'error' ? 'alert' : 'status'}
-      onMouseEnter={() => setHeld(true)}
-      onMouseLeave={() => setHeld(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       // React's onFocus/onBlur are the bubbling focusin/focusout, so tabbing to
       // the dismiss button inside holds the toast open — the whole point, since
       // the button is what the user is reaching for.
-      onFocus={() => setHeld(true)}
-      onBlur={() => setHeld(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       className={`flex items-center gap-3 rounded-lg px-4 py-3 shadow-xl text-sm font-medium text-white pointer-events-auto animate-toast-in min-w-56 max-w-xs ${typeClass[item.type]}`}
     >
       <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">

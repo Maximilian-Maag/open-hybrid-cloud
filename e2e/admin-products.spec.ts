@@ -101,8 +101,12 @@ test.describe('Admin - Product Delete Button', () => {
     // Cascade-decommission warning is present (tested elsewhere) — proceed with confirm
     await dialog.getByRole('button', { name: /^delete$/i }).click()
 
-    // Wait for the row to disappear from the list
-    await expect(page.getByRole('link', { name: productName, exact: true })).not.toBeVisible({ timeout: 8000 })
+    // 30s, not 8. The delete goes through `router.refresh()`, which re-renders
+    // the list on the SERVER — and against `next dev` that is a recompile the
+    // first time in a run. The row does go (the product is gone from the
+    // database when this fails), so the eight seconds were measuring the dev
+    // server rather than the deletion (#296).
+    await expect(page.getByRole('link', { name: productName, exact: true })).not.toBeVisible({ timeout: 30_000 })
 
     // Cleanup: remove the category we seeded
     await page.goto('/admin/categories')
@@ -128,9 +132,25 @@ test.describe('Admin - Product Environment Removal', () => {
     await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
     if (await noProducts.isVisible()) { test.skip(); return }
 
-    await editLinks.first().click()
-    const envCard = page.locator('div').filter({ has: page.getByRole('heading', { name: /^environments$/i }) }).last()
-    await expect(envCard).toBeVisible({ timeout: 8000 })
+    // By href: a Next.js `<Link>` is inert until React hydrates, and `next dev`
+    // compiles this route on its first request (#296).
+    const href = await editLinks.first().getAttribute('href')
+    expect(href, 'the product list has an Edit link with no href').toBeTruthy()
+    await page.goto(href as string)
+
+    /*
+     * `/environments$/i`, not `/^environments$/i`. The card is titled
+     * "Deployment Environments" — it was renamed while this test was skipping
+     * for want of a product, and an anchored match then found nothing (#296).
+     *
+     * Located from the heading upwards rather than by filtering every `div`:
+     * `locator('div').filter(...)` matches the card AND each of its ancestors,
+     * so `.last()` is a guess about document order rather than a statement
+     * about which box is the card.
+     */
+    const envHeading = page.getByRole('heading', { name: /environments$/i }).first()
+    await expect(envHeading).toBeVisible({ timeout: 30_000 })
+    const envCard = page.locator('div').filter({ has: envHeading }).last()
 
     const remove = envCard.getByRole('button', { name: /^remove$/i }).first()
     if (await remove.count() === 0) { test.skip(); return }

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ProductDetail, Category, DeploymentEnvironment, CostCenter } from '@open-hybrid-cloud/types'
+import type { ProductDetail, Category, DeploymentEnvironment, CostCenter, SizeMatrix } from '@open-hybrid-cloud/types'
 
 // jsdom does not implement the native <dialog> methods; stub them so Modal's
 // open/close effects don't throw (same stub as Modal.test.tsx).
@@ -73,11 +73,29 @@ const renderForm = (over?: Partial<ProductDetail>) =>
     />,
   )
 
+const EMPTY_MATRIX: SizeMatrix = { environments: [], rows: [] }
+
+/**
+ * The GETs this form fires on mount, answered by path.
+ *
+ * A blanket `[]` was enough while every one of them returned a list. The size
+ * matrix (#249) returns an OBJECT, and `[]` left `matrix.environments` undefined,
+ * which crashed the whole form — so the stub answers per endpoint and callers
+ * override only the path they are testing.
+ */
+const stubGet = (over: Record<string, unknown> = {}) =>
+  mockedGet.mockReset().mockImplementation((async (path: string) => {
+    if (path in over) return over[path]
+    if (path.endsWith('/sizes')) return EMPTY_MATRIX
+    // Pipeline stacks and webhooks.
+    return []
+  }) as never)
+
 beforeEach(() => {
   refresh.mockReset()
   mockedDel.mockReset().mockResolvedValue(undefined as never)
-  // Pipeline stacks are fetched on mount — not exercised here.
-  mockedGet.mockReset().mockResolvedValue([] as never)
+  mockedPut.mockReset().mockResolvedValue(undefined as never)
+  stubGet()
 })
 
 describe('ProductEditForm environment removal', () => {
@@ -314,10 +332,7 @@ describe('ProductEditForm order callbacks', () => {
     // Before the fix, `webhooks` was only ever written by add/delete — the
     // GET this endpoint exists for was never called, so a reload made every
     // existing callback invisible and its Delete button unreachable (#145).
-    mockedGet.mockReset().mockImplementation((async (path: string) => {
-      if (path === '/api/admin/products/7/webhooks') return [webhook]
-      return [] // pipeline-stacks
-    }) as never)
+    stubGet({ '/api/admin/products/7/webhooks': [webhook] })
 
     renderForm()
 
@@ -328,10 +343,7 @@ describe('ProductEditForm order callbacks', () => {
   })
 
   it('makes the loaded callback deletable', async () => {
-    mockedGet.mockReset().mockImplementation((async (path: string) => {
-      if (path === '/api/admin/products/7/webhooks') return [webhook]
-      return []
-    }) as never)
+    stubGet({ '/api/admin/products/7/webhooks': [webhook] })
     const user = userEvent.setup()
     renderForm()
 
@@ -474,5 +486,129 @@ describe('ProductEditForm translations', () => {
 
     await waitFor(() => expect(mockedPut).toHaveBeenCalled())
     expect(mockedPut.mock.calls[0][1]).toMatchObject({ longDescription: 'Eine neue Fassung.' })
+  })
+})
+
+/**
+ * The size matrix (#249).
+ *
+ * The editor this replaced was scoped to one offering, so what a size cost across
+ * environments — the comparison a per-environment price exists FOR — could not be
+ * seen at all, and pricing S/M/L/XL in four environments was sixteen separate
+ * saves. These pin the two promises that replaces it with: a row reads across, and
+ * a row saves across.
+ */
+describe('ProductEditForm size matrix', () => {
+  const MATRIX: SizeMatrix = {
+    environments: [
+      { environmentId: LINKED_ENV, name: 'AWS Frankfurt', currency: 'EUR' },
+      { environmentId: UNLINKED_ENV, name: 'On-Premise Vienna', currency: 'CHF' },
+    ],
+    rows: [
+      {
+        code: 'XL',
+        label: 'Extra large',
+        sortOrder: 1,
+        cells: [
+          { environmentId: LINKED_ENV, id: 11, price: '40.00', currency: 'EUR', active: true },
+          { environmentId: UNLINKED_ENV, id: 12, price: '100.00', currency: 'CHF', active: true },
+        ],
+      },
+    ],
+  }
+
+  const withMatrix = (matrix: SizeMatrix) => stubGet({ '/api/admin/products/7/sizes': matrix })
+
+  it('shows what one size costs in every environment on a single row', async () => {
+    withMatrix(MATRIX)
+    renderForm()
+
+    // Both prices are reachable from the row's own code, which is the whole point:
+    // "what does XL cost where" used to mean opening one editor per environment.
+    expect(await screen.findByLabelText('XL — AWS Frankfurt — Price')).toHaveValue('40.00')
+    expect(screen.getByLabelText('XL — On-Premise Vienna — Price')).toHaveValue('100.00')
+    // And not flattened onto one currency: the same size in two environments is
+    // two prices, in whatever the environment bills in.
+    expect(screen.getByLabelText('XL — AWS Frankfurt — Currency')).toHaveValue('EUR')
+    expect(screen.getByLabelText('XL — On-Premise Vienna — Currency')).toHaveValue('CHF')
+  })
+
+  it('prices a new size in every environment in one request', async () => {
+    withMatrix({ environments: MATRIX.environments, rows: [] })
+    renderForm()
+
+    // fireEvent, not userEvent: this form re-renders whole on every keystroke, and
+    // typing four fields a character at a time runs past the 5s test budget.
+    fireEvent.change(await screen.findByLabelText('Code'), { target: { value: 'S' } })
+    fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'Small' } })
+    fireEvent.change(screen.getByLabelText('Add / update size — AWS Frankfurt — Price'), { target: { value: '10.00' } })
+    fireEvent.change(screen.getByLabelText('Add / update size — On-Premise Vienna — Price'), { target: { value: '25.00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add / update size' }))
+
+    // One PUT carrying both cells, not one request per environment: a bulk edit
+    // applied a cell at a time can leave half a price list behind.
+    await waitFor(() => expect(mockedPut).toHaveBeenCalledTimes(1))
+    expect(mockedPut).toHaveBeenCalledWith('/api/admin/products/7/sizes/S', {
+      label: 'Small',
+      sortOrder: 1,
+      cells: [
+        { environmentId: LINKED_ENV, price: '10.00', currency: 'EUR' },
+        { environmentId: UNLINKED_ENV, price: '25.00', currency: 'CHF' },
+      ],
+    })
+  })
+
+  it('retires the cell it is asked to clear instead of deleting the size', async () => {
+    withMatrix(MATRIX)
+    renderForm()
+
+    const vienna = await screen.findByLabelText('XL — On-Premise Vienna — Price')
+    fireEvent.change(vienna, { target: { value: '' } })
+    // Scoped to the row: the page's own "Save" belongs to the basic-information
+    // form, and clicking that one would have proved nothing about the grid.
+    const row = vienna.closest('tr')
+    if (!row) throw new Error('the XL row was not found')
+    fireEvent.click(within(row).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalledTimes(1))
+    // Vienna is simply absent from the body — that is what tells the server to
+    // retire it. Sending a deletion instead would break the orders that name it.
+    expect(mockedPut).toHaveBeenCalledWith('/api/admin/products/7/sizes/XL', {
+      label: 'Extra large',
+      sortOrder: 1,
+      cells: [{ environmentId: LINKED_ENV, price: '40.00', currency: 'EUR' }],
+    })
+    expect(mockedDel).not.toHaveBeenCalled()
+  })
+
+  it('loads a retired cell empty, and still says what it was priced at', async () => {
+    withMatrix({
+      environments: MATRIX.environments,
+      rows: [{
+        ...MATRIX.rows[0],
+        cells: [
+          { environmentId: LINKED_ENV, id: 11, price: '40.00', currency: 'EUR', active: true },
+          { environmentId: UNLINKED_ENV, id: 12, price: '100.00', currency: 'CHF', active: false },
+        ],
+      }],
+    })
+    renderForm()
+
+    // Empty is what "not offered here" looks like in every other cell, so a
+    // retired one has to look the same — otherwise re-saving the row silently
+    // puts the size back on sale.
+    expect(await screen.findByLabelText('XL — On-Premise Vienna — Price')).toHaveValue('')
+    // The price it was struck at is still on screen: it is what the orders placed
+    // while it was active were charged.
+    expect(screen.getByText('retired · 100.00 CHF')).toBeInTheDocument()
+  })
+
+  it('says a size needs an offering before it can be priced', async () => {
+    withMatrix(EMPTY_MATRIX)
+    renderForm()
+
+    expect(
+      await screen.findByText('Offer this product in at least one environment below first: a size is priced per environment.'),
+    ).toBeInTheDocument()
   })
 })

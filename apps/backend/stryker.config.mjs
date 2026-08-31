@@ -69,6 +69,12 @@ const config = {
   // pull-request check and blocks nothing; a red run there means "still climbing",
   // and the number in the job summary is the thing to read.
   //
+  // The 90 that decides whether something ships is NOT this one. It lives in
+  // .github/workflows/mutation-release-gate.yml, which measures staging -> main
+  // and compares against its own RELEASE_THRESHOLD. Deliberate: #245 treats
+  // `break` as a ratchet that follows the last measured score, and a release gate
+  // reading a ratchet would pass whatever the suite happened to manage.
+  //
   // Issue #245 tracks the climb and says where the points are — roughly two
   // thirds of the frontend gap is files with no test at all, not weak assertions.
   thresholds: { high: 90, low: 80, break: 90 },

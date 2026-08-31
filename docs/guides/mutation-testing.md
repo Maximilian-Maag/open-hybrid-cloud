@@ -36,11 +36,12 @@ present. A mutation run starts with an unmutated dry run and aborts on the first
 failure, so a suite that is red for unrelated reasons stops Stryker before it
 mutates anything.
 
-A backend run also needs the test database **to itself**. Anything else that
-runs the suite at the same time — a second terminal, another agent, an editor
-test runner — truncates the tables Stryker's run is mid-way through using, and
-the run dies on a `TRUNCATE TABLE ...` failure in the dry run that looks like a
-config problem but is not.
+Parallel runs no longer collide, though they used to and the failure looked like
+a config problem: `src/test/database.ts` now derives the database name from the
+working directory, and each Stryker worker runs in its own
+`.stryker-tmp/sandbox-*` copy of the tree, so each already has a database of its
+own. `TEST_DB_SUFFIX` separates the one case a directory cannot — two runs
+started by hand in the same checkout.
 
 Expect it to be slow. One measured data point: mutating
 `src/lib/tfparser/index.ts` alone (116 mutants, ~4 covering tests each) takes
@@ -60,9 +61,10 @@ no test covers is reported as "no coverage" without running anything.
 
 `apps/backend/stryker.config.mjs` carries three deliberate deviations:
 
-- **`concurrency: 1`.** Every test file truncates every table in `beforeEach`
-  against the one `open_hybrid_cloud_test` database. Two Stryker workers would
-  wipe each other's fixtures mid-test and report the wreckage as killed mutants.
+- **`concurrency: 4`.** It was 1, on the belief that parallel workers would wipe
+  each other's fixtures in a shared database. They do not — see the per-sandbox
+  database naming above — and four matches the suite's own `maxWorkers`, past
+  which the workers only queue on the same Postgres.
 - **`ignoreStatic: true`.** A mutant in module-level code (a zod schema built at
   import time, a top-level constant) cannot be attributed to any single test, so
   Stryker falls back to running the *entire* suite for it — hours per mutant
@@ -85,21 +87,54 @@ runner at all and fails with `Cannot find TestRunner plugin "vitest"`.
 
 ## Making the backend run faster
 
-`concurrency: 1` is what makes a full backend run an overnight job rather than a
-coffee break. The way out is to stop sharing one database: Stryker sets
-`STRYKER_MUTATOR_WORKER` (`0`, `1`, `2`, …) in each test-runner process, so
-`vitest.config.ts` can derive a per-worker database name from it and
-`src/test/setup.ts` can create that database on first use. With that in place
-`concurrency` can go up to the core count. Until then, prefer scoped runs with
-`--mutate`.
+The database is no longer the ceiling — `concurrency` is 4 and can go higher.
+What costs the hours now is that every mutant reruns route tests against a live
+Postgres at roughly 6s a piece, so the lever that still works is scope: prefer
+`--mutate` on the file you are actually changing.
 
 ---
 
-## Not in CI
+## In CI
 
-Neither app runs mutation testing in `.github/workflows/ci.yml`, on purpose: a
-per-PR mutation run is far too slow to gate a merge on. Run it locally when you
-touch logic you care about, or wire it into a scheduled workflow if the score
-becomes something the team wants to defend. `thresholds.break` is `null` in both
-configs, so the command reports the score without failing; set it once a
-baseline is agreed.
+Three places, and they are not asking the same question.
+
+| Where | When | What a red run means |
+|---|---|---|
+| `.github/workflows/ci.yml` | never | — a per-PR mutation run is far too slow to gate a merge on, and #245 settled that it is not what the number is for |
+| `.github/workflows/mutation.yml` | nightly on `dev`, plus `workflow_dispatch` | "still climbing" — it blocks nothing. `thresholds.break` is the ratchet, and it is deliberately above the current score |
+| `.github/workflows/mutation-release-gate.yml` | pull requests whose **base** is `main` | the release does not meet 90% — from `ENFORCE_FROM` onwards. Until that date the job reports the number and passes |
+
+The release gate is the one the owner's 90% belongs to: the branch model is `dev`
+on the dev server, `staging` on staging and `main` in production, and the score
+has to hold at the last hop, not on every branch that reaches `dev`.
+
+Two things about it are worth knowing before you read a run:
+
+- **The 90 lives in the workflow, not in `thresholds.break`.** `break` is a
+  ratchet that tracks the last measured score so the nightly can only improve
+  (#245); a release gate reading that ratchet would wave through whatever the
+  suite managed that week. The workflow's `RELEASE_THRESHOLD` is the number that
+  does not move.
+- **It runs without `--incremental`.** The nightly reuses cached verdicts for
+  code Stryker believes has not changed, which is a fair trade for a trend line
+  and the wrong basis for a decision to ship.
+
+It also skips itself when a promotion moves nothing but `docs/`, `infra/` and
+Markdown — an hour of runner time buys nothing there. The `Mutation gate` job
+always runs and reports that skip as a pass, so it is the name to put in branch
+protection: a required check that gets skipped stays pending forever and wedges
+the merge it was meant to guard.
+
+### Why it starts as a report
+
+It cannot pass today. The frontend's last completed run scored **26.80**
+(2026-08-24) and the backend has never produced a number at all — its nightly
+still dies in the unmutated dry run. This repository's own rule, from
+`README.md`, is that a gate which cannot pass yet ships naming the issue that
+will promote it, because one that starts red teaches people to click past it.
+
+`ENFORCE_FROM` in the workflow is the date that stops being an excuse. Nothing
+believes 26.80 → 90 happens by then; what happens is that the gate starts
+blocking `main` and somebody decides in the open — raise the score, or move the
+date with the reason written next to it. Run the workflow by hand with
+`enforce: true` to see what that day will look like.

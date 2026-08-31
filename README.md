@@ -436,6 +436,8 @@ Response codes: `200` all due elements torn down, `207` some could not be starte
 | Trigger | Pipeline |
 |---------|----------|
 | Pull request | Type-check + lint + build + E2E + a11y gate + policy gate, and (only if the PR touches `docs/handbook.tex`) a handbook compile check (`.github/workflows/ci.yml`) |
+| Pull request into `main` | Additionally a full Stryker run per app against the 90% release threshold (`.github/workflows/mutation-release-gate.yml`). Hours rather than minutes, which is affordable only because it asks this of the last hop to production and of nothing else — see [the mutation testing guide](docs/guides/mutation-testing.md) for why it reports rather than blocks until a dated switch |
+| Nightly on `dev` | A full mutation run as a trend line, blocking nothing (`.github/workflows/mutation.yml`) |
 | Push to `dev`/`staging`/`main` | Build & push Docker images (`.github/workflows/cd-release.yml`) |
 | Push to `main` | Additionally compiles the handbook fresh from `docs/handbook.tex` and publishes a GitHub Release with the resulting PDF attached |
 

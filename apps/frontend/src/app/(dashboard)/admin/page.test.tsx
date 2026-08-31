@@ -13,7 +13,7 @@ import AdminPage from './page'
 async function cardTexts(forLang: string): Promise<string[]> {
   lang = forLang
   const { container, unmount } = render(await AdminPage())
-  const texts = [...container.querySelectorAll('a h3, a p')].map((el) => el.textContent ?? '')
+  const texts = [...container.querySelectorAll('a h2, a p')].map((el) => el.textContent ?? '')
   unmount()
   return texts
 }

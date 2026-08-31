@@ -241,7 +241,11 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         '--ring-accent': readableAccent(secondaryColor, '#ffffff', AA_LARGE),
       } as React.CSSProperties}
     >
-      <div className="w-full max-w-sm">
+      {/* A landmark, not a plain div: this page renders outside the dashboard
+          layout, so nothing else on it provides one and every element on the
+          screen sat outside all landmarks. `landmark-one-main` and `region`
+          both say so — two of the rules this gate did not request until #185. */}
+      <main className="w-full max-w-sm">
         <div className="text-center mb-8">
           {logoDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -455,7 +459,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
           </form>
           )}
         </div>
-      </div>
+      </main>
     </div>
   )
 }

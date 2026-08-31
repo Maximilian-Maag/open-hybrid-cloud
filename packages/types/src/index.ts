@@ -450,6 +450,15 @@ export interface CreateParameterRequest {
 }
 
 export interface UpdateParameterRequest {
+  /**
+   * Which environment this parameter applies to; `null` means all of them.
+   *
+   * The create request has carried this since the column existed, and the route
+   * has always accepted it on update too — the type simply did not say so, so
+   * nothing could send it and a parameter's environment could be chosen once
+   * and never corrected (#275).
+   */
+  environmentId?: number | null
   name?: string
   label?: string
   type?: ParameterType

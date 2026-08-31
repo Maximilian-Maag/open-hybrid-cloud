@@ -18,10 +18,16 @@ export default async function ImpressumPage() {
   const imprintText = branding.imprintText ?? ''
 
   if (!imprintText) {
+    // The same landmark and the same <h1> as the branch below. This is the
+    // branch every CI database and every fresh install renders, and it used to
+    // be a bare div: no `main`, no heading, so the page had neither a landmark
+    // nor a level-one heading — invisible to the gate until #185 asked axe for
+    // `landmark-one-main` and `page-has-heading-one`.
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center text-slate-600">{t('noImprintConfigured', lang)}</div>
-      </div>
+      <main className="min-h-screen flex flex-col items-center justify-center gap-2 bg-slate-50 px-6 text-center">
+        <h1 className="text-2xl font-bold text-slate-900">{t('imprint', lang)}</h1>
+        <p className="text-slate-600">{t('noImprintConfigured', lang)}</p>
+      </main>
     )
   }
 

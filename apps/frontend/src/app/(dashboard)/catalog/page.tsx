@@ -257,15 +257,22 @@ export default function CatalogPage() {
 
   const categoryName = (categoryId: number) => categories.find((c) => c.id === categoryId)?.name
 
-  const renderCard = (product: {
-    id: number
-    categoryId: number
-    name: string
-    description: string
-    imageAlt?: string | null
-  }) => (
+  // `level` is passed at each call site rather than defaulted here: the two
+  // grids sit at different depths in the outline, and `.map(renderCard)` would
+  // have handed the array index to it.
+  const renderCard = (
+    product: {
+      id: number
+      categoryId: number
+      name: string
+      description: string
+      imageAlt?: string | null
+    },
+    level: 2 | 3,
+  ) => (
     <ProductCard
       key={product.id}
+      level={level}
       id={product.id}
       name={product.name}
       description={product.description}
@@ -295,7 +302,7 @@ export default function CatalogPage() {
       {/* Category sidebar */}
       <aside className="hidden md:block w-52 shrink-0">
         <div className="bg-white rounded-lg border border-slate-200 p-4 sticky top-28">
-          <h3 className="font-bold text-xs text-slate-500 mb-3 uppercase tracking-wide">{t('categories', lang)}</h3>
+          <h2 className="font-bold text-xs text-slate-500 mb-3 uppercase tracking-wide">{t('categories', lang)}</h2>
           <ul className="space-y-1">
             <li>
               <button
@@ -333,29 +340,22 @@ export default function CatalogPage() {
 
       {/* Main content */}
       <div className="flex-1 min-w-0">
-        {/* Favourites shortcut. Hidden entirely when empty rather than shown as
-            an empty shelf, and suppressed while searching or filtering so it
-            cannot contradict the result set below it. */}
-        {favoriteCards.length > 0 && !search && selectedCategory === null && (
-          <section className="mb-6" aria-labelledby="favorites-heading">
-            <h2 id="favorites-heading" className="text-xl font-bold text-slate-800 mb-3">
-              {t('myFavorites', lang)}
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {favoriteCards.map(renderCard)}
-            </div>
-          </section>
-        )}
-
+        {/* The page's <h1>, and it comes BEFORE the favourites shelf on purpose.
+            It used to be an <h2> sitting below that shelf, so /catalog — the
+            second-busiest route here — had no level-one heading at all, and
+            simply promoting it in place would have put the h1 after the
+            favourites' h2 and its h3 cards: a heading-order skip on the way
+            back down. Moving it up makes the outline read h1 → h2 → h3 in DOM
+            order, which is the order a screen reader walks it in (#185). */}
         <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
           <div>
             {search ? (
-              <h2 className="text-xl font-bold text-slate-800">
+              <h1 className="text-xl font-bold text-slate-800">
                 {t('resultsFor', lang)}: <span style={{ color: 'var(--bp-text)' }}>&ldquo;{search}&rdquo;</span>
-              </h2>
+              </h1>
             ) : (
               <>
-                <h2 className="text-xl font-bold text-slate-800">{t('productCatalog', lang)}</h2>
+                <h1 className="text-xl font-bold text-slate-800">{t('productCatalog', lang)}</h1>
                 <p className="text-sm text-slate-500 mt-0.5">{t('productCatalogSubtitle', lang)}</p>
               </>
             )}
@@ -384,6 +384,20 @@ export default function CatalogPage() {
                 : `${total}${totalIsExact ? '' : '+'} ${t('products', lang)}`}
           </span>
         </div>
+
+        {/* Favourites shortcut. Hidden entirely when empty rather than shown as
+            an empty shelf, and suppressed while searching or filtering so it
+            cannot contradict the result set below it. */}
+        {favoriteCards.length > 0 && !search && selectedCategory === null && (
+          <section className="mb-6" aria-labelledby="favorites-heading">
+            <h2 id="favorites-heading" className="text-xl font-bold text-slate-800 mb-3">
+              {t('myFavorites', lang)}
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {favoriteCards.map((p) => renderCard(p, 3))}
+            </div>
+          </section>
+        )}
 
         {/* Mobile category pills */}
         {categories.length > 0 && (
@@ -442,7 +456,7 @@ export default function CatalogPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {products.map(renderCard)}
+              {products.map((p) => renderCard(p, 2))}
             </div>
 
             {/* Only when there is genuinely more to fetch — a button that says

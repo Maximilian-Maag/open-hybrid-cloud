@@ -9,8 +9,21 @@ deliberately partial claim, and this document is the record of which parts were
 taken and which were refused, because "we aim for AAA" without that record is
 indistinguishable from not having looked.
 
-Two things worth knowing before reading the table:
+Three things worth knowing before reading the table:
 
+- **The gate asks for `best-practice` as well as the WCAG tags.** Of the 105 rules
+  axe-core 4.13.0 ships, 30 carry `best-practice` and no `wcagNNN` tag, so a tag
+  list of `wcag2a`/`wcag2aa`/`wcag21a`/`wcag21aa` never ran them (#185). They are
+  the structural checks nothing else here performs — `heading-order`,
+  `page-has-heading-one`, `empty-heading`, `region`, `landmark-one-main`,
+  `landmark-unique`, `skip-link`, `tabindex`, `empty-table-header` — and on the
+  first run they found that `/` and `/catalog` had no `<h1>`, that `/login` and
+  the unconfigured `/impressum` had no landmark at all, and that every page built
+  from `PageHeader` + `Card` went h1 → h3 because `Card` hardcoded its title's
+  level. Three of axe's rules are still not requested, deliberately:
+  `duplicate-id` and `duplicate-id-active` are tagged `deprecated` (4.1.1 was
+  removed from WCAG 2.2), and `target-size` is the 2.2 AA criterion 2.5.8 at 24px,
+  which the 44px 2.5.5 probe below already exceeds.
 - **axe has three AAA rules.** `color-contrast-enhanced` (1.4.6),
   `identical-links-same-purpose` (2.4.9) and `meta-refresh-no-exceptions`
   (2.2.4/3.2.5). All three are `enabled: false` by default; requesting the
@@ -141,7 +154,7 @@ Adding one is a documentation project. Recorded as partially met, not claimed.
 | 2.1.3 Keyboard (No Exception) | Plausibly met — every control is a native element and the dialogs are `<dialog>` — but "no exception" is a claim about paths nobody has walked. Not asserted, so not claimed. |
 | 2.2.3 No Timing, 2.2.5 Re-authenticating, 2.2.6 Timeouts | The session expires. `expiredLoginUrl` returns you to the page you were on (#103), which is most of 2.2.5, but nothing warns before the timeout or preserves unsaved form data, which is 2.2.6. |
 | 2.3.2 Three Flashes | Met by construction: nothing flashes. |
-| 2.4.10 Section Headings | Largely met — `Card` titles are real headings and every page has an `h1` — but "organised using section headings" is a judgement about content structure, not something a rule can check. |
+| 2.4.10 Section Headings | Largely met — `Card` titles are real headings, every page has an `h1`, and both are now *checked* (`page-has-heading-one` and `heading-order`) rather than asserted in prose; this row claimed the h1 while `/` and `/catalog` had none. "Organised using section headings" is still a judgement about content structure, not something a rule can check. |
 | 3.1.3 Unusual Words, 3.1.4 Abbreviations, 3.1.6 Pronunciation | The UI is dense with abbreviations (CI, SMTP, TLS, CSV, VM, `TF_VAR_`). Expanding them properly means a glossary in 25 languages. Real gap. |
 | 3.3.6 Error Prevention (All) | Every destructive action is behind a confirmation modal, which covers reversal for deletes. Submissions are not reviewable-before-final in general. |
 
@@ -162,5 +175,19 @@ Adding one is a documentation project. Recorded as partially met, not claimed.
   keep that gap stated rather than implied by the list's silence.
 - A new UI primitive is not checked until it is in `a11y.test.tsx`. jsdom cannot do
   `color-contrast` (no layout, no canvas), so contrast stays an e2e concern.
+- **A glyph-only indicator is invisible to `color-contrast`.** The rule matches an
+  element only if `hasRealTextChildren` accepts it, and that helper strips
+  punctuation first — so a lone `*`, `·`, `›` or `—` leaves an empty string and
+  the element is dropped from the check. No configuration changes this. That is
+  how the required-field asterisk shipped at 3.82:1 on white (#185). The e2e gate
+  measures the class itself: `glyphContrast` in `a11y.spec.ts` runs on every page
+  and dialog it already loads, and `the required-field marker is found and
+  measured` proves the probe still matches something, because a measurement that
+  finds nothing passes exactly like a clean one.
+- **Heading levels are a page property, so a component cannot own one.** `Card`,
+  `ProductCard` and the admin environment rows take a `level` prop for that
+  reason: the same card sits under an `<h1>` in one grid and under an `<h2>` in
+  another, and a hardcoded level is a `heading-order` failure in whichever place
+  it is wrong.
 - A new control needs the 44px floor. `Button`, `Input` and `Select` carry it; a
   hand-rolled `<button>` does not.

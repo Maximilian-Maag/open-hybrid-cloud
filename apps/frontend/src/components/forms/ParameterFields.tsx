@@ -109,7 +109,7 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
               <div>
                 <label htmlFor={`param-${param.id}`} className="text-sm font-medium text-slate-700">
                   {displayLabel(param)}
-                  {param.required && <span className="ml-1 text-red-500">*</span>}
+                  {param.required && <span className="ml-1 text-red-600">*</span>}
                 </label>
                 {param.description && (
                   <p id={descriptionId} className="text-xs text-slate-500">{param.description}</p>
@@ -125,7 +125,7 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
             <div key={param.id} className="flex flex-col gap-1">
               <label htmlFor={`param-${param.id}`} className="text-sm font-medium text-slate-700">
                 {displayLabel(param)}
-                {param.required && <span className="ml-1 text-red-500">*</span>}
+                {param.required && <span className="ml-1 text-red-600">*</span>}
               </label>
               {param.description && <p id={descriptionId} className="text-xs text-slate-500">{param.description}</p>}
               <select

@@ -130,9 +130,11 @@ test.describe('Admin - Internationalization', () => {
    * (#186) — "Sprache: DE – Deutsch" once German is chosen — so a /language/i
    * match finds the toggle before the switch and nothing after it, which is
    * precisely the half of these tests that matters. `aria-expanded` is on this
-   * button and on no other control in the app.
+   * button and on no other control the app renders — scoped to the header
+   * because Next's dev-tools button carries one too, and the dev server is what
+   * these tests run against.
    */
-  const languageToggle = (page: Page) => page.locator('button[aria-expanded]')
+  const languageToggle = (page: Page) => page.locator('header button[aria-expanded]')
 
   test('language switcher is visible in header', async ({ page }) => {
     await loginAsRoot(page)

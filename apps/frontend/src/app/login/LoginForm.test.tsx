@@ -356,3 +356,46 @@ describe('LoginForm — second factor required', () => {
     expect(screen.queryByLabelText(/authentication code/i)).toBeNull()
   })
 })
+
+/**
+ * The focus indicator is a property of a state the page scan never reaches: axe
+ * scans a page at rest, and the e2e focus probe counts any painted shadow layer
+ * as a pass — so a ring painted in white on white satisfies both while being
+ * invisible (#186).
+ */
+describe('LoginForm — focus indicators', () => {
+  const ringColour = (el: HTMLElement) => el.style.getPropertyValue('--tw-ring-color')
+
+  it('paints the sign-in button ring in the accent, not in its own text colour', async () => {
+    // `ring-2` with no colour compiles to `var(--tw-ring-color, currentcolor)`.
+    // currentColor on this button is --bp-ink, which readableInk('#131921')
+    // returns as #ffffff — a white ring, on the #fff that --tw-ring-offset-color
+    // defaults to, on a white card, with the UA outline removed. --ring-accent
+    // is the brand colour darkened until it clears AA against white.
+    mockChallenge({ ok: true, mfaRequired: false })
+    render(<LoginForm {...props} />)
+
+    expect(ringColour(screen.getByRole('button', { name: /sign in/i }))).toBe('var(--ring-accent)')
+  })
+
+  it('paints the second-factor verify button the same way', async () => {
+    mockChallenge({ ok: true, mfaRequired: true, mfaToken: 'tok', methods: ['totp'] })
+    render(<LoginForm {...props} />)
+    await signInAsPassword()
+
+    const verify = await screen.findByRole('button', { name: /^verify$/i })
+    expect(ringColour(verify)).toBe('var(--ring-accent)')
+  })
+
+  it('leaves no submit control relying on the fallback', () => {
+    // The three other controls on this page already set it inline. A future
+    // button that forgets is the same defect again, and it is invisible in
+    // review — which is what this counts.
+    mockChallenge({ ok: true, mfaRequired: false })
+    const { container } = render(<LoginForm {...props} />)
+
+    for (const el of container.querySelectorAll<HTMLElement>('[class*="focus-visible:ring-2"], [class*="focus:ring-2"]')) {
+      expect(ringColour(el), el.outerHTML).not.toBe('')
+    }
+  })
+})

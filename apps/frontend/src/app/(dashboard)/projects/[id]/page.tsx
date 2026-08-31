@@ -64,40 +64,43 @@ export default async function ProjectDetailPage({ params }: Props) {
 
       <ProjectEditForm project={project} costCenters={costCenters} />
 
-      {orders.length > 0 && (
-        <Card title={t('ordersInProject', lang)}>
-          <Table<Order>
-            columns={[
-              {
-                header: t('id', lang),
-                render: (row) => (
-                  <Link href={`/orders/${row.id}`} className="font-mono text-blue-600 hover:underline text-xs">
-                    #{row.id}
-                  </Link>
-                ),
-              },
-              {
-                header: t('product', lang),
-                render: (row) => row.productName ?? `#${row.productId}`,
-              },
-              { header: t('environment', lang), accessor: 'environmentName' },
-              {
-                header: t('status', lang),
-                render: (row) => <StatusBadge status={row.status} lang={lang} />,
-              },
-              {
-                header: t('date', lang),
-                render: (row) => (
-                  <span className="text-xs text-slate-500">
-                    {new Date(row.createdAt).toLocaleDateString(lang)}
-                  </span>
-                ),
-              },
-            ]}
-            data={orders}
-          />
-        </Card>
-      )}
+      {/* Rendered unconditionally. The card used to be hidden when the project
+          had no orders, which made the empty message below unreachable — and
+          left a project page that says nothing at all about orders, so a reader
+          cannot tell "none yet" from "this page does not show them" (#186). */}
+      <Card title={t('ordersInProject', lang)}>
+        <Table<Order>
+          emptyMessage={t('noOrders', lang)}
+          columns={[
+            {
+              header: t('id', lang),
+              render: (row) => (
+                <Link href={`/orders/${row.id}`} className="font-mono text-blue-600 hover:underline text-xs">
+                  #{row.id}
+                </Link>
+              ),
+            },
+            {
+              header: t('product', lang),
+              render: (row) => row.productName ?? `#${row.productId}`,
+            },
+            { header: t('environment', lang), accessor: 'environmentName' },
+            {
+              header: t('status', lang),
+              render: (row) => <StatusBadge status={row.status} lang={lang} />,
+            },
+            {
+              header: t('date', lang),
+              render: (row) => (
+                <span className="text-xs text-slate-500">
+                  {new Date(row.createdAt).toLocaleDateString(lang)}
+                </span>
+              ),
+            },
+          ]}
+          data={orders}
+        />
+      </Card>
     </div>
   )
 }

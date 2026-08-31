@@ -295,7 +295,7 @@ describe('Table', () => {
 
   it('is accessible with rows', async () => {
     expect(
-      await check(<Table columns={columns} data={[{ id: 1, name: 'web-01' }]} />),
+      await check(<Table columns={columns} data={[{ id: 1, name: 'web-01' }]} emptyMessage="Nothing yet" />),
     ).toHaveNoViolations()
   })
 
@@ -725,13 +725,42 @@ describe('ParameterFields', () => {
           parameters={[
             param({ id: 1, name: 'hostname', label: 'Hostname', type: 'string', required: true }),
             param({ id: 2, name: 'replicas', label: 'Replicas', type: 'number', description: 'How many' }),
-            param({ id: 3, name: 'public', label: 'Publicly reachable', type: 'bool' }),
-            param({ id: 4, name: 'size', label: 'Size', type: 'dropdown', defaultValue: 'small, large' }),
+            param({ id: 3, name: 'public', label: 'Publicly reachable', type: 'bool', description: 'Opens port 443 to the internet' }),
+            param({ id: 4, name: 'size', label: 'Size', type: 'dropdown', defaultValue: 'small, large', description: 'Sets the vCPU and memory allocation' }),
             param({ id: 5, name: 'token', label: 'API token', type: 'string', sensitive: true }),
           ]}
         />,
       ),
     ).toHaveNoViolations()
+  })
+
+  // The fixture above used to leave these two empty, so the branch that drops
+  // the text never ran and the whole defect sat under a green check (#186).
+  it('announces the description for the two types that draw their own markup', async () => {
+    render(
+      <ParameterFields
+        onChange={() => {}}
+        parameters={[
+          param({ id: 3, name: 'public', label: 'Publicly reachable', type: 'bool', description: 'Opens port 443 to the internet' }),
+          param({ id: 4, name: 'size', label: 'Size', type: 'dropdown', defaultValue: 'small, large', description: 'Sets the vCPU and memory allocation' }),
+        ]}
+      />,
+    )
+    // Same operator-authored string a text parameter gets through `Input`. It
+    // is the difference between "Publicly reachable, checkbox" and knowing the
+    // box opens a port.
+    expect(screen.getByRole('checkbox', { name: 'Publicly reachable' }))
+      .toHaveAccessibleDescription('Opens port 443 to the internet')
+    expect(screen.getByRole('combobox', { name: 'Size' }))
+      .toHaveAccessibleDescription('Sets the vCPU and memory allocation')
+  })
+
+  it('leaves the description wiring off when there is nothing to describe', () => {
+    // An `aria-describedby` pointing at an id that was never rendered is a
+    // broken reference, which some screen readers read as an empty description
+    // and others skip entirely.
+    render(<ParameterFields onChange={() => {}} parameters={[param({ id: 3, name: 'public', label: 'Publicly reachable', type: 'bool' })]} />)
+    expect(screen.getByRole('checkbox', { name: 'Publicly reachable' })).not.toHaveAttribute('aria-describedby')
   })
 
   it('falls back to the variable name when no label is configured, rather than going unnamed', async () => {

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Admin area', () => {
@@ -22,7 +22,7 @@ test.describe('Admin area', () => {
     // Links include description text in accessible name, so use partial match (no $ anchor)
     await expect(page.getByRole('link', { name: /^categories/i })).toBeVisible()
     await expect(page.getByRole('link', { name: /^products/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /^environments/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^deployment environments/i })).toBeVisible()
     await expect(page.getByRole('link', { name: /^users/i })).toBeVisible()
     await expect(page.getByRole('link', { name: /^branding/i })).toBeVisible()
     await expect(page.getByRole('link', { name: /^cost centers/i })).toBeVisible()
@@ -125,19 +125,29 @@ test.describe('Admin area', () => {
 })
 
 test.describe('Admin - Internationalization', () => {
+  /**
+   * Not by accessible name. The switcher names itself in the page language now
+   * (#186) — "Sprache: DE – Deutsch" once German is chosen — so a /language/i
+   * match finds the toggle before the switch and nothing after it, which is
+   * precisely the half of these tests that matters. `aria-expanded` is on this
+   * button and on no other control the app renders — scoped to the header
+   * because Next's dev-tools button carries one too, and the dev server is what
+   * these tests run against.
+   */
+  const languageToggle = (page: Page) => page.locator('header button[aria-expanded]')
+
   test('language switcher is visible in header', async ({ page }) => {
     await loginAsRoot(page)
     await page.goto('/')
     // Language switcher shows current language code (e.g. "EN")
-    await expect(page.getByRole('button', { name: /language/i })).toBeVisible()
+    await expect(languageToggle(page)).toBeVisible()
   })
 
   test('switching language updates UI text', async ({ page }) => {
     await loginAsRoot(page)
     await page.goto('/')
 
-    // Open language switcher (aria-label: "Language: English")
-    await page.getByRole('button', { name: /language/i }).click()
+    await languageToggle(page).click()
     // Select German — button contains both code span "DE" and name span "Deutsch"
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^DE$/ }) }).click()
 
@@ -145,7 +155,7 @@ test.describe('Admin - Internationalization', () => {
     await expect(page.getByRole('link', { name: 'Katalog', exact: true })).toBeVisible({ timeout: 5000 })
 
     // Switch back to English
-    await page.getByRole('button', { name: /language/i }).click()
+    await languageToggle(page).click()
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^EN$/ }) }).click()
     await expect(page.getByRole('link', { name: /^catalog$/i })).toBeVisible({ timeout: 5000 })
   })
@@ -155,7 +165,7 @@ test.describe('Admin - Internationalization', () => {
     await page.goto('/')
 
     // Switch to German
-    await page.getByRole('button', { name: /language/i }).click()
+    await languageToggle(page).click()
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^DE$/ }) }).click()
     await expect(page.getByRole('link', { name: 'Katalog', exact: true })).toBeVisible({ timeout: 5000 })
 
@@ -164,7 +174,7 @@ test.describe('Admin - Internationalization', () => {
     await expect(page.getByRole('link', { name: 'Katalog', exact: true })).toBeVisible({ timeout: 5000 })
 
     // Switch back to English
-    await page.getByRole('button', { name: /language/i }).click()
+    await languageToggle(page).click()
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^EN$/ }) }).click()
     await expect(page.getByRole('link', { name: /^catalog$/i })).toBeVisible({ timeout: 5000 })
   })

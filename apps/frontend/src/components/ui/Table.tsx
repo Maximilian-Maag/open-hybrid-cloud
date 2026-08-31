@@ -29,14 +29,21 @@ interface TableProps<T> {
    * (see the projects table). Table.test.tsx locks the plain semantics in.
    */
   onRowClick?: (row: T) => void
-  emptyMessage?: string
+  /**
+   * Required, with no default. This component has no `lang` — it is used from
+   * server and client pages alike — so any default it could carry would be an
+   * English sentence that 24 of the 25 languages never translate, shown at
+   * exactly the moment the table has nothing else to say. Callers have `lang`;
+   * they pass `t(...)` (#186).
+   */
+  emptyMessage: string
 }
 
 export function Table<T extends { id?: number | string }>({
   columns,
   data,
   onRowClick,
-  emptyMessage = 'No data found.',
+  emptyMessage,
 }: TableProps<T>) {
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200">

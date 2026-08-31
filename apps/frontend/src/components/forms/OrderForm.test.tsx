@@ -402,3 +402,59 @@ describe('OrderForm parameter resolution', () => {
     expect(screen.queryByLabelText(/try it out/i)).not.toBeInTheDocument()
   })
 })
+
+/**
+ * An invalid quantity used to disable the submit button and say nothing.
+ *
+ * `Number('')` is 0, so clearing the field made the form unsubmittable in
+ * silence — and a disabled <button> is not focusable, so a screen-reader user
+ * tabbing this form reached the end and found no submit control at all, with no
+ * explanation of where it went. This is the app's primary conversion path
+ * (WCAG 3.3.1, 3.3.3 — #186).
+ */
+describe('OrderForm quantity', () => {
+  const projects = [{ id: 5, name: 'Proj', costCenterId: null }] as never
+
+  async function fillOrder() {
+    const user = userEvent.setup()
+    render(<OrderForm product={product} projects={projects} costCenters={[]} />)
+    await user.selectOptions(screen.getByLabelText(/environment/i), '1')
+    await user.selectOptions(await screen.findByLabelText(/project/i), '5')
+    return user
+  }
+
+  it('keeps the submit control reachable when the quantity is empty', async () => {
+    const user = await fillOrder()
+    await user.clear(screen.getByLabelText(/quantity/i))
+
+    expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled()
+  })
+
+  it('says what is wrong with the field rather than only refusing', async () => {
+    const user = await fillOrder()
+    await user.clear(screen.getByLabelText(/quantity/i))
+
+    const field = screen.getByLabelText(/quantity/i)
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(field).toHaveAccessibleDescription(/permitted range/i)
+  })
+
+  it('refuses the order through the same alert every other refusal uses', async () => {
+    const user = await fillOrder()
+    await user.clear(screen.getByLabelText(/quantity/i))
+    await user.click(screen.getByRole('button', { name: /place order/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/permitted range/i)
+    expect(mockedPost).not.toHaveBeenCalled()
+  })
+
+  it('lets a valid quantity through', async () => {
+    const user = await fillOrder()
+    await user.clear(screen.getByLabelText(/quantity/i))
+    await user.type(screen.getByLabelText(/quantity/i), '3')
+    await user.click(screen.getByRole('button', { name: /place order/i }))
+
+    await waitFor(() => expect(mockedPost).toHaveBeenCalled())
+    expect((mockedPost.mock.calls[0][1] as Record<string, unknown>).quantity).toBe(3)
+  })
+})

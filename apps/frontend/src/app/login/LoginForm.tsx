@@ -241,7 +241,11 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         '--ring-accent': readableAccent(secondaryColor, '#ffffff', AA_LARGE),
       } as React.CSSProperties}
     >
-      <div className="w-full max-w-sm">
+      {/* A landmark, not a plain div: this page renders outside the dashboard
+          layout, so nothing else on it provides one and every element on the
+          screen sat outside all landmarks. `landmark-one-main` and `region`
+          both say so — two of the rules this gate did not request until #185. */}
+      <main className="w-full max-w-sm">
         <div className="text-center mb-8">
           {logoDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -337,7 +341,17 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                   type="submit"
                   disabled={loading}
                   className="w-full min-h-11 rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                  style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
+                  // Same --ring-accent the fields above use, and for a sharper
+                  // reason: `ring-2` with no colour falls back to `currentcolor`,
+                  // which on this button is --bp-ink — white for every dark
+                  // primary. A white ring on the default white offset, on a white
+                  // card, with the UA outline removed, is no focus indicator at
+                  // all (#186).
+                  style={{
+                    backgroundColor: 'var(--bp)',
+                    color: 'var(--bp-ink)',
+                    '--tw-ring-color': 'var(--ring-accent)',
+                  } as React.CSSProperties}
                 >
                   {loading ? t('twoFactorVerifying', lang) : t('twoFactorVerify', lang)}
                 </button>
@@ -432,14 +446,20 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
               type="submit"
               disabled={loading}
               className="w-full min-h-11 rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-              style={{ backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' }}
+              // See the verify button above: without a colour the ring inherits
+              // --bp-ink and disappears into the white offset it is drawn on.
+              style={{
+                backgroundColor: 'var(--bp)',
+                color: 'var(--bp-ink)',
+                '--tw-ring-color': 'var(--ring-accent)',
+              } as React.CSSProperties}
             >
               {loading ? t('signingIn', lang) : t('signIn', lang)}
             </button>
           </form>
           )}
         </div>
-      </div>
+      </main>
     </div>
   )
 }

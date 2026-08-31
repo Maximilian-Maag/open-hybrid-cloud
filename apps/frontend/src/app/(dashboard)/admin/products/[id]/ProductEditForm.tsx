@@ -1086,7 +1086,9 @@ function EnvironmentRow({
   return (
     <form onSubmit={handleSave} className="rounded-lg border border-slate-200 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h4 className="font-medium text-slate-900">{env.name}</h4>
+        {/* h3: this row sits inside the "Environments" Card, whose title is an
+            h2, so h4 skipped a level (#185). */}
+        <h3 className="font-medium text-slate-900">{env.name}</h3>
         {existing && (
           <Button type="button" size="sm" variant="danger" onClick={() => { setSaveError(null); setConfirmRemove(true) }}>
             {t('remove', lang)}

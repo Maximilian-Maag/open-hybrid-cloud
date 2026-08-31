@@ -16,6 +16,16 @@ interface Props {
   busy?: boolean
   onToggleFavorite: () => void
   lang: string
+  /**
+   * Where this card's title sits in the page outline.
+   *
+   * The two grids on /catalog are at different depths: the main one hangs
+   * straight off the page's <h1>, the favourites shelf off its own <h2>. A
+   * fixed <h3> was fine while the page had no h1 at all, and became an
+   * h1 → h3 skip the moment it got one (#185). Only the level differs — the
+   * card still renders identically, which is the point of the component.
+   */
+  level?: 2 | 3
 }
 
 /**
@@ -35,7 +45,9 @@ export function ProductCard({
   busy,
   onToggleFavorite,
   lang,
+  level = 3,
 }: Props) {
+  const Heading = `h${level}` as const
   return (
     <div
       data-testid={`product-card-${id}`}
@@ -70,7 +82,7 @@ export function ProductCard({
             {categoryName}
           </span>
         )}
-        <h3 className="font-semibold text-sm text-slate-800 leading-snug mb-1 line-clamp-2">{name}</h3>
+        <Heading className="font-semibold text-sm text-slate-800 leading-snug mb-1 line-clamp-2">{name}</Heading>
         {description && (
           <p className="text-xs text-slate-500 leading-relaxed flex-1 mb-3 line-clamp-2">{description}</p>
         )}

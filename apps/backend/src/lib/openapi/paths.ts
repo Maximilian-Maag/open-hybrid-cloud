@@ -2909,6 +2909,155 @@ registry.registerPath({
   },
 })
 
+const sizeMatrixSchema = z.object({
+  environments: z.array(
+    z.object({ environmentId: z.number(), name: z.string(), currency: z.string() }),
+  ).openapi({ description: 'Only the environments the product is offered in — the matrix columns.' }),
+  rows: z.array(
+    z.object({
+      code: z.string(),
+      label: z.string(),
+      sortOrder: z.number(),
+      cells: z.array(
+        z.object({
+          environmentId: z.number(),
+          id: z.number(),
+          price: z.string(),
+          currency: z.string(),
+          active: z.boolean(),
+        }),
+      ).openapi({
+        description:
+          'One entry per environment the size exists in. An environment missing from this list does not ' +
+          'offer the size at all; one present with active false offers it no longer but keeps the price ' +
+          'past orders were struck at.',
+      }),
+    }),
+  ),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/products/{id}/sizes',
+  summary: '[root] The product\u2019s sizes as a matrix',
+  description:
+    'The same rows as the per-offering endpoint, transposed: sizes down, environments across (issue ' +
+    '#249). Answers "what does XL cost, everywhere", which through the per-offering route is one ' +
+    'request per environment. The row axis is the UNION of the codes across the offerings, because a ' +
+    'code is unique per (product, environment) and not global.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'The size matrix',
+      content: { 'application/json': { schema: sizeMatrixSchema } },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Product not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'put',
+  path: '/admin/products/{id}/sizes/{code}',
+  summary: '[root] Price one size across every environment',
+  description:
+    'The body is the row\u2019s FULL desired state: the environments in `cells` are the ones the size is ' +
+    'offered in, and the ones left out are the ones it is not. Leaving one out RETIRES the cell (active ' +
+    'false) and never deletes it, because an order that already names the code has to keep resolving to ' +
+    'something; a cell that is left out and does not exist is not created. Applied in one transaction, ' +
+    'so a rejected cell leaves none of the others written. Every environment whose cell actually changed ' +
+    'gets its own product-history entry (issue #38).',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({
+      id: z.string(),
+      code: z.string().openapi({
+        description:
+          'The size code, not a row id: the same size has a different id in every environment. Letters, ' +
+          'digits, dot, dash and underscore only.',
+      }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            label: z.string().max(120).optional().openapi({
+              description: 'Written to every cell the save touches — it is a property of the size, not of one offering.',
+            }),
+            sortOrder: z.number().int().min(0).max(10000).optional(),
+            cells: z.array(
+              z.object({
+                environmentId: z.number().int().positive(),
+                price: z.string().max(20).optional().openapi({
+                  description: 'Non-negative, at most two decimals.',
+                }),
+                currency: z.string().length(3).optional().openapi({
+                  description:
+                    'Per cell, deliberately: the same size legitimately costs a different amount in a ' +
+                    'different currency in another environment.',
+                }),
+              }),
+            ),
+            changelog: z.string().max(2000).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The row as it now stands',
+      content: {
+        'application/json': {
+          schema: z.object({
+            code: z.string(),
+            label: z.string(),
+            sortOrder: z.number(),
+            cells: z.array(
+              z.object({
+                environmentId: z.number(),
+                id: z.number(),
+                price: z.string(),
+                currency: z.string(),
+                active: z.boolean(),
+              }),
+            ),
+          }),
+        },
+      },
+    },
+    400: { description: 'Invalid code, price, currency, or the same environment priced twice' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Product not found, or it is not offered in one of the named environments' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/admin/products/{id}/sizes/{code}',
+  summary: '[root] Remove one size from every environment',
+  description:
+    'The blunt counterpart of emptying the row\u2019s prices, which retires instead. Existing orders are ' +
+    'unaffected \u2014 they store the code as text and their own price \u2014 but a cart line naming it reports ' +
+    'itself unavailable. Prefer retiring for a size that has ever been ordered.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string(), code: z.string() }) },
+  responses: {
+    200: { description: 'Size removed from every environment' },
+    400: { description: 'Invalid id or code' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'No environment of this product has that size' },
+  },
+})
+
 registry.registerPath({
   method: 'get',
   path: '/admin/products/{id}/webhooks',

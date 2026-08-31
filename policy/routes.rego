@@ -81,6 +81,7 @@ non_id_segments := {
 	"admin/ci/[sourceId]/projects/[projectId]/branches projectId": "a GitLab project path, URL-encoded — the CI provider's identifier for a repository, not a portal row id",
 	"admin/ci/[sourceId]/projects/[projectId]/files projectId": "a GitLab project path, URL-encoded — the CI provider's identifier for a repository, not a portal row id",
 	"admin/ci/[sourceId]/projects/[projectId]/import-vars projectId": "a GitLab project path, URL-encoded — the CI provider's identifier for a repository, not a portal row id",
+	"admin/products/[id]/sizes/[code] code": "a size code such as XL — the natural key of a matrix row (#249), which is deliberately NOT an id: the same size has a different row id in every environment. The route bounds its length and the service checks it against CODE_PATTERN before it reaches a query",
 }
 
 # Every dynamic segment, one at a time.

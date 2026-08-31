@@ -65,27 +65,27 @@ test.describe('Admin - Pipeline Stacks', () => {
     await expect(page.getByRole('dialog')).toBeVisible()
 
     /*
-     * Deliberately NOT scoped to the dialog, and that is a defect, not a
-     * choice — see #305.
+     * Scoped to the dialog, and asserting what the dialog actually has.
      *
-     * `/^name$/i` and `/environment/i` also match the product's own Name field
-     * and its offering rows on the page behind the modal. Scoping these to
-     * `getByRole('dialog')` makes them fail, and the failure snapshot shows no
-     * open dialog at all: the modal is opening and then closing again before
-     * the assertions run. So the fields these lines have been finding are the
-     * page's, not the modal's, and the test has been passing for the wrong
-     * reason.
+     * Every one of these used to be a document-level query, and the product
+     * edit page behind the modal mounts eight `<dialog>` elements plus its own
+     * form. Measured against a live page, the modal holds exactly three fields
+     * and the Add Step button — so:
      *
-     * Left as it was rather than fixed here, because fixing the locator turns
-     * one red test into six and the cause is the modal, not the selector. It
-     * belongs in its own change.
+     *   - `/^name$/i` is anchored and does NOT match this field, whose
+     *     accessible name is "Name*"; `Input` appends the required marker. It
+     *     was matching the product's own Name field on the page behind.
+     *   - `/webhook url/i` and `/webhook token/i` are not in this modal AT ALL.
+     *     They belong to "Add Webhook", a different dialog on the same page,
+     *     and the assertions were passing by finding that one.
+     *
+     * (#305)
      */
-    await expect(page.getByLabel(/^name$/i)).toBeVisible()
-    await expect(page.getByLabel(/environment/i)).toBeVisible()
-    await expect(page.getByLabel(/webhook url/i)).toBeVisible()
-    await expect(page.getByLabel(/webhook token/i)).toBeVisible()
-    await expect(page.getByLabel(/state key parameter/i)).toBeVisible()
-    await expect(page.getByRole('button', { name: /\+ add step/i })).toBeVisible()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByLabel(/^name\*?$/i)).toBeVisible()
+    await expect(dialog.getByLabel(/^environment\*?$/i)).toBeVisible()
+    await expect(dialog.getByLabel(/state key parameter/i)).toBeVisible()
+    await expect(dialog.getByRole('button', { name: /\+ add step/i })).toBeVisible()
   })
 
   test('"Add Step" button adds a step form inside the modal', async ({ page }) => {
@@ -183,28 +183,37 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
       return
     }
 
-    // Fill in the form
-    await page.getByLabel(/^name$/i).fill('E2E Test Stack')
-    const envSelect = page.getByLabel(/environment/i)
+    /*
+     * Scoped, and matching the real accessible names. `Input` appends the
+     * required marker, so the field is "Name*" and an anchored `/^name$/i`
+     * matches nothing inside the dialog — it used to find the product's own
+     * Name field on the page behind and type the stack name into THAT (#305).
+     *
+     * The webhook URL and token lines are gone because those fields are not in
+     * this modal: a stack inherits its trigger from the deployment environment
+     * (`pipelineStackInheritNotice` says so on the form itself). They were
+     * being filled in the "Add Webhook" dialog next door.
+     */
+    const form = page.getByRole('dialog')
+    await form.getByLabel(/^name\*?$/i).fill('E2E Test Stack')
+    const envSelect = form.getByLabel(/^environment\*?$/i)
     const firstOption = envSelect.locator('option').nth(1)
     const optionExists = await firstOption.count() > 0
     if (!optionExists) {
-      await page.getByRole('button', { name: /cancel/i }).click()
+      await form.getByRole('button', { name: /cancel/i }).click()
       test.skip()
       return
     }
     await envSelect.selectOption({ index: 1 })
-    await page.getByLabel(/webhook url/i).fill('https://gitlab.example.com/api/v4/projects/1/trigger/pipeline')
-    await page.getByLabel(/webhook token/i).fill('e2e-test-token')
 
     // Add a step
     await page.getByRole('button', { name: /\+ add step/i }).click()
     await expect(page.getByText(/step 1/i)).toBeVisible()
-    await page.getByLabel(/template/i).fill('linode/virtual-machine')
-    await page.getByLabel(/state suffix/i).fill('-vm')
+    await form.getByLabel(/template/i).fill('linode/virtual-machine')
+    await form.getByLabel(/state suffix/i).fill('-vm')
 
     // Submit
-    await page.getByRole('button', { name: /^add$/i }).click()
+    await form.getByRole('button', { name: /^add$/i }).click()
 
     // Stack should appear in the list
     await expect(page.getByText('E2E Test Stack')).toBeVisible({ timeout: 5000 })

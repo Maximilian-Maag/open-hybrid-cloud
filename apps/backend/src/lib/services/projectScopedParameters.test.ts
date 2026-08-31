@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { loadApplicableParameters, resolveParameterDefs } from './catalog'
+import { createParameter, updateParameter } from './admin/parameters'
 import { db } from '@/lib/db/client'
 import { parameters, parameterProjects } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import {
   createUser,
   createCategory,
@@ -155,6 +157,57 @@ describe('parameters narrowed to projects (#275)', () => {
 
       expect(defs.find((d) => d.name === 'region')?.defaultValue).toBe('from-category')
     })
+  })
+
+  describe('a narrowing that names a project which does not exist', () => {
+    /*
+     * From review. Without the check the foreign key rejects the insert, the
+     * transaction throws, and the route answers 500 — for an ordinary stale
+     * selection: an admin with the form open while somebody else deletes the
+     * project sends an id that was valid when the page loaded.
+     */
+    it('is refused with 400, naming the id, rather than a 500 from the foreign key', async () => {
+      const { cat } = await setup()
+      const result = await createParameter({
+        scope: 'global', scopeId: 0, name: 'region', type: 'string',
+        projectIds: [999_999],
+      })
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.status).toBe(400)
+        expect(result.message).toContain('999999')
+      }
+      expect(cat).toBeDefined()
+    })
+
+    it('is refused on update too', async () => {
+      const param = await addParameter({ name: 'region' })
+
+      const result = await updateParameter(param.id, { projectIds: [999_999] })
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.status).toBe(400)
+    })
+  })
+
+  /*
+   * From review. An update carrying ONLY `projectIds` leaves the column set
+   * empty, and drizzle throws "No values to set" on `.set({})` — so the one
+   * edit this feature exists for answered 500.
+   */
+  it('accepts an update that changes nothing but the projects', async () => {
+    const { mine } = await setup()
+    const param = await addParameter({ name: 'region' })
+
+    const result = await updateParameter(param.id, { projectIds: [mine.id] })
+
+    expect(result.ok).toBe(true)
+    const links = await db
+      .select()
+      .from(parameterProjects)
+      .where(eq(parameterProjects.parameterId, param.id))
+    expect(links.map((l) => l.projectId)).toEqual([mine.id])
   })
 
   /*

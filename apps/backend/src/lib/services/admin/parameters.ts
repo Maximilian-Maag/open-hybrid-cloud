@@ -1,5 +1,5 @@
 import { db } from '@/lib/db/client'
-import { parameters, parameterProjects, products, productEnvironments, type Parameter } from '@/lib/db/schema'
+import { parameters, parameterProjects, products, productEnvironments, projects, type Parameter } from '@/lib/db/schema'
 import { and, eq, inArray } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { recordProductVersion } from '@/lib/services/versions'
@@ -99,6 +99,31 @@ export interface UpdateParameterInput {
   projectIds?: number[]
 }
 
+/**
+ * Refuse a narrowing that names a project which does not exist.
+ *
+ * Without this the foreign key rejects the insert, the transaction throws, and
+ * the route answers 500 — for what is an ordinary stale selection: an admin
+ * with the form open while somebody else deletes a project sends an id that was
+ * valid when the page loaded. That deserves a 400 saying which one.
+ *
+ * Checked before the transaction rather than by catching the FK violation:
+ * translating a driver error back into "which id was it" means parsing a
+ * message, and the message is the driver's to change.
+ */
+const unknownProjectIds = async (projectIds?: number[]): Promise<Result<never> | null> => {
+  if (!projectIds || projectIds.length === 0) return null
+  const unique = [...new Set(projectIds)]
+  const found = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(inArray(projects.id, unique))
+  const known = new Set(found.map((row) => row.id))
+  const missing = unique.filter((id) => !known.has(id))
+  if (missing.length === 0) return null
+  return err(400, `No such project: ${missing.join(', ')}`)
+}
+
 export const listParameters = async (filters: ParameterFilters): Promise<Result<Parameter[]>> => {
   const conditions = []
   if (filters.scope) conditions.push(eq(parameters.scope, filters.scope))
@@ -156,6 +181,8 @@ export const createParameter = async (
   if (reserved) return reserved
   const badSizes = sizeValuesError(input.type, input.sizeValues)
   if (badSizes) return badSizes
+  const unknown = await unknownProjectIds(input.projectIds)
+  if (unknown) return unknown
 
   // One transaction: a parameter that exists but whose narrowing did not get
   // written applies to EVERY project, which is the opposite of what was asked
@@ -217,12 +244,23 @@ export const updateParameter = async (
   // taken out before the row update and applied beside it, in one transaction.
   const { projectIds, ...columns } = input
 
+  const unknown = await unknownProjectIds(projectIds)
+  if (unknown) return unknown
+
   const updated = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .update(parameters)
-      .set(columns)
-      .where(eq(parameters.id, id))
-      .returning()
+    /*
+     * An update that changes ONLY the narrowing leaves `columns` empty, and
+     * drizzle throws "No values to set" on `.set({})` — so the one edit this
+     * feature exists for would have answered 500. Read the row instead: it is
+     * needed for the 404 either way, and there is nothing to write to it.
+     */
+    const [row] = Object.keys(columns).length === 0
+      ? await tx.select().from(parameters).where(eq(parameters.id, id)).limit(1)
+      : await tx
+          .update(parameters)
+          .set(columns)
+          .where(eq(parameters.id, id))
+          .returning()
     // Absent leaves the narrowing alone; `[]` clears it. An update that omitted
     // the field must not silently widen a parameter to every project.
     if (row && projectIds !== undefined) await setProjectNarrowing(tx, id, projectIds)

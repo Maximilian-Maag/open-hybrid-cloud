@@ -11036,7 +11036,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     allStatuses: 'Visos būsenos',
     allEnvironments: 'Visos aplinkos',
     allProjects: 'Visi projektai',
-    parameterProjectsHint: "Palikite viską nepažymėta, kad galiotų kiekvienam projektui.",
+    parameterProjectsHint: "Palikite viską nepažymėtą, kad galiotų kiekvienam projektui.",
     allProductsFilter: 'Visi produktai',
     deployedFrom: 'Įdiegta nuo',
     deployedTo: 'Įdiegta iki',

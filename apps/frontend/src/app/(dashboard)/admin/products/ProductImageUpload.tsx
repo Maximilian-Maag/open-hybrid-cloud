@@ -244,7 +244,7 @@ export function ProductImageUpload({ productId, onChanged }: Props) {
                   className="block text-sm font-medium text-slate-700"
                 >
                   {index === 0 ? t('imageDescriptionLeading', lang) : t('imageDescriptionLabel', lang)}{' '}
-                  <span className="text-red-500">*</span>
+                  <span className="text-red-600">*</span>
                 </label>
                 <input
                   id={`product-image-alt-${image.id}`}
@@ -304,7 +304,7 @@ export function ProductImageUpload({ productId, onChanged }: Props) {
       <div className="space-y-2 rounded-lg border border-dashed border-slate-300 p-3">
         <div className="flex flex-col gap-1">
           <label htmlFor={`product-image-alt-new-${productId}`} className="text-sm font-medium text-slate-700">
-            {t('imageDescriptionLabel', lang)} <span className="text-red-500">*</span>
+            {t('imageDescriptionLabel', lang)} <span className="text-red-600">*</span>
           </label>
           <input
             id={`product-image-alt-new-${productId}`}

@@ -804,6 +804,13 @@ export type Translations = {
   sizesNeedAnOffering: string
   deleteSizeEverywhere: string
   deleteSizeEverywhereWarning: string
+  /** The version diff says its direction out loud; colour and strikethrough do not. */
+  changedFrom: string
+  changedTo: string
+  /** What `∅` means, for the voices that skip the glyph. */
+  emptyValue: string
+  paramsPrefilledHint: string
+  quantityInvalid: string
 }
 
 // English is the complete reference table; every other language may omit keys
@@ -1538,6 +1545,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Първо предложете този продукт поне в една среда по-долу: размерът се остойностява за всяка среда.',
     deleteSizeEverywhere: 'Да се премахне ли този размер от всички среди?',
     deleteSizeEverywhereWarning: 'Съществуващите поръчки запазват кода и цената, която им е била начислена, но ред в количката, който посочва този размер, ще се отчете като недостъпен. Ако размерът някога е бил поръчван, вместо това изчистете цените му: така той се изважда от употреба и остава четим.',
+    changedFrom: 'променено от',
+    changedTo: 'на',
+    emptyValue: 'празно',
+    paramsPrefilledHint: 'Редактирайте при нужда, преди да изпратите.',
+    quantityInvalid: 'Въведете цял брой елементи в допустимия диапазон.',
   },
   cs: {
     noActiveSessions: 'Žádná aktivní přihlášení.',
@@ -2265,6 +2277,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Nejprve nabídněte tento produkt alespoň v jednom prostředí níže: velikost se oceňuje pro každé prostředí zvlášť.',
     deleteSizeEverywhere: 'Odebrat tuto velikost ze všech prostředí?',
     deleteSizeEverywhereWarning: 'Stávající objednávky si ponechají kód i cenu, která jim byla účtována, ale položka v košíku s touto velikostí ji ohlásí jako nedostupnou. Pokud už byla někdy objednána, raději vymažte její ceny: tím ji vyřadíte a zůstane čitelná.',
+    changedFrom: 'změněno z',
+    changedTo: 'na',
+    emptyValue: 'prázdné',
+    paramsPrefilledHint: 'Před odesláním podle potřeby upravte.',
+    quantityInvalid: 'Zadejte celý počet prvků v povoleném rozsahu.',
   },
   da: {
     noActiveSessions: 'Ingen aktive sessioner.',
@@ -2992,6 +3009,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Tilbyd først dette produkt i mindst ét miljø nedenfor: en størrelse prissættes pr. miljø.',
     deleteSizeEverywhere: 'Fjern denne størrelse fra alle miljøer?',
     deleteSizeEverywhereWarning: 'Eksisterende ordrer beholder koden og den pris, de blev opkrævet, men en kurvlinje med denne størrelse melder den som utilgængelig. Hvis den nogensinde har været bestilt, så ryd dens priser i stedet: det udfaser den og bevarer den læsbar.',
+    changedFrom: 'ændret fra',
+    changedTo: 'til',
+    emptyValue: 'tom',
+    paramsPrefilledHint: 'Rediger efter behov, før du indsender.',
+    quantityInvalid: 'Angiv et helt antal elementer inden for det tilladte interval.',
   },
   de: {
     noActiveSessions: 'Keine aktiven Sitzungen.',
@@ -3719,6 +3741,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Bieten Sie dieses Produkt zuerst in mindestens einer Umgebung unten an: Eine Größe wird je Umgebung bepreist.',
     deleteSizeEverywhere: 'Diese Größe aus allen Umgebungen entfernen?',
     deleteSizeEverywhereWarning: 'Bestehende Bestellungen behalten den Code und den Preis, der ihnen berechnet wurde, aber eine Warenkorbzeile mit dieser Größe meldet sie als nicht verfügbar. Wurde sie je bestellt, leeren Sie stattdessen ihre Preise: Das legt sie still und hält sie lesbar.',
+    changedFrom: 'geändert von',
+    changedTo: 'zu',
+    emptyValue: 'leer',
+    paramsPrefilledHint: 'Vor dem Absenden bei Bedarf anpassen.',
+    quantityInvalid: 'Bitte eine ganze Anzahl von Elementen im zulässigen Bereich eingeben.',
   },
   el: {
     noActiveSessions: 'Καμία ενεργή συνεδρία.',
@@ -4446,6 +4473,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Προσφέρετε πρώτα αυτό το προϊόν σε τουλάχιστον ένα περιβάλλον παρακάτω: το μέγεθος τιμολογείται ανά περιβάλλον.',
     deleteSizeEverywhere: 'Να αφαιρεθεί αυτό το μέγεθος από κάθε περιβάλλον;',
     deleteSizeEverywhereWarning: 'Οι υπάρχουσες παραγγελίες κρατούν τον κωδικό και την τιμή που χρεώθηκαν, αλλά μια γραμμή καλαθιού με αυτό το μέγεθος θα το αναφέρει ως μη διαθέσιμο. Αν έχει παραγγελθεί ποτέ, αδειάστε αντ’ αυτού τις τιμές του: έτσι αποσύρεται και παραμένει αναγνώσιμο.',
+    changedFrom: 'άλλαξε από',
+    changedTo: 'σε',
+    emptyValue: 'κενό',
+    paramsPrefilledHint: 'Επεξεργαστείτε το όπως χρειάζεται πριν από την υποβολή.',
+    quantityInvalid: 'Εισαγάγετε ακέραιο αριθμό στοιχείων εντός του επιτρεπτού εύρους.',
   },
   en: {
     noActiveSessions: 'No active sessions.',
@@ -5173,6 +5205,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Offer this product in at least one environment below first: a size is priced per environment.',
     deleteSizeEverywhere: 'Remove this size from every environment?',
     deleteSizeEverywhereWarning: 'Existing orders keep the code and the price they were charged, but a basket line naming this size reports it as unavailable. If it has ever been ordered, clear its prices instead: that retires it and keeps it readable.',
+    changedFrom: 'changed from',
+    changedTo: 'to',
+    emptyValue: 'empty',
+    paramsPrefilledHint: 'Edit as needed before submitting.',
+    quantityInvalid: 'Enter a whole number of elements within the permitted range.',
   },
   es: {
     noActiveSessions: 'No hay sesiones activas.',
@@ -5900,6 +5937,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Ofrezca primero este producto en al menos un entorno más abajo: un tamaño se factura por entorno.',
     deleteSizeEverywhere: '¿Eliminar este tamaño de todos los entornos?',
     deleteSizeEverywhereWarning: 'Los pedidos existentes conservan el código y el precio que se les cobró, pero una línea del carrito con este tamaño lo indicará como no disponible. Si alguna vez se ha pedido, vacíe sus precios en su lugar: así se retira y sigue siendo legible.',
+    changedFrom: 'cambió de',
+    changedTo: 'a',
+    emptyValue: 'vacío',
+    paramsPrefilledHint: 'Edítelo según sea necesario antes de enviar.',
+    quantityInvalid: 'Introduzca un número entero de elementos dentro del intervalo permitido.',
   },
   et: {
     noActiveSessions: 'Aktiivseid sessioone pole.',
@@ -6627,6 +6669,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Paku seda toodet esmalt vähemalt ühes allolevas keskkonnas: suurus hinnastatakse keskkonna kaupa.',
     deleteSizeEverywhere: 'Kas eemaldada see suurus kõigist keskkondadest?',
     deleteSizeEverywhereWarning: 'Olemasolevad tellimused säilitavad koodi ja neilt võetud hinna, kuid seda suurust nimetav ostukorvi rida teatab, et see pole saadaval. Kui seda on kunagi tellitud, tühjenda pigem selle hinnad: nii kõrvaldatakse see kasutuselt ja jääb loetavaks.',
+    changedFrom: 'muutus väärtuselt',
+    changedTo: 'väärtusele',
+    emptyValue: 'tühi',
+    paramsPrefilledHint: 'Muutke vajaduse korral enne esitamist.',
+    quantityInvalid: 'Sisestage täisarv elemente lubatud vahemikus.',
   },
   fi: {
     noActiveSessions: 'Ei aktiivisia istuntoja.',
@@ -7354,6 +7401,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Tarjoa tätä tuotetta ensin vähintään yhdessä alla olevassa ympäristössä: koko hinnoitellaan ympäristökohtaisesti.',
     deleteSizeEverywhere: 'Poistetaanko tämä koko kaikista ympäristöistä?',
     deleteSizeEverywhereWarning: 'Olemassa olevat tilaukset säilyttävät koodin ja niiltä veloitetun hinnan, mutta tämän koon nimeävä ostoskoririvi ilmoittaa sen olevan poissa saatavilta. Jos koko on koskaan tilattu, tyhjennä sen sijaan sen hinnat: se poistaa koon käytöstä ja säilyttää sen luettavana.',
+    changedFrom: 'muuttui arvosta',
+    changedTo: 'arvoon',
+    emptyValue: 'tyhjä',
+    paramsPrefilledHint: 'Muokkaa tarvittaessa ennen lähettämistä.',
+    quantityInvalid: 'Anna kokonaisluku elementtejä sallitulla välillä.',
   },
   fr: {
     noActiveSessions: 'Aucune session active.',
@@ -8081,6 +8133,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Proposez d’abord ce produit dans au moins un environnement ci-dessous : une taille est tarifée par environnement.',
     deleteSizeEverywhere: 'Retirer cette taille de tous les environnements ?',
     deleteSizeEverywhereWarning: 'Les commandes existantes conservent le code et le prix qui leur a été facturé, mais une ligne de panier nommant cette taille la signalera comme indisponible. Si elle a déjà été commandée, videz plutôt ses prix : cela la retire tout en la gardant lisible.',
+    changedFrom: 'est passé de',
+    changedTo: 'à',
+    emptyValue: 'vide',
+    paramsPrefilledHint: 'Modifiez si nécessaire avant de valider.',
+    quantityInvalid: 'Saisissez un nombre entier d\'éléments dans la plage autorisée.',
   },
   ga: {
     noActiveSessions: 'Níl aon seisiún gníomhach.',
@@ -8808,6 +8865,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Tairg an táirge seo i dtimpeallacht amháin ar a laghad thíos ar dtús: praghsáiltear méid de réir timpeallachta.',
     deleteSizeEverywhere: 'An méid seo a bhaint as gach timpeallacht?',
     deleteSizeEverywhereWarning: 'Coinníonn orduithe atá ann cheana an cód agus an praghas a gearradh orthu, ach tuairisceoidh líne cairte a ainmníonn an méid seo nach bhfuil sé ar fáil. Má ordaíodh riamh é, glan a phraghsanna ina ionad sin: scortar é agus fanann sé inléite.',
+    changedFrom: 'athraithe ó',
+    changedTo: 'go',
+    emptyValue: 'folamh',
+    paramsPrefilledHint: 'Cuir in eagar de réir mar is gá sula gcuirfidh tú isteach é.',
+    quantityInvalid: 'Cuir isteach slánuimhir eilimintí laistigh den raon ceadaithe.',
   },
   hr: {
     noActiveSessions: 'Nema aktivnih sesija.',
@@ -9535,6 +9597,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Najprije ponudite ovaj proizvod u barem jednom okruženju u nastavku: veličina se naplaćuje po okruženju.',
     deleteSizeEverywhere: 'Ukloniti ovu veličinu iz svih okruženja?',
     deleteSizeEverywhereWarning: 'Postojeće narudžbe zadržavaju kod i cijenu koja im je naplaćena, ali stavka u košarici s ovom veličinom prijavit će je kao nedostupnu. Ako je ikad naručena, radije obrišite njezine cijene: time se povlači, a ostaje čitljiva.',
+    changedFrom: 'promijenjeno iz',
+    changedTo: 'u',
+    emptyValue: 'prazno',
+    paramsPrefilledHint: 'Uredite prema potrebi prije slanja.',
+    quantityInvalid: 'Unesite cijeli broj elemenata unutar dopuštenog raspona.',
   },
   hu: {
     noActiveSessions: 'Nincsenek aktív munkamenetek.',
@@ -10262,6 +10329,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Előbb kínálja ezt a terméket legalább egy alábbi környezetben: a méret árazása környezetenként történik.',
     deleteSizeEverywhere: 'Eltávolítja ezt a méretet minden környezetből?',
     deleteSizeEverywhereWarning: 'A meglévő rendelések megtartják a kódot és a kiszámlázott árat, de a kosárban ezt a méretet megnevező tétel elérhetetlenként jelzi majd. Ha valaha megrendelték, inkább ürítse ki az árait: ezzel kivonja, de olvasható marad.',
+    changedFrom: 'megváltozott erről:',
+    changedTo: 'erre:',
+    emptyValue: 'üres',
+    paramsPrefilledHint: 'Beküldés előtt szükség szerint módosítsa.',
+    quantityInvalid: 'Adjon meg egész számú elemet a megengedett tartományon belül.',
   },
   it: {
     noActiveSessions: 'Nessuna sessione attiva.',
@@ -10989,6 +11061,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Offri prima questo prodotto in almeno un ambiente qui sotto: una taglia si valorizza per ambiente.',
     deleteSizeEverywhere: 'Rimuovere questa taglia da tutti gli ambienti?',
     deleteSizeEverywhereWarning: 'Gli ordini esistenti conservano il codice e il prezzo addebitato, ma una riga del carrello che cita questa taglia la segnalerà come non disponibile. Se è mai stata ordinata, svuota invece i suoi prezzi: così viene ritirata e resta leggibile.',
+    changedFrom: 'modificato da',
+    changedTo: 'a',
+    emptyValue: 'vuoto',
+    paramsPrefilledHint: 'Modificare secondo necessità prima di inviare.',
+    quantityInvalid: 'Inserire un numero intero di elementi entro l\'intervallo consentito.',
   },
   lt: {
     noActiveSessions: 'Nėra aktyvių seansų.',
@@ -11716,6 +11793,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Pirmiausia pasiūlykite šį produktą bent vienoje aplinkoje žemiau: dydis įkainojamas kiekvienoje aplinkoje atskirai.',
     deleteSizeEverywhere: 'Pašalinti šį dydį iš visų aplinkų?',
     deleteSizeEverywhereWarning: 'Esami užsakymai išsaugo kodą ir jiems taikytą kainą, tačiau krepšelio eilutė su šiuo dydžiu praneš, kad jis nepasiekiamas. Jei jis kada nors buvo užsakytas, verčiau išvalykite jo kainas: taip jis pašalinamas iš apyvartos ir lieka įskaitomas.',
+    changedFrom: 'pakeista iš',
+    changedTo: 'į',
+    emptyValue: 'tuščia',
+    paramsPrefilledHint: 'Prieš pateikdami pakoreguokite, jei reikia.',
+    quantityInvalid: 'Įveskite sveikąjį elementų skaičių leistiname intervale.',
   },
   lv: {
     noActiveSessions: 'Nav aktīvu sesiju.',
@@ -12443,6 +12525,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Vispirms piedāvājiet šo produktu vismaz vienā vidē zemāk: izmēra cena tiek noteikta katrā vidē atsevišķi.',
     deleteSizeEverywhere: 'Vai noņemt šo izmēru no visām vidēm?',
     deleteSizeEverywhereWarning: 'Esošie pasūtījumi saglabā kodu un cenu, kas tiem tika piemērota, taču groza rinda ar šo izmēru ziņos, ka tas nav pieejams. Ja tas jebkad ir pasūtīts, labāk iztukšojiet tā cenas: tā izmērs tiek izņemts no aprites un paliek lasāms.',
+    changedFrom: 'mainīts no',
+    changedTo: 'uz',
+    emptyValue: 'tukšs',
+    paramsPrefilledHint: 'Pirms iesniegšanas rediģējiet pēc vajadzības.',
+    quantityInvalid: 'Ievadiet veselu elementu skaitu atļautajā diapazonā.',
   },
   mt: {
     noActiveSessions: 'Ebda sessjoni attiva.',
@@ -13170,6 +13257,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'L-ewwel offri dan il-prodott f’mill-inqas ambjent wieħed hawn taħt: id-daqs jiġi pprezzat għal kull ambjent.',
     deleteSizeEverywhere: 'Tneħħi dan id-daqs minn kull ambjent?',
     deleteSizeEverywhereWarning: 'L-ordnijiet eżistenti jżommu l-kodiċi u l-prezz li tħallas, iżda linja fil-basket li ssemmi dan id-daqs se tirrapportah bħala mhux disponibbli. Jekk qatt ġie ordnat, minflok battal il-prezzijiet tiegħu: hekk jiġi rtirat u jibqa’ jinqara.',
+    changedFrom: 'inbidel minn',
+    changedTo: 'għal',
+    emptyValue: 'vojt',
+    paramsPrefilledHint: 'Editja kif meħtieġ qabel ma tissottometti.',
+    quantityInvalid: 'Daħħal numru sħiħ ta\' elementi fil-medda permessa.',
   },
   nl: {
     noActiveSessions: 'Geen actieve sessies.',
@@ -13897,6 +13989,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Bied dit product eerst in minstens één omgeving hieronder aan: een maat wordt per omgeving beprijsd.',
     deleteSizeEverywhere: 'Deze maat uit alle omgevingen verwijderen?',
     deleteSizeEverywhereWarning: 'Bestaande bestellingen behouden de code en de prijs die in rekening is gebracht, maar een winkelwagenregel met deze maat meldt hem als niet beschikbaar. Is de maat ooit besteld, maak dan liever zijn prijzen leeg: dat zet hem stop en houdt hem leesbaar.',
+    changedFrom: 'gewijzigd van',
+    changedTo: 'naar',
+    emptyValue: 'leeg',
+    paramsPrefilledHint: 'Pas zo nodig aan voordat u verzendt.',
+    quantityInvalid: 'Voer een geheel aantal elementen in binnen het toegestane bereik.',
   },
   pl: {
     noActiveSessions: 'Brak aktywnych sesji.',
@@ -14624,6 +14721,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Najpierw zaoferuj ten produkt w co najmniej jednym środowisku poniżej: rozmiar wycenia się osobno dla każdego środowiska.',
     deleteSizeEverywhere: 'Usunąć ten rozmiar ze wszystkich środowisk?',
     deleteSizeEverywhereWarning: 'Istniejące zamówienia zachowują kod i cenę, którą naliczono, ale pozycja koszyka wskazująca ten rozmiar zgłosi go jako niedostępny. Jeśli kiedykolwiek go zamówiono, zamiast tego wyczyść jego ceny: to go wycofa i zachowa czytelnym.',
+    changedFrom: 'zmieniono z',
+    changedTo: 'na',
+    emptyValue: 'puste',
+    paramsPrefilledHint: 'Przed wysłaniem wprowadź potrzebne zmiany.',
+    quantityInvalid: 'Podaj całkowitą liczbę elementów z dozwolonego zakresu.',
   },
   pt: {
     noActiveSessions: 'Nenhuma sessão ativa.',
@@ -15351,6 +15453,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Ofereça primeiro este produto em pelo menos um ambiente abaixo: um tamanho é cobrado por ambiente.',
     deleteSizeEverywhere: 'Remover este tamanho de todos os ambientes?',
     deleteSizeEverywhereWarning: 'As encomendas existentes mantêm o código e o preço que lhes foi cobrado, mas uma linha do carrinho que indique este tamanho irá reportá-lo como indisponível. Se alguma vez foi encomendado, esvazie antes os seus preços: isso retira-o e mantém-no legível.',
+    changedFrom: 'alterado de',
+    changedTo: 'para',
+    emptyValue: 'vazio',
+    paramsPrefilledHint: 'Edite conforme necessário antes de submeter.',
+    quantityInvalid: 'Introduza um número inteiro de elementos dentro do intervalo permitido.',
   },
   ro: {
     noActiveSessions: 'Nicio sesiune activă.',
@@ -16078,6 +16185,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Oferiți mai întâi acest produs în cel puțin un mediu de mai jos: o dimensiune se tarifează pe fiecare mediu.',
     deleteSizeEverywhere: 'Eliminați această dimensiune din toate mediile?',
     deleteSizeEverywhereWarning: 'Comenzile existente păstrează codul și prețul care le-a fost facturat, dar o linie din coș care numește această dimensiune o va raporta ca indisponibilă. Dacă a fost comandată vreodată, goliți-i mai bine prețurile: astfel este retrasă și rămâne lizibilă.',
+    changedFrom: 'modificat din',
+    changedTo: 'în',
+    emptyValue: 'gol',
+    paramsPrefilledHint: 'Modificați după caz înainte de trimitere.',
+    quantityInvalid: 'Introduceți un număr întreg de elemente în intervalul permis.',
   },
   ru: {
     noActiveSessions: 'Активных сеансов нет.',
@@ -16805,6 +16917,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Сначала предложите этот продукт хотя бы в одной среде ниже: размер оценивается отдельно в каждой среде.',
     deleteSizeEverywhere: 'Удалить этот размер из всех сред?',
     deleteSizeEverywhereWarning: 'Существующие заказы сохраняют код и цену, по которой они были оформлены, но строка корзины с этим размером сообщит, что он недоступен. Если размер когда-либо заказывали, лучше очистите его цены: так он выводится из обращения и остаётся читаемым.',
+    changedFrom: 'изменено с',
+    changedTo: 'на',
+    emptyValue: 'пусто',
+    paramsPrefilledHint: 'При необходимости измените перед отправкой.',
+    quantityInvalid: 'Введите целое число элементов в допустимом диапазоне.',
   },
   sk: {
     noActiveSessions: 'Žiadne aktívne sedenia.',
@@ -17532,6 +17649,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Najprv ponúknite tento produkt aspoň v jednom prostredí nižšie: veľkosť sa oceňuje pre každé prostredie zvlášť.',
     deleteSizeEverywhere: 'Odstrániť túto veľkosť zo všetkých prostredí?',
     deleteSizeEverywhereWarning: 'Existujúce objednávky si ponechajú kód aj cenu, ktorá im bola účtovaná, ale položka v košíku s touto veľkosťou ju ohlási ako nedostupnú. Ak už bola niekedy objednaná, radšej vymažte jej ceny: tým sa vyradí a zostane čitateľná.',
+    changedFrom: 'zmenené z',
+    changedTo: 'na',
+    emptyValue: 'prázdne',
+    paramsPrefilledHint: 'Pred odoslaním podľa potreby upravte.',
+    quantityInvalid: 'Zadajte celý počet prvkov v povolenom rozsahu.',
   },
   sl: {
     noActiveSessions: 'Ni aktivnih sej.',
@@ -18259,6 +18381,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Najprej ponudite ta izdelek vsaj v enem okolju spodaj: velikost se obračuna po posameznem okolju.',
     deleteSizeEverywhere: 'Ali naj se ta velikost odstrani iz vseh okolij?',
     deleteSizeEverywhereWarning: 'Obstoječa naročila ohranijo kodo in ceno, ki jim je bila zaračunana, vendar bo vrstica v košarici s to velikostjo sporočila, da ni na voljo. Če je bila kdaj naročena, raje izpraznite njene cene: tako se umakne in ostane berljiva.',
+    changedFrom: 'spremenjeno iz',
+    changedTo: 'v',
+    emptyValue: 'prazno',
+    paramsPrefilledHint: 'Pred oddajo po potrebi uredite.',
+    quantityInvalid: 'Vnesite celo število elementov v dovoljenem obsegu.',
   },
   sv: {
     noActiveSessions: 'Inga aktiva sessioner.',
@@ -18986,6 +19113,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     sizesNeedAnOffering: 'Erbjud först den här produkten i minst en miljö nedan: en storlek prissätts per miljö.',
     deleteSizeEverywhere: 'Ta bort den här storleken från alla miljöer?',
     deleteSizeEverywhereWarning: 'Befintliga beställningar behåller koden och det pris de debiterades, men en varukorgsrad som nämner den här storleken rapporterar den som otillgänglig. Om den någonsin har beställts, töm hellre dess priser: det avvecklar den och håller den läsbar.',
+    changedFrom: 'ändrades från',
+    changedTo: 'till',
+    emptyValue: 'tomt',
+    paramsPrefilledHint: 'Redigera vid behov innan du skickar.',
+    quantityInvalid: 'Ange ett heltal element inom det tillåtna intervallet.',
   },
 }
 

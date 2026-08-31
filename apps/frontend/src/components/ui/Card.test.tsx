@@ -20,6 +20,20 @@ describe('Card', () => {
     expect(screen.getByRole('heading', { name: 'Recent orders' })).toBeInTheDocument()
   })
 
+  it('puts the title at level 2 by default', () => {
+    // The page's own <h1> is the only heading above a card on every screen that
+    // uses one. This was a hardcoded <h3>, so all 24 PageHeader pages went
+    // h1 → h3 and skipped a level — `heading-order`, which the e2e gate did not
+    // ask axe for until #185.
+    render(<Card title="Recent orders">body</Card>)
+    expect(screen.getByRole('heading', { level: 2, name: 'Recent orders' })).toBeInTheDocument()
+  })
+
+  it('takes a deeper level for a card nested under a section heading', () => {
+    render(<Card title="Recent orders" level={3}>body</Card>)
+    expect(screen.getByRole('heading', { level: 3, name: 'Recent orders' })).toBeInTheDocument()
+  })
+
   it('draws no header bar when there is no title', () => {
     // An empty bordered strip above the content is what an unguarded header
     // renders as.

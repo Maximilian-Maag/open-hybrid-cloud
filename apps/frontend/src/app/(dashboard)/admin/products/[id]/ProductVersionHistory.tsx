@@ -14,6 +14,47 @@ interface Props {
 }
 
 /**
+ * One value in a diff, with `∅` said out loud.
+ *
+ * Most voices skip the glyph, so an emptied field read as `price 12.00` — with
+ * no way to tell whether the price IS that or BECAME it. This is the audit
+ * trail for catalogue prices (#186).
+ */
+function DiffValue({ value, lang, className }: { value: string; lang: string; className: string }) {
+  if (value) return <span className={`font-mono text-xs ${className}`}>{value}</span>
+  return (
+    <span className={`font-mono text-xs ${className}`}>
+      <span aria-hidden="true">∅</span>
+      <span className="sr-only">{` ${t('emptyValue', lang)}`}</span>
+    </span>
+  )
+}
+
+/**
+ * An old value and a new one, said as well as drawn.
+ *
+ * What separates the two on screen is a colour, a strikethrough and an arrow —
+ * and none of the three reaches a screen reader: `line-through` is not
+ * announced by default by NVDA, JAWS or VoiceOver, and the arrow is hidden. A
+ * root admin reviewing what a change did heard `price 10.00 12.00` and had to
+ * guess which way round it went (WCAG 1.4.1, 1.3.1 — #186).
+ */
+function ValueChange({ from, to, lang }: { from: string; to: string; lang: string }) {
+  return (
+    <>
+      <span className="sr-only">{`${t('changedFrom', lang)} `}</span>
+      <DiffValue value={from} lang={lang} className="text-red-700 line-through" />{' '}
+      {/* The arrow is the only thing that carries the direction on screen, and
+          it is hidden; the word beside it is the only thing that carries it to
+          a reader, and it is invisible. Both, in that order. */}
+      <span aria-hidden="true">→</span>
+      <span className="sr-only">{` ${t('changedTo', lang)}`}</span>{' '}
+      <DiffValue value={to} lang={lang} className="text-green-700" />
+    </>
+  )
+}
+
+/**
  * Catalogue change history for a product, with a diff between any two entries
  * (issue #38).
  *
@@ -137,7 +178,11 @@ export function ProductVersionHistory({ productId, lang = 'en' }: Props) {
           {diffError && <Alert>{diffError}</Alert>}
 
           {diff && (
-            <div data-testid="version-diff" className="rounded-lg border border-slate-200 p-3 space-y-2">
+            /* `relative` for the `sr-only` spans inside. Tailwind's sr-only is
+               position: absolute, and with no positioned ancestor it is laid
+               out against the initial containing block — escaping any scroll
+               container and widening the document (#167). */
+            <div data-testid="version-diff" className="relative rounded-lg border border-slate-200 p-3 space-y-2">
               {diff.identical ? (
                 <p className="text-sm text-slate-600">{t('noChanges', lang)}</p>
               ) : (
@@ -145,9 +190,7 @@ export function ProductVersionHistory({ productId, lang = 'en' }: Props) {
                   {diff.fields.map((change) => (
                     <p key={change.field} className="text-sm">
                       <span className="font-medium text-slate-900">{change.field}</span>{' '}
-                      <span className="font-mono text-xs text-red-700 line-through">{change.from || '∅'}</span>{' '}
-                      <span aria-hidden="true">→</span>{' '}
-                      <span className="font-mono text-xs text-green-700">{change.to || '∅'}</span>
+                      <ValueChange from={change.from} to={change.to} lang={lang} />
                     </p>
                   ))}
                   {diff.parameters.map((change) => (
@@ -158,10 +201,16 @@ export function ProductVersionHistory({ productId, lang = 'en' }: Props) {
                       <span className="font-mono text-xs text-slate-900">{change.name}</span>
                       {change.kind === 'changed' && (
                         <span className="text-xs text-slate-600">
-                          {' — '}
-                          {change.fields
-                            .map((f) => `${f.field}: ${f.from || '∅'} → ${f.to || '∅'}`)
-                            .join(', ')}
+                          {/* Elements rather than a joined string: the same
+                              direction has to be spoken here as in the field
+                              list above, and a string cannot carry it. */}
+                          {change.fields.map((f, i) => (
+                            <span key={f.field}>
+                              {i === 0 ? ' — ' : ', '}
+                              {`${f.field}: `}
+                              <ValueChange from={f.from} to={f.to} lang={lang} />
+                            </span>
+                          ))}
                         </span>
                       )}
                     </p>

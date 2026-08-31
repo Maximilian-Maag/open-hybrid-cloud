@@ -235,6 +235,38 @@ definition created before the check existed is inert rather than dangerous.
 - Enter a price in the base currency per environment (e.g. AWS: 70 EUR, on-premises: 20 EUR)
 - Prices are informational; no payment processing
 
+*Sizes — a price per size per environment*
+
+An offering's own price applies only while it has **no** sizes. Once it has one,
+the customer must pick a size and pays that size's price, not the offering's.
+
+Sizes are edited on the product edit page in the **Sizes** card, as a matrix:
+one row per size code, one column per environment the product is offered in.
+
+|      | AWS Frankfurt | On-Premise Vienna |
+|------|---------------|-------------------|
+| `S`  | 10.00 EUR     | 10.00 CHF         |
+| `XL` | 40.00 EUR     | 100.00 CHF        |
+
+- Reading a **row** answers "what does XL cost, and where" — the comparison the
+  per-environment price exists for
+- Saving a row prices that size in every environment at once, in one transaction:
+  a rejected price leaves none of the others written
+- Currency is per **cell**, not per row. The same size legitimately bills in EUR in
+  one environment and CHF in another; the catalogue compares them through the
+  configured exchange rates
+- An **empty cell** means the size is not offered in that environment. That is a
+  real state, not an error
+- Emptying a priced cell **retires** the size there — it stops being orderable but
+  the row and its price survive, because orders that already name the code have to
+  keep rendering. The cell shows what it was last priced at underneath. Typing a
+  price back in restores it
+- **Delete** removes the code from every environment at once. Existing orders keep
+  the code and the price they were charged, but a basket line naming it reports the
+  size as unavailable — prefer retiring for a size that has ever been ordered
+- The code reaches the pipeline as `SIZE`; see *Type `size`* above for how it is
+  turned into template variables
+
 **Step 6 – Cost Center Configuration**
 Per environment, set:
 - **Cost Center Mode**: **From Project** (the order's project supplies the cost center) / **User Selection** (the orderer picks one from the list) / **Overhead** (every order is billed to one fixed account)

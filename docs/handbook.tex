@@ -3833,6 +3833,33 @@ the \code{variable} block name in \file{variables.tf} exactly.}
   \item Repeat for each environment.
 \end{enumerate}
 
+\subsection{Sizes}
+
+An offering's own price applies only while it has \textbf{no} sizes. Once it
+has one, the orderer must pick a size and pays that size's price.
+
+Sizes are edited in the \textbf{Sizes} card of the product edit page, as a
+matrix: one row per size code, one column per environment the product is offered
+in. Reading a row answers ``what does XL cost, and where''.
+
+\begin{enumerate}
+  \item Type a \textbf{Code} (letters, digits, dot, dash and underscore --- it
+        reaches the pipeline as \code{SIZE}) and a \textbf{Label}.
+  \item Fill in a price for each environment the size is offered in. The
+        currency is per cell: the same size may bill in EUR in one environment
+        and CHF in another.
+  \item Click \textbf{Add / update size}. One request writes every cell of the
+        row in a single transaction, so a rejected price leaves none of the
+        others written.
+\end{enumerate}
+
+\notebox{An empty cell means the size is not offered in that environment ---
+a real state, not an error. Emptying a priced cell \textbf{retires} the size
+there rather than deleting it: it stops being orderable while the row and its
+price survive, because orders that already name the code have to keep
+rendering. \textbf{Delete} removes the code from every environment at once and
+should be kept for a code that was mistyped and never ordered.}
+
 \subsection{Multiple Webhooks (Pipeline Arrays)}
 
 A single product-environment combination can have multiple webhooks

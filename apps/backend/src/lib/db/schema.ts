@@ -365,6 +365,42 @@ export const parameters = pgTable('parameters', {
   sizeValues: jsonb('size_values').$type<Record<string, string>>().notNull().default({}),
 })
 
+/**
+ * Which projects a parameter is narrowed to. No rows means every project.
+ *
+ * A join table rather than a `project_id` column, because the requirement is
+ * "one or several projects" and a column can only ever say one (#275).
+ *
+ * Empty means unrestricted, which is what every parameter is today — so this
+ * table starts empty and changes nothing until somebody uses it. That is also
+ * why there is no "all projects" sentinel row: absence is the default, and a
+ * sentinel would need writing for every existing parameter and would break the
+ * moment one was missed.
+ *
+ * `onDelete: 'cascade'` both ways. A deleted parameter's narrowing is
+ * meaningless, and a deleted project must not leave a parameter narrowed to a
+ * project that no longer exists — which would silently make it apply nowhere,
+ * the worst of the available failures.
+ */
+export const parameterProjects = pgTable(
+  'parameter_projects',
+  {
+    parameterId: bigint('parameter_id', { mode: 'number' })
+      .notNull()
+      .references(() => parameters.id, { onDelete: 'cascade' }),
+    projectId: bigint('project_id', { mode: 'number' })
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.parameterId, table.projectId] }),
+    // The read is always "which parameters apply to THIS project", so the
+    // project side needs its own index — the composite primary key can only
+    // serve a lookup that leads with the parameter.
+    index('parameter_projects_project_idx').on(table.projectId),
+  ],
+)
+
 export const ciSources = pgTable('ci_sources', {
   id: bigserial({ mode: 'number' }).primaryKey(),
   name: text().notNull(),

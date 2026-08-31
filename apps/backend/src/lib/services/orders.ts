@@ -688,7 +688,10 @@ export const prepareOrder = async (
   }
 
   // Server-side parameter validation (required/type checks + defaults).
-  const defs = await loadApplicableParameters(productId, product.categoryId, environmentId)
+  // `projectId` too: a parameter narrowed to specific projects applies only to
+  // those, and the order is the point at which the project is finally known
+  // (#275).
+  const defs = await loadApplicableParameters(productId, product.categoryId, environmentId, projectId)
   // `priced.data.sizeCode` and not `input.sizeCode`: the former has been through
   // `resolveOfferingPrice`, so it is a size that actually exists and is active.
   const validated = validateAndApplyParameters(defs, input.parameters, priced.data.sizeCode)
@@ -706,6 +709,9 @@ export const prepareOrder = async (
     product.categoryId,
     environmentId,
     priced.data.sizeCode,
+    // So the snapshot records the definitions that ACTUALLY applied to this
+    // order's project, not the wider set an unfiltered load would return.
+    projectId,
   )
 
   return ok({

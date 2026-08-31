@@ -21,7 +21,7 @@ import type {
   CreateParameterRequest,
   UpdateParameterRequest,
   CostCenter,
-  OfferingSize,
+  SizeMatrix,
 } from '@open-hybrid-cloud/types'
 import { put, post, del, get } from '@/lib/api'
 import { generatePipelineYaml } from '@/lib/pipelineStackPreview'
@@ -85,6 +85,11 @@ export function ProductEditForm({ product, categories, environments, translation
   // Bumped after a save so the history panel refetches and shows the entry the
   // save just created.
   const [historyKey, setHistoryKey] = useState(0)
+  // Bumped when an offering is added or withdrawn. The size matrix's COLUMNS are
+  // the offerings, so a new environment has nowhere to be priced until the grid
+  // is redrawn — and one that has just been withdrawn keeps offering a column
+  // whose saves would 404.
+  const [offeringsKey, setOfferingsKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
@@ -191,12 +196,14 @@ export function ProductEditForm({ product, categories, environments, translation
     // Let failures propagate so the row can show an error instead of a false
     // "Saved!" confirmation.
     await put(`/api/admin/products/${product.id}/environments/${envId}`, data)
+    setOfferingsKey((k) => k + 1)
   }
 
   async function handleDeleteEnv(envId: number) {
     // Propagates so the row surfaces the reason — most often the 409 the backend
     // returns while infrastructure is still deployed in this environment.
     await del(`/api/admin/products/${product.id}/environments/${envId}`)
+    setOfferingsKey((k) => k + 1)
     router.refresh()
   }
 
@@ -656,7 +663,6 @@ export function ProductEditForm({ product, categories, environments, translation
                   env={env}
                   existing={existing}
                   costCenters={costCenters}
-                  productId={product.id}
                   onSave={(data) => handleSaveEnv(env.id, data)}
                   onDelete={() => handleDeleteEnv(env.id)}
                   lang={lang}
@@ -665,6 +671,11 @@ export function ProductEditForm({ product, categories, environments, translation
             })}
           </div>
         )}
+      </Card>
+
+      {/* Sizes, across every environment at once (#249) */}
+      <Card title={t('sizes', lang)}>
+        <SizeMatrixEditor productId={product.id} lang={lang} reloadKey={offeringsKey} />
       </Card>
 
       {/* Parameters */}
@@ -994,7 +1005,6 @@ function EnvironmentRow({
   env,
   existing,
   costCenters,
-  productId,
   onSave,
   onDelete,
   lang,
@@ -1010,7 +1020,6 @@ function EnvironmentRow({
     trialDurationMinutes: number
   }
   costCenters: CostCenter[]
-  productId: number
   onSave: (data: UpsertProductEnvironmentRequest) => Promise<void>
   onDelete: () => Promise<void>
   lang: string
@@ -1082,7 +1091,9 @@ function EnvironmentRow({
   return (
     <form onSubmit={handleSave} className="rounded-lg border border-slate-200 p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h4 className="font-medium text-slate-900">{env.name}</h4>
+        {/* h3: this row sits inside the "Environments" Card, whose title is an
+            h2, so h4 skipped a level (#185). */}
+        <h3 className="font-medium text-slate-900">{env.name}</h3>
         {existing && (
           <Button type="button" size="sm" variant="danger" onClick={() => { setSaveError(null); setConfirmRemove(true) }}>
             {t('remove', lang)}
@@ -1155,8 +1166,6 @@ function EnvironmentRow({
             .map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}${cc.active ? '' : ` ${t('inactiveSuffix', lang)}`}` }))}
         />
       )}
-      {existing && <SizesEditor productId={productId} envId={env.id} lang={lang} />}
-
       <div className="flex items-center gap-3">
         <Button type="submit" size="sm" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
         {saved && <span className="text-xs text-green-600">{t('saved', lang)}</span>}
@@ -1182,136 +1191,324 @@ function EnvironmentRow({
 }
 
 
+/** What one cell holds while it is being edited. An empty price means not offered. */
+interface CellDraft {
+  price: string
+  currency: string
+}
+
+interface RowDraft {
+  code: string
+  label: string
+  sortOrder: number
+  /** Keyed by environment id, one entry per column so a blank cell is still a control. */
+  cells: Record<number, CellDraft>
+}
+
+const BLANK_ROW = (environments: SizeMatrix['environments'], sortOrder: number): RowDraft => ({
+  code: '',
+  label: '',
+  sortOrder,
+  cells: Object.fromEntries(
+    // The offering's currency, not a hardcoded EUR: a Swiss environment priced in
+    // CHF should not need the admin to retype it in every cell.
+    environments.map((e) => [e.environmentId, { price: '', currency: e.currency }]),
+  ),
+})
+
+const toDrafts = (matrix: SizeMatrix): RowDraft[] =>
+  matrix.rows.map((row) => ({
+    code: row.code,
+    label: row.label,
+    sortOrder: row.sortOrder,
+    cells: Object.fromEntries(
+      matrix.environments.map((env) => {
+        const cell = row.cells.find((c) => c.environmentId === env.environmentId)
+        return [
+          env.environmentId,
+          {
+            // A RETIRED cell loads blank, because blank is what "not offered here"
+            // looks like everywhere else in this grid and saving it back must not
+            // quietly re-offer the size. Its price is still shown beside the field,
+            // so what it was struck at is not lost from the screen.
+            price: cell?.active ? cell.price : '',
+            currency: cell?.currency ?? env.currency,
+          },
+        ]
+      }),
+    ),
+  }))
+
 /**
- * Per-offering size list (issue #98).
+ * Every size of the product, as a matrix: sizes down, environments across (issue #249).
  *
- * Lives inside the offering row because a size belongs to a (product,
- * environment) pair: the same product legitimately costs different amounts at the
- * same size in two environments, which is half the point of the feature.
+ * The editor this replaced was nested in one offering row, so pricing S/M/L/XL
+ * across four environments meant opening four editors and typing sixteen rows —
+ * with no view of what a size costs across environments, which is the comparison
+ * the per-environment price exists FOR, and nothing keeping `XL` in one
+ * environment from being `X-Large` in the next.
  *
- * Deliberately not a nested <form> — the offering row is already one, and nested
- * forms are invalid HTML — so every control here is a type="button".
+ * A row is the unit of editing and of saving. One request writes every cell of it
+ * in one transaction, so a rejected price leaves none of the others written: half
+ * a price list is worse than none, because it looks finished.
+ *
+ * Not a nested <form>: this sits beside the offering forms rather than inside one,
+ * but the same rule earns a mention — every control here is a type="button", so
+ * pressing Enter in a price field cannot submit somebody else's form.
  */
-function SizesEditor({
+function SizeMatrixEditor({
   productId,
-  envId,
   lang,
+  reloadKey,
 }: {
   productId: number
-  envId: number
   lang: string
+  /**
+   * Bumped by the offering forms. The columns ARE the offerings, so adding or
+   * withdrawing one has to redraw the grid — otherwise a freshly added
+   * environment has no column to be priced in until the page is reloaded by hand.
+   */
+  reloadKey: number
 }) {
-  const [sizes, setSizes] = useState<OfferingSize[] | null>(null)
+  const [matrix, setMatrix] = useState<SizeMatrix | null>(null)
+  const [rows, setRows] = useState<RowDraft[]>([])
+  const [newRow, setNewRow] = useState<RowDraft>(BLANK_ROW([], 0))
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [code, setCode] = useState('')
-  const [label, setLabel] = useState('')
-  const [price, setPrice] = useState('')
-  const [currency, setCurrency] = useState('EUR')
-  const path = `/api/admin/products/${productId}/environments/${envId}/sizes`
+  const [busyCode, setBusyCode] = useState<string | null>(null)
+  const [savedCode, setSavedCode] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<RowDraft | null>(null)
+  const path = `/api/admin/products/${productId}/sizes`
 
   const load = useCallback(async () => {
     try {
-      setSizes((await get<OfferingSize[]>(path)) ?? [])
+      const loaded = await get<SizeMatrix>(path)
+      if (!loaded) return
+      setMatrix(loaded)
+      setRows(toDrafts(loaded))
+      setNewRow(BLANK_ROW(loaded.environments, loaded.rows.length + 1))
     } catch (e) {
       setError(e instanceof Error ? e.message : t('failedToLoadGeneric', lang))
-      setSizes([])
     }
-    // `lang` is in here because the fallback message is translated now. It makes
-    // `load` change when the language does, so the sizes are re-fetched on a
-    // language switch — one request, and the alternative is a stale error still
-    // reading in the previous language.
+    // `lang` is in here because the fallback message is translated, so the grid is
+    // refetched on a language switch rather than leaving an error in the language
+    // the reader has just left.
   }, [path, lang])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load() }, [load, reloadKey])
 
-  async function handleAdd() {
-    setBusy(true)
+  /** Only the priced cells travel: the ones left out are what the server retires. */
+  const save = async (draft: RowDraft) => {
+    const code = draft.code.trim()
+    setBusyCode(code)
     setError(null)
+    setSavedCode(null)
     try {
-      await post(path, {
-        code: code.trim(),
-        label: label.trim(),
-        price: price.trim() || '0',
-        currency: currency.trim().toUpperCase(),
-        // Appended at the end of the list; an admin reorders by editing the value
-        // on the row, which upserts on the same code.
-        sortOrder: (sizes?.length ?? 0) + 1,
+      await put(`${path}/${encodeURIComponent(code)}`, {
+        label: draft.label.trim(),
+        sortOrder: draft.sortOrder,
+        cells: Object.entries(draft.cells)
+          .filter(([, cell]) => cell.price.trim() !== '')
+          .map(([environmentId, cell]) => ({
+            environmentId: Number(environmentId),
+            price: cell.price.trim(),
+            currency: cell.currency.trim().toUpperCase(),
+          })),
       })
-      setCode(''); setLabel(''); setPrice('')
       await load()
+      setSavedCode(code)
+      setTimeout(() => setSavedCode(null), 2000)
     } catch (e) {
       setError(e instanceof Error ? e.message : t('failedToSave', lang))
     } finally {
-      setBusy(false)
+      setBusyCode(null)
     }
   }
 
-  /** Retire rather than delete: existing orders reference the code. */
-  async function handleToggleActive(size: OfferingSize) {
-    setBusy(true)
+  const remove = async (draft: RowDraft) => {
+    setBusyCode(draft.code)
     setError(null)
     try {
-      await post(path, { code: size.code, label: size.label, price: size.price,
-        currency: size.currency, sortOrder: size.sortOrder, active: !size.active })
+      await del(`${path}/${encodeURIComponent(draft.code)}`)
+      setConfirmDelete(null)
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('failedToSave', lang))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleDelete(size: OfferingSize) {
-    setBusy(true)
-    setError(null)
-    try {
-      await del(`${path}/${size.id}`)
-      await load()
-    } catch (e) {
+      // Left on screen next to the action that failed rather than closing the
+      // dialog on an error the operator has not read.
       setError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
     } finally {
-      setBusy(false)
+      setBusyCode(null)
     }
   }
 
+  // The unsaved row is held apart from the saved ones because it has no code yet,
+  // and the code is what identifies a row everywhere else here.
+  const updateRow = (draft: RowDraft, next: RowDraft) => {
+    if (draft === newRow) setNewRow(next)
+    else setRows((all) => all.map((r) => (r.code === draft.code ? next : r)))
+  }
+
+  const setCell = (draft: RowDraft, environmentId: number, patch: Partial<CellDraft>) =>
+    updateRow(draft, {
+      ...draft,
+      cells: { ...draft.cells, [environmentId]: { ...draft.cells[environmentId], ...patch } },
+    })
+
+  if (matrix === null) {
+    return error ? <Alert>{error}</Alert> : null
+  }
+
+  if (matrix.environments.length === 0) {
+    return <p className="text-sm text-slate-600">{t('sizesNeedAnOffering', lang)}</p>
+  }
+
+  const cellFor = (code: string, environmentId: number) =>
+    matrix.rows.find((r) => r.code === code)?.cells.find((c) => c.environmentId === environmentId)
+
+  /**
+   * `rowName` rather than `draft.code`: the unsaved row's code is being typed, and
+   * naming its fields after it would rename every control in the row on each
+   * keystroke — which a screen reader reads out again every time.
+   */
+  const renderCells = (draft: RowDraft, rowName: string) =>
+    matrix.environments.map((env) => {
+      const stored = cellFor(draft.code, env.environmentId)
+      const cell = draft.cells[env.environmentId] ?? { price: '', currency: env.currency }
+      return (
+        <td key={env.environmentId} className="px-2 py-2 align-top">
+          <div className="flex items-start gap-1">
+            <input
+              type="text"
+              inputMode="decimal"
+              value={cell.price}
+              onChange={(e) => setCell(draft, env.environmentId, { price: e.target.value })}
+              aria-label={`${rowName} — ${env.name} — ${t('price', lang)}`}
+              placeholder="0.00"
+              className="min-h-11 w-24 rounded-lg border border-slate-300 px-2 py-2 text-sm text-slate-900 placeholder-slate-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <input
+              type="text"
+              value={cell.currency}
+              onChange={(e) => setCell(draft, env.environmentId, { currency: e.target.value })}
+              aria-label={`${rowName} — ${env.name} — ${t('currency', lang)}`}
+              placeholder="EUR"
+              className="min-h-11 w-16 rounded-lg border border-slate-300 px-2 py-2 text-sm uppercase text-slate-900 placeholder-slate-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          {/* Only while the field is still empty: once a price is typed the row is
+              about to be restored, and a "retired" note beside it would describe
+              the state the save is leaving. */}
+          {stored && !stored.active && cell.price.trim() === '' && (
+            <p className="mt-1 text-xs text-slate-500">
+              {t('retiredBadge', lang)} · {stored.price} {stored.currency}
+            </p>
+          )}
+        </td>
+      )
+    })
+
   return (
-    <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
-      <p className="text-sm font-medium text-slate-700">{t('sizes', lang)}</p>
+    <div className="space-y-3">
       <p className="text-xs text-slate-500">
         {t('sizesHint', lang)} <code>SIZE</code>.
       </p>
       {error && <Alert>{error}</Alert>}
-      {sizes !== null && sizes.length === 0 && (
-        <p className="text-xs text-slate-600">{t('noSizes', lang)}</p>
-      )}
-      {sizes?.map((size) => (
-        <div key={size.id} className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2">
-          <span className="font-mono text-xs text-slate-600">{size.code}</span>
-          <span className="text-sm text-slate-900">{size.label}</span>
-          <span className="text-sm font-medium text-slate-900">{size.price} {size.currency}</span>
-          {!size.active && (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{t('retiredBadge', lang)}</span>
-          )}
-          <span className="ml-auto flex gap-2">
-            <Button type="button" size="sm" variant="secondary" disabled={busy}
-              onClick={() => handleToggleActive(size)}>
-              {size.active ? t('retire', lang) : t('restore', lang)}
-            </Button>
-            <Button type="button" size="sm" variant="danger" disabled={busy}
-              onClick={() => handleDelete(size)}>{t('delete', lang)}</Button>
-          </span>
-        </div>
-      ))}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <Input label={t('code', lang)} value={code} onChange={(e) => setCode(e.target.value)} placeholder="XL" />
-        <Input label={t('label', lang)} value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('sizeLabelPlaceholder', lang)} />
-        <Input label={t('price', lang)} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" />
-        <Input label={t('currency', lang)} value={currency} onChange={(e) => setCurrency(e.target.value)} placeholder="EUR" />
+      {rows.length === 0 && <p className="text-xs text-slate-600">{t('noSizes', lang)}</p>}
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-separate border-spacing-0 text-sm">
+          <thead>
+            <tr className="text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+              <th scope="col" className="px-2 py-2">{t('code', lang)}</th>
+              <th scope="col" className="px-2 py-2">{t('label', lang)}</th>
+              {matrix.environments.map((env) => (
+                <th key={env.environmentId} scope="col" className="px-2 py-2">{env.name}</th>
+              ))}
+              <th scope="col" className="px-2 py-2">
+                <span className="sr-only">{t('save', lang)}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((draft) => (
+              <tr key={draft.code} className="border-t border-slate-100">
+                {/* A row header, not a cell: the code is what names the row, and it
+                    is what a screen reader should read back with every price in it. */}
+                <th scope="row" className="px-2 py-2 text-left align-top font-mono text-xs font-normal text-slate-700">
+                  {draft.code}
+                </th>
+                <td className="px-2 py-2 align-top">
+                  <input
+                    type="text"
+                    value={draft.label}
+                    onChange={(e) => updateRow(draft, { ...draft, label: e.target.value })}
+                    aria-label={`${draft.code} — ${t('label', lang)}`}
+                    placeholder={t('sizeLabelPlaceholder', lang)}
+                    className="min-h-11 w-40 rounded-lg border border-slate-300 px-2 py-2 text-sm text-slate-900 placeholder-slate-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </td>
+                {renderCells(draft, draft.code)}
+                <td className="px-2 py-2 align-top">
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="sm" disabled={busyCode !== null} onClick={() => void save(draft)}>
+                      {busyCode === draft.code ? t('saving', lang) : t('save', lang)}
+                    </Button>
+                    <Button type="button" size="sm" variant="danger" disabled={busyCode !== null}
+                      onClick={() => { setError(null); setConfirmDelete(draft) }}>
+                      {t('delete', lang)}
+                    </Button>
+                    {savedCode === draft.code && <span className="text-xs text-green-600">{t('saved', lang)}</span>}
+                  </div>
+                </td>
+              </tr>
+            ))}
+
+            <tr className="border-t border-slate-200">
+              <td className="px-2 py-2 align-top">
+                <input
+                  type="text"
+                  value={newRow.code}
+                  onChange={(e) => setNewRow({ ...newRow, code: e.target.value })}
+                  aria-label={t('code', lang)}
+                  placeholder="XL"
+                  className="min-h-11 w-24 rounded-lg border border-slate-300 px-2 py-2 font-mono text-xs text-slate-900 placeholder-slate-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </td>
+              <td className="px-2 py-2 align-top">
+                <input
+                  type="text"
+                  value={newRow.label}
+                  onChange={(e) => setNewRow({ ...newRow, label: e.target.value })}
+                  aria-label={t('label', lang)}
+                  placeholder={t('sizeLabelPlaceholder', lang)}
+                  className="min-h-11 w-40 rounded-lg border border-slate-300 px-2 py-2 text-sm text-slate-900 placeholder-slate-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </td>
+              {renderCells(newRow, t('addOrUpdateSize', lang))}
+              <td className="px-2 py-2 align-top">
+                <Button type="button" size="sm" disabled={busyCode !== null || newRow.code.trim() === ''}
+                  onClick={() => void save(newRow)}>
+                  {busyCode === newRow.code.trim() ? t('saving', lang) : t('addOrUpdateSize', lang)}
+                </Button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <Button type="button" size="sm" disabled={busy || code.trim() === ''} onClick={handleAdd}>
-        {busy ? t('saving', lang) : t('addOrUpdateSize', lang)}
-      </Button>
+
+      <Modal open={confirmDelete !== null} onClose={() => setConfirmDelete(null)}
+        title={t('deleteSizeEverywhere', lang)} size="md">
+        {error && <Alert className="mb-3">{error}</Alert>}
+        <p className="text-sm text-slate-600">
+          <code>{confirmDelete?.code}</code> — {t('deleteSizeEverywhereWarning', lang)}
+        </p>
+        <div className="mt-4 flex justify-end gap-3">
+          <Button type="button" variant="secondary" onClick={() => setConfirmDelete(null)}>{t('cancel', lang)}</Button>
+          <Button type="button" variant="danger" disabled={busyCode !== null}
+            onClick={() => confirmDelete && void remove(confirmDelete)}>
+            {busyCode !== null ? t('removing', lang) : t('delete', lang)}
+          </Button>
+        </div>
+      </Modal>
     </div>
   )
 }

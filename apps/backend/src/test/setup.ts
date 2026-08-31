@@ -147,8 +147,61 @@ const RESET_ALL = `${TRUNCATE_ALL};
   INSERT INTO branding (id) VALUES (1) ON CONFLICT DO NOTHING;
   INSERT INTO app_config (id) VALUES (1) ON CONFLICT DO NOTHING`
 
+/**
+ * How long the per-test reset may take before it is worth explaining itself.
+ *
+ * The reset is one round trip and normally costs single-digit milliseconds. A
+ * second means something is holding a lock on one of these tables, and that is
+ * the moment worth capturing — afterwards, all anybody sees is a different test
+ * failing for a reason of its own.
+ */
+const SLOW_RESET_MS = 1_000
+
+/**
+ * Say WHY the suite stalled, at the moment it stalls.
+ *
+ * #282: a full run intermittently reports exactly one failed test, a different
+ * one each time, and every one of them passes when its file is run alone. The
+ * standing theory was a query from a previous test still in flight on the app's
+ * pool, blocking this TRUNCATE's ACCESS EXCLUSIVE lock until something timed
+ * out. That theory is now unsupported — there is not one un-awaited database
+ * write left in `apps/backend/src` — but "unsupported" is not "disproved", and
+ * the runs that produced the report were captured with a filter that threw the
+ * error message away.
+ *
+ * So rather than guess again: when the reset is slow, print what Postgres says
+ * is in the way. A blocked TRUNCATE names its blocker here; an ordinary busy
+ * server shows nothing and the run continues. Either way the next occurrence
+ * arrives with its own evidence instead of needing another six runs to catch.
+ */
+const explainSlowReset = async (elapsedMs: number): Promise<void> => {
+  try {
+    const blockers = await testDb.execute(sql`
+      SELECT pid, state, wait_event_type, wait_event,
+             left(query, 120) AS query,
+             EXTRACT(EPOCH FROM (NOW() - COALESCE(xact_start, query_start)))::int AS age_s
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND pid <> pg_backend_pid()
+        AND state <> 'idle'
+      ORDER BY age_s DESC NULLS LAST
+      LIMIT 5
+    `)
+    console.warn(
+      `[test] reset took ${elapsedMs}ms (#282). Other activity on this database:\n` +
+        JSON.stringify(blockers, null, 2),
+    )
+  } catch (e) {
+    // The diagnostic must never be the reason a run fails.
+    console.warn(`[test] reset took ${elapsedMs}ms (#282); could not read pg_stat_activity:`, e)
+  }
+}
+
 beforeEach(async () => {
+  const started = Date.now()
   await testDb.execute(sql.raw(RESET_ALL))
+  const elapsed = Date.now() - started
+  if (elapsed >= SLOW_RESET_MS) await explainSlowReset(elapsed)
 })
 
 afterAll(async () => {

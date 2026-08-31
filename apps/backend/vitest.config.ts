@@ -12,13 +12,31 @@ import { testDatabaseUrl } from './src/test/database'
  * that, so `thresholds.break = 80` was enforcing nothing at all.
  *
  * Raised only under Stryker, which sets STRYKER_MUTATOR_WORKER in each test
- * runner process. An ordinary run keeps the strict 5s, because a test that
- * genuinely takes six seconds is worth being told about.
+ * runner process.
+ *
+ * An ordinary run used to keep vitest's default 5s, on the argument that a test
+ * genuinely taking six seconds is worth being told about. The argument is sound
+ * and the number was not: this suite runs four workers against ONE Postgres, and
+ * a budget of five seconds measures how busy that server is at least as much as
+ * it measures the code.
+ *
+ * That is #282 — a full run reporting exactly one failure, a different test each
+ * time, every one of them passing alone. The theory was a blocked TRUNCATE; the
+ * diagnostic added to `src/test/setup.ts` disproves it, reporting an EMPTY
+ * `pg_stat_activity` every time the reset ran slow. Nothing is holding a lock.
+ * The server is simply saturated, and the tests that lose are whichever ones
+ * happened to be doing the most I/O at the time.
+ *
+ * 15s, then. Still tight enough to catch a test that has genuinely gone wrong —
+ * nothing here does real work for fifteen seconds — and slack enough that a
+ * queue on a shared server is not reported as a failing assertion.
  */
 const underMutationTesting = process.env.STRYKER_MUTATOR_WORKER !== undefined
 
 export default defineConfig({
   test: {
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
     ...(underMutationTesting ? { testTimeout: 60_000, hookTimeout: 60_000 } : {}),
     globals: true,
     environment: 'node',

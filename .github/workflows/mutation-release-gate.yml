@@ -1,0 +1,253 @@
+name: Mutation gate (release)
+
+on:
+  # `branches:` on pull_request filters the branch being merged INTO, not the one
+  # being merged. So this fires on staging → main and on nothing else. That is the
+  # scope the owner set on #245: dev server runs `dev`, staging runs `staging`,
+  # production runs `main`, and 90% is asked of the last hop only. A PR into `dev`
+  # never sees this job, which is also the only reason the runtime below is
+  # affordable at all.
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      enforce:
+        description: 'Fail below the threshold now, instead of waiting for the switch date'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# An hour of measurement against a commit that has been superseded answers a
+# question nobody is asking any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The number lives here and not in `thresholds.break`, deliberately. #245 uses
+  # `break` as a ratchet that tracks the last measured score so the nightly can
+  # only improve; a release gate that read the ratchet would wave through
+  # whatever the suite happened to manage that week. 90 is the owner's number for
+  # shipping to production and it does not move with the ratchet.
+  RELEASE_THRESHOLD: '90'
+
+  # The date this stops reporting and starts blocking.
+  #
+  # It ships as a report because it cannot pass today and this repository already
+  # has the rule, in README.md: "A rule that cannot pass on `dev` yet ships as
+  # `warn` naming the issue that will promote it — a gate that starts red teaches
+  # people to ignore it." The frontend's last completed run scored 26.80, the
+  # backend has never produced a number at all, and a check that is red for
+  # reasons the release author cannot fix in their PR gets clicked past once and
+  # then always.
+  #
+  # The date is what stops that reasoning from becoming permanent. It is a forcing
+  # function, not an estimate: nothing here believes 26.80 → 90 happens by then.
+  # What happens on 2026-11-01 is that the gate starts blocking main and somebody
+  # has to make a decision in the open — raise the score, or move this line with a
+  # reason written next to it. No code change is needed for the switch to fire.
+  ENFORCE_FROM: '2026-11-01'
+
+jobs:
+  # ── Is an hour of Stryker worth spending on this release? ────────────────────
+  scope:
+    name: Scope
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.diff.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check whether this release touches code a mutant could live in
+        id: diff
+        run: |
+          # A promotion that only moves documentation or deployment manifests
+          # cannot move a mutation score, and the run below is billed in
+          # runner-hours. `.github/` is deliberately NOT in the ignore list: a
+          # change to this workflow is exactly when the measurement should be
+          # taken for real rather than assumed.
+          if [ "${{ github.event_name }}" != 'pull_request' ]; then
+            echo 'relevant=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")
+          mutable=$(printf '%s\n' "$changed" \
+            | grep -vE '^(docs/|infra/|\.vscode/|LICENSE$)|\.md$' || true)
+          if [ -n "$mutable" ]; then
+            echo 'relevant=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'relevant=false' >> "$GITHUB_OUTPUT"
+            echo 'Documentation and deployment files only — no mutants can have moved.' \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ── The measurement ──────────────────────────────────────────────────────────
+  mutate:
+    name: Mutate (${{ matrix.app }})
+    needs: [scope]
+    if: needs.scope.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    # These are not CI-shaped numbers and pretending otherwise is how a gate ends
+    # up cancelled instead of answered. The frontend leg took 58m49s the one time
+    # it finished and has since outgrown the nightly's 60-minute limit; the backend
+    # suite runs against a live Postgres. This is a check a release author starts
+    # and comes back to, not one they watch.
+    timeout-minutes: ${{ matrix.app == 'backend' && 330 || 180 }}
+    strategy:
+      # Two independent numbers. Learning that the frontend is short is no reason
+      # to stop finding out about the backend.
+      fail-fast: false
+      matrix:
+        app: [frontend, backend]
+    services:
+      # Only the backend leg uses it, but a service block cannot be conditional
+      # per matrix leg — the same trade CI makes, for the same few seconds.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: open_hybrid_cloud_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - name: Run Stryker
+        id: run
+        working-directory: apps/${{ matrix.app }}
+        env:
+          # Only the backend leg uses it; harmless for the frontend.
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: |
+          # No `--incremental` here, unlike the nightly. Incremental reuses
+          # verdicts cached from an earlier run for code Stryker believes has not
+          # changed — a good trade for a trend line, and the wrong basis for a
+          # number that decides whether something reaches production. A release
+          # measurement is taken from scratch or it is not evidence.
+          #
+          # The exit code is recorded rather than obeyed: `thresholds.break` in the
+          # config is the ratchet, and the release number is enforced by the next
+          # step. Capturing it still tells that step whether a missing score means
+          # "below the line" or "the run never got going".
+          set -o pipefail
+          status=0
+          pnpm exec stryker run --reporters clear-text,html,progress \
+            | tee stryker.log || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Check the score against the release threshold
+        if: always()
+        working-directory: apps/${{ matrix.app }}
+        env:
+          STRYKER_STATUS: ${{ steps.run.outputs.status }}
+          # A dispatch input, so the enforcing behaviour can be seen before the
+          # date arrives rather than discovered by it.
+          FORCE: ${{ inputs.enforce }}
+        run: |
+          # The score lives in the clear-text table's "All files" row. Parsed
+          # rather than read from a machine-readable file because Stryker's JSON
+          # report carries the per-mutant verdicts, not the computed score.
+          score=''
+          if [ -f stryker.log ]; then
+            score=$(grep -E '^[[:space:]]*All files' stryker.log \
+              | head -1 | awk -F'|' '{gsub(/ /,"",$2); print $2}')
+          fi
+
+          today=$(date -u +%F)
+          enforcing=false
+          # ISO-8601 sorts lexically, which is the whole reason the dates in this
+          # file are written that way.
+          if [ "$FORCE" = 'true' ] || ! [[ "$today" < "$ENFORCE_FROM" ]]; then
+            enforcing=true
+          fi
+
+          if [ -z "$score" ]; then
+            verdict="**no score** — the run exited ${STRYKER_STATUS:-?} without producing one"
+            passed=false
+          elif awk -v s="$score" -v t="$RELEASE_THRESHOLD" 'BEGIN { exit !(s + 0 >= t + 0) }'; then
+            verdict="**${score}%** — at or above the ${RELEASE_THRESHOLD}% release threshold"
+            passed=true
+          else
+            verdict="**${score}%** — below the ${RELEASE_THRESHOLD}% release threshold"
+            passed=false
+          fi
+
+          {
+            echo "## Mutation score — ${{ matrix.app }}"
+            echo
+            echo "$verdict"
+            echo
+            if [ "$enforcing" = 'true' ]; then
+              echo "Enforcing: this gate blocks the merge into \`main\`."
+            else
+              echo "Reporting only until \`$ENFORCE_FROM\` (see #245). The number above"
+              echo "blocks nothing today; on that date it starts to."
+            fi
+            echo
+            echo '```'
+            grep -E '^[[:space:]]*(File|All files|-)' stryker.log 2>/dev/null | head -20 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "$verdict"
+          if [ "$enforcing" != 'true' ]; then
+            echo "Reporting only until $ENFORCE_FROM — not failing the job."
+            exit 0
+          fi
+          [ "$passed" = 'true' ]
+
+      - name: Upload the HTML report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutation-report-${{ matrix.app }}
+          path: apps/${{ matrix.app }}/reports/mutation/
+          retention-days: 14
+
+  # ── The name branch protection knows ─────────────────────────────────────────
+  gate:
+    name: Mutation gate
+    runs-on: ubuntu-latest
+    needs: [scope, mutate]
+    if: always()
+    steps:
+      - name: Report the matrix result
+        run: |
+          # `mutate` is skipped when the release moves nothing a mutant can live
+          # in. Branch protection cannot tell a skipped required check from one
+          # that has not started, so requiring the matrix directly would wedge
+          # every docs-only promotion at "Expected — waiting for status". This job
+          # always runs, so this is the name to require, and it turns 'skipped'
+          # into a pass with a stated reason.
+          echo "scope:  ${{ needs.scope.result }} (relevant=${{ needs.scope.outputs.relevant }})"
+          echo "mutate: ${{ needs.mutate.result }}"
+          case "${{ needs.mutate.result }}" in
+            success)
+              echo 'Both legs met the release threshold, or the gate is still reporting only.'
+              ;;
+            skipped)
+              [ "${{ needs.scope.result }}" = 'success' ]
+              echo 'Nothing that can carry a mutant changed in this release.'
+              ;;
+            *)
+              echo 'A leg is below the release threshold, or did not produce a score.'
+              exit 1
+              ;;
+          esac

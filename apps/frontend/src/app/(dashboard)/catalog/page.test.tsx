@@ -435,3 +435,66 @@ describe('CatalogPage server-side filtering and paging', () => {
     expect(screen.queryByTestId('product-card-10')).not.toBeInTheDocument()
   })
 })
+
+/**
+ * What a filtered catalogue says, as opposed to what it draws.
+ *
+ * The selection is carried by a background colour and the result set is
+ * replaced without focus moving, so to anything that cannot compare two fills
+ * the page is silent — and a filter that matched nothing is indistinguishable
+ * from a catalogue that failed to load (#186).
+ */
+describe('CatalogPage announces its own state', () => {
+  const sidebar = (name: string) => screen.getAllByRole('button', { name })[0]
+
+  it('marks the category in effect, which the fill colour says only to the eye', async () => {
+    const user = userEvent.setup()
+    mockApi([])
+    render(<CatalogPage />)
+    await waitFor(() => expect(screen.getByTestId('product-card-10')).toBeInTheDocument())
+
+    // "All products" is the state the page opens in.
+    expect(sidebar('All products')).toHaveAttribute('aria-pressed', 'true')
+    expect(sidebar('Databases')).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(sidebar('Databases'))
+
+    expect(sidebar('Databases')).toHaveAttribute('aria-pressed', 'true')
+    expect(sidebar('All products')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('puts the result count in a live region, including when it is zero', async () => {
+    // Zero is the announcement that matters most: it is the one a sighted user
+    // reads off the empty state and everyone else used to get as silence.
+    mockedGet.mockImplementation((async (path: string) => {
+      if (path.startsWith('/api/catalog')) return catalogPage([])
+      if (path.startsWith('/api/admin/categories')) return categories
+      return []
+    }) as never)
+    render(<CatalogPage />)
+
+    const status = await screen.findByRole('status')
+    await waitFor(() => expect(status).toHaveTextContent('0 products'))
+    expect(status).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it('says so when loading more fails, instead of leaving a button that did nothing', async () => {
+    const user = userEvent.setup()
+    mockedGet.mockImplementation((async (path: string) => {
+      if (path.startsWith('/api/catalog')) {
+        if (path.includes('offset=0')) return catalogPage(products, 3)
+        throw new Error('the second page is not coming')
+      }
+      if (path.startsWith('/api/admin/categories')) return categories
+      return []
+    }) as never)
+    render(<CatalogPage />)
+
+    await user.click(await screen.findByRole('button', { name: /show more/i }))
+
+    // The cards already fetched stay: a failed append is not a failed page.
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(screen.getByTestId('product-card-10')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /show more/i })).toBeEnabled()
+  })
+})

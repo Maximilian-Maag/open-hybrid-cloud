@@ -108,6 +108,9 @@ export function OrderForm({
   const parsedQuantity = Number(quantity)
   const quantityValid =
     Number.isInteger(parsedQuantity) && parsedQuantity >= 1 && parsedQuantity <= MAX_QUANTITY
+  // The range is appended rather than written into the translation so that
+  // raising MAX_QUANTITY does not silently leave 25 tables claiming the old one.
+  const quantityMessage = `${t('quantityInvalid', lang)} (1–${MAX_QUANTITY})`
   const envParameters = resolvedParameters.filter(
     (p) => p.environmentId === null || String(p.environmentId) === envId,
   )
@@ -192,6 +195,15 @@ export function OrderForm({
     }
     if (needsSize && !sizeCode) {
       setError(t('selectSize', lang))
+      return
+    }
+    // Refused here rather than by disabling the button. Clearing the field makes
+    // `Number('')` zero, and a disabled <button> is not focusable — so the form
+    // used to become unsubmittable in silence, and a screen-reader user tabbing
+    // to the end found no submit control at all and nothing saying why (WCAG
+    // 3.3.1 — #186). Every other refusal in this form goes through `Alert`.
+    if (!quantityValid) {
+      setError(quantityMessage)
       return
     }
     setLoading(true)
@@ -314,6 +326,10 @@ export function OrderForm({
         step={1}
         value={quantity}
         onChange={(e) => setQuantity(e.target.value)}
+        // `Input` turns this into aria-invalid plus a described-by message, so
+        // the field says what is wrong with it where the user is, as well as at
+        // submit time.
+        error={quantityValid ? undefined : quantityMessage}
         // Said rather than silently clamped: one order provisions this many
         // elements, and one approval covers all of them.
         hint={`1 – ${MAX_QUANTITY}`}
@@ -390,7 +406,7 @@ export function OrderForm({
           />
           {templateId && (
             <p className="mt-1 text-xs text-slate-500">
-              {t('paramsPrefilled', lang)}{templateId}. Edit as needed before submitting.
+              {`${t('paramsPrefilled', lang)}${templateId}. ${t('paramsPrefilledHint', lang)}`}
             </p>
           )}
           {fromInfraId && templateId === fromInfraId && (
@@ -410,7 +426,9 @@ export function OrderForm({
         </div>
       )}
 
-      <Button type="submit" disabled={loading || !quantityValid} className="w-full">
+      {/* Only `loading` disables it. A quantity the form will refuse is a
+          refusal to say out loud, not a control to take away. */}
+      <Button type="submit" disabled={loading} className="w-full">
         {loading ? t('submitting', lang) : t('placeOrder', lang)}
       </Button>
     </form>

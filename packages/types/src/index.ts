@@ -450,6 +450,15 @@ export interface CreateParameterRequest {
 }
 
 export interface UpdateParameterRequest {
+  /**
+   * Which environment this parameter applies to; `null` means all of them.
+   *
+   * The create request has carried this since the column existed, and the route
+   * has always accepted it on update too — the type simply did not say so, so
+   * nothing could send it and a parameter's environment could be chosen once
+   * and never corrected (#275).
+   */
+  environmentId?: number | null
   name?: string
   label?: string
   type?: ParameterType
@@ -548,6 +557,62 @@ export interface UpsertSizeRequest {
   currency?: string
   sortOrder?: number
   active?: boolean
+  changelog?: string
+}
+
+/**
+ * The same sizes, transposed: sizes down, environments across (issue #249).
+ *
+ * A size code is unique per (product, environment), never global, so the row axis
+ * is the UNION of the codes across the product's offerings and a hole in the grid
+ * is a legitimate state — the size is simply not offered there.
+ */
+export interface SizeMatrixCell {
+  environmentId: number
+  id: number
+  price: string
+  currency: string
+  /** Retired cells stay in the payload: the price is what past orders were struck at. */
+  active: boolean
+}
+
+export interface SizeMatrixRow {
+  code: string
+  /**
+   * Stored per offering but the same property of the same size in all of them, so
+   * the matrix treats it as the row's and writes it to every cell it touches.
+   * Price and currency stay per cell — differing per environment is the point.
+   */
+  label: string
+  sortOrder: number
+  cells: SizeMatrixCell[]
+}
+
+export interface SizeMatrixEnvironment {
+  environmentId: number
+  name: string
+  /** The offering's own currency, the default for a cell that has none yet. */
+  currency: string
+}
+
+export interface SizeMatrix {
+  /** Only the environments the product is offered in — the matrix's columns. */
+  environments: SizeMatrixEnvironment[]
+  rows: SizeMatrixRow[]
+}
+
+/**
+ * The full desired state of one row.
+ *
+ * `cells` lists the environments the size IS offered in; one left out is retired
+ * there rather than deleted, because an order that already names the code has to
+ * keep resolving to something. Applied in one transaction, so a rejected cell
+ * leaves none of the others written.
+ */
+export interface SaveSizeRowRequest {
+  label?: string
+  sortOrder?: number
+  cells: { environmentId: number; price?: string; currency?: string }[]
   changelog?: string
 }
 

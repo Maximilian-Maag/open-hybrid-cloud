@@ -29,7 +29,11 @@ beforeEach(() => {
 
 afterEach(() => vi.restoreAllMocks())
 
-const toggle = () => screen.getByRole('button', { name: /^Language:/ })
+// Not by accessible name: that name is translated now, so it is "Sprache: DE –
+// Deutsch" on a German page and matching it here would mean re-deriving the
+// label the component is under test for. `aria-expanded` is on the toggle and
+// nowhere else.
+const toggle = () => document.querySelector('button[aria-expanded]') as HTMLElement
 
 describe('LanguageSwitcher trigger', () => {
   it('shows the current language code, region stripped and upper-cased', () => {
@@ -37,10 +41,15 @@ describe('LanguageSwitcher trigger', () => {
     expect(toggle()).toHaveTextContent('DE')
   })
 
-  it('names itself with the language in its own spelling', () => {
-    // "Language: DE" tells a screen-reader user nothing; "Language: Deutsch" does.
+  it('names itself in the page language, with the visible code inside the name', () => {
+    // Three promises in one string. The word is translated, so a German page
+    // does not name its own control in English (WCAG 3.1.2). The code is there,
+    // because the visible label is `DE` and an accessible name that does not
+    // contain it leaves speech control with nothing to say (WCAG 2.5.3). And
+    // the endonym is still there, because "Sprache: DE" does not tell a
+    // screen-reader user which language DE is.
     render(<LanguageSwitcher lang="de" />)
-    expect(screen.getByRole('button', { name: 'Language: Deutsch' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sprache: DE – Deutsch' })).toBeInTheDocument()
   })
 
   it('falls back to the bare code when the language is not one we ship', () => {
@@ -141,6 +150,29 @@ describe('LanguageSwitcher menu', () => {
     expect(german.textContent).not.toContain('de<')
     expect(within(german).getByText('DE')).toBeInTheDocument()
   })
+
+  it('marks the language in effect, which colour alone does not', async () => {
+    // 25 buttons that differ only by fill: without this a screen-reader user
+    // hears the whole list and cannot tell which one they are already on
+    // (WCAG 1.4.1, 4.1.2).
+    const user = userEvent.setup()
+    render(<LanguageSwitcher lang="de" />)
+    await user.click(toggle())
+
+    expect(screen.getByRole('button', { name: /^DE\s*Deutsch$/ })).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('button', { name: /^FR\s*Français$/ })).not.toHaveAttribute('aria-current')
+  })
+
+  it('tags each endonym with its own language', async () => {
+    // `Ελληνικά` inside a German document is read with German phonemes unless
+    // the span says otherwise (WCAG 3.1.2 Language of Parts).
+    const user = userEvent.setup()
+    render(<LanguageSwitcher lang="de" />)
+    await user.click(toggle())
+
+    expect(screen.getByText('Ελληνικά')).toHaveAttribute('lang', 'el')
+    expect(screen.getByText('Français')).toHaveAttribute('lang', 'fr')
+  })
 })
 
 describe('LanguageSwitcher selection', () => {
@@ -203,7 +235,7 @@ describe('LanguageSwitcher selection', () => {
 // than decoration: they are the only thing telling a sighted user which of the
 // 25 is selected, and the only feedback the mouse gets.
 describe('LanguageSwitcher grid states', () => {
-  // The toggle is named "Language: Deutsch", so a loose /Deutsch/ matches two
+  // The toggle's name ends in the endonym too, so a loose /Deutsch/ matches two
   // buttons. The grid options are named by their code and their own spelling.
   const optionFor = (code: string, name: string) =>
     screen.getByRole('button', { name: new RegExp(`^${code}\\s*${name}$`) })

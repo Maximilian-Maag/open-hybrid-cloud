@@ -35,7 +35,10 @@ export function Select({
     <div className="flex flex-col gap-1">
       <label htmlFor={selectId} className="text-sm font-medium text-slate-700">
         {label}
-        {props.required && <span className="ml-1 text-red-500">*</span>}
+        {/* red-600 for the same reason as Input's marker: red-500 is 3.82:1
+            on white, and axe's contrast rule cannot see a punctuation-only
+            element at all (#185). */}
+        {props.required && <span className="ml-1 text-red-600">*</span>}
       </label>
       <select
         id={selectId}

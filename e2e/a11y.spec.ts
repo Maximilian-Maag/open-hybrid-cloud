@@ -17,9 +17,10 @@ import type { Result } from 'axe-core'
  *     dark default and collapsed to 1.88:1 on a mid-tone amber, so the contrast
  *     check runs against a deliberately hostile colour as well. See
  *     apps/frontend/src/lib/contrast.ts.
- *  2. axe alone. Focus visibility, target size and accessible-name language are
- *     not things axe can test at the level this app claims, so they get explicit
- *     assertions at the bottom.
+ *  2. axe alone. Focus visibility, target size, accessible-name language and
+ *     the contrast of glyph-only text are not things axe can test at the level
+ *     this app claims, so they get explicit assertions of their own. The last of
+ *     those is not a gap axe could close by configuration — see `glyphContrast`.
  *  3. "AAA" as a slogan. Full AAA is not reachable for an app whose brand colour
  *     is chosen by the operator, so the AAA claim here is partial and the parts
  *     that were refused are written down — with the arithmetic — in
@@ -62,8 +63,30 @@ const AUTHED_PAGES = [
  * only consults `rule.enabled` when the include list is empty. wcag21aaa and
  * wcag22aaa match nothing today; they are here so a future axe release that adds
  * an AAA rule is picked up rather than silently skipped.
+ *
+ * `best-practice` is the newest of them, and it is worth 30 rules. Enumerated
+ * against the axe-core 4.13.0 this repo pins, 30 of its 105 rules carry
+ * `best-practice` and no `wcagNNN` tag at all, so the five WCAG tags above asked
+ * for none of them (#185). They are not a softer class of finding — they are the
+ * structural checks nothing else here performs: `heading-order`,
+ * `page-has-heading-one`, `empty-heading`, `region`, `landmark-one-main`,
+ * `landmark-unique`, the three `landmark-no-duplicate-*`, `skip-link`,
+ * `tabindex`, `empty-table-header`. Between them, on the first run, they found
+ * that `/` and `/catalog` had no `<h1>`, that /login and an unconfigured
+ * /impressum had no landmark at all, and that every page built from
+ * `PageHeader` + `Card` went h1 → h3 because `Card` hardcoded its title's
+ * level.
+ *
+ * Three rules axe ships are still not requested, and all three deliberately:
+ * `duplicate-id` and `duplicate-id-active` are tagged `deprecated` and
+ * `wcag2a-obsolete` (4.1.1 was removed from WCAG in 2.2), and `target-size` is
+ * the WCAG 2.2 AA criterion 2.5.8 at 24px — a weaker claim than the 44px 2.5.5
+ * this suite measures itself further down, so passing it would say nothing.
+ *
+ * `the gate asks axe for the best-practice rules` below holds this honest: a tag
+ * that stops matching is a silently smaller gate, not a red one.
  */
-const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag2aaa', 'wcag21aaa', 'wcag22aaa']
+const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag2aaa', 'wcag21aaa', 'wcag22aaa', 'best-practice']
 
 /**
  * The one AAA rule this app cannot satisfy, and why it is switched off rather
@@ -151,6 +174,136 @@ const focusProbe = () => {
   }
 }
 
+/**
+ * WCAG 1.4.3 for text axe refuses to look at.
+ *
+ * `color-contrast` only matches an element that `hasRealTextChildren` accepts,
+ * and that helper calls `removeUnicode(text, { emoji: true, punctuations: true })`
+ * before deciding. A required-field marker is one asterisk; strip the
+ * punctuation and the string is empty, so the element is dropped from the rule
+ * altogether. No viewport, no branding colour and no rule option changes it —
+ * the hole is in the matcher, and it swallows every glyph-only indicator:
+ * asterisks, bullets, dots, chevrons, dashes (#185). It is how a 3.82:1
+ * asterisk — the one mark telling a low-vision user which fields are mandatory
+ * — shipped on every form in the app and on five admin dialogs.
+ *
+ * Colours go through a canvas rather than being parsed out of the computed
+ * string: Tailwind 4 authors its palette in oklch and Chromium hands that back
+ * as `oklch(...)`, which no rgb() regex reads. Painting one pixel and reading it
+ * back returns sRGB whatever the input syntax was.
+ *
+ * `aria-hidden` glyphs are skipped. They are decoration by the author's own
+ * declaration — the breadcrumb separators are the case here — and 1.4.3 is
+ * about text that carries information.
+ */
+const glyphContrast = () => {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 1
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  ctx.globalCompositeOperation = 'copy'
+
+  type Rgba = { r: number; g: number; b: number; a: number }
+
+  // Memoised because `backdrop` walks every ancestor of every glyph and a page
+  // has a handful of distinct colours in total. getImageData is not free, and
+  // an unmemoised walk over a long table costs seconds.
+  const seen = new Map<string, Rgba>()
+
+  const toRgba = (css: string): Rgba => {
+    const hit = seen.get(css)
+    if (hit) return hit
+    // Reset first: an unparseable value leaves fillStyle at its previous colour,
+    // which would silently report the LAST element's colour for this one.
+    ctx.fillStyle = '#000000'
+    ctx.fillStyle = css
+    ctx.fillRect(0, 0, 1, 1)
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+    const rgba = { r, g, b, a: a / 255 }
+    seen.set(css, rgba)
+    return rgba
+  }
+
+  const over = (fg: Rgba, bg: Rgba): Rgba => ({
+    r: fg.r * fg.a + bg.r * (1 - fg.a),
+    g: fg.g * fg.a + bg.g * (1 - fg.a),
+    b: fg.b * fg.a + bg.b * (1 - fg.a),
+    a: 1,
+  })
+
+  const luminance = ({ r, g, b }: Rgba): number => {
+    const channel = (v: number) => {
+      const c = v / 255
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+  }
+
+  const WHITE: Rgba = { r: 255, g: 255, b: 255, a: 1 }
+
+  /** The colour actually behind the glyph, compositing every translucent layer. */
+  const backdrop = (el: Element): Rgba => {
+    let stack: Rgba | null = null
+    for (let node: Element | null = el; node; node = node.parentElement) {
+      const layer = toRgba(getComputedStyle(node).backgroundColor)
+      if (layer.a > 0) stack = stack ? over(stack, layer) : layer
+      if (stack && stack.a >= 0.999) return stack
+    }
+    // Nothing opaque all the way up: the canvas underneath is the browser's own.
+    return stack ? over(stack, WHITE) : WHITE
+  }
+
+  const ratio = (fg: Rgba, bg: Rgba): number => {
+    const [hi, lo] = [luminance(fg), luminance(bg)].sort((a, b) => b - a)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+
+  /** Only the element's OWN text — a parent's letters are not this node's glyph. */
+  const ownText = (el: Element): string =>
+    Array.from(el.childNodes)
+      .filter((n) => n.nodeType === Node.TEXT_NODE)
+      .map((n) => n.textContent ?? '')
+      .join('')
+      .trim()
+
+  return Array.from(document.querySelectorAll<HTMLElement>('body *'))
+    .filter((el) => {
+      const text = ownText(el)
+      // What axe strips and then calls empty: one or two characters, no letters
+      // and no digits. Matching the shape of the hole rather than listing the
+      // glyphs, so the next indicator someone invents is covered too.
+      // Cheapest filter first: it is the one that rejects the whole page.
+      return text.length > 0 && text.length <= 2 && !/[\p{L}\p{N}]/u.test(text)
+    })
+    .filter((el) => !el.closest('[aria-hidden="true"]'))
+    .filter((el) => {
+      const style = getComputedStyle(el)
+      if (style.visibility === 'hidden' || style.opacity === '0') return false
+      const r = el.getBoundingClientRect()
+      return r.width > 0 && r.height > 0
+    })
+    .map((el) => {
+      const style = getComputedStyle(el)
+      const bg = backdrop(el)
+      const size = parseFloat(style.fontSize)
+      const weight = parseInt(style.fontWeight, 10) || 400
+      // 1.4.3's own large-text exception, in the CSS px the criterion is written
+      // in: 18.66px bold or 24px. Applying it here rather than failing a large
+      // glyph at 4.5:1 keeps this from being a stricter rule than WCAG's.
+      const large = size >= 24 || (size >= 18.66 && weight >= 700)
+      return {
+        text: ownText(el),
+        ratio: Math.round(ratio(over(toRgba(style.color), bg), bg) * 100) / 100,
+        needs: large ? 3 : 4.5,
+        where:
+          el.tagName.toLowerCase() +
+          `.${el.className?.toString().trim().split(/\s+/).join('.').slice(0, 60)}` +
+          ` in <${el.parentElement?.tagName.toLowerCase() ?? '?'}> "${
+            el.parentElement?.textContent?.trim().replace(/\s+/g, ' ').slice(0, 40) ?? ''
+          }"`,
+      }
+    })
+}
+
 type Page = import('@playwright/test').Page
 
 const scan = async (page: Page) =>
@@ -208,6 +361,19 @@ const expectAccessible = async (page: Page, where: string) => {
 
   const review = incomplete.filter((r) => REVIEW_IS_FAILURE.includes(r.id))
   expect(review, `${where} — needs review, which this suite counts as failing\n${format(review)}`).toEqual([])
+
+  // Here and not in its own block, because the class is not confined to a few
+  // known pages: every page and every dialog this suite already loads gets the
+  // measurement for the price of one evaluate. The block below proves the probe
+  // finds anything at all — without that, a universally-passing check is
+  // indistinguishable from a check that matched nothing.
+  const glyphs = await page.evaluate(glyphContrast)
+  const dim = glyphs.filter((g) => g.ratio < g.needs)
+  expect(
+    dim,
+    `${where} — glyph-only text below its 1.4.3 floor, which axe cannot see:\n` +
+      dim.map((g) => `  "${g.text}" is ${g.ratio}:1, needs ${g.needs}:1 — ${g.where}`).join('\n'),
+  ).toEqual([])
 }
 
 /** 44 CSS px: the WCAG 2.5.5 target size. */
@@ -627,6 +793,80 @@ test.describe('Accessibility — things axe cannot check', () => {
       .first()
       .evaluate((n) => getComputedStyle(n).animationDuration)
     expect(parseFloat(normal), `expected a real animation without the preference, got ${normal}`).toBeGreaterThan(0.05)
+  })
+
+  /*
+   * The probe `expectAccessible` runs on every page is only worth anything if it
+   * finds the markers. This is the half that cannot pass by finding nothing:
+   * /admin/products/new renders two of them — the category Select and the name
+   * Input — so if fewer than two come back, the probe has stopped matching and
+   * the per-page check above has been green over an empty list. That is the
+   * failure mode this whole file exists to avoid.
+   *
+   * The ratios are asserted here too, with the numbers named, so a failure says
+   * which colour regressed rather than only that something did.
+   */
+  test('the required-field marker is found and measured (1.4.3)', async ({ page }) => {
+    await page.goto('/admin/products/new')
+    await settled(page, '/admin/products/new')
+
+    const markers = (await page.evaluate(glyphContrast)).filter((g) => g.text === '*')
+    expect(
+      markers.length,
+      'the required-field markers on /admin/products/new were not found — the probe has stopped matching them',
+    ).toBeGreaterThanOrEqual(2)
+
+    for (const m of markers) {
+      expect(m.ratio, `the required marker is ${m.ratio}:1, needs ${m.needs}:1 — ${m.where}`).toBeGreaterThanOrEqual(
+        m.needs,
+      )
+    }
+  })
+
+  /*
+   * That the 30 best-practice rules are actually being evaluated, and not merely
+   * named in a tag array that axe no longer matches.
+   *
+   * Worth a test of its own because the failure mode is silence: drop
+   * 'best-practice' from WCAG, or let axe retag a rule, and the gate goes on
+   * passing while checking thirty fewer things. That is the state this file was
+   * in before #185, and nothing in it said so.
+   *
+   * Every rule axe runs lands in exactly one of the four buckets — a rule that
+   * matched no element is `inapplicable`, not absent — so the union of the four
+   * is the list of rules that ran.
+   */
+  test('the gate asks axe for the best-practice rules', async ({ page }) => {
+    await page.goto('/admin/categories')
+    await settled(page, '/admin/categories')
+
+    const results = await new AxeBuilder({ page }).withTags(WCAG).disableRules(RULES_OUT_OF_SCOPE).analyze()
+    const ran = new Set(
+      [...results.violations, ...results.passes, ...results.incomplete, ...results.inapplicable].map((r) => r.id),
+    )
+
+    // Not all thirty: a list of ids is a list to maintain. These are the ones
+    // the audit named, and between them they cover every category the tag adds
+    // — headings, landmarks, tables, keyboard order.
+    const EXPECTED = [
+      'heading-order',
+      'page-has-heading-one',
+      'empty-heading',
+      'empty-table-header',
+      'region',
+      'landmark-one-main',
+      'landmark-unique',
+      'landmark-no-duplicate-main',
+      'skip-link',
+      'tabindex',
+    ]
+    expect(EXPECTED.filter((id) => !ran.has(id)), 'best-practice rules that axe did not run').toEqual([])
+
+    // And the WCAG side is still there: adding a tag must not have replaced one.
+    expect(ran.has('color-contrast'), 'color-contrast should still be running').toBe(true)
+    // The one rule this suite switches off really is off, so RULES_OUT_OF_SCOPE
+    // is doing something rather than listing a rule that was never requested.
+    expect(ran.has('color-contrast-enhanced'), 'color-contrast-enhanced is out of scope').toBe(false)
   })
 })
 

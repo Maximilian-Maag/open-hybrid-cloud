@@ -13,6 +13,23 @@ describe('Table', () => {
     expect(th).toHaveAttribute('scope', 'col')
   })
 
+  it('renders a column with no header as a td, not an empty th', () => {
+    // An empty <th> is a header cell that announces nothing — axe's
+    // `empty-table-header` — and the row-actions column is the one column here
+    // that genuinely has no name. A <td> in the header row says that instead of
+    // claiming a heading and then not providing one.
+    render(
+      <Table<Row>
+        columns={[...columns, { header: '', render: () => <button type="button">Edit</button> }]}
+        data={[{ id: 1, name: 'Alpha' }]}
+      />,
+    )
+    const cells = document.querySelectorAll('thead tr > *')
+    expect(Array.from(cells).map((c) => c.tagName)).toEqual(['TH', 'TD'])
+    // And no header cell is left without a name, which is the property that matters.
+    expect(Array.from(document.querySelectorAll('th')).every((th) => th.textContent?.trim())).toBe(true)
+  })
+
   it('renders the empty message when there is no data', () => {
     render(<Table<Row> columns={columns} data={[]} emptyMessage="Nothing here" />)
     expect(screen.getByText('Nothing here')).toBeInTheDocument()

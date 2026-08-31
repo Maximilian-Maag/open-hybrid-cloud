@@ -7,6 +7,7 @@ import { get, put, del } from '@/lib/api'
 import { t } from '@/lib/i18n'
 import { useLang } from '@/lib/useLang'
 import { SkeletonCard, LoadingRegion } from '@/components/ui/Skeleton'
+import { Alert } from '@/components/ui/Alert'
 import { ProductCard } from './ProductCard'
 
 /** One screenful of cards. The endpoint caps what it will serve at 100. */
@@ -32,6 +33,9 @@ export default function CatalogPage() {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState(false)
+  // Kept apart from `error`: that one replaces the grid, and a failed "load
+  // more" must not throw away the cards already on screen.
+  const [loadMoreError, setLoadMoreError] = useState(false)
   // Favourited product ids. Held as a Set so a card can answer "am I starred?"
   // without scanning a list per render.
   const [favorites, setFavorites] = useState<Set<number>>(new Set())
@@ -143,13 +147,18 @@ export default function CatalogPage() {
   const loadMore = async () => {
     if (loadingMore) return
     setLoadingMore(true)
+    setLoadMoreError(false)
     try {
       const page = await get<CatalogPageData>(pageUrl(products.length))
       setProducts((prev) => [...prev, ...(page?.items ?? [])])
       setTotal(page?.total ?? 0)
       setTotalIsExact(page?.totalIsExact ?? true)
     } catch {
-      // Keep what is on screen; the button stays available for another go.
+      // Keep what is on screen; the button stays available for another go — but
+      // say so. Swallowed, the failure and a successful append that happened to
+      // return nothing look identical, and to anyone not counting cards the
+      // button simply did nothing (#186).
+      setLoadMoreError(true)
     } finally {
       setLoadingMore(false)
     }
@@ -274,6 +283,11 @@ export default function CatalogPage() {
             <li>
               <button
                 onClick={() => setSelectedCategory(null)}
+                // Which filter is in effect is otherwise carried by the fill
+                // colour alone, so a screen-reader user hears a list of
+                // identical buttons and cannot tell a filtered result set from
+                // a broken one (WCAG 1.4.1, 4.1.2 — #186).
+                aria-pressed={selectedCategory === null}
                 className="w-full text-left flex min-h-11 items-center px-3 py-1.5 rounded text-sm transition-colors font-semibold"
                 style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { color: '#475569' }}
                 onMouseEnter={(e) => { if (selectedCategory !== null) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
@@ -286,6 +300,7 @@ export default function CatalogPage() {
               <li key={cat.id}>
                 <button
                   onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
+                  aria-pressed={selectedCategory === cat.id}
                   className="w-full text-left flex min-h-11 items-center px-3 py-1.5 rounded text-sm transition-colors"
                   style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)', fontWeight: 600 } : { color: '#475569' }}
                   onMouseEnter={(e) => { if (selectedCategory !== cat.id) (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
@@ -328,16 +343,29 @@ export default function CatalogPage() {
               </>
             )}
           </div>
-          {total > 0 && (
-            <span className="text-sm text-slate-500">
-              {/* "500+" rather than "500" once the count hit its cap: the
-                  number is a floor there, and a bare figure claims a precision
-                  the server did not spend the work to have (#236). */}
-              {products.length < total
+          {/* The result count is the only thing that says a search or a filter
+              did anything: the grid below is replaced without focus moving, so
+              a screen-reader user gets no feedback at all otherwise (WCAG
+              4.1.3). Rendered unconditionally rather than only when there are
+              matches, because "0 products" is the announcement that matters
+              most — a filter that found nothing and a catalogue that failed to
+              load are otherwise the same silence. InfraFilters already does
+              this; this is the same wiring (#186). */}
+          <span
+            className="text-sm text-slate-500"
+            role="status"
+            aria-live="polite"
+            aria-busy={loading}
+          >
+            {/* "500+" rather than "500" once the count hit its cap: the
+                number is a floor there, and a bare figure claims a precision
+                the server did not spend the work to have (#236). */}
+            {loading || error
+              ? ''
+              : products.length < total
                 ? `${products.length} / ${total}${totalIsExact ? '' : '+'} ${t('products', lang)}`
                 : `${total}${totalIsExact ? '' : '+'} ${t('products', lang)}`}
-            </span>
-          )}
+          </span>
         </div>
 
         {/* Mobile category pills */}
@@ -345,6 +373,7 @@ export default function CatalogPage() {
           <div className="flex flex-wrap gap-2 mb-4 md:hidden">
             <button
               onClick={() => setSelectedCategory(null)}
+              aria-pressed={selectedCategory === null}
               className="inline-flex min-h-11 items-center rounded-full px-4 py-1 text-sm font-medium transition-colors"
               style={selectedCategory === null ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
             >
@@ -354,6 +383,7 @@ export default function CatalogPage() {
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id === selectedCategory ? null : cat.id)}
+                aria-pressed={selectedCategory === cat.id}
                 className="inline-flex min-h-11 items-center rounded-full px-4 py-1 text-sm font-medium transition-colors"
                 style={selectedCategory === cat.id ? { backgroundColor: 'var(--bp)', color: 'var(--bp-ink)' } : { backgroundColor: '#f1f5f9', color: '#475569' }}
               >
@@ -410,6 +440,11 @@ export default function CatalogPage() {
                 >
                   {loadingMore ? t('loading', lang) : t('loadMore', lang)}
                 </button>
+                {loadMoreError && (
+                  <div className="mt-3">
+                    <Alert>{t('somethingWentWrong', lang)}</Alert>
+                  </div>
+                )}
               </div>
             )}
           </>

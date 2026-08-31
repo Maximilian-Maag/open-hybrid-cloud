@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { t } from '@/lib/i18n'
 import { useLang } from '@/lib/useLang'
 
@@ -32,13 +32,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const toast = useCallback((message: string, type: ToastType = 'success') => {
     const id = nextId++
     setToasts((prev) => [...prev, { id, message, type }])
-    setTimeout(() => setToasts((prev) => prev.filter((entry) => entry.id !== id)), 3500)
   }, [])
 
   return (
     <ToastContext.Provider value={{ toast }}>
-      {children}
-      {/* The live region is on each bubble (role="alert"/"status"), not here —
+      {/* Before `{children}`, not after. The bubble carries a dismiss button,
+          and a control the user cannot reach before the thing it controls
+          disappears is not a control: after the children it sat behind every
+          field, row and link on the page, which on /admin/users is far more
+          than 3.5 seconds of tabbing (WCAG 2.2.1 — #186). The container is
+          `fixed`, so nothing about the layout depends on where it sits.
+
+          The live region is on each bubble (role="alert"/"status"), not here —
           an aria-live container wrapping children that declare their own live
           role nests two regions, and some screen readers then announce twice. */}
       <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
@@ -50,6 +55,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           />
         ))}
       </div>
+      {children}
     </ToastContext.Provider>
   )
 }
@@ -66,11 +72,43 @@ const typeIconPath: Record<ToastType, string> = {
   info:    'M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z',
 }
 
+/** How long a confirmation stays up when nobody is looking at it. */
+const DISMISS_AFTER_MS = 3500
+
 function ToastBubble({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) {
   const lang = useLang()
+  // Held while the pointer is over the bubble or focus is inside it. Reading a
+  // message and dismissing it both take longer than the timer, and a message
+  // that vanishes out from under the user is the timing failure WCAG 2.2.1 is
+  // about (#186).
+  const [held, setHeld] = useState(false)
+
+  // Through a ref, because the parent hands down a fresh arrow on every render.
+  // As a dependency it would restart the timer each time and the toast would
+  // never leave; as a ref the effect depends only on what should actually
+  // restart it.
+  const dismiss = useRef(onDismiss)
+  dismiss.current = onDismiss
+
+  useEffect(() => {
+    // An error is not a confirmation: it is the only record of what went wrong,
+    // and it is usually raised on a page the user is still working on. It waits
+    // to be dismissed.
+    if (item.type === 'error' || held) return
+    const timer = setTimeout(() => dismiss.current(), DISMISS_AFTER_MS)
+    return () => clearTimeout(timer)
+  }, [item.type, held])
+
   return (
     <div
       role={item.type === 'error' ? 'alert' : 'status'}
+      onMouseEnter={() => setHeld(true)}
+      onMouseLeave={() => setHeld(false)}
+      // React's onFocus/onBlur are the bubbling focusin/focusout, so tabbing to
+      // the dismiss button inside holds the toast open — the whole point, since
+      // the button is what the user is reaching for.
+      onFocus={() => setHeld(true)}
+      onBlur={() => setHeld(false)}
       className={`flex items-center gap-3 rounded-lg px-4 py-3 shadow-xl text-sm font-medium text-white pointer-events-auto animate-toast-in min-w-56 max-w-xs ${typeClass[item.type]}`}
     >
       <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">

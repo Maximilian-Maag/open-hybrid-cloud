@@ -67,6 +67,7 @@ export default async function ProjectDetailPage({ params }: Props) {
       {orders.length > 0 && (
         <Card title={t('ordersInProject', lang)}>
           <Table<Order>
+            emptyMessage={t('noOrders', lang)}
             columns={[
               {
                 header: t('id', lang),

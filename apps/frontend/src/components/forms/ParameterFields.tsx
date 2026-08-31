@@ -81,6 +81,12 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
     <div className="space-y-4">
       {parameters.map((param) => {
         const value = getValue(param)
+        // The operator's own explanation of what this parameter is for. The
+        // string/number branch below hands it to `Input`, which wires it up;
+        // the checkbox and the dropdown draw their own markup, so they have to
+        // point at it themselves or it is announced for a text field and
+        // silently dropped for the other two (WCAG 1.3.1, 3.3.2 — #186).
+        const descriptionId = param.description ? `param-${param.id}-description` : undefined
 
         // Decided by the chosen size, so there is nothing here to fill in — and
         // a field the customer could contradict would let them buy an S and
@@ -97,6 +103,7 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
                 type="checkbox"
                 checked={value === 'true'}
                 onChange={(e) => update(param.name, e.target.checked ? 'true' : 'false')}
+                aria-describedby={descriptionId}
                 className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
               />
               <div>
@@ -105,7 +112,7 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
                   {param.required && <span className="ml-1 text-red-500">*</span>}
                 </label>
                 {param.description && (
-                  <p className="text-xs text-slate-500">{param.description}</p>
+                  <p id={descriptionId} className="text-xs text-slate-500">{param.description}</p>
                 )}
               </div>
             </div>
@@ -120,12 +127,13 @@ export function ParameterFields({ parameters, values, onChange }: ParameterField
                 {displayLabel(param)}
                 {param.required && <span className="ml-1 text-red-500">*</span>}
               </label>
-              {param.description && <p className="text-xs text-slate-500">{param.description}</p>}
+              {param.description && <p id={descriptionId} className="text-xs text-slate-500">{param.description}</p>}
               <select
                 id={`param-${param.id}`}
                 value={value}
                 onChange={(e) => update(param.name, e.target.value)}
                 required={param.required}
+                aria-describedby={descriptionId}
                 className="min-h-11 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">{t('selectPlaceholder', lang)}</option>

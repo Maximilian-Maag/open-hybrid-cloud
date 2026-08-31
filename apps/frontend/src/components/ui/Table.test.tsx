@@ -4,18 +4,22 @@ import { Table } from './Table'
 
 interface Row { id: number; name: string }
 const columns = [{ header: 'Name', accessor: 'name' as const }]
+// Required even where no row is missing, because the component cannot translate
+// a default of its own: it has no `lang`, and the English one it used to carry
+// was the message 24 of 25 languages got (#186).
+const empty = 'Nothing here'
 
 describe('Table', () => {
   it('renders column headers with scope="col"', () => {
-    render(<Table<Row> columns={columns} data={[{ id: 1, name: 'Alpha' }]} />)
+    render(<Table<Row> columns={columns} data={[{ id: 1, name: 'Alpha' }]} emptyMessage={empty} />)
     const th = screen.getByText('Name')
     expect(th.tagName).toBe('TH')
     expect(th).toHaveAttribute('scope', 'col')
   })
 
   it('renders the empty message when there is no data', () => {
-    render(<Table<Row> columns={columns} data={[]} emptyMessage="Nothing here" />)
-    expect(screen.getByText('Nothing here')).toBeInTheDocument()
+    render(<Table<Row> columns={columns} data={[]} emptyMessage={empty} />)
+    expect(screen.getByText(empty)).toBeInTheDocument()
   })
 
   it('fires onRowClick when a row is clicked', () => {
@@ -24,6 +28,7 @@ describe('Table', () => {
       <Table<Row>
         columns={columns}
         data={[{ id: 1, name: 'Alpha' }]}
+        emptyMessage={empty}
         onRowClick={onRowClick}
       />,
     )
@@ -36,7 +41,7 @@ describe('Table', () => {
 
   it('keeps plain row semantics (no role/tabindex) when onRowClick is present', () => {
     render(
-      <Table<Row> columns={columns} data={[{ id: 1, name: 'Alpha' }]} onRowClick={() => {}} />,
+      <Table<Row> columns={columns} data={[{ id: 1, name: 'Alpha' }]} emptyMessage={empty} onRowClick={() => {}} />,
     )
     const row = screen.getByText('Alpha').closest('tr')
     if (!row) throw new Error('row not found')

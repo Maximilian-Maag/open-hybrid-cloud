@@ -797,6 +797,13 @@ export type Translations = {
   importedNothing: string
   filesRead: string
   modulesNotRead: string
+  /** The version diff says its direction out loud; colour and strikethrough do not. */
+  changedFrom: string
+  changedTo: string
+  /** What `∅` means, for the voices that skip the glyph. */
+  emptyValue: string
+  paramsPrefilledHint: string
+  quantityInvalid: string
 }
 
 // English is the complete reference table; every other language may omit keys
@@ -1527,6 +1534,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Няма нови параметри — всичко, което този шаблон декларира, вече е зададено.',
     filesRead: 'Прочетени файлове',
     modulesNotRead: 'Модули, които не можаха да бъдат прочетени:',
+    changedFrom: 'променено от',
+    changedTo: 'на',
+    emptyValue: 'празно',
+    paramsPrefilledHint: 'Редактирайте при нужда, преди да изпратите.',
+    quantityInvalid: 'Въведете цял брой елементи в допустимия диапазон.',
   },
   cs: {
     noActiveSessions: 'Žádná aktivní přihlášení.',
@@ -2250,6 +2262,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Žádné nové parametry — vše, co tato šablona deklaruje, už existuje.',
     filesRead: 'Přečtené soubory',
     modulesNotRead: 'Moduly, které nešlo přečíst:',
+    changedFrom: 'změněno z',
+    changedTo: 'na',
+    emptyValue: 'prázdné',
+    paramsPrefilledHint: 'Před odesláním podle potřeby upravte.',
+    quantityInvalid: 'Zadejte celý počet prvků v povoleném rozsahu.',
   },
   da: {
     noActiveSessions: 'Ingen aktive sessioner.',
@@ -2973,6 +2990,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Ingen nye parametre — alt, hvad denne skabelon erklærer, findes allerede.',
     filesRead: 'Læste filer',
     modulesNotRead: 'Moduler, der ikke kunne læses:',
+    changedFrom: 'ændret fra',
+    changedTo: 'til',
+    emptyValue: 'tom',
+    paramsPrefilledHint: 'Rediger efter behov, før du indsender.',
+    quantityInvalid: 'Angiv et helt antal elementer inden for det tilladte interval.',
   },
   de: {
     noActiveSessions: 'Keine aktiven Sitzungen.',
@@ -3696,6 +3718,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Keine neuen Parameter — alles, was dieses Template deklariert, ist bereits angelegt.',
     filesRead: 'Gelesene Dateien',
     modulesNotRead: 'Nicht lesbare Module:',
+    changedFrom: 'geändert von',
+    changedTo: 'zu',
+    emptyValue: 'leer',
+    paramsPrefilledHint: 'Vor dem Absenden bei Bedarf anpassen.',
+    quantityInvalid: 'Bitte eine ganze Anzahl von Elementen im zulässigen Bereich eingeben.',
   },
   el: {
     noActiveSessions: 'Καμία ενεργή συνεδρία.',
@@ -4419,6 +4446,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Καμία νέα παράμετρος — ό,τι δηλώνει αυτό το πρότυπο υπάρχει ήδη.',
     filesRead: 'Αρχεία που διαβάστηκαν',
     modulesNotRead: 'Ενότητες που δεν διαβάστηκαν:',
+    changedFrom: 'άλλαξε από',
+    changedTo: 'σε',
+    emptyValue: 'κενό',
+    paramsPrefilledHint: 'Επεξεργαστείτε το όπως χρειάζεται πριν από την υποβολή.',
+    quantityInvalid: 'Εισαγάγετε ακέραιο αριθμό στοιχείων εντός του επιτρεπτού εύρους.',
   },
   en: {
     noActiveSessions: 'No active sessions.',
@@ -5142,6 +5174,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'No new parameters — everything this template declares is already defined.',
     filesRead: 'Files read',
     modulesNotRead: 'Modules that could not be read:',
+    changedFrom: 'changed from',
+    changedTo: 'to',
+    emptyValue: 'empty',
+    paramsPrefilledHint: 'Edit as needed before submitting.',
+    quantityInvalid: 'Enter a whole number of elements within the permitted range.',
   },
   es: {
     noActiveSessions: 'No hay sesiones activas.',
@@ -5865,6 +5902,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Sin parámetros nuevos: todo lo que declara esta plantilla ya está definido.',
     filesRead: 'Archivos leídos',
     modulesNotRead: 'Módulos que no se pudieron leer:',
+    changedFrom: 'cambió de',
+    changedTo: 'a',
+    emptyValue: 'vacío',
+    paramsPrefilledHint: 'Edítelo según sea necesario antes de enviar.',
+    quantityInvalid: 'Introduzca un número entero de elementos dentro del intervalo permitido.',
   },
   et: {
     noActiveSessions: 'Aktiivseid sessioone pole.',
@@ -6588,6 +6630,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Uusi parameetreid pole — kõik, mida see mall deklareerib, on juba olemas.',
     filesRead: 'Loetud failid',
     modulesNotRead: 'Moodulid, mida ei õnnestunud lugeda:',
+    changedFrom: 'muutus väärtuselt',
+    changedTo: 'väärtusele',
+    emptyValue: 'tühi',
+    paramsPrefilledHint: 'Muutke vajaduse korral enne esitamist.',
+    quantityInvalid: 'Sisestage täisarv elemente lubatud vahemikus.',
   },
   fi: {
     noActiveSessions: 'Ei aktiivisia istuntoja.',
@@ -7311,6 +7358,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Ei uusia parametreja — kaikki, mitä tämä malli määrittelee, on jo olemassa.',
     filesRead: 'Luetut tiedostot',
     modulesNotRead: 'Moduulit, joita ei voitu lukea:',
+    changedFrom: 'muuttui arvosta',
+    changedTo: 'arvoon',
+    emptyValue: 'tyhjä',
+    paramsPrefilledHint: 'Muokkaa tarvittaessa ennen lähettämistä.',
+    quantityInvalid: 'Anna kokonaisluku elementtejä sallitulla välillä.',
   },
   fr: {
     noActiveSessions: 'Aucune session active.',
@@ -8034,6 +8086,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Aucun nouveau paramètre — tout ce que ce modèle déclare existe déjà.',
     filesRead: 'Fichiers lus',
     modulesNotRead: 'Modules illisibles :',
+    changedFrom: 'est passé de',
+    changedTo: 'à',
+    emptyValue: 'vide',
+    paramsPrefilledHint: 'Modifiez si nécessaire avant de valider.',
+    quantityInvalid: 'Saisissez un nombre entier d\'éléments dans la plage autorisée.',
   },
   ga: {
     noActiveSessions: 'Níl aon seisiún gníomhach.',
@@ -8757,6 +8814,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Gan paraiméadair nua — tá gach a ndearbhaíonn an teimpléad seo ann cheana.',
     filesRead: 'Comhaid a léadh',
     modulesNotRead: 'Modúil nárbh fhéidir a léamh:',
+    changedFrom: 'athraithe ó',
+    changedTo: 'go',
+    emptyValue: 'folamh',
+    paramsPrefilledHint: 'Cuir in eagar de réir mar is gá sula gcuirfidh tú isteach é.',
+    quantityInvalid: 'Cuir isteach slánuimhir eilimintí laistigh den raon ceadaithe.',
   },
   hr: {
     noActiveSessions: 'Nema aktivnih sesija.',
@@ -9480,6 +9542,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Nema novih parametara — sve što ovaj predložak deklarira već postoji.',
     filesRead: 'Pročitane datoteke',
     modulesNotRead: 'Moduli koji se nisu mogli pročitati:',
+    changedFrom: 'promijenjeno iz',
+    changedTo: 'u',
+    emptyValue: 'prazno',
+    paramsPrefilledHint: 'Uredite prema potrebi prije slanja.',
+    quantityInvalid: 'Unesite cijeli broj elemenata unutar dopuštenog raspona.',
   },
   hu: {
     noActiveSessions: 'Nincsenek aktív munkamenetek.',
@@ -10203,6 +10270,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Nincs új paraméter — minden, amit ez a sablon deklarál, már létezik.',
     filesRead: 'Beolvasott fájlok',
     modulesNotRead: 'Nem beolvasható modulok:',
+    changedFrom: 'megváltozott erről:',
+    changedTo: 'erre:',
+    emptyValue: 'üres',
+    paramsPrefilledHint: 'Beküldés előtt szükség szerint módosítsa.',
+    quantityInvalid: 'Adjon meg egész számú elemet a megengedett tartományon belül.',
   },
   it: {
     noActiveSessions: 'Nessuna sessione attiva.',
@@ -10926,6 +10998,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Nessun parametro nuovo: tutto ciò che questo template dichiara è già definito.',
     filesRead: 'File letti',
     modulesNotRead: 'Moduli non leggibili:',
+    changedFrom: 'modificato da',
+    changedTo: 'a',
+    emptyValue: 'vuoto',
+    paramsPrefilledHint: 'Modificare secondo necessità prima di inviare.',
+    quantityInvalid: 'Inserire un numero intero di elementi entro l\'intervallo consentito.',
   },
   lt: {
     noActiveSessions: 'Nėra aktyvių seansų.',
@@ -11649,6 +11726,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Naujų parametrų nėra — viskas, ką šis šablonas deklaruoja, jau apibrėžta.',
     filesRead: 'Perskaityti failai',
     modulesNotRead: 'Moduliai, kurių nepavyko perskaityti:',
+    changedFrom: 'pakeista iš',
+    changedTo: 'į',
+    emptyValue: 'tuščia',
+    paramsPrefilledHint: 'Prieš pateikdami pakoreguokite, jei reikia.',
+    quantityInvalid: 'Įveskite sveikąjį elementų skaičių leistiname intervale.',
   },
   lv: {
     noActiveSessions: 'Nav aktīvu sesiju.',
@@ -12372,6 +12454,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Nav jaunu parametru — viss, ko šī veidne deklarē, jau ir definēts.',
     filesRead: 'Nolasītie faili',
     modulesNotRead: 'Moduļi, kurus nevarēja nolasīt:',
+    changedFrom: 'mainīts no',
+    changedTo: 'uz',
+    emptyValue: 'tukšs',
+    paramsPrefilledHint: 'Pirms iesniegšanas rediģējiet pēc vajadzības.',
+    quantityInvalid: 'Ievadiet veselu elementu skaitu atļautajā diapazonā.',
   },
   mt: {
     noActiveSessions: 'Ebda sessjoni attiva.',
@@ -13095,6 +13182,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'L-ebda parametru ġdid — dak kollu li jiddikjara dan il-mudell diġà jeżisti.',
     filesRead: 'Fajls moqrija',
     modulesNotRead: 'Moduli li ma setgħux jinqraw:',
+    changedFrom: 'inbidel minn',
+    changedTo: 'għal',
+    emptyValue: 'vojt',
+    paramsPrefilledHint: 'Editja kif meħtieġ qabel ma tissottometti.',
+    quantityInvalid: 'Daħħal numru sħiħ ta\' elementi fil-medda permessa.',
   },
   nl: {
     noActiveSessions: 'Geen actieve sessies.',
@@ -13818,6 +13910,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Geen nieuwe parameters — alles wat dit sjabloon declareert, bestaat al.',
     filesRead: 'Gelezen bestanden',
     modulesNotRead: 'Niet-leesbare modules:',
+    changedFrom: 'gewijzigd van',
+    changedTo: 'naar',
+    emptyValue: 'leeg',
+    paramsPrefilledHint: 'Pas zo nodig aan voordat u verzendt.',
+    quantityInvalid: 'Voer een geheel aantal elementen in binnen het toegestane bereik.',
   },
   pl: {
     noActiveSessions: 'Brak aktywnych sesji.',
@@ -14541,6 +14638,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Brak nowych parametrów — wszystko, co deklaruje ten szablon, już istnieje.',
     filesRead: 'Odczytane pliki',
     modulesNotRead: 'Moduły, których nie udało się odczytać:',
+    changedFrom: 'zmieniono z',
+    changedTo: 'na',
+    emptyValue: 'puste',
+    paramsPrefilledHint: 'Przed wysłaniem wprowadź potrzebne zmiany.',
+    quantityInvalid: 'Podaj całkowitą liczbę elementów z dozwolonego zakresu.',
   },
   pt: {
     noActiveSessions: 'Nenhuma sessão ativa.',
@@ -15264,6 +15366,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Sem parâmetros novos — tudo o que este modelo declara já está definido.',
     filesRead: 'Ficheiros lidos',
     modulesNotRead: 'Módulos que não puderam ser lidos:',
+    changedFrom: 'alterado de',
+    changedTo: 'para',
+    emptyValue: 'vazio',
+    paramsPrefilledHint: 'Edite conforme necessário antes de submeter.',
+    quantityInvalid: 'Introduza um número inteiro de elementos dentro do intervalo permitido.',
   },
   ro: {
     noActiveSessions: 'Nicio sesiune activă.',
@@ -15987,6 +16094,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Niciun parametru nou — tot ce declară acest șablon este deja definit.',
     filesRead: 'Fișiere citite',
     modulesNotRead: 'Module care nu au putut fi citite:',
+    changedFrom: 'modificat din',
+    changedTo: 'în',
+    emptyValue: 'gol',
+    paramsPrefilledHint: 'Modificați după caz înainte de trimitere.',
+    quantityInvalid: 'Introduceți un număr întreg de elemente în intervalul permis.',
   },
   ru: {
     noActiveSessions: 'Активных сеансов нет.',
@@ -16710,6 +16822,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Новых параметров нет — всё, что объявляет этот шаблон, уже задано.',
     filesRead: 'Прочитанные файлы',
     modulesNotRead: 'Модули, которые не удалось прочитать:',
+    changedFrom: 'изменено с',
+    changedTo: 'на',
+    emptyValue: 'пусто',
+    paramsPrefilledHint: 'При необходимости измените перед отправкой.',
+    quantityInvalid: 'Введите целое число элементов в допустимом диапазоне.',
   },
   sk: {
     noActiveSessions: 'Žiadne aktívne sedenia.',
@@ -17433,6 +17550,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Žiadne nové parametre — všetko, čo táto šablóna deklaruje, už existuje.',
     filesRead: 'Prečítané súbory',
     modulesNotRead: 'Moduly, ktoré sa nepodarilo prečítať:',
+    changedFrom: 'zmenené z',
+    changedTo: 'na',
+    emptyValue: 'prázdne',
+    paramsPrefilledHint: 'Pred odoslaním podľa potreby upravte.',
+    quantityInvalid: 'Zadajte celý počet prvkov v povolenom rozsahu.',
   },
   sl: {
     noActiveSessions: 'Ni aktivnih sej.',
@@ -18156,6 +18278,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Ni novih parametrov — vse, kar ta predloga navaja, je že določeno.',
     filesRead: 'Prebrane datoteke',
     modulesNotRead: 'Moduli, ki jih ni bilo mogoče prebrati:',
+    changedFrom: 'spremenjeno iz',
+    changedTo: 'v',
+    emptyValue: 'prazno',
+    paramsPrefilledHint: 'Pred oddajo po potrebi uredite.',
+    quantityInvalid: 'Vnesite celo število elementov v dovoljenem obsegu.',
   },
   sv: {
     noActiveSessions: 'Inga aktiva sessioner.',
@@ -18879,6 +19006,11 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     importedNothing: 'Inga nya parametrar — allt den här mallen deklarerar finns redan.',
     filesRead: 'Lästa filer',
     modulesNotRead: 'Moduler som inte kunde läsas:',
+    changedFrom: 'ändrades från',
+    changedTo: 'till',
+    emptyValue: 'tomt',
+    paramsPrefilledHint: 'Redigera vid behov innan du skickar.',
+    quantityInvalid: 'Ange ett heltal element inom det tillåtna intervallet.',
   },
 }
 

@@ -43,6 +43,13 @@ working directory, and each Stryker worker runs in its own
 own. `TEST_DB_SUFFIX` separates the one case a directory cannot — two runs
 started by hand in the same checkout.
 
+**Unset `TEST_DB_SUFFIX` before a Stryker run.** The suffix is applied *instead
+of* the working-directory hash, not alongside it, and Stryker passes the
+environment through to every worker — so a suffix that is set makes all the
+sandboxes share one database, which is the exact collision the per-directory
+naming exists to prevent. It is easy to have one set without noticing: it is the
+normal way to keep two hand-started vitest runs apart.
+
 Expect it to be slow. One measured data point: mutating
 `src/lib/tfparser/index.ts` alone (116 mutants, ~4 covering tests each) takes
 **12m40s**, because every mutant reruns DB-backed route tests at roughly 6s a
@@ -87,8 +94,12 @@ runner at all and fails with `Cannot find TestRunner plugin "vitest"`.
 
 ## Making the backend run faster
 
-The database is no longer the ceiling — `concurrency` is 4 and can go higher.
-What costs the hours now is that every mutant reruns route tests against a live
+The database is no longer the ceiling — `concurrency` is 4. Treat that as the
+practical maximum rather than a starting point: `stryker.config.mjs` says why,
+which is that every worker talks to the SAME Postgres, so past four they mostly
+queue on it. Raising it is a thing to measure, not to assume.
+
+What costs the hours is that every mutant reruns route tests against a live
 Postgres at roughly 6s a piece, so the lever that still works is scope: prefer
 `--mutate` on the file you are actually changing.
 

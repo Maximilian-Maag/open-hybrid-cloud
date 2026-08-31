@@ -6,6 +6,7 @@ import type {
   ParameterType,
   CreateParameterRequest,
   UpdateParameterRequest,
+  DeploymentEnvironment,
   Project,
 } from '@open-hybrid-cloud/types'
 import { get, post, put, del } from '@/lib/api'
@@ -30,6 +31,10 @@ const TYPE_KEYS: Record<ParameterType, 'typeString' | 'typeNumber' | 'typeBoolea
 const emptyForm = () => ({
   name: '', label: '', type: 'string' as ParameterType, description: '',
   defaultValue: '', required: false, sensitive: false, sizeValues: '',
+  // '' is "all environments", which is what a global parameter has always been
+  // and stays the default. The column and the resolution behind it have existed
+  // all along; this form was the only reason they were unreachable (#275).
+  environmentId: '' as string,
   // Empty is "every project", which is what every parameter is until somebody
   // narrows it, and what an existing one already is (#275).
   projectIds: [] as number[],
@@ -41,6 +46,7 @@ export function ParametersManager() {
     value, label: t(TYPE_KEYS[value], lang),
   }))
   const [params, setParams] = useState<Parameter[]>([])
+  const [environments, setEnvironments] = useState<DeploymentEnvironment[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
@@ -54,14 +60,18 @@ export function ParametersManager() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [all, projectList] = await Promise.all([
+      const [all, envs, projectList] = await Promise.all([
         get<Parameter[]>('/api/admin/parameters'),
-        // Degrades to "every project only" rather than breaking the screen:
-        // without the list there is nothing to narrow to, but every existing
+        // Degrades to "all environments only" rather than breaking the screen:
+        // without the list there is nothing to choose from, but every existing
         // parameter still edits and saves.
+        get<DeploymentEnvironment[]>('/api/admin/environments').catch(() => [] as DeploymentEnvironment[]),
+        // Same degradation as the environments above: without the list there is
+        // nothing to narrow to, but every existing parameter still edits.
         get<Project[]>('/api/projects').catch(() => [] as Project[]),
-      ])
+      ] as const)
       setParams((all ?? []).filter((p) => p.scope === 'global'))
+      setEnvironments(envs ?? [])
       setProjects(projectList ?? [])
       setDeleteError(null)
     } catch (e) {
@@ -86,6 +96,7 @@ export function ParametersManager() {
       name: param.name, label: param.label ?? '', type: param.type, description: param.description,
       defaultValue: param.defaultValue, required: param.required, sensitive: param.sensitive,
       sizeValues: sizeValuesToText(param.sizeValues),
+      environmentId: param.environmentId === null ? '' : String(param.environmentId),
       projectIds: param.projectIds ?? [],
     })
     setFormError(null); setEditTarget(param)
@@ -102,6 +113,7 @@ export function ParametersManager() {
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
         sizeValues: form.type === 'size' ? parseSizeValues(form.sizeValues) : {},
+        ...(form.environmentId !== '' ? { environmentId: Number(form.environmentId) } : {}),
         ...(form.projectIds.length > 0 ? { projectIds: form.projectIds } : {}),
       }
       await post('/api/admin/parameters', body)
@@ -124,9 +136,12 @@ export function ParametersManager() {
         defaultValue: form.defaultValue.trim() || undefined,
         required: form.required, sensitive: form.sensitive,
         sizeValues: form.type === 'size' ? parseSizeValues(form.sizeValues) : {},
-        // Always sent on update, including as []: omitting it means "leave the
-        // narrowing alone", so a parameter cleared back to every project would
-        // silently stay narrowed.
+        // Sent explicitly as null when cleared, not omitted: omitting it would
+        // leave a parameter pinned to an environment with no way back to "all".
+        environmentId: form.environmentId === '' ? null : Number(form.environmentId),
+        // Always sent, including as []: omitting it means "leave the narrowing
+        // alone", so a parameter cleared back to every project would silently
+        // stay narrowed.
         projectIds: form.projectIds,
       }
       await put(`/api/admin/parameters/${editTarget.id}`, body)
@@ -174,15 +189,25 @@ export function ParametersManager() {
                         this size. red-700 (#c10007) on the same ground is 5.27:1. */}
                     {p.required && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">{t('requiredBadge', lang)}</span>}
                     {p.sensitive && <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-700">{t('sensitiveBadge', lang)}</span>}
-                    {/* Only on a narrowed row. A badge on every row saying
-                        "all projects" would be noise on the common case and
-                        would stop the narrowed ones standing out, which is the
-                        only reason to show it (#275). */}
+                    {/* Only when it is narrowed. A badge on every row saying "all
+                        environments" would be noise on the common case and would
+                        stop the narrowed ones standing out, which is the whole
+                        reason to show it (#275). The id is the fallback for an
+                        environment that has since been deleted — better than a
+                        blank where a name should be. */}
+                    {/* Only on a narrowed row, for the same reason as the
+                        environment badge beside it (#275). */}
                     {(p.projectIds ?? []).length > 0 && (
                       <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-800">
                         {(p.projectIds ?? [])
                           .map((id) => projects.find((project) => project.id === id)?.name ?? `#${id}`)
                           .join(', ')}
+                      </span>
+                    )}
+                    {p.environmentId !== null && (
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
+                        {environments.find((env) => env.id === p.environmentId)?.name
+                          ?? `${t('environment', lang)} #${p.environmentId}`}
                       </span>
                     )}
                   </div>
@@ -207,11 +232,17 @@ export function ParametersManager() {
             <Input label={t('displayLabel', lang)} value={form.label} onChange={(e) => setField('label', e.target.value)} hint={t('displayLabelHint', lang)} />
           </div>
           <Select label={t('type', lang)} value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
+          {/* Where this parameter applies. `parameters.environment_id` and the
+              resolution behind it — an environment-specific row preferred over an
+              all-environments one — have been implemented and correct all along;
+              no form ever offered the field, so the capability was unreachable
+              (#275). "All environments" is first and is what an existing global
+              parameter already is. */}
           {/* Checkboxes, not a multi-select. "One or several projects" is a set,
               and a <select multiple> hides the unselected options behind a
-              scroll and needs ctrl-click to build a set at all — which is the
-              kind of control people get wrong without noticing (#275).
-              Rendered only when there are projects to narrow to. */}
+              scroll and needs ctrl-click to build a set at all — the kind of
+              control people get wrong without noticing (#275). Rendered only
+              when there are projects to narrow to. */}
           {projects.length > 0 && (
             <fieldset className="rounded-lg border border-slate-200 p-3">
               <legend className="px-1 text-sm font-medium text-slate-700">{t('projects', lang)}</legend>
@@ -238,6 +269,15 @@ export function ParametersManager() {
               </div>
             </fieldset>
           )}
+          <Select
+            label={t('environment', lang)}
+            value={form.environmentId}
+            onChange={(e) => setField('environmentId', e.target.value)}
+            options={[
+              { value: '', label: t('allEnvironments', lang) },
+              ...environments.map((env) => ({ value: String(env.id), label: env.name })),
+            ]}
+          />
           <Input label={t('description', lang)} value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Input label={t('defaultValue', lang)} value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
             hint={form.type === 'dropdown' ? t('commaSeparatedOptions', lang) : undefined} />
@@ -286,11 +326,17 @@ export function ParametersManager() {
             <Input label={t('displayLabel', lang)} value={form.label} onChange={(e) => setField('label', e.target.value)} hint={t('displayLabelHint', lang)} />
           </div>
           <Select label={t('type', lang)} value={form.type} onChange={(e) => setField('type', e.target.value as ParameterType)} options={TYPES} />
+          {/* Where this parameter applies. `parameters.environment_id` and the
+              resolution behind it — an environment-specific row preferred over an
+              all-environments one — have been implemented and correct all along;
+              no form ever offered the field, so the capability was unreachable
+              (#275). "All environments" is first and is what an existing global
+              parameter already is. */}
           {/* Checkboxes, not a multi-select. "One or several projects" is a set,
               and a <select multiple> hides the unselected options behind a
-              scroll and needs ctrl-click to build a set at all — which is the
-              kind of control people get wrong without noticing (#275).
-              Rendered only when there are projects to narrow to. */}
+              scroll and needs ctrl-click to build a set at all — the kind of
+              control people get wrong without noticing (#275). Rendered only
+              when there are projects to narrow to. */}
           {projects.length > 0 && (
             <fieldset className="rounded-lg border border-slate-200 p-3">
               <legend className="px-1 text-sm font-medium text-slate-700">{t('projects', lang)}</legend>
@@ -317,6 +363,15 @@ export function ParametersManager() {
               </div>
             </fieldset>
           )}
+          <Select
+            label={t('environment', lang)}
+            value={form.environmentId}
+            onChange={(e) => setField('environmentId', e.target.value)}
+            options={[
+              { value: '', label: t('allEnvironments', lang) },
+              ...environments.map((env) => ({ value: String(env.id), label: env.name })),
+            ]}
+          />
           <Input label={t('description', lang)} value={form.description} onChange={(e) => setField('description', e.target.value)} />
           <Input label={t('defaultValue', lang)} value={form.defaultValue} onChange={(e) => setField('defaultValue', e.target.value)}
             hint={form.type === 'dropdown' ? t('commaSeparatedOptions', lang) : undefined} />

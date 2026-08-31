@@ -130,42 +130,137 @@ const format = (violations: Result[]): string =>
     .join('\n\n')
 
 /**
- * Is a focus indicator actually painted on this element?
+ * Is a focus indicator painted on this element, and can it be SEEN?
  *
- * Tailwind renders its focus ring as a box-shadow AND always emits the ring
- * custom properties, so `boxShadow !== 'none'` is not enough — an unset ring
- * colour produces a shadow made entirely of fully transparent layers. A layer
- * counts only if its colour is not transparent.
+ * The distinction is the whole point, and this probe used to miss it. It asked
+ * only whether a non-transparent shadow layer existed — and #186's first defect
+ * was a ring painted in `currentcolor`, which resolved to white, on the white
+ * `--tw-ring-offset-color` default, on a white card, with `focus:outline-none`.
+ * A ring IS painted there. It is simply invisible, and the old probe passed it
+ * (#298).
  *
- * Deliberately not a regex: the obvious one (a repeated group containing
- * `[^,]*`) backtracks exponentially on a long all-transparent shadow, which
- * CodeQL flags as a ReDoS.
+ * So the measure is contrast, not existence: WCAG 1.4.11 wants 3:1 between a
+ * focus indicator and what it is drawn against. The backdrop is resolved by
+ * walking up from the element to the first ancestor with a non-transparent
+ * background, because that is what the ring is actually painted over.
+ *
+ * Deliberately not a regex for splitting the shadow: the obvious one (a
+ * repeated group containing `[^,]*`) backtracks exponentially on a long
+ * all-transparent shadow, which CodeQL flags as a ReDoS.
  */
 const focusProbe = () => {
   const el = document.activeElement as HTMLElement | null
   if (!el) return null
   const c = getComputedStyle(el)
-  const outlined = c.outlineStyle !== 'none' && parseFloat(c.outlineWidth) > 0
 
-  const paints = (shadow: string): boolean => {
-    if (!shadow || shadow === 'none') return false
-    // Split on the colour function each layer starts with, then keep any layer
-    // whose colour is not fully transparent.
+  /**
+   * Any CSS colour to channels, via the browser rather than a regex.
+   *
+   * Canvas `fillStyle` normalises whatever the engine understands — `oklch()`,
+   * `color()`, `color-mix()`, a named colour — to `#rrggbb` or `rgba(...)`, and
+   * silently ignores an assignment it cannot parse, which is the null case.
+   *
+   * Parsing this by hand is what broke the first attempt at this probe:
+   * Tailwind v4 emits `oklch()`, the regex only knew `rgb()`, and every ring on
+   * the page was reported as "paints no focus indicator at all".
+   */
+  const probeCanvas = document.createElement('canvas')
+  probeCanvas.width = 1
+  probeCanvas.height = 1
+  const probeCtx = probeCanvas.getContext('2d', { willReadFrequently: true })
+  const rgb = (value: string): [number, number, number, number] | null => {
+    if (!probeCtx || !value || value === 'none') return null
+    // Painted and read back, rather than read off `fillStyle`. Chromium keeps
+    // `oklch(...)` verbatim in `fillStyle`, which is how the first version of
+    // this probe reported every Tailwind v4 ring — they are all oklch — as no
+    // ring at all. A pixel is always sRGB bytes.
+    probeCtx.clearRect(0, 0, 1, 1)
+    const before = probeCtx.fillStyle
+    probeCtx.fillStyle = value
+    if (probeCtx.fillStyle === before && value !== before) {
+      // Assignment ignored: not a colour this engine understands.
+      return null
+    }
+    probeCtx.fillRect(0, 0, 1, 1)
+    const [r, g, b, a] = probeCtx.getImageData(0, 0, 1, 1).data
+    return [r, g, b, a / 255]
+  }
+
+  const relativeLuminance = ([r, g, b]: [number, number, number, number]): number => {
+    const lin = (n: number) => {
+      const v = n / 255
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+  }
+
+  const ratio = (a: [number, number, number, number], b: [number, number, number, number]): number => {
+    const la = relativeLuminance(a)
+    const lb = relativeLuminance(b)
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+  }
+
+  /**
+   * What the indicator is drawn over.
+   *
+   * The nearest ancestor with an opaque background, the element's own included.
+   * White is the honest fallback: the page body is white here, and assuming the
+   * most common backdrop is better than skipping the check.
+   */
+  const backdrop = (): [number, number, number, number] => {
+    let node: HTMLElement | null = el
+    while (node) {
+      const parsed = rgb(getComputedStyle(node).backgroundColor)
+      if (parsed && parsed[3] > 0.5) return parsed
+      node = node.parentElement
+    }
+    return [255, 255, 255, 1]
+  }
+
+  /**
+   * Every shadow layer that actually paints, as colours.
+   *
+   * All of them, not the first — Tailwind's ring is TWO shadows and the first
+   * is the offset, deliberately painted in the page colour so the ring stands
+   * clear of the control. Measuring that one against the backdrop returns 1.00
+   * by construction, which is how the first version of this check reported
+   * every Button in a dialog as having an invisible focus ring. The ring is the
+   * layer after it, so the honest question is whether ANY layer is visible.
+   */
+  const shadowColours = (shadow: string): [number, number, number, number][] => {
+    if (!shadow || shadow === 'none') return []
     return shadow
       .split(/(?=rgba?\(|oklch\(|color\()/)
       .map((s) => s.trim())
       .filter(Boolean)
-      .some((layer) => {
-        const alpha = /rgba\(\s*\d+,\s*\d+,\s*\d+,\s*([\d.]+)\s*\)/.exec(layer)
-        if (alpha) return parseFloat(alpha[1]) > 0
-        // oklch()/color() layers here carry no alpha, so they paint.
-        return true
+      .map((layer) => {
+        // The layer is "<colour> <offsets>"; hand the colour to the canvas.
+        const colour = /(rgba?\([^)]*\)|oklch\([^)]*\)|color\([^)]*\)|#[0-9a-f]{3,8})/i.exec(layer)
+        return colour ? rgb(colour[1]) : null
       })
+      .filter((c): c is [number, number, number, number] => c !== null && c[3] > 0)
   }
+
+  const against = backdrop()
+  const ringLayers = shadowColours(c.boxShadow)
+  const outlineWidth = parseFloat(c.outlineWidth)
+  const outlined = c.outlineStyle !== 'none' && outlineWidth > 0
+  const outlineColour = outlined ? rgb(c.outlineColor) : null
+
+  const contrasts = [
+    ...ringLayers.map((layer) => ratio(layer, against)),
+    ...(outlineColour ? [ratio(outlineColour, against)] : []),
+  ]
 
   return {
     outlined,
-    ringed: paints(c.boxShadow),
+    ringed: ringLayers.length > 0,
+    /**
+     * Best contrast of any indicator against its backdrop, or null when there
+     * is an indicator whose colour could not be parsed. Null is not a pass.
+     */
+    contrast: contrasts.length > 0 ? Math.max(...contrasts) : null,
+    unmeasurable: (c.boxShadow !== 'none' && ringLayers.length === 0) || (outlined && outlineColour === null),
     inDialog: !!el.closest('dialog'),
     id:
       el.tagName.toLowerCase() +
@@ -173,6 +268,9 @@ const focusProbe = () => {
       (el.getAttribute('type') ? `:${el.getAttribute('type')}` : ''),
   }
 }
+
+/** WCAG 1.4.11: a focus indicator needs 3:1 against what it is drawn on. */
+const FOCUS_INDICATOR_MIN_CONTRAST = 3
 
 /**
  * WCAG 1.4.3 for text axe refuses to look at.
@@ -687,8 +785,15 @@ test.describe('Accessibility — branding colours cannot break the chrome', () =
 })
 
 test.describe('Accessibility — things axe cannot check', () => {
-  test('every interactive control in the chrome shows a visible focus indicator', async ({ page }) => {
-    await page.goto('/admin/categories')
+  /*
+   * Four pages, not one. The chrome is shared, but the ring is painted on
+   * whatever is behind it — a white ring is invisible on a card and obvious on
+   * the branded header — so "the header passes on /admin/categories" says
+   * nothing about the header on the catalogue (#298).
+   */
+  for (const path of ['/admin/categories', '/catalog', '/', '/orders'])
+  test(`every interactive control in the chrome shows a visible focus indicator on ${path}`, async ({ page }) => {
+    await page.goto(path)
 
     const controls: [string, string][] = [
       ['header account menu', 'header summary'],
@@ -705,8 +810,17 @@ test.describe('Accessibility — things axe cannot check', () => {
       // before reading the computed style.
       await page.waitForTimeout(250)
       const probe = await page.evaluate(focusProbe)
-      const visible = !!probe && (probe.outlined || probe.ringed)
-      expect(visible, `${label} (${selector}) must show a focus indicator`).toBe(true)
+      expect(probe, `${label} (${selector}) had no focused element to measure`).not.toBeNull()
+      expect(
+        probe!.outlined || probe!.ringed,
+        `${label} (${selector}) paints no focus indicator at all`,
+      ).toBe(true)
+      // Painted is not the same as visible. A ring the same colour as what it
+      // is drawn on satisfies every check that only asks whether it exists.
+      expect(
+        probe!.contrast ?? 0,
+        `${label} (${selector}) paints a focus indicator at ${probe!.contrast?.toFixed(2) ?? 'an unmeasurable'} contrast against its backdrop — 1.4.11 wants ${FOCUS_INDICATOR_MIN_CONTRAST}:1`,
+      ).toBeGreaterThanOrEqual(FOCUS_INDICATOR_MIN_CONTRAST)
     }
   })
 
@@ -735,8 +849,12 @@ test.describe('Accessibility — things axe cannot check', () => {
       stops++
       expect(
         stop.outlined || stop.ringed,
-        `${stop.id} inside the dialog must show a focus indicator`,
+        `${stop.id} inside the dialog paints no focus indicator at all`,
       ).toBe(true)
+      expect(
+        stop.contrast ?? 0,
+        `${stop.id} inside the dialog paints its focus indicator at ${stop.contrast?.toFixed(2) ?? 'an unmeasurable'} contrast — 1.4.11 wants ${FOCUS_INDICATOR_MIN_CONTRAST}:1`,
+      ).toBeGreaterThanOrEqual(FOCUS_INDICATOR_MIN_CONTRAST)
     }
 
     // Guard against the loop silently finding nothing to check.

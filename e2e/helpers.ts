@@ -265,3 +265,18 @@ export async function hydrated(page: Page): Promise<void> {
     .waitFor({ state: 'attached', timeout: 15_000 })
     .catch(() => {})
 }
+
+/**
+ * The page's own alerts, without the one Next.js puts there.
+ *
+ * Next's App Router renders `<div role="alert" id="__next-route-announcer__">`
+ * into every page to announce client-side navigations. It is empty, it is
+ * always present, and it means `getByRole('alert')` can never resolve to one
+ * element — so any assertion written as "an alert is shown" fails with a strict
+ * mode violation rather than with anything about the alert (#296).
+ *
+ * Excluded by id rather than by emptiness: an announcer that happens to be
+ * mid-announcement has text, and a test should not depend on that timing.
+ */
+export const pageAlerts = (page: Page) =>
+  page.locator('[role="alert"]:not(#__next-route-announcer__)')

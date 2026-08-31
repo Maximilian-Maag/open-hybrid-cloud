@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot, expectNoServerError } from './helpers'
+import { loginAsRoot, expectNoServerError, pageAlerts } from './helpers'
 
 // Issue #32. What the report contains depends on what the stack has provisioned,
 // so the contracts pinned here are the ones that hold either way: the page renders,
@@ -19,13 +19,18 @@ test.describe('Cost dashboard', () => {
   test('shows the title, subtitle and total', async ({ page }) => {
     await expect(page.getByRole('heading', { name: /^costs$/i })).toBeVisible()
     await expect(page.getByText(/spending on provisioned infrastructure/i)).toBeVisible()
-    await expect(page.getByText(/total spend/i)).toBeVisible()
+    // The summary paragraph, not any text: with spending recorded, each of the
+    // three breakdown tables carries a "Total spend" column header too, and a
+    // bare text match resolves to four elements (#296).
+    await expect(page.getByRole('paragraph').filter({ hasText: /^total spend$/i })).toBeVisible()
   })
 
   test('says the total is not a projection', async ({ page }) => {
     // The catalogue stores a price with no billing period, so a run rate cannot be
     // derived from it — the disclaimer is part of the feature, not decoration.
-    await expect(page.getByText(/not a projection over a period/i)).toBeVisible()
+    // `.first()`: the disclaimer is repeated under every section, which is the
+    // point of it. The claim here is that the page says it at all.
+    await expect(page.getByText(/not a projection over a period/i).first()).toBeVisible()
   })
 
   test('shows the four breakdowns, or the no-spend state', async ({ page }) => {
@@ -128,14 +133,14 @@ test.describe('Cost dashboard filtering', () => {
     await page.goto('/costs?range=custom&from=2026-01-01&to=2026-12-31')
     await expect(page.getByLabel(/^from$/i)).toHaveValue('2026-01-01')
     await expect(page.getByLabel(/^to$/i)).toHaveValue('2026-12-31')
-    await expect(page.getByText(/total spend/i)).toBeVisible()
+    await expect(page.getByRole('paragraph').filter({ hasText: /^total spend$/i })).toBeVisible()
   })
 
   test('an inverted custom range is refused rather than shown as zero spend', async ({ page }) => {
     // The server rejects from > to; the page must say something went wrong instead
     // of rendering zeros, which would read as "nothing was spent".
     await page.goto('/costs?range=custom&from=2026-12-31&to=2026-01-01')
-    await expect(page.getByRole('alert')).toBeVisible({ timeout: 8000 })
+    await expect(pageAlerts(page).first()).toBeVisible({ timeout: 8000 })
   })
 
   test('a project filter can be set and undone in place', async ({ page }) => {

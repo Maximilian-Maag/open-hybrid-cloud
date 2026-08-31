@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { loginAsRoot } from './helpers'
 
 // Issue #28. The cart is per user and persisted server-side, so what is asserted

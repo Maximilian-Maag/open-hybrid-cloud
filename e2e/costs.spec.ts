@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { loginAsRoot, expectNoServerError } from './helpers'
 
 // Issue #32. What the report contains depends on what the stack has provisioned,

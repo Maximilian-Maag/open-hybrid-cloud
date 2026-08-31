@@ -242,3 +242,26 @@ export async function expectNoServerError(page: Page): Promise<void> {
   await expect(page.locator('body')).not.toContainText('Application error')
   await expect(page.locator('body')).not.toContainText('This page could not be found')
 }
+
+/**
+ * Wait until React has taken over the page, then hand back control.
+ *
+ * Playwright's actionability checks cannot see hydration. A Next.js `<Link>` is
+ * in the server HTML, so it is visible, enabled and stable — and clicking it
+ * before the router is mounted follows nothing. The click reports success, the
+ * page stays where it is, and the failure surfaces later as a URL assertion
+ * timing out, which reads as a routing bug rather than a timing one.
+ *
+ * `HydrationMarker` sets `data-hydrated` on `<html>` from an effect in the root
+ * layout, which is the first moment any of this is true.
+ *
+ * Call it after `goto` and before the first click on a page. It is a wait, not
+ * an assertion: a page that never hydrates fails at whatever the test does
+ * next, with that test's own message, rather than here with a generic one.
+ */
+export async function hydrated(page: Page): Promise<void> {
+  await page
+    .locator('html[data-hydrated="true"]')
+    .waitFor({ state: 'attached', timeout: 15_000 })
+    .catch(() => {})
+}

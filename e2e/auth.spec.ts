@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { loginAs, rootEmail, rootPassword, completeSecondFactor } from './helpers'
 
 const protectedRoutes = [

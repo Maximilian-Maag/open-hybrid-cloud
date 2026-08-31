@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Admin - Pipeline Stacks', () => {

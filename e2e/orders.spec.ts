@@ -82,7 +82,9 @@ test.describe('Order comments', () => {
     // that once and can exceed ten seconds on a cold cache — which showed up as
     // this test being flaky rather than as anything being wrong with it (#296).
     await expect(page.getByRole('heading', { name: /comments/i })).toBeVisible({ timeout: 30_000 })
-    await hydrated(page)
+    // With the path, because this one follows a client-side navigation: the
+    // bare marker is still set from /orders and would return immediately.
+    await hydrated(page, /^\/orders\/\d+$/)
     return true
   }
 

@@ -22,8 +22,9 @@ export default async function RootLayout({
     <html lang={lang}>
       <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
         <SessionProvider>
-          <HydrationMarker />
           <ToastProvider>{children}</ToastProvider>
+          {/* After the children, deliberately: see HydrationMarker. */}
+          <HydrationMarker />
         </SessionProvider>
       </body>
     </html>

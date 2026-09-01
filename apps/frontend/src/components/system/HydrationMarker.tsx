@@ -1,5 +1,6 @@
 'use client'
 
+import { usePathname } from 'next/navigation'
 import { useEffect } from 'react'
 
 /**
@@ -21,17 +22,33 @@ import { useEffect } from 'react'
  * thing to wait for — and it is useful in the browser too, where "is this page
  * live yet?" is otherwise guesswork.
  *
- * Renders nothing. The attribute is written on the element rather than kept in
- * React state so it survives the effect's own re-render and can be read by
+ * The path is stamped alongside it, and that is not decoration. Next preserves
+ * the root layout across a client-side navigation, so a marker set once and
+ * never cleared is still `true` on the page the router moved to — a test that
+ * waits for it after a click waits for nothing, and gets an answer about the
+ * page it came from. `data-hydrated-path` changes with the route, so "hydrated
+ * on the page I am now looking at" becomes something a test can actually ask.
+ *
+ * This component is rendered AFTER `{children}` in the root layout for the same
+ * reason. React runs effects in tree order, so a sibling that comes later runs
+ * its effect after the page's components have run theirs — which is the moment
+ * the stamp is meant to describe.
+ *
+ * Renders nothing. The attributes are written on the element rather than kept in
+ * React state so they survive the effect's own re-render and can be read by
  * anything, including a plain CSS selector.
  */
 export function HydrationMarker() {
+  const pathname = usePathname()
+
   useEffect(() => {
     document.documentElement.dataset.hydrated = 'true'
+    document.documentElement.dataset.hydratedPath = pathname
     return () => {
       delete document.documentElement.dataset.hydrated
+      delete document.documentElement.dataset.hydratedPath
     }
-  }, [])
+  }, [pathname])
 
   return null
 }

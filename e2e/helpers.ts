@@ -258,11 +258,25 @@ export async function expectNoServerError(page: Page): Promise<void> {
  * Call it after `goto` and before the first click on a page. It is a wait, not
  * an assertion: a page that never hydrates fails at whatever the test does
  * next, with that test's own message, rather than here with a generic one.
+ *
+ * After a click that navigates, pass `path`. Next preserves the root layout
+ * across a client-side navigation, so the bare attribute is still `true` from
+ * the page you left and the wait returns at once, having established nothing —
+ * which is worse than not waiting, because it reads like a guarantee.
+ * `data-hydrated-path` follows the route, so `hydrated(page, /^\/orders\/\d+$/)`
+ * waits for the page you actually arrived at.
  */
-export async function hydrated(page: Page): Promise<void> {
+export async function hydrated(page: Page, path?: RegExp): Promise<void> {
   await page
-    .locator('html[data-hydrated="true"]')
-    .waitFor({ state: 'attached', timeout: 15_000 })
+    .waitForFunction(
+      (source: string | null) => {
+        const el = document.documentElement
+        if (el.dataset.hydrated !== 'true') return false
+        return source === null || new RegExp(source).test(el.dataset.hydratedPath ?? '')
+      },
+      path ? path.source : null,
+      { timeout: 15_000 },
+    )
     .catch(() => {})
 }
 

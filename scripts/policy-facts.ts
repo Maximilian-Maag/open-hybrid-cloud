@@ -868,6 +868,43 @@ const ASSERTING_WAITS = /^waitFor(URL|Response|Request|Selector|Event|LoadState|
  */
 const ASSERTING_HELPER = /^(expect|assert)[A-Z]/
 
+interface UnscopedAlertFact extends Located {
+  /** The expression as written, so the message can quote it. */
+  text: string
+}
+
+/**
+ * `page.getByRole('alert')` in an e2e spec — which can never resolve to one
+ * element in this application.
+ *
+ * Next's App Router renders `<div role="alert" id="__next-route-announcer__">`
+ * into every page to announce client-side navigations. It is empty, it is
+ * always present, and it means a document-level alert query is a strict mode
+ * violation waiting for the first test that reaches it — reported as
+ * "resolved to 2 elements" rather than as anything about the alert.
+ *
+ * It cost a real debugging session on the costs dashboard, and it will cost the
+ * next person the same, because the failure names the locator and not the
+ * cause. `pageAlerts(page)` in `e2e/helpers.ts` excludes the announcer.
+ *
+ * Only the `page.`-rooted form is reported. `dialog.getByRole('alert')` and
+ * `.filter({ hasText: … })` are already scoped and are how the two legitimate
+ * uses in this suite are written.
+ */
+function unscopedAlertQueries(): UnscopedAlertFact[] {
+  const out: UnscopedAlertFact[] = []
+  for (const file of walk('e2e', (rel) => /\.spec\.ts$/.test(rel))) {
+    const lines = read(file).split('\n')
+    lines.forEach((line, i) => {
+      if (!/\bpage\.getByRole\(\s*['"]alert['"]\s*\)/.test(line)) return
+      // A `.filter(...)` immediately after narrows it to one, which is fine.
+      if (/getByRole\(\s*['"]alert['"]\s*\)\s*\.filter\(/.test(line)) return
+      out.push({ file, line: i + 1, text: line.trim().slice(0, 120) })
+    })
+  }
+  return out
+}
+
 function testCases(): TestCaseFact[] {
   const files = [
     ...walk('e2e', (rel) => /\.spec\.ts$/.test(rel)),
@@ -1618,6 +1655,7 @@ export function collectFacts(): Record<string, unknown> {
     silentCatches: silentCatches(),
     consoleCalls: consoleCalls(),
     testCases: testCases(),
+    unscopedAlertQueries: unscopedAlertQueries(),
     pages: pageFacts(),
     clientImports: clientImportFacts(),
     a11ySpecFile: A11Y_SPEC,

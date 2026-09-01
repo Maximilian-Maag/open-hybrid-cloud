@@ -53,12 +53,19 @@ export function SmtpForm({ initial }: Props) {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="col-span-2">
-            <Input label={t('host', lang)} value={host} onChange={(e) => setHost(e.target.value)} required placeholder="smtp.example.com" />
+            {/* Required only while the other half of the pair is filled.
+                Unconditionally required made SMTP a one-way door: the browser
+                refused to submit an emptied field, so a wrong hostname could be
+                replaced but never removed (#317). The backend enforces the same
+                rule — both set, or both empty and mail is off. */}
+            <Input label={t('host', lang)} value={host} onChange={(e) => setHost(e.target.value)}
+              required={from.trim() !== ''} placeholder="smtp.example.com" />
           </div>
           <Input label={t('port', lang)} type="number" value={port} onChange={(e) => setPort(e.target.value)} required />
         </div>
 
-        <Input label={t('fromAddress', lang)} type="email" value={from} onChange={(e) => setFrom(e.target.value)} required placeholder="noreply@example.com" />
+        <Input label={t('fromAddress', lang)} type="email" value={from} onChange={(e) => setFrom(e.target.value)}
+          required={host.trim() !== ''} placeholder="noreply@example.com" />
         <Input label={t('username', lang)} value={user} onChange={(e) => setUser(e.target.value)} />
         <Input label={t('password', lang)} type="password" value={password} onChange={(e) => setPassword(e.target.value)}
           hint={initial ? t('passwordKeepHint', lang) : undefined} />

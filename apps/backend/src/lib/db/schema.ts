@@ -454,8 +454,11 @@ export const integrations = pgTable('integrations', {
    * probe or to a future client.
    *
    * Nullable so `auth_type = 'none'` (an unauthenticated Loki, a public Grafana
-   * health endpoint) does not have to store an empty ciphertext, and so a row
-   * can outlive a credential that was revoked.
+   * health endpoint) does not have to store an empty ciphertext. NOT so a row
+   * can outlive a revoked credential, which is what this said before #195: an
+   * integration that claims bearer auth with nothing to send is not a row in a
+   * waiting state, it is a row that sends `Authorization: Bearer ` and blocks
+   * whatever it gates. `integrations_credential_check` below forbids it.
    */
   credential: text(),
   /**
@@ -530,6 +533,25 @@ export const integrations = pgTable('integrations', {
   check('integrations_kind_check', sql`kind IN ('foreman','ansible','nexus','pulp','loki','grafana')`),
   check('integrations_auth_type_check', sql`auth_type IN ('none','bearer','basic','token_header')`),
   check('integrations_failure_mode_check', sql`failure_mode IN ('blocking','best_effort')`),
+  /*
+   * An integration that claims authentication must have something to send.
+   *
+   * `updateIntegration` checks this in TypeScript and returns 400, but it reads
+   * the current row outside any transaction, so two concurrent updates walk
+   * straight through it (#195, finding 9): A switches to `none` and nulls the
+   * credential, B — holding a snapshot from before A — switches to `bearer` and
+   * passes the check because the credential still existed when it looked. B's
+   * SET carries `auth_type` and no `credential`, lands second, and leaves
+   * exactly the state the service says cannot exist. `probe.ts` then sends
+   * `Authorization: Bearer ` for ever, and a `failure_mode='blocking'`
+   * integration blocks every operation it gates.
+   *
+   * A constraint cannot be raced: it is evaluated against the row as committed,
+   * not against a snapshot someone read a moment ago. Which is why this is the
+   * fix rather than a transaction with a row lock — the lock would work, but it
+   * would have to be remembered at every future write site, and this does not.
+   */
+  check('integrations_credential_check', sql`auth_type = 'none' OR credential IS NOT NULL`),
 ])
 
 export const deploymentEnvironments = pgTable('deployment_environments', {

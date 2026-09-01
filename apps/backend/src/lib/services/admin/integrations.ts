@@ -139,6 +139,29 @@ const requireEncryption = (): Result<void> => {
   )
 }
 
+/**
+ * A base URL with any userinfo taken out.
+ *
+ * `https://svc:hunter2@nexus.internal` is a URL an operator can paste into the
+ * form and a password the audit log must not keep: NFA-04.3 makes that table
+ * append-only, so anything written there can never be redacted (#195,
+ * finding 10).
+ *
+ * A string that does not parse is not passed through on the chance that it is
+ * harmless — the only reason to be looking at it is that it might not be.
+ */
+const withoutUserinfo = (baseUrl: string): string => {
+  try {
+    const url = new URL(baseUrl)
+    if (!url.username && !url.password) return baseUrl
+    url.username = ''
+    url.password = ''
+    return `${url.toString()} (credentials in the URL, not recorded)`
+  } catch {
+    return '(unparseable URL, not recorded)'
+  }
+}
+
 /** Human-readable target for an audit entry, so the log survives a deletion. */
 const auditLabel = (row: {
   kind: string
@@ -146,7 +169,7 @@ const auditLabel = (row: {
   baseUrl: string
   environmentId: number | null
 }): string =>
-  `${row.kind} "${row.name}" at ${row.baseUrl}` +
+  `${row.kind} "${row.name}" at ${withoutUserinfo(row.baseUrl)}` +
   (row.environmentId === null ? ' (portal-wide)' : ` (environment #${row.environmentId})`)
 
 export const listIntegrations = async (): Promise<Result<IntegrationPublic[]>> => {
@@ -173,6 +196,16 @@ const UNIQUE_VIOLATION = '23505'
 
 /** Foreign-key violation — here, an environmentId that does not exist. */
 const FK_VIOLATION = '23503'
+
+/**
+ * CHECK violation — in practice `integrations_credential_check`.
+ *
+ * The same rule `updateIntegration` states in TypeScript, enforced where it
+ * cannot be raced. Reaching it means two edits interleaved (#195, finding 9),
+ * so the message says that rather than blaming the caller's input, which was
+ * fine when they sent it.
+ */
+const CHECK_VIOLATION = '23514'
 
 /**
  * The SQLSTATE of a failed query, or null.
@@ -340,6 +373,9 @@ export const updateIntegration = async (
     const code = pgErrorCode(e)
     if (code === UNIQUE_VIOLATION) return err(409, conflictMessage(before.data.kind, environmentId))
     if (code === FK_VIOLATION) return err(400, `Environment #${environmentId} does not exist.`)
+    if (code === CHECK_VIOLATION) {
+      return err(409, 'The credential was removed while this edit was in flight. Re-open the integration and set one.')
+    }
     throw e
   }
 
@@ -366,15 +402,23 @@ export const updateIntegration = async (
 }
 
 /**
- * What changed, for the audit entry. Values only — the credential is not in
- * either snapshot, so there is nothing here that could print one.
+ * Which fields changed, for the audit entry. Names, never values.
+ *
+ * This used to write `username "old" → "new"`, on the reasoning that the
+ * credential is not in either snapshot so nothing secret could appear. Two of
+ * the seven fields make that wrong (#195, finding 10): `username` is half of a
+ * stored basic-auth credential, and `baseUrl` may carry userinfo — an operator
+ * pasting `https://svc:hunter2@nexus.internal` puts a password in a table
+ * NFA-04.3 makes append-only, where it can never be redacted.
+ *
+ * Diffing values here and names everywhere else was also the only exception in
+ * the admin surface, so nobody reading one entry could tell which convention
+ * they were looking at.
  */
 const describeChanges = (before: IntegrationPublic, after: IntegrationPublic): string => {
   const fields = ['name', 'baseUrl', 'authType', 'username', 'environmentId', 'enabled', 'failureMode'] as const
-  const changes = fields
-    .filter((f) => before[f] !== after[f])
-    .map((f) => `${f} ${JSON.stringify(before[f])} → ${JSON.stringify(after[f])}`)
-  return changes.length > 0 ? changes.join(', ') : 'no field values changed'
+  const changed = fields.filter((f) => before[f] !== after[f])
+  return changed.length > 0 ? `Changed: ${changed.join(', ')}` : 'No fields changed'
 }
 
 export const deleteIntegration = async (
@@ -422,10 +466,17 @@ export interface ProbeOutcome {
  * indistinguishable from a bad request at the HTTP layer, and the frontend would
  * have to parse the message to tell them apart.
  */
-export const probeIntegrationById = async (id: number): Promise<Result<ProbeOutcome>> => {
+export const probeIntegrationById = async (
+  actorUserId: number,
+  id: number,
+): Promise<Result<ProbeOutcome>> => {
   const rows = await db
     .select({
       kind: integrations.kind,
+      // Selected for the audit entry, not for the probe: an entry naming only an
+      // id is useless once the integration is deleted.
+      name: integrations.name,
+      environmentId: integrations.environmentId,
       baseUrl: integrations.baseUrl,
       authType: integrations.authType,
       username: integrations.username,
@@ -443,6 +494,20 @@ export const probeIntegrationById = async (id: number): Promise<Result<ProbeOutc
     return err(409, 'Integration is disabled. Enable it before probing.')
   }
 
+  /*
+   * Audited like every other mutation in this file, which is what it is: root
+   * only, it writes `last_contacted_at`/`last_error`, and it spends a decrypted
+   * credential on a call to a system outside this one. It was the only unaudited
+   * one (#195, finding 10), so "who made this portal talk to Nexus, and when"
+   * had no answer.
+   *
+   * The outcome is in the entry because a probe that fails is the interesting
+   * one. The text is the probe's own — a status line or a connection error,
+   * never anything decrypted.
+   */
+  const auditProbe = (outcome: string) =>
+    logAudit(actorUserId, 'integration.probed', id, `Probed integration ${auditLabel(row)}: ${outcome}`)
+
   let credential: string | null = null
   if (row.credential !== null) {
     try {
@@ -458,6 +523,7 @@ export const probeIntegrationById = async (id: number): Promise<Result<ProbeOutc
       // in the response while the row still said otherwise.
       const message = `Stored credential could not be decrypted: ${e instanceof Error ? e.message : String(e)}`
       const health = await recordProbe(id, { ok: false, status: null, error: message })
+      await auditProbe('not attempted — the stored credential could not be decrypted')
       return ok({ ok: false, status: null, error: message, ...health })
     }
   }
@@ -471,6 +537,10 @@ export const probeIntegrationById = async (id: number): Promise<Result<ProbeOutc
   })
 
   const health = await recordProbe(id, result)
+  await auditProbe(
+    result.ok ? `reachable (${result.status ?? 'no status'})` : `unreachable — ${result.error}`,
+  )
+
   return ok({ ...result, ...health })
 }
 

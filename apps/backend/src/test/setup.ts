@@ -5,7 +5,7 @@ import * as schema from '@/lib/db/schema'
 import { getTableName, sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { join } from 'node:path'
-import { acquireTestDatabase } from './database'
+import { acquireTestDatabase, wipeIfUnaccountedFor } from './database'
 
 // Claimed at MODULE scope, before any test file is imported: the app's db
 // singleton reads process.env.DATABASE_URL when its module first loads, so a URL
@@ -114,6 +114,12 @@ beforeAll(async () => {
    * worker is one SELECT. Each worker holds its own database under an advisory
    * lock (see `acquireTestDatabase`), so no two of them migrate the same one.
    */
+  // A schema the journal does not account for is not stale, it is unusable —
+  // and it stays that way until someone drops the database by hand (#308).
+  if (await wipeIfUnaccountedFor(client)) {
+    console.warn(`[test] ${acquired.name} held a schema no migration claimed; rebuilt it from empty`)
+  }
+
   await migrate(testDb, { migrationsFolder: join(process.cwd(), 'drizzle') })
 
 })

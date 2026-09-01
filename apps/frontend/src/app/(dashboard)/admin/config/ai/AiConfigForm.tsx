@@ -74,7 +74,10 @@ export function AiConfigForm({ initial }: Props) {
         <Input label={t('apiKey', lang)} type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
           hint={initial ? t('apiKeyKeepHint', lang) : undefined} />
 
-        <Input label={t('model', lang)} value={model} onChange={(e) => setModel(e.target.value)} required
+        {/* Clearable, like SMTP's host (#317): an empty model is what `lib/ai`
+            already means by "use the default", and a field that can be set and
+            never emptied is a setting nobody can undo. */}
+        <Input label={t('model', lang)} value={model} onChange={(e) => setModel(e.target.value)}
           placeholder={modelPlaceholder[provider]} />
 
         <div className="flex justify-end">

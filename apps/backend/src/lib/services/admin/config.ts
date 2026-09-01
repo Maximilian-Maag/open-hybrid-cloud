@@ -62,14 +62,25 @@ export const getSmtpConfig = async (): Promise<Result<SmtpConfig>> => {
   })
 }
 
+/**
+ * An empty string is not a value, it is the absence of one.
+ *
+ * These columns are nullable and every reader treats NULL as "not configured" —
+ * `lib/notification` returns null for a missing host, `lib/ai` falls back to a
+ * default model. Storing `''` instead would satisfy neither: `?? 'gpt-4o-mini'`
+ * does not fire for an empty string, so a cleared model would be sent to the
+ * provider as nothing at all rather than as the default (#317).
+ */
+const orNull = (value: string): string | null => (value.trim() === '' ? null : value)
+
 export const updateSmtpConfig = async (
   input: UpdateSmtpInput,
   actorId?: number,
 ): Promise<Result<void>> => {
   const setValues: Partial<typeof appConfig.$inferInsert> = {
-    smtpHost: input.host,
+    smtpHost: orNull(input.host),
     smtpPort: input.port,
-    smtpFrom: input.from,
+    smtpFrom: orNull(input.from),
     smtpUser: input.user ?? '',
     smtpTls: input.tls ?? true,
   }
@@ -90,7 +101,9 @@ export const updateSmtpConfig = async (
     actorId ?? null,
     'config.smtp_updated',
     undefined,
-    `SMTP set to ${input.host}:${input.port} (tls ${input.tls ?? true})${input.password !== undefined ? ', password replaced' : ''}`,
+    orNull(input.host) === null
+      ? 'SMTP turned off'
+      : `SMTP set to ${input.host}:${input.port} (tls ${input.tls ?? true})${input.password !== undefined ? ', password replaced' : ''}`,
   )
 
   return ok(undefined)
@@ -126,7 +139,7 @@ export const updateAiConfig = async (
   const setValues: Partial<typeof appConfig.$inferInsert> = {
     aiProvider: input.provider,
     aiEndpoint: input.endpoint,
-    aiModel: input.model,
+    aiModel: orNull(input.model),
   }
   if (input.apiKey !== undefined) setValues.aiApiKey = input.apiKey
 

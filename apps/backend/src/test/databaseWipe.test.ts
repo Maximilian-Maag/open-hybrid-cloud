@@ -1,6 +1,6 @@
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import postgres from 'postgres'
-import { wipeIfUnaccountedFor } from './database'
+import { testDatabaseName, wipeIfUnaccountedFor } from './database'
 
 /**
  * Against a real Postgres, and on a database of its own.
@@ -15,7 +15,9 @@ import { wipeIfUnaccountedFor } from './database'
  * database would take the schema out from under every test file that follows.
  */
 const url = new URL(process.env.DATABASE_URL ?? '')
-const PROBE = 'open_hybrid_cloud_wipe_probe'
+// Named after the database this worker holds, so a run in another worktree
+// against the same Postgres cannot drop the one this file is using.
+const PROBE = `${testDatabaseName()}_wipe_probe`
 const adminUrl = new URL(url.toString())
 adminUrl.pathname = '/postgres'
 const probeUrl = new URL(url.toString())
@@ -24,18 +26,37 @@ probeUrl.pathname = `/${PROBE}`
 const admin = postgres(adminUrl.toString(), { max: 1 })
 let probe: postgres.Sql
 
-beforeEach(async () => {
-  // DROP DATABASE, not DROP SCHEMA: the point is to start from what Postgres
-  // gives you on CREATE, with no assumption about what the last case left.
+/*
+ * Made once, emptied between cases.
+ *
+ * CREATE DATABASE copies a template and takes seconds under load — doing it per
+ * case timed the hook out on CI, where four workers share one Postgres. Dropping
+ * the two schemas reaches the same starting point (an empty `public`, no
+ * `drizzle`) for the cost of one statement.
+ *
+ * Sixty seconds for this hook rather than the suite's fifteen: it is the one
+ * that does DROP DATABASE ... WITH (FORCE) and CREATE DATABASE, and a slow CI
+ * runner is not a thing for it to fail on.
+ */
+beforeAll(async () => {
   await admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`)
   await admin.unsafe(`CREATE DATABASE "${PROBE}"`)
   probe = postgres(probeUrl.toString(), { max: 1 })
+}, 60_000)
+
+beforeEach(async () => {
+  await probe.unsafe(`
+    DROP SCHEMA IF EXISTS public CASCADE;
+    DROP SCHEMA IF EXISTS drizzle CASCADE;
+    CREATE SCHEMA public;
+  `)
 })
 
 afterAll(async () => {
+  await probe?.end({ timeout: 5 })
   await admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`)
   await admin.end({ timeout: 5 })
-})
+}, 60_000)
 
 const publicTables = async (db: postgres.Sql): Promise<number> => {
   const [{ n }] = await db<{ n: number }[]>`

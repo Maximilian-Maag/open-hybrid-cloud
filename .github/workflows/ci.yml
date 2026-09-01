@@ -302,6 +302,13 @@ jobs:
         run: pnpm exec playwright test e2e/a11y.spec.ts --reporter=list,json,html
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: a11y-results.json
+          # Its own directory, because Playwright EMPTIES the html reporter's
+          # output directory before writing. Sharing the default with the step
+          # above means this run deletes the E2E report — and it runs on
+          # `always()`, so the run where both failed is exactly the run where
+          # the E2E report goes missing. The JSON was already separated by name;
+          # the HTML needs a directory. Raised by CodeRabbit on #285.
+          PLAYWRIGHT_HTML_OUTPUT_DIR: a11y-report
 
       # Zero, not three: every page in this spec is reachable on a seeded
       # database, and a skipped scan is a page nobody checked reported as a page
@@ -324,6 +331,7 @@ jobs:
           # needs to see — and they are two small files.
           path: |
             playwright-report/
+            a11y-report/
             e2e-results.json
             a11y-results.json
           retention-days: 7

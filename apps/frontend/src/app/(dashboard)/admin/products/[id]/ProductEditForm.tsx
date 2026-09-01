@@ -33,6 +33,8 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ProductVersionHistory } from './ProductVersionHistory'
 import { t, SUPPORTED_LANGUAGES } from '@/lib/i18n'
+import { parameterTypeOptions } from '@/lib/parameterTypes'
+import { sizeValuesToText, parseSizeValues } from '@/lib/sizeValues'
 import { ImportFromRepo } from './ImportFromRepo'
 
 // All 25, from the single list `SUPPORTED_LANGUAGES` — not the four this used to
@@ -157,6 +159,7 @@ export function ProductEditForm({ product, categories, environments, translation
   const [editParam, setEditParam] = useState<Parameter | null>(null)
   const [paramForm, setParamForm] = useState({
     name: '', label: '', type: 'string' as ParameterType, description: '', defaultValue: '', required: false, sensitive: false,
+    sizeValues: '',
   })
 
   async function handleSaveBasic(e: React.FormEvent) {
@@ -479,7 +482,7 @@ export function ProductEditForm({ product, categories, environments, translation
     setEditParam(null)
     setParamError(null)
     setParamSyncMsg(null)
-    setParamForm({ name: '', label: '', type: 'string', description: '', defaultValue: '', required: false, sensitive: false })
+    setParamForm({ name: '', label: '', type: 'string', description: '', defaultValue: '', required: false, sensitive: false, sizeValues: '' })
     setParamModal(true)
   }
 
@@ -487,7 +490,7 @@ export function ProductEditForm({ product, categories, environments, translation
     setEditParam(p)
     setParamError(null)
     setParamSyncMsg(null)
-    setParamForm({ name: p.name, label: p.label, type: p.type, description: p.description, defaultValue: p.defaultValue, required: p.required, sensitive: p.sensitive })
+    setParamForm({ name: p.name, label: p.label, type: p.type, description: p.description, defaultValue: p.defaultValue, required: p.required, sensitive: p.sensitive, sizeValues: sizeValuesToText(p.sizeValues) })
     setParamModal(true)
   }
 
@@ -505,6 +508,7 @@ export function ProductEditForm({ product, categories, environments, translation
           defaultValue: paramForm.defaultValue.trim() || undefined,
           required: paramForm.required,
           sensitive: paramForm.sensitive,
+          sizeValues: paramForm.type === 'size' ? parseSizeValues(paramForm.sizeValues) : {},
         }
         const updated = await put<Parameter>(`/api/admin/parameters/${editParam.id}`, body)
         setProductParams((prev) => prev.map((p) => p.id === editParam.id ? updated : p))
@@ -519,6 +523,7 @@ export function ProductEditForm({ product, categories, environments, translation
           defaultValue: paramForm.defaultValue.trim() || undefined,
           required: paramForm.required,
           sensitive: paramForm.sensitive,
+          sizeValues: paramForm.type === 'size' ? parseSizeValues(paramForm.sizeValues) : {},
         }
         const created = await post<Parameter>('/api/admin/parameters', body)
         setProductParams((prev) => [...prev, created])
@@ -966,17 +971,37 @@ export function ProductEditForm({ product, categories, environments, translation
           </div>
           <Select label={t('type', lang)} value={paramForm.type}
             onChange={(e) => setParamForm((f) => ({ ...f, type: e.target.value as ParameterType }))}
-            options={[
-              { value: 'string', label: t('typeString', lang) },
-              { value: 'number', label: t('typeNumber', lang) },
-              { value: 'bool', label: t('typeBoolean', lang) },
-              { value: 'dropdown', label: t('typeDropdown', lang) },
-            ]} />
+            /* From `parameterTypeOptions`, not written out here. The four
+               types this listed by hand were the four that existed when it was
+               written; `size` was added to `ParameterType` and never reached
+               this screen, so one parameter editor offered T-shirt sizes and
+               the other did not (#313). */
+            options={parameterTypeOptions(lang)} />
           <Input label={t('description', lang)} value={paramForm.description}
             onChange={(e) => setParamForm((f) => ({ ...f, description: e.target.value }))} />
           <Input label={t('defaultValue', lang)} value={paramForm.defaultValue}
             onChange={(e) => setParamForm((f) => ({ ...f, defaultValue: e.target.value }))}
             hint={paramForm.type === 'dropdown' ? t('commaSeparatedOptions', lang) : undefined} />
+          {/* A `size` variable is not typed in by the customer: its value comes
+              from the size they picked, so the parameter carries one value per
+              size code. Without this field a `size` parameter created here would
+              have none, which is why the option and the field arrive together. */}
+          {paramForm.type === 'size' && (
+            <div className="flex flex-col gap-1">
+              <label htmlFor="product-param-size-values" className="text-sm font-medium text-slate-700">
+                {t('valuePerSize', lang)}
+              </label>
+              <p className="text-xs text-slate-500">{t('valuePerSizeHint', lang)}</p>
+              <textarea
+                id="product-param-size-values"
+                rows={4}
+                value={paramForm.sizeValues}
+                onChange={(e) => setParamForm((f) => ({ ...f, sizeValues: e.target.value }))}
+                placeholder={'S=t3.micro\nM=t3.large\nXL=m6i.2xlarge'}
+                className="rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
           <div className="flex gap-6">
             <div className="flex items-center gap-2">
               <input type="checkbox" id="param-required" checked={paramForm.required}

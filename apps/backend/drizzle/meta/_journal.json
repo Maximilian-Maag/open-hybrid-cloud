@@ -232,6 +232,13 @@
       "when": 1788998400000,
       "tag": "0036_parameter_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1789084800000,
+      "tag": "0037_integration_credential_check",
+      "breakpoints": true
     }
   ]
 }

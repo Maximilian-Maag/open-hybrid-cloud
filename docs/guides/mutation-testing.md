@@ -50,6 +50,29 @@ sandboxes share one database, which is the exact collision the per-directory
 naming exists to prevent. It is easy to have one set without noticing: it is the
 normal way to keep two hand-started vitest runs apart.
 
+### The databases pile up
+
+Every sandbox gets a database and nothing ever removes it. That is the price of
+the per-directory naming, and it is not small: one developer's Postgres held
+**328** `open_hybrid_cloud_test_*` databases, about 3 GB, almost all of them from
+Stryker runs months old.
+
+```sh
+pnpm --filter backend test:db:prune          # lists what it would drop
+pnpm --filter backend test:db:prune --yes    # drops it
+```
+
+It only touches names beginning with `open_hybrid_cloud_test`, and it skips any
+database it cannot take the advisory lock for — so a suite running in another
+terminal keeps its own. Dropping the database this checkout uses is harmless: the
+next run recreates it from the migrations, in about a second.
+
+Old databases are not merely untidy. One created before #147 has the full schema
+and no migration journal, and the migrator, which only ever adds, fails on it
+with `relation "app_config" already exists` in `beforeAll` — the same way, for
+ever. Since #308 the suite notices that shape and rebuilds the database from
+empty instead of failing, but pruning is still the cheaper habit.
+
 Expect it to be slow. One measured data point: mutating
 `src/lib/tfparser/index.ts` alone (116 mutants, ~4 covering tests each) takes
 **12m40s**, because every mutant reruns DB-backed route tests at roughly 6s a

@@ -27,5 +27,5 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid integration id' }, { status: 400 })
   }
 
-  return toResponse(await probeIntegrationById(id))
+  return toResponse(await probeIntegrationById(session.id, id))
 }

@@ -76,6 +76,61 @@ const createIfMissing = async (admin: postgres.Sql, name: string): Promise<void>
  * The lock is released when `release()` closes that connection, or by Postgres
  * itself if the process dies — no stale state to clean up.
  */
+/**
+ * Throw away a schema the migration journal does not account for.
+ *
+ * The migrator only ever adds. It reads `drizzle.__drizzle_migrations`, applies
+ * what is missing, and assumes anything already in `public` is there because it
+ * put it there. When that is false the first `CREATE TABLE` fails with
+ * `relation "app_config" already exists`, in `beforeAll`, before a single test
+ * runs — and it fails again on every subsequent run, because nothing in the
+ * cycle can record what is already applied. The database is not stale, it is
+ * unusable, and only dropping it by hand brings it back (#308).
+ *
+ * Two things put a database in that state. Databases created before #147 got
+ * their schema from hand-written DDL and have no journal at all — a survey of
+ * this Postgres found 31 of them. And a migration run interrupted after the DDL
+ * but before the bookkeeping leaves the same shape.
+ *
+ * So: if `public` holds tables and the journal accounts for none of them, empty
+ * the database and let the migrator build it from nothing. That is safe in a way
+ * it would never be in production — the name is derived from the working
+ * directory precisely so that this database belongs to this run, the worker
+ * holds an advisory lock on it, and every test truncates the tables anyway.
+ *
+ * Deliberately narrow. A journal with SOME rows is an ordinary out-of-date
+ * database and the migrator handles it; wiping that would turn a one-second
+ * catch-up into a full rebuild on every branch switch.
+ *
+ * @returns whether it wiped, which the caller reports so the rebuild is visible.
+ */
+export const wipeIfUnaccountedFor = async (db: postgres.Sql): Promise<boolean> => {
+  const [{ tables }] = await db<{ tables: number }[]>`
+    SELECT count(*)::int AS tables FROM pg_tables WHERE schemaname = 'public'
+  `
+  if (tables === 0) return false
+
+  // Two statements, not one CASE: Postgres resolves relation names when it
+  // parses, so a subquery against a missing journal table is an error even in a
+  // branch that would not be taken.
+  const [{ present }] = await db<{ present: boolean }[]>`
+    SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS present
+  `
+  if (present) {
+    const [{ applied }] = await db<{ applied: number }[]>`
+      SELECT count(*)::int AS applied FROM drizzle.__drizzle_migrations
+    `
+    if (applied > 0) return false
+  }
+
+  await db.unsafe(`
+    DROP SCHEMA public CASCADE;
+    CREATE SCHEMA public;
+    DROP SCHEMA IF EXISTS drizzle CASCADE;
+  `)
+  return true
+}
+
 export const acquireTestDatabase = async (
   databaseUrl: string,
 ): Promise<{ url: string; name: string; release: () => Promise<void> }> => {

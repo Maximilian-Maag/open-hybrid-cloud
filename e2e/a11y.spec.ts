@@ -212,14 +212,22 @@ const focusProbe = () => {
   }
 
   /**
-   * What the indicator is drawn over.
+   * What the indicator is drawn over — and that depends on which side it is on.
    *
-   * The nearest ancestor with an opaque background, the element's own included.
-   * White is the honest fallback: the page body is white here, and assuming the
-   * most common backdrop is better than skipping the check.
+   * A `box-shadow` ring is painted OUTSIDE the border box, so what it sits on is
+   * the first opaque ancestor. An `inset` ring is painted inside, so what it
+   * sits on is the element's own background.
+   *
+   * Getting this wrong is not academic: measuring the outside ring of a primary
+   * button against the button's own fill compared blue-500 to the branding's
+   * amber and reported 2.27:1 — a failure for a ring that in fact sits on the
+   * dialog behind it at nearly 4:1. The check has to know where the paint lands.
+   *
+   * White is the honest fallback when nothing opaque is found: the page body is
+   * white here, and assuming the most common backdrop beats skipping the check.
    */
-  const backdrop = (): [number, number, number, number] => {
-    let node: HTMLElement | null = el
+  const backdropFrom = (start: HTMLElement | null): [number, number, number, number] => {
+    let node: HTMLElement | null = start
     while (node) {
       const parsed = rgb(getComputedStyle(node).backgroundColor)
       if (parsed && parsed[3] > 0.5) return parsed
@@ -227,6 +235,8 @@ const focusProbe = () => {
     }
     return [255, 255, 255, 1]
   }
+  const insideBackdrop = () => backdropFrom(el)
+  const outsideBackdrop = () => backdropFrom(el.parentElement)
 
   /**
    * Every shadow layer that actually paints, as colours.
@@ -238,29 +248,32 @@ const focusProbe = () => {
    * every Button in a dialog as having an invisible focus ring. The ring is the
    * layer after it, so the honest question is whether ANY layer is visible.
    */
-  const shadowColours = (shadow: string): [number, number, number, number][] => {
+  const shadowColours = (shadow: string): { colour: [number, number, number, number]; inset: boolean }[] => {
     if (!shadow || shadow === 'none') return []
     return shadow
       .split(/(?=rgba?\(|oklch\(|color\()/)
       .map((s) => s.trim())
       .filter(Boolean)
       .map((layer) => {
-        // The layer is "<colour> <offsets>"; hand the colour to the canvas.
+        // The layer is "<colour> <offsets> [inset]"; hand the colour to the
+        // canvas and keep the keyword, which decides which side it is painted on.
         const colour = /(rgba?\([^)]*\)|oklch\([^)]*\)|color\([^)]*\)|#[0-9a-f]{3,8})/i.exec(layer)
-        return colour ? rgb(colour[1]) : null
+        const parsed = colour ? rgb(colour[1]) : null
+        return parsed ? { colour: parsed, inset: /\binset\b/.test(layer) } : null
       })
-      .filter((c): c is [number, number, number, number] => c !== null && c[3] > 0)
+      .filter((c): c is { colour: [number, number, number, number]; inset: boolean } => c !== null && c.colour[3] > 0)
   }
 
-  const against = backdrop()
   const ringLayers = shadowColours(c.boxShadow)
   const outlineWidth = parseFloat(c.outlineWidth)
   const outlined = c.outlineStyle !== 'none' && outlineWidth > 0
   const outlineColour = outlined ? rgb(c.outlineColor) : null
 
   const contrasts = [
-    ...ringLayers.map((layer) => ratio(layer, against)),
-    ...(outlineColour ? [ratio(outlineColour, against)] : []),
+    // Each layer against the surface it is actually painted on.
+    ...ringLayers.map((layer) => ratio(layer.colour, layer.inset ? insideBackdrop() : outsideBackdrop())),
+    // An outline is always drawn outside the border box.
+    ...(outlineColour ? [ratio(outlineColour, outsideBackdrop())] : []),
   ]
 
   return {

@@ -281,8 +281,38 @@ describe('updateIntegration', () => {
 
     const entries = await auditEntries()
     const update = entries.find((e) => e.action === 'integration.updated')
-    expect(update?.details).toContain('"Foreman Prod" → "Foreman Staging"')
+    expect(update?.details).toContain('name')
     expect(update?.details).toContain('failureMode')
+    // Names, never values (#195, finding 10). `baseUrl` can carry userinfo and
+    // `username` is half a basic-auth credential, and this table is append-only.
+    expect(update?.details).not.toContain('"Foreman Prod" →')
+    expect(update?.details).not.toContain('→')
+  })
+
+  /*
+   * A password can reach the audit log without ever going near the credential
+   * column: `https://svc:hunter2@nexus.internal` is a base URL an operator can
+   * paste into the form, and NFA-04.3 makes the audit table append-only, so
+   * anything written there stays for ever (#195, finding 10).
+   */
+  it('does not record a password an operator put in the base URL', async () => {
+    const actor = await rootId()
+    const created = await createIntegration(
+      actor,
+      input({ baseUrl: 'https://svc:hunter2@nexus.example.com' }),
+    )
+    if (!created.ok) throw new Error('setup failed')
+
+    await updateIntegration(actor, created.data.id, { name: 'Renamed' })
+
+    const details = (await auditEntries())
+      .filter((e) => e.action.startsWith('integration.'))
+      .map((e) => e.details ?? '')
+    expect(details.length).toBeGreaterThan(0)
+    for (const line of details) {
+      expect(line).not.toContain('hunter2')
+      expect(line).not.toContain('svc:')
+    }
   })
 
   it('leaves the credential alone when the field is omitted', async () => {
@@ -348,7 +378,7 @@ describe('updateIntegration', () => {
     if (!created.ok) throw new Error('setup failed')
 
     vi.spyOn(global, 'fetch').mockResolvedValue(jsonRes({ version: '3.9.1' }))
-    await probeIntegrationById(created.data.id)
+    await probeIntegrationById(actor, created.data.id)
 
     const after = await getIntegrationById(created.data.id)
     expect(after.ok && after.data.updatedAt?.getTime()).toBe(created.data.updatedAt?.getTime())
@@ -362,7 +392,7 @@ describe('updateIntegration', () => {
     if (!created.ok) throw new Error('setup failed')
 
     vi.spyOn(global, 'fetch').mockResolvedValue(jsonRes({ version: '3.9.1' }))
-    await probeIntegrationById(created.data.id)
+    await probeIntegrationById(actor, created.data.id)
     const probed = await getIntegrationById(created.data.id)
     expect(probed.ok && probed.data.lastContactedAt).not.toBeNull()
 
@@ -461,6 +491,27 @@ describe('deleteIntegration', () => {
     expect(entry?.details).toContain('https://foreman.example.com')
   })
 
+  /*
+   * The only mutation in this file that wrote no audit entry (#195, finding 10).
+   * It is root-only, it writes the health columns, and it spends a decrypted
+   * credential on a call to a system outside this one — so "who made this portal
+   * talk to Nexus, and when" had no answer at all.
+   */
+  it('records who probed, and what came back', async () => {
+    const actor = await rootId()
+    const created = await createIntegration(actor, input())
+    if (!created.ok) throw new Error('setup failed')
+    vi.spyOn(global, 'fetch').mockResolvedValue(new Response('down', { status: 500 }))
+
+    await probeIntegrationById(actor, created.data.id)
+
+    const probed = (await auditEntries()).find((e) => e.action === 'integration.probed')
+    expect(probed).toBeDefined()
+    expect(probed?.userId).toBe(actor)
+    expect(probed?.entityId).toBe(created.data.id)
+    expect(probed?.details).toContain('unreachable')
+  })
+
   it('404s for an unknown id', async () => {
     const actor = await rootId()
     expect(await deleteIntegration(actor, 999_999)).toMatchObject({ ok: false, status: 404 })
@@ -503,6 +554,50 @@ describe('listIntegrations', () => {
   })
 })
 
+/*
+ * The invariant `updateIntegration` states in TypeScript, checked where it is
+ * actually enforced.
+ *
+ * The service reads the row outside any transaction, so two edits can interleave
+ * and produce the state its own check forbids (#195, finding 9): one switches to
+ * `none` and nulls the credential, the other — holding the earlier snapshot —
+ * switches to `bearer` and lands second. There is no way to write that as a
+ * deterministic test through the service, and no need to: the point of moving
+ * the rule into a CHECK is that it holds against whatever produced the write.
+ * So the test writes it directly, which is the strongest form of the question.
+ */
+describe('the integrations table itself', () => {
+  it('refuses a row that claims authentication with nothing to send', async () => {
+    const actor = await rootId()
+    const created = await createIntegration(actor, input())
+    if (!created.ok) throw new Error('setup failed')
+
+    // The SQLSTATE and the constraint name, not the message: drizzle wraps the
+    // driver error, so the name is on the cause and the top-level text is just
+    // "Failed query". Asserting the code is also what the service branches on.
+    const failure = await db
+      .execute(
+        sql`UPDATE integrations SET auth_type = 'bearer', credential = NULL WHERE id = ${created.data.id}`,
+      )
+      .then(() => null)
+      .catch((e: unknown) => e)
+
+    expect(failure).not.toBeNull()
+    expect(JSON.stringify(failure, Object.getOwnPropertyNames(failure))).toContain(
+      'integrations_credential_check',
+    )
+  })
+
+  it('allows a row with no credential when it claims no authentication', async () => {
+    const actor = await rootId()
+    const created = await createIntegration(actor, input({ authType: 'none', credential: undefined }))
+
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(created.data.hasCredential).toBe(false)
+  })
+})
+
 describe('probeIntegrationById', () => {
   it('records the contact time on success and clears any previous error', async () => {
     const actor = await rootId()
@@ -510,11 +605,11 @@ describe('probeIntegrationById', () => {
     if (!created.ok) throw new Error('setup failed')
 
     vi.spyOn(global, 'fetch').mockResolvedValue(new Response('down', { status: 500 }))
-    await probeIntegrationById(created.data.id)
+    await probeIntegrationById(actor, created.data.id)
     vi.restoreAllMocks()
 
     vi.spyOn(global, 'fetch').mockResolvedValue(jsonRes({ version: '3.9.1', api_version: 2 }))
-    const result = await probeIntegrationById(created.data.id)
+    const result = await probeIntegrationById(actor, created.data.id)
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -531,13 +626,13 @@ describe('probeIntegrationById', () => {
     if (!created.ok) throw new Error('setup failed')
 
     vi.spyOn(global, 'fetch').mockResolvedValue(jsonRes({ version: '3.9.1' }))
-    const good = await probeIntegrationById(created.data.id)
+    const good = await probeIntegrationById(actor, created.data.id)
     const contactedAt = good.ok ? good.data.lastContactedAt : null
     expect(contactedAt).not.toBeNull()
     vi.restoreAllMocks()
 
     vi.spyOn(global, 'fetch').mockResolvedValue(new Response('nope', { status: 401 }))
-    const bad = await probeIntegrationById(created.data.id)
+    const bad = await probeIntegrationById(actor, created.data.id)
 
     expect(bad.ok).toBe(true)
     if (!bad.ok) return
@@ -556,7 +651,7 @@ describe('probeIntegrationById', () => {
     if (!created.ok) throw new Error('setup failed')
 
     const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(jsonRes({}))
-    await probeIntegrationById(created.data.id)
+    await probeIntegrationById(actor, created.data.id)
 
     const [, init] = fetchMock.mock.calls[0] as [URL, RequestInit]
     const headers = (init.headers ?? {}) as Record<string, string>
@@ -574,7 +669,7 @@ describe('probeIntegrationById', () => {
     // Contact it successfully first: an earlier success must survive a later
     // failure, in the response as well as on the row.
     vi.spyOn(global, 'fetch').mockResolvedValue(jsonRes({ version: '3.9.1' }))
-    const good = await probeIntegrationById(created.data.id)
+    const good = await probeIntegrationById(actor, created.data.id)
     const contactedAt = good.ok ? good.data.lastContactedAt : null
     expect(contactedAt).not.toBeNull()
     vi.restoreAllMocks()
@@ -582,7 +677,7 @@ describe('probeIntegrationById', () => {
     const fetchMock = vi.spyOn(global, 'fetch')
     process.env[SECRET_KEY_ENV] = 'f'.repeat(64)
 
-    const result = await probeIntegrationById(created.data.id)
+    const result = await probeIntegrationById(actor, created.data.id)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data.ok).toBe(false)
@@ -596,7 +691,8 @@ describe('probeIntegrationById', () => {
   })
 
   it('404s for an unknown id', async () => {
-    expect(await probeIntegrationById(999_999)).toMatchObject({ ok: false, status: 404 })
+    const actor = await rootId()
+    expect(await probeIntegrationById(actor, 999_999)).toMatchObject({ ok: false, status: 404 })
   })
 
   it('409s for a disabled integration', async () => {
@@ -604,7 +700,7 @@ describe('probeIntegrationById', () => {
     const created = await createIntegration(actor, input({ enabled: false }))
     if (!created.ok) throw new Error('setup failed')
 
-    expect(await probeIntegrationById(created.data.id)).toMatchObject({ ok: false, status: 409 })
+    expect(await probeIntegrationById(actor, created.data.id)).toMatchObject({ ok: false, status: 409 })
   })
 })
 

@@ -274,6 +274,24 @@ describe('deleteProduct', () => {
     if (!result.ok) expect(result.status).toBe(404)
   })
 
+  /*
+   * #251 made `retired_at` a reversible Disable, so a disabled product is on
+   * screen with an Enable button beside a Delete button. Delete used to answer
+   * "Not found" for it, every time, and there was no other way to remove it
+   * (#312) — reported against a real product on dev.
+   */
+  it('deletes a product that was disabled first', async () => {
+    const cat = await createCategory()
+    const p = await seedProduct(cat.id, 'Disabled then deleted')
+    const disabled = await setProductRetired(p.id, true)
+    expect(disabled.ok).toBe(true)
+
+    const result = await deleteProduct(p.id)
+
+    expect(result.ok).toBe(true)
+    expect(await db.select().from(products).where(eq(products.id, p.id))).toHaveLength(0)
+  })
+
   it('deletes from DB', async () => {
     const cat = await createCategory()
     const p = await seedProduct(cat.id, 'Del')
@@ -528,13 +546,35 @@ describe('deleteProduct preserves order history (issue #142)', () => {
     if (adminDetail.ok) expect(adminDetail.data.retiredAt).toBeInstanceOf(Date)
   })
 
-  it('returns 404 when the same product is deleted twice', async () => {
+  /*
+   * Deleting an ordered product twice is idempotent, not a 404.
+   *
+   * This asserted 404 until #312. "Not found" was a lie about a product sitting
+   * in the admin list with an Enable button, and the lie was load-bearing: the
+   * same pre-check made a product that had only ever been DISABLED — never
+   * deleted — impossible to remove at all. There is no test that distinguishes
+   * the two cases, because at the row level there is nothing to distinguish.
+   *
+   * `ok` without a hard delete is already this function's contract: the first
+   * call on an ordered product retires it and returns ok too. Both calls leave
+   * the caller's stated end state — out of the catalogue, history intact — and
+   * say so the same way. `setProductRetired` makes the same choice one screen
+   * over: "the caller wanted it disabled and it is disabled".
+   */
+  it('is idempotent for an ordered product, which stays retired', async () => {
     const { product } = await seedOrderedProduct()
     expect((await deleteProduct(product.id)).ok).toBe(true)
 
     const again = await deleteProduct(product.id)
-    expect(again.ok).toBe(false)
-    if (!again.ok) expect(again.status).toBe(404)
+
+    expect(again.ok).toBe(true)
+    const rows = await db.select().from(products).where(eq(products.id, product.id))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].retiredAt).toBeInstanceOf(Date)
+  })
+
+  it('still 404s for an id that was never there', async () => {
+    expect(await deleteProduct(999_999)).toMatchObject({ ok: false, status: 404 })
   })
 
   /*

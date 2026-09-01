@@ -28,11 +28,12 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { ProductEditForm } from './ProductEditForm'
-import { get, del, put } from '@/lib/api'
+import { get, del, put, post } from '@/lib/api'
 
 const mockedGet = vi.mocked(get)
 const mockedDel = vi.mocked(del)
 const mockedPut = vi.mocked(put)
+const mockedPost = vi.mocked(post)
 
 const LINKED_ENV = 1
 const UNLINKED_ENV = 2
@@ -95,6 +96,9 @@ beforeEach(() => {
   refresh.mockReset()
   mockedDel.mockReset().mockResolvedValue(undefined as never)
   mockedPut.mockReset().mockResolvedValue(undefined as never)
+  // Reset only. A blanket resolved value here reaches the translation save too,
+  // which does `setTranslations(created)` and turns an array into an object.
+  mockedPost.mockReset()
   stubGet()
 })
 
@@ -610,5 +614,53 @@ describe('ProductEditForm size matrix', () => {
     expect(
       await screen.findByText('Offer this product in at least one environment below first: a size is priced per environment.'),
     ).toBeInTheDocument()
+  })
+})
+
+/*
+ * The product page and the global parameters admin are two editors for one
+ * thing, and they disagreed: this one wrote its four type options out by hand,
+ * so `size` — added to `ParameterType` — never appeared here (#313). Reported
+ * by an operator who could not pick T-shirt size while editing a parameter.
+ */
+describe('ProductEditForm parameter types', () => {
+  /*
+   * Scoped to the dialog, and not by accident: the page behind it has its own
+   * Save and its own Add Translation, so an unscoped `/^(add|save)/` matches
+   * three buttons and the failure names the count rather than the problem.
+   */
+  const openParameterForm = async () => {
+    renderForm()
+    await userEvent.click(await screen.findByRole('button', { name: /add parameter/i }))
+    return within(await screen.findByRole('dialog'))
+  }
+
+  it('offers every parameter type, T-shirt size included', async () => {
+    const dialog = await openParameterForm()
+
+    const select = dialog.getByLabelText(/^type$/i)
+    const offered = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
+
+    // Every member of ParameterType, not a list repeated from the source: the
+    // bug was exactly a list that agreed with itself and with nothing else.
+    expect(offered).toEqual(['string', 'number', 'bool', 'dropdown', 'size'])
+  })
+
+  it('asks for a value per size once the type is size, and sends them', async () => {
+    mockedPost.mockResolvedValue({ id: 1, type: 'size' } as never)
+    const dialog = await openParameterForm()
+
+    // Nothing to fill in until the type calls for it.
+    expect(dialog.queryByLabelText(/value per size/i)).not.toBeInTheDocument()
+
+    await userEvent.selectOptions(dialog.getByLabelText(/^type$/i), 'size')
+    await userEvent.type(dialog.getByLabelText(/variable name/i), 'instance_type')
+    await userEvent.type(dialog.getByLabelText(/value per size/i), 'S=t3.micro\nXL=m6i.2xlarge')
+    await userEvent.click(dialog.getByRole('button', { name: /^(add|save)$/i }))
+
+    await waitFor(() => expect(mockedPost).toHaveBeenCalled())
+    const [, body] = mockedPost.mock.calls[0] as [string, { type: string; sizeValues: Record<string, string> }]
+    expect(body.type).toBe('size')
+    expect(body.sizeValues).toEqual({ S: 't3.micro', XL: 'm6i.2xlarge' })
   })
 })

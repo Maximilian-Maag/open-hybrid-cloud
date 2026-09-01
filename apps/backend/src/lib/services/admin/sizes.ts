@@ -3,6 +3,7 @@ import { deploymentEnvironments, productEnvironments, productEnvironmentSizes, p
 import { and, eq } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { recordProductVersion } from '@/lib/services/versions'
+import { logAudit } from '@/lib/audit'
 import { listAllSizes, SIZE_CODE_MAX_LENGTH, type OfferingSize } from '@/lib/services/sizes'
 
 /**
@@ -16,6 +17,20 @@ import { listAllSizes, SIZE_CODE_MAX_LENGTH, type OfferingSize } from '@/lib/ser
  * Every mutation records a product version entry (issue #38), because a size's
  * price IS what a customer is offered and a change to it is exactly the kind of
  * change the history exists to explain.
+ *
+ * And an audit entry, which is not the same record and was missing entirely
+ * (#195, finding 10). These are root-only endpoints that set PRICES, and the
+ * only trace either of them left came from `recordProductVersion` — whose whole
+ * body, including its own `logAudit`, sits inside a swallowing `try/catch`
+ * (`versions.ts:42-77`). A history write that failed took the audit entry with
+ * it silently, so a price change to a live offering could leave nothing at all.
+ * The audit call is outside that catch.
+ *
+ * The amount is in the entry. The house rule is names-never-values because the
+ * admin surface carries credentials that can never be redacted from an
+ * append-only table; a price is the opposite — it is the auditable fact, and an
+ * entry saying only "price changed" answers none of the questions an auditor
+ * brings to a priced offering.
  */
 
 export interface UpsertSizeInput {
@@ -155,6 +170,18 @@ export const upsertSize = async (
     userId: input.userId ?? null,
   })
 
+
+  await logAudit(
+    input.userId ?? null,
+    existing ? 'size.updated' : 'size.created',
+    row.id,
+    `Size ${code} of product #${productId} in environment #${environmentId} ` +
+      (existing
+        ? existing.price === row.price && existing.currency === row.currency
+          ? 'updated, price unchanged'
+          : `re-priced ${existing.price} ${existing.currency} → ${row.price} ${row.currency}`
+        : `added at ${row.price} ${row.currency}`),
+  )
   return ok({
     id: row.id,
     code: row.code,
@@ -181,6 +208,9 @@ export const deleteSize = async (
   productId: number,
   environmentId: number,
   sizeId: number,
+  // Was hardcoded `null` below while the route had the session in hand, so
+  // deleting a priced size was attributed to "System" (#195, finding 10).
+  actorId?: number,
 ): Promise<Result<void>> => {
   const [deleted] = await db
     .delete(productEnvironmentSizes)
@@ -191,7 +221,7 @@ export const deleteSize = async (
         eq(productEnvironmentSizes.environmentId, environmentId),
       ),
     )
-    .returning({ code: productEnvironmentSizes.code })
+    .returning({ code: productEnvironmentSizes.code, price: productEnvironmentSizes.price, currency: productEnvironmentSizes.currency })
 
   if (!deleted) return err(404, 'Size not found')
 
@@ -199,8 +229,16 @@ export const deleteSize = async (
     productId,
     environmentId,
     summary: `Size ${deleted.code} removed`,
-    userId: null,
+    userId: actorId ?? null,
   })
+
+  await logAudit(
+    actorId ?? null,
+    'size.deleted',
+    sizeId,
+    `Size ${deleted.code} of product #${productId} in environment #${environmentId} removed, ` +
+      `last priced ${deleted.price} ${deleted.currency}`,
+  )
 
   return ok(undefined)
 }
@@ -510,6 +548,24 @@ export const saveSizeRow = async (
     })
   }
 
+  // One entry for the action, not one per cell. The matrix saves a size across
+  // every environment in a single submit, and four entries a millisecond apart
+  // read as four decisions. What changed per environment is in the version
+  // history, which is the record built for that.
+  //
+  // Outside `recordProductVersion` deliberately: its whole body sits in a
+  // swallowing try/catch (`versions.ts:42-77`), so an entry written from in
+  // there disappears with the history write that failed (#195, finding 10).
+  if (changes.length > 0) {
+    await logAudit(
+      input.userId ?? null,
+      'size.updated',
+      productId,
+      `Size ${code} of product #${productId} saved across ${changes.length} environment(s): ` +
+        changes.map((c) => `env #${c.environmentId} — ${c.summary}`).join('; '),
+    )
+  }
+
   const matrix = await getSizeMatrix(productId)
   if (!matrix.ok) return matrix
   const row = matrix.data.rows.find((r) => r.code === code)
@@ -527,7 +583,11 @@ export const saveSizeRow = async (
  * they store the code as text and their own price — but a CART line naming it
  * reports itself unavailable.
  */
-export const deleteSizeRow = async (productId: number, rawCode: string): Promise<Result<void>> => {
+export const deleteSizeRow = async (
+  productId: number,
+  rawCode: string,
+  actorId?: number,
+): Promise<Result<void>> => {
   const code = rawCode.trim()
 
   const deleted = await db
@@ -535,7 +595,7 @@ export const deleteSizeRow = async (productId: number, rawCode: string): Promise
     .where(
       and(eq(productEnvironmentSizes.productId, productId), eq(productEnvironmentSizes.code, code)),
     )
-    .returning({ environmentId: productEnvironmentSizes.environmentId })
+    .returning({ id: productEnvironmentSizes.id, environmentId: productEnvironmentSizes.environmentId })
 
   if (deleted.length === 0) return err(404, 'Size not found')
 
@@ -544,9 +604,21 @@ export const deleteSizeRow = async (productId: number, rawCode: string): Promise
       productId,
       environmentId: row.environmentId,
       summary: `Size ${code} removed`,
-      userId: null,
+      userId: actorId ?? null,
     })
   }
+
+  // One entry for the row, not one per environment: the matrix deletes a size
+  // ACROSS environments in a single action, and an auditor reading four entries
+  // a millisecond apart cannot tell that from four separate decisions. The
+  // per-environment detail is in the product version history, which is the
+  // record built for it.
+  await logAudit(
+    actorId ?? null,
+    'size.deleted',
+    productId,
+    `Size ${code} removed from product #${productId} in ${deleted.length} environment(s)`,
+  )
 
   return ok(undefined)
 }

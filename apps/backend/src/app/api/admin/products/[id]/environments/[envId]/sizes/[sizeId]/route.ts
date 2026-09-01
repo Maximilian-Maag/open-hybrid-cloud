@@ -27,5 +27,5 @@ export async function DELETE(
     return invalidId('product, environment or size id')
   }
 
-  return toResponse(await deleteSize(productId, environmentId, size))
+  return toResponse(await deleteSize(productId, environmentId, size, session.id))
 }

@@ -27,21 +27,24 @@ test_static_page_on_the_list_is_clean if {
 	count(warned) == 0
 }
 
-# A dynamic route has no single static URL, so the list cannot name it. It is a
-# real gap and it warns — but it must never fail a build for a shape that cannot
-# be expressed in the list it is being compared against.
-test_dynamic_page_warns_rather_than_denies if {
+# A dynamic route used to WARN, because a static path list could not name it and
+# there was no seeded record to point at. #285 seeded the database and #223 added
+# `DETAIL_PAGES`, which lists the route pattern and resolves a real URL at run
+# time — so the shape is expressible now and this denies like any other page.
+test_uncovered_dynamic_page_is_denied if {
 	input_facts := facts([page("/orders/[id]", true, false)])
 	denied := policy.deny with input as input_facts
-	count(denied) == 0
-	warned := policy.warn with input as input_facts
-	count(warned) == 1
-	some v in warned
+	count(denied) == 1
+	some v in denied
 	v.rule == "page_is_in_the_a11y_gate"
+	contains(v.detail, "dynamic segment")
+	contains(v.why, "DETAIL_PAGES")
+	warned := policy.warn with input as input_facts
+	count(warned) == 0
 }
 
-# Covering a dynamic page — a seeded fixture whose exact path is listed — is the
-# way out of the warning, not a permanent exemption.
+# Covering a dynamic page — its route pattern in DETAIL_PAGES — is the way out,
+# and it is the same way out a static page has.
 test_covered_dynamic_page_is_clean if {
 	input_facts := facts([page("/orders/[id]", true, true)])
 	denied := policy.deny with input as input_facts

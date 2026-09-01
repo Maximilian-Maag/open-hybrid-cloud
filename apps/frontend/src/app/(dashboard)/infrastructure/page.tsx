@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation'
 import type { InfrastructureElement, InfraFacets, Role, InfrastructurePage } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { RefreshButton } from '@/components/ui/RefreshButton'
+import { AutoRefresh } from '@/components/ui/AutoRefresh'
+import { hasUnsettled } from '@/lib/unsettled'
 import { Card } from '@/components/ui/Card'
 import { Pager } from '@/components/ui/Pager'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -127,6 +129,12 @@ export default async function InfrastructurePage({ searchParams }: Props) {
           </>
         }
       />
+
+      {/* `displayStatus` and not `status`: an element is 'active' from the
+          moment its row is written, and what says it is still being built lives
+          on its order (#287). Watching the stored column would stop polling
+          exactly when there is something to wait for. */}
+      <AutoRefresh active={hasUnsettled(elements.map((el) => el.displayStatus ?? el.status))} />
 
       <InfraFilters facets={facets} lang={lang} resultCount={elements.length} />
 

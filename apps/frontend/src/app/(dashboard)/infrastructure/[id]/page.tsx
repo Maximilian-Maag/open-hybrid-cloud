@@ -5,6 +5,8 @@ import { redirect, notFound } from 'next/navigation'
 import type { InfrastructureDetail, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { RefreshButton } from '@/components/ui/RefreshButton'
+import { AutoRefresh } from '@/components/ui/AutoRefresh'
+import { hasUnsettled } from '@/lib/unsettled'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -66,6 +68,10 @@ export default async function InfrastructureDetailPage({ params }: Props) {
           { label: element.productName ?? `Product #${element.productId}` },
         ]}
       />
+      {/* `displayStatus`, for the reason #287 introduced it: the stored status
+          is 'active' from the moment the row exists, and "still being built"
+          lives on the order. */}
+      <AutoRefresh active={hasUnsettled([element.displayStatus ?? element.status])} />
       <PageHeader
         title={element.productName ?? `Product #${element.productId}`}
         subtitle={[element.environmentName, element.projectName].filter(Boolean).join(' · ')}

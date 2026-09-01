@@ -4,6 +4,8 @@ import { redirect, notFound } from 'next/navigation'
 import type { Order, OrderComment, Role } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { RefreshButton } from '@/components/ui/RefreshButton'
+import { AutoRefresh } from '@/components/ui/AutoRefresh'
+import { hasUnsettled } from '@/lib/unsettled'
 import { WriteOffOrder } from './WriteOffOrder'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
@@ -73,6 +75,9 @@ export default async function OrderDetailPage({ params }: Props) {
           { label: `${t('order', lang)} #${order.id}` },
         ]}
       />
+      {/* The order's own status, and its elements' — a completed order can
+          still have an element being torn down. */}
+      <AutoRefresh active={hasUnsettled([order.status, ...elements.map((e) => e.status)])} />
       <PageHeader
         title={`${t('order', lang)} #${order.id}`}
         actions={

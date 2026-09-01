@@ -23,6 +23,10 @@ export const testDb = drizzle(client, { schema })
 // schema's shape and new tables get added in the right place by habit.
 const TABLES = [
   schema.auditLog,
+  // Narrowing rows outlive nothing: they cascade from both sides, but a test
+  // that leaves one behind narrows a parameter for the NEXT test, which then
+  // sees it apply nowhere (#275).
+  schema.parameterProjects,
   schema.approvalDelegations,
   schema.sessions,
   schema.userRecoveryCodes,

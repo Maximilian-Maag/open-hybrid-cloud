@@ -416,6 +416,15 @@ export interface Parameter {
   scope: ParameterScope
   scopeId: number
   environmentId: number | null
+  /**
+   * Projects this parameter is narrowed to. Empty means every project (#275).
+   *
+   * Optional because it is assembled from `parameter_projects` by the admin
+   * list rather than being a column, and the paths that read a bare row do not
+   * fill it in. Absent reads the same as empty, which is what every parameter
+   * was before narrowing existed.
+   */
+  projectIds?: number[]
   name: string
   label: string
   type: ParameterType
@@ -439,6 +448,8 @@ export interface CreateParameterRequest {
   scope: ParameterScope
   scopeId: number
   environmentId?: number
+  /** Projects this parameter is narrowed to; omitted means every project (#275). */
+  projectIds?: number[]
   name: string
   label?: string
   type: ParameterType
@@ -459,6 +470,14 @@ export interface UpdateParameterRequest {
    * and never corrected (#275).
    */
   environmentId?: number | null
+  /**
+   * Projects this parameter is narrowed to (#275).
+   *
+   * Absent leaves the narrowing untouched; `[]` clears it back to "every
+   * project". Those have to be different, or an update that says nothing about
+   * projects would silently widen the parameter to all of them.
+   */
+  projectIds?: number[]
   name?: string
   label?: string
   type?: ParameterType

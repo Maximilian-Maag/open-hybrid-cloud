@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/client'
-import { parameters, products, productEnvironments, type Parameter } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { parameters, parameterProjects, products, productEnvironments, projects, type Parameter } from '@/lib/db/schema'
+import { and, eq, inArray } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { recordProductVersion } from '@/lib/services/versions'
 import { logAudit, changedFields } from '@/lib/audit'
@@ -73,6 +73,8 @@ export interface CreateParameterInput {
   sensitive?: boolean
   /** Required, and only meaningful, when `type` is `size`. See `sizeValuesError`. */
   sizeValues?: Record<string, string>
+  /** Projects this parameter is narrowed to; empty or absent means all of them (#275). */
+  projectIds?: number[]
 }
 
 export interface UpdateParameterInput {
@@ -85,6 +87,41 @@ export interface UpdateParameterInput {
   sensitive?: boolean
   environmentId?: number | null
   sizeValues?: Record<string, string>
+  /**
+   * The projects this parameter is narrowed to. An empty array means every
+   * project, which is what every parameter is until somebody says otherwise
+   * (#275).
+   *
+   * Absent on an update means "leave the narrowing alone"; `[]` means "clear
+   * it". The distinction matters because an update that omits the field must
+   * not silently unnarrow a parameter, and one that sends `[]` must be able to.
+   */
+  projectIds?: number[]
+}
+
+/**
+ * Refuse a narrowing that names a project which does not exist.
+ *
+ * Without this the foreign key rejects the insert, the transaction throws, and
+ * the route answers 500 — for what is an ordinary stale selection: an admin
+ * with the form open while somebody else deletes a project sends an id that was
+ * valid when the page loaded. That deserves a 400 saying which one.
+ *
+ * Checked before the transaction rather than by catching the FK violation:
+ * translating a driver error back into "which id was it" means parsing a
+ * message, and the message is the driver's to change.
+ */
+const unknownProjectIds = async (projectIds?: number[]): Promise<Result<never> | null> => {
+  if (!projectIds || projectIds.length === 0) return null
+  const unique = [...new Set(projectIds)]
+  const found = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(inArray(projects.id, unique))
+  const known = new Set(found.map((row) => row.id))
+  const missing = unique.filter((id) => !known.has(id))
+  if (missing.length === 0) return null
+  return err(400, `No such project: ${missing.join(', ')}`)
 }
 
 export const listParameters = async (filters: ParameterFilters): Promise<Result<Parameter[]>> => {
@@ -98,7 +135,42 @@ export const listParameters = async (filters: ParameterFilters): Promise<Result<
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(parameters.scope, parameters.scopeId, parameters.name)
 
-  return ok(rows)
+  // One query for every narrowing rather than one per parameter: the admin
+  // screen renders the whole list at once, and N+1 here would be N+1 on every
+  // page load.
+  const links = rows.length === 0
+    ? []
+    : await db
+        .select()
+        .from(parameterProjects)
+        .where(inArray(parameterProjects.parameterId, rows.map((r) => r.id)))
+
+  const byParameter = new Map<number, number[]>()
+  for (const link of links) {
+    byParameter.set(link.parameterId, [...(byParameter.get(link.parameterId) ?? []), link.projectId])
+  }
+
+  return ok(rows.map((row) => ({ ...row, projectIds: byParameter.get(row.id) ?? [] })))
+}
+
+/**
+ * Replace a parameter's project narrowing with exactly this set.
+ *
+ * Delete-then-insert rather than a diff: the set is small, the write is inside
+ * the caller's transaction, and a diff would be more code for the same result
+ * with more ways to be subtly wrong. An empty array leaves the parameter
+ * unnarrowed, which is the default state and needs no rows at all (#275).
+ */
+const setProjectNarrowing = async (
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  parameterId: number,
+  projectIds: number[],
+): Promise<void> => {
+  await tx.delete(parameterProjects).where(eq(parameterProjects.parameterId, parameterId))
+  const unique = [...new Set(projectIds)]
+  if (unique.length > 0) {
+    await tx.insert(parameterProjects).values(unique.map((projectId) => ({ parameterId, projectId })))
+  }
 }
 
 export const createParameter = async (
@@ -109,23 +181,34 @@ export const createParameter = async (
   if (reserved) return reserved
   const badSizes = sizeValuesError(input.type, input.sizeValues)
   if (badSizes) return badSizes
+  const unknown = await unknownProjectIds(input.projectIds)
+  if (unknown) return unknown
 
-  const [param] = await db
-    .insert(parameters)
-    .values({
-      scope: input.scope,
-      scopeId: input.scopeId ?? 0,
-      environmentId: input.environmentId ?? null,
-      name: input.name,
-      label: input.label ?? '',
-      type: input.type,
-      description: input.description ?? '',
-      defaultValue: input.defaultValue ?? '',
-      required: input.required ?? false,
-      sensitive: input.sensitive ?? false,
-      sizeValues: input.sizeValues ?? {},
-    })
-    .returning()
+  // One transaction: a parameter that exists but whose narrowing did not get
+  // written applies to EVERY project, which is the opposite of what was asked
+  // for and the more dangerous of the two ways to fail (#275).
+  const param = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(parameters)
+      .values({
+        scope: input.scope,
+        scopeId: input.scopeId ?? 0,
+        environmentId: input.environmentId ?? null,
+        name: input.name,
+        label: input.label ?? '',
+        type: input.type,
+        description: input.description ?? '',
+        defaultValue: input.defaultValue ?? '',
+        required: input.required ?? false,
+        sensitive: input.sensitive ?? false,
+        sizeValues: input.sizeValues ?? {},
+      })
+      .returning()
+    if (input.projectIds && input.projectIds.length > 0) {
+      await setProjectNarrowing(tx, created.id, input.projectIds)
+    }
+    return created
+  })
 
   await recordParameterChange(param, 'added', userId ?? null)
   // `sensitive` is called out by name: it decides whether the value this parameter
@@ -157,11 +240,32 @@ export const updateParameter = async (
   // changes two sets of offerings, and the old one is only knowable from before.
   const [before] = await db.select().from(parameters).where(eq(parameters.id, id)).limit(1)
 
-  const [updated] = await db
-    .update(parameters)
-    .set(input)
-    .where(eq(parameters.id, id))
-    .returning()
+  // `projectIds` is not a column — it lives in `parameter_projects` — so it is
+  // taken out before the row update and applied beside it, in one transaction.
+  const { projectIds, ...columns } = input
+
+  const unknown = await unknownProjectIds(projectIds)
+  if (unknown) return unknown
+
+  const updated = await db.transaction(async (tx) => {
+    /*
+     * An update that changes ONLY the narrowing leaves `columns` empty, and
+     * drizzle throws "No values to set" on `.set({})` — so the one edit this
+     * feature exists for would have answered 500. Read the row instead: it is
+     * needed for the 404 either way, and there is nothing to write to it.
+     */
+    const [row] = Object.keys(columns).length === 0
+      ? await tx.select().from(parameters).where(eq(parameters.id, id)).limit(1)
+      : await tx
+          .update(parameters)
+          .set(columns)
+          .where(eq(parameters.id, id))
+          .returning()
+    // Absent leaves the narrowing alone; `[]` clears it. An update that omitted
+    // the field must not silently widen a parameter to every project.
+    if (row && projectIds !== undefined) await setProjectNarrowing(tx, id, projectIds)
+    return row
+  })
 
   if (!updated) return err(404, 'Not found')
 

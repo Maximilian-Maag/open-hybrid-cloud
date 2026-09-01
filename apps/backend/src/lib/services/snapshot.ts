@@ -103,6 +103,16 @@ export const captureProductSnapshot = async (
    * the offering has none.
    */
   sizeCode?: string | null,
+  /**
+   * The project the order is for, when there is one.
+   *
+   * Only affects which parameter definitions are captured: a parameter narrowed
+   * to specific projects (#275) applies to those and no others, and a snapshot
+   * that recorded the unfiltered set would describe an offer this order was
+   * never made. Omitted by the admin version-history paths, which describe a
+   * product rather than an order and have no project to speak of.
+   */
+  projectId?: number,
 ): Promise<ProductSnapshot | null> => {
   const [offering] = await db
     .select({
@@ -169,7 +179,7 @@ export const captureProductSnapshot = async (
   // against, so the snapshot records the definitions that actually applied rather
   // than every row that happened to match.
   const defs = resolveParameterDefs(
-    await loadApplicableParameters(productId, categoryId, environmentId),
+    await loadApplicableParameters(productId, categoryId, environmentId, projectId),
   )
 
   return {

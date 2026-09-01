@@ -43,3 +43,32 @@ deny contains v if {
 		]),
 	}
 }
+
+# `page.getByRole('alert')` in an e2e spec, which cannot resolve to one element.
+#
+# Next's App Router renders `<div role="alert" id="__next-route-announcer__">`
+# into every page to announce client-side navigations. It is always there and it
+# is empty, so a document-level alert query is a strict mode violation waiting
+# for the first test that reaches it — and Playwright reports that as "resolved
+# to 2 elements", naming the locator and not the cause.
+#
+# It cost a debugging session on the costs dashboard. `pageAlerts(page)` in
+# `e2e/helpers.ts` excludes the announcer and is the fix. A locator that is
+# already scoped — `dialog.getByRole('alert')`, or a `.filter({ hasText: … })` —
+# is not reported, which is how the legitimate uses in this suite are written.
+deny contains v if {
+	some q in input.unscopedAlertQueries
+
+	v := {
+		"rule": "alert_query_is_scoped",
+		"file": q.file,
+		"line": q.line,
+		"detail": sprintf("`%s` also matches Next's route announcer", [q.text]),
+		"why": concat("", [
+			"Every page carries `<div role=\"alert\" id=\"__next-route-announcer__\">`, so this locator ",
+			"matches at least two elements and fails in strict mode with a message about the count ",
+			"rather than about the alert. Use `pageAlerts(page)` from `e2e/helpers.ts`, which excludes ",
+			"the announcer, or scope the query to the container the alert renders in.",
+		]),
+	}
+}

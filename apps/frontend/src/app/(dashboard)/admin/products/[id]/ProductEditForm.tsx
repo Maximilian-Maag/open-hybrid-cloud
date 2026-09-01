@@ -641,7 +641,12 @@ export function ProductEditForm({ product, categories, environments, translation
                 <p className="font-medium text-slate-900">{tr.name}</p>
                 <p className="text-sm text-slate-500 line-clamp-2">{tr.description}</p>
                 {tr.longDescription && (
-                  <p className="mt-1 text-xs text-slate-400 line-clamp-2">{tr.longDescription}</p>
+                  // slate-600, not slate-400: 2.63:1 on white, which fails AA
+                  // outright and is the one real violation the accessibility
+                  // gate found the moment it had data to scan (#152). This text
+                  // is 12px, so it needs MORE contrast than the 14px line above
+                  // it, not less — slate-600 is 7.58:1.
+                  <p className="mt-1 text-xs text-slate-600 line-clamp-2">{tr.longDescription}</p>
                 )}
               </div>
             ))}

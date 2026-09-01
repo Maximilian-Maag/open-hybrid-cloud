@@ -52,3 +52,23 @@ test_every_empty_test_is_reported if {
 	denied := policy.deny with input as facts
 	count(denied) == 2
 }
+
+test_alert_query_is_scoped_flags_the_unscoped_form if {
+	facts := {"unscopedAlertQueries": [{
+		"file": "e2e/costs.spec.ts",
+		"line": 42,
+		"text": "await expect(page.getByRole('alert')).toBeVisible()",
+	}]}
+	denied := policy.deny with input as facts
+	some v in denied
+	v.rule == "alert_query_is_scoped"
+	v.file == "e2e/costs.spec.ts"
+	v.line == 42
+	contains(v.detail, "route announcer")
+	contains(v.why, "pageAlerts(page)")
+}
+
+test_alert_query_is_scoped_is_silent_when_the_suite_is_clean if {
+	denied := policy.deny with input as {"unscopedAlertQueries": []}
+	count(denied) == 0
+}

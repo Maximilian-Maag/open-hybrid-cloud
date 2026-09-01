@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 
 // FA-15.3: The imprint text is publicly accessible at /impressum without requiring a login.
 // This spec runs without the shared root session (storageState: undefined) so we can

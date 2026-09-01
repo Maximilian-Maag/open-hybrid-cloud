@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import AxeBuilder from '@axe-core/playwright'
 import type { Result } from 'axe-core'
 
@@ -918,7 +918,23 @@ test.describe('Accessibility — detail pages', () => {
         return
       }
 
-      await first.click()
+      /*
+       * Navigated by URL, not by clicking.
+       *
+       * These are Next.js `<Link>`s: the click only navigates once React has
+       * hydrated, and Playwright's actionability checks are satisfied by the
+       * server-rendered anchor long before that. So the click landed on an inert
+       * element, nothing happened, and `toHaveURL` timed out — a hydration race,
+       * reported as an accessibility failure.
+       *
+       * Reading the href and going there keeps what this test is for: it still
+       * proves the list links point at a real detail page, and it is the detail
+       * page's accessibility that is being scanned. Whether a Link hydrates is a
+       * different test's job.
+       */
+      const href = await first.getAttribute('href')
+      expect(href, `${from} has a ${link} with no href`).toBeTruthy()
+      await page.goto(href!)
       await expect(page).toHaveURL(new RegExp(`${from}/`), { timeout: 30000 })
       // Wait for the page's own content, not just the URL: scanning a shell that
       // is still streaming in would pass for the wrong reason.

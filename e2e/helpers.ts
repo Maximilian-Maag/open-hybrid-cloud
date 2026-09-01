@@ -242,3 +242,55 @@ export async function expectNoServerError(page: Page): Promise<void> {
   await expect(page.locator('body')).not.toContainText('Application error')
   await expect(page.locator('body')).not.toContainText('This page could not be found')
 }
+
+/**
+ * Wait until React has taken over the page, then hand back control.
+ *
+ * Playwright's actionability checks cannot see hydration. A Next.js `<Link>` is
+ * in the server HTML, so it is visible, enabled and stable — and clicking it
+ * before the router is mounted follows nothing. The click reports success, the
+ * page stays where it is, and the failure surfaces later as a URL assertion
+ * timing out, which reads as a routing bug rather than a timing one.
+ *
+ * `HydrationMarker` sets `data-hydrated` on `<html>` from an effect in the root
+ * layout, which is the first moment any of this is true.
+ *
+ * Call it after `goto` and before the first click on a page. It is a wait, not
+ * an assertion: a page that never hydrates fails at whatever the test does
+ * next, with that test's own message, rather than here with a generic one.
+ *
+ * After a click that navigates, pass `path`. Next preserves the root layout
+ * across a client-side navigation, so the bare attribute is still `true` from
+ * the page you left and the wait returns at once, having established nothing —
+ * which is worse than not waiting, because it reads like a guarantee.
+ * `data-hydrated-path` follows the route, so `hydrated(page, /^\/orders\/\d+$/)`
+ * waits for the page you actually arrived at.
+ */
+export async function hydrated(page: Page, path?: RegExp): Promise<void> {
+  await page
+    .waitForFunction(
+      (source: string | null) => {
+        const el = document.documentElement
+        if (el.dataset.hydrated !== 'true') return false
+        return source === null || new RegExp(source).test(el.dataset.hydratedPath ?? '')
+      },
+      path ? path.source : null,
+      { timeout: 15_000 },
+    )
+    .catch(() => {})
+}
+
+/**
+ * The page's own alerts, without the one Next.js puts there.
+ *
+ * Next's App Router renders `<div role="alert" id="__next-route-announcer__">`
+ * into every page to announce client-side navigations. It is empty, it is
+ * always present, and it means `getByRole('alert')` can never resolve to one
+ * element — so any assertion written as "an alert is shown" fails with a strict
+ * mode violation rather than with anything about the alert (#296).
+ *
+ * Excluded by id rather than by emptiness: an announcer that happens to be
+ * mid-announcement has text, and a test should not depend on that timing.
+ */
+export const pageAlerts = (page: Page) =>
+  page.locator('[role="alert"]:not(#__next-route-announcer__)')

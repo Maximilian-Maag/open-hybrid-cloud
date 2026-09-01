@@ -164,6 +164,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // Ensure the user object exists on the session before modifying it.
       if (session.user) {
         session.user.role = token.role as Role | undefined
+        /*
+         * NextAuth does not put the user id on the session by itself under the
+         * JWT strategy — it lives on the token as `sub`, and `session.user.id`
+         * is left undefined unless something copies it.
+         *
+         * Two pages read it, and both got `undefined`:
+         *
+         *  - The order comment thread gates Edit and Delete on
+         *    `comment.userId === currentUserId`, where `currentUserId` is
+         *    `Number(session.user.id)`. `Number(undefined)` is NaN, and NaN
+         *    equals nothing — so NOBODY could ever edit or delete their own
+         *    comment. The controls simply were not rendered.
+         *  - The approvals page decides `ownOrder` the same way, so it offered
+         *    Approve on the viewer's own order. The backend refuses that with
+         *    403 (`approvals.ts:152`), so it was a broken button rather than a
+         *    hole — but a button that cannot work is still a defect.
+         *
+         * Found by an e2e test that had never run: it skipped for want of data
+         * until the database was seeded (#152).
+         */
+        session.user.id = token.sub ?? ''
       }
       session.apiToken = token.apiToken as string | undefined
       session.apiTokenExp = (token.apiTokenExp as number | null | undefined) ?? undefined

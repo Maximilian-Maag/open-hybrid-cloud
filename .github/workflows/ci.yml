@@ -231,8 +231,63 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
+      # Without this the e2e database holds a root user, default branding and
+      # nothing else: `runBootstrap()` is all the app does on start, and
+      # `make db-seed-demo` was never called here. So 56 of 283 tests skipped —
+      # order-flow, every pipeline-stack test, most of admin-products, the cart,
+      # the order comments — and a run that executed almost nothing reported
+      # green (#152). The five detail pages in the accessibility gate skipped for
+      # the same reason (#223): each walks in from a list, and an empty list has
+      # nothing to walk to.
+      #
+      # `seed-demo.ts` runs its own bootstrap, so it does not need the app up —
+      # which is why this can sit before the webServer Playwright starts. Not
+      # `make db-seed-demo`: that passes `--env-file=.env`, and CI has its
+      # configuration in the job env rather than in a file.
+      - name: Seed the demo catalogue
+        working-directory: apps/backend
+        run: ../../node_modules/.bin/tsx --tsconfig tsconfig.json src/seed-demo.ts
+
+      # `html` stays in the list. `--reporter=` REPLACES what playwright.config.ts
+      # declares, so naming only list and json silently stops the HTML report
+      # being written — and the failure artifact below would upload an empty
+      # directory, which is worse than no artifact because it looks like one.
       - name: Run E2E tests
-        run: pnpm exec playwright test --grep-invert "Accessibility"
+        run: pnpm exec playwright test --grep-invert "Accessibility" --reporter=list,json,html
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-results.json
+
+      # A skip is invisible in a green summary, which is how the gap above went
+      # unnoticed for as long as it did. This makes it loud.
+      #
+      # `always()`, because a step without a condition inherits `success()` and
+      # would be skipped the moment a test failed — exactly the run where
+      # "and it skipped forty others" is worth knowing. The run is already red;
+      # this only decides whether it says why twice.
+      #
+      # EIGHT, and the number is a statement rather than a ceiling to grow into.
+      # Seven of the eight have one cause: `seedDemoData` creates a CI source
+      # and two deployment environments but no pipeline stack, so no seeded
+      # product can be provisioned — and with no order there is no approval to
+      # act on, no cart item to keep, and no element mid-provisioning:
+      #
+      #   admin-pipeline-stacks  "Edit Stack" pre-filled     (no stack to edit)
+      #   admin-products         Remove asks for confirmation
+      #   admin-products         trial duration appears once opted in
+      #   approvals              approving removes it from the list
+      #   cart                   an added item persists
+      #   cart                   checkout needs a project chosen
+      #   infrastructure         provisioning is not offered for teardown
+      #   order-flow             can submit an order                (#157)
+      #
+      # Seeding a stack unlocks the first and breaks the last: the trigger would
+      # then fire at gitlab.example.invalid, fail, and the order be refused for
+      # a different reason. Closing that properly means a CI endpoint the suite
+      # can answer for, which is #157's subject, not this one's. Lower the
+      # number as that lands rather than leaving it here.
+      - name: Check the skip budget
+        if: always() && hashFiles('e2e-results.json') != ''
+        run: node scripts/skip-budget.mjs e2e-results.json 8
 
       # Separate step so a red pipeline says which of the two broke. Covers
       # WCAG 2.1 A/AA on every page and dialog, plus the things axe cannot see:
@@ -240,13 +295,44 @@ jobs:
       # reduced-motion. Also re-scans the dashboard under a deliberately hostile
       # branding colour, because the chrome is painted on an operator-chosen
       # value and default-config scanning hid 235 of 246 failures.
+      # Runs even when the suite above failed: the two gates answer different
+      # questions and a red E2E run must not hide an accessibility regression.
       - name: Run accessibility gate (WCAG 2.1 AA)
-        run: pnpm exec playwright test e2e/a11y.spec.ts
+        if: always()
+        run: pnpm exec playwright test e2e/a11y.spec.ts --reporter=list,json,html
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: a11y-results.json
+          # Its own directory, because Playwright EMPTIES the html reporter's
+          # output directory before writing. Sharing the default with the step
+          # above means this run deletes the E2E report — and it runs on
+          # `always()`, so the run where both failed is exactly the run where
+          # the E2E report goes missing. The JSON was already separated by name;
+          # the HTML needs a directory. Raised by CodeRabbit on #285.
+          PLAYWRIGHT_HTML_OUTPUT_DIR: a11y-report
+
+      # Zero, not three: every page in this spec is reachable on a seeded
+      # database, and a skipped scan is a page nobody checked reported as a page
+      # that passed (#223).
+      #
+      # The `hashFiles` guard is not belt-and-braces — without it this reads a
+      # file that does not exist whenever the step above never ran, and reports
+      # the plumbing as a skip-budget failure.
+      - name: Check the accessibility skip budget
+        if: always() && hashFiles('a11y-results.json') != ''
+        run: node scripts/skip-budget.mjs a11y-results.json 0
 
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: playwright-report
-          path: playwright-report/
+          # The JSON alongside the HTML. The skip budget reads these, so when it
+          # is the thing that failed the numbers it judged are what somebody
+          # needs to see — and they are two small files.
+          path: |
+            playwright-report/
+            a11y-report/
+            e2e-results.json
+            a11y-results.json
           retention-days: 7
+          if-no-files-found: warn

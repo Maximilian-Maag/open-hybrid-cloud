@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
 import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Approvals', () => {
@@ -20,10 +20,26 @@ test.describe('Approvals', () => {
     await expect(page.getByText(/orders pending approval/i)).toBeVisible()
   })
 
-  test('shows empty state or pending order cards', async ({ page }) => {
+  /*
+   * Three states, not two — and the third is why this test used to be wrong.
+   *
+   * A pending order the viewer PLACED shows no Approve button: nobody approves
+   * their own order, not even root (`approvals.ts:152` refuses it with 403).
+   * That guard had never actually fired in the browser, because the page
+   * compares `order.userId` against `Number(session.user.id)` and NextAuth was
+   * never putting the id on the session — `Number(undefined)` is NaN, which
+   * equals nothing. So Approve was offered on every order, and this assertion
+   * passed by describing the bug.
+   *
+   * With the id populated the guard works, the seeded orders belong to the
+   * signed-in root, and "no empty state and no Approve button" is now the
+   * correct rendering of a real state (#296).
+   */
+  test('shows the empty state, an approvable order, or one the viewer may not approve', async ({ page }) => {
     const noPending = page.getByText(/no pending orders/i)
     const approveBtn = page.getByRole('button', { name: /^approve$/i }).first()
-    await expect(noPending.or(approveBtn)).toBeVisible()
+    const ownOrder = page.getByText(/cannot approve your own order/i).first()
+    await expect(noPending.or(approveBtn).or(ownOrder).first()).toBeVisible()
   })
 
   test('pending orders show Approve and Reject buttons', async ({ page }) => {
@@ -50,7 +66,11 @@ test.describe('Approvals', () => {
       await rejectBtn.click()
       await expect(page.getByRole('button', { name: /confirm rejection/i })).toBeVisible()
       await page.getByRole('button', { name: /cancel/i }).click()
-      await expect(page.getByRole('button', { name: /^approve$/i }).first()).toBeVisible()
+      // The form is gone — which is what "cancel hides the form" means. It used
+      // to assert that Approve came back instead, and that is not the same
+      // claim: on an order the viewer placed there is no Approve button to
+      // return to, and there never should have been (#296).
+      await expect(page.getByRole('button', { name: /confirm rejection/i })).toHaveCount(0)
     }
   })
 

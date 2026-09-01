@@ -19,7 +19,7 @@ import {
   type Parameter,
 } from '@/lib/db/schema'
 import type { ProductImageMeta } from '@open-hybrid-cloud/types'
-import { count, eq, sql, and, inArray, isNull } from 'drizzle-orm'
+import { count, eq, sql, and, inArray } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
 import { fireDestroyTriggers, destroyVariables } from '@/lib/services/teardown'
@@ -488,12 +488,27 @@ export const setProductRetired = async (
 }
 
 export const deleteProduct = async (id: number, actorId?: number): Promise<Result<void>> => {
-  // An already-retired product is gone from every screen, so asking to delete it
-  // again is a 404 like any other missing product.
+  /*
+   * By id, and NOT `AND retired_at IS NULL` — the same rule as the lock at the
+   * end of this function, which has always been written that way.
+   *
+   * This used to filter on the flag, under the reasoning that "an already-
+   * retired product is gone from every screen, so asking to delete it again is
+   * a 404 like any other missing product". #251 ended that: `retired_at` became
+   * a reversible Disable, so a disabled product is listed in the admin screens
+   * with an Enable button beside a Delete button — and Delete answered "Not
+   * found" every time, with no other way to remove it (#312).
+   *
+   * The two halves of this function disagreed and the one that runs first won.
+   * They agree now, on the answer the second half already documented: an
+   * ordered product ends up retired either way, and an unordered one is
+   * deleted, which is what a root asking to delete a product with no history
+   * asked for.
+   */
   const existing = await db
     .select({ id: products.id })
     .from(products)
-    .where(and(eq(products.id, id), isNull(products.retiredAt)))
+    .where(eq(products.id, id))
     .limit(1)
   if (!existing.length) return err(404, 'Not found')
 

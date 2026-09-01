@@ -3,7 +3,7 @@ import {
   listSizes, upsertSize, deleteSize, getSizeMatrix, saveSizeRow, deleteSizeRow,
 } from './sizes'
 import { db } from '@/lib/db/client'
-import { productEnvironmentSizes, productVersions } from '@/lib/db/schema'
+import { auditLog, productEnvironmentSizes, productVersions } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -497,5 +497,83 @@ describe('deleteSizeRow', () => {
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.status).toBe(404)
+  })
+})
+
+/*
+ * These are root-only endpoints that set PRICES, and until #195 they wrote no
+ * audit entry at all. The only trace either left came from
+ * `recordProductVersion`, whose whole body — including its own `logAudit` —
+ * sits inside a swallowing try/catch, so a history write that failed took the
+ * record with it silently. A price change to a live offering could leave
+ * nothing.
+ */
+describe('the audit trail for prices', () => {
+  const entries = () => db.select().from(auditLog).orderBy(auditLog.id)
+
+  it('records who set a price, and what it became', async () => {
+    const { root, product, env } = await setup()
+
+    await upsertSize(product.id, env.id, { code: 'XL', price: '42.00', userId: root.id })
+
+    const created = (await entries()).find((e) => e.action === 'size.created')
+    expect(created).toBeDefined()
+    expect(created?.userId).toBe(root.id)
+    expect(created?.details).toContain('42.00')
+  })
+
+  it('records a re-price as a re-price, with both amounts', async () => {
+    const { root, product, env } = await setup()
+    await upsertSize(product.id, env.id, { code: 'XL', price: '42.00', userId: root.id })
+
+    await upsertSize(product.id, env.id, { code: 'XL', price: '99.00', userId: root.id })
+
+    const updated = (await entries()).find((e) => e.action === 'size.updated')
+    expect(updated?.details).toContain('42.00 EUR → 99.00 EUR')
+  })
+
+  /*
+   * `deleteSize` hardcoded `userId: null` while the route had the session in
+   * hand, so removing a priced size was attributed to "System" — an action with
+   * no actor, in the log whose purpose is to have one.
+   */
+  it('attributes a deletion to the person who made it, not to System', async () => {
+    const { root, product, env } = await setup()
+    const created = await upsertSize(product.id, env.id, { code: 'XL', price: '42.00', userId: root.id })
+    if (!created.ok) throw new Error('setup failed')
+
+    await deleteSize(product.id, env.id, created.data.id, root.id)
+
+    const deleted = (await entries()).find((e) => e.action === 'size.deleted')
+    expect(deleted?.userId).toBe(root.id)
+    expect(deleted?.details).toContain('42.00')
+
+    const version = (await db.select().from(productVersions).where(eq(productVersions.productId, product.id)))
+      .find((v) => v.summary === 'Size XL removed')
+    expect(version?.createdBy).toBe(root.id)
+  })
+
+  /*
+   * One entry per action, not one per environment. The matrix saves a size
+   * across every environment in a single submit; four entries a millisecond
+   * apart read as four separate decisions.
+   */
+  it('writes one entry for a matrix save that touched several environments', async () => {
+    const { root, product, env } = await setup()
+    const ci2 = await createCiSource()
+    const second = await createEnvironment(ci2.id, undefined, 'Vienna')
+    await linkProductEnvironment(product.id, second.id, { price: '99.00' })
+
+    await saveSizeRow(product.id, 'XL', {
+      cells: [
+        { environmentId: env.id, price: '10.00', currency: 'EUR' },
+        { environmentId: second.id, price: '20.00', currency: 'EUR' },
+      ],
+      userId: root.id,
+    })
+
+    const saves = (await entries()).filter((e) => e.action === 'size.updated')
+    expect(saves).toHaveLength(1)
+    expect(saves[0].details).toContain('2 environment(s)')
   })
 })

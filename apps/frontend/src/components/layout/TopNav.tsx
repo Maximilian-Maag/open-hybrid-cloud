@@ -26,7 +26,12 @@ function navLinkClass(current: string, href: string, exact = false): string {
   // one place in the app where that costs visible layout — the nav strip grows
   // from 36px to 52px — and it is worth it: these links are how the whole
   // portal is navigated, and a 28px pill was the hardest thing here to hit.
-  const base = 'inline-flex items-center min-h-11 px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap '
+  // `focus-visible:ring-current` like every other control in the chrome
+  // (CartLink, the account summary, the language switcher). Without it these
+  // links fell back to the browser's default outline, which is near-black — and
+  // on the default branding the nav strip is #131921, so keyboard focus in the
+  // main navigation measured 1.08:1 against it. Painted, and invisible (#298).
+  const base = 'inline-flex items-center min-h-11 px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-current '
   return active
     ? base + 'brand-state-active font-semibold'
     : base + 'brand-state'

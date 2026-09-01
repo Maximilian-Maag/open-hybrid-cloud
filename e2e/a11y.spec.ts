@@ -1154,34 +1154,76 @@ test.describe('Accessibility — detail pages', () => {
   // accessibility problem. Any labelled nav inside main is the trail; there is
   // only one.
 
+  /*
+   * `route` is the Next.js route PATTERN, and it is what makes this block
+   * visible to the policy gate (#223).
+   *
+   * `page_is_in_the_a11y_gate` reads the path arrays out of this file and
+   * compares them to the file tree. It could see PUBLIC_PAGES and AUTHED_PAGES;
+   * it could not see this list, because the strings in it were the pages these
+   * scans START from — `/orders`, already covered as a static route — and never
+   * the detail page they end on. So all five detail views were scanned and the
+   * gate still reported them as unreachable, and warned about them on every run.
+   *
+   * Naming the pattern costs one field and turns the warning into a deny: a
+   * sixth detail page now fails the gate the way a sixth static one already
+   * does. The URL is still resolved at run time from the list, because an id in
+   * a fixture goes stale the first time somebody reseeds.
+   */
   const DETAIL_PAGES = [
-    { from: '/infrastructure', link: 'a[href^="/infrastructure/"]', name: 'an infrastructure element' },
-    { from: '/orders', link: 'a[href^="/orders/"]', name: 'an order' },
-    { from: '/catalog', link: 'a[href^="/catalog/"]', name: 'a product' },
-    { from: '/projects', link: 'a[href^="/projects/"]', name: 'a project' },
-    // The one detail page this list was missing, and the one with the most form
-    // controls on it (issue #102).
+    '/infrastructure/[id]',
+    '/orders/[id]',
+    '/catalog/[id]',
+    '/projects/[id]',
+    // The one this list was missing, and the one with the most form controls on
+    // it (issue #102).
+    '/admin/products/[id]',
+  ]
+
+  const DETAIL_FIXTURES: Record<string, { from: string; link: string; name: string }> = {
+    '/infrastructure/[id]': { from: '/infrastructure', link: 'a[href^="/infrastructure/"]', name: 'an infrastructure element' },
+    '/orders/[id]': { from: '/orders', link: 'a[href^="/orders/"]', name: 'an order' },
+    '/catalog/[id]': { from: '/catalog', link: 'a[href^="/catalog/"]', name: 'a product' },
+    '/projects/[id]': { from: '/projects', link: 'a[href^="/projects/"]', name: 'a project' },
     // Excluding /new, which is the first such link on the page and is covered as
     // a static route in AUTHED_PAGES.
-    {
+    '/admin/products/[id]': {
       from: '/admin/products',
       link: 'a[href^="/admin/products/"]:not([href$="/new"])',
       name: 'a product in the admin area',
     },
-  ]
+  }
 
-  for (const { from, link, name } of DETAIL_PAGES) {
+  for (const route of DETAIL_PAGES) {
+    const { from, link, name } = DETAIL_FIXTURES[route]
+
     test(`${name} is clean, and says where it is`, async ({ page }) => {
+      /*
+       * Two page loads and an axe run, against `next dev`, which compiles a
+       * route the first time it is requested. Every other scan in this file
+       * pays that once; these pay it twice, for the list and then the detail
+       * page. Inside the full suite the list pages are already warm and 30s is
+       * enough — run this block on its own and the first of each pair is not,
+       * which reads as a flaky accessibility failure rather than a cold cache.
+       */
+      test.slow()
       await page.goto(from)
       const first = page.locator(`main ${link}`).first()
       // Wait before concluding there is nothing to open: the catalogue fetches its
       // products after hydration, so counting immediately after goto() skipped a
       // page that was about to render.
       await first.waitFor({ state: 'attached', timeout: 15000 }).catch(() => {})
-      if (await first.count() === 0) {
-        test.skip(true, `nothing on ${from} to open — seed the demo data (make db-seed-demo)`)
-        return
-      }
+      /*
+       * A failure, not a skip (#223). The e2e database is seeded since #285 —
+       * a product, a project, three orders and two infrastructure elements —
+       * so every one of these is reachable, and the accessibility skip budget
+       * for this spec is zero. A scan that quietly did not happen is the exact
+       * shape #223 is about: 25 of 30 pages covered, reported as green.
+       */
+      expect(
+        await first.count(),
+        `nothing on ${from} to open, so ${route} went unscanned — seed the demo data (make db-seed-demo)`,
+      ).toBeGreaterThan(0)
 
       /*
        * Navigated by URL, not by clicking.

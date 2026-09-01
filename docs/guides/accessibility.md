@@ -160,19 +160,31 @@ Adding one is a documentation project. Recorded as partially met, not claimed.
 
 ## When you add a page or a component
 
-- A new route is not scanned until it is listed in `AUTHED_PAGES` / `PUBLIC_PAGES`
-  or reached by the detail-page block. The gate covers what it is told to cover.
-  **The policy gate now says so**: `page_is_in_the_a11y_gate` (`policy/a11y.rego`)
-  compares the route tree against those two arrays and denies a static page that
-  is not on either. It exists because forgetting the list does not turn the suite
-  red — it reports the same green result it did before the page existed, so the
-  gate quietly stops covering the app while continuing to look like it does.
-- The five detail pages — `/orders/[id]`, `/projects/[id]`, `/catalog/[id]`,
-  `/infrastructure/[id]`, `/admin/products/[id]` — are **not** scanned, and the
-  same rule warns about each. A static path list cannot name them: reaching one
-  needs a seeded record. They are where the tables, forms and status panels live,
-  so they are also the pages most likely to have a defect. The warning is there to
-  keep that gap stated rather than implied by the list's silence.
+- A new route is not scanned until it is listed in `AUTHED_PAGES`, `PUBLIC_PAGES`
+  or `DETAIL_PAGES`. The gate covers what it is told to cover. **The policy gate
+  says so**: `page_is_in_the_a11y_gate` (`policy/a11y.rego`) compares the route
+  tree against those three arrays and **denies** a page that is on none of them.
+  It exists because forgetting the list does not turn the suite red — it reports
+  the same green result it did before the page existed, so the gate quietly stops
+  covering the app while continuing to look like it does.
+- **All thirty pages are scanned, detail views included** (#223). The five that
+  take a dynamic segment — `/orders/[id]`, `/projects/[id]`, `/catalog/[id]`,
+  `/infrastructure/[id]`, `/admin/products/[id]` — are reached by the
+  detail-page block, which opens a list, reads the first matching `href` and
+  scans the page it points at. Adding a sixth means one line in `DETAIL_PAGES`
+  (the route **pattern**, which is what the policy fact reads) and one entry in
+  `DETAIL_FIXTURES` saying which list links to it.
+
+  This used to be a warning rather than a deny, for two reasons that no longer
+  hold: there was no seeded record to point at (#285 seeds the database), and
+  the block named the pages it started FROM rather than the routes it ended on,
+  so the fact could not see it. All five were in fact being scanned while the
+  gate reported them as unreachable — coverage that existed and could not be
+  claimed.
+
+  They are also where the tables, forms and status panels live, so they are the
+  pages most likely to hold a defect. A scan that quietly does not happen is a
+  failure here, not a skip: this spec's skip budget is zero.
 - A new UI primitive is not checked until it is in `a11y.test.tsx`. jsdom cannot do
   `color-contrast` (no layout, no canvas), so contrast stays an e2e concern.
 - **A glyph-only indicator is invisible to `color-contrast`.** The rule matches an

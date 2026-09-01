@@ -1039,7 +1039,7 @@ const APP_DIR = `${FRONTEND}/src/app`
 const A11Y_SPEC = 'e2e/a11y.spec.ts'
 
 /** The arrays in `e2e/a11y.spec.ts` that axe is actually pointed at. */
-const A11Y_PATH_ARRAYS = new Set(['PUBLIC_PAGES', 'AUTHED_PAGES'])
+const A11Y_PATH_ARRAYS = new Set(['PUBLIC_PAGES', 'AUTHED_PAGES', 'DETAIL_PAGES'])
 
 /**
  * The URL path a `page.tsx` answers on.

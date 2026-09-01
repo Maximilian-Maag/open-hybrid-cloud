@@ -4,6 +4,9 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { Order, OrderPage } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { RefreshButton } from '@/components/ui/RefreshButton'
+import { AutoRefresh } from '@/components/ui/AutoRefresh'
+import { hasUnsettled } from '@/lib/unsettled'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { TrialBadge } from '@/components/ui/TrialBadge'
 import { Table } from '@/components/ui/Table'
@@ -37,7 +40,15 @@ export default async function OrdersPage({ searchParams }: Props) {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <PageHeader title={t('orders', lang)} subtitle={t('ordersSubtitle', lang)} />
+      <PageHeader
+        title={t('orders', lang)}
+        subtitle={t('ordersSubtitle', lang)}
+        /* The page checkout lands on, showing a status that arrives from CI
+           minutes later — and until #314 it had no refresh control at all. The
+           log has an operator pressing F5 ten times in two minutes on it. */
+        actions={<RefreshButton />}
+      />
+      <AutoRefresh active={hasUnsettled(orders.map((o) => o.status))} />
 
       <Table<Order>
         columns={[

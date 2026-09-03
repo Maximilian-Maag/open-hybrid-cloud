@@ -58,6 +58,16 @@ type RequestOptions = {
    * until this was split out.
    */
   token?: string
+  /**
+   * Abort this request.
+   *
+   * `fetch` has no timeout of its own: a connection that is accepted and then
+   * says nothing leaves the promise pending for ever, and a caller that
+   * `await`s it never runs its `finally`. A rejection a caller can handle is
+   * always recoverable; a promise that never settles is not, which is why the
+   * caller has to be able to put a bound on it.
+   */
+  signal?: AbortSignal
 }
 
 export class ApiError extends Error {
@@ -107,7 +117,7 @@ const endExpiredSession = async (): Promise<void> => {
 
 export const apiRequest = async <T>(
   path: string,
-  { method = 'GET', body, isFormData = false, token }: RequestOptions = {},
+  { method = 'GET', body, isFormData = false, token, signal }: RequestOptions = {},
 ): Promise<T> => {
   const browser = inBrowser()
   const headers: Record<string, string> = {}
@@ -122,6 +132,7 @@ export const apiRequest = async <T>(
     headers,
     body: isFormData ? (body as FormData) : body ? JSON.stringify(body) : undefined,
     cache: 'no-store',
+    signal,
   })
 
   if (!res.ok) {
@@ -134,7 +145,7 @@ export const apiRequest = async <T>(
   return res.json()
 }
 
-export const get = <T>(path: string) => apiRequest<T>(path)
+export const get = <T>(path: string, signal?: AbortSignal) => apiRequest<T>(path, { signal })
 
 export const post = <T>(path: string, body: unknown) =>
   apiRequest<T>(path, { method: 'POST', body })

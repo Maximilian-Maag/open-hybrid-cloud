@@ -16,6 +16,35 @@ const PAGE_SIZE = 24
 /** How long to wait after a keystroke before asking the database (#91). */
 const SEARCH_DEBOUNCE_MS = 300
 
+/**
+ * How long the category filter may keep the catalogue waiting.
+ *
+ * Generous, because this is not a latency budget — a slow answer still produces
+ * a working filter and is worth having. It is the bound past which "slow" stops
+ * being a possible explanation, and beyond which the shop is better off drawn
+ * without its filter than not drawn at all.
+ */
+const CATEGORIES_TIMEOUT_MS = 10_000
+
+/**
+ * A signal that aborts after `ms`.
+ *
+ * Its own three lines rather than `AbortSignal.timeout`, which is not something
+ * every environment this file is exercised in provides — the page's own tests run
+ * under jsdom, and a missing static would throw on the call rather than fail an
+ * assertion, which reads as the page being broken. `AbortController` and
+ * `setTimeout` are everywhere.
+ *
+ * The timer is not cleared. It holds nothing but a reference to a controller
+ * whose signal no longer has a listener once the fetch has settled, and firing
+ * `abort()` on a settled request does nothing at all.
+ */
+const deadline = (ms: number): AbortSignal => {
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), ms)
+  return controller.signal
+}
+
 export default function CatalogPage() {
   const searchParams = useSearchParams()
   const lang = useLang()
@@ -115,9 +144,17 @@ export default function CatalogPage() {
       // behind the error state with a perfectly good page of products in hand —
       // which is exactly how this page looked to every non-root account. The
       // filter is worth degrading; the catalogue is not.
+      //
+      // And the categories get a deadline, because allSettled alone does not
+      // finish the job. It makes a category REJECTION harmless, but a request
+      // that is accepted and then never answered is not a rejection: `fetch` has
+      // no timeout, the promise stays pending, and the `await` above never
+      // reaches its `finally` — so the shop sits on its skeleton for ever with
+      // the products already in hand. Same failure this whole change is about,
+      // reached by hanging instead of by 403. Raised by CodeRabbit on #324.
       const [pageRes, catsRes] = await Promise.allSettled([
         get<CatalogPageData>(pageUrl(0)),
-        get<Category[]>('/api/admin/categories'),
+        get<Category[]>('/api/admin/categories', deadline(CATEGORIES_TIMEOUT_MS)),
       ])
       if (pageRes.status === 'rejected') throw pageRes.reason
       const page = pageRes.value

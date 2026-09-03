@@ -25,6 +25,13 @@ export default defineConfig({
   //      would have been used to justify the wrong fix (#156).
   // Raising this needs BOTH fixed first: serve production builds instead of
   // `next dev`, and isolate per-worker state (or mark the admin specs serial).
+  //
+  // CI parallelises on a different axis instead: `ci.yml` runs the suite as four
+  // `--shard`s, one job each. A shard is a whole machine with its own Postgres
+  // service, its own seed and its own pair of dev servers, so neither objection
+  // above applies ACROSS shards — the shared database they describe is not
+  // shared between them. That is why the wall clock could come down without
+  // this line changing, and why changing it is still the harder job.
   fullyParallel: !process.env.CI,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

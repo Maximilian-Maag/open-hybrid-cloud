@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Product, Category, FavoriteProduct } from '@open-hybrid-cloud/types'
 
@@ -64,10 +64,33 @@ const favoriteOf = (productId: number): FavoriteProduct => {
 }
 
 /** Wire the three GETs the page fires, with a configurable favourites payload. */
-const mockApi = (favorites: number[], opts: { favoritesFail?: boolean } = {}) => {
-  mockedGet.mockImplementation((async (path: string) => {
+const mockApi = (
+  favorites: number[],
+  opts: {
+    favoritesFail?: boolean
+    /** The 403 every non-root account used to get from the category list (#323). */
+    categoriesFail?: boolean
+    /**
+     * A category request that is accepted and then never answered.
+     *
+     * Honours the abort signal the page passes, because that is the thing under
+     * test: a mock that simply never settles would pass whether the page sets a
+     * deadline or not.
+     */
+    categoriesHang?: boolean
+  } = {},
+) => {
+  mockedGet.mockImplementation((async (path: string, signal?: AbortSignal) => {
     if (path.startsWith('/api/catalog')) return catalogPage(products)
-    if (path.startsWith('/api/admin/categories')) return categories
+    if (path.startsWith('/api/admin/categories')) {
+      if (opts.categoriesFail) throw new Error('Forbidden')
+      if (opts.categoriesHang) {
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')))
+        })
+      }
+      return categories
+    }
     if (path.startsWith('/api/favorites')) {
       if (opts.favoritesFail) throw new Error('favorites down')
       return favorites.map(favoriteOf)
@@ -227,6 +250,54 @@ describe('CatalogPage favorites', () => {
     await waitFor(() => expect(screen.getByTestId('product-card-10')).toBeInTheDocument())
     expect(screen.getByTestId('product-card-11')).toBeInTheDocument()
     expect(screen.queryByText(/something went wrong/i)).not.toBeInTheDocument()
+  })
+
+  it('renders the catalogue even when the categories request is refused', async () => {
+    /*
+     * #323, as the browser met it.
+     *
+     * `GET /api/admin/categories` was gated on root while this page fetched it to
+     * build the category filter — in the same `Promise.all` as the products — so
+     * the 403 rejected the pair and every project manager and admin got the error
+     * state instead of the shop. The products are the page; the filter is beside
+     * it. Losing the second must not cost the first.
+     */
+    mockApi([], { categoriesFail: true })
+    render(<CatalogPage />)
+
+    await waitFor(() => expect(screen.getByTestId('product-card-10')).toBeInTheDocument())
+    expect(screen.getByTestId('product-card-11')).toBeInTheDocument()
+    expect(screen.queryByText(/something went wrong/i)).not.toBeInTheDocument()
+  })
+
+  it('renders the catalogue when the categories request never answers', async () => {
+    /*
+     * The same failure reached by hanging rather than by 403 — and `allSettled`
+     * alone does not cover it. A request that is accepted and then says nothing
+     * is not a rejection: `fetch` has no timeout of its own, so the promise stays
+     * pending, the `await` never reaches its `finally`, and the page keeps its
+     * skeleton up with the products already in hand. Raised by CodeRabbit on
+     * #324.
+     */
+    vi.useFakeTimers()
+    try {
+      mockApi([], { categoriesHang: true })
+      render(<CatalogPage />)
+
+      // Past the page's own deadline for the category list. Inside `act`, so the
+      // state updates the abort sets off are flushed before the assertions —
+      // advancing the clock drains the microtask queue but does not itself make
+      // React commit.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(11_000)
+      })
+
+      expect(screen.getByTestId('product-card-10')).toBeInTheDocument()
+      expect(screen.getByTestId('product-card-11')).toBeInTheDocument()
+      expect(screen.queryByText(/something went wrong/i)).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('suppresses the favourites section while a search is active', async () => {

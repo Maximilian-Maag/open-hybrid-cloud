@@ -1,62 +1,122 @@
-# Session handoff — paused 2026-08-24 for transfer to office
+# Session handoff — 2026-09-01 / 09-03
 
-This file is deliberately **untracked** and does not travel with you. Everything
-that matters is on the remote: all branches are pushed, and the findings are
-GitHub issues. This is only a local index.
+A working note, not documentation. It is tracked because it was swept into a
+commit long before this session; delete it when the queue below is empty.
 
-## State at the pause
+## Where things stand
 
-All nine subagents and both CI monitors were stopped. Four worktrees had
-uncommitted work; it is committed as `wip:` snapshots and pushed. **Those
-snapshots are not verified — gates were not run on them.**
+**Merged this session** (all into `dev`, all squashed):
 
-| Branch | Pushed | Note |
-|---|---|---|
-| `chore/stricter-lint` | ✅ | |
-| `feat/aaa-conformance` | ✅ | wip snapshot; new `bootstrap/brandingContrast.ts` |
-| `fix/issue-152-154-156-157-e2e` | ✅ | wip snapshot |
-| `fix/issue-185-186-a11y` | ✅ | wip snapshot; adds `playwright.local.ts` |
-| `fix/issue-183-ci-variables` | ⚠️ | diverged — see below |
-| `fix/issue-184-189-money-sessions` | ⚠️ | diverged — see below |
+| PR | What it was |
+|---|---|
+| #285 | CI seeds the e2e database; a run that skips its way to green now fails |
+| #306 | the a11y focus probe measured existence, not visibility |
+| #310 | a test database with a schema and no journal was unusable for ever |
+| #311 | #195 findings 9 + 10 — the integrations table could hold a state its own code forbids |
+| #315 | #312 a disabled product could not be deleted · #313 the product page's parameter editor had no T-shirt size |
+| #316 | #314 the orders list can be refreshed, and waiting pages refresh themselves |
+| #318 | #317 SMTP could be set and never unset, and the e2e test hid it by leaking |
+| #319 | #195 finding 10 — the endpoints that set prices wrote no audit entry |
+| #320 | #223 the five detail pages were scanned and the gate could not tell |
 
-Both diverged branches are backed up on the remote at
-`wip-local/<branch>`; nothing is lost, but they need a manual reconcile:
+**Open, and the only thing in flight:**
 
-- `fix/issue-183-ci-variables` — local is ahead 7 / behind 2. The remote has
-  `f6def42 chore: renumber to 0026, 0025 is taken by the callback-secret rotation`,
-  which is the migration renumber. **Take the remote's renumber**, do not force-push over it.
-- `fix/issue-184-189-money-sessions` — local ahead 1 / behind 2, both sides WIP.
+### PR #322 — `feat(#157)`: the provisioning webhook now has an e2e test
 
-## Open PRs, auto-merge armed
+Auto-merge is armed. It is BLOCKED only on CI.
 
-#174 product page · #191 PaC gate · #192 CI variables · #194 migration journal
+What it does: starts the WireMock from `infra/wiremock/mappings` in the e2e job
+(as a `docker run` step — service containers start before the checkout, and the
+mappings are the point), adds `DEMO_CI_URL` which points the demo catalogue at
+it, and seeds a **pipeline stack** when that variable is set. `e2e/provisioning.
+spec.ts` then walks the whole path with nothing mocked: order → real HTTP
+trigger → callback on the public webhook route with the environment's real
+callback secret → `completed` → an element carrying the Terraform outputs parsed
+out of the child pipeline's apply job.
 
-**#194 matters most.** Five journal entries share `when=1787702400000`, and
-drizzle's comparison is a strict `<` (`pg-core/dialect.js:62`), so once idx 20
-applies, **0022–0025 are silently skipped** — including the callback-secret
-rotation from #190. Still unmerged, so `dev` still has the collision.
+**Verified locally** against a fresh database and the local WireMock:
+`outputs: { vm_ip: '10.0.0.100', vm_name: 'dev-server-01', disk_size_gb: '50' }`.
 
-## Filed at the pause
+**What CI has to answer, and the first thing to look at when you come back:**
+the seven tests that skip for want of a pipeline stack should now RUN —
+`order-flow` "can submit an order", two `cart` tests, `approvals`,
+`admin-pipeline-stacks`, two `admin-products`. I could not get a clean local run
+of all of them together (see "this machine" below). If any fail, that is a real
+finding this PR surfaced rather than caused, and it belongs to #296.
 
-- **#195** — fifteen defects at the seams between the twenty PRs merged on 2026-08-23.
-  Ranked; if only three get done: `deleteCategory` erasing orders, the
-  `createDelegation` deadlock (ship the `setup.ts` FK with it), and the
-  parallel-bypassable TOTP lockout.
-- **#196** — root admin cannot sign in to the **deployed** dev instance. Best
-  candidate: a successful sign-in spends **two** attempts from the per-IP
-  rate-limit bucket (the `challengeOnly` hop plus the real one) and never gets
-  them back, so it is five sign-ins per IP per 15 minutes. Only bites where
-  `TRUST_PROXY` is set, which is why it does not reproduce locally.
-  **Needs from the owner:** the status and body of the failing login POST.
-- **#197** — force second-factor enrolment for admins, and add WebAuthn/Yubikey.
-  **Blocked on one answer:** which roles must enrol — `root` only, or all
-  administrative roles?
+**The skip budget in `ci.yml` is still 8, deliberately.** Lower it once CI says
+what the number actually is. Guessing it down fails the run for the wrong reason.
 
-## Local environment notes
+## The queue, in the order I would take it
 
-- The main checkout is **75 commits behind `origin/dev`**. `git pull` before doing anything here.
-- The local dev database was built by `drizzle-kit push`, not `migrate` —
-  `drizzle.__drizzle_migrations` does not exist. It therefore proves nothing
-  about migration correctness.
-- Running locally: `ohc-postgres`, `ohc-wiremock`, `ohc-structurizr`, `ohc-mailpit`,
-  and a backend on `:3001`. Nothing on `:3000`.
+1. **Watch #322 through CI** and lower the skip budget to whatever the run
+   reports. Then #296 for whatever still skips or fails.
+2. **#195 findings 7 and 8** — the two remaining backend races. 7: the
+   completion CAS in `webhook/settle.ts` guards `status` but not the
+   `pipeline_status` snapshot the decision was made on. 8:
+   `deleteProductEnvironment` strands live infrastructure and drops its orders
+   from the cost report. Both are written up in the issue with the fix.
+3. **#195 frontend items F1–F5** — small and independent. F4 in particular: a
+   root account with zero recovery codes is told to "save these now", in 25
+   locales, at the one moment the message has to be right.
+4. **#245** raise the mutation score. **#298** findings 2 and 3 (the selection
+   assertion is hard-coded to the top nav; the language sweep covers three
+   elements on one page).
+5. Then the large integrations: #108–#117, #148, #197, #241.
+
+## Things that will bite you
+
+**This machine cannot run the full e2e suite.** A long Playwright run degrades
+`next dev` until navigation exceeds 30 s, and then the server dies —
+`ERR_CONNECTION_REFUSED` and `__webpack_modules__[moduleId] is not a function`.
+A full `a11y.spec.ts` run ended 43 failed / 42 passed for exactly that reason
+while every targeted run of the same tests was green. **Per-spec runs are the
+only valid local signal; CI is the arbiter.**
+
+**Local e2e database.** `open_hybrid_cloud_e2e_local` exists and is seeded with
+`DEMO_CI_URL=http://localhost:8080`, including the pipeline stack. To use it:
+
+```sh
+BASE=$(grep -oP '^DATABASE_URL=\K.*' apps/backend/.env)
+E2EDB=$(echo "$BASE" | sed 's|/[^/]*$|/open_hybrid_cloud_e2e_local|')
+DATABASE_URL="$E2EDB" DEMO_CI_URL=http://localhost:8080 \
+  E2E_ADMIN_EMAIL=root@test.dev E2E_ADMIN_PASSWORD=testpassword123 \
+  npx playwright test e2e/provisioning.spec.ts --reporter=line
+```
+
+`ohc-wiremock` is already running on :8080 from `infra/docker-compose.dev.yml`.
+
+**`e2e/.auth` and TOTP.** The secret is derived from `JWT_SECRET`, and only one
+checkout can hold an enrolment against a given database at a time. When
+auth.setup fails with "the account already has an authenticator this run did not
+enrol", `delete from user_totp` in that database and `rm -rf e2e/.auth`.
+
+**`JWT_SECRET` was rotated** in `apps/backend/.env` this session (it was 23
+characters, under the 32 the server requires, so every local login failed).
+`user_totp` was cleared to match. The dev SERVER is untouched.
+
+**pnpm wanted to purge `node_modules`.** `node_modules/.modules.yaml` in the
+main checkout had `virtualStoreDir` pointing at the `e2e152` worktree — copied
+in by an install run from the wrong cwd. Fixed by setting it back to `.pnpm`;
+no reinstall was needed. If `pnpm dev` ever aborts with
+`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`, check that field first.
+
+**328 test databases**, about 3 GB, are still on the local Postgres. #310 shipped
+`pnpm --filter backend test:db:prune` (lists by default, drops with `--yes`,
+skips anything a running suite holds). **I did not run it.**
+
+## Two review lessons worth keeping
+
+CodeRabbit was right twice, and both were real:
+
+* the hydration marker was set once and never cleared, so waiting for it after a
+  client-side navigation established nothing — worse than not waiting, because
+  it reads as a guarantee. Fixed by stamping the pathname alongside it.
+* the focus probe ignored alpha, so `rgba(0,0,0,0.05)` measured 21:1 against
+  white. The backdrop had the mirror bug — first ancestor with `alpha > 0.5`
+  taken as opaque, so a 60 % overlay on a dark page read as white and a white
+  ring on it as 1.00. Both composited now.
+
+**`required_conversation_resolution` is on for `dev`.** A PR with all checks
+green still shows BLOCKED while any review thread is unresolved. Resolve them
+with the GraphQL `resolveReviewThread` mutation after answering.

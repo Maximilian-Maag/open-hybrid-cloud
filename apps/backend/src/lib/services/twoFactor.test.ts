@@ -78,22 +78,70 @@ const createRoot = (overrides?: Parameters<typeof createUser>[0]) =>
  * type the database column is NULL — so filtering on it finds nothing. The
  * backend's own datname is the honest way to keep the four workers apart.
  */
-const blockedLocks = async (): Promise<number> => {
+/**
+ * Backends stuck on a lock while running a statement against `user_totp`.
+ *
+ * Two things had to be narrowed here, and both were making this file flaky.
+ *
+ * It used to count EVERY ungranted lock in the database. The backend suite gives
+ * each source directory its own database, so the files beside this one share it
+ * and run in parallel — any lock any of them happened to be waiting on satisfied
+ * the wait, which returned early and let the assertions run against a race that
+ * had not happened yet. A false positive is the worse of the two failures,
+ * because it does not look like a timing problem: it looks like the service
+ * behaving wrongly.
+ *
+ * And it joined `pg_locks` when it only ever needed to know "is this backend
+ * waiting for a lock". `wait_event_type = 'Lock'` says exactly that, and
+ * `pg_blocking_pids` confirms somebody is actually holding it rather than the
+ * backend having just cleared. `query` is the statement the blocked backend is
+ * waiting on, which is what makes the `user_totp` filter possible at all — a row
+ * lock is awaited as a `transactionid` lock with no relation attached, so
+ * filtering `pg_locks.relation` could never have worked.
+ */
+const blockedOnUserTotp = async (): Promise<number> => {
   const rows = (await db.execute(sql`
     SELECT COUNT(*)::int AS n
-    FROM pg_locks l
-    JOIN pg_stat_activity a ON a.pid = l.pid
-    WHERE NOT l.granted AND a.datname = current_database()
+    FROM pg_stat_activity a
+    WHERE a.datname = current_database()
+      AND a.wait_event_type = 'Lock'
+      AND a.query ILIKE '%user_totp%'
+      AND cardinality(pg_blocking_pids(a.pid)) > 0
   `)) as unknown as { n: number }[]
   return Number(rows[0]?.n ?? 0)
 }
 
+/**
+ * How long to wait for the other statement to reach its blocking UPDATE.
+ *
+ * Thirty seconds, not the three this used to allow. It is not a latency budget:
+ * the wait ends the moment the lock is seen, so on an idle machine it costs
+ * milliseconds and the ceiling is never approached. It is the point past which
+ * "the runner is busy" stops being a possible explanation — and three seconds was
+ * inside that, which is why CI failed this test on a loaded runner with
+ * "the confirmation never reached its UPDATE" while the code was perfectly fine.
+ *
+ * A generous ceiling costs a slow failure only when something is genuinely
+ * broken. A tight one costs a red build on working code, which is worse: it
+ * teaches everyone to re-run.
+ */
+const BLOCKED_WAIT_MS = 30_000
+const BLOCKED_POLL_MS = 10
+
 const waitUntilBlocked = async (): Promise<void> => {
-  for (let i = 0; i < 300; i++) {
-    if ((await blockedLocks()) > 0) return
-    await new Promise((r) => setTimeout(r, 10))
+  const deadline = Date.now() + BLOCKED_WAIT_MS
+  while (Date.now() < deadline) {
+    if ((await blockedOnUserTotp()) > 0) return
+    await new Promise((r) => setTimeout(r, BLOCKED_POLL_MS))
   }
-  throw new Error('the confirmation never reached its UPDATE')
+  // Named for what was actually being waited on, so the message does not send
+  // the reader looking at `confirmEnrollment` when the truth is that nothing
+  // ever took the lock.
+  throw new Error(
+    `no backend reached a blocking statement on user_totp within ${BLOCKED_WAIT_MS}ms — ` +
+      'the concurrent operation this test synchronises against never started, or it did not ' +
+      'take the row lock it is supposed to wait for',
+  )
 }
 
 const row = async (userId: number) =>

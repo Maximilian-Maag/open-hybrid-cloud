@@ -68,10 +68,18 @@ describe('upsertSize', () => {
     })
     expect(result.ok).toBe(true)
 
+    // Ordered by id, because the assertion below depends on the order.
+    //
+    // A query with no ORDER BY returns rows in whatever order the plan produces.
+    // That is insertion order for a small sequential scan and stays that way for
+    // as long as nothing changes underneath — until a plan flips, an index
+    // appears, or the rows are read from more than one page. Then the same test
+    // fails on the same code, which is what happened here.
     const versions = await db
       .select()
       .from(productVersions)
       .where(eq(productVersions.productId, product.id))
+      .orderBy(productVersions.id)
     expect(versions).toHaveLength(2)
     expect(versions[1].summary).not.toContain('re-priced')
     expect(versions[1].summary).toContain('updated')
@@ -91,7 +99,14 @@ describe('upsertSize', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].price).toBe('450.00')
 
-    const versions = await db.select().from(productVersions)
+    // Ordered by id, because the assertion below depends on the order.
+    //
+    // A query with no ORDER BY returns rows in whatever order the plan produces.
+    // That is insertion order for a small sequential scan and stays that way for
+    // as long as nothing changes underneath — until a plan flips, an index
+    // appears, or the rows are read from more than one page. Then the same test
+    // fails on the same code, which is what happened here.
+    const versions = await db.select().from(productVersions).orderBy(productVersions.id)
     expect(versions[1].summary).toContain('400.00')
     expect(versions[1].summary).toContain('450.00')
   })
@@ -147,7 +162,14 @@ describe('deleteSize', () => {
 
     expect(result.ok).toBe(true)
     expect(await db.select().from(productEnvironmentSizes)).toHaveLength(0)
-    const versions = await db.select().from(productVersions)
+    // Ordered by id, because the assertion below depends on the order.
+    //
+    // A query with no ORDER BY returns rows in whatever order the plan produces.
+    // That is insertion order for a small sequential scan and stays that way for
+    // as long as nothing changes underneath — until a plan flips, an index
+    // appears, or the rows are read from more than one page. Then the same test
+    // fails on the same code, which is what happened here.
+    const versions = await db.select().from(productVersions).orderBy(productVersions.id)
     expect(versions[versions.length - 1].summary).toContain('removed')
   })
 
@@ -359,7 +381,15 @@ describe('saveSizeRow', () => {
 
     const [row] = await db.select().from(productEnvironmentSizes).where(eq(productEnvironmentSizes.productId, product.id))
     expect(row).toMatchObject({ active: true, price: '45.00' })
-    const versions = await db.select().from(productVersions).where(eq(productVersions.productId, product.id))
+    // Ordered by id. `toEqual` on an array is order-sensitive, and this asserts a
+    // SEQUENCE of events — added, retired, restored — so the order is the claim.
+    // Without ORDER BY the rows arrive in whatever order the plan produces, and
+    // this failed with the three summaries permuted: same code, same data, red.
+    const versions = await db
+      .select()
+      .from(productVersions)
+      .where(eq(productVersions.productId, product.id))
+      .orderBy(productVersions.id)
     expect(versions.map((v) => v.summary)).toEqual([
       'Size XL added at 40.00 EUR',
       'Size XL retired',

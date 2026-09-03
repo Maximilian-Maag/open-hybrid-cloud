@@ -221,6 +221,11 @@ jobs:
       E2E_BASE_URL: http://localhost:3000
       E2E_ADMIN_EMAIL: root@test.dev
       E2E_ADMIN_PASSWORD: testpassword123
+      # Points the demo catalogue at the WireMock started below, which is what
+      # makes a pipeline stack worth seeding and the provisioning journey
+      # runnable at all (#157). Left unset, the seed uses
+      # `gitlab.example.invalid` and skips the stack.
+      DEMO_CI_URL: http://localhost:8080
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -230,6 +235,31 @@ jobs:
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
+
+      # A `docker run` step rather than a `services:` entry, and not by
+      # preference: service containers start BEFORE the checkout, so there is no
+      # repository yet to mount the mappings from — and the mappings are the
+      # whole point.
+      #
+      # Twelve stubs have been sitting in infra/wiremock/mappings since #121
+      # proved the full GitLab path against them — trigger → bridges → child
+      # pipeline → apply job → parsed outputs — and the e2e job never started
+      # one, so that path had no end-to-end coverage at all (#157).
+      #
+      # Pinned to the version the mappings were written against, same as
+      # infra/docker-compose.dev.yml. `--wait` on the health check rather than a
+      # sleep: a suite that starts before the stubs are loaded fails as a
+      # provisioning bug.
+      - name: Start the GitLab stub (WireMock)
+        run: |
+          docker run -d --name ohc-wiremock -p 8080:8080 \
+            -v "$PWD/infra/wiremock/mappings:/home/wiremock/mappings:ro" \
+            wiremock/wiremock:3.13.2 --verbose --global-response-templating
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/__admin/mappings >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://localhost:8080/__admin/mappings >/dev/null
 
       # Without this the e2e database holds a root user, default branding and
       # nothing else: `runBootstrap()` is all the app does on start, and

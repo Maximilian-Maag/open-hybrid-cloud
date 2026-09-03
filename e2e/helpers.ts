@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createHmac } from 'node:crypto'
 import path from 'node:path'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test'
 
 /**
  * Read a value from the backend's .env.
@@ -41,6 +41,17 @@ export const rootPassword =
  * field for a secret nobody kept.
  */
 export const totpSecretFile = path.join(__dirname, '.auth/root-totp.txt')
+
+/**
+ * The saved root session every authenticated spec is seeded from.
+ *
+ * Here rather than in `auth.setup.ts` because a spec cannot import from that
+ * file: doing so would re-register its `setup(...)` as a test of the importing
+ * spec. The role matrix needs the path to open a root context of its own for
+ * creating fixture accounts, so the constant has to live somewhere both can
+ * reach — and one definition beats the same string written twice.
+ */
+export const rootStorageStateFile = path.join(__dirname, '.auth/root.json')
 
 /** Base32 (RFC 4648, no padding) — how an authenticator secret is written down. */
 function base32Decode(input: string): Buffer {
@@ -101,12 +112,19 @@ export const totpStepOf = (at = Date.now()): number => Math.floor(at / 1000 / 30
  * Costs up to thirty seconds, and only when it is actually needed.
  */
 /**
- * The last step this process presented a code for.
+ * The last step this process presented a code for, per secret.
  *
  * Per worker, which is all it can be — Playwright workers are separate processes.
  * The retry in `completeSecondFactor` is what covers the gap between them.
+ *
+ * Keyed by secret rather than one number for the whole process, because the role
+ * matrix signs in as more than one account: a step spent on root's authenticator
+ * says nothing about an admin's, since `twoFactor.ts` records the accepted step
+ * against the USER. One shared counter was still correct — it only ever waits too
+ * long — but it made every extra account pay up to thirty seconds for a code
+ * nobody had used.
  */
-let lastSpentStep = -1
+const lastSpentStep = new Map<string, number>()
 
 export async function waitForTotpStepAfter(step: number): Promise<void> {
   while (totpStepOf() <= step) {
@@ -137,7 +155,10 @@ export function storedRootTotpSecret(): string | null {
  * against the navigation resolves as soon as either happens, and cannot hang on
  * an account that needs no code.
  */
-export async function completeSecondFactor(page: Page): Promise<boolean> {
+export async function completeSecondFactor(
+  page: Page,
+  secretOverride?: string,
+): Promise<boolean> {
   const codeField = page.getByLabel(/authentication code/i).first()
   const needsCode = await Promise.race([
     codeField
@@ -151,7 +172,7 @@ export async function completeSecondFactor(page: Page): Promise<boolean> {
   ])
   if (!needsCode) return false
 
-  const secret = storedRootTotpSecret()
+  const secret = secretOverride ?? storedRootTotpSecret()
   if (!secret) {
     throw new Error(
       `The sign-in is asking for a second factor and no secret is stored at ${totpSecretFile}. ` +
@@ -170,7 +191,7 @@ export async function completeSecondFactor(page: Page): Promise<boolean> {
   //
   // Proactive turns that into one wait and one submit. The retry below stays for
   // the case this cannot see: a parallel worker spending the step from under us.
-  await waitForTotpStepAfter(lastSpentStep)
+  await waitForTotpStepAfter(lastSpentStep.get(secret) ?? -1)
 
   // Up to three steps, because the code has to be one this account has not spent.
   // Codes are single-use and the suite runs in parallel workers, so a step can be
@@ -179,7 +200,7 @@ export async function completeSecondFactor(page: Page): Promise<boolean> {
   // the only answer that does not depend on guessing who spent what.
   for (let attempt = 0; attempt < 2; attempt++) {
     const step = totpStepOf()
-    lastSpentStep = step
+    lastSpentStep.set(secret, step)
     await codeField.fill(totpCode(secret))
     // Not /^sign in$/: the step-two button says "Verify" since #240, because
     // repeating the password step's wording read as being asked to log in again.
@@ -294,3 +315,197 @@ export async function hydrated(page: Page, path?: RegExp): Promise<void> {
  */
 export const pageAlerts = (page: Page) =>
   page.locator('[role="alert"]:not(#__next-route-announcer__)')
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Roles
+ *
+ * Everything below exists because the suite could only sign in as root, and a
+ * root-only suite cannot see a role bug. It did not: `GET /api/admin/categories`
+ * was gated on `root` while the catalogue page fetched it to build the category
+ * filter, so the shop rendered as an error for every project manager and every
+ * admin — and 30 catalogue assertions stayed green throughout, because the one
+ * account they run as was the one account that worked.
+ *
+ * So the matrix needs real accounts of each role, and that means three things
+ * root did not: creating them, signing in from a context that is NOT seeded with
+ * root's cookies, and — for the administrative roles — enrolling the second
+ * factor #197 makes mandatory before the session can reach anything.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** The three roles, ranked as `ROLE_RANK` in the backend's auth middleware ranks them. */
+export type TestRole = 'project_manager' | 'admin' | 'root'
+
+/** An account this suite created, and the credentials to sign in as it. */
+export interface TestAccount {
+  id: number
+  email: string
+  password: string
+  name: string
+  role: TestRole
+}
+
+/**
+ * Whether this role owes a second factor before its session can do anything.
+ *
+ * The backend's `TWO_FACTOR_ROLES` in the same words. A copy, because `e2e/` is
+ * not in either app's module graph — and a wrong copy fails loudly here rather
+ * than quietly: a role listed that should not be waits for an enrolment screen
+ * that never appears, and one omitted that should not be gets a session refused
+ * on every route.
+ */
+export const roleNeedsSecondFactor = (role: TestRole): boolean =>
+  role === 'admin' || role === 'root'
+
+/**
+ * A fresh account of the given role, created through the API as the caller.
+ *
+ * Through the API rather than the Add User dialog because this is a fixture, not
+ * the thing under test — `admin-users.spec.ts` covers the dialog. `page.request`
+ * shares the context's cookies, so this goes out as whoever `page` is signed in
+ * as, which for the `chromium` project is root. Creating a user is root-only, so
+ * a non-root caller gets a 403 here and the message says so rather than leaving a
+ * later assertion to fail on a missing account.
+ *
+ * The password satisfies the backend's 8-character minimum and is the same for
+ * every fixture account: these exist for the length of one run against a
+ * disposable database, and a per-account secret would only have to be threaded
+ * somewhere to be read back.
+ */
+export async function createAccount(page: Page, role: TestRole): Promise<TestAccount> {
+  // Unique per account, not per run: the e2e database persists locally, and a
+  // fixed address collides with the row a previous run left behind (the backend
+  // answers 409, which reads as "the API is broken" from the assertion that
+  // follows).
+  const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+  const email = `e2e-${role.replace(/_/g, '-')}-${stamp}@example.com`
+  const password = 'E2eRole123!'
+  const name = `E2E ${role} ${stamp}`
+
+  const res = await page.request.post('/api/proxy/api/admin/users', {
+    data: { email, name, role, password, active: true },
+  })
+  if (!res.ok()) {
+    throw new Error(
+      `Could not create the ${role} fixture account: ${res.status()} ${await res.text()}. ` +
+        'Creating a user is root-only — this helper has to be called from a root session.',
+    )
+  }
+  const created = (await res.json()) as { id: number }
+  return { id: created.id, email, password, name, role }
+}
+
+/**
+ * Enrol a second factor for the account `page` is signed in as, and return the secret.
+ *
+ * The generalised form of what `auth.setup.ts` does for root, and driven through
+ * the UI for the same reason: the secret is stored as an AES-256-GCM envelope, so
+ * a fixture that wrote a plaintext one into the database would prove nothing and
+ * would not let the account sign in either.
+ *
+ * Call it on a session that has just been bounced to `/settings?enroll2fa=1`.
+ * Returns the base32 secret, which the caller needs to sign this account in again
+ * — including the sign-in this function itself performs at the end, since the
+ * cookie the middleware reads is rewritten asynchronously and reading it too
+ * early is what made the first version of root's enrolment hang on /settings.
+ */
+export async function enrolSecondFactorFor(page: Page, account: TestAccount): Promise<string> {
+  const passwordField = page.getByLabel(/confirm with your password/i)
+  await passwordField.waitFor({ state: 'visible', timeout: 60_000 })
+  await passwordField.fill(account.password)
+  await page.getByRole('button', { name: /set up/i }).click()
+
+  // The setup key, shown once. Whitespace is presentation; the secret is the
+  // base32 without it.
+  const shown = await page.locator('code').first().innerText()
+  const secret = shown.replace(/\s/g, '')
+
+  // Confirming SPENDS this step — `twoFactor.ts` records the accepted step and
+  // refuses anything at or below it — so record it before the sign-in below asks
+  // for another code against the same secret.
+  const confirmedAtStep = totpStepOf()
+  lastSpentStep.set(secret, confirmedAtStep)
+  await page.getByLabel(/authentication code/i).fill(totpCode(secret))
+  await page.getByRole('button', { name: /activate/i }).click()
+
+  // The recovery codes appear only on success, so they are what proves the factor
+  // is confirmed rather than merely started.
+  await page.getByText(/recovery codes/i).first().waitFor({ timeout: 30_000 })
+
+  return secret
+}
+
+/**
+ * A page signed in as `account`, in a context of its own.
+ *
+ * A context of its own is the whole point: the `chromium` project seeds every
+ * context from `e2e/.auth/root.json`, so a test that merely navigates is root no
+ * matter whose password it typed. `browser.newContext()` with no `storageState`
+ * starts with no cookies at all, which is the only way to be somebody else here.
+ *
+ * The caller owns the returned context and must close it — `test.afterEach` or a
+ * `finally`. Left open, its browser process outlives the test.
+ *
+ * For an administrative role this also walks the mandatory enrolment (#197):
+ * such an account signs in perfectly well and is then refused every route until
+ * it has a factor, which is a state no real administrator can stay in and not one
+ * worth asserting against.
+ */
+export async function signInAsAccount(
+  browser: Browser,
+  account: TestAccount,
+): Promise<{ page: Page; context: BrowserContext; secret: string | null }> {
+  const context = await browser.newContext({ storageState: undefined })
+  const page = await context.newPage()
+  try {
+    await page.goto('/login')
+    await page.getByLabel(/email address/i).fill(account.email)
+    await page.getByLabel(/password/i).fill(account.password)
+    await page.getByRole('button', { name: /sign in/i }).click()
+    // A brand-new account has no factor yet, so there is no code to give — the
+    // sign-in is one step and this is a no-op. The enrolment below is what makes
+    // the NEXT one two-step.
+    await completeSecondFactor(page)
+    await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 75_000 })
+
+    if (!roleNeedsSecondFactor(account.role)) {
+      await hydrated(page)
+      return { page, context, secret: null }
+    }
+
+    const secret = await enrolSecondFactorFor(page, account)
+
+    // Sign in again from scratch rather than waiting for the open session's token
+    // to catch up: `confirm` clears the flag on the backend at once, but the
+    // cookie the middleware reads is rewritten asynchronously. A fresh sign-in
+    // mints a token that is simply correct, and it is also the two-step path a
+    // real administrator takes.
+    await waitForTotpStepAfter(lastSpentStep.get(secret) ?? -1)
+    await context.clearCookies()
+    await page.goto('/login')
+    await page.getByLabel(/email address/i).fill(account.email)
+    await page.getByLabel(/password/i).fill(account.password)
+    await page.getByRole('button', { name: /sign in/i }).click()
+    await completeSecondFactor(page, secret)
+    await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 75_000 })
+
+    // The guarantee the matrix rests on, asserted here rather than left to the
+    // first test that trips over it: this session reaches the app instead of
+    // being bounced back to the enrolment screen. auth.setup.ts learned this the
+    // expensive way — a setup that cannot produce a usable session must fail AS
+    // THE SETUP.
+    await page.goto('/')
+    await page.waitForURL((url) => !url.pathname.includes('/settings'), { timeout: 30_000 })
+    if (page.url().includes('enroll2fa')) {
+      throw new Error(`The ${account.role} session still owes a second factor after enrolling one.`)
+    }
+    await hydrated(page)
+
+    return { page, context, secret }
+  } catch (error) {
+    // Otherwise a failure in here leaks the context, and its browser process
+    // outlives the run.
+    await context.close()
+    throw error
+  }
+}
+

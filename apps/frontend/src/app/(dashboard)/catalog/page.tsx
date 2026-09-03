@@ -109,10 +109,19 @@ export default function CatalogPage() {
     // would sit above a grid it has nothing to do with (#186).
     setLoadMoreError(false)
     try {
-      const [page, cats] = await Promise.all([
+      // allSettled, not all: the products are what this page IS, and the
+      // category list only builds the filter beside them. Joined by `Promise.all`
+      // these shared one fate, and a 403 on the categories put the whole shop
+      // behind the error state with a perfectly good page of products in hand —
+      // which is exactly how this page looked to every non-root account. The
+      // filter is worth degrading; the catalogue is not.
+      const [pageRes, catsRes] = await Promise.allSettled([
         get<CatalogPageData>(pageUrl(0)),
         get<Category[]>('/api/admin/categories'),
       ])
+      if (pageRes.status === 'rejected') throw pageRes.reason
+      const page = pageRes.value
+      const cats = catsRes.status === 'fulfilled' ? catsRes.value : []
       // A newer load has started since this one went out (another category
       // click, or the debounced search firing) — its answer belongs to a
       // filter that is no longer selected, so it must not overwrite what the

@@ -571,6 +571,11 @@ export const deploymentEnvironments = pgTable('deployment_environments', {
   // legacy 0004 backfill from webhook_token made that possible, so migration
   // 0006 rotates duplicates and enforces uniqueness.
   callbackSecret: text('callback_secret').notNull().unique(),
+  // Whether deployment windows bind this environment (#330). Default FALSE, and
+  // that is the load-bearing part: switching windows on globally at upgrade
+  // would stop every sandbox deploy after 18:00 for a deployment that never
+  // asked for them. Production opts in; dev and test carry on.
+  respectsDeploymentWindows: boolean('respects_deployment_windows').notNull().default(false),
 })
 
 export const productEnvironments = pgTable('product_environments', {
@@ -1002,6 +1007,61 @@ export const branding = pgTable('branding', {
   imprintText: text('imprint_text').notNull().default(''),
 })
 
+/**
+ * When provisioning may run (#330).
+ *
+ * `startMinute` is minutes past local midnight in the zone
+ * `app_config.deploymentTimeZone` names — 08:00 is 480. A number rather than a
+ * `time` on purpose: it is arithmetic, not an instant, and a `time` column
+ * invites a reader to think it carries a zone when the whole difficulty is that
+ * it does not.
+ */
+export const deploymentWindows = pgTable('deployment_windows', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  startMinute: integer('start_minute').notNull(),
+  durationMinutes: integer('duration_minutes').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  // `validateWindows` says the same thing in TypeScript, and says it better —
+  // it can also refuse an overlap, which one row cannot see. This is here for
+  // what TypeScript cannot promise: a row written by a migration, a fixture or
+  // a hand at psql is still a window that fits inside one day.
+  check('deployment_windows_within_day', sql`${t.startMinute} >= 0 AND ${t.startMinute} <= 1439 AND ${t.durationMinutes} > 0 AND ${t.startMinute} + ${t.durationMinutes} <= 1440`),
+])
+
+/**
+ * Non-working days, cached from the configured feed.
+ *
+ * Cached rather than fetched when an order is decided: whether a deployment may
+ * run must not depend on a third party answering. `source` is what makes a
+ * refresh safe — 'feed' rows are replaced wholesale, 'manual' rows survive it,
+ * so a company shutdown no public feed knows about and a public holiday the
+ * company works through are both expressible.
+ */
+export const holidays = pgTable('holidays', {
+  /** A local date in the deployment zone, not an instant. */
+  date: date().primaryKey(),
+  name: text().notNull(),
+  source: text({ enum: ['feed', 'manual'] }).notNull().default('feed'),
+  observed: boolean().notNull().default(true),
+}, (t) => [
+  // The Drizzle `enum` is a TypeScript type, not a database one; a refresh that
+  // wrote any other word would be accepted and then never matched again.
+  check('holidays_source', sql`${t.source} IN ('feed', 'manual')`),
+])
+
+/** What the holiday feed last did, so the admin UI can say how old the answer is. */
+export const holidayFeedState = pgTable('holiday_feed_state', {
+  id: integer().primaryKey().default(1),
+  url: text(),
+  lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+}, (t) => [
+  // One feed, so one row. Same shape as `branding` and `app_config`.
+  check('holiday_feed_state_singleton', sql`${t.id} = 1`),
+])
+
 export const appConfig = pgTable('app_config', {
   id: integer().primaryKey().default(1),
   smtpHost: text('smtp_host'),
@@ -1014,6 +1074,10 @@ export const appConfig = pgTable('app_config', {
   aiEndpoint: text('ai_endpoint'),
   aiApiKey: text('ai_api_key'),
   aiModel: text('ai_model'),
+  // The zone `deployment_windows.start_minute` is read in. UTC until an
+  // operator says otherwise — a window means nothing without a zone, and no
+  // other default is defensible.
+  deploymentTimeZone: text('deployment_time_zone').notNull().default('UTC'),
 })
 
 export type User = typeof users.$inferSelect

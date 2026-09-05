@@ -1,16 +1,22 @@
 import type { CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
 import { triggerFailure } from './triggerError'
+import { insecureTransportRefusal } from './transport'
 
 // Cap on pages followed for any list endpoint. Guards against unbounded loops
 // (e.g. a broken/looping X-Next-Page header) while still covering large orgs:
 // 10 pages × per_page=100 = 1000 items.
 const MAX_LIST_PAGES = 10
 
+/**
+ * The gate every outbound GitLab URL passes through.
+ *
+ * It used to reject `file:` and `gopher:` and then permit plaintext http to any
+ * host — while each of these calls carries a credential (#329). See
+ * `transport.ts` for what is refused and for the operator opt-out.
+ */
 const validateWebUrl = (url: string): string => {
-  const parsed = new URL(url)
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new Error(`Disallowed URL protocol: ${parsed.protocol}`)
-  }
+  const refusal = insecureTransportRefusal(url)
+  if (refusal) throw new Error(refusal)
   return url
 }
 

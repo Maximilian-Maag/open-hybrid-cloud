@@ -78,6 +78,7 @@ Orders can also be placed one at a time (`POST /api/orders`) or collected in a *
 | `SMTP_USER` | No | SMTP authentication username |
 | `SMTP_PASS` | No | SMTP authentication password |
 | `SMTP_TLS` | No | Enable TLS (`true`/`false`, default: `true`) |
+| `ALLOW_INSECURE_CI_TRANSPORT` | No | Set to `1` to permit plaintext http to a CI host that is not loopback. Every call to a CI source carries a credential, so this is refused by default — see [CI transport security](#ci-transport-security) |
 | `DECOMMISSION_SWEEP_SECRET` | No | Shared secret for the scheduled-decommission sweep. Blank leaves `POST /api/internal/decommission-sweep` disabled (503) — see [Scheduled decommissioning](#scheduled-decommissioning) |
 | `TRUST_PROXY` | No | Set to `1`/`true` when the backend sits behind a reverse proxy you trust to set `X-Forwarded-For` (nginx, an Ingress). Enables the **per-IP** half of the login rate limiter (`apps/backend/src/app/api/auth/login/route.ts`); the per-account half applies regardless. Leave unset when the backend is reachable directly, or the header becomes a spoofable bypass. |
 | `WEBAUTHN_RP_ID` | In production | The **bare domain** security keys are scoped to — no scheme, no port, no path (`portal.example.com`, or `example.com` to work across subdomains). Blank falls back to `localhost`, so a fresh clone works with a key straight away; required when `NODE_ENV=production`. Changing it invalidates every registered credential |
@@ -448,6 +449,42 @@ Response codes: `200` all due elements torn down, `207` some could not be starte
 | Push to `main` | Additionally compiles the handbook fresh from `docs/handbook.tex` and publishes a GitHub Release with the resulting PDF attached |
 
 Required GitHub secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
+
+## CI transport security
+
+Every outbound call to a CI source carries a credential: the trigger token on a
+pipeline trigger, `PRIVATE-TOKEN` on every project, branch, tree and file read.
+An `http://` CI source therefore puts all of it on the wire in clear.
+
+The portal refuses that. A GitLab URL must be `https://`, unless the host is
+loopback — `127.0.0.0/8`, `localhost`, `*.localhost`, `[::1]` — which is how the
+e2e suite points `DEMO_CI_URL` at a WireMock on `:8080` that never leaves the
+machine.
+
+```
+Refusing to send CI credentials over plaintext http to gitlab.internal.example.com.
+Use https, or set ALLOW_INSECURE_CI_TRANSPORT=1 if this host is genuinely
+reachable only over http and the network between is trusted.
+```
+
+`ALLOW_INSECURE_CI_TRANSPORT=1` is the opt-out, and it is deployment-wide rather
+than per source: it is a statement about the network the portal sits on, which
+is not a property of one row in `ci_sources`.
+
+**Upgrading with an http CI source.** The change refuses at the point of the
+call, so an existing source keeps looking fine in the admin UI and fails when
+somebody places an order. To make that visible, the bootstrap names every
+affected source on stderr at boot:
+
+```
+[bootstrap] 1 CI source(s) cannot be used: On-Prem GitLab (http://gitlab.internal.example.com).
+Every call to them carries a credential, so plaintext http off loopback is refused (#329).
+Move them to https, or set ALLOW_INSECURE_CI_TRANSPORT=1 to accept the risk.
+```
+
+GitHub and Bitbucket are unaffected: those clients always talk to
+`api.github.com` and `api.bitbucket.org` over https and ignore the configured
+URL entirely.
 
 ## Policy Gate
 

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
+import { clearServiceWorkerCaches } from '@/lib/serviceWorker'
 import { LanguageSwitcher } from './LanguageSwitcher'
 import { CartLink } from './CartLink'
 import { useLang } from '@/lib/useLang'
@@ -153,7 +154,13 @@ export function Header({
               <Link href="/settings" className="flex min-h-11 items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">{t('profile', lang)}</Link>
               <hr className="my-1 border-slate-100" />
               <button
-                onClick={() => signOut({ redirectTo: '/login' })}
+                onClick={async () => {
+                  // Awaited before the redirect: the worker's caches hold the
+                  // shell and this operator's branding, and on a shared device
+                  // they must not outlive the session (#148).
+                  await clearServiceWorkerCaches()
+                  await signOut({ redirectTo: '/login' })
+                }}
                 className="w-full text-left flex min-h-11 items-center px-4 py-2 text-sm text-slate-700 hover:text-red-600 transition-colors"
               >
                 {t('signOut', lang)}

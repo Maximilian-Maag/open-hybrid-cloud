@@ -576,10 +576,18 @@ Verification
 
 ### Data Model
 
-A new `product_webhooks` table stores an ordered list of webhook endpoints per product+environment combination. The webshop fires them all on order approval or decommission.
+**This shipped.** The section below is written in the future tense because it was
+a proposal when it was drafted; `product_webhooks` has existed since the very
+first migration, `0000_steep_blizzard.sql` — not the `006` the snippet names, and
+`0006_unique_callback_secret.sql` is about something else entirely. The DDL is
+kept because it still describes the shape accurately.
+
+The `product_webhooks` table stores an ordered list of webhook endpoints per
+product+environment combination. The webshop fires them all on order approval or
+decommission.
 
 ```sql
--- migration: 006_product_webhooks.sql
+-- Shipped in 0000_steep_blizzard.sql; this is the shape, not a pending change.
 CREATE TABLE product_webhooks (
     id             BIGSERIAL PRIMARY KEY,
     product_id     BIGINT NOT NULL REFERENCES products(id)  ON DELETE CASCADE,
@@ -627,9 +635,14 @@ The order is considered **completed** when all stored pipeline IDs reach `succes
 
 ### Root UI
 
-The product edit page (`Admin → Products → Edit`) gains a **Webhooks** section per environment where the admin can add, reorder, and delete webhook entries. This replaces the single webhook URL that is currently on the `DeploymentEnvironment`.
+The product edit page (`Admin → Products → Edit`) has a **Webhooks** section per environment where an admin can add, reorder and delete webhook entries.
 
-> **Note:** If `product_webhooks` rows exist for a product+environment, they take precedence over the environment's default `webhook_url`. This keeps existing single-webhook setups working without migration.
+> **Note:** there is no fallback to an environment-level webhook, and the
+> precedence rule this note used to claim never shipped. `hasSomethingToTrigger`
+> (`apps/backend/src/lib/services/orders.ts`) looks for `product_webhooks` rows
+> and for a pipeline stack, and for nothing else — an offering with neither is
+> simply not orderable, and the order is refused with an explanation rather than
+> accepted and left hanging. The two mechanisms are alternatives, not a chain.
 
 ### When to Use Which Pattern
 

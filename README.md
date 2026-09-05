@@ -78,6 +78,11 @@ Orders can also be placed one at a time (`POST /api/orders`) or collected in a *
 | `SMTP_USER` | No | SMTP authentication username |
 | `SMTP_PASS` | No | SMTP authentication password |
 | `SMTP_TLS` | No | Enable TLS (`true`/`false`, default: `true`) |
+| `TOTP_ENCRYPTION_KEY` | No | Encrypts stored TOTP secrets at rest. Unset, the key is derived from `JWT_SECRET` — which means rotating `JWT_SECRET` makes every enrolled authenticator unreadable and forces re-enrolment |
+| `SESSION_TTL_SECONDS` | No | How long a session lives |
+| `SESSION_REMEMBER_ME_TTL_SECONDS` | No | How long a "remember me" session lives |
+| `ALLOW_DEMO_SEED_IN_PRODUCTION` | No | Set to `1` to let `make db-seed-demo` run with `NODE_ENV=production`. Refused otherwise — the demo writes a catalogue, a CI source and two environments that are not real |
+| `DEMO_CI_URL` | No | Points the demo catalogue at a CI that will answer, which is what makes it seed a pipeline stack. Left blank the demo uses `gitlab.example.invalid`, which cannot resolve, so nothing seeded is orderable |
 | `DECOMMISSION_SWEEP_SECRET` | No | Shared secret for the scheduled-decommission sweep. Blank leaves `POST /api/internal/decommission-sweep` disabled (503) — see [Scheduled decommissioning](#scheduled-decommissioning) |
 | `TRUST_PROXY` | No | Set to `1`/`true` when the backend sits behind a reverse proxy you trust to set `X-Forwarded-For` (nginx, an Ingress). Enables the **per-IP** half of the login rate limiter (`apps/backend/src/app/api/auth/login/route.ts`); the per-account half applies regardless. Leave unset when the backend is reachable directly, or the header becomes a spoofable bypass. |
 | `WEBAUTHN_RP_ID` | In production | The **bare domain** security keys are scoped to — no scheme, no port, no path (`portal.example.com`, or `example.com` to work across subdomains). Blank falls back to `localhost`, so a fresh clone works with a key straight away; required when `NODE_ENV=production`. Changing it invalidates every registered credential |

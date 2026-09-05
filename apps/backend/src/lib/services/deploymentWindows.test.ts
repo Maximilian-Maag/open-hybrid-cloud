@@ -36,7 +36,7 @@ describe('isWithinWindow', () => {
     ['in the middle', '2026-09-02T07:00:00Z', true],
     ['the last minute inside', '2026-09-02T07:59:00Z', true],
     ['exactly as it closes', '2026-09-02T08:00:00Z', false],
-    ['between the two windows', '2026-09-02T09:00:00Z', true === false],
+    ['between the two windows — 11:00 Berlin, past the morning, before the afternoon', '2026-09-02T09:00:00Z', false],
     ['inside the afternoon window', '2026-09-02T11:30:00Z', true],
     ['after the afternoon window', '2026-09-02T12:30:00Z', false],
   ])('%s', (_name, iso, expected) => {

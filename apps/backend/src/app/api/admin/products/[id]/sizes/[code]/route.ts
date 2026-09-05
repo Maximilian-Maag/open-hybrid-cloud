@@ -79,5 +79,5 @@ export async function DELETE(
   const code = parseCode(rawCode)
   if (code === null) return invalidId('size code')
 
-  return toResponse(await deleteSizeRow(productId, code))
+  return toResponse(await deleteSizeRow(productId, code, session.id))
 }

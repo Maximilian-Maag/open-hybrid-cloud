@@ -34,13 +34,13 @@ deny contains v if {
 	}
 }
 
-# A dynamic page cannot be named by a static path — `/orders/[id]` needs a real
-# order to exist first — so it warns rather than denies. The hole is real: five
-# of this app's pages, including every detail view, are outside the gate. Closing
-# it means seeding a record and visiting its URL, which is what the rest of the
-# e2e suite already does; the point of the warning is that the gap is stated
-# rather than implied by the list's silence.
-warn contains v if {
+# A dynamic page used to warn rather than deny, because a static path list cannot
+# name `/orders/[id]` and there was no seeded order to point at. Both halves of
+# that changed: #285 seeds the e2e database, and #223 added `DETAIL_PAGES`, which
+# lists the ROUTE PATTERN and resolves a real URL from the list page at run time.
+# All five are covered, so this denies like any other page — the exit condition
+# the warning named.
+deny contains v if {
 	some page in input.pages
 	page.dynamic
 	not page.inA11ySpec
@@ -48,12 +48,13 @@ warn contains v if {
 	v := {
 		"rule": "page_is_in_the_a11y_gate",
 		"file": page.file,
-		"detail": sprintf("%s takes a dynamic segment, so the static path list cannot reach it", [page.routePath]),
+		"detail": sprintf("%s takes a dynamic segment and is in no path list", [page.routePath]),
 		"why": concat("", [
 			"Detail pages are where the tables, forms and status panels live, so they are the pages ",
-			"most likely to have an accessibility defect and the ones the gate cannot name. Covering ",
-			"one means seeding a record in the e2e database and visiting its URL — the rest of the ",
-			"suite already does exactly that. Deny once every detail page has a seeded fixture.",
+			"most likely to have an accessibility defect — and the ones a static list cannot name. ",
+			"Add the route PATTERN to DETAIL_PAGES and an entry to DETAIL_FIXTURES saying which list ",
+			"page links to it; the test finds a real URL from there. A page nobody scanned is not ",
+			"covered by the partial AAA conformance docs/guides/accessibility.md claims.",
 		]),
 	}
 }

@@ -81,7 +81,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         root -> frontend "Manages shop" "HTTPS"
         project_manager -> frontend "Uses web interface" "HTTPS"
         frontend -> backend "All data and actions via REST API" "JSON/HTTPS"
-        backend -> database "Reads and writes all portal data" "SQL/TCP"
+        backend -> database "Reads and writes" "SQL/TCP"
         backend -> gitlab "Triggers pipelines, browses repositories, fetches job traces" "JSON/HTTPS"
         gitlab -> backend "Pushes pipeline status events via webhook" "JSON/HTTPS"
         backend -> github "Triggers workflow_dispatch runs, browses repositories" "JSON/HTTPS"
@@ -143,13 +143,13 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
 
         # Relationships — the capabilities added after the model was last revised
         api_orders -> svc_cart "Delegates cart and checkout" "internal"
-        svc_cart -> database "Reads and writes cart lines and the orders a checkout creates" "SQL/TCP"
-        svc_projects -> database "Reads and writes projects and membership" "SQL/TCP"
-        svc_comments -> database "Reads and writes order comments" "SQL/TCP"
-        svc_comments -> api_notification "sendOrderComment" "internal"
+        svc_cart -> database "Reads and writes" "SQL/TCP"
+        svc_projects -> database "Reads and writes" "SQL/TCP"
+        svc_comments -> database "Reads and writes" "SQL/TCP"
+        svc_comments -> api_notification "Notifies" "internal"
         api_auth -> svc_twofactor "Verifies the second factor, or a passkey, after the password" "internal"
-        svc_twofactor -> database "Reads and writes user_totp, user_recovery_codes, webauthn_credentials and sessions" "SQL/TCP"
-        svc_integrations -> database "Reads and writes the integrations registry" "SQL/TCP"
+        svc_twofactor -> database "Reads and writes" "SQL/TCP"
+        svc_integrations -> database "Reads and writes" "SQL/TCP"
 
         # Relationships — backend components
         # Route handler → service
@@ -158,16 +158,16 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         api_orders -> svc_approvals "Delegates approve/reject" "internal"
         api_infrastructure -> svc_infrastructure "Delegates list and decommission" "internal"
         api_admin -> svc_admin "Delegates all CRUD operations" "internal"
-        api_audit -> lib_queries "Uses shared query helpers" "internal"
+        api_audit -> lib_queries "Shared reads" "internal"
 
         # Services → shared libraries
-        svc_orders -> api_ci "triggerProductWebhooks, triggerPipelineStacks" "internal"
-        svc_orders -> api_notification "sendOrderCreated, sendApprovalRequest" "internal"
-        svc_orders -> lib_queries "findProductName, findUserEmail, findAdminEmails" "internal"
-        svc_approvals -> api_ci "triggerProductWebhooks, triggerPipelineStacks" "internal"
-        svc_approvals -> api_notification "sendOrderApproved, sendOrderRejected" "internal"
-        svc_approvals -> lib_queries "findProductName, findUserEmail" "internal"
-        svc_infrastructure -> api_ci "triggerProductWebhooks with TF_ACTION=destroy" "internal"
+        svc_orders -> api_ci "Triggers provisioning" "internal"
+        svc_orders -> api_notification "Notifies" "internal"
+        svc_orders -> lib_queries "Shared reads" "internal"
+        svc_approvals -> api_ci "Triggers provisioning" "internal"
+        svc_approvals -> api_notification "Notifies" "internal"
+        svc_approvals -> lib_queries "Shared reads" "internal"
+        svc_infrastructure -> api_ci "Triggers teardown" "internal"
         svc_infrastructure -> lib_queries "findCiSourceForEnv" "internal"
         svc_auth -> oidc_provider "PLANNED (#139): validates OIDC ID token. The removed handler decoded it without checking the signature, aud or iss." "OIDC/HTTPS"
         svc_admin -> api_ai "Triggers AI translation for a product" "internal"
@@ -178,10 +178,10 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         gitlab -> api_webhook "Pushes pipeline status events" "JSON/HTTPS"
         github -> api_webhook "Pushes workflow-run status events" "JSON/HTTPS"
         bitbucket -> api_webhook "Pushes pipeline status events" "JSON/HTTPS"
-        api_webhook -> database "Writes status transitions and OpenTofu outputs" "SQL/TCP"
+        api_webhook -> database "Writes" "SQL/TCP"
         api_webhook -> api_ci "Fetches job trace to parse OpenTofu outputs on success" "internal"
         api_webhook -> api_notification "Triggers completion or failure notification" "internal"
-        api_webhook -> lib_queries "findProductName, findUserEmail, findCiSourceForEnv" "internal"
+        api_webhook -> lib_queries "Shared reads" "internal"
 
         # External I/O
         api_notification -> smtp "Dispatches emails via Nodemailer" "SMTP"
@@ -193,10 +193,10 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         api_ci -> bitbucket "Bitbucket 2.0 API; no job-trace fetch, so no parsed OpenTofu outputs" "JSON/HTTPS"
 
         # DB access (all services and helpers)
-        svc_auth -> database "Reads and writes users" "SQL/TCP"
-        svc_orders -> database "Reads and writes orders, infra elements" "SQL/TCP"
-        svc_approvals -> database "Reads and writes orders, infra elements" "SQL/TCP"
-        svc_infrastructure -> database "Reads and writes infra elements, projects" "SQL/TCP"
+        svc_auth -> database "Reads and writes" "SQL/TCP"
+        svc_orders -> database "Reads and writes" "SQL/TCP"
+        svc_approvals -> database "Reads and writes" "SQL/TCP"
+        svc_infrastructure -> database "Reads and writes" "SQL/TCP"
         svc_admin -> database "CRUD for all catalog and configuration entities" "SQL/TCP"
         lib_queries -> database "Shared read queries" "SQL/TCP"
 

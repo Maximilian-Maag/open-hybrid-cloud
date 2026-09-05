@@ -239,6 +239,13 @@
       "when": 1789084800000,
       "tag": "0037_integration_credential_check",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1789171200000,
+      "tag": "0038_deployment_windows",
+      "breakpoints": true
     }
   ]
 }

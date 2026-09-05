@@ -2728,7 +2728,10 @@ The table below shows the current effective schema.
     \code{audit\_log}               & Append-only log of significant user actions \\
     \code{exchange\_rates}          & Cached currency conversion rates \\
     \code{branding}                 & Single-row branding config (logo, colours, texts) \\
-    \code{app\_config}              & Single-row application config (SMTP, AI) \\
+    \code{app\_config}              & Single-row application config (SMTP, AI, deployment time zone) \\
+    \code{deployment\_windows}      & When provisioning may run: minutes past local midnight and a duration, one row per window per working day \\
+    \code{holidays}                 & Non-working dates, cached from the configured feed so the decision never depends on it answering. \code{source} distinguishes feed rows, replaced wholesale by a refresh, from manual ones that survive it \\
+    \code{holiday\_feed\_state}     & Single-row record of what the holiday feed last did, so the admin UI can say how old the answer is \\
     \bottomrule
   \end{tabular}
 \end{table}

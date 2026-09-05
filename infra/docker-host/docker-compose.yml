@@ -94,6 +94,16 @@ services:
       # Optional — encrypts the integration registry's credentials (issue #111).
       # Blank leaves the feature off; it never falls back to plain text.
       SECRET_ENCRYPTION_KEY: "${SECRET_ENCRYPTION_KEY:-}"
+      # Optional — enables POST /api/internal/decommission-sweep. Blank leaves it
+      # disabled (503), and a scheduled decommission then stays a stored
+      # timestamp nothing ever acts on. This deployment has no scheduler of its
+      # own: point cron or a systemd timer at the endpoint (see ../../.env.example).
+      DECOMMISSION_SWEEP_SECRET: "${DECOMMISSION_SWEEP_SECRET:-}"
+      # Optional — enables the scheduled drift loop (issue #108). Authorises BOTH
+      # GET /api/internal/drift-targets and POST /api/internal/drift-report;
+      # blank leaves both disabled (503). The reporter is a pipeline schedule in
+      # the infra-templates project, which needs the same value.
+      DRIFT_REPORT_SECRET: "${DRIFT_REPORT_SECRET:-}"
     depends_on:
       postgres:
         condition: service_healthy

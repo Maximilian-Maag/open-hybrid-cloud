@@ -61,6 +61,21 @@ decommissionSweep:
       cpu: 100m
       memory: 64Mi
 
+# ── Scheduled drift report (issue #108) ───────────────────────────────────────
+# There is no CronJob here, unlike decommissionSweep above, and that is
+# deliberate: the reporter is a pipeline SCHEDULE in the infra-templates project
+# because it needs an OpenTofu toolchain and the Terraform state backend's
+# credentials, neither of which belongs in this chart. All this section does is
+# hand the backend the secret that authorises the two endpoints that pipeline
+# calls.
+driftReport:
+  # Shared secret, sent by the pipeline as X-Drift-Secret. It authorises BOTH
+  # GET /api/internal/drift-targets (the work list) and
+  # POST /api/internal/drift-report (what the plans found). While it is unset
+  # both endpoints return 503, so neither can be called anonymously — set the
+  # same value on the infra-templates pipeline schedule.
+  secret: ""
+
 # ── Backend ───────────────────────────────────────────────────────────────────
 backend:
   replicaCount: 2

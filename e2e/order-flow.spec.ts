@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot, expectNoServerError } from './helpers'
+import { expectNoServerError, loginAsRoot, requireSeeded, requireStack } from './helpers'
 
 /**
  * Open the first catalogue product, or say the catalogue is empty.
@@ -29,13 +29,13 @@ async function openFirstProduct(page: import('@playwright/test').Page): Promise<
 test.describe('Product Detail Page', () => {
   test('product detail page loads from a catalogue tile', async ({ page }) => {
     await loginAsRoot(page)
-    if (!(await openFirstProduct(page))) { test.skip(); return }
+    requireSeeded(await openFirstProduct(page), 'no product on /catalog to open')
     await expectNoServerError(page)
   })
 
   test('product detail page shows description and environments', async ({ page }) => {
     await loginAsRoot(page)
-    if (!(await openFirstProduct(page))) { test.skip(); return }
+    requireSeeded(await openFirstProduct(page), 'no product on /catalog to open')
 
     /*
      * The page's own `<h1>`, not "the first h1 or h2".
@@ -55,7 +55,7 @@ test.describe('Product Detail Page', () => {
 
   test('product detail page shows order form with environment selector', async ({ page }) => {
     await loginAsRoot(page)
-    if (!(await openFirstProduct(page))) { test.skip(); return }
+    requireSeeded(await openFirstProduct(page), 'no product on /catalog to open')
 
     // The order form always renders with environment and project selects
     await expect(page.getByLabel(/select environment/i).or(page.getByText(/available environments/i))).toBeVisible({ timeout: 5000 })
@@ -65,7 +65,7 @@ test.describe('Product Detail Page', () => {
 test.describe('Order Placement Flow', () => {
   test('can submit an order and see it in the orders list', async ({ page }) => {
     await loginAsRoot(page)
-    if (!(await openFirstProduct(page))) { test.skip(); return }
+    requireSeeded(await openFirstProduct(page), 'no product on /catalog to open')
 
     // Check if environments are available (product may have zero environments configured)
     // Scoped to the order form: the buy box has an environment select of its own,
@@ -75,12 +75,13 @@ test.describe('Order Placement Flow', () => {
     const envSelect = page.locator('#order').getByLabel(/environment/i)
     const noEnvText = page.getByText(/no environments|not configured/i)
     await expect(envSelect.or(noEnvText).first()).toBeVisible({ timeout: 5000 })
-    if (await noEnvText.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noEnvText.isVisible()), 'the product offers no environment to order into')
 
     // Check if there are selectable environment options (not just placeholder)
     const envOptions = envSelect.locator('option').filter({ hasNot: page.locator('[disabled]') })
     const optCount = await envOptions.count()
-    if (optCount <= 1) { test.skip(); return } // only placeholder option
+    // One option is the disabled placeholder, so a real choice needs more than one.
+    requireSeeded(optCount > 1, 'the environment select offers only its placeholder')
 
     // Select the first real environment
     await envSelect.selectOption({ index: 1 })
@@ -104,7 +105,7 @@ test.describe('Order Placement Flow', () => {
 
     // Submit the order
     const submitButton = page.locator('#order').getByRole('button', { name: /place order/i })
-    if (!await submitButton.isVisible()) { test.skip(); return }
+    requireSeeded(await submitButton.isVisible(), 'the order form offers no Place order button')
     await submitButton.click()
 
     /*
@@ -129,7 +130,11 @@ test.describe('Order Placement Flow', () => {
 
     if (outcome === 'refused') {
       await expect(refused).toBeVisible()
-      test.skip(true, 'the seeded product has no pipeline stack, so it cannot be ordered — see #157')
+      // The refusal itself is asserted above, so the guard #206 added is covered
+      // either way. What is left — that the order goes THROUGH — needs a stack,
+      // and `DEMO_CI_URL` is the switch that seeds one. Where it is set, a refusal
+      // is the regression rather than the expected local outcome (#157, #322).
+      requireStack(false, 'the order was refused for want of a pipeline stack')
       return
     }
     expect(outcome, 'the order neither went through nor said why').toBe('redirected')
@@ -147,7 +152,7 @@ test.describe('Order Placement Flow', () => {
     // Find any order link (#N format)
     const orderLinks = page.getByRole('link').filter({ hasText: /^#\d+$/ })
     const count = await orderLinks.count()
-    if (count === 0) { test.skip(); return }
+    requireSeeded(count > 0, 'no order on /orders to open')
 
     await orderLinks.first().click()
     // 30s, like auth.setup.ts: the suite runs against `next dev`, which compiles
@@ -169,7 +174,7 @@ test.describe('Order Placement Flow', () => {
     await page.goto('/orders')
 
     const orderLinks = page.getByRole('link').filter({ hasText: /^#\d+$/ })
-    if (await orderLinks.count() === 0) { test.skip(); return }
+    requireSeeded(await orderLinks.count() > 0, 'no order on /orders to open')
 
     await orderLinks.first().click()
     // 30s, like auth.setup.ts: the suite runs against `next dev`, which compiles
@@ -196,7 +201,7 @@ test.describe('Catalog - Category Filter', () => {
     // Check if there are category filter buttons (sidebar for md+, pills for mobile)
     const categoryButtons = page.getByRole('button').filter({ hasNot: page.getByText(/all products|^all$/i) })
     const catCount = await categoryButtons.count()
-    if (catCount === 0) { test.skip(); return } // no categories configured
+    requireSeeded(catCount > 0, 'the catalogue offers no category filter')
 
     // Click the first category button
     await categoryButtons.first().click()

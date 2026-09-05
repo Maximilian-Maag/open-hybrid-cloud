@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot } from './helpers'
+import { loginAsRoot, requireSeeded } from './helpers'
 
 test.describe('Admin - Product Delete Button', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,7 +16,7 @@ test.describe('Admin - Product Delete Button', () => {
     const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
     await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     // At least one row exposes a Delete button next to the Edit link
     // Anchored on a word boundary, not on the end: the row's Delete carries the
@@ -28,7 +28,7 @@ test.describe('Admin - Product Delete Button', () => {
     const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
     await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     await page.getByRole('button', { name: /^delete\b/i }).first().click()
 
@@ -44,7 +44,7 @@ test.describe('Admin - Product Delete Button', () => {
     const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
     await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     const productCountBefore = await page.getByRole('button', { name: /^delete\b/i }).count()
 
@@ -130,7 +130,7 @@ test.describe('Admin - Product Environment Removal', () => {
     const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
     await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     // By href: a Next.js `<Link>` is inert until React hydrates, and `next dev`
     // compiles this route on its first request (#296).
@@ -153,7 +153,7 @@ test.describe('Admin - Product Environment Removal', () => {
     const envCard = page.locator('div').filter({ has: envHeading }).last()
 
     const remove = envCard.getByRole('button', { name: /^remove$/i }).first()
-    if (await remove.count() === 0) { test.skip(); return }
+    requireSeeded(await remove.count() > 0, 'the product offers no environment binding to remove')
 
     await remove.click()
     const dialog = page.locator('dialog[open]')
@@ -181,11 +181,11 @@ test.describe('Admin - Trial Offerings', () => {
     const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
     await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     await editLinks.first().click()
     const trialToggle = page.getByLabel(/offer as trial/i).first()
-    if (await trialToggle.count() === 0) { test.skip(); return }
+    requireSeeded(await trialToggle.count() > 0, 'the product edit page offers no trial toggle')
 
     await expect(page.getByLabel(/trial duration/i)).toHaveCount(0)
     await trialToggle.check()
@@ -210,7 +210,7 @@ test.describe('Admin - Product Version History', () => {
     const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
     await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     await editLinks.first().click()
     await expect(page.getByRole('heading', { name: /version history/i })).toBeVisible({ timeout: 10000 })
@@ -221,7 +221,7 @@ test.describe('Admin - Product Version History', () => {
     const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
     await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     await editLinks.first().click()
     await expect(page.getByLabel(/^changelog$/i)).toBeVisible({ timeout: 10000 })

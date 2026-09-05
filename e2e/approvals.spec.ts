@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot, expectNoServerError } from './helpers'
+import { expectNoServerError, loginAsRoot } from './helpers'
 
 test.describe('Approvals', () => {
   test.beforeEach(async ({ page }) => {
@@ -76,7 +76,16 @@ test.describe('Approvals', () => {
 
   test('approving a pending order removes it from the list', async ({ page }) => {
     const approveBtn = page.getByRole('button', { name: /^approve$/i }).first()
-    if (!await approveBtn.isVisible()) { test.skip(); return }
+    /*
+     * A reasoned skip and NOT `requireSeeded`, deliberately.
+     *
+     * The demo seeds exactly one pending order, and this test consumes it — the
+     * rejection test below then has nothing left unless another spec happened to
+     * place one first. So "no pending order" here is legitimately variable state,
+     * not the missing fixture `requireSeeded` is for. What it must not be is
+     * silent, which is the whole of #332.
+     */
+    test.skip(!(await approveBtn.isVisible()), 'no pending order on /approvals to approve')
 
     // Count pending orders before approval
     const beforeCount = await page.getByRole('button', { name: /^approve$/i }).count()
@@ -91,7 +100,7 @@ test.describe('Approvals', () => {
 
   test('rejecting a pending order with a note removes it from the list', async ({ page }) => {
     const rejectBtn = page.getByRole('button', { name: /^reject$/i }).first()
-    if (!await rejectBtn.isVisible()) { test.skip(); return }
+    test.skip(!(await rejectBtn.isVisible()), 'no pending order on /approvals to reject — the approval test above consumes the one the demo seeds')
 
     const beforeCount = await page.getByRole('button', { name: /^reject$/i }).count()
     await rejectBtn.click()

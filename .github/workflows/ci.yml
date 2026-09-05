@@ -266,6 +266,12 @@ jobs:
       E2E_BASE_URL: http://localhost:3000
       E2E_ADMIN_EMAIL: root@test.dev
       E2E_ADMIN_PASSWORD: testpassword123
+      # This job seeds `src/seed-demo.ts` below, so the fixtures that seed
+      # guarantees — a catalogue, three orders, two infrastructure elements, a
+      # pending approval — are present. `requireSeeded` reads this and FAILS on
+      # a missing one instead of skipping: an empty catalogue here is a defect,
+      # and #285 is what happens when the suite reports one as a skip (#332).
+      E2E_SEEDED: '1'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -474,6 +480,12 @@ jobs:
       E2E_BASE_URL: http://localhost:3000
       E2E_ADMIN_EMAIL: root@test.dev
       E2E_ADMIN_PASSWORD: testpassword123
+      # This job seeds `src/seed-demo.ts` below, so the fixtures that seed
+      # guarantees — a catalogue, three orders, two infrastructure elements, a
+      # pending approval — are present. `requireSeeded` reads this and FAILS on
+      # a missing one instead of skipping: an empty catalogue here is a defect,
+      # and #285 is what happens when the suite reports one as a skip (#332).
+      E2E_SEEDED: '1'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:

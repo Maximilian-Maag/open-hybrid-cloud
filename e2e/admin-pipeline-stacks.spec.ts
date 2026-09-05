@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot, expectNoServerError } from './helpers'
+import { expectNoServerError, loginAsRoot, requireSeeded, requireStack } from './helpers'
 
 /**
  * Open the first product's edit page, or say there is nothing to open.
@@ -37,13 +37,13 @@ test.describe('Admin - Pipeline Stacks', () => {
   })
 
   test('pipeline stacks card is visible on product edit page', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
 
     await expect(page.getByRole('heading', { name: /pipeline stacks/i })).toBeVisible()
   })
 
   test('pipeline stacks card shows empty state or existing stacks', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
 
     await expect(page.getByRole('button', { name: /add stack/i })).toBeVisible()
     const emptyState = page.getByText(/no pipeline stacks configured/i)
@@ -52,7 +52,7 @@ test.describe('Admin - Pipeline Stacks', () => {
   })
 
   test('"Add Stack" button opens the modal', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
 
     await page.getByRole('button', { name: /add stack/i }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
@@ -60,7 +60,7 @@ test.describe('Admin - Pipeline Stacks', () => {
   })
 
   test('modal contains all required fields', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
     await page.getByRole('button', { name: /add stack/i }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
 
@@ -89,7 +89,7 @@ test.describe('Admin - Pipeline Stacks', () => {
   })
 
   test('"Add Step" button adds a step form inside the modal', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
     await page.getByRole('button', { name: /add stack/i }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
 
@@ -100,7 +100,7 @@ test.describe('Admin - Pipeline Stacks', () => {
   })
 
   test('adding two steps shows step 1 and step 2', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
     await page.getByRole('button', { name: /add stack/i }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
 
@@ -112,7 +112,7 @@ test.describe('Admin - Pipeline Stacks', () => {
   })
 
   test('removing a step decreases step count', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
     await page.getByRole('button', { name: /add stack/i }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
 
@@ -132,7 +132,7 @@ test.describe('Admin - Pipeline Stacks', () => {
   })
 
   test('submit button is disabled when no steps are added', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
     await page.getByRole('button', { name: /add stack/i }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
 
@@ -141,7 +141,7 @@ test.describe('Admin - Pipeline Stacks', () => {
   })
 
   test('cancel button closes the modal', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
     await page.getByRole('button', { name: /add stack/i }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
 
@@ -150,13 +150,13 @@ test.describe('Admin - Pipeline Stacks', () => {
   })
 
   test('"Edit Stack" button opens modal pre-filled with stack data', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
 
     const stackItem = page.locator('[data-testid="stack-item"]').first()
     const noStacks = page.getByText(/no pipeline stacks configured/i)
     await expect(stackItem.or(noStacks)).toBeVisible({ timeout: 5000 })
 
-    if (await noStacks.isVisible()) { test.skip(); return }
+    requireStack(!(await noStacks.isVisible()), 'the product has no pipeline stack to edit')
 
     await stackItem.getByRole('button', { name: /^edit$/i }).click()
     await expect(page.getByRole('heading', { name: /edit pipeline stack/i })).toBeVisible()
@@ -167,7 +167,7 @@ test.describe('Admin - Pipeline Stacks', () => {
 test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
   test('create a pipeline stack and verify it appears, then delete it', async ({ page }) => {
     await loginAsRoot(page)
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
 
     // Check if an environment is configured — required for the form select
     const envSelector = page.locator('select')
@@ -177,9 +177,10 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
     await expect(page.getByRole('dialog')).toBeVisible()
 
     if (!hasEnv) {
-      // No environment select options available — can't complete the form
+      // Closed before bailing out, so a failure screenshot shows the page rather
+      // than a modal sitting on top of it.
       await page.getByRole('button', { name: /cancel/i }).click()
-      test.skip()
+      requireSeeded(false, 'the stack modal offers no environment to bind a stack to')
       return
     }
 
@@ -201,7 +202,7 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
     const optionExists = await firstOption.count() > 0
     if (!optionExists) {
       await form.getByRole('button', { name: /cancel/i }).click()
-      test.skip()
+      requireSeeded(false, 'the stack form offers no CI source to build the stack from')
       return
     }
     await envSelect.selectOption({ index: 1 })
@@ -235,7 +236,7 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
   })
 
   test('step form exposes Exec Order and Upstream State Refs (v2 features)', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
     await page.getByRole('button', { name: /add stack/i }).click()
     await page.getByRole('button', { name: /\+ add step/i }).click()
 
@@ -248,7 +249,7 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
   })
 
   test('"Preview YAML" button opens the pipeline preview modal', async ({ page }) => {
-    if (!(await openFirstProductEdit(page))) { test.skip(); return }
+    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
     await page.getByRole('button', { name: /add stack/i }).click()
     await page.getByRole('button', { name: /\+ add step/i }).click()
     await page.getByLabel(/template/i).fill('linode/virtual-machine')

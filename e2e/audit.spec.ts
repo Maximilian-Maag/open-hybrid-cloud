@@ -92,8 +92,12 @@ test.describe('Audit log', () => {
     const rows = page.getByRole('row')
     await expect(rows.first()).toBeVisible({ timeout: 15_000 })
 
+    // No pager is a legitimate state, not a reason to skip: it means the log fits
+    // on one page, and that is worth asserting rather than shrugging at. A pager
+    // that failed to render over 20+ entries would otherwise read as "fits on one
+    // page" for ever.
     if ((await pager.count()) === 0) {
-      test.skip(true, 'the audit log fits on one page, so there is no pager to drive')
+      expect(await rows.count(), 'no pager, so the log must fit on one page').toBeLessThanOrEqual(21)
       return
     }
 

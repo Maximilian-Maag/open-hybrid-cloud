@@ -55,6 +55,8 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
                 api_ai = component "AI Translation" "Translates product content into 25 languages via the configured AI provider."
                 api_exchange = component "Exchange Rates" "Fetches and caches exchange rates; converts amounts between currencies."
                 api_ci = component "CI Provider Client" "Unified client for GitLab, GitHub and Bitbucket: trigger pipelines, browse repos, fetch job traces. triggerProductWebhooks() orchestrates webhook execOrder; triggerPipelineStacks() sends stack steps (each with execOrder for parallel groups and optional upstreamRefs for cross-step state passing) as PIPELINE_STACK JSON to the CI orchestrator."
+                api_drift = component "Drift Routes" "Two internal endpoints for the scheduled drift loop (#108), both authenticated with a shared secret in X-Drift-Secret and both 503 when it is unset: GET /api/internal/drift-targets hands out the work list, POST /api/internal/drift-report records what the plans found."
+                svc_drift = component "Drift Service" "Builds the work list from active elements and their stack steps, and records each report. Matches a reported state key by composing <base>-<stateSuffix> the same way generate_stack.py does; aggregates an element's states into one reading (drift anywhere wins) and refuses a report older than the one already stored."
                 api_docs = component "OpenAPI / Swagger UI" "Swagger UI and OpenAPI 3.0 spec auto-generated from Zod schemas."
             }
 
@@ -182,6 +184,11 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         api_webhook -> api_ci "Fetches job trace to parse OpenTofu outputs on success" "internal"
         api_webhook -> api_notification "Triggers completion or failure notification" "internal"
         api_webhook -> lib_queries "Shared reads" "internal"
+
+        # Scheduled drift loop (#108) — inverted: CI asks, the portal answers and records
+        gitlab -> api_drift "Scheduled: asks for the work list, reports the plans" "JSON/HTTPS"
+        api_drift -> svc_drift "Delegates the work list and the report" "internal"
+        svc_drift -> database "Reads elements and stacks, writes refresh state" "SQL/TCP"
 
         # External I/O
         api_notification -> smtp "Dispatches emails via Nodemailer" "SMTP"

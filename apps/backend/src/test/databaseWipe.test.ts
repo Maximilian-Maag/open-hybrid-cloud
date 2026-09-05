@@ -81,15 +81,29 @@ beforeEach(async () => {
  * slowest statement in it and the likeliest to be blocked by a peer worker; a red
  * suite over cleanup that does not matter is exactly the kind of failure that
  * teaches everyone to re-run rather than to read.
+ *
+ * That applied to the DROP and not to the two `end()` calls around it, which is
+ * how this file failed a green run: all four tests passed, then `probe.end()`
+ * exceeded its 5-second grace under a full parallel suite and took the file down
+ * with it. Closing a connection is cleanup too. Everything in here is now
+ * best-effort and says so on stderr when it does not work.
  */
+const closeQuietly = async (sql: postgres.Sql | undefined, name: string) => {
+  try {
+    await sql?.end({ timeout: 5 })
+  } catch (e) {
+    console.warn(`[databaseWipe] ${name} did not close cleanly; the pool is torn down with the worker anyway: ${e}`)
+  }
+}
+
 afterAll(async () => {
-  await probe?.end({ timeout: 5 })
+  await closeQuietly(probe, 'the probe connection')
   try {
     await admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`)
   } catch (e) {
     console.warn(`[databaseWipe] could not drop the probe database ${PROBE}; \`make test-db-prune\` will: ${e}`)
   }
-  await admin.end({ timeout: 5 })
+  await closeQuietly(admin, 'the admin connection')
 }, DB_HOOK_TIMEOUT_MS)
 
 const publicTables = async (db: postgres.Sql): Promise<number> => {

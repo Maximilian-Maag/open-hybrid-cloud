@@ -311,6 +311,8 @@ export const createInfraElement = async (
      * parameter value, the way its apply did.
      */
     stateKeyNamespace?: string | null
+    /** `{ "<stackId>": "<stateKeyName>" }`, recorded at provisioning by #200. */
+    stateKeys?: Record<string, string>
   },
 ) => {
   const [el] = await db
@@ -326,6 +328,7 @@ export const createInfraElement = async (
       ...(overrides?.sizeCode !== undefined ? { sizeCode: overrides.sizeCode } : {}),
       ...(overrides?.sequence !== undefined ? { sequence: overrides.sequence } : {}),
       ...(overrides?.stateKeyNamespace !== undefined ? { stateKeyNamespace: overrides.stateKeyNamespace } : {}),
+      ...(overrides?.stateKeys ? { stateKeys: overrides.stateKeys } : {}),
       ...(overrides?.parameters ? { parameters: overrides.parameters } : {}),
       ...(overrides?.deployedAt ? { deployedAt: overrides.deployedAt } : {}),
       ...(overrides?.outputs ? { outputs: overrides.outputs } : {}),

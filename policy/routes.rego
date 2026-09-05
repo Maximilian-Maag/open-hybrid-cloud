@@ -25,6 +25,8 @@ public_routes := {
 	"webhooks/github/workflow": "authenticated by the environment's callback_secret over HMAC, not by a session",
 	"webhooks/bitbucket/pipeline": "authenticated by the environment's callback_secret over HMAC, not by a session",
 	"internal/decommission-sweep": "driven by a scheduler with no user to be; authenticated by DECOMMISSION_SWEEP_SECRET and disabled outright when it is unset",
+	"internal/drift-report": "the scheduled drift pipeline reporting what it found (#108); no user to be, authenticated by DRIFT_REPORT_SECRET with the same constant-time compare as the sweep, and disabled outright when it is unset",
+	"internal/drift-targets": "the other half of the same conversation with the same caller — the work list that pipeline plans against; same secret, same 503 when unset, and it answers for ACTIVE elements only",
 }
 
 deny contains v if {

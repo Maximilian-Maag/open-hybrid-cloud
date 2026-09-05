@@ -67,11 +67,11 @@ deny contains v if {
 # where a refused order, the regression the test existed to catch, came back
 # green. #332 catalogues the rest.
 #
-# A WARN, not a deny, and deliberately: 63 existing violations would fail every
-# build the day this lands, which is how a gate gets switched off rather than
-# obeyed. It flips to deny when #332 clears them — the same staged approach #245
-# takes with the mutation score.
-warn contains v if {
+# Shipped as a WARN because 63 existing violations would have failed every build
+# the day it landed, which is how a gate gets switched off rather than obeyed.
+# #332 cleared them — the tree reports zero — so it is a deny now, which is what
+# stops the sixty-fourth being written.
+deny contains v if {
 	some c in input.skipCalls
 	not c.hasReason
 

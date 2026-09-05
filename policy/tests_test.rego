@@ -86,8 +86,8 @@ test_a_bare_skip_is_warned if {
 		"text": "test.skip()",
 		"hasReason": false,
 	}])
-	warned := policy.warn with input as facts
-	some v in warned
+	denied := policy.deny with input as facts
+	some v in denied
 	v.rule == "skip_says_why"
 	v.file == "e2e/catalog.spec.ts"
 	v.line == 95
@@ -102,8 +102,8 @@ test_a_skip_with_a_reason_is_not_warned if {
 		"text": "test.skip(true, 'nothing on /orders to open')",
 		"hasReason": true,
 	}])
-	warned := policy.warn with input as facts
-	count(warned) == 0
+	denied := policy.deny with input as facts
+	count([v | some v in denied; v.rule == "skip_says_why"]) == 0
 }
 
 # The message has to quote the call, because the fix is to edit that line and a
@@ -115,8 +115,8 @@ test_the_message_quotes_the_call if {
 		"text": "test.skip()",
 		"hasReason": false,
 	}])
-	warned := policy.warn with input as facts
-	some v in warned
+	denied := policy.deny with input as facts
+	some v in denied
 	contains(v.detail, "test.skip()")
 }
 
@@ -128,15 +128,22 @@ test_every_unreasoned_skip_is_warned if {
 		{"file": "a.spec.ts", "line": 2, "text": "test.skip()", "hasReason": false},
 		{"file": "b.spec.ts", "line": 3, "text": "test.skip()", "hasReason": false},
 	])
-	warned := policy.warn with input as facts
-	count([v | some v in warned; v.rule == "skip_says_why"]) == 3
+	denied := policy.deny with input as facts
+	count([v | some v in denied; v.rule == "skip_says_why"]) == 3
 }
 
-# It warns; it does not deny. 63 existing violations would fail every build on
-# the day this lands, which is how a gate gets switched off instead of obeyed.
-# This flips when #332 clears them.
-test_an_unreasoned_skip_does_not_fail_the_build if {
+# It denies now. It shipped as a warn because 63 violations existed; #332 cleared
+# them, and a rule that only reports is a rule the sixty-fourth skip walks past.
+test_an_unreasoned_skip_fails_the_build if {
 	facts := skips([{"file": "a.spec.ts", "line": 1, "text": "test.skip()", "hasReason": false}])
 	denied := policy.deny with input as facts
-	count(denied) == 0
+	count([v | some v in denied; v.rule == "skip_says_why"]) == 1
+}
+
+# And it is no longer a warn — a rule that is both would report every violation
+# twice and make the counts in the summary wrong.
+test_an_unreasoned_skip_is_not_also_warned if {
+	facts := skips([{"file": "a.spec.ts", "line": 1, "text": "test.skip()", "hasReason": false}])
+	warned := policy.warn with input as facts
+	count([v | some v in warned; v.rule == "skip_says_why"]) == 0
 }

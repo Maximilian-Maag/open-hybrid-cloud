@@ -399,3 +399,53 @@ describe('LoginForm — focus indicators', () => {
     }
   })
 })
+
+/**
+ * A brand-filled control needs a boundary (#195, F3).
+ *
+ * `Button` has drawn its filled controls with a `--bs-edge` border since #178,
+ * for the reason stated there: an operator whose brand colour is near-white —
+ * `#f5f5f4` is a real configuration in this deployment — gets a control
+ * indistinguishable from the card behind it. It reads as disabled and it fails
+ * WCAG 1.4.11, which wants 3:1 for the boundary of a control.
+ *
+ * The two submit buttons on this page are hand-rolled rather than `Button`s, so
+ * the treatment never reached them. Asserted here rather than in the page scan
+ * because axe has no 1.4.11 rule for this, and because the TOTP step only exists
+ * after a successful password POST — which the e2e spec never performs.
+ */
+describe('LoginForm — the brand fill has an edge', () => {
+  const edge = (el: HTMLElement) => el.style.getPropertyValue('border-color')
+
+  it('gives the sign-in button a boundary against the card', async () => {
+    mockChallenge({ ok: true, mfaRequired: false })
+    render(<LoginForm {...props} />)
+
+    const button = screen.getByRole('button', { name: /sign in/i })
+    expect(edge(button)).toBe('var(--bp-edge, transparent)')
+    // A colour with no border-width paints nothing.
+    expect(button.className).toContain('border')
+  })
+
+  it('gives the second-factor verify button the same boundary', async () => {
+    mockChallenge({ ok: true, mfaRequired: true, mfaToken: 'tok', methods: ['totp'] })
+    render(<LoginForm {...props} />)
+    await signInAsPassword()
+
+    const verify = await screen.findByRole('button', { name: /^verify$/i })
+    expect(edge(verify)).toBe('var(--bp-edge, transparent)')
+    expect(verify.className).toContain('border')
+  })
+
+  it('defines --bp-edge on the wrapper, so the fallback is never what paints', () => {
+    mockChallenge({ ok: true, mfaRequired: false })
+    const { container } = render(<LoginForm {...props} />)
+
+    // `var(--bp-edge, transparent)` silently paints nothing if the variable is
+    // not set, which is the failure this whole test group would miss.
+    const wrapper = container.querySelector('[style*="--bp-edge"]')
+    expect(wrapper).toBeTruthy()
+    const value = (wrapper as HTMLElement).style.getPropertyValue('--bp-edge')
+    expect(value).toMatch(/^#[0-9a-f]{6}$/i)
+  })
+})

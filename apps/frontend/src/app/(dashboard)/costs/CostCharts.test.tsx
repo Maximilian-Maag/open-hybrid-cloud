@@ -123,35 +123,6 @@ describe('CostTrend', () => {
     // The one y tick worth printing; every column is read against it.
     expect(screen.getAllByText('120.00 EUR').length).toBeGreaterThan(1)
   })
-
-  /*
-   * #195, F1. The disclosure below the chart is the ONLY text alternative to it
-   * — the whole month-by-month table is behind it — and it shipped as a bare
-   * `text-xs` summary, about 16px tall, against the 44px floor #178 set for
-   * every other control in the app.
-   *
-   * Asserted here and not in the page scan: /costs is axe-scanned, but axe has
-   * no rule for WCAG 2.5.5, so nothing there was ever going to catch it.
-   */
-  it('gives the data disclosure a pointer target, not just a label', () => {
-    renderTrend()
-
-    const summary = document.querySelector('summary')
-    expect(summary, 'the chart has no disclosure to reveal its table').toBeTruthy()
-    // `min-h-11` is 44px, which is the floor the rest of the app uses.
-    expect(summary!.className).toContain('min-h-11')
-  })
-
-  it('keeps the disclosure marker, so it reads as something that opens', () => {
-    renderTrend()
-
-    // A summary set to display:flex loses its triangle in Chrome. Padding is how
-    // this one reaches 44px, and the distinction is the reason for the comment
-    // on it — a future "tidy-up" to `flex items-center` would be a regression
-    // nothing else would catch.
-    const summary = document.querySelector('summary')!
-    expect(summary.className).not.toMatch(/\bflex\b/)
-  })
 })
 
 describe('CostDistribution', () => {

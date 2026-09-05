@@ -159,6 +159,8 @@ describe('one order, N infrastructure elements (issue #104)', () => {
 
     expect(approved.ok).toBe(true)
     if (!approved.ok) return
+    // Narrows the union — this environment does not respect windows (#330).
+    if (approved.data.scheduled) throw new Error('expected an immediate provision')
     // One decision, four elements.
     expect(approved.data.infraIds).toHaveLength(4)
     expect(approved.data.infraId).toBe(approved.data.infraIds[0])

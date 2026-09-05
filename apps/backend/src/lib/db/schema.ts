@@ -735,7 +735,18 @@ export const orders = pgTable('orders', {
   productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
   environmentId: bigint('environment_id', { mode: 'number' }).notNull().references(() => deploymentEnvironments.id),
   userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id),
-  status: text({ enum: ['pending', 'provisioning', 'completed', 'failed', 'rejected'] }).notNull().default('pending'),
+  /*
+   * 'scheduled' sits between approval and provisioning (#330): an admin has
+   * decided, but the environment respects deployment windows and none is open.
+   * A lifecycle state, not a property — which is why it belongs here and drift
+   * did not (see `lastRefreshOutcome`).
+   */
+  status: text({ enum: ['pending', 'scheduled', 'provisioning', 'completed', 'failed', 'rejected'] }).notNull().default('pending'),
+  /** When the window that will release it opens. NULL unless it is waiting. */
+  scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
+  /** Root deployed it before its window. Who, and when — both or neither. */
+  windowOverrideBy: bigint('window_override_by', { mode: 'number' }).references(() => users.id),
+  windowOverrideAt: timestamp('window_override_at', { withTimezone: true }),
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
   costCenterId: bigint('cost_center_id', { mode: 'number' }).references(() => costCenters.id),
   // Ordered as a time-boxed trial (issue #1). Recorded on the ORDER rather than
@@ -787,6 +798,25 @@ export const orders = pgTable('orders', {
   index('orders_status_created_at_idx').on(t.status, t.createdAt),
   // The cost report's project + date-range filter.
   index('orders_project_created_at_idx').on(t.projectId, t.createdAt.desc().nullsFirst()),
+  /*
+   * The sweep asks one question every time it runs: which scheduled orders are
+   * due? Partial, because 'scheduled' is a handful of rows out of every order
+   * ever placed — and migration 0040, declared here too for the reason the
+   * indexes above give.
+   */
+  index('orders_scheduled_for_idx').on(t.scheduledFor).where(sql`${t.status} = 'scheduled'`),
+  /*
+   * Only a scheduled order has a time to be released at, and only a released one
+   * has an overrider. A row carrying either without the other is a bug that
+   * surfaces as an order the sweep picks up for ever — see 0040. It is
+   * load-bearing in the tests too: a `pending` order with a `scheduled_for`
+   * cannot be constructed at all, which is the point.
+   */
+  check(
+    'orders_scheduled_consistency',
+    sql`(${t.scheduledFor} IS NULL OR ${t.status} IN ('scheduled', 'provisioning', 'completed', 'failed'))
+        AND (${t.windowOverrideBy} IS NULL) = (${t.windowOverrideAt} IS NULL)`,
+  ),
 ])
 
 // Items a user has collected but not yet ordered (issue #28).

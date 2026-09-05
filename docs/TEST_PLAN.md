@@ -10,7 +10,7 @@ anyone noticed — so the command is the part worth keeping.
 
 | Level | Pre-audit baseline | At the time of this plan | Now (2026-09-05) |
 |-------|--------------------|--------------------------|------------------|
-| Backend unit/integration (`apps/backend`, vitest + real Postgres) | 94 files / ~719 tests | 747 tests | **2,963 tests / 190 files** — `pnpm --filter backend test` |
+| Backend unit/integration (`apps/backend`, vitest + real Postgres) | 94 files / ~719 tests | 747 tests | **2,963 tests / 192 files** — `pnpm --filter backend test` |
 | Frontend unit/component (`apps/frontend`, vitest + jsdom + Testing Library) | 2 files / ~20 tests — **major gap** | 53 tests / 11 files | **890 tests / 74 files** — `pnpm --filter frontend test` |
 | E2E (`e2e`, Playwright, four shards) | 24 specs | 24 specs (unchanged) | **28 specs** — `ls e2e/*.spec.ts`; `make test-e2e` |
 

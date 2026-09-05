@@ -623,7 +623,7 @@ VM provisions first (order 10), then DNS and firewall in parallel (both order 20
 Because multiple pipelines run per order, the single `pipeline_id` column is extended to a JSON array:
 
 ```sql
--- included in 006_product_webhooks.sql
+-- shipped in 0000_steep_blizzard.sql alongside the table above, not in a separate migration
 ALTER TABLE orders ALTER COLUMN pipeline_id TYPE JSONB USING
     CASE WHEN pipeline_id = '' THEN '[]'::jsonb
          ELSE jsonb_build_array(pipeline_id)

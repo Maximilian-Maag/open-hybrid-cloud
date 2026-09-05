@@ -453,6 +453,8 @@ Logged action types (this list has grown since the feature was first documented 
 | `config.smtp_updated` / `config.ai_updated` | SMTP or AI provider settings are saved |
 | `branding.updated` / `branding.logo_updated` | Branding colours/text are saved, or the logo is replaced |
 | `integration.probed` | An external integration's reachability is tested |
+| `category.deleted` / `cost_center.deleted` / `ci_source.deleted` / `environment.deleted` / `user.deleted` | A catalogue category, cost centre, CI source, environment or account is deleted — the entries an audit reader looks for first |
+| `product.offering_withdrawn` | A product's offering in one environment is withdrawn, so it can no longer be ordered there |
 | `exchange_rate.refreshed` | Currency rates are refreshed from the configured API |
 
 ---

@@ -72,3 +72,71 @@ test_alert_query_is_scoped_is_silent_when_the_suite_is_clean if {
 	denied := policy.deny with input as {"unscopedAlertQueries": []}
 	count(denied) == 0
 }
+
+# ---------------------------------------------------------------------------
+# rule 19 — a skip says why it skipped
+# ---------------------------------------------------------------------------
+
+skips(list) := {"skipCalls": list}
+
+test_a_bare_skip_is_warned if {
+	facts := skips([{
+		"file": "e2e/catalog.spec.ts",
+		"line": 95,
+		"text": "test.skip()",
+		"hasReason": false,
+	}])
+	warned := policy.warn with input as facts
+	some v in warned
+	v.rule == "skip_says_why"
+	v.file == "e2e/catalog.spec.ts"
+	v.line == 95
+	contains(v.detail, "skips without a reason")
+	contains(v.why, "#332")
+}
+
+test_a_skip_with_a_reason_is_not_warned if {
+	facts := skips([{
+		"file": "e2e/a11y.spec.ts",
+		"line": 1182,
+		"text": "test.skip(true, 'nothing on /orders to open')",
+		"hasReason": true,
+	}])
+	warned := policy.warn with input as facts
+	count(warned) == 0
+}
+
+# The message has to quote the call, because the fix is to edit that line and a
+# spec can hold fifteen of these.
+test_the_message_quotes_the_call if {
+	facts := skips([{
+		"file": "e2e/orders.spec.ts",
+		"line": 92,
+		"text": "test.skip()",
+		"hasReason": false,
+	}])
+	warned := policy.warn with input as facts
+	some v in warned
+	contains(v.detail, "test.skip()")
+}
+
+# Every one of them, not just the first: #332 counts 63 across nine files, and a
+# rule that reported one per run would take 63 runs to clear.
+test_every_unreasoned_skip_is_warned if {
+	facts := skips([
+		{"file": "a.spec.ts", "line": 1, "text": "test.skip()", "hasReason": false},
+		{"file": "a.spec.ts", "line": 2, "text": "test.skip()", "hasReason": false},
+		{"file": "b.spec.ts", "line": 3, "text": "test.skip()", "hasReason": false},
+	])
+	warned := policy.warn with input as facts
+	count([v | some v in warned; v.rule == "skip_says_why"]) == 3
+}
+
+# It warns; it does not deny. 63 existing violations would fail every build on
+# the day this lands, which is how a gate gets switched off instead of obeyed.
+# This flips when #332 clears them.
+test_an_unreasoned_skip_does_not_fail_the_build if {
+	facts := skips([{"file": "a.spec.ts", "line": 1, "text": "test.skip()", "hasReason": false}])
+	denied := policy.deny with input as facts
+	count(denied) == 0
+}

@@ -44,6 +44,52 @@ deny contains v if {
 	}
 }
 
+# ---------------------------------------------------------------------------
+# rule 19 — a skip says why it skipped
+# ---------------------------------------------------------------------------
+
+# The other half of rule 13, and the reason that rule can afford its exemption.
+#
+# Rule 13 lets a test off for calling `test.skip()`, on the grounds that saying
+# it did not run is honest. That only holds if the skip actually says something.
+# 63 of the 64 skips in this suite are bare:
+#
+#     if (await noProducts.isVisible()) { test.skip(); return }
+#
+# which announces nothing. The report shows a skipped test and cannot tell a
+# reader whether that was "no demo data on my laptop" or "the catalogue page is
+# throwing 500s" — so rule 13's exemption is currently being spent on precisely
+# the outcome it was written to discourage.
+#
+# It matters more since #285. The shards seed the database before they run, so in
+# CI an empty catalogue is not an unmet precondition, it is a defect — and it is
+# reported as a skip. #322 had to fix exactly this in `provisioning.spec.ts`,
+# where a refused order, the regression the test existed to catch, came back
+# green. #332 catalogues the rest.
+#
+# A WARN, not a deny, and deliberately: 63 existing violations would fail every
+# build the day this lands, which is how a gate gets switched off rather than
+# obeyed. It flips to deny when #332 clears them — the same staged approach #245
+# takes with the mutation score.
+warn contains v if {
+	some c in input.skipCalls
+	not c.hasReason
+
+	v := {
+		"rule": "skip_says_why",
+		"file": c.file,
+		"line": c.line,
+		"detail": sprintf("`%s` skips without a reason", [c.text]),
+		"why": concat("", [
+			"A skip with no message is invisible in the report: it cannot distinguish an unmet ",
+			"precondition from a broken page, and since #285 seeded the CI database the second is the ",
+			"likelier one. Give it the reason — `test.skip(true, 'no product tile on /catalog')` — and ",
+			"where the database IS seeded, fail instead of skipping, which is what #322 did for ",
+			"provisioning.spec.ts. See #332.",
+		]),
+	}
+}
+
 # `page.getByRole('alert')` in an e2e spec, which cannot resolve to one element.
 #
 # Next's App Router renders `<div role="alert" id="__next-route-announcer__">`

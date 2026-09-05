@@ -905,6 +905,65 @@ function unscopedAlertQueries(): UnscopedAlertFact[] {
   return out
 }
 
+interface SkipCallFact extends Located {
+  /** The call as written, so the message can quote the line a reader must edit. */
+  text: string
+  /** Whether a reason was given — a string the runner will print in the report. */
+  hasReason: boolean
+}
+
+/**
+ * Every in-body `test.skip(…)` in the e2e suite, and whether it says why.
+ *
+ * Rule 13 exempts a test that skips, on the grounds that announcing it did not
+ * run is the honest behaviour. That exemption is load-bearing and it is
+ * currently being spent on the opposite: ~70 of the skips in this suite are a
+ * bare `test.skip()` conditioned on what a page shows —
+ * `if (await noProducts.isVisible()) { test.skip(); return }` — which announces
+ * nothing at all. The report says a test was skipped and cannot say whether that
+ * was "no demo data locally" or "the catalogue page is throwing 500s".
+ *
+ * Since #285 the shards seed the database before they run, so in CI the second
+ * reading is the likely one, and it is reported as a skip either way (#332).
+ * That is the exact shape #322 had to fix in `provisioning.spec.ts`, where a
+ * refused order — the regression the test existed for — came back green.
+ *
+ * Only in-body calls. `test.skip('a title', async () => {…})` DECLARES a skipped
+ * test, and its string is a title rather than a reason; those are recognised by
+ * carrying a function argument and are left alone. `test.skip(condition)` with
+ * no message counts as unreasoned, because the report is the same as a bare one.
+ */
+function skipCalls(): SkipCallFact[] {
+  const out: SkipCallFact[] = []
+  for (const file of walk('e2e', (rel) => /\.spec\.ts$/.test(rel))) {
+    const sf = parse(file)
+    visit(sf, (node) => {
+      if (!ts.isCallExpression(node)) return
+      const fn = node.expression
+      if (!ts.isPropertyAccessExpression(fn) || fn.name.text !== 'skip') return
+      // `test.skip(…)` and `this.skip(…)`. A `page.skip()` does not exist, but
+      // naming the two receivers keeps an unrelated `.skip` out of the facts.
+      const receiver = ts.isIdentifier(fn.expression)
+        ? fn.expression.text
+        : fn.expression.kind === ts.SyntaxKind.ThisKeyword
+          ? 'this'
+          : null
+      if (receiver !== 'test' && receiver !== 'this') return
+
+      // The declaration form, whose string is the test's title.
+      if (node.arguments.some((a) => ts.isArrowFunction(a) || ts.isFunctionExpression(a))) return
+
+      out.push({
+        file,
+        line: lineOf(sf, node),
+        text: node.getText(sf).replace(/\s+/g, ' ').slice(0, 120),
+        hasReason: node.arguments.some((a) => ts.isStringLiteralLike(a) && a.text.trim() !== ''),
+      })
+    })
+  }
+  return out
+}
+
 function testCases(): TestCaseFact[] {
   const files = [
     ...walk('e2e', (rel) => /\.spec\.ts$/.test(rel)),
@@ -1655,6 +1714,7 @@ export function collectFacts(): Record<string, unknown> {
     silentCatches: silentCatches(),
     consoleCalls: consoleCalls(),
     testCases: testCases(),
+    skipCalls: skipCalls(),
     unscopedAlertQueries: unscopedAlertQueries(),
     pages: pageFacts(),
     clientImports: clientImportFacts(),

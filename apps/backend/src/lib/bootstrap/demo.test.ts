@@ -137,4 +137,73 @@ describe('where it will and will not run', () => {
 
     expect(await marker()).toHaveLength(1)
   })
+
+  /*
+   * DEMO_CI_URL is not just a base URL: the stack seeded against it holds a
+   * trigger token, and provisioning sends that token to this host the moment an
+   * order is placed. So the seed refuses a value it cannot use safely, and
+   * refuses it before the transaction writes anything.
+   */
+  describe('DEMO_CI_URL', () => {
+    const seedWith = async (url: string | undefined) => {
+      await createUser({ role: 'root', email: 'ci-url-root@test.dev' })
+      let thrown: unknown
+      await withEnv({ DEMO_CI_URL: url }, async () => {
+        try {
+          await seedDemoData()
+        } catch (error) {
+          thrown = error
+        }
+      })
+      return thrown
+    }
+
+    const seededCiUrl = async () => {
+      const [row] = await db.select({ url: ciSources.url }).from(ciSources).limit(1)
+      return row?.url
+    }
+
+    it('refuses plaintext http to a host that is not loopback', async () => {
+      const error = await seedWith('http://gitlab.internal.example.com')
+
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toMatch(/plaintext http/i)
+      // Refused before the transaction, so not even the marker is written.
+      expect(await marker()).toEqual([])
+    })
+
+    it.each([
+      ['127.0.0.1', 'http://127.0.0.1:8080'],
+      ['localhost', 'http://localhost:8080'],
+      ['a .localhost name', 'http://wiremock.localhost:8080'],
+    ])('allows plaintext http to loopback (%s) — that is the WireMock', async (_name, url) => {
+      expect(await seedWith(url)).toBeUndefined()
+      expect(await seededCiUrl()).toBe(url)
+    })
+
+    it('allows https to any host', async () => {
+      expect(await seedWith('https://gitlab.internal.example.com')).toBeUndefined()
+      expect(await seededCiUrl()).toBe('https://gitlab.internal.example.com')
+    })
+
+    it('refuses a protocol that is neither http nor https', async () => {
+      const error = await seedWith('file:///etc/passwd')
+
+      expect((error as Error).message).toMatch(/must be http or https/i)
+      expect(await marker()).toEqual([])
+    })
+
+    it('refuses a value that is not a URL at all', async () => {
+      const error = await seedWith('gitlab.example.com')
+
+      expect((error as Error).message).toMatch(/not a URL/i)
+      expect(await marker()).toEqual([])
+    })
+
+    it('falls back to the unresolvable default when unset', async () => {
+      expect(await seedWith(undefined)).toBeUndefined()
+      // RFC 2606 reserves `.invalid` so a developer's demo cannot reach a real CI.
+      expect(await seededCiUrl()).toBe('https://gitlab.example.invalid')
+    })
+  })
 })

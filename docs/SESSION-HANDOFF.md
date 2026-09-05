@@ -89,7 +89,16 @@ DATABASE_URL="$E2EDB" DEMO_CI_URL=http://localhost:8080 \
 **`e2e/.auth` and TOTP.** The secret is derived from `JWT_SECRET`, and only one
 checkout can hold an enrolment against a given database at a time. When
 auth.setup fails with "the account already has an authenticator this run did not
-enrol", `delete from user_totp` in that database and `rm -rf e2e/.auth`.
+enrol", clear the one enrolment and the cached session:
+
+```bash
+# Named in full on purpose. An unscoped `delete from user_totp` against the URL
+# in apps/backend/.env unenrols every account on the DEV database, which is not
+# this one, and the next person to sign in there has to re-pair.
+psql "$E2EDB" -c "select current_database()"   # must print open_hybrid_cloud_e2e_local
+psql "$E2EDB" -c "delete from user_totp where user_id = (select id from users where email = 'root@test.dev')"
+rm -rf e2e/.auth
+```
 
 **`JWT_SECRET` was rotated** in `apps/backend/.env` this session (it was 23
 characters, under the 32 the server requires, so every local login failed).

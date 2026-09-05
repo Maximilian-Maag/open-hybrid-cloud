@@ -22,7 +22,20 @@ import { loginAsRoot } from './helpers'
  * the demo catalogue at something that answers, and without it the product has
  * no pipeline stack and the order would be refused before any of this. That is
  * the local default, so the reason has to name the switch.
+ *
+ * Where the switch IS set — every CI run — the same conditions are failures
+ * instead. A test that skips when the thing it guards is broken reports a
+ * regression as a green run, which is the whole of #285.
  */
+
+/**
+ * Whether this run is supposed to have a pipeline stack.
+ *
+ * The same switch on both sides: `DEMO_CI_URL` is what makes the demo seed a
+ * stack, so it is also what says a missing stack is a defect rather than the
+ * local default.
+ */
+const stackIsSeeded = Boolean(process.env.DEMO_CI_URL?.trim())
 
 /** The product the demo seeds a pipeline stack for. */
 const PROVISIONABLE = 'Managed Nginx Gateway'
@@ -61,7 +74,9 @@ test.describe('Provisioning, end to end', () => {
     const tile = page.getByRole('link', { name: new RegExp(PROVISIONABLE, 'i') }).first()
     await tile.waitFor({ state: 'attached', timeout: 15_000 }).catch(() => {})
     if ((await tile.count()) === 0) {
-      test.skip(true, `no ${PROVISIONABLE} in the catalogue — seed the demo data (make db-seed-demo)`)
+      const why = `no ${PROVISIONABLE} in the catalogue — seed the demo data (make db-seed-demo)`
+      if (stackIsSeeded) throw new Error(`DEMO_CI_URL is set, so the demo should have seeded it: ${why}`)
+      test.skip(true, why)
       return
     }
     const href = await tile.getAttribute('href')
@@ -108,7 +123,14 @@ test.describe('Provisioning, end to end', () => {
     const outcome = await Promise.race([redirected, explained]).catch(() => 'neither' as const)
 
     if (outcome === 'refused') {
-      test.skip(true, 'no pipeline stack is seeded — set DEMO_CI_URL so the demo points at a CI that answers (#157)')
+      const why = 'the order was refused for want of a pipeline stack'
+      if (stackIsSeeded) {
+        throw new Error(
+          `${why}, but DEMO_CI_URL is set. Either the demo seeded no stack or provisioning could ` +
+            'not reach the CI it points at — which is the regression this test exists to catch.',
+        )
+      }
+      test.skip(true, `${why} — set DEMO_CI_URL so the demo points at a CI that answers (#157)`)
       return
     }
     expect(outcome, 'the order neither went through nor said why').toBe('redirected')

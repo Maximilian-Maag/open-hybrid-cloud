@@ -69,6 +69,18 @@ const refusedByEnvironment = (): boolean => {
 }
 
 /**
+ * Loopback, by the names a WireMock is actually reached on. `.localhost` is
+ * loopback by RFC 6761, and `URL.hostname` hands back the IPv6 form still
+ * bracketed — `new URL('http://[::1]:8080').hostname` is `'[::1]'`.
+ */
+const isLoopback = (hostname: string): boolean =>
+  hostname === 'localhost' ||
+  hostname.endsWith('.localhost') ||
+  hostname === '::1' ||
+  hostname === '[::1]' ||
+  /^127\.\d+\.\d+\.\d+$/.test(hostname)
+
+/**
  * The GitLab the demo data points at.
  *
  * `gitlab.example.invalid` by default, and `.invalid` is reserved by RFC 2606
@@ -80,8 +92,36 @@ const refusedByEnvironment = (): boolean => {
  * the whole GitLab side of a provisioning run: the trigger returns pipeline 42,
  * its bridges lead to child pipeline 43, and 43's apply job has a trace with
  * Terraform outputs in it. Until now nothing in CI ever spoke to them (#157).
+ *
+ * Checked before anything is seeded against it. The seeded stack holds a
+ * trigger token, and provisioning sends that token to this host the moment an
+ * order is placed — over plaintext http to anywhere but loopback that is a
+ * credential on the wire, so it is refused here rather than at the point the
+ * token leaves. A seed that cannot be used safely should not be written.
+ *
+ * Loopback stays http on purpose: that WireMock speaks http on :8080.
  */
-const CI_URL = process.env.DEMO_CI_URL?.trim() || 'https://gitlab.example.invalid'
+const ciUrl = (): string => {
+  const raw = process.env.DEMO_CI_URL?.trim()
+  if (!raw) return 'https://gitlab.example.invalid'
+
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    throw new Error(`[demo] DEMO_CI_URL is not a URL: ${raw}`)
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`[demo] DEMO_CI_URL must be http or https, not ${parsed.protocol}`)
+  }
+  if (parsed.protocol === 'http:' && !isLoopback(parsed.hostname)) {
+    throw new Error(
+      `[demo] DEMO_CI_URL is plaintext http to ${parsed.hostname}. The seeded stack's ` +
+        'trigger token would go out over that connection. Use https, or point it at loopback.',
+    )
+  }
+  return raw
+}
 
 /**
  * Whether the demo should seed a pipeline stack.
@@ -216,6 +256,10 @@ const CATALOGUE: DemoProduct[] = [
 ]
 
 export const seedDemoData = async (): Promise<{ created: boolean }> => {
+  // Validated before the transaction opens: a DEMO_CI_URL that cannot be used
+  // safely should stop the seed, not leave half a catalogue behind.
+  const ciBaseUrl = ciUrl()
+
   if (refusedByEnvironment()) return { created: false }
 
   // One transaction around the marker lookup AND every write. Without it a
@@ -243,7 +287,7 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
     const [category] = await tx.insert(categories).values({ name: MARKER_CATEGORY }).returning()
     const [ci] = await tx
       .insert(ciSources)
-      .values({ name: 'Demo GitLab', url: CI_URL, accessToken: demoSecret(), provider: 'gitlab' })
+      .values({ name: 'Demo GitLab', url: ciBaseUrl, accessToken: demoSecret(), provider: 'gitlab' })
       .returning()
 
     const [frankfurt] = await tx
@@ -252,7 +296,7 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
         name: 'AWS Frankfurt',
         description: 'Public cloud, eu-central-1',
         ciSourceId: ci.id,
-        webhookUrl: `${CI_URL}/api/v4/projects/1/trigger/pipeline`,
+        webhookUrl: `${ciBaseUrl}/api/v4/projects/1/trigger/pipeline`,
         webhookToken: 'demo-trigger-1',
         callbackSecret: demoSecret(),
       })
@@ -264,7 +308,7 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
         name: 'On-Premise Vienna',
         description: 'vSphere cluster in the Vienna datacentre',
         ciSourceId: ci.id,
-        webhookUrl: `${CI_URL}/api/v4/projects/2/trigger/pipeline`,
+        webhookUrl: `${ciBaseUrl}/api/v4/projects/2/trigger/pipeline`,
         webhookToken: 'demo-trigger-2',
         callbackSecret: demoSecret(),
       })

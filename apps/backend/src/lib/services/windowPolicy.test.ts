@@ -8,7 +8,20 @@ import {
   createUser, createCategory, createProduct, createCiSource,
   createEnvironment, createProject, createOrder,
 } from '@/test/helpers'
-import { loadWindowPolicy, whenMayItDeploy, dueScheduledOrders } from './windowPolicy'
+import { loadWindowPolicy, whenMayItDeploy, dueScheduledOrders, releaseDueScheduledOrders } from './windowPolicy'
+import type * as OrdersService from '@/lib/services/orders'
+import type * as AuditModule from '@/lib/audit'
+import { logAudit } from '@/lib/audit'
+import { provisionOrderElements } from '@/lib/services/orders'
+
+vi.mock('@/lib/services/orders', async (importOriginal) => ({
+  ...(await importOriginal<typeof OrdersService>()),
+  provisionOrderElements: vi.fn(),
+}))
+vi.mock('@/lib/audit', async (importOriginal) => ({
+  ...(await importOriginal<typeof AuditModule>()),
+  logAudit: vi.fn(),
+}))
 
 /**
  * Reading the window policy out of the database, and deciding with it (#330).
@@ -187,5 +200,109 @@ describe('dueScheduledOrders', () => {
     const later = await scheduleOne(new Date('2026-09-03T10:00:00Z'))
     const earlier = await scheduleOne(new Date('2026-09-03T06:00:00Z'))
     expect(await dueScheduledOrders(new Date('2026-09-04T00:00:00Z'))).toEqual([earlier.id, later.id])
+  })
+})
+
+/*
+ * Releasing what the window has made due (#330).
+ *
+ * The sweep retries by itself, unlike the approval path where a human decides.
+ * That is the whole difficulty: every failure has to answer "is it safe to run
+ * this order again?", and getting it wrong deploys the same infrastructure
+ * twice.
+ */
+describe('releaseDueScheduledOrders', () => {
+  const AT = new Date('2026-09-02T07:00:00Z')
+
+  const dueOrder = async () => {
+    const { user, product, environment, project } = await setup()
+    const order = await createOrder(project.id, product.id, environment.id, user.id, { status: 'pending' })
+    await db
+      .update(orders)
+      .set({ status: 'scheduled', scheduledFor: new Date(AT.getTime() - 60_000) })
+      .where(eq(orders.id, order.id))
+    return order
+  }
+
+  const reload = async (id: number) => (await db.select().from(orders).where(eq(orders.id, id)))[0]
+
+  beforeEach(() => {
+    vi.mocked(provisionOrderElements).mockReset()
+    vi.mocked(logAudit).mockReset()
+    vi.mocked(provisionOrderElements).mockResolvedValue({ elementIds: [1], pipelineIds: ['p1'], failures: [] } as never)
+    vi.mocked(logAudit).mockResolvedValue(undefined as never)
+  })
+
+  it('provisions a due order and leaves it provisioning', async () => {
+    const order = await dueOrder()
+
+    const out = await releaseDueScheduledOrders(AT)
+
+    expect(out.released).toEqual([order.id])
+    expect((await reload(order.id)).status).toBe('provisioning')
+  })
+
+  /*
+   * Nothing started, so running it again is exactly what should happen:
+   * `provisionOrderElements` throws only when not one pipeline started, and it
+   * removes the element rows it inserted on the way out.
+   */
+  it('reschedules an order whose provisioning started nothing', async () => {
+    const order = await dueOrder()
+    vi.mocked(provisionOrderElements).mockRejectedValue(new Error('CI unreachable'))
+
+    const out = await releaseDueScheduledOrders(AT)
+
+    expect(out.released).toEqual([])
+    expect(out.failed[0].reason).toContain('CI unreachable')
+    const row = await reload(order.id)
+    expect(row.status).toBe('scheduled')
+    // Still due, so the next sweep picks it up.
+    expect(row.scheduledFor).not.toBeNull()
+  })
+
+  /*
+   * The bug this guard exists for. A throw from the bracket that CLOSES the run
+   * arrives with pipelines already running; rescheduling would deploy the same
+   * infrastructure a second time.
+   */
+  it('does not reschedule an order whose pipelines had already started', async () => {
+    const order = await dueOrder()
+    vi.mocked(provisionOrderElements).mockImplementation(async () => {
+      await db.update(orders).set({ pipelineId: ['pipe-1'] }).where(eq(orders.id, order.id))
+      throw new Error('finishOrderTriggerRun exploded')
+    })
+
+    const out = await releaseDueScheduledOrders(AT)
+
+    expect(out.released).toEqual([])
+    expect(out.failed[0].reason).toContain('deploy the same infrastructure twice')
+    expect((await reload(order.id)).status).toBe('provisioning')
+  })
+
+  /*
+   * Losing the audit line is bad; duplicating the infrastructure because of it
+   * is worse. The audit write used to sit inside the recovery, so a failure
+   * there put a successfully provisioned order back to 'scheduled' with its
+   * `scheduled_for` still due.
+   */
+  it('keeps a provisioned order provisioned when its audit entry fails', async () => {
+    const order = await dueOrder()
+    vi.mocked(logAudit).mockRejectedValue(new Error('audit table is on fire'))
+
+    const out = await releaseDueScheduledOrders(AT)
+
+    expect(out.released).toEqual([order.id])
+    expect((await reload(order.id)).status).toBe('provisioning')
+  })
+
+  it('leaves an order alone once something else has claimed it', async () => {
+    const order = await dueOrder()
+    await db.update(orders).set({ status: 'provisioning' }).where(eq(orders.id, order.id))
+
+    const out = await releaseDueScheduledOrders(AT)
+
+    expect(out.released).toEqual([])
+    expect(vi.mocked(provisionOrderElements)).not.toHaveBeenCalled()
   })
 })

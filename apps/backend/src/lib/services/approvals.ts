@@ -204,7 +204,26 @@ export const approveOrder = async (
    * decision is recorded either way and the work is not thrown away. Only the
    * provisioning waits.
    */
-  const wait = await whenMayItDeploy(order.environmentId, new Date())
+  let wait: Awaited<ReturnType<typeof whenMayItDeploy>>
+  try {
+    wait = await whenMayItDeploy(order.environmentId, new Date())
+  } catch (e) {
+    /*
+     * The claim above already moved this order out of 'pending'.
+     *
+     * A policy read that throws would otherwise strand it in 'provisioning'
+     * for good: no second approval can claim it, because the claim is
+     * conditioned on 'pending'; and the window sweep cannot pick it up, because
+     * it only looks at 'scheduled'. Nothing has been provisioned at this point,
+     * so the same undo the provisioning failure below performs is the right one.
+     */
+    await db
+      .update(orders)
+      .set({ status: 'pending', updatedAt: new Date() })
+      .where(eq(orders.id, orderId))
+    throw e
+  }
+
   if (wait) {
     await db
       .update(orders)

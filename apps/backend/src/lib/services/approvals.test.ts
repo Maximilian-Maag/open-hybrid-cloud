@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { SessionUser } from '@open-hybrid-cloud/types'
+import type * as WindowPolicyService from '@/lib/services/windowPolicy'
 
 vi.mock('@/lib/notification', () => ({
   sendOrderApproved: vi.fn().mockResolvedValue(undefined),
@@ -11,9 +12,15 @@ vi.mock('@/lib/ci/webhooks', () => ({
   triggerPipelineStacksTracked: vi.fn().mockResolvedValue({ pipelineIds: [], failures: [] }),
 }))
 
+vi.mock('@/lib/services/windowPolicy', async (importOriginal) => ({
+  ...(await importOriginal<typeof WindowPolicyService>()),
+  whenMayItDeploy: vi.fn(),
+}))
+
 import { listApprovals, approveOrder, rejectOrder } from './approvals'
 import { sendOrderApproved, sendOrderRejected } from '@/lib/notification'
 import { triggerProductWebhooksTracked } from '@/lib/ci/webhooks'
+import { whenMayItDeploy } from '@/lib/services/windowPolicy'
 import { db } from '@/lib/db/client'
 import {
   orders,
@@ -452,5 +459,26 @@ describe('approveOrder — auditing a delegation in use', () => {
     expect(used).toHaveLength(1)
     expect(used[0].entityId).toBe(delegation.id)
     expect(used[0].details).toContain('rejected')
+  })
+
+  /*
+   * The claim is what makes this caller the one acting on the order, and it has
+   * already moved it out of 'pending' by the time the window policy is read.
+   *
+   * A policy read that throws used to leave the order in 'provisioning' for
+   * good: no second approval can claim it, because the claim is conditioned on
+   * 'pending', and the window sweep never sees it, because that only looks at
+   * 'scheduled'. Nothing has been provisioned at that point, so the claim must
+   * come back off.
+   */
+  it('releases the claim when the window policy cannot be read', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
+    vi.mocked(whenMayItDeploy).mockRejectedValueOnce(new Error('deployment_windows is unreadable'))
+
+    await expect(approveOrder(makeSession(admin), order.id)).rejects.toThrow('unreadable')
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(row.status, 'the order is stranded: nothing can claim it and no sweep looks at it').toBe('pending')
   })
 })

@@ -798,6 +798,25 @@ export const orders = pgTable('orders', {
   index('orders_status_created_at_idx').on(t.status, t.createdAt),
   // The cost report's project + date-range filter.
   index('orders_project_created_at_idx').on(t.projectId, t.createdAt.desc().nullsFirst()),
+  /*
+   * The sweep asks one question every time it runs: which scheduled orders are
+   * due? Partial, because 'scheduled' is a handful of rows out of every order
+   * ever placed — and migration 0040, declared here too for the reason the
+   * indexes above give.
+   */
+  index('orders_scheduled_for_idx').on(t.scheduledFor).where(sql`${t.status} = 'scheduled'`),
+  /*
+   * Only a scheduled order has a time to be released at, and only a released one
+   * has an overrider. A row carrying either without the other is a bug that
+   * surfaces as an order the sweep picks up for ever — see 0040. It is
+   * load-bearing in the tests too: a `pending` order with a `scheduled_for`
+   * cannot be constructed at all, which is the point.
+   */
+  check(
+    'orders_scheduled_consistency',
+    sql`(${t.scheduledFor} IS NULL OR ${t.status} IN ('scheduled', 'provisioning', 'completed', 'failed'))
+        AND (${t.windowOverrideBy} IS NULL) = (${t.windowOverrideAt} IS NULL)`,
+  ),
 ])
 
 // Items a user has collected but not yet ordered (issue #28).

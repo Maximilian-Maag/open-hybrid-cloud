@@ -160,15 +160,59 @@ export const releaseDueScheduledOrders = async (
         // minutes after it came up.
         trialDurationMinutes: order.isTrial ? await trialDurationFor(order.productId, order.environmentId) : 0,
       })
-      await logAudit(null, 'order.window_opened', order.id, 'Deployment window opened; provisioning started')
-      released.push(order.id)
     } catch (e) {
-      // Back to 'scheduled' rather than 'failed': the window is still open, the
-      // next sweep will try again, and an order marked failed because CI blinked
-      // is one a human has to notice and redo.
-      await db.update(orders).set({ status: 'scheduled', updatedAt: new Date() }).where(eq(orders.id, order.id))
-      failed.push({ orderId: order.id, reason: e instanceof Error ? e.message : String(e) })
+      /*
+       * Back to 'scheduled' rather than 'failed' — but ONLY when nothing started.
+       *
+       * The ordinary failure is safe to retry: `provisionOrderElements` throws
+       * only when not one pipeline started, and it deletes the element rows it
+       * had inserted on the way out. The next sweep picks the order up again,
+       * which is what should happen when CI blinks — an order marked failed for
+       * that is one a human has to notice and redo.
+       *
+       * What is NOT safe to retry is a throw that arrives with pipelines already
+       * running, from the bracket that closes the run. Rescheduling that order
+       * would provision the same infrastructure a second time. This differs from
+       * the approval path, where a human decides whether to retry; the sweep
+       * retries by itself, so it has to be sure. `pipeline_id` is appended to as
+       * each trigger returns, not at the end, so it is a truthful answer to
+       * "did anything start".
+       */
+      const [row] = await db
+        .select({ pipelineId: orders.pipelineId })
+        .from(orders)
+        .where(eq(orders.id, order.id))
+      const started = (row?.pipelineId ?? []).length > 0
+
+      if (!started) {
+        await db.update(orders).set({ status: 'scheduled', updatedAt: new Date() }).where(eq(orders.id, order.id))
+      }
+      failed.push({
+        orderId: order.id,
+        reason:
+          (e instanceof Error ? e.message : String(e)) +
+          (started
+            ? ' — left in provisioning: pipelines had already started, so rescheduling it would deploy the same infrastructure twice'
+            : ''),
+      })
+      continue
     }
+
+    /*
+     * Outside the recovery above, deliberately.
+     *
+     * Inside it, an audit write that failed after a successful provisioning put
+     * the order back to 'scheduled' with its `scheduled_for` still due — and the
+     * next sweep provisioned it all over again. Losing the audit line is bad;
+     * duplicating the infrastructure because of it is worse, so this says so on
+     * stderr and the order stays where it is.
+     */
+    try {
+      await logAudit(null, 'order.window_opened', order.id, 'Deployment window opened; provisioning started')
+    } catch (e) {
+      console.error(`[windowPolicy] order ${order.id} provisioned but its audit entry failed:`, e)
+    }
+    released.push(order.id)
   }
 
   return { released, failed }

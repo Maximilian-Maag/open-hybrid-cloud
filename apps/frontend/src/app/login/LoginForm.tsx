@@ -237,6 +237,14 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
         '--bp-text': readableAccent(primaryColor),
         // Same boundary as the dashboard gives its filled controls.
         '--bs-edge': readableAccent(secondaryColor, undefined, AA_NON_TEXT),
+        // The same again for the PRIMARY fill, which is what the two submit
+        // buttons on this page are painted with. `Button` has given its filled
+        // controls a `--bs-edge` boundary since #178, for the reason it states
+        // there: a near-white brand colour — #f5f5f4 is a real configuration
+        // here — is a button indistinguishable from the card behind it, which
+        // reads as disabled and fails WCAG 1.4.11. These two are hand-rolled
+        // rather than `Button`s, so they never got it (#195, F3).
+        '--bp-edge': readableAccent(primaryColor, undefined, AA_NON_TEXT),
         // Focus rings sit on the white card, so they need the same treatment.
         '--ring-accent': readableAccent(secondaryColor, '#ffffff', AA_LARGE),
       } as React.CSSProperties}
@@ -340,7 +348,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full min-h-11 rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                  className="w-full min-h-11 rounded-md border px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                   // Same --ring-accent the fields above use, and for a sharper
                   // reason: `ring-2` with no colour falls back to `currentcolor`,
                   // which on this button is --bp-ink — white for every dark
@@ -350,6 +358,7 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
                   style={{
                     backgroundColor: 'var(--bp)',
                     color: 'var(--bp-ink)',
+                    borderColor: 'var(--bp-edge, transparent)',
                     '--tw-ring-color': 'var(--ring-accent)',
                   } as React.CSSProperties}
                 >
@@ -445,12 +454,13 @@ export function LoginForm({ shopName, shopSubtitle, logoDataUrl, primaryColor, s
             <button
               type="submit"
               disabled={loading}
-              className="w-full min-h-11 rounded-md px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              className="w-full min-h-11 rounded-md border px-4 py-2.5 text-sm font-semibold hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
               // See the verify button above: without a colour the ring inherits
               // --bp-ink and disappears into the white offset it is drawn on.
               style={{
                 backgroundColor: 'var(--bp)',
                 color: 'var(--bp-ink)',
+                borderColor: 'var(--bp-edge, transparent)',
                 '--tw-ring-color': 'var(--ring-accent)',
               } as React.CSSProperties}
             >

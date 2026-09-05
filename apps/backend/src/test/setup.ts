@@ -56,6 +56,7 @@ const TABLES = [
   schema.holidays,
   // Drift observations (#108). Independent of everything else.
   schema.unclaimedStates,
+  // Deployment windows already truncate above; this is the report side (#108).
   // Before deployment_environments: integrations.environment_id references it.
   schema.integrations,
   schema.deploymentEnvironments,

@@ -15,6 +15,7 @@ import { ok, err, type Result } from '@/lib/services/result'
 import { redactParametersForOrders } from '@/lib/services/parameterRedaction'
 import { activeDelegationsHeldBy, type DelegationRow } from '@/lib/services/delegations'
 import { provisionOrderElements } from '@/lib/services/orders'
+import { whenMayItDeploy } from '@/lib/services/windowPolicy'
 import { productNameSql } from '@/lib/db/productText'
 
 export interface ApprovalRow {
@@ -153,10 +154,21 @@ const assertNotOwnOrder = async (
   return ok(undefined)
 }
 
+/**
+ * What approving an order did.
+ *
+ * A union rather than nullable fields, so a caller cannot read `infraId` off a
+ * scheduled approval and get `null` where it expected a number. `scheduled` is
+ * discriminated on, and the route renders a different message for it (#330).
+ */
+export type ApprovalOutcome =
+  | { success: true; scheduled: false; infraId: number; infraIds: number[]; pipelineIds: string[] }
+  | { success: true; scheduled: true; scheduledFor: Date }
+
 export const approveOrder = async (
   session: SessionUser,
   orderId: number,
-): Promise<Result<{ success: true; infraId: number; infraIds: number[]; pipelineIds: string[] }>> => {
+): Promise<Result<ApprovalOutcome>> => {
   const separation = await assertNotOwnOrder(session, orderId)
   if (!separation.ok) return separation
 
@@ -179,6 +191,35 @@ export const approveOrder = async (
   }
 
   const order = claimed[0]
+
+  /*
+   * Does a window have to open first (#330)?
+   *
+   * After the claim, not before: the claim is what makes this the one caller
+   * acting on the order, and asking first would let two approvals both decide
+   * to schedule it. The order is already out of 'pending', so nothing else can
+   * touch it while this decides.
+   *
+   * The approval itself never fails for being out of hours — the admin's
+   * decision is recorded either way and the work is not thrown away. Only the
+   * provisioning waits.
+   */
+  const wait = await whenMayItDeploy(order.environmentId, new Date())
+  if (wait) {
+    await db
+      .update(orders)
+      .set({ status: 'scheduled', scheduledFor: wait.scheduledFor, updatedAt: new Date() })
+      .where(eq(orders.id, order.id))
+
+    await logAudit(
+      session.id,
+      'order.scheduled',
+      order.id,
+      `Approved, waiting for a deployment window at ${wait.scheduledFor.toISOString()}`,
+    )
+
+    return ok({ success: true as const, scheduled: true as const, scheduledFor: wait.scheduledFor })
+  }
 
   // Snapshotted at the moment of the claim, not at logging time: everything
   // below — webhooks, pipeline stacks, the infrastructure insert — can take
@@ -255,6 +296,8 @@ export const approveOrder = async (
 
   return ok({
     success: true as const,
+    // Discriminates the union: this one provisioned, the early return above did not.
+    scheduled: false as const,
     // The first element, for the callers written when an order had exactly one.
     infraId: provisioned.elementIds[0],
     infraIds: provisioned.elementIds,

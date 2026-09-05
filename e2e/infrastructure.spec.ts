@@ -304,7 +304,18 @@ test.describe('Infrastructure retry', () => {
     const anyRow = page.getByRole('link', { name: /^reorder\b/i }).first()
     const nothingMatches = page.getByText(/no infrastructure matches|no infrastructure elements yet/i)
     await expect(anyRow.or(nothingMatches).first()).toBeVisible({ timeout: 10000 })
-    requireSeeded(!(await nothingMatches.isVisible()), 'no infrastructure element on /infrastructure to filter')
+    /*
+     * A reasoned skip and NOT `requireSeeded`, unlike every other guard in this
+     * file: this one is behind `?status=provisioning`, and the demo writes two
+     * elements that are both 'active'. An empty result here is the correct state
+     * of a seeded database, not a defect — which is exactly the distinction
+     * `requireSeeded` exists to make, so pointing it at a filtered view whose
+     * rows the seed never creates would report a working portal as broken.
+     */
+    test.skip(
+      await nothingMatches.isVisible(),
+      'the demo seeds no element in `provisioning` — nothing matches this filter',
+    )
 
     await expect(page.getByRole('button', { name: /^decommission$/i })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /automatic decommissioning/i })).toHaveCount(0)

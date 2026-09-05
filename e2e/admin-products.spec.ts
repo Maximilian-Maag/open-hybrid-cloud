@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot, requireSeeded } from './helpers'
+import { appears, loginAsRoot, requireSeeded } from './helpers'
 
 test.describe('Admin - Product Delete Button', () => {
   test.beforeEach(async ({ page }) => {
@@ -150,10 +150,26 @@ test.describe('Admin - Product Environment Removal', () => {
      */
     const envHeading = page.getByRole('heading', { name: /environments$/i }).first()
     await expect(envHeading).toBeVisible({ timeout: 30_000 })
-    const envCard = page.locator('div').filter({ has: envHeading }).last()
 
-    const remove = envCard.getByRole('button', { name: /^remove$/i }).first()
-    requireSeeded(await remove.count() > 0, 'the product offers no environment binding to remove')
+    /*
+     * The comment above was right that `.last()` is a guess, and the guess was
+     * wrong: every ancestor of the section heading matches, and the innermost is
+     * the heading's own wrapper, which holds no buttons at all. So this found
+     * nothing and skipped — every run, for months, in silence (#332).
+     *
+     * Each offering renders its own card: a level-3 heading naming the
+     * environment, and that offering's Remove. Asking for the innermost box that
+     * holds BOTH is a statement about which box is the card rather than a bet on
+     * document order.
+     */
+    const offeringCard = page
+      .locator('div')
+      .filter({ has: page.getByRole('heading', { level: 3 }) })
+      .filter({ has: page.getByRole('button', { name: /^remove$/i }) })
+      .last()
+
+    const remove = offeringCard.getByRole('button', { name: /^remove$/i }).first()
+    requireSeeded(await appears(remove), 'the product offers no environment binding to remove')
 
     await remove.click()
     const dialog = page.locator('dialog[open]')
@@ -165,7 +181,7 @@ test.describe('Admin - Product Environment Removal', () => {
     // Cancel leaves the offering in place.
     await dialog.getByRole('button', { name: /cancel/i }).click()
     await expect(dialog).not.toBeVisible()
-    await expect(envCard.getByRole('button', { name: /^remove$/i }).first()).toBeVisible()
+    await expect(offeringCard.getByRole('button', { name: /^remove$/i }).first()).toBeVisible()
   })
 })
 
@@ -185,7 +201,10 @@ test.describe('Admin - Trial Offerings', () => {
 
     await editLinks.first().click()
     const trialToggle = page.getByLabel(/offer as trial/i).first()
-    requireSeeded(await trialToggle.count() > 0, 'the product edit page offers no trial toggle')
+    // The toggle is rendered per environment offering, so it only exists once
+    // the edit page's offerings have. Counted immediately after the click, it
+    // was always 0 and this test always skipped.
+    requireSeeded(await appears(trialToggle), 'the product edit page offers no trial toggle')
 
     await expect(page.getByLabel(/trial duration/i)).toHaveCount(0)
     await trialToggle.check()

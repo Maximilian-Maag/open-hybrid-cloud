@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { expectNoServerError, loginAsRoot, requireSeeded } from './helpers'
+import { appears, expectNoServerError, loginAsRoot, requireSeeded } from './helpers'
 
 test.describe('Infrastructure', () => {
   test.beforeEach(async ({ page }) => {
@@ -280,7 +280,7 @@ test.describe('Infrastructure retry', () => {
 
   test('a failed deployment shows the failed state rather than claiming to be active', async ({ page }) => {
     const failedBadge = page.getByText(/deployment failed/i).first()
-    requireSeeded(await failedBadge.count() > 0, 'no failed deployment on /infrastructure')
+    requireSeeded(await appears(failedBadge), 'no failed deployment on /infrastructure')
     await expect(failedBadge).toBeVisible()
 
     // Decommission is not offered — tearing down something never provisioned
@@ -323,7 +323,7 @@ test.describe('Infrastructure retry', () => {
 
   test('Retry asks for confirmation and says the parameters are reused', async ({ page }) => {
     const retry = page.getByRole('button', { name: /^retry$/i }).first()
-    requireSeeded(await retry.count() > 0, 'no failed deployment on /infrastructure offering Retry')
+    requireSeeded(await appears(retry), 'no failed deployment on /infrastructure offering Retry')
 
     await retry.click()
     const dialog = page.locator('dialog[open]')

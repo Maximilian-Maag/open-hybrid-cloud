@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot, requireSeeded } from './helpers'
+import { appears, loginAsRoot, requireSeeded } from './helpers'
 
 // Issue #28. The cart is per user and persisted server-side, so what is asserted
 // here is that an added item survives a reload and that checkout's validation gate
@@ -20,9 +20,12 @@ test.describe('Shopping cart', () => {
     if (await noProducts.isVisible()) return false
 
     await order.click()
+    // Waited for, not counted. `count()` here ran before the product page had
+    // rendered and answered 0, so this helper returned false and every test
+    // using it skipped — the `toBeVisible` below would have waited, but it came
+    // one line too late (#332).
     const addButton = page.getByRole('button', { name: /add to cart/i })
-    if (await addButton.count() === 0) return false
-    await expect(addButton).toBeVisible({ timeout: 10000 })
+    if (!(await appears(addButton))) return false
 
     // The environment select next to Add to cart; skip when nothing is offered.
     const envSelect = page.locator('form, div').filter({ has: addButton }).last().getByLabel(/environment/i).first()

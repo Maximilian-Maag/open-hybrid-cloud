@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { expectNoServerError, loginAsRoot, requireSeeded, requireStack } from './helpers'
+import { appears, expectNoServerError, loginAsRoot, requireSeeded, requireStack } from './helpers'
 
 /**
  * Open the first product's edit page, or say there is nothing to open.
@@ -13,6 +13,31 @@ import { expectNoServerError, loginAsRoot, requireSeeded, requireStack } from '.
  * Navigating by `href` sidesteps both. It still proves the list links point at
  * a real edit page, which is all the click was ever demonstrating here.
  */
+/** The one offering `seedDemoData` gives a pipeline stack, when DEMO_CI_URL is set. */
+const STACKED_PRODUCT = 'Managed Nginx Gateway'
+
+/**
+ * Open the edit page of a product named `name`, rather than of whichever one
+ * sorts first. Returns false when the catalogue has no such product.
+ */
+async function openProductEditByName(
+  page: import('@playwright/test').Page,
+  name: string,
+): Promise<boolean> {
+  await page.goto('/admin/products')
+  await expectNoServerError(page)
+
+  const row = page.getByRole('row').filter({ hasText: name })
+  if (!(await appears(row))) return false
+
+  const href = await row.getByRole('link', { name: /edit/i }).first().getAttribute('href')
+  expect(href, `the row for ${name} has an Edit link with no href`).toBeTruthy()
+  await page.goto(href as string)
+  await expect(page).toHaveURL(/\/admin\/products\/\d+/, { timeout: 30_000 })
+  await expect(page.getByRole('heading', { name: /pipeline stacks/i })).toBeVisible({ timeout: 30_000 })
+  return true
+}
+
 async function openFirstProductEdit(page: import('@playwright/test').Page): Promise<boolean> {
   await page.goto('/admin/products')
   await expectNoServerError(page)
@@ -150,17 +175,36 @@ test.describe('Admin - Pipeline Stacks', () => {
   })
 
   test('"Edit Stack" button opens modal pre-filled with stack data', async ({ page }) => {
-    requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
+    // By NAME, not "the first product". The demo seeds a pipeline stack for one
+    // offering only — the same `Managed Nginx Gateway` the provisioning journey
+    // uses — so opening whichever product sorts first found a product with no
+    // stacks and skipped, every run, whatever DEMO_CI_URL said.
+    requireSeeded(await openProductEditByName(page, STACKED_PRODUCT), `no ${STACKED_PRODUCT} on /admin/products`)
 
+    /*
+     * Waited for, not read once. `stacks` starts empty and the panel paints its
+     * "No pipeline stacks configured" state before the fetch resolves, so
+     * `noStacks.isVisible()` was true on a product that has one — and the test
+     * concluded there was no stack to edit. `appears` waits for the row itself
+     * and answers false only when none ever arrives.
+     */
     const stackItem = page.locator('[data-testid="stack-item"]').first()
-    const noStacks = page.getByText(/no pipeline stacks configured/i)
-    await expect(stackItem.or(noStacks)).toBeVisible({ timeout: 5000 })
-
-    requireStack(!(await noStacks.isVisible()), 'the product has no pipeline stack to edit')
+    requireStack(await appears(stackItem), 'the product has no pipeline stack to edit')
 
     await stackItem.getByRole('button', { name: /^edit$/i }).click()
-    await expect(page.getByRole('heading', { name: /edit pipeline stack/i })).toBeVisible()
-    await expect(page.getByLabel(/^name$/i)).not.toBeEmpty()
+
+    /*
+     * Scoped to the dialog, and the label allows its required marker.
+     *
+     * `page.getByLabel(/^name$/i)` was both unscoped — the page behind the modal
+     * has its own Name field — and anchored, so it matched nothing at all:
+     * `Input` renders a required field's label as "Name*". Two ways to be wrong
+     * about the same locator, neither of which anyone saw, because the guard
+     * above skipped the test before it ever got here.
+     */
+    const dialog = page.locator('dialog[open]')
+    await expect(dialog.getByRole('heading', { name: /edit pipeline stack/i })).toBeVisible()
+    await expect(dialog.getByLabel(/^name\s*\*?$/i)).not.toBeEmpty()
   })
 })
 

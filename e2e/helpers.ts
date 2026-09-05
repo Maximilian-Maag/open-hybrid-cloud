@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createHmac } from 'node:crypto'
 import path from 'node:path'
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
+import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test'
 
 /**
  * Read a value from the backend's .env.
@@ -263,6 +263,25 @@ export async function expectNoServerError(page: Page): Promise<void> {
   await expect(page.locator('body')).not.toContainText('Application error')
   await expect(page.locator('body')).not.toContainText('This page could not be found')
 }
+
+/**
+ * Whether a locator turns up within the budget.
+ *
+ * `count()` does not wait. Guarding on it straight after a click or a
+ * navigation reads the page before it has rendered, answers 0, and — in front of
+ * a `test.skip` — skips the test. Every run. `addFirstProduct` did exactly that:
+ * `count()` on the Add-to-cart button on the line BEFORE the `toBeVisible` that
+ * would have waited for it, so the whole cart suite skipped for months and the
+ * report said "skipped", not "broken" (#332).
+ *
+ * Use this for any precondition read after the page has been asked to change.
+ */
+export const appears = async (locator: Locator, timeout = 15_000): Promise<boolean> =>
+  locator
+    .first()
+    .waitFor({ state: 'visible', timeout })
+    .then(() => true)
+    .catch(() => false)
 
 /**
  * A precondition the demo seed is supposed to satisfy.

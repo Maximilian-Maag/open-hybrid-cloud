@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { expectNoServerError, loginAsRoot, requireSeeded, requireStack } from './helpers'
+import { appears, expectNoServerError, loginAsRoot, requireSeeded, requireStack } from './helpers'
 
 /**
  * Open the first catalogue product, or say the catalogue is empty.
@@ -174,7 +174,7 @@ test.describe('Order Placement Flow', () => {
     await page.goto('/orders')
 
     const orderLinks = page.getByRole('link').filter({ hasText: /^#\d+$/ })
-    requireSeeded(await orderLinks.count() > 0, 'no order on /orders to open')
+    requireSeeded(await appears(orderLinks), 'no order on /orders to open')
 
     await orderLinks.first().click()
     // 30s, like auth.setup.ts: the suite runs against `next dev`, which compiles

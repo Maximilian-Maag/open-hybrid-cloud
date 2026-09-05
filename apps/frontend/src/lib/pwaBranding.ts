@@ -71,6 +71,27 @@ export const readLogoDataUri = async (mime: string | null): Promise<string | nul
   }
 }
 
+/**
+ * A name that fits under a home-screen icon.
+ *
+ * Roughly twelve characters is where launchers start truncating, and they cut
+ * mid-word with an ellipsis. Cutting at a word boundary ourselves gives
+ * "Acme Cloud" rather than "Acme Cloud P…", which is the same information
+ * without the ragged edge. A single word longer than the budget is still hard
+ * truncated — there is nowhere better to cut it.
+ */
+export const shortNameFor = (name: string, budget = 12): string => {
+  if (name.length <= budget) return name
+  const words = name.split(/\s+/).filter(Boolean)
+  let out = ''
+  for (const word of words) {
+    const next = out === '' ? word : `${out} ${word}`
+    if (next.length > budget) break
+    out = next
+  }
+  return out || name.slice(0, budget)
+}
+
 /** `Open Hybrid Cloud` -> `OH`. What the icon shows when there is no logo. */
 export const initialsOf = (name: string): string => {
   const words = name.split(/\s+/).filter(Boolean)

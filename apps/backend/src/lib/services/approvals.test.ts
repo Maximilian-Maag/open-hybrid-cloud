@@ -115,6 +115,9 @@ describe('approveOrder', () => {
     if (!result.ok) return
 
     expect(result.data.success).toBe(true)
+    // Narrows the union: this environment does not respect deployment windows,
+    // so the approval provisioned rather than scheduling (#330).
+    if (result.data.scheduled) throw new Error('expected an immediate provision, got a scheduled one')
     expect(result.data.pipelineIds).toEqual(['pipe-approved'])
     expect(result.data.infraId).toBeDefined()
 

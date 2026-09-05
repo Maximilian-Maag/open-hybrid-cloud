@@ -735,7 +735,18 @@ export const orders = pgTable('orders', {
   productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
   environmentId: bigint('environment_id', { mode: 'number' }).notNull().references(() => deploymentEnvironments.id),
   userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id),
-  status: text({ enum: ['pending', 'provisioning', 'completed', 'failed', 'rejected'] }).notNull().default('pending'),
+  /*
+   * 'scheduled' sits between approval and provisioning (#330): an admin has
+   * decided, but the environment respects deployment windows and none is open.
+   * A lifecycle state, not a property — which is why it belongs here and drift
+   * did not (see `lastRefreshOutcome`).
+   */
+  status: text({ enum: ['pending', 'scheduled', 'provisioning', 'completed', 'failed', 'rejected'] }).notNull().default('pending'),
+  /** When the window that will release it opens. NULL unless it is waiting. */
+  scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
+  /** Root deployed it before its window. Who, and when — both or neither. */
+  windowOverrideBy: bigint('window_override_by', { mode: 'number' }).references(() => users.id),
+  windowOverrideAt: timestamp('window_override_at', { withTimezone: true }),
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
   costCenterId: bigint('cost_center_id', { mode: 'number' }).references(() => costCenters.id),
   // Ordered as a time-boxed trial (issue #1). Recorded on the ORDER rather than

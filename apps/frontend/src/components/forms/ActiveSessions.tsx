@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SessionInfo, RevokeSessionsResponse } from '@open-hybrid-cloud/types'
 import { del, get } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
@@ -96,16 +96,65 @@ export function ActiveSessions({ initialSessions, userId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchSessions])
 
+  /*
+   * Whether this component is still on the page (#195, F2).
+   *
+   * The comment on `fetchSessions` says every caller checks before it writes,
+   * and the effect above does. `run` did not: it writes three times after an
+   * await, in a card rendered inside a modal that closes on a click outside it.
+   *
+   * Consistency with that contract, NOT a fix for an observable defect — and the
+   * distinction is worth recording, because #195 filed it as the latter. React 18
+   * removed the "setState on an unmounted component" warning: such a write is a
+   * discarded no-op and leaks nothing, and the resolved closure is collected
+   * either way. Probed before writing this — unguarded, the console says nothing
+   * at all, so there is no test that could tell the two apart. What was actually
+   * wrong was the comment above claiming an invariant one of its callers broke.
+   *
+   * Set on mount rather than only at declaration, because StrictMode runs the
+   * cleanup and then re-runs the effect: a ref left false there would silence
+   * every write for the rest of the component's life in development.
+   */
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+
+  /*
+   * Whether the browser has taken over (#195, F5).
+   *
+   * These timestamps arrive server-rendered through `initialSessions` and are
+   * formatted with `toLocaleString`, which reads the *runtime's* time zone —
+   * Node's on the server, the viewer's in the browser. Any viewer not sitting in
+   * the server's zone gets a hydration mismatch and a timestamp that visibly
+   * changes after load. It is the only call site in the app that is both
+   * server-rendered and client-formatted; everywhere else is either a server
+   * component or fetches on the client.
+   *
+   * So the server renders a placeholder and the browser fills it in. Rendering
+   * the raw ISO string instead would agree across both, but it would also be
+   * what a viewer with JavaScript disabled is left reading.
+   */
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => setHydrated(true), [])
+
+  const localTime = (value: string) =>
+    hydrated ? new Date(value).toLocaleString(lang) : '—'
+
   const run = async (key: number | 'others', action: () => Promise<RevokeSessionsResponse>) => {
     setBusy(key)
     setError(null)
     try {
       await action()
-      setSessions(await fetchSessions())
+      const rows = await fetchSessions()
+      if (mounted.current) setSessions(rows)
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('unexpectedError', lang))
+      if (mounted.current) setError(err instanceof Error ? err.message : t('unexpectedError', lang))
     } finally {
-      setBusy(null)
+      if (mounted.current) setBusy(null)
     }
   }
 
@@ -131,11 +180,11 @@ export function ActiveSessions({ initialSessions, userId }: Props) {
     },
     {
       header: t('lastSeen', lang),
-      render: (row: SessionInfo) => new Date(row.lastSeenAt).toLocaleString(lang),
+      render: (row: SessionInfo) => localTime(row.lastSeenAt),
     },
     {
       header: t('created', lang),
-      render: (row: SessionInfo) => new Date(row.createdAt).toLocaleString(lang),
+      render: (row: SessionInfo) => localTime(row.createdAt),
     },
     {
       header: t('signOut', lang),

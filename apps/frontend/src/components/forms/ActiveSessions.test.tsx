@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import { renderToString } from 'react-dom/server'
 import userEvent from '@testing-library/user-event'
 import type { SessionInfo } from '@open-hybrid-cloud/types'
 import { ActiveSessions } from './ActiveSessions'
@@ -164,5 +165,34 @@ describe('ActiveSessions', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
     expect(String(fetchMock.mock.calls[1][0])).toContain('userId=77')
+  })
+
+  /*
+   * #195, F5. These timestamps are server-rendered through `initialSessions` and
+   * formatted with `toLocaleString`, which reads the runtime's time zone — Node's
+   * on the server, the viewer's in the browser. Any viewer outside the server's
+   * zone got a hydration mismatch and a timestamp that changed after load.
+   *
+   * The first render must therefore not contain a formatted time; the one after
+   * mount must.
+   */
+  it('formats timestamps only once the browser has taken over', async () => {
+    render(<ActiveSessions initialSessions={[phone]} />)
+
+    // After mount the effect has run, so the real time is in.
+    await waitFor(() => {
+      const formatted = new Date(phone.lastSeenAt).toLocaleString('en')
+      expect(screen.getByText(formatted)).toBeTruthy()
+    })
+  })
+
+  it('renders a placeholder rather than a server-zone time on the first paint', () => {
+    // `renderToString` is the server's view: no effects run, so `hydrated` is
+    // false and no locale formatting can have happened. Asserting on the absence
+    // of the formatted string is what catches a regression here — a re-added
+    // `toLocaleString` in the render body would put it back.
+    const html = renderToString(<ActiveSessions initialSessions={[phone]} />)
+    expect(html).not.toContain(new Date(phone.lastSeenAt).toLocaleString('en'))
+    expect(html).toContain('—')
   })
 })

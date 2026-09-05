@@ -27,7 +27,9 @@ import type { Result } from 'axe-core'
  *     docs/guides/accessibility.md. Read that before adding or removing a tag.
  */
 
-const PUBLIC_PAGES = ['/login', '/impressum']
+//  is public because it has to render when nothing can be fetched —
+// including a session check (#148). It is a page, so it is scanned like one.
+const PUBLIC_PAGES = ['/login', '/impressum', '/offline']
 
 const AUTHED_PAGES = [
   '/',

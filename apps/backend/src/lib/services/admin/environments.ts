@@ -50,6 +50,10 @@ const environmentColumns = {
   ciSourceId: deploymentEnvironments.ciSourceId,
   webhookUrl: deploymentEnvironments.webhookUrl,
   webhookToken: deploymentEnvironments.webhookToken,
+  // Not a secret, and the admin UI needs it to render the toggle (#330). `tsc`
+  // insisted, and rightly: `PublicEnvironment` is derived from the table, so a
+  // column the type promises and the projection omits is a row that lies.
+  respectsDeploymentWindows: deploymentEnvironments.respectsDeploymentWindows,
 }
 
 export type PublicEnvironment = Omit<DeploymentEnvironment, 'callbackSecret' | 'webhookToken'> & {

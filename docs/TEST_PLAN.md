@@ -127,9 +127,32 @@ Coverage is broad; add the flows the fixes introduced and cross-cutting concerns
   end to end.
 - **Order validation** ([NEW] `order-validation.spec.ts`): submitting with a
   required parameter empty shows a validation error and does not create an order.
-- **Authorization** ([NEW] `authz.spec.ts`): a project_manager cannot see/act on
-  another PM's project, orders, or infrastructure (IDOR guard); admin-only pages
-  redirect/403 for a PM. (Add a second seeded non-root user in `global-setup`.)
+- **Authorization** (`roles.spec.ts` — DONE, planned here as `authz.spec.ts`): a
+  permission matrix asserted as each role, in three parts — every endpoint's
+  guard (allowed vs. 403), every page the role's nav offers rendering its own
+  data, and a page above the role not handing that data over. A project_manager
+  reading another PM's order is covered in `processes.spec.ts`.
+
+  Two notes for anyone extending it. The table is written as the set of roles
+  that ARE allowed, not as a minimum rank, because one endpoint needs "admin but
+  not root": `listDelegations` refuses root in the SERVICE, since the route's
+  `requireRole('admin')` admits it by rank and root does not participate in
+  approval delegation. And the accounts are created at run time through the API
+  rather than seeded — a seeded second user was the plan below, but it cannot
+  cover an admin, whose session only works after the mandatory second-factor
+  enrolment (#197) that `signInAsAccount` walks.
+
+  This is the coverage whose absence let #323 ship: the catalogue asked a
+  root-only route for the category filter, so the shop was an error page for
+  every role except the one the whole suite signs in as.
+- **Process journeys** (`processes.spec.ts` — DONE): the flows that cross
+  accounts, which no single-session spec can see — a project_manager orders and
+  the order WAITS, the orderer cannot approve their own order, an admin finds it
+  in the queue and rejects it with a note the orderer can read, root retires a
+  product and it leaves the shop, root deactivates an account and it can no
+  longer sign in. The post-approval half (CI fired, callback, element active)
+  needs a CI endpoint the suite can answer for and lives in `provisioning.spec.ts`
+  (#157).
 - **Localization** ([NEW] `i18n.spec.ts`): switch language via the switcher →
   `<html lang>` updates, nav/status labels change, cookie persists across reload;
   dates/prices render in the selected locale.
@@ -145,8 +168,14 @@ Coverage is broad; add the flows the fixes introduced and cross-cutting concerns
   effect immediately (send a test mail via Mailpit and assert receipt).
 
 ### E2E infrastructure notes
-- Add a non-root seeded user + a second storage state so authorization specs can
-  run as a project_manager.
+- ~~Add a non-root seeded user + a second storage state so authorization specs
+  can run as a project_manager.~~ Done differently, and deliberately:
+  `helpers.ts` creates each role's account through the API at run time and signs
+  it in from a context with NO stored state. A seeded user and a saved storage
+  state would have been cheaper for a project_manager and no help at all for an
+  admin — a fresh administrative account owes a second factor before its session
+  can reach anything, so the enrolment has to be walked, and a storage state
+  saved once would go stale against a database that is reseeded per run.
 - The dev stack already mocks CI (WireMock) and SMTP (Mailpit) — assert against
   Mailpit's API for email flows and WireMock for CI triggers.
 

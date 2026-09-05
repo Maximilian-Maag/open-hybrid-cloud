@@ -71,12 +71,46 @@ test.describe('Audit log', () => {
     await expectNoServerError(page)
   })
 
-  test('shows pagination when there are multiple pages', async ({ page }) => {
-    const prevBtn = page.getByRole('button', { name: /previous/i })
-    const nextBtn = page.getByRole('button', { name: /next/i })
-    // Pagination only appears when totalPages > 1; just check controls work if shown
-    if (await nextBtn.isVisible()) {
-      await expect(prevBtn).toBeVisible()
+  /*
+   * Scoped to the pager, and that is the whole point.
+   *
+   * This read `page.getByRole('button', { name: /next/i })` at document level,
+   * which also matches the dev-tools button `next dev` injects into every page.
+   * That button is always there, so the guard was reporting on the overlay
+   * rather than on the table — whenever the overlay happened to mount first the
+   * body ran against a table with no pagination and failed on a Previous that
+   * was never rendered, and the rest of the time the assertion did not run at
+   * all. It had therefore never once checked what it is named after.
+   *
+   * The behaviour is worth asserting properly: Previous is rendered but
+   * disabled on page 1, and clicking Next both enables it and advances the
+   * counter. Asserting only "both buttons exist" would pass against a pager
+   * whose buttons do nothing.
+   */
+  test('pagination pages through the log when there is more than one page', async ({ page }) => {
+    const pager = page.getByTestId('audit-pager')
+    const rows = page.getByRole('row')
+    await expect(rows.first()).toBeVisible({ timeout: 15_000 })
+
+    // No pager is a legitimate state, not a reason to skip: it means the log fits
+    // on one page, and that is worth asserting rather than shrugging at. A pager
+    // that failed to render over 20+ entries would otherwise read as "fits on one
+    // page" for ever.
+    if ((await pager.count()) === 0) {
+      expect(await rows.count(), 'no pager, so the log must fit on one page').toBeLessThanOrEqual(21)
+      return
     }
+
+    const prevBtn = pager.getByRole('button', { name: /previous/i })
+    const nextBtn = pager.getByRole('button', { name: /next/i })
+
+    await expect(pager).toContainText(/page 1 \/ \d+/i)
+    await expect(prevBtn).toBeDisabled()
+    await expect(nextBtn).toBeEnabled()
+
+    await nextBtn.click()
+
+    await expect(pager).toContainText(/page 2 \/ \d+/i)
+    await expect(prevBtn).toBeEnabled()
   })
 })

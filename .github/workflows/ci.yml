@@ -80,6 +80,19 @@ jobs:
       - name: Lint frontend
         run: pnpm --filter frontend lint
 
+      # A step in THIS job rather than a job of its own, deliberately: `dev` and
+      # `staging` require four checks by exact name, and a new required job would
+      # have to be added to both protections before it gated anything — while an
+      # extra step here is covered by "Type-check & Lint" the moment it merges.
+      #
+      # `e2e/` was in neither the type-check nor the lint scripts, both of which
+      # filter to `./apps/*`. It is the largest test code in the repo and nothing
+      # read it statically: two type errors were sitting in it, one of them a
+      # `ready(page)` missing the timeout argument its own signature requires
+      # (#328).
+      - name: Type-check e2e
+        run: pnpm exec tsc --noEmit -p e2e/tsconfig.json
+
   # ── Policy ───────────────────────────────────────────────────────────────────
   #
   # Codebase invariants as Rego (issue #149). Every rule here is one that spans
@@ -192,7 +205,277 @@ jobs:
 
   # ── E2E ──────────────────────────────────────────────────────────────────────
   e2e:
+    # ── Four runners, not four workers ────────────────────────────────────────
+    #
+    # `playwright.config.ts` pins `workers: 1` on CI and gives two reasons: both
+    # apps are served by `next dev`, which compiles on first request and starves
+    # under concurrent workers on a small runner; and the specs mutate GLOBAL
+    # singletons — CI sources, environments, products, categories, users,
+    # branding, SMTP, AI config — against one shared database and then assert on
+    # list contents. Both reasons still stand, so `workers` stays at 1.
+    #
+    # Sharding parallelises on the axis those objections do not cover. Each
+    # matrix job is its own runner with its OWN Postgres service, its own seed and
+    # its own pair of dev servers, so the shared-database coupling is not merely
+    # tolerated across shards — it does not exist. Raising `workers` instead would
+    # have hit both objections head-on.
+    #
+    # Four is chosen against the setup cost, which every shard pays in full:
+    # checkout, install, a Chromium download, the demo seed and two cold `next
+    # dev` compiles. Past roughly four that fixed cost dominates what is left of
+    # the suite to divide, and the wall clock stops improving.
+    #
+    # `fail-fast: false` because a shard is a slice of the suite, not a stage of
+    # it: cancelling the other three on the first red one throws away three
+    # quarters of the run's information to save a few minutes.
+    # NOT "E2E Tests" — that name belongs to the aggregating job below, because
+    # branch protection on `dev` requires a check called exactly that. A matrix
+    # job cannot satisfy it (it reports one check per shard, each with the shard
+    # in its name), so naming a shard "E2E Tests" would leave the required check
+    # permanently missing and every PR to `dev` unmergeable.
+    name: E2E shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: open_hybrid_cloud_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/open_hybrid_cloud_e2e
+      JWT_SECRET: ci-e2e-jwt-secret-not-used-in-prod
+      ADMIN_EMAIL: root@test.dev
+      ADMIN_PASSWORD: testpassword123
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ci-e2e-nextauth-secret-not-used-in-prod
+      API_URL: http://localhost:3001
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      E2E_BASE_URL: http://localhost:3000
+      E2E_ADMIN_EMAIL: root@test.dev
+      E2E_ADMIN_PASSWORD: testpassword123
+      # Points the demo catalogue at the WireMock started below, which is what
+      # makes a pipeline stack worth seeding and the provisioning journey
+      # runnable at all (#157). Left unset, the seed uses
+      # `gitlab.example.invalid` and skips the stack — which is how sharding
+      # this job first silently undid #322.
+      DEMO_CI_URL: http://localhost:8080
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      # A `docker run` step rather than a `services:` entry, and not by
+      # preference: service containers start BEFORE the checkout, so there is no
+      # repository yet to mount the mappings from — and the mappings are the
+      # whole point.
+      #
+      # Twelve stubs have been sitting in infra/wiremock/mappings since #121
+      # proved the full GitLab path against them — trigger → bridges → child
+      # pipeline → apply job → parsed outputs. Every shard needs its own, since
+      # each is a separate runner with its own database and its own seed.
+      #
+      # Pinned to the version the mappings were written against, same as
+      # infra/docker-compose.dev.yml. A health poll rather than a sleep: a suite
+      # that starts before the stubs are loaded fails as a provisioning bug.
+      - name: Start the GitLab stub (WireMock)
+        run: |
+          docker run -d --name ohc-wiremock -p 8080:8080 \
+            -v "$PWD/infra/wiremock/mappings:/home/wiremock/mappings:ro" \
+            wiremock/wiremock:3.13.2 --verbose --global-response-templating
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/__admin/mappings >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://localhost:8080/__admin/mappings >/dev/null
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Without this the e2e database holds a root user, default branding and
+      # nothing else: `runBootstrap()` is all the app does on start, and
+      # `make db-seed-demo` was never called here. So 56 of 283 tests skipped —
+      # order-flow, every pipeline-stack test, most of admin-products, the cart,
+      # the order comments — and a run that executed almost nothing reported
+      # green (#152). The five detail pages in the accessibility gate skipped for
+      # the same reason (#223): each walks in from a list, and an empty list has
+      # nothing to walk to.
+      #
+      # `seed-demo.ts` runs its own bootstrap, so it does not need the app up —
+      # which is why this can sit before the webServer Playwright starts. Not
+      # `make db-seed-demo`: that passes `--env-file=.env`, and CI has its
+      # configuration in the job env rather than in a file.
+      - name: Seed the demo catalogue
+        working-directory: apps/backend
+        run: ../../node_modules/.bin/tsx --tsconfig tsconfig.json src/seed-demo.ts
+
+      # `blob`, because a shard's report is a QUARTER of a report and the skip
+      # budget below has to judge the whole thing. A blob is the intermediate
+      # format `playwright merge-reports` recombines, and merging is what makes
+      # one JSON out of four partial runs — four separate JSONs, each showing a
+      # quarter of the skips against a budget written for all of them, would let
+      # a real skip regression through four times over.
+      #
+      # `list` stays alongside it so a shard's own log still reads as a test run.
+      #
+      # The a11y gate has moved to its own job. It used to be a step here, after
+      # the suite, which made it wait for a full E2E run before it started — and
+      # with four shards it would have run four times over the same pages.
+      - name: Run E2E tests
+        run: >-
+          pnpm exec playwright test
+          --grep-invert "Accessibility"
+          --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+          --reporter=list,blob
+
+      # Named per shard: `upload-artifact` v4 refuses a second upload to the same
+      # name, so one name for all four would fail three of them.
+      - name: Upload this shard's blob report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 3
+          if-no-files-found: error
+
+
+  # ── E2E report ───────────────────────────────────────────────────────────────
+  #
+  # The shards' four blob reports, recombined into the one report the skip budget
+  # judges. This job is where a skip regression is caught: each shard alone sees
+  # roughly a quarter of the suite, so a budget of eight applied per shard would
+  # tolerate thirty-two.
+  e2e-report:
+    # This name is load-bearing: branch protection on `dev` requires a check
+    # called "E2E Tests", and after sharding no single job runs the E2E suite any
+    # more. So the job that AGGREGATES the shards carries the name, and the guard
+    # below is what makes that honest — a required check that reports success
+    # while a shard was red would be worse than no required check at all.
+    #
+    # It also stands in for the accessibility gate, which used to be a step
+    # inside the old "E2E Tests" job and was therefore covered by the same
+    # required check. Moving it to a job of its own would have quietly stopped it
+    # blocking a merge; depending on it here keeps the enforcement exactly where
+    # it was.
     name: E2E Tests
+    runs-on: ubuntu-latest
+    # `always()`, because the report matters MOST when a shard failed — and
+    # without it this job inherits `success()`, is skipped, and a skipped
+    # required check blocks the PR with no explanation. The guard step is what
+    # turns a failed shard into a failed check.
+    if: always()
+    needs: [e2e, a11y]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - name: Download the shards' blob reports
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: all-blob-reports
+          pattern: blob-report-*
+          merge-multiple: true
+
+      # `json` for the skip budget, `html` for a human. `merge-reports` writes the
+      # JSON to stdout unless told otherwise, hence the output-name variable —
+      # the same one the single-job version used.
+      - name: Merge into one report
+        run: pnpm exec playwright merge-reports --reporter=json,html ./all-blob-reports
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-results.json
+
+      # A skip is invisible in a green summary, which is how #152 went unnoticed
+      # for months: CI never seeded the e2e database, 56 of 283 tests skipped, and
+      # the report said `ok: true`.
+      #
+      # EIGHT, and the number is a statement rather than a ceiling to grow into.
+      # Seven of the eight have one cause: `seedDemoData` creates a CI source and
+      # two deployment environments but no pipeline stack, so no seeded product
+      # can be provisioned — and with no order there is no approval to act on, no
+      # cart item to keep, and no element mid-provisioning:
+      #
+      #   admin-pipeline-stacks  "Edit Stack" pre-filled     (no stack to edit)
+      #   admin-products         Remove asks for confirmation
+      #   admin-products         trial duration appears once opted in
+      #   approvals              approving removes it from the list
+      #   cart                   an added item persists
+      #   cart                   checkout needs a project chosen
+      #   infrastructure         provisioning is not offered for teardown
+      #   order-flow             can submit an order                (#157)
+      #
+      # #157 seeds a pipeline stack and stands up a CI endpoint the suite can
+      # answer for, which closes most of these. Lower the number as that lands
+      # rather than leaving it here.
+      - name: Check the skip budget
+        if: always() && hashFiles('e2e-results.json') != ''
+        run: node scripts/skip-budget.mjs e2e-results.json 8
+
+      - name: Upload the merged report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report
+          # The JSON alongside the HTML. The skip budget reads it, so when that is
+          # what failed, the numbers it judged are what somebody needs to see.
+          path: |
+            playwright-report/
+            e2e-results.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      # LAST, not first. `needs.<job>.result` for a matrix job is the aggregate —
+      # 'success' only if every shard succeeded — and this job runs on
+      # `always()`, so without this step four red shards plus a green merge would
+      # report the required check as passing.
+      #
+      # It sits at the end so that a failed shard still gets its report merged,
+      # its skip budget counted and its artifact uploaded on the way past. Failing
+      # fast here would have skipped all three, and a run where a shard broke is
+      # exactly the run where somebody needs the merged report.
+      - name: Fail if any shard or the accessibility gate failed
+        if: always() && (needs.e2e.result != 'success' || needs.a11y.result != 'success')
+        run: |
+          echo "E2E shards:         ${{ needs.e2e.result }}"
+          echo "Accessibility gate: ${{ needs.a11y.result }}"
+          echo "::error::A job this check aggregates did not succeed — open the shard jobs above for the failure itself."
+          exit 1
+
+  # ── Accessibility ────────────────────────────────────────────────────────────
+  #
+  # Its own job rather than a step after the E2E suite. It answers a different
+  # question, and as a step it (a) waited for a full suite it does not depend on,
+  # and (b) once the suite is sharded would have run four times over the same
+  # pages, or needed a `matrix.shard == 1` guard that reads like an accident.
+  #
+  # Covers WCAG 2.1 A/AA on every page and dialog, plus the things axe cannot
+  # see: focus visibility, accessible-name language, aria-current and
+  # reduced-motion. Also re-scans the dashboard under a deliberately hostile
+  # branding colour, because the chrome is painted on an operator-chosen value
+  # and default-config scanning hid 235 of 246 failures.
+  #
+  # The services, env and seed below are the same as the shards'. GitHub
+  # Actions has no YAML anchors, so this is a copy — and it must stay one:
+  # a job that scans a differently-seeded database is scanning different pages.
+  a11y:
+    name: Accessibility gate (WCAG 2.1 AA)
     runs-on: ubuntu-latest
     needs: [build]
     services:
@@ -224,7 +507,8 @@ jobs:
       # Points the demo catalogue at the WireMock started below, which is what
       # makes a pipeline stack worth seeding and the provisioning journey
       # runnable at all (#157). Left unset, the seed uses
-      # `gitlab.example.invalid` and skips the stack.
+      # `gitlab.example.invalid` and skips the stack — which is how sharding
+      # this job first silently undid #322.
       DEMO_CI_URL: http://localhost:8080
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -233,9 +517,6 @@ jobs:
 
       - uses: ./.github/actions/setup
 
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
-
       # A `docker run` step rather than a `services:` entry, and not by
       # preference: service containers start BEFORE the checkout, so there is no
       # repository yet to mount the mappings from — and the mappings are the
@@ -243,13 +524,12 @@ jobs:
       #
       # Twelve stubs have been sitting in infra/wiremock/mappings since #121
       # proved the full GitLab path against them — trigger → bridges → child
-      # pipeline → apply job → parsed outputs — and the e2e job never started
-      # one, so that path had no end-to-end coverage at all (#157).
+      # pipeline → apply job → parsed outputs. Every shard needs its own, since
+      # each is a separate runner with its own database and its own seed.
       #
       # Pinned to the version the mappings were written against, same as
-      # infra/docker-compose.dev.yml. `--wait` on the health check rather than a
-      # sleep: a suite that starts before the stubs are loaded fails as a
-      # provisioning bug.
+      # infra/docker-compose.dev.yml. A health poll rather than a sleep: a suite
+      # that starts before the stubs are loaded fails as a provisioning bug.
       - name: Start the GitLab stub (WireMock)
         run: |
           docker run -d --name ohc-wiremock -p 8080:8080 \
@@ -261,83 +541,22 @@ jobs:
           done
           curl -sf http://localhost:8080/__admin/mappings >/dev/null
 
-      # Without this the e2e database holds a root user, default branding and
-      # nothing else: `runBootstrap()` is all the app does on start, and
-      # `make db-seed-demo` was never called here. So 56 of 283 tests skipped —
-      # order-flow, every pipeline-stack test, most of admin-products, the cart,
-      # the order comments — and a run that executed almost nothing reported
-      # green (#152). The five detail pages in the accessibility gate skipped for
-      # the same reason (#223): each walks in from a list, and an empty list has
-      # nothing to walk to.
-      #
-      # `seed-demo.ts` runs its own bootstrap, so it does not need the app up —
-      # which is why this can sit before the webServer Playwright starts. Not
-      # `make db-seed-demo`: that passes `--env-file=.env`, and CI has its
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      # The five detail pages in this spec each walk in from a list, and an empty
+      # list has nothing to walk to — so an unseeded database silently skips them
+      # (#223). `seed-demo.ts` runs its own bootstrap, so it does not need the app
+      # up. Not `make db-seed-demo`: that passes `--env-file=.env`, and CI has its
       # configuration in the job env rather than in a file.
       - name: Seed the demo catalogue
         working-directory: apps/backend
         run: ../../node_modules/.bin/tsx --tsconfig tsconfig.json src/seed-demo.ts
 
-      # `html` stays in the list. `--reporter=` REPLACES what playwright.config.ts
-      # declares, so naming only list and json silently stops the HTML report
-      # being written — and the failure artifact below would upload an empty
-      # directory, which is worse than no artifact because it looks like one.
-      - name: Run E2E tests
-        run: pnpm exec playwright test --grep-invert "Accessibility" --reporter=list,json,html
-        env:
-          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-results.json
-
-      # A skip is invisible in a green summary, which is how the gap above went
-      # unnoticed for as long as it did. This makes it loud.
-      #
-      # `always()`, because a step without a condition inherits `success()` and
-      # would be skipped the moment a test failed — exactly the run where
-      # "and it skipped forty others" is worth knowing. The run is already red;
-      # this only decides whether it says why twice.
-      #
-      # EIGHT, and the number is a statement rather than a ceiling to grow into.
-      # Seven of the eight have one cause: `seedDemoData` creates a CI source
-      # and two deployment environments but no pipeline stack, so no seeded
-      # product can be provisioned — and with no order there is no approval to
-      # act on, no cart item to keep, and no element mid-provisioning:
-      #
-      #   admin-pipeline-stacks  "Edit Stack" pre-filled     (no stack to edit)
-      #   admin-products         Remove asks for confirmation
-      #   admin-products         trial duration appears once opted in
-      #   approvals              approving removes it from the list
-      #   cart                   an added item persists
-      #   cart                   checkout needs a project chosen
-      #   infrastructure         provisioning is not offered for teardown
-      #   order-flow             can submit an order                (#157)
-      #
-      # Seeding a stack unlocks the first and breaks the last: the trigger would
-      # then fire at gitlab.example.invalid, fail, and the order be refused for
-      # a different reason. Closing that properly means a CI endpoint the suite
-      # can answer for, which is #157's subject, not this one's. Lower the
-      # number as that lands rather than leaving it here.
-      - name: Check the skip budget
-        if: always() && hashFiles('e2e-results.json') != ''
-        run: node scripts/skip-budget.mjs e2e-results.json 8
-
-      # Separate step so a red pipeline says which of the two broke. Covers
-      # WCAG 2.1 A/AA on every page and dialog, plus the things axe cannot see:
-      # focus visibility, accessible-name language, aria-current and
-      # reduced-motion. Also re-scans the dashboard under a deliberately hostile
-      # branding colour, because the chrome is painted on an operator-chosen
-      # value and default-config scanning hid 235 of 246 failures.
-      # Runs even when the suite above failed: the two gates answer different
-      # questions and a red E2E run must not hide an accessibility regression.
-      - name: Run accessibility gate (WCAG 2.1 AA)
-        if: always()
+      - name: Run accessibility gate
         run: pnpm exec playwright test e2e/a11y.spec.ts --reporter=list,json,html
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: a11y-results.json
-          # Its own directory, because Playwright EMPTIES the html reporter's
-          # output directory before writing. Sharing the default with the step
-          # above means this run deletes the E2E report — and it runs on
-          # `always()`, so the run where both failed is exactly the run where
-          # the E2E report goes missing. The JSON was already separated by name;
-          # the HTML needs a directory. Raised by CodeRabbit on #285.
           PLAYWRIGHT_HTML_OUTPUT_DIR: a11y-report
 
       # Zero, not three: every page in this spec is reachable on a seeded
@@ -351,18 +570,14 @@ jobs:
         if: always() && hashFiles('a11y-results.json') != ''
         run: node scripts/skip-budget.mjs a11y-results.json 0
 
-      - name: Upload Playwright report
+      - name: Upload accessibility report
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-report
-          # The JSON alongside the HTML. The skip budget reads these, so when it
-          # is the thing that failed the numbers it judged are what somebody
-          # needs to see — and they are two small files.
+          name: a11y-report
           path: |
-            playwright-report/
             a11y-report/
-            e2e-results.json
             a11y-results.json
           retention-days: 7
           if-no-files-found: warn
+

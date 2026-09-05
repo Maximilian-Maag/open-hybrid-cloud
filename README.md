@@ -39,6 +39,12 @@ GitHub and Bitbucket are wired up the same way as GitLab for triggering pipeline
 | **admin** | Can order directly, approve/reject all orders, view all projects and infrastructure. |
 | **project_manager** | Can place orders (approval by Admin required), manage own projects and infrastructure. |
 
+The executable version of this table is `e2e/roles.spec.ts`, which asserts every
+endpoint's guard and every page's reachability as each of the three roles. If you
+change what a role may do, that file is where it has to be said — a rank is not
+always enough to express it (root, for instance, is deliberately refused approval
+delegation despite outranking admin).
+
 ## Order Process
 
 ```

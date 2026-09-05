@@ -26,23 +26,41 @@ probeUrl.pathname = `/${PROBE}`
 const admin = postgres(adminUrl.toString(), { max: 1 })
 let probe: postgres.Sql
 
+/**
+ * How long the database-level hooks may take.
+ *
+ * Two minutes, and it has been raised twice. CREATE DATABASE copies a template
+ * and DROP DATABASE ... WITH (FORCE) evicts connections; both are cluster-level
+ * statements that serialise against each other, and on CI four workers share one
+ * Postgres. Fifteen seconds was not enough, sixty was not either — a run failed
+ * with "Hook timed out in 60000ms" while all 2949 tests passed, on a PR that only
+ * bumped pnpm.
+ *
+ * The ceiling is the second half of the fix, though, not the first: see below for
+ * why the common path no longer does either statement.
+ */
+const DB_HOOK_TIMEOUT_MS = 120_000
+
 /*
- * Made once, emptied between cases.
+ * Made once if it is not already there, emptied between cases.
  *
- * CREATE DATABASE copies a template and takes seconds under load — doing it per
- * case timed the hook out on CI, where four workers share one Postgres. Dropping
- * the two schemas reaches the same starting point (an empty `public`, no
- * `drizzle`) for the cost of one statement.
+ * `beforeEach` drops both schemas and recreates `public`, which reaches the
+ * starting point every case wants — an empty `public`, no `drizzle` — for the
+ * cost of one statement. So the DATABASE itself does not have to be new; it only
+ * has to exist. Creating it unconditionally meant a DROP and a CREATE on every
+ * run, which is the pair that timed the hook out, and it bought nothing that
+ * `beforeEach` was not already providing.
  *
- * Sixty seconds for this hook rather than the suite's fifteen: it is the one
- * that does DROP DATABASE ... WITH (FORCE) and CREATE DATABASE, and a slow CI
- * runner is not a thing for it to fail on.
+ * The name carries this worker's database name, so a run in another worktree
+ * against the same Postgres cannot collide with the one this file is using.
  */
 beforeAll(async () => {
-  await admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`)
-  await admin.unsafe(`CREATE DATABASE "${PROBE}"`)
+  const [existing] = await admin<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM pg_database WHERE datname = ${PROBE}
+  `
+  if (existing.n === 0) await admin.unsafe(`CREATE DATABASE "${PROBE}"`)
   probe = postgres(probeUrl.toString(), { max: 1 })
-}, 60_000)
+}, DB_HOOK_TIMEOUT_MS)
 
 beforeEach(async () => {
   await probe.unsafe(`
@@ -52,11 +70,27 @@ beforeEach(async () => {
   `)
 })
 
+/*
+ * Connections closed for certain; the database dropped only if it can be.
+ *
+ * The drop is tidiness, not correctness — `beforeAll` reuses a leftover probe and
+ * `beforeEach` empties it, so the next run is unaffected by one surviving. And
+ * the name matches the pattern `make test-db-prune` already sweeps.
+ *
+ * So a failure here must not fail the file. DROP DATABASE ... WITH (FORCE) is the
+ * slowest statement in it and the likeliest to be blocked by a peer worker; a red
+ * suite over cleanup that does not matter is exactly the kind of failure that
+ * teaches everyone to re-run rather than to read.
+ */
 afterAll(async () => {
   await probe?.end({ timeout: 5 })
-  await admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`)
+  try {
+    await admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`)
+  } catch (e) {
+    console.warn(`[databaseWipe] could not drop the probe database ${PROBE}; \`make test-db-prune\` will: ${e}`)
+  }
   await admin.end({ timeout: 5 })
-}, 60_000)
+}, DB_HOOK_TIMEOUT_MS)
 
 const publicTables = async (db: postgres.Sql): Promise<number> => {
   const [{ n }] = await db<{ n: number }[]>`

@@ -48,6 +48,15 @@ const reportSchema = z.object({
   // One report per run. Capped because this is unauthenticated-adjacent input
   // and the body is parsed into memory before anything else happens.
   results: z.array(stateResult).max(5000),
+  /**
+   * The run planned every entry of the work list it was given.
+   *
+   * Only a run that says so may have its silence read as "that state is no
+   * longer being checked" — see the reconciliation in `recordDriftReport`. It is
+   * stated by the runner rather than inferred here, because a job that died
+   * halfway through looks identical from this side.
+   */
+  complete: z.boolean().optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -83,6 +92,7 @@ export async function POST(req: NextRequest) {
   const recorded = await recordDriftReport({
     checkedAt: new Date(parsed.data.checkedAt),
     results: parsed.data.results,
+    complete: parsed.data.complete ?? false,
   })
 
   // The counts go back so the pipeline's own log says what the portal did with

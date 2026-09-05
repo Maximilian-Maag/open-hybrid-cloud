@@ -3943,6 +3943,15 @@ translation:
   \env{SMTP\_PASS}              & SMTP authentication password                    & No  \\
   \env{SMTP\_TLS}               & \code{true} to enable SMTP TLS                  & No  \\
   \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint URL                 & No  \\
+  \env{SECRET\_ENCRYPTION\_KEY} & AES-256-GCM key for stored integration credentials — 64 hex characters. Treat as unrotatable once in use: there is no re-encryption path, so a changed key means re-entering every credential & No \\
+  \env{SESSION\_TTL\_SECONDS}   & Ordinary login lifetime in seconds (default 8\,h, clamped to 30 days) & No \\
+  \env{SESSION\_REMEMBER\_ME\_TTL\_SECONDS} & Lifetime with ``remember me'' ticked (default 30 days, same clamp) & No \\
+  \env{TRUST\_PROXY}            & Trust \code{X-Forwarded-For}. Set only behind a proxy you control: it decides the per-IP login rate-limit bucket and the address shown in a session list. Unset records no address at all & No \\
+  \env{DECOMMISSION\_SWEEP\_SECRET} & Shared secret for \code{POST /api/internal/decommission-sweep}, sent as \code{X-Sweep-Secret}. Blank disables the endpoint (503) & No \\
+  \env{DRIFT\_REPORT\_SECRET}   & Shared secret for the scheduled drift loop, sent as \code{X-Drift-Secret}. Authorises \emph{both} \code{GET /api/internal/drift-targets} and \code{POST /api/internal/drift-report}. Blank disables both (503) & No \\
+  \env{ALLOW\_INSECURE\_CI\_TRANSPORT} & Accept a plaintext \code{http} CI source off loopback. Every call to one carries a credential, so this is refused by default (\#329) & No \\
+  \env{DEMO\_CI\_URL}           & CI endpoint the demo seed points its stack at; without it the seeded catalogue has nothing provisionable & No \\
+  \env{ALLOW\_DEMO\_SEED\_IN\_PRODUCTION} & Permit \code{make db-seed-demo} with \code{NODE\_ENV=production}, which it otherwise refuses & No \\
   \bottomrule
   \caption{Backend environment variable reference}
   \label{tab:envvars-backend}
@@ -4198,11 +4207,38 @@ The \textbf{Role} column uses the following abbreviations:
   \multicolumn{4}{@{}l}{\textit{CI Provider Webhooks (inbound, token-authenticated)}} \\[2pt]
   POST & \code{/api/webhooks/gitlab/pipeline}                        & GitLab pipeline status event            & public \\
   POST & \code{/api/webhooks/github/pipeline}                        & GitHub Actions workflow event           & public \\
-  POST & \code{/api/webhooks/bitbucket/pipeline}                     & Bitbucket pipeline status event         & public \\
+  POST & \code{/api/webhooks/bitbucket/pipeline}                     & Bitbucket pipeline status event         & public \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Internal (scheduler-authenticated, shared secret in a header)}} \\[2pt]
+  POST & \code{/api/internal/decommission-sweep}                     & Tear down elements past their expiry     & secret \\
+  GET  & \code{/api/internal/drift-targets}                          & Work list for the drift pipeline         & secret \\
+  POST & \code{/api/internal/drift-report}                           & Record what \code{plan -refresh-only} found & secret \\
   \bottomrule
   \caption{Complete REST API route reference}
   \label{tab:routes}
 \end{longtable}
+
+\paragraph{The internal routes.} These three have no user. A scheduler has no
+session to present, so each is authenticated with a shared secret in a request
+header, compared in constant time, and each returns \code{503} outright when its
+secret is unset --- an unconfigured deployment must not be writable by an
+anonymous caller. \code{X-Sweep-Secret} carries
+\env{DECOMMISSION\_SWEEP\_SECRET}; \code{X-Drift-Secret} carries
+\env{DRIFT\_REPORT\_SECRET} and authorises both drift routes, so a deployment
+that sets it enables the whole loop and one that does not enables neither.
+
+The two drift routes are one cycle, run from a schedule in the
+\code{infra-templates} project (\code{.ci/drift-report.gitlab-ci.yml}). The
+\code{GET} returns the work list --- one entry per \emph{active} element, with
+its base state name, its stack steps and the variables its apply used, because
+\code{plan -refresh-only} needs the module and its inputs and a state file names
+neither. The pipeline composes each step's state key as
+\code{<base>-<stateSuffix>}, exactly as \code{generate\_stack.py} does, plans
+each one, and \code{POST}s a single report. It is worth being plain that the
+\code{GET} returns provisioning variables for the whole estate at once: not a
+new class of exposure, since CI already receives exactly these when an element is
+provisioned, but everything in one response --- hence the secret, and hence
+nothing at all about inactive elements.
 
 \chapter{Requirements Traceability Matrix}
 \label{app:rtm}

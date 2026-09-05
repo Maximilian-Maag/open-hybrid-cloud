@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { POST } from './route'
 import { db } from '@/lib/db/client'
-import { infrastructureElements } from '@/lib/db/schema'
+import { infrastructureElements, unclaimedStates } from '@/lib/db/schema'
 import {
   createUser, createCategory, createProduct, createCiSource,
   createEnvironment, createProject, createOrder, createInfraElement,
@@ -82,9 +82,33 @@ describe('POST /api/internal/drift-report', () => {
     // The counts go back so the pipeline's own log says what the portal made of
     // its report — a run that matched nothing is a state-key convention that has
     // drifted apart, and it should be visible from either end.
-    expect(await res.json()).toEqual({ matched: 1, unclaimed: 0, ignored: 0 })
+    expect(await res.json()).toEqual({ matched: 1, unclaimed: 0, ignored: 0, stale: 0 })
     const [row] = await db.select().from(infrastructureElements).where(eq(infrastructureElements.id, element.id))
     expect(row.lastRefreshOutcome).toBe('clean')
+  })
+
+  /*
+   * `complete` decides whether the report's silence about a state key may be
+   * read as "nothing checks that any more". A run that does not say so must not
+   * have observations reconciled away underneath it, so the flag has to survive
+   * the route rather than being defaulted on.
+   */
+  it('carries the completeness flag through to the recorder', async () => {
+    await db.insert(unclaimedStates).values({ stateKey: 'left-behind-o7', outcome: 'drifted' })
+
+    const res = await POST(post({ ...validReport, results: [], complete: true }, SECRET))
+
+    expect(res.status).toBe(200)
+    expect(await db.select().from(unclaimedStates)).toHaveLength(0)
+  })
+
+  it('leaves observations alone when the run does not claim completeness', async () => {
+    await db.insert(unclaimedStates).values({ stateKey: 'left-behind-o7', outcome: 'drifted' })
+
+    const res = await POST(post({ ...validReport, results: [] }, SECRET))
+
+    expect(res.status).toBe(200)
+    expect(await db.select().from(unclaimedStates)).toHaveLength(1)
   })
 
   it('refuses a body that is not JSON', async () => {

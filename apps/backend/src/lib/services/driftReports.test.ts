@@ -6,6 +6,7 @@ import {
   createUser, createCategory, createProduct, createCiSource,
   createEnvironment, createProject, createOrder, createInfraElement,
 } from '@/test/helpers'
+import type { StackStep } from '@open-hybrid-cloud/types'
 import { recordDriftReport, driftReportStatus, driftTargets } from './driftReports'
 
 /**
@@ -18,19 +19,29 @@ import { recordDriftReport, driftReportStatus, driftTargets } from './driftRepor
  */
 const AT = new Date('2026-09-10T06:00:00.000Z')
 
-const scenario = async (over: { status?: string; stateKeys?: Record<string, string> } = {}) => {
+const scenario = async (over: { status?: string; stateKeys?: Record<string, string>; steps?: StackStep[] } = {}) => {
   const user = await createUser({ email: `drift-${Math.random()}@test.dev` })
   const category = await createCategory()
   const product = await createProduct(category.id)
   const ci = await createCiSource()
   const environment = await createEnvironment(ci.id)
   const project = await createProject(user.id)
+  const [stack] = await db
+    .insert(pipelineStacks)
+    .values({
+      productId: product.id,
+      environmentId: environment.id,
+      name: 'vm',
+      stateKeyParam: 'hostname',
+      steps: over.steps ?? [{ template: 'linode/virtual-machine', stateSuffix: 'vm', execOrder: 0, upstreamRefs: [] }],
+    })
+    .returning()
   const order = await createOrder(project.id, product.id, environment.id, user.id, { status: 'completed' })
   const element = await createInfraElement(order.id, project.id, environment.id, product.id, {
     status: over.status ?? 'active',
-    stateKeys: over.stateKeys ?? { '1': 'web-01-o42' },
+    stateKeys: over.stateKeys ?? { [String(stack.id)]: 'web-01-o42' },
   })
-  return { element }
+  return { element, stack }
 }
 
 const reload = async (id: number) => {
@@ -48,7 +59,7 @@ describe('recordDriftReport', () => {
 
     const out = await recordDriftReport({ checkedAt: AT, results: [{ stateKey: 'web-01-o42', outcome: 'clean' }] })
 
-    expect(out).toEqual({ matched: 1, unclaimed: 0, ignored: 0 })
+    expect(out).toEqual({ matched: 1, unclaimed: 0, ignored: 0, stale: 0 })
     const row = await reload(element.id)
     expect(row.lastRefreshedAt?.toISOString()).toBe(AT.toISOString())
     expect(row.lastRefreshOutcome).toBe('clean')
@@ -115,7 +126,7 @@ describe('recordDriftReport', () => {
       results: [{ stateKey: 'left-behind-o7', outcome: 'drifted', summary: { resources: [] } }],
     })
 
-    expect(out).toEqual({ matched: 0, unclaimed: 1, ignored: 0 })
+    expect(out).toEqual({ matched: 0, unclaimed: 1, ignored: 0, stale: 0 })
     const [row] = await db.select().from(unclaimedStates).where(eq(unclaimedStates.stateKey, 'left-behind-o7'))
     expect(row.outcome).toBe('drifted')
   })
@@ -155,8 +166,15 @@ describe('recordDriftReport', () => {
     const row = await reload(element.id)
     expect(row.lastRefreshedAt).toBeNull()
     expect(row.lastRefreshOutcome).toBeNull()
-    // It is not silently dropped either — an unmatched key is an observation.
-    expect(out.unclaimed).toBe(1)
+    /*
+     * It is not silently dropped, and it is not an observation either. The
+     * portal knows exactly what this state is — an element it is tearing down.
+     * Filing it under `unclaimed` would put a row in the admin UI for every
+     * teardown, describing a state nobody has lost track of.
+     */
+    expect(out.ignored).toBe(1)
+    expect(out.unclaimed).toBe(0)
+    expect(await db.select().from(unclaimedStates)).toHaveLength(0)
   })
 
   it('never creates or removes an element', async () => {
@@ -184,8 +202,66 @@ describe('recordDriftReport', () => {
       results: [{ stateKey: 'web-01-o42', outcome: 'clean' }, { stateKey: 'dns-01-o42', outcome: 'drifted' }],
     })
 
-    expect(out.matched).toBe(2)
+    // One element, written once, however many of its states were planned.
+    expect(out.matched).toBe(1)
     expect((await reload(element.id)).lastRefreshOutcome).toBe('drifted')
+  })
+
+  /*
+   * The bug that made this an aggregation rather than a loop.
+   *
+   * An element owns one state file per step and they are planned separately.
+   * Applying each result in turn made the element's reading depend on the ORDER
+   * of the array: the drifted VM was written first, then the clean DNS record
+   * overwrote it and cleared `drift_detected_at`. The drift was erased by a plan
+   * that never looked at it.
+   */
+  it.each([
+    ['drift last', ['clean', 'drifted'] as const],
+    ['drift first', ['drifted', 'clean'] as const],
+  ])('reads the same either way when the results arrive %s', async (_name, [first, second]) => {
+    const { element } = await scenario({
+      steps: [
+        { template: 'linode/virtual-machine', stateSuffix: 'vm', execOrder: 0, upstreamRefs: [] },
+        { template: 'linode/dns-record', stateSuffix: 'dns', execOrder: 1, upstreamRefs: [] },
+      ],
+    })
+
+    await recordDriftReport({
+      checkedAt: AT,
+      results: [
+        { stateKey: 'web-01-o42-vm', outcome: first, summary: { resources: [{ address: 'a', action: 'update' }] } },
+        { stateKey: 'web-01-o42-dns', outcome: second, summary: { resources: [{ address: 'b', action: 'update' }] } },
+      ],
+    })
+
+    const row = await reload(element.id)
+    expect(row.lastRefreshOutcome).toBe('drifted')
+    expect(row.driftDetectedAt?.toISOString()).toBe(AT.toISOString())
+  })
+
+  /*
+   * An element is clean only when every one of its states was actually read.
+   * `locked` beating `clean` is the same rule as leaving drift alone: silence
+   * must not read as health.
+   */
+  it('is not clean when one of its states could not be read', async () => {
+    const { element } = await scenario({
+      steps: [
+        { template: 'linode/virtual-machine', stateSuffix: 'vm', execOrder: 0, upstreamRefs: [] },
+        { template: 'linode/dns-record', stateSuffix: 'dns', execOrder: 1, upstreamRefs: [] },
+      ],
+    })
+
+    await recordDriftReport({
+      checkedAt: AT,
+      results: [
+        { stateKey: 'web-01-o42-vm', outcome: 'clean' },
+        { stateKey: 'web-01-o42-dns', outcome: 'locked' },
+      ],
+    })
+
+    expect((await reload(element.id)).lastRefreshOutcome).toBe('locked')
   })
 
   it('audits drift, and only drift', async () => {
@@ -194,10 +270,148 @@ describe('recordDriftReport', () => {
     await recordDriftReport({ checkedAt: AT, results: [{ stateKey: 'web-01-o42', outcome: 'clean' }] })
     expect(await db.select().from(auditLog).where(eq(auditLog.action, 'infra.drift_detected'))).toHaveLength(0)
 
-    await recordDriftReport({ checkedAt: AT, results: [{ stateKey: 'web-01-o42', outcome: 'drifted' }] })
+    const later = new Date(AT.getTime() + 3_600_000)
+    await recordDriftReport({ checkedAt: later, results: [{ stateKey: 'web-01-o42', outcome: 'drifted' }] })
     // A clean run every fifteen minutes would bury the log, which is how an
     // audit log stops being read.
     expect(await db.select().from(auditLog).where(eq(auditLog.action, 'infra.drift_detected'))).toHaveLength(1)
+  })
+
+  /*
+   * The contract between the two repositories, and the one that was wrong.
+   *
+   * `state_keys` records ONE base per stack, but a stack fans out to a job per
+   * step and `generate_stack.py` writes each step's state under
+   * `<base>-<stateSuffix>`. The matcher compared the reported key against the
+   * recorded base, so it matched nothing a real pipeline would ever send: every
+   * element in the estate would have come back `unclaimed` while both sides
+   * looked individually correct.
+   *
+   * Nothing caught it because every test reported the base directly. This one
+   * reports what `.ci/drift-report.gitlab-ci.yml` actually composes.
+   */
+  it('matches the per-step key the pipeline actually reports, not the base', async () => {
+    const { element } = await scenario({
+      steps: [
+        { template: 'linode/virtual-machine', stateSuffix: 'vm', execOrder: 0, upstreamRefs: [] },
+        { template: 'linode/dns-record', stateSuffix: 'dns', execOrder: 1, upstreamRefs: [] },
+      ],
+    })
+
+    const out = await recordDriftReport({
+      checkedAt: AT,
+      results: [
+        { stateKey: 'web-01-o42-vm', outcome: 'clean' },
+        { stateKey: 'web-01-o42-dns', outcome: 'clean' },
+      ],
+    })
+
+    expect(out).toEqual({ matched: 1, unclaimed: 0, ignored: 0, stale: 0 })
+    expect((await reload(element.id)).lastRefreshOutcome).toBe('clean')
+    expect(await db.select().from(unclaimedStates)).toHaveLength(0)
+  })
+
+  /*
+   * The round trip, asserted end to end: whatever `driftTargets` hands out, the
+   * composition the pipeline performs on it has to come back matchable. A change
+   * to either side alone breaks this.
+   */
+  it('accepts every key composed from its own work list', async () => {
+    await scenario({
+      steps: [
+        { template: 'linode/virtual-machine', stateSuffix: 'vm', execOrder: 0, upstreamRefs: [] },
+        { template: 'linode/dns-record', stateSuffix: 'dns', execOrder: 1, upstreamRefs: [] },
+      ],
+    })
+
+    // Exactly what .ci/drift-report.gitlab-ci.yml builds from targets.json.
+    const results = (await driftTargets()).flatMap((t) =>
+      t.stack.map((step) => ({ stateKey: `${t.stateName}-${step.stateSuffix}`, outcome: 'clean' as const })),
+    )
+    expect(results).toHaveLength(2)
+
+    const out = await recordDriftReport({ checkedAt: AT, results })
+    expect(out).toEqual({ matched: 1, unclaimed: 0, ignored: 0, stale: 0 })
+  })
+
+  /*
+   * A retried job POSTing an older run's findings must not restore an obsolete
+   * reading over a newer one. Without the guard the late `clean` below wins on
+   * arrival order and the drift disappears.
+   */
+  it('refuses a report older than the one already recorded', async () => {
+    const { element } = await scenario()
+    const summary = { resources: [{ address: 'module.vm.linode_instance.this', action: 'update' }] }
+
+    const later = new Date(AT.getTime() + 3_600_000)
+    await recordDriftReport({ checkedAt: later, results: [{ stateKey: 'web-01-o42', outcome: 'drifted', summary }] })
+
+    // The earlier run finally reports in.
+    const out = await recordDriftReport({ checkedAt: AT, results: [{ stateKey: 'web-01-o42', outcome: 'clean' }] })
+
+    expect(out.stale).toBe(1)
+    expect(out.matched).toBe(0)
+    // Not an observation either: the key is owned, the report was simply late.
+    expect(out.unclaimed).toBe(0)
+    const row = await reload(element.id)
+    expect(row.lastRefreshOutcome).toBe('drifted')
+    expect(row.lastRefreshedAt?.toISOString()).toBe(later.toISOString())
+    expect(row.driftSummary).toEqual(summary)
+  })
+
+  it('does not let a late report drag the whole picture backwards', async () => {
+    await scenario()
+    const later = new Date(AT.getTime() + 3_600_000)
+
+    await recordDriftReport({ checkedAt: later, results: [{ stateKey: 'web-01-o42', outcome: 'clean' }] })
+    await recordDriftReport({ checkedAt: AT, results: [{ stateKey: 'web-01-o42', outcome: 'clean' }] })
+
+    expect((await driftReportStatus()).lastReportAt?.toISOString()).toBe(later.toISOString())
+  })
+
+  /*
+   * An observation is only as current as the last run that saw it. The report is
+   * built from the portal's own work list, so a key that stops appearing is one
+   * the portal has stopped asking about — and the row would otherwise sit in the
+   * admin UI for ever describing a check that no longer runs.
+   */
+  it('reconciles away an observation a complete run no longer sees', async () => {
+    await recordDriftReport({ checkedAt: AT, results: [{ stateKey: 'left-behind-o7', outcome: 'drifted' }] })
+    expect(await db.select().from(unclaimedStates)).toHaveLength(1)
+
+    const later = new Date(AT.getTime() + 3_600_000)
+    await recordDriftReport({ checkedAt: later, results: [], complete: true })
+
+    expect(await db.select().from(unclaimedStates)).toHaveLength(0)
+  })
+
+  // A partial run's silence about a key means nothing at all, so it must not be
+  // read as "gone". `complete` is stated by the runner, never inferred here.
+  it('keeps an observation when the run does not claim to be complete', async () => {
+    await recordDriftReport({ checkedAt: AT, results: [{ stateKey: 'left-behind-o7', outcome: 'drifted' }] })
+
+    const later = new Date(AT.getTime() + 3_600_000)
+    await recordDriftReport({ checkedAt: later, results: [] })
+
+    expect(await db.select().from(unclaimedStates)).toHaveLength(1)
+  })
+
+  it('keeps the observations a complete run did still see', async () => {
+    await recordDriftReport({
+      checkedAt: AT,
+      results: [{ stateKey: 'left-behind-o7', outcome: 'drifted' }, { stateKey: 'gone-o8', outcome: 'clean' }],
+    })
+    expect(await db.select().from(unclaimedStates)).toHaveLength(2)
+
+    const later = new Date(AT.getTime() + 3_600_000)
+    await recordDriftReport({
+      checkedAt: later,
+      results: [{ stateKey: 'left-behind-o7', outcome: 'drifted' }],
+      complete: true,
+    })
+
+    const rows = await db.select().from(unclaimedStates)
+    expect(rows.map((r) => r.stateKey)).toEqual(['left-behind-o7'])
   })
 
   it('is idempotent — the same report twice leaves the same rows', async () => {
@@ -300,6 +514,34 @@ describe('driftTargets', () => {
    */
   it('omits an element with no recorded state key rather than deriving one', async () => {
     await withStack({ stateKeys: {} })
+    expect(await driftTargets()).toEqual([])
+  })
+
+  /*
+   * The stack lookup is global now — one query for all of them instead of one
+   * per element — so the scoping the per-element query gave for free has to be
+   * an explicit check. Without it a recycled stack id would hand the pipeline
+   * another product's steps to plan this element's state against.
+   */
+  it('omits a state key whose stack belongs to another product', async () => {
+    const { element } = await withStack()
+    const otherCategory = await createCategory()
+    const otherProduct = await createProduct(otherCategory.id)
+    const [foreign] = await db
+      .insert(pipelineStacks)
+      .values({
+        productId: otherProduct.id,
+        environmentId: (await db.select().from(pipelineStacks).limit(1))[0].environmentId,
+        name: 'someone-elses-stack',
+        stateKeyParam: 'hostname',
+        steps: [{ template: 'linode/object-storage', stateSuffix: 'obj', execOrder: 0, upstreamRefs: [] }],
+      })
+      .returning()
+    await db
+      .update(infrastructureElements)
+      .set({ stateKeys: { [String(foreign.id)]: 'web-01-o42' } })
+      .where(eq(infrastructureElements.id, element.id))
+
     expect(await driftTargets()).toEqual([])
   })
 

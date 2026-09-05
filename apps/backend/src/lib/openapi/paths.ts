@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi'
 import { registry } from './registry'
+import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
 extendZodWithOpenApi(z)
 
@@ -32,6 +33,14 @@ const orderSchema = z.object({
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
   isTrial: z.boolean().openapi({ description: 'Ordered as a time-boxed trial (issue #1).' }),
+  sizeCode: z.string().nullable().openapi({
+    description: 'The size that was ordered (issue #98). Null when the offering has none.',
+  }),
+  quantity: z.number().openapi({
+    description:
+      'How many infrastructure elements the order provisioned (issue #104). One order, N elements, one ' +
+      'approval; teardown stays per element.',
+  }),
   productSnapshot: z.unknown().nullable().openapi({
     description:
       'What the customer was offered when the order was placed (issue #38): product name and description, ' +
@@ -69,6 +78,12 @@ const productSchema = z.object({
   description: z.string().nullable(),
 })
 
+/** One picture of a product's gallery — its bytes come from the image routes. */
+const productImageSchema = z.object({
+  id: z.number(),
+  alt: z.string().openapi({ description: 'Required whenever an image exists (#105); never blank.' }),
+})
+
 const parameterSchema = z.object({
   id: z.number(),
   scope: z.string(),
@@ -88,7 +103,9 @@ const environmentSchema = z.object({
   description: z.string(),
   ciSourceId: z.number(),
   webhookUrl: z.string(),
-  webhookToken: z.string(),
+  // The outbound trigger token is never returned (issue #144) — only whether one
+  // is set. Send a new value to PUT /admin/environments/{id} to replace it.
+  webhookTokenSet: z.boolean(),
 })
 
 const costCenterSchema = z.object({
@@ -103,6 +120,50 @@ const ciSourceSchema = z.object({
   name: z.string(),
   url: z.string(),
   provider: z.string(),
+})
+
+const integrationKinds = ['foreman', 'ansible', 'nexus', 'pulp', 'loki', 'grafana'] as const
+const integrationAuthTypes = ['none', 'bearer', 'basic', 'token_header'] as const
+const integrationFailureModes = ['blocking', 'best_effort'] as const
+
+const integrationSchema = z.object({
+  id: z.number(),
+  kind: z.enum(integrationKinds),
+  name: z.string(),
+  baseUrl: z.string(),
+  authType: z.enum(integrationAuthTypes),
+  username: z.string(),
+  hasCredential: z.boolean().openapi({
+    description:
+      'Whether a credential is stored. The credential itself is never returned by any endpoint — ' +
+      'it is encrypted at rest and read only server-side.',
+  }),
+  environmentId: z.number().nullable().openapi({
+    description: 'Deployment environment this instance serves; null means portal-wide.',
+  }),
+  enabled: z.boolean(),
+  failureMode: z.enum(integrationFailureModes).openapi({
+    description:
+      'Whether a failed call to this integration aborts the operation that made it (blocking) ' +
+      'or is logged and carried on from (best_effort).',
+  }),
+  lastContactedAt: z.string().nullable().openapi({
+    description: 'Last time a probe reached this system. Set on success only; null means never.',
+  }),
+  lastError: z.string().nullable().openapi({
+    description: 'Why the most recent probe failed. Cleared on the next success.',
+  }),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+})
+
+const integrationProbeSchema = z.object({
+  ok: z.boolean(),
+  status: z.number().nullable(),
+  detail: z.string().optional(),
+  error: z.string().optional(),
+  lastContactedAt: z.string().nullable(),
+  lastError: z.string().nullable(),
 })
 
 const infraSchema = z.object({
@@ -146,8 +207,19 @@ const webhookSchema = z.object({
   environmentId: z.number(),
   name: z.string(),
   webhookUrl: z.string(),
-  webhookToken: z.string(),
+  // As with the environment: whether a trigger token is set, never its value.
+  webhookTokenSet: z.boolean(),
   execOrder: z.number(),
+})
+
+const offeringSizeSchema = z.object({
+  id: z.number(),
+  code: z.string().openapi({ description: 'Passed to CI as SIZE and stored on the order line.' }),
+  label: z.string(),
+  price: z.string(),
+  currency: z.string(),
+  sortOrder: z.number(),
+  active: z.boolean(),
 })
 
 const productEnvironmentSchema = z.object({
@@ -166,6 +238,13 @@ const productEnvironmentSchema = z.object({
   trialDurationMinutes: z.number().openapi({ description: 'How long a trial lives. Default 30.' }),
   environmentName: z.string().nullable(),
   overheadCostCenterName: z.string().nullable().optional(),
+  sizes: z.array(offeringSizeSchema).optional().openapi({
+    description:
+      'The sizes this offering can be ordered in (issue #98), in the order an admin arranged them. Empty ' +
+      "for an offering that defines none, in which case the offering-level price applies and an order " +
+      'must name no size. When it is non-empty an order MUST name one of these codes, and what it is ' +
+      "charged is the size's price, not the offering's.",
+  }),
 })
 
 const exchangeRateSchema = z.object({
@@ -219,6 +298,11 @@ registry.registerPath({
   method: 'post',
   path: '/auth/login',
   summary: 'Login with email and password',
+  description:
+    'Opens a server-side session (issue #37) and returns a token naming it. The token is only ' +
+    'accepted while that session is live, so a revoked session stops working on the next request. ' +
+    'When the account has a second factor (issue #36) NOTHING is opened here: the response is a ' +
+    'challenge, and the session is created by POST /auth/login/mfa once a code has been verified.',
   tags: ['Auth'],
   security: [],
   request: {
@@ -228,6 +312,79 @@ registry.registerPath({
           schema: z.object({
             email: z.string().email(),
             password: z.string().min(1),
+            rememberMe: z.boolean().optional().openapi({
+              description:
+                'Extend the session from the 8 h default to 30 days. On a two-step login it is ' +
+                'sealed into the challenge, so it is answered once, here.',
+            }),
+            challengeOnly: z.boolean().optional().openapi({
+              description:
+                'Check the password and report whether a second factor is required, opening no ' +
+                'session and returning no token in either case. Answers {"mfaRequired":false} for ' +
+                'an account without one.',
+            }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        'Either a session (token + user) or, when the account has a second factor, an MFA ' +
+        'challenge with NO token — see POST /auth/login/mfa.',
+      content: {
+        'application/json': {
+          schema: z.union([
+            z.object({
+              token: z.string(),
+              user: z.object({
+                id: z.number(),
+                email: z.string(),
+                name: z.string().nullable(),
+                role: z.string(),
+              }),
+            }),
+            z.object({
+              mfaRequired: z.literal(true),
+              mfaToken: z.string(),
+              expiresIn: z.number(),
+            }),
+            z.object({ mfaRequired: z.literal(false) }).openapi({
+              description: 'challengeOnly, and no second factor is enrolled.',
+            }),
+          ]),
+        },
+      },
+    },
+    400: { description: 'Bad request' },
+    401: { description: 'Invalid credentials' },
+    429: { description: 'Too many login attempts' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/auth/login/mfa',
+  summary: 'Complete a two-step login by presenting the second factor',
+  description:
+    'Trades the challenge from POST /auth/login, plus a TOTP code or a one-time recovery code, for a ' +
+    'session token. This is where the session row is created for a two-step login, through the same ' +
+    'path as every other sign-in, so it is listed and revocable like any other (issue #37). The ' +
+    'session lifetime comes from the "remember me" choice sealed into the challenge, not from this ' +
+    'request. Failures are counted against the account and lock the factor for 15 minutes after ' +
+    '5 consecutive failures (429).',
+  tags: ['Auth'],
+  security: [],
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            mfaToken: z.string().min(1),
+            code: z.string().min(1).max(64).openapi({
+              description: 'A 6-digit TOTP code or a one-time recovery code.',
+            }),
           }),
         },
       },
@@ -250,25 +407,9 @@ registry.registerPath({
         },
       },
     },
-    400: { description: 'Bad request' },
-    401: { description: 'Invalid credentials' },
-  },
-})
-
-registry.registerPath({
-  method: 'get',
-  path: '/auth/callback',
-  summary: 'OIDC / Entra ID callback — exchanges code for JWT and redirects',
-  tags: ['Auth'],
-  security: [],
-  request: {
-    query: z.object({ code: z.string() }),
-  },
-  responses: {
-    302: { description: 'Redirect to frontend with JWT token' },
-    400: { description: 'Missing or invalid code / claims' },
-    500: { description: 'Entra ID not configured' },
-    502: { description: 'Token exchange failed' },
+    400: { description: 'Invalid or already-used code' },
+    401: { description: 'Challenge expired, forged, or superseded by a password change' },
+    429: { description: 'Second factor locked after repeated failures' },
   },
 })
 
@@ -279,6 +420,16 @@ const costBucketSchema = z.object({
   label: z.string(),
   totalEur: z.number(),
   orderCount: z.number(),
+})
+
+const costPeriodSchema = z.object({
+  period: z.string().openapi({ description: 'Calendar month in UTC, YYYY-MM.', example: '2026-08' }),
+  totalEur: z.number(),
+  orderCount: z.number(),
+  estimatedOrders: z.number(),
+  partial: z.boolean().openapi({
+    description: 'The month is not over, so the figure will still grow. Charts must say so rather than showing it as a fall in spend.',
+  }),
 })
 
 const costFilterQuery = z.object({
@@ -301,7 +452,12 @@ registry.registerPath({
     'are counted in estimatedOrders. Totals are in EUR (the exchange-rate base) and the client converts to ' +
     'the viewer\'s currency; an amount whose currency has no stored rate appears in unconverted[] rather ' +
     'than being silently treated as EUR. These are sums of recorded prices, NOT a time-based projection — ' +
-    'the catalogue stores no billing period. Scoped by role: a project manager sees the projects they own.',
+    'the catalogue stores no billing period. Scoped by role: a project manager sees the projects they own. ' +
+    'series[] adds the same spend per calendar month (UTC), oldest first, with empty months in between filled ' +
+    'in so a trend cannot draw a straight line through a gap; it is computed from the same de-duplicated rows ' +
+    'as the breakdowns and therefore sums to totalEur. comparison holds the last two months of that series and ' +
+    'is null when the window covers fewer than two — comparing against a month the filter excluded would read ' +
+    'as "spend doubled".',
   tags: ['Costs'],
   security: bearerAuth,
   request: { query: costFilterQuery },
@@ -314,6 +470,15 @@ registry.registerPath({
             totalEur: z.number(),
             orderCount: z.number(),
             estimatedOrders: z.number(),
+            series: z.array(costPeriodSchema),
+            comparison: z
+              .object({
+                current: costPeriodSchema,
+                previous: costPeriodSchema,
+                changeEur: z.number(),
+                changePct: z.number().nullable(),
+              })
+              .nullable(),
             byProject: z.array(costBucketSchema),
             byCostCenter: z.array(costBucketSchema),
             byProduct: z.array(costBucketSchema),
@@ -360,12 +525,20 @@ const cartItemSchema = z.object({
   createdAt: z.string().nullable(),
   productName: z.string().nullable(),
   environmentName: z.string().nullable(),
-  price: z.string().nullable(),
+  sizeCode: z.string().nullable(),
+  sizeLabel: z.string().nullable(),
+  quantity: z.number().openapi({ description: 'Elements this line will provision (issue #104).' }),
+  price: z.string().nullable().openapi({
+    description:
+      "UNIT price — the chosen size's, or the offering's for a line with no size. The line total is this " +
+      'times quantity.',
+  }),
   currency: z.string().nullable(),
   stillOffered: z.boolean().openapi({
     description:
-      'False when the product is no longer offered in that environment. The item stays in the cart and ' +
-      'says so, rather than vanishing without explanation.',
+      'False when the product is no longer offered in that environment, or when the size the line chose ' +
+      'has been retired. The item stays in the cart and says so, rather than vanishing without ' +
+      'explanation.',
   }),
 })
 
@@ -400,6 +573,15 @@ registry.registerPath({
             productId: z.number().int().positive(),
             environmentId: z.number().int().positive(),
             parameters: z.record(z.string()).optional(),
+            sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional().openapi({
+              description:
+                'Required when the offering defines sizes, refused when it does not (issue #98). Unlike ' +
+                'the parameters this IS validated here: it is what the line is, not something filled in ' +
+                'later at checkout.',
+            }),
+            quantity: z.number().int().positive().optional().openapi({
+              description: 'Defaults to 1. Capped at 20 per line (issue #104).',
+            }),
           }),
         },
       },
@@ -424,12 +606,25 @@ registry.registerPath({
 registry.registerPath({
   method: 'put',
   path: '/cart/{itemId}',
-  summary: "Save a cart item's parameter prefill",
+  summary: 'Update one cart line: parameter prefill, size or quantity',
+  description:
+    'A patch in all but name: an omitted field is left alone, so the quantity control in the cart does ' +
+    'not have to resend the parameters it never touched.',
   tags: ['Cart'],
   security: bearerAuth,
   request: {
     params: z.object({ itemId: z.string() }),
-    body: { content: { 'application/json': { schema: z.object({ parameters: z.record(z.string()) }) } } },
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            parameters: z.record(z.string()).optional(),
+            sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional(),
+            quantity: z.number().int().positive().optional(),
+          }),
+        },
+      },
+    },
   },
   responses: {
     200: { description: 'Prefill saved' },
@@ -747,12 +942,101 @@ registry.registerPath({
   },
 })
 
+// ─── Sessions ─────────────────────────────────────────────────────────────────
+
+const sessionInfoSchema = z.object({
+  id: z.number(),
+  userId: z.number(),
+  ip: z.string().nullable().openapi({
+    description: 'Null unless a trusted proxy supplied one (TRUST_PROXY).',
+  }),
+  userAgent: z.string().nullable(),
+  createdAt: z.string(),
+  lastSeenAt: z.string().openapi({
+    description: 'Advanced at most once every five minutes, so it lags real activity by up to that.',
+  }),
+  expiresAt: z.string(),
+  current: z.boolean().openapi({ description: 'True for the session this request was made from.' }),
+})
+
+const revokeResponseSchema = z.object({ revoked: z.number() })
+
+registry.registerPath({
+  method: 'get',
+  path: '/sessions',
+  summary: 'List active sessions',
+  description:
+    "The caller's own sessions, or another user's with `userId` (root only). Revoked and expired " +
+    'sessions are omitted — this is what is live, not the history. Every call is written to the ' +
+    'audit log as `session.list`, including which user was looked at.',
+  tags: ['Sessions'],
+  security: bearerAuth,
+  request: { query: z.object({ userId: z.string().optional() }) },
+  responses: {
+    200: {
+      description: 'Active sessions, most recently seen first',
+      content: { 'application/json': { schema: z.array(sessionInfoSchema) } },
+    },
+    400: { description: 'Invalid user id' },
+    401: { description: 'Unauthorized' },
+    403: { description: "Not root, and asked for someone else's sessions" },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/sessions',
+  summary: 'Sign out everywhere else',
+  description:
+    "Revokes every live session of the caller except the one making the request. With `userId` " +
+    "(root only) it revokes ALL of that user's sessions — root's own session is not one of theirs, " +
+    'so there is nothing to keep. Audited as `session.revoked_others`.',
+  tags: ['Sessions'],
+  security: bearerAuth,
+  request: { query: z.object({ userId: z.string().optional() }) },
+  responses: {
+    200: {
+      description: 'How many sessions were revoked',
+      content: { 'application/json': { schema: revokeResponseSchema } },
+    },
+    400: { description: 'Invalid user id' },
+    401: { description: 'Unauthorized' },
+    403: { description: "Not root, and asked for someone else's sessions" },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/sessions/{id}',
+  summary: 'Revoke one session',
+  description:
+    'The caller\'s own session, or any session if the caller is root. Takes effect on the very next ' +
+    'request made with that token: the session row is checked before anything else happens. ' +
+    'Revoking a session that is already revoked reports `revoked: 0` rather than failing. ' +
+    'Audited as `session.revoked`.',
+  tags: ['Sessions'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Revoked (or already revoked)',
+      content: { 'application/json': { schema: revokeResponseSchema } },
+    },
+    400: { description: 'Invalid session id' },
+    401: { description: 'Unauthorized' },
+    404: { description: 'No such session, or not the caller\'s to revoke' },
+  },
+})
+
 // ─── Catalog ──────────────────────────────────────────────────────────────────
 
 registry.registerPath({
   method: 'get',
   path: '/catalog',
   summary: 'List catalog products',
+  description:
+    'Filtered and paged in the database. `search` matches the translated name and description that the ' +
+    'row displays, so a hit is always explicable. `total` counts every match, not the page.',
   tags: ['Catalog'],
   security: bearerAuth,
   request: {
@@ -760,13 +1044,25 @@ registry.registerPath({
       lang: z.string().optional(),
       search: z.string().optional(),
       categoryId: z.string().optional(),
+      limit: z.string().optional(),
+      offset: z.string().optional(),
     }),
   },
   responses: {
     200: {
-      description: 'List of products',
-      content: { 'application/json': { schema: z.array(productSchema) } },
+      description: 'One page of products, with the total number of matches',
+      content: {
+        'application/json': {
+          schema: z.object({
+            items: z.array(productSchema),
+            total: z.number(),
+            limit: z.number(),
+            offset: z.number(),
+          }),
+        },
+      },
     },
+    400: { description: 'Invalid filter' },
     401: { description: 'Unauthorized' },
   },
 })
@@ -792,6 +1088,18 @@ registry.registerPath({
           schema: productSchema.extend({
             environments: z.array(productEnvironmentSchema),
             parameters: z.array(parameterSchema),
+            images: z.array(productImageSchema).openapi({
+              description:
+                'The gallery in order. Empty on a product with no picture. Fetch the bytes from ' +
+                '/catalog/{id}/images/{imageId}.',
+            }),
+            longDescription: z.string().openapi({
+              description:
+                'The long text for the detail page, translated with the same fallback chain as ' +
+                '`description`. Empty string when nobody wrote one.',
+            }),
+            owner: z.string().nullable(),
+            docsUrl: z.string().nullable(),
           }),
         },
       },
@@ -804,7 +1112,10 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/catalog/{id}/image',
-  summary: 'Get catalog product image (binary)',
+  summary: 'Get the product image the catalogue leads with (binary)',
+  description:
+    'The first picture of the gallery. Kept as its own endpoint because a tile, a cart row and a ' +
+    'favourites card only need one and can build this URL from the product id alone.',
   tags: ['Catalog'],
   security: [],
   request: {
@@ -812,9 +1123,32 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: 'PNG image',
-      content: { 'image/png': { schema: z.any() } },
+      description: 'The image, served as the type it was stored as',
+      content: { 'image/*': { schema: z.any() } },
     },
+    400: { description: 'The product id is not a positive integer' },
+    404: { description: 'No such product, or it has no picture' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/catalog/{id}/images/{imageId}',
+  summary: 'Get one picture of a product gallery (binary)',
+  description:
+    'The ids come from `images` on /catalog/{id}. Scoped by product, so an image id from another ' +
+    'product answers 404 rather than serving the wrong picture.',
+  tags: ['Catalog'],
+  security: [],
+  request: {
+    params: z.object({ id: z.string(), imageId: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'The image, served as the type it was stored as',
+      content: { 'image/*': { schema: z.any() } },
+    },
+    400: { description: 'Invalid id' },
     404: { description: 'Image not found' },
   },
 })
@@ -852,6 +1186,18 @@ registry.registerPath({
             environmentId: z.number().int().positive(),
             costCenterId: z.number().int().positive().optional(),
             parameters: z.record(z.string()),
+            sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional().openapi({
+              description:
+                'The size to order (issue #98). Mandatory when the offering defines sizes and refused ' +
+                "when it does not — what is charged is the size's price, and the order snapshot records it.",
+            }),
+            quantity: z.number().int().positive().optional().openapi({
+              description:
+                'How many infrastructure elements to provision (issue #104). Defaults to 1, capped at 20. ' +
+                'One order with N elements: one approval covers all of them, the pipeline trigger fans out ' +
+                'per element (each with its own ELEMENT_SEQUENCE and therefore its own Terraform state), ' +
+                'and teardown stays per element.',
+            }),
             trial: z.boolean().optional().openapi({
               description:
                 'Order as a time-boxed trial (issue #1). Rejected unless the offering has trialEnabled. ' +
@@ -922,6 +1268,10 @@ registry.registerPath({
   method: 'post',
   path: '/approvals/{id}/approve',
   summary: '[admin] Approve an order and trigger provisioning',
+  description:
+    'Nobody approves their own order, delegation or not: the check compares the ACTOR with the ' +
+    'orderer, and a delegation never changes who the actor is. A delegation held at the time of ' +
+    'the decision is recorded in the audit log (`order.approved` and `approval_delegation.used`).',
   tags: ['Approvals'],
   security: bearerAuth,
   request: {
@@ -972,6 +1322,122 @@ registry.registerPath({
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Order not found' },
+  },
+})
+
+// ─── Approval delegations ─────────────────────────────────────────────────────
+
+const delegationSchema = z.object({
+  id: z.number(),
+  fromUserId: z.number(),
+  fromUserName: z.string(),
+  fromUserEmail: z.string(),
+  toUserId: z.number(),
+  toUserName: z.string(),
+  toUserEmail: z.string(),
+  startsOn: z.string().openapi({ description: 'Calendar date, inclusive.', example: '2026-09-01' }),
+  endsOn: z.string().openapi({
+    description: 'Calendar date, inclusive — the last day the delegation is in force.',
+    example: '2026-09-14',
+  }),
+  createdAt: z.string(),
+  revokedAt: z.string().nullable(),
+  active: z.boolean().openapi({
+    description:
+      'Computed at read time by date comparison (starts_on <= today <= ends_on and not revoked). ' +
+      'Never stored, so a delegation cannot outlive its end date.',
+  }),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/approvals/delegations',
+  summary: "[admin] The caller's approval delegations, and who they may nominate",
+  description:
+    'Approval delegation (issue #35): an admin nominates a substitute approver for a period. ' +
+    'What is delegated is AUTHORITY, not identity — the substitute approves under their own name ' +
+    'and every decision taken while a delegation is in force is audited against it. ' +
+    '`mine` is the authority the caller has given away, `grantedToMe` the authority they hold. ' +
+    'Root does not participate in the approval workflow and is neither listed nor nominable.',
+  tags: ['Approvals'],
+  security: bearerAuth,
+  responses: {
+    200: {
+      description: 'Delegations and eligible substitutes',
+      content: {
+        'application/json': {
+          schema: z.object({
+            mine: z.array(delegationSchema),
+            grantedToMe: z.array(delegationSchema),
+            candidates: z.array(
+              z.object({ id: z.number(), name: z.string(), email: z.string() }),
+            ),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/approvals/delegations',
+  summary: '[admin] Nominate a substitute approver for a period',
+  description:
+    'One live delegation per delegator, and a user may not appear on both sides of overlapping ' +
+    'delegations — so A→B while B→C is refused and authority never travels more than one hop. ' +
+    'A delegation cannot start in the past. Root can be neither delegator nor substitute.',
+  tags: ['Approvals'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            toUserId: z.number(),
+            startsOn: z.string().openapi({ example: '2026-09-01' }),
+            endsOn: z.string().openapi({ example: '2026-09-14' }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Delegation created',
+      content: { 'application/json': { schema: delegationSchema } },
+    },
+    400: { description: 'Bad request — dates, or the substitute is not an active admin' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden — root does not participate in the approval workflow' },
+    404: { description: 'Substitute not found' },
+    409: { description: 'Overlaps an existing delegation, or would chain one' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/approvals/delegations/{delegationId}',
+  summary: '[admin] Revoke a delegation you granted',
+  description:
+    'Delegator only. The row is stamped rather than deleted, so the audit entries for decisions ' +
+    'taken while it was in force keep resolving.',
+  tags: ['Approvals'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ delegationId: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'Delegation revoked',
+      content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+    },
+    400: { description: 'Already revoked' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden — only the delegator may revoke' },
+    404: { description: 'Delegation not found' },
   },
 })
 
@@ -1097,6 +1563,54 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
+  path: '/dashboard',
+  summary: "The landing page's counters and its five most recent orders",
+  description:
+    'One bounded response for the whole dashboard. It exists because the page used to answer "how ' +
+    'many orders do I have" by calling GET /orders, GET /infrastructure and GET /projects in full ' +
+    'and taking `.length` — for an administrator, the entire history of the installation, on the ' +
+    'page every user lands on immediately after login (#158). ' +
+    'Scoped exactly as those three endpoints are, so the counters agree with the pages they link ' +
+    'to: orders and projects by owner, infrastructure through the element\'s project. Grants no ' +
+    'visibility the caller did not already have. ' +
+    'The response is a fixed size whatever the history behind it: four counts and at most five rows.',
+  tags: ['Dashboard'],
+  security: bearerAuth,
+  request: {
+    query: z.object({
+      lang: z.string().optional().describe('Language for product names. Defaults to en.'),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Counters and recent orders',
+      content: {
+        'application/json': {
+          schema: z.object({
+            orders: z.object({ total: z.number(), pending: z.number() }),
+            infrastructure: z.object({ active: z.number() }),
+            projects: z.object({ total: z.number() }),
+            recentOrders: z.array(
+              z.object({
+                id: z.number(),
+                productId: z.number(),
+                productName: z.string().nullable(),
+                environmentName: z.string().nullable(),
+                projectName: z.string().nullable(),
+                status: z.string(),
+                createdAt: z.string(),
+              }),
+            ),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
   path: '/infrastructure',
   summary: 'List infrastructure elements',
   tags: ['Infrastructure'],
@@ -1212,6 +1726,46 @@ registry.registerPath({
     404: { description: 'Infrastructure element or order not found' },
     409: { description: 'A retry is already in progress' },
     502: { description: 'No pipeline, or only some pipelines, could be started' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/infrastructure/{id}/outputs',
+  summary: "Read this element's Terraform outputs again from its pipeline log",
+  description:
+    'Outputs are parsed once, at settle. If anything was wrong at that instant — an expired CI token, ' +
+    'a trigger URL that names no project, a parser that could not read the log — the element stayed ' +
+    'blank forever, and nothing on the page distinguished that from a template that declares no ' +
+    'outputs. This re-reads the same pipelines and stores what it finds, and records why when it ' +
+    'finds nothing. ' +
+    'Not admin-only, unlike POST /infrastructure/{id}/retry: that re-fires CI against real ' +
+    'infrastructure, this fetches a text file whose result the caller can already see. Scoped like ' +
+    'GET /infrastructure/{id}, so a caller who may not see the element gets 404, not 403. ' +
+    'A read that comes back empty does not overwrite outputs already stored — a token that expires ' +
+    'between two clicks must not erase a correct answer. ' +
+    'Throttled to one call per element per 15 seconds: each call makes one outbound CI request per ' +
+    "pipeline, against the environment's shared access token, and the log does not change between two " +
+    'clicks a second apart.',
+  tags: ['Infrastructure'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Outputs re-read. `outputsError` says why there are none, when there are none.',
+      content: {
+        'application/json': {
+          schema: z.object({
+            outputs: z.record(z.string()),
+            outputsError: z.string().nullable(),
+          }),
+        },
+      },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    404: { description: 'Infrastructure element not found, or not visible to this caller' },
+    429: { description: 'This element was re-read within the last 15 seconds' },
   },
 })
 
@@ -1377,6 +1931,127 @@ registry.registerPath({
     },
     400: { description: 'Bad request or wrong current password' },
     401: { description: 'Unauthorized' },
+  },
+})
+
+// ─── Two-factor authentication ────────────────────────────────────────────────
+
+registry.registerPath({
+  method: 'get',
+  path: '/users/me/2fa',
+  summary: 'Second-factor status for the signed-in user',
+  description:
+    'Root only — the feature is scoped to the root account, and every 2FA endpoint answers 403 for any ' +
+    'other role. ' +
+    'Status only — never the shared secret or the recovery codes. There is no endpoint that turns a ' +
+    'confirmed factor off: DELETE answers 405 by design, and the only exits are a re-enrollment or an ' +
+    'operator deleting the row (see the operator handbook).',
+  tags: ['Two-factor'],
+  security: bearerAuth,
+  responses: {
+    200: {
+      description: 'Current status',
+      content: {
+        'application/json': {
+          schema: z.object({
+            enabled: z.boolean(),
+            confirmedAt: z.string().nullable(),
+            pending: z.boolean(),
+            recoveryCodesRemaining: z.number(),
+            lockedUntil: z.string().nullable(),
+          }),
+        },
+      },
+    },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the root account' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/users/me/2fa',
+  summary: 'Refused — two-factor authentication cannot be disabled once set up',
+  tags: ['Two-factor'],
+  security: bearerAuth,
+  responses: {
+    405: { description: 'Always. Enroll a new authenticator instead.' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/users/me/2fa/enroll',
+  summary: 'Start a TOTP enrollment and get the QR code',
+  description:
+    'Root only. Requires the current password. When a factor is already active it ALSO requires a current TOTP code ' +
+    'or a recovery code, so a stolen session plus a phished password cannot replace the factor. The new ' +
+    'secret is stored as pending, so the existing authenticator keeps working until it is confirmed.',
+  tags: ['Two-factor'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            password: z.string().min(1),
+            code: z.string().min(1).max(64).optional().openapi({
+              description: 'A current TOTP or recovery code. Required only when re-enrolling.',
+            }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The enrollment offer. Shown once; not retrievable afterwards.',
+      content: {
+        'application/json': {
+          schema: z.object({
+            secret: z.string().openapi({ description: 'base32, for manual entry' }),
+            secretFormatted: z.string(),
+            otpauthUrl: z.string(),
+            qrSvg: z.string().openapi({ description: 'A self-contained SVG of the QR code' }),
+          }),
+        },
+      },
+    },
+    400: { description: 'Bad request, or an SSO account with no local password' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the root account, wrong password, or a current second factor is required' },
+    429: { description: 'Second factor locked after repeated failures' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/users/me/2fa/confirm',
+  summary: 'Confirm a pending enrollment and receive the recovery codes',
+  description:
+    'Root only. A code from the new authenticator proves the secret actually arrived in an app. The recovery codes ' +
+    'are returned here and nowhere else: they are stored hashed, so this response is the only copy.',
+  tags: ['Two-factor'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': { schema: z.object({ code: z.string().min(1).max(64) }) },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The factor is now active. Recovery codes, shown once.',
+      content: {
+        'application/json': { schema: z.object({ recoveryCodes: z.array(z.string()) }) },
+      },
+    },
+    400: { description: 'No enrollment in progress, expired, or an invalid code' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Not the root account' },
+    409: { description: 'A newer enrollment has replaced the one being confirmed' },
+    429: { description: 'Second factor locked after repeated failures' },
   },
 })
 
@@ -1666,6 +2341,9 @@ registry.registerPath({
 
 const adminProductSchema = productSchema.extend({
   categoryName: z.string().nullable(),
+  /** Trust content for the product page (issue #107). */
+  owner: z.string().nullable(),
+  docsUrl: z.string().nullable(),
 })
 
 registry.registerPath({
@@ -1751,6 +2429,14 @@ registry.registerPath({
             baseLanguage: z.string().optional(),
             name: z.string().min(1).optional(),
             description: z.string().optional(),
+            owner: z.string().nullable().optional().openapi({
+              description: 'Who runs the product, shown on its page. Null or empty clears it.',
+            }),
+            docsUrl: z.string().nullable().optional().openapi({
+              description:
+                'Link to the product documentation. Must start with http:// or https://; null or ' +
+                'empty clears it.',
+            }),
           }),
         },
       },
@@ -1832,6 +2518,11 @@ registry.registerPath({
           schema: z.object({
             name: z.string().min(1),
             description: z.string().optional(),
+            longDescription: z.string().optional().openapi({
+              description:
+                'The long text the product page shows (issue #107). Omit to leave it unchanged — ' +
+                'callers that only know about name and description must not blank it.',
+            }),
           }),
         },
       },
@@ -1847,6 +2538,7 @@ registry.registerPath({
             languageCode: z.string(),
             name: z.string(),
             description: z.string(),
+            longDescription: z.string(),
           }),
         },
       },
@@ -1882,9 +2574,37 @@ registry.registerPath({
 })
 
 registry.registerPath({
-  method: 'put',
-  path: '/admin/products/{id}/image',
-  summary: '[root] Upload product image (multipart)',
+  method: 'get',
+  path: '/admin/products/{id}/images',
+  summary: '[root] List a product gallery',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'The gallery in order, without the bytes',
+      content: {
+        'application/json': {
+          schema: z.array(productImageSchema.extend({ position: z.number(), mime: z.string() })),
+        },
+      },
+    },
+    400: { description: 'Invalid product id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Product not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/products/{id}/images',
+  summary: '[root] Append a picture to a product gallery (multipart)',
+  description:
+    'Replaced `PUT /admin/products/{id}/image`, which could only overwrite the single picture a ' +
+    'product used to be allowed. `alt` is required: an image with no description is what #105 ' +
+    'rules out. The type is determined from the bytes, not from the declared Content-Type, and ' +
+    'SVG is refused because it can carry script.',
   tags: ['Admin'],
   security: bearerAuth,
   request: {
@@ -1892,19 +2612,91 @@ registry.registerPath({
     body: {
       content: {
         'multipart/form-data': {
-          schema: z.object({ image: z.any() }),
+          schema: z.object({ image: z.any(), alt: z.string() }),
         },
       },
     },
   },
   responses: {
-    200: {
-      description: 'Image uploaded',
-      content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+    201: {
+      description: 'Image stored',
+      content: {
+        'application/json': {
+          schema: z.object({ id: z.number(), mime: z.string(), position: z.number() }),
+        },
+      },
     },
-    400: { description: 'No image provided' },
+    400: { description: 'No image provided, or no description for it' },
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
+    404: { description: 'Product not found' },
+    409: { description: 'The gallery is already at its maximum size' },
+    413: { description: 'Image larger than 10 MB' },
+    415: { description: 'Unsupported image type' },
+  },
+})
+
+registry.registerPath({
+  method: 'patch',
+  path: '/admin/products/{id}/images',
+  summary: '[root] Reorder a product gallery',
+  description:
+    '`order` lists every image id of the product exactly once. A partial list is refused rather ' +
+    'than half-applied, so a reorder from a stale gallery cannot silently drop a picture.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': { schema: z.object({ order: z.array(z.number().int().positive()) }) },
+      },
+    },
+  },
+  responses: {
+    204: { description: 'Reordered' },
+    400: { description: 'The order is not exactly this product\'s gallery' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'No such product' },
+  },
+})
+
+registry.registerPath({
+  method: 'patch',
+  path: '/admin/products/{id}/images/{imageId}',
+  summary: '[root] Change one picture\'s description',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string(), imageId: z.string() }),
+    body: {
+      content: { 'application/json': { schema: z.object({ alt: z.string() }) } },
+    },
+  },
+  responses: {
+    204: { description: 'Description saved' },
+    400: { description: 'Missing, blank or over-long description' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Image not found for this product' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/admin/products/{id}/images/{imageId}',
+  summary: '[root] Remove one picture from a product gallery',
+  description: 'The remaining positions are closed up so the gallery order stays dense.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string(), imageId: z.string() }) },
+  responses: {
+    204: { description: 'Removed' },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Image not found for this product' },
   },
 })
 
@@ -2023,6 +2815,246 @@ registry.registerPath({
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },
     409: { description: 'Infrastructure is still deployed in this environment' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/products/{id}/environments/{envId}/sizes',
+  summary: '[root] List the sizes of one offering',
+  description:
+    'Every size, retired ones included — this is the admin view (issue #98). The catalogue endpoint ' +
+    'returns only the active ones.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string(), envId: z.string() }) },
+  responses: {
+    200: {
+      description: 'Sizes of the offering',
+      content: { 'application/json': { schema: z.array(offeringSizeSchema) } },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'The product is not offered in that environment' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/products/{id}/environments/{envId}/sizes',
+  summary: '[root] Add or update one size of an offering',
+  description:
+    'Upserts on the CODE, not on an id: the code is the natural key an admin edits by, so re-posting XL ' +
+    'corrects XL instead of creating a second one. Price moves from the offering to the size (issue #98), ' +
+    'so this is where a price change happens — and it is recorded in the product history (issue #38), ' +
+    'because it changes what customers are offered. Existing orders are unaffected: they carry the price ' +
+    'they were charged in their own snapshot.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string(), envId: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            code: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).openapi({
+              description: 'Letters, digits, dot, dash and underscore only — it reaches CI as SIZE.',
+            }),
+            label: z.string().max(120).optional(),
+            price: z.string().max(20).optional().openapi({
+              description: 'Non-negative, at most two decimals.',
+            }),
+            currency: z.string().length(3).optional(),
+            sortOrder: z.number().int().min(0).max(10000).optional(),
+            active: z.boolean().optional().openapi({
+              description:
+                'Retire a size by setting this false rather than deleting it: existing orders reference ' +
+                'the code, and a retired size stops being orderable while staying readable.',
+            }),
+            changelog: z.string().max(2000).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Size created or updated',
+      content: { 'application/json': { schema: offeringSizeSchema } },
+    },
+    400: { description: 'Invalid code, price or currency' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'The product is not offered in that environment' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/admin/products/{id}/environments/{envId}/sizes/{sizeId}',
+  summary: '[root] Remove one size of an offering',
+  description:
+    'Existing orders are unaffected — they store the code as text and their own price. A cart line naming ' +
+    'the deleted size reports itself unavailable instead of failing at checkout. Prefer active: false.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string(), envId: z.string(), sizeId: z.string() }) },
+  responses: {
+    200: { description: 'Size removed' },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Size not found' },
+  },
+})
+
+const sizeMatrixSchema = z.object({
+  environments: z.array(
+    z.object({ environmentId: z.number(), name: z.string(), currency: z.string() }),
+  ).openapi({ description: 'Only the environments the product is offered in — the matrix columns.' }),
+  rows: z.array(
+    z.object({
+      code: z.string(),
+      label: z.string(),
+      sortOrder: z.number(),
+      cells: z.array(
+        z.object({
+          environmentId: z.number(),
+          id: z.number(),
+          price: z.string(),
+          currency: z.string(),
+          active: z.boolean(),
+        }),
+      ).openapi({
+        description:
+          'One entry per environment the size exists in. An environment missing from this list does not ' +
+          'offer the size at all; one present with active false offers it no longer but keeps the price ' +
+          'past orders were struck at.',
+      }),
+    }),
+  ),
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/products/{id}/sizes',
+  summary: '[root] The product\u2019s sizes as a matrix',
+  description:
+    'The same rows as the per-offering endpoint, transposed: sizes down, environments across (issue ' +
+    '#249). Answers "what does XL cost, everywhere", which through the per-offering route is one ' +
+    'request per environment. The row axis is the UNION of the codes across the offerings, because a ' +
+    'code is unique per (product, environment) and not global.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'The size matrix',
+      content: { 'application/json': { schema: sizeMatrixSchema } },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Product not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'put',
+  path: '/admin/products/{id}/sizes/{code}',
+  summary: '[root] Price one size across every environment',
+  description:
+    'The body is the row\u2019s FULL desired state: the environments in `cells` are the ones the size is ' +
+    'offered in, and the ones left out are the ones it is not. Leaving one out RETIRES the cell (active ' +
+    'false) and never deletes it, because an order that already names the code has to keep resolving to ' +
+    'something; a cell that is left out and does not exist is not created. Applied in one transaction, ' +
+    'so a rejected cell leaves none of the others written. Every environment whose cell actually changed ' +
+    'gets its own product-history entry (issue #38).',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({
+      id: z.string(),
+      code: z.string().openapi({
+        description:
+          'The size code, not a row id: the same size has a different id in every environment. Letters, ' +
+          'digits, dot, dash and underscore only.',
+      }),
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            label: z.string().max(120).optional().openapi({
+              description: 'Written to every cell the save touches — it is a property of the size, not of one offering.',
+            }),
+            sortOrder: z.number().int().min(0).max(10000).optional(),
+            cells: z.array(
+              z.object({
+                environmentId: z.number().int().positive(),
+                price: z.string().max(20).optional().openapi({
+                  description: 'Non-negative, at most two decimals.',
+                }),
+                currency: z.string().length(3).optional().openapi({
+                  description:
+                    'Per cell, deliberately: the same size legitimately costs a different amount in a ' +
+                    'different currency in another environment.',
+                }),
+              }),
+            ),
+            changelog: z.string().max(2000).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The row as it now stands',
+      content: {
+        'application/json': {
+          schema: z.object({
+            code: z.string(),
+            label: z.string(),
+            sortOrder: z.number(),
+            cells: z.array(
+              z.object({
+                environmentId: z.number(),
+                id: z.number(),
+                price: z.string(),
+                currency: z.string(),
+                active: z.boolean(),
+              }),
+            ),
+          }),
+        },
+      },
+    },
+    400: { description: 'Invalid code, price, currency, or the same environment priced twice' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Product not found, or it is not offered in one of the named environments' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/admin/products/{id}/sizes/{code}',
+  summary: '[root] Remove one size from every environment',
+  description:
+    'The blunt counterpart of emptying the row\u2019s prices, which retires instead. Existing orders are ' +
+    'unaffected \u2014 they store the code as text and their own price \u2014 but a cart line naming it reports ' +
+    'itself unavailable. Prefer retiring for a size that has ever been ordered.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string(), code: z.string() }) },
+  responses: {
+    200: { description: 'Size removed from every environment' },
+    400: { description: 'Invalid id or code' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'No environment of this product has that size' },
   },
 })
 
@@ -2172,7 +3204,8 @@ registry.registerPath({
             scopeId: z.number().int().optional(),
             environmentId: z.number().int().positive().nullable().optional(),
             name: z.string().min(1),
-            type: z.enum(['string', 'number', 'bool', 'dropdown']),
+            type: z.enum(['string', 'number', 'bool', 'dropdown', 'size']),
+            sizeValues: z.record(z.string(), z.string()).optional(),
             description: z.string().optional(),
             defaultValue: z.string().optional(),
             required: z.boolean().optional(),
@@ -2206,7 +3239,8 @@ registry.registerPath({
         'application/json': {
           schema: z.object({
             name: z.string().min(1).optional(),
-            type: z.enum(['string', 'number', 'bool', 'dropdown']).optional(),
+            type: z.enum(['string', 'number', 'bool', 'dropdown', 'size']).optional(),
+            sizeValues: z.record(z.string(), z.string()).optional(),
             description: z.string().optional(),
             defaultValue: z.string().optional(),
             required: z.boolean().optional(),
@@ -2368,6 +3402,184 @@ registry.registerPath({
     401: { description: 'Unauthorized' },
     403: { description: 'Forbidden' },
     404: { description: 'Not found' },
+  },
+})
+
+// ─── Admin — Integrations ─────────────────────────────────────────────────────
+//
+// The registry of external systems that are not CI providers (issue #111).
+// Root-only throughout: these rows hold credentials to systems that can
+// provision and destroy infrastructure.
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/integrations',
+  summary: '[root] List integrations',
+  description:
+    'Every registered external system. Credentials are never included — only `hasCredential`.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  responses: {
+    200: {
+      description: 'List of integrations',
+      content: { 'application/json': { schema: z.array(integrationSchema) } },
+    },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/integrations',
+  summary: '[root] Register an integration',
+  description:
+    'The credential is encrypted at rest (AES-256-GCM) with the key in SECRET_ENCRYPTION_KEY. ' +
+    'Without that key configured, any request carrying a credential is refused with 503 rather ' +
+    'than stored in plain text. `failureMode` is required: whether a failed call to this system ' +
+    'blocks the operation that made it is a decision the registry records, not a default.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            kind: z.enum(integrationKinds),
+            name: z.string().min(1),
+            baseUrl: z.string().url(),
+            authType: z.enum(integrationAuthTypes),
+            username: z.string().optional().openapi({ description: 'Required for authType "basic".' }),
+            credential: z.string().min(1).optional().openapi({
+              description: 'Token or password. Required unless authType is "none". Never returned.',
+            }),
+            environmentId: z.number().int().positive().nullable().optional().openapi({
+              description: 'Bind to one environment, or null/omitted for portal-wide.',
+            }),
+            enabled: z.boolean().optional(),
+            failureMode: z.enum(integrationFailureModes),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: 'Integration created',
+      content: { 'application/json': { schema: integrationSchema } },
+    },
+    400: { description: 'Bad request, or a credential/username missing for the chosen authType' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    409: { description: 'An integration of this kind is already bound to that environment' },
+    503: { description: 'SECRET_ENCRYPTION_KEY is not configured, so a credential cannot be stored' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/admin/integrations/{id}',
+  summary: '[root] Get an integration by ID',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Integration',
+      content: { 'application/json': { schema: integrationSchema } },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'put',
+  path: '/admin/integrations/{id}',
+  summary: '[root] Update an integration',
+  description:
+    'Sending `credential` rotates it and is audited as a rotation in its own right; omitting it ' +
+    'leaves the stored one alone. `kind` cannot be changed — delete and recreate instead, so a ' +
+    "row's credential, health record and audit history keep belonging to one system. Changing " +
+    '`baseUrl` or the credential clears the health record, because it described the old target.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            name: z.string().min(1).optional(),
+            baseUrl: z.string().url().optional(),
+            authType: z.enum(integrationAuthTypes).optional(),
+            username: z.string().optional(),
+            credential: z.string().min(1).optional(),
+            environmentId: z.number().int().positive().nullable().optional(),
+            enabled: z.boolean().optional(),
+            failureMode: z.enum(integrationFailureModes).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Updated integration',
+      content: { 'application/json': { schema: integrationSchema } },
+    },
+    400: { description: 'Bad request' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'An integration of this kind is already bound to that environment' },
+    503: { description: 'SECRET_ENCRYPTION_KEY is not configured, so a credential cannot be rotated' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/admin/integrations/{id}',
+  summary: '[root] Delete an integration',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Integration deleted',
+      content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/admin/integrations/{id}/probe',
+  summary: '[root] Probe an integration for reachability',
+  description:
+    "Contacts the system's health endpoint now and records the outcome on the row. An " +
+    'unreachable system is a 200 with `ok: false` and a reason — the admin asked whether it ' +
+    'works, and "no, because …" answers that. POST because it makes an outbound call and writes ' +
+    '`lastContactedAt` / `lastError`.',
+  tags: ['Admin'],
+  security: bearerAuth,
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'Probe outcome, successful or not',
+      content: { 'application/json': { schema: integrationProbeSchema } },
+    },
+    400: { description: 'Invalid id' },
+    401: { description: 'Unauthorized' },
+    403: { description: 'Forbidden' },
+    404: { description: 'Not found' },
+    409: { description: 'Integration is disabled' },
   },
 })
 
@@ -2816,6 +4028,9 @@ registry.registerPath({
   method: 'put',
   path: '/admin/users/{id}',
   summary: '[root] Update a user',
+  description:
+    'Setting `active: false` also revokes every live session of that account (issue #37) — `active` ' +
+    'is only read at login, so without that the user would stay signed in until their token ran out.',
   tags: ['Admin'],
   security: bearerAuth,
   request: {

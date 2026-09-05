@@ -7,10 +7,11 @@ import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'
 import { Table } from '@/components/ui/Table'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
-interface Props { token: string }
-
-export function ExchangeRatesTable({ token }: Props) {
+export function ExchangeRatesTable() {
+  const lang = useLang()
   const [rates, setRates] = useState<ExchangeRate[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -19,24 +20,24 @@ export function ExchangeRatesTable({ token }: Props) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setRates((await get<ExchangeRate[]>('/api/admin/exchange-rates', token)) ?? [])
+      setRates((await get<ExchangeRate[]>('/api/admin/exchange-rates')) ?? [])
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load exchange rates.')
+      setError(e instanceof Error ? e.message : t('failedToLoadExchangeRates', lang))
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [lang])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   async function handleRefresh() {
     setRefreshing(true)
     setError(null)
     try {
-      await post('/api/admin/exchange-rates/refresh', {}, token)
+      await post('/api/admin/exchange-rates/refresh', {})
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to refresh rates.')
+      setError(e instanceof Error ? e.message : t('failedToRefreshRates', lang))
     } finally {
       setRefreshing(false)
     }
@@ -44,10 +45,10 @@ export function ExchangeRatesTable({ token }: Props) {
 
   return (
     <Card
-      title="Exchange Rates"
+      title={t('exchangeRates', lang)}
       action={
         <Button size="sm" variant="secondary" onClick={handleRefresh} disabled={refreshing || loading}>
-          {refreshing ? 'Refreshing…' : 'Refresh Rates'}
+          {refreshing ? t('refreshing', lang) : t('refreshRates', lang)}
         </Button>
       }
     >
@@ -63,28 +64,28 @@ export function ExchangeRatesTable({ token }: Props) {
         <Table<ExchangeRate & { id: string }>
           columns={[
             {
-              header: 'Currency',
+              header: t('currency', lang),
               render: (row) => (
                 <span className="font-mono font-semibold text-slate-900">{row.currencyCode}</span>
               ),
             },
             {
-              header: 'Rate (to EUR)',
+              header: t('rateToEur', lang),
               render: (row) => (
                 <span className="font-mono">{Number(row.rate).toFixed(6)}</span>
               ),
             },
             {
-              header: 'Last Updated',
+              header: t('lastUpdated', lang),
               render: (row) => (
                 <span className="text-xs text-slate-500">
-                  {new Date(row.updatedAt).toLocaleString()}
+                  {new Date(row.updatedAt).toLocaleString(lang)}
                 </span>
               ),
             },
           ]}
           data={rates.map((r) => ({ ...r, id: r.currencyCode }))}
-          emptyMessage="No exchange rates configured."
+          emptyMessage={t('noExchangeRates', lang)}
         />
       )}
     </Card>

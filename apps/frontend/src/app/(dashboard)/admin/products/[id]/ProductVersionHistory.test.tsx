@@ -45,7 +45,7 @@ const mockApi = (versions: ProductVersion[], diffResult?: ProductVersionDiff | E
   }) as never)
 }
 
-const renderPanel = () => render(<ProductVersionHistory productId={7} token="t" lang="en" />)
+const renderPanel = () => render(<ProductVersionHistory productId={7} lang="en" />)
 
 beforeEach(() => {
   mockedGet.mockReset()
@@ -125,6 +125,42 @@ describe('ProductVersionHistory', () => {
     expect(within(panel).getByText('25.00')).toBeInTheDocument()
   })
 
+  // Colour, a strikethrough and an arrow say which value is the old one. None of
+  // the three reaches a screen reader — `line-through` is not announced by
+  // default and the arrow is aria-hidden — so this row used to read
+  // "price 10.00 25.00" to the one person auditing what a price change did
+  // (#186).
+  it('says which value is the old one, not only paints it', async () => {
+    mockApi(
+      [version({ id: 9 }), version({ id: 8 })],
+      diff({ identical: false, fields: [{ field: 'price', from: '10.00', to: '25.00' }] }),
+    )
+    renderPanel()
+
+    await userEvent.click(await screen.findByRole('button', { name: /compare/i }))
+    const panel = await screen.findByTestId('version-diff')
+    expect(within(panel).getByText('price').closest('p')).toHaveTextContent(
+      'price changed from 10.00 → to 25.00',
+    )
+  })
+
+  // Most voices skip `∅` entirely, so a field that was emptied read as
+  // "price 25.00" — indistinguishable from a price that simply IS 25.00.
+  it('names the empty value the glyph stands for', async () => {
+    mockApi(
+      [version({ id: 9 }), version({ id: 8 })],
+      diff({ identical: false, fields: [{ field: 'changelog', from: '', to: 'Bumped the image' }] }),
+    )
+    renderPanel()
+
+    await userEvent.click(await screen.findByRole('button', { name: /compare/i }))
+    const panel = await screen.findByTestId('version-diff')
+    expect(within(panel).getByText('∅')).toHaveAttribute('aria-hidden', 'true')
+    expect(within(panel).getByText('changelog').closest('p')).toHaveTextContent(
+      'changelog changed from ∅ empty → to Bumped the image',
+    )
+  })
+
   it('renders added, removed and changed parameters', async () => {
     const param = { name: 'X', label: '', type: 'string', description: '', defaultValue: '', required: false, sensitive: false }
     mockApi(
@@ -145,7 +181,11 @@ describe('ProductVersionHistory', () => {
     expect(within(panel).getByText('added')).toBeInTheDocument()
     expect(within(panel).getByText('removed')).toBeInTheDocument()
     expect(within(panel).getByText('changed')).toBeInTheDocument()
-    expect(within(panel).getByText(/defaultValue: eu → us/)).toBeInTheDocument()
+    // Same direction, spoken the same way, for a parameter's own fields — this
+    // used to be a joined string, which no markup could make say it.
+    expect(within(panel).getByText('REGION').closest('p')).toHaveTextContent(
+      'defaultValue: changed from eu → to us',
+    )
   })
 
   it('says so when two versions are identical', async () => {
@@ -186,7 +226,7 @@ describe('ProductVersionHistory', () => {
     await user.click(screen.getByRole('button', { name: /compare/i }))
 
     await waitFor(() =>
-      expect(mockedGet).toHaveBeenCalledWith('/api/admin/products/7/versions/diff?from=7&to=9', 't'),
+      expect(mockedGet).toHaveBeenCalledWith('/api/admin/products/7/versions/diff?from=7&to=9'),
     )
   })
 

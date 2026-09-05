@@ -1,11 +1,15 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
 import type { CostReport, CostBucket, ExchangeRate, Project } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { CostFilters } from './CostFilters'
 import { CostExport } from './CostExport'
+import { CostTrend } from './CostTrend'
+import { CostDistribution } from './CostDistribution'
+import { CostComparison } from './CostComparison'
+import { CostCaveats } from './CostCaveats'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
 import { localeToCurrency, convertPrice } from '@/lib/locale'
@@ -25,7 +29,6 @@ export default async function CostsPage({ searchParams }: Props) {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
   const localeCurrency = localeToCurrency(lang)
   const params = await searchParams
@@ -38,12 +41,13 @@ export default async function CostsPage({ searchParams }: Props) {
     const value = Array.isArray(raw) ? raw[0] : raw
     if (value) query.set(key, value)
   }
+  query.set('lang', lang)
   const qs = query.toString()
 
   const [reportRes, projectsRes, ratesRes] = await Promise.allSettled([
-    get<CostReport>(`/api/costs${qs ? `?${qs}` : ''}`, token),
-    get<Project[]>('/api/projects', token),
-    get<ExchangeRate[]>('/api/public/exchange-rates', token),
+    get<CostReport>(`/api/costs?${qs}`),
+    get<Project[]>('/api/projects'),
+    get<ExchangeRate[]>('/api/public/exchange-rates'),
   ])
 
   // A rejected report is the one failure that leaves nothing to show — an invalid
@@ -69,7 +73,7 @@ export default async function CostsPage({ searchParams }: Props) {
       <PageHeader
         title={t('costs', lang)}
         subtitle={t('costsSubtitle', lang)}
-        actions={<CostExport token={token} lang={lang} />}
+        actions={<CostExport lang={lang} />}
       />
 
       <CostFilters projects={projects} lang={lang} />
@@ -80,40 +84,85 @@ export default async function CostsPage({ searchParams }: Props) {
         </div>
       ) : (
         <>
-          <Card>
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-slate-500">{t('totalSpend', lang)}</p>
-              <p className="text-3xl font-bold text-slate-900">{money(report.totalEur)}</p>
-              <p className="text-sm text-slate-600">
-                {report.orderCount} {t('ordersCounted', lang)}
-              </p>
-              {/* Always shown, not only when it looks odd: these figures are a sum
-                  of recorded order prices, and the catalogue stores no billing
-                  period, so any reading of them as a run rate is wrong. */}
-              <p className="text-xs text-slate-500">{t('notAProjection', lang)}</p>
-              {report.estimatedOrders > 0 && (
-                <p className="text-xs text-amber-700">
-                  {t('estimatedNotice', lang)} ({report.estimatedOrders})
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-500">{t('totalSpend', lang)}</p>
+                <p className="text-3xl font-bold text-slate-900">{money(report.totalEur)}</p>
+                <p className="text-sm text-slate-600">
+                  {report.orderCount} {t('ordersCounted', lang)}
                 </p>
-              )}
-              {report.unconverted.length > 0 && (
-                <p className="text-xs text-amber-700">
-                  {t('unconvertedNotice', lang)}{' '}
-                  {report.unconverted.map((u) => `${u.amount.toFixed(2)} ${u.currency}`).join(', ')}
-                </p>
-              )}
-            </div>
-          </Card>
+                {/* Always shown, not only when it looks odd: these figures are a sum
+                    of recorded order prices, and the catalogue stores no billing
+                    period, so any reading of them as a run rate is wrong. */}
+                <CostCaveats
+                  estimatedOrders={report.estimatedOrders}
+                  unconverted={report.unconverted}
+                  // Only on the total card: this caveat is about money missing
+                  // from THE total, and repeating it under every chart would say
+                  // it four times about the same orders.
+                  unpricedOrders={report.unpricedOrders}
+                  lang={lang}
+                />
+              </div>
+            </Card>
+
+            {/* "Is spend rising?" is the second question after "how much?", so the
+                comparison sits beside the total rather than below the breakdowns. */}
+            <CostComparison
+              comparison={report.comparison}
+              money={money}
+              lang={lang}
+              estimatedOrders={report.estimatedOrders}
+              unconverted={report.unconverted}
+            />
+          </div>
 
           {report.orderCount === 0 ? (
             <div className="text-center py-12 text-slate-600">{t('noSpend', lang)}</div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Breakdown title={t('perProject', lang)} buckets={report.byProject} money={money} lang={lang} />
-              <Breakdown title={t('perCostCenter', lang)} buckets={report.byCostCenter} money={money} lang={lang} />
-              <Breakdown title={t('perProduct', lang)} buckets={report.byProduct} money={money} lang={lang} />
-              <Breakdown title={t('perEnvironment', lang)} buckets={report.byEnvironment} money={money} lang={lang} />
-            </div>
+            <>
+              <CostTrend
+                series={report.series}
+                money={money}
+                lang={lang}
+                estimatedOrders={report.estimatedOrders}
+                unconverted={report.unconverted}
+              />
+
+              {/* Projects and cost centres, because those are the two dimensions
+                  somebody is accountable for; product and environment stay as ranked
+                  lists, where the question is "which is biggest", not "what share". */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <CostDistribution
+                  chartId="cost-share-project"
+                  dimension={t('perProject', lang)}
+                  buckets={report.byProject}
+                  money={money}
+                  lang={lang}
+                  estimatedOrders={report.estimatedOrders}
+                  unconverted={report.unconverted}
+                />
+                <CostDistribution
+                  chartId="cost-share-cost-center"
+                  dimension={t('perCostCenter', lang)}
+                  buckets={report.byCostCenter}
+                  money={money}
+                  lang={lang}
+                  estimatedOrders={report.estimatedOrders}
+                  unconverted={report.unconverted}
+                />
+              </div>
+
+              {/* Only the two dimensions the share charts do NOT cover. Keeping a
+                  ranked list of projects as well would print the same figures a
+                  third time, one card apart, and the reader would have to check
+                  whether the two disagreed. */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Breakdown title={t('perProduct', lang)} buckets={report.byProduct} money={money} lang={lang} />
+                <Breakdown title={t('perEnvironment', lang)} buckets={report.byEnvironment} money={money} lang={lang} />
+              </div>
+            </>
           )}
         </>
       )}

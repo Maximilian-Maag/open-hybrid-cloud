@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { importCiVars } from '@/lib/services/admin/ciSources'
 
 const ImportVarsSchema = z.object({
@@ -17,6 +17,8 @@ export async function POST(
   if (!isAuth(session)) return session
 
   const { sourceId, projectId } = await params
+  const ciSourceId = parseRouteId(sourceId)
+  if (ciSourceId === null) return invalidId('CI source id')
 
   const body = await req.json().catch(() => null)
   const parsed = ImportVarsSchema.safeParse(body)
@@ -25,7 +27,7 @@ export async function POST(
   }
 
   return toResponse(await importCiVars(
-    parseInt(sourceId, 10),
+    ciSourceId,
     decodeURIComponent(projectId),
     parsed.data.branch,
     parsed.data.filePath,

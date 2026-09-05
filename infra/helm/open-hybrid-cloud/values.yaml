@@ -94,12 +94,6 @@ backend:
     frontendUrl: "https://shop.example.com"
     exchangeRateApiUrl: "https://api.exchangerate.host/latest"
 
-    # Optional — Microsoft Entra ID (OIDC)
-    entra:
-      tenantId: ""
-      clientId: ""
-      clientSecret: ""
-
     # Optional — SMTP
     smtp:
       host: ""
@@ -114,6 +108,36 @@ backend:
     databaseUrl: ""     # DATABASE_URL  postgresql://user:pass@host:5432/db
     jwtSecret: ""       # JWT_SECRET    32+ random bytes
     adminPassword: ""   # ADMIN_PASSWORD  initial admin account password
+    # SECRET_ENCRYPTION_KEY — 64 hex characters (`openssl rand -hex 32`). Encrypts
+    # the credentials in the integration registry (Foreman, Ansible, Nexus, Pulp,
+    # Loki, Grafana). Leave empty to leave that feature off; the endpoints then
+    # refuse to store a credential rather than storing it in plain text.
+    #
+    # Cannot currently be rotated: a new key cannot decrypt what the old one
+    # wrote, and every stored credential would have to be re-entered.
+    secretEncryptionKey: ""
+    # TOTP_ENCRYPTION_KEY — encrypts the root account's second-factor secret at
+    # rest. 32 bytes, hex or base64: `openssl rand -base64 32`. Blank derives it
+    # from jwtSecret, which works but means rotating jwtSecret invalidates every
+    # enrolled authenticator.
+    totpEncryptionKey: ""
+
+  # ── Security keys / passkeys (issue #197) ───────────────────────────────────
+  # WEBAUTHN_RP_ID is a bare domain — no scheme, no port. WEBAUTHN_RP_ORIGIN is
+  # the full origin the browser sees, with scheme; comma-separate several if the
+  # portal answers on more than one hostname, and the RP ID must be a suffix of
+  # each. Both are required in production: the backend refuses to start a
+  # ceremony without them rather than issuing credentials nobody can use.
+  #
+  # These are NOT secrets — they are public identifiers the browser already
+  # knows — which is why they sit here and not under `secrets` above.
+  #
+  # Set them to match `ingress.hosts[0].host`. Changing rpId later invalidates
+  # every registered credential, so pick the broadest domain you might want
+  # before anyone enrols.
+  webauthn:
+    rpId: "shop.example.com"
+    rpOrigin: "https://shop.example.com"
 
 # ── Ingress ───────────────────────────────────────────────────────────────────
 ingress:

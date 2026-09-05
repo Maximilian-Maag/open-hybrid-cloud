@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { handlePipelineEvent } from './handler'
+import { fetchJobTraces, parseTofuOutputs, supportsJobTrace } from '@/lib/ci'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements } from '@/lib/db/schema'
+import { orders, infrastructureElements, deploymentEnvironments } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -17,8 +18,11 @@ import {
 
 // Prevent real HTTP calls and email sending during tests
 vi.mock('@/lib/ci', () => ({
-  fetchJobTrace: vi.fn().mockResolvedValue(''),
+  fetchJobTraces: vi.fn().mockResolvedValue([]),
   parseTofuOutputs: vi.fn().mockReturnValue({}),
+  // Must be mocked too: without it the handler calls undefined, the surrounding
+  // try/catch swallows the TypeError, and outputs silently stop being recorded.
+  supportsJobTrace: vi.fn().mockReturnValue(true),
   triggerPipeline: vi.fn(),
 }))
 
@@ -368,5 +372,233 @@ describe('handlePipelineEvent — no-ops', () => {
     await expect(
       handlePipelineEvent({ provider: 'gitlab', pipelineId: 'nonexistent', status: 'success' }, 999_999),
     ).resolves.toBeUndefined()
+  })
+})
+
+
+// Issues #97 and #121. The apply log is the only channel by which a deployment
+// reports its Terraform outputs, so where they land — and whether anything says why
+// they did not — is worth pinning down.
+describe('handlePipelineEvent — Terraform outputs', () => {
+  // The mocks are module-level, so call counts accumulate across tests in this
+  // file unless they are cleared per test.
+  beforeEach(() => {
+    vi.mocked(fetchJobTraces).mockClear().mockResolvedValue([])
+    vi.mocked(parseTofuOutputs).mockClear().mockReturnValue({})
+    vi.mocked(supportsJobTrace).mockClear().mockReturnValue(true)
+  })
+
+  const outputsOf = async (id: number) =>
+    (await db.select({ outputs: infrastructureElements.outputs }).from(infrastructureElements).where(eq(infrastructureElements.id, id)))[0]
+      .outputs
+
+  // `pipelineIds` are the ORDER's. By default every element carries all of them,
+  // which is the one-element-several-pipelines shape (#121). Pass `perElement` to
+  // give each element pipelines of its own, which is what provisioning writes now
+  // that one order provisions N elements (#104).
+  const seedOrderWithElements = async (
+    count: number,
+    pipelineIds: string[] = ['pipe-1'],
+    perElement?: string[][],
+  ) => {
+    const pm = await createUser({ role: 'project_manager', email: `out-pm-${Math.random()}@test.dev` })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Gateway')
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    await linkProductEnvironment(product.id, env.id)
+    const project = await createProject(pm.id)
+    const order = await createOrder(project.id, product.id, env.id, pm.id, {
+      status: 'provisioning',
+      pipelineId: pipelineIds,
+    })
+    // Every pipeline but the last already reported: the order completes on the
+    // event for the last one, which is the moment the outputs are collected.
+    const alreadySucceeded = Object.fromEntries(pipelineIds.slice(0, -1).map((id) => [id, 'success']))
+    if (Object.keys(alreadySucceeded).length > 0) {
+      await db.update(orders).set({ pipelineStatus: alreadySucceeded }).where(eq(orders.id, order.id))
+    }
+    const elements = []
+    for (let i = 0; i < count; i++) {
+      elements.push(
+        await createInfraElement(order.id, project.id, env.id, product.id, {
+          pipelineId: perElement?.[i] ?? pipelineIds,
+          sequence: i + 1,
+        }),
+      )
+    }
+    return { order, env, elements }
+  }
+
+  it('records each element with the outputs of its OWN pipeline', async () => {
+    // Issue #104: each of the N elements is a separate machine reporting its own
+    // ip_address. Merging the order's pipelines into one map made every element
+    // report element 1's address — silent, confidently wrong operational data.
+    const { elements } = await seedOrderWithElements(2, ['pipe-el1', 'pipe-el2'], [
+      ['pipe-el1'],
+      ['pipe-el2'],
+    ])
+    vi.mocked(fetchJobTraces).mockImplementation(async (_ci, pipelineId) =>
+      pipelineId === 'pipe-el1' ? ['trace-el1'] : ['trace-el2'],
+    )
+    vi.mocked(parseTofuOutputs).mockImplementation(
+      (trace): Record<string, string> =>
+        trace === 'trace-el1' ? { ip: '203.0.113.7' } : { ip: '203.0.113.8' },
+    )
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-el2', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(await outputsOf(elements[0].id)).toEqual({ ip: '203.0.113.7' })
+    expect(await outputsOf(elements[1].id)).toEqual({ ip: '203.0.113.8' })
+  })
+
+  it('does not call the same-key collision a collision when it is two elements', async () => {
+    // Two elements reporting `ip` with different values is the normal case, not a
+    // template naming clash: warning about it trained operators to ignore the
+    // warning that does mean one.
+    const { elements } = await seedOrderWithElements(2, ['pipe-el1', 'pipe-el2'], [
+      ['pipe-el1'],
+      ['pipe-el2'],
+    ])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(fetchJobTraces).mockImplementation(async (_ci, pipelineId) =>
+      pipelineId === 'pipe-el1' ? ['trace-el1'] : ['trace-el2'],
+    )
+    vi.mocked(parseTofuOutputs).mockImplementation(
+      (trace): Record<string, string> =>
+        trace === 'trace-el1' ? { ip: '203.0.113.7' } : { ip: '203.0.113.8' },
+    )
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-el2', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('more than one'))
+    warn.mockRestore()
+  })
+
+  it('records nothing for an element whose triggers never fired, and says so', async () => {
+    // An element with no pipeline of its own has unknown outputs. Taking a
+    // sibling's is what this whole loop exists to stop.
+    const { elements } = await seedOrderWithElements(2, ['pipe-el1'], [['pipe-el1'], []])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(fetchJobTraces).mockResolvedValue(['trace-el1'])
+    vi.mocked(parseTofuOutputs).mockReturnValue({ ip: '203.0.113.7' })
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-el1', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(await outputsOf(elements[0].id)).toEqual({ ip: '203.0.113.7' })
+    expect(await outputsOf(elements[1].id)).toEqual({})
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no pipeline of its own'))
+    warn.mockRestore()
+  })
+
+  it('says why there are no outputs when the provider cannot be read', async () => {
+    // GitHub and Bitbucket have no trace endpoint implemented, and silence made it
+    // look like the template had declared no outputs.
+    const { elements } = await seedOrderWithElements(1)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(supportsJobTrace).mockReturnValueOnce(false)
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-1', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('not implemented'))
+    expect(await outputsOf(elements[0].id)).toEqual({})
+    expect(fetchJobTraces).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  // Issue #121 from here down.
+  it('reads every pipeline of the order and merges what they report', async () => {
+    // An order fans out over the product webhooks and pipeline stacks. Reading only
+    // the pipeline whose event completed the order dropped the rest — and which set
+    // survived was decided by CI timing.
+    const { elements } = await seedOrderWithElements(1, ['pipe-1', 'pipe-2'])
+    vi.mocked(fetchJobTraces)
+      .mockResolvedValueOnce(['trace-1'])
+      .mockResolvedValueOnce(['trace-2'])
+    vi.mocked(parseTofuOutputs).mockImplementation(
+      (trace): Record<string, string> =>
+        trace === 'trace-1' ? { vm_ip: '10.0.0.4' } : { fqdn: 'web-01.example.com' },
+    )
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-2', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(vi.mocked(fetchJobTraces).mock.calls.map((call) => call[1])).toEqual(['pipe-1', 'pipe-2'])
+    expect(await outputsOf(elements[0].id)).toEqual({ vm_ip: '10.0.0.4', fqdn: 'web-01.example.com' })
+  })
+
+  it('keeps the first pipeline\'s value when two report the same key, and says so', async () => {
+    // Picking by CI timing would make the recorded value change from run to run.
+    const { elements } = await seedOrderWithElements(1, ['pipe-1', 'pipe-2'])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(fetchJobTraces)
+      .mockResolvedValueOnce(['trace-1'])
+      .mockResolvedValueOnce(['trace-2'])
+    vi.mocked(parseTofuOutputs).mockImplementation(
+      (trace): Record<string, string> => (trace === 'trace-1' ? { ip: '10.0.0.4' } : { ip: '10.0.0.9' }),
+    )
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-2', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(await outputsOf(elements[0].id)).toEqual({ ip: '10.0.0.4' })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('more than one'))
+    warn.mockRestore()
+  })
+
+  it('still records what the readable pipelines reported when one log cannot be read', async () => {
+    const { elements } = await seedOrderWithElements(1, ['pipe-1', 'pipe-2'])
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(fetchJobTraces)
+      .mockRejectedValueOnce(new Error('GitLab jobs fetch failed: 500'))
+      .mockResolvedValueOnce(['trace-2'])
+    vi.mocked(parseTofuOutputs).mockReturnValue({ fqdn: 'web-01.example.com' })
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-2', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(await outputsOf(elements[0].id)).toEqual({ fqdn: 'web-01.example.com' })
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('pipe-1'), expect.anything())
+    error.mockRestore()
+  })
+
+  it('names the misconfigured environment when the project cannot be derived from its webhook URL', async () => {
+    // GitLab's job endpoints are project-scoped and the project is named only in the
+    // environment's trigger URL. An operator can fix a URL of another shape, but
+    // only if the portal says so.
+    const { env, elements } = await seedOrderWithElements(1)
+    await db
+      .update(deploymentEnvironments)
+      .set({ webhookUrl: 'https://gitlab.example.com/api/v4/trigger/pipeline' })
+      .where(eq(deploymentEnvironments.id, env.id))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await handlePipelineEvent(
+      { provider: 'gitlab', pipelineId: 'pipe-1', status: 'success' },
+      elements[0].environmentId,
+    )
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('/projects/<id>/'))
+    expect(fetchJobTraces).not.toHaveBeenCalled()
+    expect(await outputsOf(elements[0].id)).toEqual({})
+    warn.mockRestore()
   })
 })

@@ -9,7 +9,10 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { useToast } from '@/components/ui/Toast'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
+// Provider names are proper nouns — not translated, same as "SMTP" and "Branding".
 const PROVIDERS: { value: AiProviderType; label: string }[] = [
   { value: 'claude', label: 'Anthropic Claude' },
   { value: 'openai', label: 'OpenAI' },
@@ -20,10 +23,10 @@ const PROVIDERS: { value: AiProviderType; label: string }[] = [
 
 interface Props {
   initial: AiConfig | null
-  token: string
 }
 
-export function AiConfigForm({ initial, token }: Props) {
+export function AiConfigForm({ initial }: Props) {
+  const lang = useLang()
   const { toast } = useToast()
   const [provider, setProvider] = useState<AiProviderType>(initial?.provider ?? 'claude')
   const [endpoint, setEndpoint] = useState(initial?.endpoint ?? '')
@@ -40,10 +43,10 @@ export function AiConfigForm({ initial, token }: Props) {
         provider, endpoint: endpoint.trim(), model: model.trim(),
         ...(apiKey ? { apiKey } : {}),
       }
-      await put('/api/admin/config/ai', body, token)
-      toast('AI configuration saved.')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save AI config.')
+      await put('/api/admin/config/ai', body)
+      toast(t('aiConfigSavedToast', lang))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('failedToSaveAi', lang))
     } finally {
       setSaving(false)
     }
@@ -58,24 +61,27 @@ export function AiConfigForm({ initial, token }: Props) {
   }
 
   return (
-    <Card title="AI Provider Settings">
+    <Card title={t('aiProviderSettingsTitle', lang)}>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert>{error}</Alert>}
 
-        <Select label="Provider" value={provider} onChange={(e) => setProvider(e.target.value as AiProviderType)} options={PROVIDERS} />
+        <Select label={t('provider', lang)} value={provider} onChange={(e) => setProvider(e.target.value as AiProviderType)} options={PROVIDERS} />
 
-        <Input label="API Endpoint" type="url" value={endpoint} onChange={(e) => setEndpoint(e.target.value)}
+        <Input label={t('apiEndpoint', lang)} type="url" value={endpoint} onChange={(e) => setEndpoint(e.target.value)}
           placeholder="https://api.anthropic.com"
-          hint="Leave blank to use the default endpoint for the selected provider" />
+          hint={t('apiEndpointHint', lang)} />
 
-        <Input label="API Key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-          hint={initial ? 'Leave blank to keep existing key' : undefined} />
+        <Input label={t('apiKey', lang)} type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+          hint={initial ? t('apiKeyKeepHint', lang) : undefined} />
 
-        <Input label="Model" value={model} onChange={(e) => setModel(e.target.value)} required
+        {/* Clearable, like SMTP's host (#317): an empty model is what `lib/ai`
+            already means by "use the default", and a field that can be set and
+            never emptied is a setting nobody can undo. */}
+        <Input label={t('model', lang)} value={model} onChange={(e) => setModel(e.target.value)}
           placeholder={modelPlaceholder[provider]} />
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save Configuration'}</Button>
+          <Button type="submit" disabled={saving}>{saving ? t('saving', lang) : t('saveConfiguration', lang)}</Button>
         </div>
       </form>
     </Card>

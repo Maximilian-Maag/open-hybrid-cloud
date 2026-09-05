@@ -1,15 +1,11 @@
 import type { PipelineEvent } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
 import { orders, infrastructureElements } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
-import {
-  sendProvisioningCompleted,
-  sendProvisioningFailed,
-  sendDecommissioned,
-} from '@/lib/notification'
-import { fetchJobTrace, parseTofuOutputs } from '@/lib/ci'
-import { findProductName, findUserEmail, findCiSourceForEnv, findAdminEmails } from '@/lib/db/queries'
+import { sendProvisioningFailed } from '@/lib/notification'
+import { findProductName, findUserEmail, findAdminEmails } from '@/lib/db/queries'
+import { settleOrderIfComplete, settleElementIfComplete } from '@/lib/webhook/settle'
 
 export const handlePipelineEvent = async (
   event: PipelineEvent,
@@ -67,73 +63,20 @@ export const handlePipelineEvent = async (
 
       if (!merged.length) continue // already terminal — ignore stale/duplicate event
 
-      // Only complete the order once EVERY pipeline that belongs to it has
-      // succeeded (multi-pipeline products: webhooks + stacks).
-      const statusMap = merged[0].pipelineStatus
-      const allSucceeded =
-        merged[0].pipelineId.every((pid) => statusMap[pid] === 'success') &&
-        // Also require every recorded entry to be a success, mirroring the infra
-        // branch below. A trigger that never started contributes no pipeline id
-        // but does leave a `trigger-failed:*` sentinel (see retryProvisioning),
-        // so without this the order would complete as soon as the pipelines that
-        // DID start succeed — reporting a fully provisioned order while one
-        // webhook or stack was never fired at all.
-        Object.values(statusMap).every((status) => status === 'success')
-      if (!allSucceeded) continue
-
-      // Compare-and-swap: only the caller that flips provisioning → completed
-      // runs the terminal effects (audit, email, outputs), so concurrent final
-      // events don't double-notify.
-      const completed = await db
-        .update(orders)
-        .set({ status: 'completed', updatedAt: new Date() })
-        .where(sql`${orders.id} = ${order.id} AND ${orders.status} = 'provisioning'`)
-        .returning({ id: orders.id })
-      if (!completed.length) continue
-
-      await logAudit(null, 'order.completed', order.id, `Pipeline ${event.pipelineId} succeeded`)
-
-      const infraElements = await db
-        .select({ id: infrastructureElements.id })
-        .from(infrastructureElements)
-        .where(eq(infrastructureElements.orderId, order.id))
-        .limit(1)
-
-      const productName = await findProductName(order.productId)
-      const infraId = infraElements[0]?.id ?? order.id
-      const email = await findUserEmail(order.userId)
-
-      if (email) {
-        await sendProvisioningCompleted(email, productName, infraId)
-      }
-
-      if (infraElements.length > 0) {
-        try {
-          const ciSource = await findCiSourceForEnv(order.environmentId)
-          if (ciSource) {
-            const trace = await fetchJobTrace(ciSource, event.pipelineId)
-            const outputs = parseTofuOutputs(trace)
-            if (Object.keys(outputs).length > 0) {
-              await db
-                .update(infrastructureElements)
-                .set({ outputs })
-                .where(eq(infrastructureElements.id, infraElements[0].id))
-            }
-          }
-        } catch (err) {
-          console.error('[webhook] Failed to fetch/parse job trace:', err)
-        }
-      }
+      // Whether that success finishes the order — and what to do about it — is
+      // `settleOrderIfComplete`'s to decide, because the trigger fan-out has to
+      // reach the same decision when it outruns a callback (see pipelineTracking).
+      await settleOrderIfComplete(order, merged[0], `Pipeline ${event.pipelineId} succeeded`)
     }
 
     for (const infra of matchingInfra) {
       // Same all-pipelines rule as orders: a teardown can fan out to several
       // pipelines (product webhooks + pipeline stacks), so merge this one's
       // success into the JSONB map (`||` is a single atomic UPDATE, so
-      // concurrent events can't lose each other's keys) and only flip the
-      // element to 'decommissioned' once EVERY pipeline it is waiting on has
-      // succeeded. Guard on 'decommissioning' so a stale event can't resurrect
-      // an already-terminal element.
+      // concurrent events can't lose each other's keys) and let
+      // `settleElementIfComplete` decide whether that finished the teardown.
+      // Guard on 'decommissioning' so a stale event can't resurrect an
+      // already-terminal element.
       const successPatch = JSON.stringify({ [event.pipelineId]: 'success' })
       const merged = await db
         .update(infrastructureElements)
@@ -148,47 +91,7 @@ export const handlePipelineEvent = async (
 
       if (!merged.length) continue // already terminal — ignore stale/duplicate event
 
-      const statusMap = merged[0].pipelineStatus
-      const allSucceeded =
-        merged[0].pipelineId.every((pid) => statusMap[pid] === 'success') &&
-        // Also require every recorded entry to be a success. A destroy trigger
-        // that never started contributes no pipeline id but does leave a
-        // `trigger-failed:*` sentinel (see fireDestroyTriggers), so this is what
-        // stops a partially-fired teardown from reporting itself complete.
-        Object.values(statusMap).every((status) => status === 'success')
-      if (!allSucceeded) continue
-
-      // Compare-and-swap so only the caller that flips decommissioning →
-      // decommissioned runs the terminal effects (audit, notification).
-      const done = await db
-        .update(infrastructureElements)
-        .set({ status: 'decommissioned' })
-        .where(
-          sql`${infrastructureElements.id} = ${infra.id} AND ${infrastructureElements.status} = 'decommissioning'`,
-        )
-        .returning({ id: infrastructureElements.id })
-      if (!done.length) continue
-
-      await logAudit(
-        null,
-        'infra.decommissioned',
-        infra.id,
-        `Pipeline ${event.pipelineId} succeeded`,
-      )
-
-      const orderRows = await db
-        .select({ userId: orders.userId })
-        .from(orders)
-        .where(eq(orders.id, infra.orderId))
-        .limit(1)
-
-      if (orderRows[0]) {
-        const email = await findUserEmail(orderRows[0].userId)
-        const productName = await findProductName(infra.productId)
-        if (email) {
-          await sendDecommissioned(email, productName, infra.id)
-        }
-      }
+      await settleElementIfComplete(infra, merged[0], `Pipeline ${event.pipelineId} succeeded`)
     }
   } else if (event.status === 'failed' || event.status === 'canceled') {
     for (const order of matchingOrders) {

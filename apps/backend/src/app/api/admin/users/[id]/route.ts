@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { getUserById, updateUser, deleteUser } from '@/lib/services/admin/users'
 
 const UpdateUserSchema = z.object({
@@ -19,7 +19,9 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await getUserById(parseInt(id, 10)))
+  const userId = parseRouteId(id)
+  if (userId === null) return invalidId('user id')
+  return toResponse(await getUserById(userId))
 }
 
 export async function PUT(
@@ -30,13 +32,18 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id } = await params
+  const userId = parseRouteId(id)
+  if (userId === null) return invalidId('user id')
   const body = await req.json().catch(() => null)
   const parsed = UpdateUserSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateUser(parseInt(id, 10), parsed.data))
+  // The actor is passed through so that a deactivation, which now also ends the
+  // account's sessions (#37), is attributed in the audit log to whoever did it
+  // rather than appearing as a system action.
+  return toResponse(await updateUser(userId, parsed.data, session.id))
 }
 
 export async function DELETE(
@@ -47,5 +54,7 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await deleteUser(session, parseInt(id, 10)))
+  const userId = parseRouteId(id)
+  if (userId === null) return invalidId('user id')
+  return toResponse(await deleteUser(session, userId))
 }

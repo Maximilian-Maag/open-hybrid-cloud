@@ -600,7 +600,7 @@ its major logical components.
 
   % Middle row — service layer
   \node[c4component, below=0.9cm of auth] (sauth)
-    {\textbf{Auth Service}\\[2pt]\scriptsize credentials, SSO upsert};
+    {\textbf{Auth Service}\\[2pt]\scriptsize credentials, sessions};
   \node[c4component, right=of sauth] (sorder)
     {\textbf{Order Service}\\[2pt]\scriptsize state machine, CI trigger};
   \node[c4component, right=of sorder] (sinfra)
@@ -677,7 +677,8 @@ All domain logic is in the service layer.
     and branding — each delegates to the corresponding admin service. \\[6pt]
   \multicolumn{2}{@{}l}{\textit{Service Layer (\file{src/lib/services/})}} \\[2pt]
   Auth Service &
-    Verifies bcrypt passwords, upserts SSO users, returns or invalidates JWTs.
+    Verifies bcrypt passwords, returns or invalidates JWTs. The SSO user upsert
+    went with the removed callback (issue~\#139).
     Returns \code{Result<string>} (token) or a typed error. \\[4pt]
   Order / Approval Services &
     Implements the order state machine: \textit{pending} →
@@ -800,10 +801,13 @@ Every backend request follows the same four-step shell:
 \end{enumerate}
 
 User interactions on the frontend are handled by React Server Components or
-client components that call the backend via typed wrappers in
-\file{src/lib/api.ts}. NextAuth v5 stores the JWT in an encrypted
-server-side session cookie and forwards it as a Bearer token on every
-backend call.
+client components that call the backend via typed wrappers. NextAuth v5 stores
+the backend JWT in an encrypted, HttpOnly session cookie, and the token stays on
+the server: a Server Component calls \file{src/lib/serverApi.ts}, which reads it
+from the session and sends it as a Bearer token, while a client component calls
+\file{src/lib/api.ts}, which sends the request to this origin's own
+\code{/api/proxy} route and lets that attach the header server-side. See
+\S\ref{sec:jwt-auth}.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Design Decisions \& Technology Rationale}
@@ -926,7 +930,7 @@ the \code{postgres} Node.js driver.
   \item \textbf{Thin abstraction:} Drizzle stays close to SQL semantics
         (no opaque magic), making it straightforward to write efficient
         queries for JSONB columns, upserts, and aggregations.
-  \item BYTEA columns store product images and the branding logo
+  \item BYTEA columns store product images (\code{product\_images.data}) and the branding logo
         directly in the database, eliminating a separate object store at
         this scale.
 \end{itemize}
@@ -940,11 +944,45 @@ containers (\code{apps/backend/Dockerfile} and
 \textbf{Rationale:}
 Separating concerns at the container boundary gives each part its own
 deployment, scaling, and environment-variable scope. The frontend never
-holds database credentials; the backend never renders HTML. Nginx
-(or any reverse proxy) routes \code{/api/*} to port 3001 and all other
-paths to port 3000. At the anticipated load (tens of users, hundreds
-of orders per month), this split adds minimal operational overhead
-while making the security boundary explicit.
+holds database credentials; the backend never renders HTML. At the
+anticipated load (tens of users, hundreds of orders per month), this
+split adds minimal operational overhead while making the security
+boundary explicit.
+
+\textbf{Routing is not simply \code{/api/*}.} Both halves are Next.js
+applications and both serve routes under \code{/api}. A reverse proxy that
+sends all of \code{/api/*} to port 3001 breaks sign-in, because these paths
+belong to the \emph{frontend} on port 3000:
+
+\begin{itemize}
+  \item \code{/api/auth/*} --- NextAuth's own endpoints (\code{csrf},
+        \code{session}, \code{callback/credentials}, \code{signin}, \ldots)
+  \item \code{/api/login-challenge} --- step one of the two-step sign-in
+  \item \code{/api/ping} --- the frontend's liveness route
+  \item \code{/api/proxy/*} --- how the browser reaches the backend API at all
+        (issue~\#146). The browser no longer holds the bearer token; it calls
+        this route with the HttpOnly session cookie and the route attaches the
+        token server-side. Sending this one to port 3001 does not produce a 404
+        --- it produces a 401 on every request the signed-in user makes, which
+        is harder to attribute.
+\end{itemize}
+
+\noindent
+There used to be one exception inside that range: \code{/api/auth/callback},
+Entra ID's OAuth callback, which was the \emph{backend's} and had to be matched
+exactly so it outranked the \code{/api/auth} prefix. That flow was removed
+(issue~\#139) --- nothing on the frontend ever consumed its result, and it handed
+the session JWT back in a query string --- so the whole of \code{/api/auth} now
+belongs to the frontend. Reinstating SSO means reinstating that exact match with
+it. Everything else under \code{/api} goes to port 3001, and every other path to
+port 3000.
+
+Getting this wrong produces a 404 that is easy to misattribute, since both
+applications answer with \code{X-Powered-By: Next.js}; the giveaway is that a
+reply from the backend also carries its CORS headers. \code{ingress.yaml} and
+\code{infra/docker-host/nginx.conf.example} both encode the split, and
+\code{apps/frontend/src/lib/apiRoutes.test.ts} fails if either falls behind the
+frontend's actual routes.
 
 \section{OpenTofu over Terraform}
 
@@ -1054,11 +1092,24 @@ complex custom script), whereas passing \code{PIPELINE\_STACK} JSON is a
 simple REST variable and works with any GitLab tier.
 
 \section{JWT Authentication}
+\label{sec:jwt-auth}
 
 \textbf{Decision:} The backend issues signed JWTs (HS256, 24-hour
 expiry) via the \code{jose} library. The frontend stores the JWT in
-a NextAuth v5 server-side session cookie and forwards it as a
-\code{Bearer} token on every backend API call.
+a NextAuth v5 encrypted session cookie and forwards it as a
+\code{Bearer} token on every backend API call --- \emph{from the server only}.
+Client JavaScript never holds the token: the browser calls the frontend's own
+\code{/api/proxy/*} route with the HttpOnly session cookie, and that route adds
+the Authorization header.
+
+\textbf{Why the proxy:} a bearer token is not bound to an origin, so a token in
+client JavaScript is a credential that can be read by any script on the page and
+replayed from anywhere for the rest of its 24 hours. Handing it to the browser
+--- as \code{session.apiToken} on \code{/api/auth/session}, and as a
+\code{token} prop serialised into every page's RSC payload --- turned any XSS on
+this origin into a full account takeover that outlived the page. The proxy costs
+one extra hop inside the cluster and removes the credential from the browser
+entirely.
 
 \textbf{Rationale:}
 \begin{itemize}
@@ -1502,8 +1553,6 @@ Section~\ref{sec:webhook} for the JSON schema.
   \item Docker 24+ (or a Kubernetes cluster)
   \item PostgreSQL 15+ (external or containerized)
   \item SMTP server credentials (optional, can be configured later)
-  \item Microsoft Entra ID application registration for OIDC
-        (optional for local-only operation)
   \item Linode API token with Read/Write scope
   \item GitLab instance with webhook support
 \end{itemize}
@@ -1540,9 +1589,6 @@ cp apps/frontend/.env.example apps/frontend/.env
     \env{SMTP\_PASS}          & SMTP authentication password                       & No  \\
     \env{SMTP\_TLS}           & \code{true} to enable TLS                         & No  \\
     \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint                    & No  \\
-    \env{ENTRA\_TENANT\_ID}   & Microsoft Entra ID tenant ID (SSO)                & No  \\
-    \env{ENTRA\_CLIENT\_ID}   & Entra ID application client ID                     & No  \\
-    \env{ENTRA\_CLIENT\_SECRET} & Entra ID client secret                           & No  \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -1610,7 +1656,13 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 \end{figure}
 
 Nginx routes \code{/api/*} and \code{/api/webhooks/*} to the backend
-container (port 3001) and all other paths to the frontend (port 3000).
+container (port 3001), and all other paths to the frontend (port 3000).
+The exceptions are the frontend's own \code{/api/auth},
+\code{/api/login-challenge}, \code{/api/ping} and \code{/api/proxy}, which go
+to the frontend (see section on the two-container split). \code{/api/auth/callback} used to be
+the exception to that exception --- Entra ID's callback, matched exactly so it
+outranked the \code{/api/auth} prefix --- but the SSO flow was removed in
+issue~\#139 and the whole prefix is the frontend's again.
 
 \subsection*{Step-by-Step Deployment Procedure}
 
@@ -1661,52 +1713,57 @@ certificate and key at the paths referenced in
 
 \item \textbf{Configure Nginx as TLS-terminating reverse proxy.}
 
-Listing~\ref{lst:nginxconf} shows a minimal but production-ready
-Nginx configuration:
+The configuration is kept in the repository rather than reproduced here,
+so that it cannot drift away from what is actually deployed:
+\file{infra/docker-host/nginx.conf.example}.
 
-\begin{lstlisting}[style=yaml,caption={infra/nginx/default.conf},label={lst:nginxconf}]
-server {
-    listen 80;
-    server_name shop.example.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name shop.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/shop.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/shop.example.com/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
-
-    client_max_body_size 10m;
-
-    # Backend API (REST + webhooks)
-    location /api/ {
-        proxy_pass         http://ohc-backend:3001;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60s;
-    }
-
-    # Frontend (Next.js UI)
-    location / {
-        proxy_pass         http://ohc-frontend:3000;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60s;
-    }
-}
+\begin{lstlisting}[style=bash]
+cd infra/docker-host
+cp nginx.conf.example nginx.conf
+# Edit the ONE line marked "CHANGE THIS" -- your public domain.
+# It must match NEXTAUTH_URL in .env and the name on the certificate.
 \end{lstlisting}
 
-\item \textbf{Reload Nginx.}
+\begin{tcolorbox}[warnboxstyle]
+Do not simplify the \code{/api} routing to a single
+\code{location /api/} block. The frontend and the backend are \emph{both}
+Next.js applications and \emph{both} serve routes under \code{/api}. These
+belong to the frontend on port 3000:
+
+\begin{itemize}
+  \item \code{/api/auth/*} --- NextAuth's endpoints
+        (\code{csrf}, \code{session}, \code{callback/credentials}, \ldots)
+  \item \code{/api/login-challenge} --- step one of the two-step sign-in
+  \item \code{/api/ping} --- the frontend's liveness route
+  \item \code{/api/proxy/*} --- how the browser reaches the backend API at all
+        (issue~\#146). The browser no longer holds the bearer token; it calls
+        this route with the HttpOnly session cookie and the route attaches the
+        token server-side. Sending this one to port 3001 does not produce a 404
+        --- it produces a 401 on every request the signed-in user makes, which
+        is harder to attribute.
+\end{itemize}
+
+\noindent
+The exception that used to sit inside that range --- \code{/api/auth/callback},
+Entra ID's OAuth callback, matched exactly so it outranked the \code{/api/auth}
+prefix --- went with the SSO flow in issue~\#139. Everything else under
+\code{/api} goes to port 3001.
+
+Sending all of \code{/api} to the backend breaks sign-in with a 404 that is easy
+to misattribute, because both applications answer with
+\code{X-Powered-By: Next.js}; the giveaway is that a reply from the backend also
+carries its CORS headers. This is issue \#196, and the ordering of the
+\code{location} blocks in the example file is what prevents it.
+\end{tcolorbox}
+
+\item \textbf{Start Nginx.}
+
+Nginx runs as a container and mounts \file{nginx.conf} from the host, so a
+configuration change is applied by recreating that one container --- the
+application containers are untouched:
+
 \begin{lstlisting}[style=bash]
-nginx -t && systemctl reload nginx
+docker compose -f infra/docker-host/docker-compose.yml up -d --force-recreate nginx
 \end{lstlisting}
 
 \item \textbf{Verify the deployment.}
@@ -2061,12 +2118,196 @@ definition against the live database and applies the diff.
 
 \begin{enumerate}
   \item Navigate to the webshop URL.
-  \item Click \textbf{Local Login} (not \textbf{Sign in with Microsoft}).
   \item Enter the email and password from \env{ADMIN\_EMAIL} and
         \env{ADMIN\_PASSWORD}.
   \item Navigate to \textbf{Settings → My Profile} and change the
         default password immediately.
 \end{enumerate}
+
+\section{Mandatory Two-Factor Authentication for Administrators}
+\label{sec:root-2fa}
+
+Administrator accounts hold enough privilege to change what the portal does, and
+no identity provider stands in front of them --- SSO was removed in issue~\#139.
+They are given a second factor:
+standard TOTP (RFC~6238, SHA-1, 30-second window, six digits), compatible with
+Google Authenticator, Authy, Bitwarden and 1Password.
+
+It is \emph{required} and it covers both administrative roles, Root and Admin.
+The enforcement point is \code{requireAuth}: an administrative session with no
+confirmed factor is answered 403 with the code
+\code{second\_factor\_required} on every route except the enrolment endpoints
+and a read of the caller's own profile. The frontend redirect to Settings is a
+convenience on top of that, not the control — a client that ignores it, or calls
+the API directly with the token, meets the same refusal.
+
+The session is issued rather than withheld, deliberately: enrolling needs a
+working session, so refusing the sign-in would be a lockout with no way out of
+it. What the session can do is enrol, and nothing else.
+
+The requirement is a property of the \emph{role}, re-read per request, not a flag
+cached on the session row. That is what makes both directions work: the gate
+lifts the moment enrolment is confirmed, without a fresh sign-in, and closes
+again the moment an operator clears the row by hand.
+
+Two kinds of account are excluded, and the first exclusion is load-bearing. An
+account with no local password cannot re-authenticate an enrolment:
+\code{loadTwoFactorAccount} refuses to enrol it, so
+\code{secondFactorOutstanding} must not require a factor of it either. A gate an
+account can never satisfy is a lockout, not a policy — it would be refused every
+route and refused the one screen that could lift the refusal. Only the removed
+SSO flow (issue~\#139) ever created such an account, so no new one can appear;
+rows an earlier deployment wrote still take this branch. Note that the code keys
+on the missing password hash, not on \code{sso\_sub}, so an operator setting
+that column on a password account does not buy an exemption from it.
+
+Project Manager accounts are excluded for the ordinary reason: it is the end-user
+role, and every two-factor endpoint answers 403 for it, enforced in the service
+layer rather than per route.
+
+Setup lives under \textbf{Settings → My Profile → Two-factor authentication};
+the end-user steps are in \file{docs/guides/root.md}. What matters at the
+operator level is the following.
+
+\subsection*{Security keys and passkeys (WebAuthn)}
+
+TOTP is one of two factors an account may hold. The other is a WebAuthn
+credential --- a hardware key, or a passkey backed by Touch ID, Windows Hello or
+a phone --- and either satisfies the requirement on its own.
+
+The difference is not convenience. An assertion is signed over the origin the
+browser is actually on, and the server checks it, so a user walked onto a
+lookalike domain cannot produce one that verifies. A six-digit code can be typed
+into anything that asks for one, and \autoref{sec:root-2fa} is not the only place
+this handbook records people ending up on the wrong host.
+
+Nothing secret is stored. A registration leaves the private key on the
+authenticator and hands the server a public key; a dump of
+\code{webauthn\_credentials} authenticates nobody. That is the sharpest
+difference from \code{user\_totp.secret}, which is material a code can be computed
+from and therefore has to be encrypted.
+
+\paragraph{Configuration, and the one way to get it wrong.}
+A credential is scoped to a Relying Party ID, and the assertion names an origin.
+Both are deployment configuration:
+
+\begin{itemize}
+  \item \env{WEBAUTHN\_RP\_ID} --- a \emph{bare domain}. No scheme, no port, no
+    path. \code{portal.example.com}, or \code{example.com} to let one credential
+    work across subdomains.
+  \item \env{WEBAUTHN\_RP\_ORIGIN} --- the full origin the browser sees, with
+    scheme. Comma-separate several if the portal answers on more than one
+    hostname; the RP ID must be a suffix of every one.
+\end{itemize}
+
+Get either wrong and every key fails on the deployed instance while working
+perfectly on localhost. So the backend validates both at first use and refuses to
+start a ceremony rather than minting credentials nobody can ever use --- a
+mistyped variable becomes one loud error for the operator instead of a silent
+failure at every user. Blank values fall back to localhost, which is what makes a
+fresh clone work with a key straight away; both are required when
+\env{NODE\_ENV} is \code{production}.
+
+Changing the RP ID invalidates every registered credential --- they are scoped to
+it. Choose the broadest domain you might want before anyone enrols.
+
+\paragraph{What the server enforces.}
+The library verifies the ceremony; the service around it adds the rules that are
+not its job. A challenge lives in \code{webauthn\_challenges} and is claimed by
+the \code{DELETE ... RETURNING} that reads it, so it is spent exactly once and two
+requests racing on one cannot both proceed --- a signed stateless token, as used
+for the MFA challenge, could be replayed for as long as it was valid. The
+challenge \code{kind} is part of that \code{WHERE}: a registration challenge
+matches nothing on the authentication path, so a ceremony run inside an
+authenticated session cannot be redeemed as the second factor for a session that
+never passed one. The credential lookup is keyed by user \emph{and} credential id,
+or a valid assertion from anybody's key would satisfy a challenge issued for
+somebody else's password.
+
+The signature counter is enforced only where there is one to enforce: a value at
+or below the stored one means two authenticators are answering for one credential,
+but every passkey and much modern hardware reports a constant zero. Enforcing a
+rising counter against those would lock out most users to claim a guarantee the
+portal does not have.
+
+\paragraph{Recovery codes are shared.} Registering a first factor of
+\emph{either} kind issues them; a second key does not reissue, because that would
+silently invalidate the set the user already wrote down. A credential can be
+removed, unlike a confirmed TOTP secret --- a lost key that stays registered keeps
+prompting for something the user no longer has --- but never the last factor an
+administrator holds.
+
+\subsection*{Configuration}
+
+The shared secret is encrypted at rest with AES-256-GCM. The key comes from
+\env{TOTP\_ENCRYPTION\_KEY} — 32 bytes, hex or base64:
+
+\begin{lstlisting}[style=bash]
+openssl rand -base64 32
+\end{lstlisting}
+
+If the variable is left blank the key is derived from \env{JWT\_SECRET} instead,
+so two-factor authentication works out of the box. That couples the two secrets:
+rotating \env{JWT\_SECRET} then makes every enrolled authenticator unreadable and
+forces a re-enrollment. Set \env{TOTP\_ENCRYPTION\_KEY} separately before anyone
+enrols in production, and back it up with the rest of your secrets.
+
+\subsection*{Storage}
+
+Two tables (migration \code{0018}):
+
+\begin{itemize}
+  \item \code{user\_totp} — one row per user. The live secret, an in-flight
+        pending secret, the confirmation timestamp, the last accepted time step
+        (the replay guard) and the failure counter with its lockout deadline.
+  \item \code{user\_recovery\_codes} — ten rows per enrollment, each holding a
+        SHA-256 hash of one code and the timestamp it was spent. The codes
+        themselves exist only in the browser response that issued them.
+\end{itemize}
+
+\subsection*{Rate limiting}
+
+Five consecutive failed codes lock the second factor for fifteen minutes. The
+counter and the deadline live in the database rather than in process memory, so a
+restart or a second replica does not hand an attacker a fresh allowance. Every
+failure, every lockout and every attempt made while locked is written to the
+audit log under the \code{auth.2fa.*} actions.
+
+\subsection*{It cannot be disabled}
+
+There is no API endpoint that removes a confirmed second factor —
+\code{DELETE /api/users/me/2fa} answers \code{405} by design. The supported
+route is a replacement, which requires the password plus a current code or an
+unused recovery code.
+
+\subsection*{Emergency reset}
+
+If the authenticator and all ten recovery codes are lost — or if
+\env{TOTP\_ENCRYPTION\_KEY} was lost or rotated, which makes the stored secret
+undecryptable and every two-factor sign-in fail closed — the only way back in is
+to clear the rows. This removes the protection, so record it in your change log.
+
+\begin{lstlisting}[style=bash]
+# Docker Compose
+docker exec -i ohc-postgres psql -U postgres -d open_hybrid_cloud <<'SQL'
+BEGIN;
+DELETE FROM user_recovery_codes
+  WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
+DELETE FROM user_totp
+  WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
+COMMIT;
+SQL
+
+# Kubernetes
+kubectl exec -n open-hybrid-cloud deploy/ohc-postgres -- \
+  psql -U postgres -d open_hybrid_cloud -c \
+  "DELETE FROM user_recovery_codes WHERE user_id = \
+     (SELECT id FROM users WHERE email = 'root@example.com'); \
+   DELETE FROM user_totp WHERE user_id = \
+     (SELECT id FROM users WHERE email = 'root@example.com');"
+\end{lstlisting}
+
+The account then signs in with its password alone and should enrol again at once.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{System Configuration}
@@ -2184,9 +2425,9 @@ browser locale and applying the stored rate.
     \textbf{Role} & \textbf{Description} &
       \textbf{Auth method} & \textbf{DB role} \\
     \midrule
-    Admin         & Full access; direct ordering; approval & SSO  & \code{admin} \\
+    Admin         & Full access; direct ordering; approval & Local & \code{admin} \\
     Root    & Catalog \& config; no ordering          & Local & \code{root} \\
-    Project Manager  & Orders own infra; approval required     & SSO  & \code{project\_leader} \\
+    Project Manager  & Orders own infra; approval required     & Local & \code{project\_leader} \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -2202,7 +2443,9 @@ Under \textbf{Administration → Users}:
   \item Click \textbf{Save}.
 \end{enumerate}
 
-SSO users are created automatically on first login.
+Every account is created here. SSO account auto-provisioning went with the
+removed callback (issue~\#139), so there is no other way for a user row to
+appear.
 
 \section{Editing Users}
 
@@ -2324,7 +2567,7 @@ The frontend is available at \url{http://localhost:3000}, the backend API at
     \code{make docker-build} & Build both Docker images locally \\
     \code{make db-push}      & Push Drizzle schema to the database \\
     \code{make db-studio}    & Open Drizzle Studio \\
-    \code{make docs}         & Compile the LaTeX handbook to PDF \\
+    \code{make handbook}         & Compile the LaTeX handbook to PDF \\
     \code{make clean}        & Remove build artefacts \\
     \bottomrule
   \end{tabular}
@@ -2374,7 +2617,7 @@ open-hybrid-cloud/
 |   +-- architecture/
 |   |   +-- workspace.dsl         # Structurizr C4 architecture
 |   +-- handbook.tex
-|   +-- handbook.pdf              # compiled output
+|   +-- handbook.pdf              # compiled output, not committed (see .gitignore)
 +-- Makefile
 +-- package.json
 +-- pnpm-workspace.yaml
@@ -2585,10 +2828,11 @@ The table below shows the current effective schema.
     \toprule
     \textbf{Table} & \textbf{Purpose} \\
     \midrule
-    \code{users}                    & User accounts (local + SSO) with role-based access \\
+    \code{users}                    & User accounts with role-based access \\
     \code{categories}               & Product catalogue categories \\
     \code{products}                 & Infrastructure products offered in the catalogue \\
-    \code{product\_translations}    & Multi-language name + description per product \\
+    \code{product\_translations}    & Multi-language name + short/long description per product \\
+    \code{product\_images}          & A product's pictures in gallery order, each with its own alt text \\
     \code{parameters}               & Configurable inputs for global/category/product scope \\
     \code{ci\_sources}              & CI provider credentials (GitLab / GitHub / Bitbucket) \\
     \code{deployment\_environments} & Named environments linked to a CI source \\
@@ -2598,6 +2842,19 @@ The table below shows the current effective schema.
     \code{projects}                 & User-owned projects that group orders \\
     \code{orders}                   & Individual infrastructure provisioning requests \\
     \code{infrastructure\_elements} & Deployed instances tracked per order \\
+    \code{product\_environment\_sizes} & Per-offering size tiers and their prices; an offering with no rows here prices off \code{product\_environments.price} \\
+    \code{product\_versions}        & Timeline of catalogue changes to a product, so an order's snapshot can be explained against what it differs from \\
+    \code{product\_favorites}       & Per-user product bookmarks; composite primary key, so a product can be favourited once \\
+    \code{pipeline\_stacks}         & Ordered pipeline stacks a product provisions through, each with its own webhook \\
+    \code{cart\_items}              & Draft order lines, kept out of \code{orders} so no query over orders has to exclude drafts \\
+    \code{order\_comments}          & Free-text discussion thread on an order \\
+    \code{approval\_delegations}    & Date-bounded delegation of approval authority between users \\
+    \code{integrations}             & External system registry: encrypted credentials, health and failure semantics \\
+    \code{sessions}                 & Server-side sessions; stores only the SHA-256 of the token, never the token \\
+    \code{user\_totp}               & Per-user second-factor secret, kept out of \code{users} so nothing selects it by accident \\
+    \code{user\_recovery\_codes}    & Single-use second-factor recovery codes, stored as SHA-256 hashes; shared by both factor kinds \\
+    \code{webauthn\_credentials}    & Registered security keys and passkeys. Public keys only — a dump of this table authenticates nobody \\
+    \code{webauthn\_challenges}     & The in-flight ceremony challenge, one row per user, deleted when it is spent \\
     \code{audit\_log}               & Append-only log of significant user actions \\
     \code{exchange\_rates}          & Cached currency conversion rates \\
     \code{branding}                 & Single-row branding config (logo, colours, texts) \\
@@ -2625,7 +2882,7 @@ key, foreign keys, and notable constraints.
     \code{email}         & TEXT      & --- & NOT NULL, UNIQUE \\
     \code{name}          & TEXT      & --- & NOT NULL \\
     \code{role}          & TEXT      & --- & CHECK: \code{admin}, \code{project\_manager}, \code{root} \\
-    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; set for SSO accounts \\
+    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; unused since issue~\#139 removed SSO. Kept so rows an earlier deployment wrote survive and a future implementation can link to them. \\
     \code{password\_hash}& TEXT      & NULL & set for local accounts \\
     \code{active}        & BOOLEAN   & TRUE & soft-disable without deletion \\
     \code{created\_at}   & TIMESTAMPTZ & NOW() & \\
@@ -2634,7 +2891,62 @@ key, foreign keys, and notable constraints.
 \end{table}
 
 \noindent\textbf{Constraint:} \code{sso\_sub IS NOT NULL OR password\_hash IS NOT NULL}
-(every account must have at least one credential).
+(every account must have at least one credential). With SSO removed
+(issue~\#139) nothing writes \code{sso\_sub} any more, so in practice every new
+row satisfies this through \code{password\_hash}.
+
+\subsection*{\texttt{user\_totp}}
+
+Second factor for a local account (see \autoref{sec:root-2fa}). Deliberately a
+separate table: every read of \code{users} goes through a column whitelist to
+keep \code{password\_hash} out of API responses, and secret-bearing columns on
+the table that everything selects from eventually leak.
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{user\_id}            & BIGINT      & ---   & PK, FK → \code{users(id)} ON DELETE CASCADE \\
+    \code{secret}              & TEXT        & NULL  & AES-256-GCM envelope; the live secret \\
+    \code{pending\_secret}     & TEXT        & NULL  & an enrollment in flight \\
+    \code{pending\_created\_at}& TIMESTAMPTZ & NULL  & pending enrollments expire after 15 min \\
+    \code{confirmed\_at}       & TIMESTAMPTZ & NULL  & set once a code proved the secret arrived \\
+    \code{last\_used\_step}    & BIGINT      & NULL  & replay guard: RFC 6238 step of the last accepted code \\
+    \code{failed\_attempts}    & INTEGER     & 0     & consecutive failures; cleared on success \\
+    \code{locked\_until}       & TIMESTAMPTZ & NULL  & set when the failure allowance runs out \\
+    \code{created\_at}         & TIMESTAMPTZ & NOW() & \\
+    \code{updated\_at}         & TIMESTAMPTZ & NOW() & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent\textbf{Invariant:} \code{secret IS NOT NULL AND confirmed\_at IS NOT
+NULL} is the one condition meaning ``two-factor authentication is on''. No column
+turns it off, and no API endpoint clears them.
+
+\subsection*{\texttt{user\_recovery\_codes}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}         & BIGSERIAL   & ---   & PK \\
+    \code{user\_id}   & BIGINT      & ---   & NOT NULL, FK → \code{users(id)} ON DELETE CASCADE \\
+    \code{code\_hash} & TEXT        & ---   & NOT NULL; SHA-256 of the code, never the code \\
+    \code{used\_at}   & TIMESTAMPTZ & NULL  & set when spent; the row is kept, not deleted \\
+    \code{created\_at}& TIMESTAMPTZ & NOW() & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent\textbf{Constraint:} UNIQUE \code{(user\_id, code\_hash)} — issuing the
+same code twice to one user would make ``each code is usable once'' untrue, and
+the index is also what makes verification a single constant-time lookup rather
+than a comparison per row.
 
 \subsection*{\texttt{categories}}
 
@@ -2662,7 +2974,8 @@ key, foreign keys, and notable constraints.
     \code{id}           & BIGSERIAL & ---  & PK \\
     \code{category\_id} & BIGINT    & ---  & NOT NULL, FK \textrightarrow{} \code{categories(id)} ON DELETE CASCADE \\
     \code{base\_language}& TEXT     & \code{'de'} & fallback language for translations \\
-    \code{image}        & BYTEA     & NULL & product image stored inline \\
+    \code{owner}        & TEXT      & NULL & team that runs the product, shown on its page \\
+    \code{docs\_url}    & TEXT      & NULL & link to the product documentation (http/https only) \\
     \code{created\_at}  & TIMESTAMPTZ & NOW() & \\
     \bottomrule
   \end{tabular}
@@ -2679,7 +2992,34 @@ key, foreign keys, and notable constraints.
     \code{product\_id}    & BIGINT & --- & PK, FK \textrightarrow{} \code{products(id)} ON DELETE CASCADE \\
     \code{language\_code} & TEXT   & --- & PK, e.g.\ \code{de}, \code{en}, \code{fr} \\
     \code{name}           & TEXT   & --- & NOT NULL \\
-    \code{description}    & TEXT   & \code{''} & NOT NULL \\
+    \code{description}    & TEXT   & \code{''} & NOT NULL, the short text on the catalogue tile \\
+    \code{long\_description} & TEXT & \code{''} & NOT NULL, the long text on the product page \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{product\_images}}
+
+A product's pictures, in gallery order. Migration 0021 moved the single
+\code{image}/\code{image\_mime}/\code{image\_alt} triple off \code{products} into
+this table and dropped those columns, so this is the only place a product picture
+lives. \code{alt} is NOT NULL here: a row exists only when there is an image, so
+``an image with no description'' is ruled out by the schema rather than only by the
+service (which additionally rejects a blank one).
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}         & BIGSERIAL & ---  & PK \\
+    \code{product\_id}& BIGINT    & ---  & NOT NULL, FK \textrightarrow{} \code{products(id)} ON DELETE CASCADE \\
+    \code{position}   & INT       & 0    & NOT NULL, 0-based gallery order; reads order by (\code{position}, \code{id}) \\
+    \code{data}       & BYTEA     & ---  & NOT NULL, the image bytes \\
+    \code{mime}       & TEXT      & ---  & NOT NULL, detected from the bytes, never from the upload's header \\
+    \code{alt}        & TEXT      & ---  & NOT NULL, what the picture shows (WCAG 1.1.1) \\
+    \code{created\_at}& TIMESTAMPTZ & NOW() & \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -3119,19 +3459,27 @@ export async function POST(req: NextRequest) {
 
 \subsection{Step 4: Add the Frontend API Wrapper}
 
-In \file{apps/frontend/src/lib/api.ts}, the generic \code{get} and
-\code{post} wrappers already exist. Call them from any Server Component
-or client action:
+The generic \code{get} and \code{post} wrappers already exist, in two modules.
+Import them from \file{@/lib/serverApi} in a Server Component and from
+\file{@/lib/api} in a client component; neither takes a token, because no caller
+has one to give. The split is deliberate --- \file{@/lib/api} is in the client
+bundle, so it must not import anything that reads the session:
 
 \begin{lstlisting}[style=typescript]
-import { get, post } from '@/lib/api'
+// Server Component
+import { get } from '@/lib/serverApi'
 import type { Widget } from '@open-hybrid-cloud/types'
 
-export const fetchWidgets = (token: string) =>
-  get<Widget[]>('/api/admin/widgets', token)
+export const fetchWidgets = () => get<Widget[]>('/api/admin/widgets')
+\end{lstlisting}
 
-export const createWidget = (name: string, token: string) =>
-  post<Widget>('/api/admin/widgets', { name }, token)
+\begin{lstlisting}[style=typescript]
+// Client component ('use client'). Same path, sent through /api/proxy.
+import { post } from '@/lib/api'
+import type { Widget } from '@open-hybrid-cloud/types'
+
+export const createWidget = (name: string) =>
+  post<Widget>('/api/admin/widgets', { name })
 \end{lstlisting}
 
 \subsection{Step 5: Add the Frontend Page}
@@ -3147,7 +3495,9 @@ export default async function AdminWidgetsPage() {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const widgets = await fetchWidgets(session.apiToken ?? '')
+  // No token argument, and never a token prop into a client component:
+  // serverApi reads it from the session on the server -- see JWT Authentication.
+  const widgets = await fetchWidgets()
 
   return (
     <div className="p-6">
@@ -3403,9 +3753,32 @@ Under \textbf{Administration → Products → New}:
   \item Select the \textbf{Category}.
   \item Enter the product \textbf{Name} in the primary language.
   \item Enter a detailed \textbf{Description} in the primary language.
-  \item Upload a product \textbf{Image} (PNG or JPEG, max 10 MB).
   \item Click \textbf{Save \& Continue}.
 \end{enumerate}
+
+\subsection{Images}
+
+A product has a gallery rather than a single picture. The product page shows
+the first one large with the rest as thumbnails; the catalogue tile and the
+cart row show the first one only, so put the picture that best identifies the
+product at the top.
+
+\begin{enumerate}
+  \item Type an \textbf{Image description} --- what the picture shows, at most
+        300 characters. It is required: it is the \code{alt} text screen
+        readers announce and what browsers show when the picture fails to
+        load, and the upload is refused without it.
+  \item Choose a \textbf{file} (PNG, JPEG or WebP, max 10 MB) and upload. Each
+        upload appends to the gallery instead of replacing what is there.
+  \item Reorder with the \textbf{move earlier} / \textbf{move later} buttons on
+        each picture, and drop one with \textbf{remove}. Removing the first
+        picture promotes the next one to lead.
+\end{enumerate}
+
+\notebox{Up to 8 pictures per product. The format is decided by reading the
+file's leading bytes, not the extension or the browser's declared type, so a
+renamed file is rejected rather than stored under the wrong MIME type. SVG is
+not accepted --- it can carry script.}
 
 \subsection{Parameters}
 
@@ -3459,6 +3832,33 @@ the \code{variable} block name in \file{variables.tf} exactly.}
         \end{description}
   \item Repeat for each environment.
 \end{enumerate}
+
+\subsection{Sizes}
+
+An offering's own price applies only while it has \textbf{no} sizes. Once it
+has one, the orderer must pick a size and pays that size's price.
+
+Sizes are edited in the \textbf{Sizes} card of the product edit page, as a
+matrix: one row per size code, one column per environment the product is offered
+in. Reading a row answers ``what does XL cost, and where''.
+
+\begin{enumerate}
+  \item Type a \textbf{Code} (letters, digits, dot, dash and underscore --- it
+        reaches the pipeline as \code{SIZE}) and a \textbf{Label}.
+  \item Fill in a price for each environment the size is offered in. The
+        currency is per cell: the same size may bill in EUR in one environment
+        and CHF in another.
+  \item Click \textbf{Add / update size}. One request writes every cell of the
+        row in a single transaction, so a rejected price leaves none of the
+        others written.
+\end{enumerate}
+
+\notebox{An empty cell means the size is not offered in that environment ---
+a real state, not an error. Emptying a priced cell \textbf{retires} the size
+there rather than deleting it: it stops being orderable while the row and its
+price survive, because orders that already name the code have to keep
+rendering. \textbf{Delete} removes the code from every environment at once and
+should be kept for a code that was mistyped and never ordered.}
 
 \subsection{Multiple Webhooks (Pipeline Arrays)}
 
@@ -3668,9 +4068,6 @@ translation:
   \env{SMTP\_PASS}              & SMTP authentication password                    & No  \\
   \env{SMTP\_TLS}               & \code{true} to enable SMTP TLS                  & No  \\
   \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint URL                 & No  \\
-  \env{ENTRA\_TENANT\_ID}       & Microsoft Entra ID tenant ID (future SSO)       & No  \\
-  \env{ENTRA\_CLIENT\_ID}       & Entra ID application (client) ID                & No  \\
-  \env{ENTRA\_CLIENT\_SECRET}   & Entra ID client secret                          & No  \\
   \bottomrule
   \caption{Backend environment variable reference}
   \label{tab:envvars-backend}
@@ -3842,10 +4239,11 @@ The \textbf{Role} column uses the following abbreviations:
   POST & \code{/api/auth/logout}                                     & Stateless no-op (client discards JWT)   & auth \\
   GET  & \code{/api/health}                                          & Health check + bootstrap trigger        & public \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Catalog}} \\[2pt]
+  \multicolumn{4}{@{}l}{\textit{Catalog (image bytes are public: a browser image request carries no bearer token)}} \\[2pt]
   GET  & \code{/api/catalog}                                         & List products by category               & auth \\
   GET  & \code{/api/catalog/\{id\}}                                  & Product detail with environments        & auth \\
-  GET  & \code{/api/catalog/\{id\}/image}                            & Serve product image (BYTEA)             & auth \\
+  GET  & \code{/api/catalog/\{id\}/image}                            & Serve the leading product image (BYTEA) & public \\
+  GET  & \code{/api/catalog/\{id\}/images/\{imageId\}}                & Serve one gallery image (BYTEA)         & public \\
   POST & \code{/api/catalog/\{id\}/order}                            & Place an order                          & auth \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Orders}} \\[2pt]
@@ -3882,7 +4280,11 @@ The \textbf{Role} column uses the following abbreviations:
   GET  & \code{/api/admin/products/\{id\}}                           & Product detail (admin view)             & root \\
   PUT  & \code{/api/admin/products/\{id\}}                           & Update product                          & root \\
   DELETE & \code{/api/admin/products/\{id\}}                         & Delete product + cascade                & root \\
-  PUT  & \code{/api/admin/products/\{id\}/image}                     & Upload product image                    & root \\[6pt]
+  GET  & \code{/api/admin/products/\{id\}/images}                    & List the product gallery                & root \\
+  POST & \code{/api/admin/products/\{id\}/images}                    & Append a picture (multipart)            & root \\
+  PATCH & \code{/api/admin/products/\{id\}/images}                   & Reorder the gallery                     & root \\
+  PATCH & \code{/api/admin/products/\{id\}/images/\{imageId\}}       & Change one picture's description        & root \\
+  DELETE & \code{/api/admin/products/\{id\}/images/\{imageId\}}      & Remove one picture                      & root \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Admin — Environments \& CI Sources (role: root)}} \\[2pt]
   GET  & \code{/api/admin/environments}                              & Deployment environment list             & root \\
@@ -4024,7 +4426,7 @@ The handbook source is at \file{docs/handbook.tex}. Compile with:
 
 \begin{lstlisting}[style=bash]
 # From the repo root
-make docs
+make handbook
 
 # Or manually (run twice for ToC/references)
 cd docs

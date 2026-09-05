@@ -22,7 +22,47 @@ spec:
     - host: {{ .host | quote }}
       http:
         paths:
-          # API routes → backend
+          # ── The frontend's OWN routes under /api ────────────────────────────
+          #
+          # Not everything under /api is the backend. The frontend serves three
+          # paths there, and sending them to the backend gets a 404 from a
+          # Next.js app that has no such route — which is what happened to the
+          # deployed sign-in (#196): POST /api/login-challenge answered 404 with
+          # the BACKEND's CORS headers on it.
+          #
+          # These must come first. nginx-ingress matches the longest prefix, so
+          # /api/auth beats /api, but do not rely on reading that off the file
+          # order — it is the specificity that decides.
+          #
+          # The list is not an operator choice: it is a property of the frontend
+          # build, and it is exactly the set that frontend middleware.ts exempts
+          # from authentication. apps/frontend/src/lib/apiRoutes.test.ts fails if
+          # the two ever disagree, so a new frontend /api route cannot ship
+          # without landing here too.
+          #
+          # /api/proxy is how the BROWSER now reaches the backend API (#146): the
+          # frontend attaches the bearer token server-side, so the token is never
+          # in client JavaScript. It carries every dashboard request, so sending
+          # it to the backend does not degrade gracefully — the whole UI 404s.
+
+          # There used to be an exact-match rule sending /api/auth/callback to the
+          # BACKEND, for Entra ID's OAuth callback. That flow was removed in #139:
+          # nothing on the frontend ever consumed its result, and it handed the
+          # session JWT back in a query string. When SSO is built properly the
+          # rule has to come back — the callback sits inside the frontend's
+          # NextAuth prefix, so only an Exact match outranks /api/auth below,
+          # and without it the callback silently lands on the wrong service.
+          {{- range $path := list "/api/auth" "/api/login-challenge" "/api/ping" "/api/proxy" }}
+          - path: {{ $path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "open-hybrid-cloud.frontend.fullname" $ }}
+                port:
+                  number: {{ $.Values.frontend.service.port }}
+          {{- end }}
+
+          # Everything else under /api → backend
           - path: /api
             pathType: Prefix
             backend:
@@ -30,6 +70,7 @@ spec:
                 name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
                 port:
                   number: {{ $.Values.backend.service.port }}
+
           # All other routes → frontend
           - path: /
             pathType: Prefix

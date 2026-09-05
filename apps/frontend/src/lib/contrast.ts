@@ -76,6 +76,23 @@ export const AA_LARGE = 3
 export const AA_NON_TEXT = 3
 
 /**
+ * AAA thresholds (1.4.6 Contrast (Enhanced)): 7:1 body, 4.5:1 large text.
+ *
+ * These only apply to the HALF of the branding problem we can actually move.
+ * `readableAccent` derives a new colour, so it can always reach 7:1 — it just
+ * darkens further. `readableInk` cannot: it picks between two fixed inks against
+ * a background the operator owns, and for a wide band of mid-tones neither ink
+ * gets there (#ca8a04 tops out at 6.05:1, #16a34a at 5.39:1). That is why 1.4.6
+ * is recorded as out of scope for the branded chrome in docs/guides/accessibility.md
+ * rather than enforced in the page gate.
+ *
+ * There is no enhanced equivalent of 1.4.11, so non-text boundaries stay at
+ * AA_NON_TEXT.
+ */
+export const AAA_BODY = 7
+export const AAA_LARGE = 4.5
+
+/**
  * The reference surface for accent colours used AS text or as a filled control.
  *
  * NOT white. The dashboard body is `bg-slate-50` (#f8fafc) and several chips sit on
@@ -96,6 +113,15 @@ export const meetsAaBody = (background: string): boolean =>
   readableInk(background).ratio >= AA_BODY
 
 /**
+ * The same question at the AAA threshold. Not a gate — nothing rejects a colour
+ * for failing this — but the branding form says so, because the operator is the
+ * only person who can trade their brand for 7:1 and they should know the trade
+ * exists.
+ */
+export const meetsAaaBody = (background: string): boolean =>
+  readableInk(background).ratio >= AAA_BODY
+
+/**
  * Adjust `colour` until it reaches `target` contrast against `background`,
  * keeping its hue.
  *
@@ -110,11 +136,18 @@ export const meetsAaBody = (background: string): boolean =>
  * keeps the colour recognisably the same hue while moving its luminance, which
  * is what the ratio actually depends on. Binary search converges in ~20 steps
  * and is deterministic, so the result is stable across renders.
+ *
+ * The default target is AAA, not AA. That is not ambition: because this function
+ * DERIVES a colour rather than choosing between two, 7:1 is always reachable, and
+ * the AA derivation had already given up on the brand swatch anyway — #febd69
+ * comes out of it as #8e693b, a brown. Going the rest of the way to #694e2c costs
+ * no recognisability that AA had not already spent. Callers that need less say so:
+ * AA_NON_TEXT for a control boundary, AA_LARGE for a focus ring.
  */
 export const readableAccent = (
   colour: string,
   background = SURFACE,
-  target = AA_BODY,
+  target = AAA_BODY,
 ): string => {
   const rgb = parseHex(colour)
   const bg = parseHex(background)
@@ -136,4 +169,63 @@ export const readableAccent = (
     else lo = mid
   }
   return toCanonicalHex(at(hi))
+}
+
+/**
+ * One hue at `steps` distinguishable lightnesses, darkest first, every one of them
+ * still clearing `target` against `background` (issue #106).
+ *
+ * The cost charts stack several segments in a single bar, and the app has exactly
+ * one chart colour to spend: the operator's. A categorical palette is not available
+ * — there is no second brand hue — so the segments are stepped tone-on-tone in the
+ * order the data is already sorted in (largest share darkest), which is an ordinal
+ * ramp over an ordered dimension rather than arbitrary colours on nominal ones.
+ *
+ * The floor is what makes it survive branding. `readableAccent` moves a colour in
+ * one direction only, so it cannot produce a ramp: a colour that already clears the
+ * target comes back unchanged, giving `steps` identical tones. This walks a single
+ * black → colour → white lightness parameter instead, whose contrast against a light
+ * surface falls monotonically, and binary-searches the tone that hits each step's
+ * ratio. Every step therefore clears 1.4.11's 3:1 against the card it is painted on,
+ * whatever the operator picked — including a near-white secondary.
+ *
+ * Colour is never the only channel: the legend beside these segments carries the
+ * label, the amount and the share as text.
+ */
+export const accentRamp = (
+  colour: string,
+  steps: number,
+  background = SURFACE,
+  target = AA_NON_TEXT,
+): string[] => {
+  const rgb = parseHex(colour)
+  if (!rgb || steps <= 0) return Array.from({ length: Math.max(0, steps) }, () => colour)
+
+  /** t = 0 is black, 0.5 the colour itself, 1 white — luminance rises with t. */
+  const toneAt = (t: number): string => {
+    const mix = t <= 0.5
+      ? rgb.map((v) => v * (t * 2))
+      : rgb.map((v) => v + (255 - v) * ((t - 0.5) * 2))
+    return toCanonicalHex(mix as [number, number, number])
+  }
+
+  const solve = (ratio: number): string => {
+    let lo = 0
+    let hi = 1
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2
+      // Contrast falls as t rises, so keep the half that still clears the ratio.
+      if (contrastRatio(toneAt(mid), background) >= ratio) lo = mid
+      else hi = mid
+    }
+    return toneAt(lo)
+  }
+
+  // The darkest step stops short of black so the hue stays recognisable; the
+  // lightest sits on the non-text floor rather than below it.
+  const DARKEST = 9
+  if (steps === 1) return [solve(DARKEST)]
+  return Array.from({ length: steps }, (_, i) =>
+    solve(DARKEST - ((DARKEST - target) * i) / (steps - 1)),
+  )
 }

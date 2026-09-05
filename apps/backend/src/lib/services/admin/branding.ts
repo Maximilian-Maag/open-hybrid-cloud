@@ -1,7 +1,15 @@
 import { db } from '@/lib/db/client'
 import { branding } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { ok, type Result } from '@/lib/services/result'
+import { ok, err, type Result } from '@/lib/services/result'
+import { logAudit, changedFields } from '@/lib/audit'
+import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
+import {
+  ALLOWED_IMAGE_MIMES,
+  MAX_IMAGE_BYTES,
+  detectImageMime,
+  safeImageContentType,
+} from '@/lib/services/imageUpload'
 
 export interface BrandingConfig {
   id?: number
@@ -52,12 +60,21 @@ export const getBranding = async (): Promise<Result<BrandingConfig>> => {
   return ok(rows[0] as BrandingConfig)
 }
 
-export const updateBranding = async (input: UpdateBrandingInput): Promise<Result<BrandingConfig>> => {
+export const updateBranding = async (
+  input: UpdateBrandingInput,
+  actorId?: number,
+): Promise<Result<BrandingConfig>> => {
+  // `onConflictDoUpdate({ set: {} })` hits the same "No values to set" as a bare
+  // `.set({})`, and every field of this schema is optional.
+  if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
+
   const [updated] = await db
     .insert(branding)
     .values({ id: 1, ...input })
     .onConflictDoUpdate({ target: branding.id, set: input })
     .returning(brandingPublicColumns)
+
+  await logAudit(actorId ?? null, 'branding.updated', undefined, changedFields(input))
 
   return ok(updated as BrandingConfig)
 }
@@ -71,13 +88,40 @@ export const getBrandingLogo = async (): Promise<Result<{ data: Buffer; mime: st
 
   if (!rows.length || !rows[0].logoData) return ok(null)
 
-  return ok({ data: rows[0].logoData, mime: rows[0].logoMime ?? 'image/png' })
+  // Clamped on the way out, not just on the way in: this blob is served by an
+  // UNAUTHENTICATED GET, and any row written before the upload path sniffed the
+  // bytes can still hold whatever type its uploader declared — `text/html`
+  // included, which the browser would render as a document on the backend's own
+  // origin. Anything unrecognised becomes an opaque download instead.
+  return ok({ data: rows[0].logoData, mime: safeImageContentType(rows[0].logoMime ?? 'image/png') })
 }
 
+/**
+ * Replace the shop logo.
+ *
+ * Validates exactly like `updateProductImage`, because the logo is the more
+ * exposed of the two: the route used to take `file.type` on trust, store it, and
+ * echo it back as the `Content-Type` of an unauthenticated GET, with no size cap
+ * — so a root admin uploading `logo.html` got stored XSS on the backend origin,
+ * served to anonymous visitors (issue #143).
+ *
+ * Takes the bytes only. The declared type is not a parameter any more, so there is
+ * nothing for a caller to pass through unchecked.
+ */
 export const updateBrandingLogo = async (
   buffer: Buffer,
-  mime: string,
-): Promise<Result<void>> => {
+  actorId?: number,
+): Promise<Result<{ mime: string }>> => {
+  if (buffer.length === 0) return err(400, 'The uploaded file is empty')
+  if (buffer.length > MAX_IMAGE_BYTES) {
+    return err(413, `Logo is larger than ${MAX_IMAGE_BYTES / (1024 * 1024)} MB`)
+  }
+
+  const mime = detectImageMime(buffer)
+  if (mime === null) {
+    return err(415, `Unsupported image type — allowed: ${ALLOWED_IMAGE_MIMES.join(', ')}`)
+  }
+
   await db
     .insert(branding)
     .values({ id: 1, logoData: buffer, logoMime: mime })
@@ -86,5 +130,7 @@ export const updateBrandingLogo = async (
       set: { logoData: buffer, logoMime: mime },
     })
 
-  return ok(undefined)
+  await logAudit(actorId ?? null, 'branding.logo_updated', undefined, `Logo replaced (${mime}, ${buffer.length} bytes)`)
+
+  return ok({ mime })
 }

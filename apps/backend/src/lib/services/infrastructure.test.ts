@@ -19,9 +19,11 @@ import {
   sweepDueDecommissions,
 } from './infrastructure'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
+import { INFRA_STATUS_FILTERS, INFRA_DISPLAY_STATUSES } from '@/lib/services/infrastructure'
 import { db } from '@/lib/db/client'
 import { infrastructureElements, orders, auditLog } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { LIST_MAX_LIMIT } from '@/lib/services/page'
 import {
   createUser,
   createCategory,
@@ -69,7 +71,7 @@ describe('listInfrastructure', () => {
 
     const result = await listInfrastructure(makeSession(admin), {})
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.data.length).toBe(2)
+    if (result.ok) expect(result.data.items.length).toBe(2)
   })
 
   it('PM only sees infra from their own projects', async () => {
@@ -82,8 +84,8 @@ describe('listInfrastructure', () => {
     const result = await listInfrastructure(makeSession(pm), {})
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(1)
-      expect(result.data[0].projectId).toBe(project.id)
+      expect(result.data.items.length).toBe(1)
+      expect(result.data.items[0].projectId).toBe(project.id)
     }
   })
 
@@ -97,8 +99,8 @@ describe('listInfrastructure', () => {
     const result = await listInfrastructure(makeSession(admin), { productId: product.id })
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(1)
-      expect(result.data[0].productId).toBe(product.id)
+      expect(result.data.items.length).toBe(1)
+      expect(result.data.items[0].productId).toBe(product.id)
     }
   })
 
@@ -112,8 +114,8 @@ describe('listInfrastructure', () => {
     const result = await listInfrastructure(makeSession(admin), { projectId: otherProject.id })
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.data.length).toBe(1)
-      expect(result.data[0].projectId).toBe(otherProject.id)
+      expect(result.data.items.length).toBe(1)
+      expect(result.data.items[0].projectId).toBe(otherProject.id)
     }
   })
 })
@@ -138,8 +140,16 @@ describe('listInfrastructure — search, filtering and sorting', () => {
       env: { id: number },
       project: { id: number },
       over?: Parameters<typeof createInfraElement>[4],
+      /** The order's status, which the row's DISPLAYED status now follows. */
+      orderStatus: 'pending' | 'provisioning' | 'completed' | 'failed' = 'completed',
     ) => {
-      const order = await seedOrder(project.id, product.id, env.id, pm.id)
+      // Completed, not the helper's `pending` default. These tests are about the
+      // element's own lifecycle, and an element hanging off a pending order is a
+      // state the real system does not produce — the row is created inside the
+      // provisioning path, after approval. It only ever passed because the
+      // element's stored column was the whole story; since #287 the displayed
+      // status follows the order, so the fixture has to be one that could exist.
+      const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: orderStatus })
       return createInfraElement(order.id, project.id, env.id, product.id, over)
     }
 
@@ -154,7 +164,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.frankfurt, ctx.webshop)
 
     const result = await listInfrastructure(makeSession(ctx.admin), { search: 'nginx' })
-    expect(result.ok && names(result.data)).toEqual(['Nginx Gateway'])
+    expect(result.ok && names(result.data.items)).toEqual(['Nginx Gateway'])
   })
 
   it("filters for failed deployments, which are stored 'active'", async () => {
@@ -162,7 +172,11 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     // provisioning starts — so without this the Failed badge on the row could not
     // be filtered for, and 'Active' silently included it.
     const ctx = await searchable()
-    const okOrder = await seedOrder(ctx.webshop.id, ctx.nginx.id, ctx.frankfurt.id, ctx.pm.id)
+    // Completed: the helper defaults to 'pending', which since #287 displays as
+    // Provisioning and would put this row in neither bucket.
+    const okOrder = await seedOrder(ctx.webshop.id, ctx.nginx.id, ctx.frankfurt.id, ctx.pm.id, {
+      status: 'completed',
+    })
     await createInfraElement(okOrder.id, ctx.webshop.id, ctx.frankfurt.id, ctx.nginx.id)
     const badOrder = await seedOrder(ctx.billing.id, ctx.postgres.id, ctx.frankfurt.id, ctx.pm.id, {
       status: 'failed',
@@ -170,11 +184,11 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await createInfraElement(badOrder.id, ctx.billing.id, ctx.frankfurt.id, ctx.postgres.id)
 
     const failed = await listInfrastructure(makeSession(ctx.admin), { status: 'failed' })
-    expect(failed.ok && names(failed.data)).toEqual(['Managed Postgres'])
+    expect(failed.ok && names(failed.data.items)).toEqual(['Managed Postgres'])
 
     // And 'active' means what the badge beside it says.
     const active = await listInfrastructure(makeSession(ctx.admin), { status: 'active' })
-    expect(active.ok && names(active.data)).toEqual(['Nginx Gateway'])
+    expect(active.ok && names(active.data.items)).toEqual(['Nginx Gateway'])
   })
 
   it('matches the search term against the environment and project name too', async () => {
@@ -183,10 +197,10 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.frankfurt, ctx.billing)
 
     const byEnv = await listInfrastructure(makeSession(ctx.admin), { search: 'vienna' })
-    expect(byEnv.ok && names(byEnv.data)).toEqual(['Nginx Gateway'])
+    expect(byEnv.ok && names(byEnv.data.items)).toEqual(['Nginx Gateway'])
 
     const byProject = await listInfrastructure(makeSession(ctx.admin), { search: 'billing' })
-    expect(byProject.ok && names(byProject.data)).toEqual(['Managed Postgres'])
+    expect(byProject.ok && names(byProject.data.items)).toEqual(['Managed Postgres'])
   })
 
   it('searches case-insensitively', async () => {
@@ -194,7 +208,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.nginx, ctx.frankfurt, ctx.webshop)
 
     const result = await listInfrastructure(makeSession(ctx.admin), { search: 'NGINX gateway' })
-    expect(result.ok && result.data.length).toBe(1)
+    expect(result.ok && result.data.items.length).toBe(1)
   })
 
   it('treats LIKE metacharacters in the search term literally', async () => {
@@ -206,7 +220,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
 
     for (const search of ['%', '_', 'Nginx%Gateway']) {
       const result = await listInfrastructure(makeSession(ctx.admin), { search })
-      expect(result.ok && result.data.length, search).toBe(0)
+      expect(result.ok && result.data.items.length, search).toBe(0)
     }
   })
 
@@ -220,8 +234,8 @@ describe('listInfrastructure — search, filtering and sorting', () => {
 
     // 'webshop' matches both projects by name, but scope wins over the filter.
     const result = await listInfrastructure(makeSession(ctx.pm), { search: 'webshop' })
-    expect(result.ok && result.data.length).toBe(1)
-    if (result.ok) expect(result.data[0].projectId).toBe(ctx.webshop.id)
+    expect(result.ok && result.data.items.length).toBe(1)
+    if (result.ok) expect(result.data.items[0].projectId).toBe(ctx.webshop.id)
   })
 
   it('filters by status', async () => {
@@ -230,10 +244,10 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.frankfurt, ctx.webshop, { status: 'decommissioned' })
 
     const active = await listInfrastructure(makeSession(ctx.admin), { status: 'active' })
-    expect(active.ok && names(active.data)).toEqual(['Nginx Gateway'])
+    expect(active.ok && names(active.data.items)).toEqual(['Nginx Gateway'])
 
     const gone = await listInfrastructure(makeSession(ctx.admin), { status: 'decommissioned' })
-    expect(gone.ok && names(gone.data)).toEqual(['Managed Postgres'])
+    expect(gone.ok && names(gone.data.items)).toEqual(['Managed Postgres'])
   })
 
   it('filters by environment', async () => {
@@ -242,7 +256,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.vienna, ctx.webshop)
 
     const result = await listInfrastructure(makeSession(ctx.admin), { environmentId: ctx.vienna.id })
-    expect(result.ok && names(result.data)).toEqual(['Managed Postgres'])
+    expect(result.ok && names(result.data.items)).toEqual(['Managed Postgres'])
   })
 
   it('filters by deployed-at range, inclusive of both bounds', async () => {
@@ -254,14 +268,14 @@ describe('listInfrastructure — search, filtering and sorting', () => {
       deployedFrom: new Date('2026-04-01T00:00:00.000Z'),
       deployedTo: new Date('2026-06-01T00:00:00.000Z'),
     })
-    expect(inRange.ok && names(inRange.data)).toEqual(['Managed Postgres'])
+    expect(inRange.ok && names(inRange.data.items)).toEqual(['Managed Postgres'])
 
     // The lower bound matches the row's exact timestamp — it must be included.
     const onBoundary = await listInfrastructure(makeSession(ctx.admin), {
       deployedFrom: new Date('2026-03-01T00:00:00.000Z'),
       deployedTo: new Date('2026-03-01T00:00:00.000Z'),
     })
-    expect(onBoundary.ok && names(onBoundary.data)).toEqual(['Nginx Gateway'])
+    expect(onBoundary.ok && names(onBoundary.data.items)).toEqual(['Nginx Gateway'])
   })
 
   it('combines filters conjunctively', async () => {
@@ -275,7 +289,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
       environmentId: ctx.frankfurt.id,
       status: 'active',
     })
-    expect(result.ok && result.data.length).toBe(1)
+    expect(result.ok && result.data.items.length).toBe(1)
   })
 
   it('defaults to newest-deployed first', async () => {
@@ -284,7 +298,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.frankfurt, ctx.webshop, { deployedAt: new Date('2026-06-01T00:00:00.000Z') })
 
     const result = await listInfrastructure(makeSession(ctx.admin), {})
-    expect(result.ok && result.data.map((r) => r.productName)).toEqual(['Managed Postgres', 'Nginx Gateway'])
+    expect(result.ok && result.data.items.map((r) => r.productName)).toEqual(['Managed Postgres', 'Nginx Gateway'])
   })
 
   it('sorts by name and by status in both directions', async () => {
@@ -293,13 +307,13 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     await ctx.mk(ctx.postgres, ctx.frankfurt, ctx.webshop, { status: 'active' })
 
     const byName = await listInfrastructure(makeSession(ctx.admin), { sort: 'name', direction: 'asc' })
-    expect(byName.ok && byName.data.map((r) => r.productName)).toEqual(['Managed Postgres', 'Nginx Gateway'])
+    expect(byName.ok && byName.data.items.map((r) => r.productName)).toEqual(['Managed Postgres', 'Nginx Gateway'])
 
     const byNameDesc = await listInfrastructure(makeSession(ctx.admin), { sort: 'name', direction: 'desc' })
-    expect(byNameDesc.ok && byNameDesc.data.map((r) => r.productName)).toEqual(['Nginx Gateway', 'Managed Postgres'])
+    expect(byNameDesc.ok && byNameDesc.data.items.map((r) => r.productName)).toEqual(['Nginx Gateway', 'Managed Postgres'])
 
     const byStatus = await listInfrastructure(makeSession(ctx.admin), { sort: 'status', direction: 'asc' })
-    expect(byStatus.ok && byStatus.data.map((r) => r.status)).toEqual(['active', 'decommissioned'])
+    expect(byStatus.ok && byStatus.data.items.map((r) => r.status)).toEqual(['active', 'decommissioned'])
   })
 
   it('orders rows sharing a sort key deterministically', async () => {
@@ -313,8 +327,8 @@ describe('listInfrastructure — search, filtering and sorting', () => {
 
     const first = await listInfrastructure(makeSession(ctx.admin), {})
     const second = await listInfrastructure(makeSession(ctx.admin), {})
-    expect(first.ok && second.ok && first.data.map((r) => r.id)).toEqual(
-      second.ok ? second.data.map((r) => r.id) : [],
+    expect(first.ok && second.ok && first.data.items.map((r) => r.id)).toEqual(
+      second.ok ? second.data.items.map((r) => r.id) : [],
     )
   })
 
@@ -328,7 +342,7 @@ describe('listInfrastructure — search, filtering and sorting', () => {
     const result = await listInfrastructure(makeSession(ctx.admin), {})
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    const row = result.data.find((r) => r.id === el.id)
+    const row = result.data.items.find((r) => r.id === el.id)
     expect(row?.status).toBe('active')
     expect(row?.orderStatus).toBe('failed')
   })
@@ -339,7 +353,227 @@ describe('listInfrastructure — search, filtering and sorting', () => {
 
     const result = await listInfrastructure(makeSession(ctx.admin), { search: 'no-such-thing' })
     expect(result.ok).toBe(true)
-    if (result.ok) expect(result.data).toEqual([])
+    // An empty page, not a bare empty array (#158). The window is still
+    // reported, so a client laying out its pager has nothing to special-case.
+    if (result.ok) expect(result.data.items).toEqual([])
+  })
+})
+
+/*
+ * #158. The second-largest response in the application after the order list,
+ * and the one that grows without anybody placing an order: decommissioned
+ * elements stay for the history, so an installation accumulates these forever.
+ */
+describe('listInfrastructure — paging (#158)', () => {
+  const seedMany = async (count: number) => {
+    const base = await setup()
+    for (let i = 0; i < count; i++) {
+      const order = await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id)
+      await createInfraElement(order.id, base.project.id, base.env.id, base.product.id)
+    }
+    return base
+  }
+
+  it('returns one window and the count behind it', async () => {
+    const { admin } = await seedMany(5)
+
+    const result = await listInfrastructure(makeSession(admin), { limit: 2 })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.data.items).toHaveLength(2)
+    expect(result.data.total).toBe(5)
+    expect(result.data.limit).toBe(2)
+  })
+
+  it('walks every element across pages without repeating one', async () => {
+    const { admin } = await seedMany(5)
+
+    const seen: number[] = []
+    for (let offset = 0; offset < 5; offset += 2) {
+      const page = await listInfrastructure(makeSession(admin), { limit: 2, offset })
+      if (page.ok) seen.push(...page.data.items.map((e) => e.id))
+    }
+
+    expect(new Set(seen).size).toBe(5)
+  })
+
+  it('caps a limit that would put the unbounded read back', async () => {
+    const { admin } = await seedMany(2)
+
+    const result = await listInfrastructure(makeSession(admin), { limit: 1_000_000 })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.limit).toBe(LIST_MAX_LIMIT)
+  })
+
+  /*
+   * The count runs the same three joins as the page, because the WHERE reaches
+   * into all of them — the non-admin scope is `projects.owner_id`, the status
+   * filter reads `orders.status`, the search matches the environment name. A
+   * count over the bare element table would answer a different question than
+   * the list beneath it.
+   */
+  it('counts under the filters, not over the whole table', async () => {
+    const { admin, pm, product, product2, env, project } = await setup()
+    const o1 = await seedOrder(project.id, product.id, env.id, pm.id)
+    const o2 = await seedOrder(project.id, product2.id, env.id, pm.id)
+    await createInfraElement(o1.id, project.id, env.id, product.id)
+    await createInfraElement(o2.id, project.id, env.id, product2.id)
+
+    const result = await listInfrastructure(makeSession(admin), { productId: product.id, limit: 1 })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.total).toBe(1)
+  })
+
+  it('counts only what the caller may see', async () => {
+    const { pm, otherPm, product, env, project, otherProject } = await setup()
+    const mine = await seedOrder(project.id, product.id, env.id, pm.id)
+    const theirs = await seedOrder(otherProject.id, product.id, env.id, otherPm.id)
+    await createInfraElement(mine.id, project.id, env.id, product.id)
+    await createInfraElement(theirs.id, otherProject.id, env.id, product.id)
+
+    const result = await listInfrastructure(makeSession(pm), { limit: 1 })
+    expect(result.ok).toBe(true)
+    // Not 2 — a total over the whole table would tell a project manager how
+    // much infrastructure exists in projects they cannot see.
+    if (result.ok) expect(result.data.total).toBe(1)
+  })
+})
+
+/*
+ * #287. Reported from the dev server: an ordered VM is listed Active while it
+ * is still being provisioned.
+ *
+ * `infrastructure_elements.status` has no 'provisioning' value and the row is
+ * inserted 'active' the moment provisioning STARTS — before the pipeline has
+ * been triggered. So the column is not a status that goes wrong later; it is
+ * one that is never right at the beginning. The list and the detail page each
+ * patched the failed case at the leaf, independently, and neither handled this
+ * one.
+ */
+describe('listInfrastructure — the status a person reads (#287)', () => {
+  const elementFor = async (orderStatus: 'pending' | 'provisioning' | 'completed' | 'failed') => {
+    const base = await setup()
+    const order = await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, {
+      status: orderStatus,
+    })
+    await createInfraElement(order.id, base.project.id, base.env.id, base.product.id)
+    return base
+  }
+
+  // `.items`, because #158 landed between this helper being written and being
+  // merged: `listInfrastructure` answers a page now, not an array. Both PRs
+  // were green on their own — git merged them without a conflict because they
+  // touch different lines, and nothing recompiled the combination until it was
+  // already on dev.
+  const only = async (session: SessionUser, filters = {}) => {
+    const result = await listInfrastructure(session, filters)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    return result.data.items
+  }
+
+  it('says provisioning while the pipeline is still running', async () => {
+    const { admin } = await elementFor('provisioning')
+
+    const [row] = await only(makeSession(admin))
+    // The stored column still reads 'active'. That is the whole point: it is
+    // what the badge used to show.
+    expect(row.status).toBe('active')
+    expect(row.displayStatus).toBe('provisioning')
+  })
+
+  /*
+   * An order awaiting approval has not started building anything either. If an
+   * element exists for it, claiming the machine is running is the same lie one
+   * step earlier.
+   */
+  it('says provisioning while the order is still awaiting approval', async () => {
+    const { admin } = await elementFor('pending')
+
+    const [row] = await only(makeSession(admin))
+    expect(row.displayStatus).toBe('provisioning')
+  })
+
+  it('says active once the order completed', async () => {
+    const { admin } = await elementFor('completed')
+
+    const [row] = await only(makeSession(admin))
+    expect(row.displayStatus).toBe('active')
+  })
+
+  it('still says failed when the pipeline failed', async () => {
+    const { admin } = await elementFor('failed')
+
+    const [row] = await only(makeSession(admin))
+    expect(row.displayStatus).toBe('failed')
+  })
+
+  /*
+   * The element's own column wins once the order is done with: a
+   * decommissioning element belongs to a completed order, and reading the
+   * order would put it back to Active.
+   */
+  it('lets the element speak for itself after provisioning', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
+    const el = await createInfraElement(order.id, project.id, env.id, product.id)
+    await db.update(infrastructureElements)
+      .set({ status: 'decommissioning' })
+      .where(eq(infrastructureElements.id, el.id))
+
+    const [row] = await only(makeSession(admin))
+    expect(row.displayStatus).toBe('decommissioning')
+  })
+
+  /*
+   * The filter and the badge read the same expression, so they cannot disagree.
+   * Before this, `status=active` matched the column and excluded only
+   * failures — so filtering the list down to Active returned infrastructure
+   * that did not exist yet, and there was no way to filter FOR the ones still
+   * running.
+   */
+  describe('the filter offers exactly what the badge shows', () => {
+    const seedOneOfEach = async () => {
+      const base = await setup()
+      const made: Record<string, number> = {}
+      for (const status of ['provisioning', 'completed', 'failed'] as const) {
+        const order = await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, { status })
+        const el = await createInfraElement(order.id, base.project.id, base.env.id, base.product.id)
+        made[status] = el.id
+      }
+      return { ...base, made }
+    }
+
+    it('finds the still-provisioning ones, which had no filter value at all', async () => {
+      const { admin, made } = await seedOneOfEach()
+
+      const rows = await only(makeSession(admin), { status: 'provisioning' })
+      expect(rows.map((r) => r.id)).toEqual([made.provisioning])
+    })
+
+    it('no longer counts a still-provisioning element as active', async () => {
+      const { admin, made } = await seedOneOfEach()
+
+      const rows = await only(makeSession(admin), { status: 'active' })
+      expect(rows.map((r) => r.id)).toEqual([made.completed])
+    })
+
+    it('still finds the failed ones', async () => {
+      const { admin, made } = await seedOneOfEach()
+
+      const rows = await only(makeSession(admin), { status: 'failed' })
+      expect(rows.map((r) => r.id)).toEqual([made.failed])
+    })
+
+    /*
+     * Every value the list can display is a value it can be filtered by. A
+     * badge with no filter is a dead end — which is what 'provisioning' was,
+     * because nothing produced it.
+     */
+    it('offers a filter for every status a row can show', () => {
+      expect([...INFRA_STATUS_FILTERS].sort()).toEqual([...INFRA_DISPLAY_STATUSES].sort())
+    })
   })
 })
 
@@ -609,6 +843,75 @@ describe('retryProvisioning', () => {
   const infraRow = async (id: number) =>
     (await db.select().from(infrastructureElements).where(eq(infrastructureElements.id, id)))[0]
 
+  // Retry re-fires EVERY element of the order, and the suite covered that
+  // thoroughly — but never with a sibling that is not active. That is the case
+  // where it did damage (#188).
+  describe('with a sibling the operator has already torn down', () => {
+    const withSibling = async (siblingStatus: 'decommissioning' | 'decommissioned') => {
+      const ctx = await failedDeployment()
+      const sibling = await createInfraElement(ctx.order.id, ctx.project.id, ctx.env.id, ctx.product.id, {
+        status: siblingStatus,
+        parameters: { hostname: 'web-02' },
+        pipelineId: ['destroy-pipe'],
+      })
+      mockedWebhooks.mockClear()
+      return { ...ctx, sibling }
+    }
+
+    // Writing it back to 'active' and overwriting its pipelineId means the
+    // in-flight destroy's callback can no longer match — the handler requires
+    // `status = 'decommissioning'` — so the teardown never reaches
+    // 'decommissioned' and the element becomes permanently unreconcilable.
+    it('leaves a decommissioning sibling alone', async () => {
+      const { admin, el, sibling } = await withSibling('decommissioning')
+
+      const result = await retryProvisioning(makeSession(admin), el.id)
+
+      expect(result.ok).toBe(true)
+      const row = await infraRow(sibling.id)
+      expect(row.status).toBe('decommissioning')
+      expect(row.pipelineId).toEqual(['destroy-pipe'])
+    })
+
+    it('does not resurrect a decommissioned sibling', async () => {
+      const { admin, el, sibling } = await withSibling('decommissioned')
+
+      await retryProvisioning(makeSession(admin), el.id)
+
+      expect((await infraRow(sibling.id)).status).toBe('decommissioned')
+    })
+
+    // An apply and a destroy running against the same TF_STATE_NAME at once —
+    // both paths derive the suffix identically, by design.
+    it('fires no apply for a sibling that is being torn down', async () => {
+      const { admin, el } = await withSibling('decommissioning')
+
+      await retryProvisioning(makeSession(admin), el.id)
+
+      // One trigger, for the failed element only.
+      expect(mockedWebhooks).toHaveBeenCalledTimes(1)
+      for (const call of mockedWebhooks.mock.calls) {
+        expect(call[2]).not.toMatchObject({ TF_ACTION: 'destroy' })
+        expect(call[2]).toMatchObject({ hostname: 'web-01' })
+      }
+    })
+
+    it('still re-fires the active siblings', async () => {
+      const ctx = await failedDeployment()
+      await createInfraElement(ctx.order.id, ctx.project.id, ctx.env.id, ctx.product.id, {
+        status: 'decommissioned', parameters: { hostname: 'gone' },
+      })
+      await createInfraElement(ctx.order.id, ctx.project.id, ctx.env.id, ctx.product.id, {
+        status: 'active', parameters: { hostname: 'web-03' },
+      })
+      mockedWebhooks.mockClear()
+
+      await retryProvisioning(makeSession(ctx.admin), ctx.el.id)
+
+      expect(mockedWebhooks).toHaveBeenCalledTimes(2)
+    })
+  })
+
   it('returns 404 for an unknown element', async () => {
     const { admin } = await failedDeployment()
     const result = await retryProvisioning(makeSession(admin), 999_999)
@@ -640,13 +943,58 @@ describe('retryProvisioning', () => {
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.pipelineIds).toEqual(['new-webhook', 'new-stack'])
 
-    for (const mock of [mockedWebhooks, mockedStacks]) {
-      expect(mock).toHaveBeenCalledWith(
-        product.id,
-        env.id,
-        expect.objectContaining({ hostname: 'web-01' }),
-      )
-    }
+    expect(mockedWebhooks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ hostname: 'web-01' }),
+      expect.any(Function),
+    )
+
+    // The stack trigger takes a fifth argument the webhook trigger does not: the
+    // element's parameters with reserved names still in them, for state-key
+    // derivation only. A legacy stack keyed on a reserved name (REF) has no other
+    // way to find the value its own apply used — see webhooks.test.ts.
+    expect(mockedStacks).toHaveBeenCalledWith(
+      product.id,
+      env.id,
+      expect.objectContaining({ hostname: 'web-01' }),
+      expect.any(Function),
+      expect.objectContaining({ hostname: 'web-01' }),
+      // And a sixth: the keys this element was PROVISIONED under (#200). A retry
+      // re-applies the SAME element, so it has to address the state that already
+      // exists rather than one the stack row would derive today.
+      expect.anything(),
+    )
+  })
+
+  /*
+   * #200. A retry re-applies the SAME element, so it must address the state that
+   * already exists — not one the stack row would derive today.
+   *
+   * The key used to be recomputed at every trigger from `stack.stateKeyParam` as
+   * it is NOW, so an admin editing that field moved the key of every element
+   * already running under it: the retry then applied to a state nothing had
+   * created, and the destroy afterwards addressed a state that was never there.
+   */
+  it('hands the retry the state keys the element was provisioned under', async () => {
+    const { admin, el } = await failedDeployment()
+    await db
+      .update(infrastructureElements)
+      .set({ stateKeys: { '7': 'web-01-o1' } })
+      .where(eq(infrastructureElements.id, el.id))
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-webhook'], failures: [] })
+    mockedStacks.mockResolvedValue({ pipelineIds: ['new-stack'], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    expect(mockedStacks).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.any(Function),
+      expect.anything(),
+      { '7': 'web-01-o1' },
+    )
   })
 
   it('reuses the original ORDER_ID so the retry targets the same Terraform state', async () => {
@@ -659,7 +1007,39 @@ describe('retryProvisioning', () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ ORDER_ID: String(order.id) }),
+      // The recorder that stores each pipeline id as it starts (issue #132).
+      expect.any(Function),
     )
+  })
+
+  it('retries an element provisioned before #183 against the state key it already has', async () => {
+    // `failedDeployment` leaves state_key_namespace NULL, as every row written
+    // before the column existed is. Sending a namespace now would make the retry
+    // apply into a fresh state and leave the half-built infrastructure of the
+    // failed attempt orphaned.
+    const { admin, el } = await failedDeployment()
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const vars = mockedWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars).not.toHaveProperty('TF_STATE_NAMESPACE')
+  })
+
+  it("carries a namespaced element's own namespace into the retry (issue #183)", async () => {
+    const { admin, el } = await failedDeployment()
+    await db
+      .update(infrastructureElements)
+      .set({ stateKeyNamespace: '99', parameters: { hostname: 'web-01', REF: 'attacker/branch' } })
+      .where(eq(infrastructureElements.id, el.id))
+    mockedWebhooks.mockResolvedValue({ pipelineIds: ['new-pipe'], failures: [] })
+
+    await retryProvisioning(makeSession(admin), el.id)
+
+    const vars = mockedWebhooks.mock.calls[0][2] as Record<string, string>
+    expect(vars.TF_STATE_NAMESPACE).toBe('99')
+    // And a stored parameter still cannot choose which git ref the rerun uses.
+    expect(vars).not.toHaveProperty('REF')
   })
 
   it('resets the order to provisioning and clears the previous attempt tracking', async () => {
@@ -995,6 +1375,7 @@ describe('sweepDueDecommissions', () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ TF_ACTION: 'destroy' }),
+      expect.any(Function),
     )
   })
 
@@ -1107,11 +1488,14 @@ describe('sweepDueDecommissions', () => {
 
   it('processes the earliest-due element first', async () => {
     const { mk } = await build()
-    const later = await mk(new Date('2026-05-01T00:00:00.000Z'))
-    const earlier = await mk(new Date('2026-01-01T00:00:00.000Z'))
+    // Named for what they are, not when they are due: the module-level `later` is
+    // a Date, and reading `later.id` off a Date is a mistake the compiler catches
+    // only because these two happen to have different types.
+    const laterElement = await mk(new Date('2026-05-01T00:00:00.000Z'))
+    const earlierElement = await mk(new Date('2026-01-01T00:00:00.000Z'))
 
     const result = await sweepDueDecommissions()
-    expect(result.decommissioned).toEqual([earlier.id, later.id])
+    expect(result.decommissioned).toEqual([earlierElement.id, laterElement.id])
   })
 
   it('returns empty lists when nothing is due', async () => {

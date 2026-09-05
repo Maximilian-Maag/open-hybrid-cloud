@@ -6,7 +6,9 @@ import {
   updateBrandingLogo,
 } from './branding'
 import { db } from '@/lib/db/client'
-import { sql } from 'drizzle-orm'
+import { auditLog } from '@/lib/db/schema'
+import { eq, sql } from 'drizzle-orm'
+import { createUser } from '@/test/helpers'
 
 // The `branding` row with id=1 is seeded once in beforeAll, but the table is
 // not in the TRUNCATE list — so the row persists across tests. Reset it here
@@ -63,11 +65,16 @@ describe('getBrandingLogo', () => {
   })
 })
 
+/** Enough of a PNG for the magic-byte check: the 8-byte signature plus padding. */
+const pngBytes = (extra = 8) =>
+  Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(extra)])
+
 describe('updateBrandingLogo', () => {
-  it('stores the buffer and mime; getBrandingLogo returns them', async () => {
-    const buf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-    const setRes = await updateBrandingLogo(buf, 'image/png')
+  it('stores the buffer and the sniffed mime; getBrandingLogo returns them', async () => {
+    const buf = pngBytes()
+    const setRes = await updateBrandingLogo(buf)
     expect(setRes.ok).toBe(true)
+    if (setRes.ok) expect(setRes.data.mime).toBe('image/png')
 
     const result = await getBrandingLogo()
     expect(result.ok).toBe(true)
@@ -75,5 +82,62 @@ describe('updateBrandingLogo', () => {
       expect(Buffer.from(result.data.data).equals(buf)).toBe(true)
       expect(result.data.mime).toBe('image/png')
     }
+  })
+
+  // Issue #143: the route took `file.type` on trust, stored it, and echoed it as
+  // the Content-Type of an unauthenticated GET — stored XSS on the backend origin.
+  it('refuses an HTML document with a 415, whatever it was declared as', async () => {
+    const html = Buffer.from('<script>alert(document.domain)</script><!-- padding -->')
+    const result = await updateBrandingLogo(html)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(415)
+
+    // Nothing was stored, so the GET still has nothing to serve.
+    const after = await getBrandingLogo()
+    expect(after.ok).toBe(true)
+    if (after.ok) expect(after.data).toBeNull()
+  })
+
+  it('refuses an SVG, which is a script-carrying document', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>')
+    const result = await updateBrandingLogo(svg)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(415)
+  })
+
+  it('refuses an empty file with a 400', async () => {
+    const result = await updateBrandingLogo(Buffer.alloc(0))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(400)
+  })
+
+  it('refuses anything over 10 MB with a 413', async () => {
+    // A valid PNG header on an 11 MB body: the cap is about the size, not the type.
+    const result = await updateBrandingLogo(pngBytes(11 * 1024 * 1024))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(413)
+  })
+
+  it('writes an audit entry naming the actor', async () => {
+    const root = await createUser({ role: 'root' })
+    const result = await updateBrandingLogo(pngBytes(), root.id)
+    expect(result.ok).toBe(true)
+
+    const rows = await db.select().from(auditLog).where(eq(auditLog.action, 'branding.logo_updated'))
+    expect(rows.length).toBe(1)
+    expect(rows[0].userId).toBe(root.id)
+  })
+})
+
+describe('getBrandingLogo', () => {
+  // Validating new writes does nothing for rows already in the table.
+  it('clamps a legacy row whose stored mime is not an image type', async () => {
+    await db.execute(sql`
+      UPDATE branding SET logo_data = ${pngBytes()}, logo_mime = 'text/html' WHERE id = 1
+    `)
+
+    const result = await getBrandingLogo()
+    expect(result.ok).toBe(true)
+    if (result.ok && result.data) expect(result.data.mime).toBe('application/octet-stream')
   })
 })

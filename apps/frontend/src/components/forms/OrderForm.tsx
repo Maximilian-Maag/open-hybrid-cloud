@@ -2,27 +2,32 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import type {
-  ProductDetail,
-  Project,
-  CostCenter,
-  CreateOrderRequest,
-  Order,
-  InfrastructureElement,
+import {
+  REDACTED_PARAMETER_VALUE,
+  type ProductDetail,
+  type Project,
+  type CostCenter,
+  type CreateOrderRequest,
+  type Order,
+  type InfrastructureElement,
+  type InfrastructurePage,
 } from '@open-hybrid-cloud/types'
 import { post, get } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
 import { Select } from '@/components/ui/Select'
+import { Input } from '@/components/ui/Input'
 import { ParameterFields } from './ParameterFields'
 import { t } from '@/lib/i18n'
-import { convertPrice } from '@/lib/locale'
+import { convertPrice, sortByValue } from '@/lib/locale'
+
+/** Mirrors MAX_ORDER_QUANTITY in the backend, which re-checks it. */
+const MAX_QUANTITY = 20
 
 interface OrderFormProps {
   product: ProductDetail
   projects: Project[]
   costCenters: CostCenter[]
-  token: string
   lang?: string
   exchangeRates?: Record<string, number>
   localeCurrency?: string
@@ -39,7 +44,6 @@ export function OrderForm({
   product,
   projects,
   costCenters,
-  token,
   lang = 'en',
   exchangeRates = {},
   localeCurrency = 'EUR',
@@ -50,6 +54,11 @@ export function OrderForm({
   const [envId, setEnvId] = useState<string>('')
   const [projectId, setProjectId] = useState<string>(initialProjectId ?? '')
   const [costCenterId, setCostCenterId] = useState<string>('')
+  // The size (issue #98) and how many elements to provision (issue #104). Both are
+  // part of the line rather than of the parameters: the size decides the price and
+  // the quantity decides how many elements one approval covers.
+  const [sizeCode, setSizeCode] = useState<string>('')
+  const [quantity, setQuantity] = useState<string>('1')
   const [trial, setTrial] = useState(false)
   const [paramValues, setParamValues] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -74,14 +83,14 @@ export function OrderForm({
   useEffect(() => {
     if (!envId) { setResolvedParameters(product.parameters); return }
     let stale = false
-    get<ProductDetail>(`/api/catalog/${product.id}?lang=${lang}&environmentId=${envId}`, token)
+    get<ProductDetail>(`/api/catalog/${product.id}?lang=${lang}&environmentId=${envId}`)
       // Guard on `parameters`, not just on `detail`: a truthy-but-shapeless
       // response (an error envelope, an empty array) would otherwise store
       // undefined and crash the next render on `.filter`.
       .then((detail) => { if (!stale && detail?.parameters) setResolvedParameters(detail.parameters) })
       .catch(() => { /* keep the unresolved list — submit still validates server-side */ })
     return () => { stale = true }
-  }, [envId, product.id, product.parameters, lang, token])
+  }, [envId, product.id, product.parameters, lang])
 
   const selectedEnv = product.environments.find((e) => String(e.environmentId) === envId)
   // `overhead` used to be lumped in with `select` and rendered a picker, which
@@ -92,6 +101,16 @@ export function OrderForm({
   // Trials are opt-in per offering (issue #1), so the toggle only exists where one
   // is actually offered. The server re-checks — a hidden control is not a control.
   const trialAvailable = selectedEnv?.trialEnabled === true
+  // Sizes belong to the offering. An offering with none prices off itself, which is
+  // every offering that predates sizing, so the control is not rendered at all.
+  const sizes = selectedEnv?.sizes ?? []
+  const needsSize = sizes.length > 0
+  const parsedQuantity = Number(quantity)
+  const quantityValid =
+    Number.isInteger(parsedQuantity) && parsedQuantity >= 1 && parsedQuantity <= MAX_QUANTITY
+  // The range is appended rather than written into the translation so that
+  // raising MAX_QUANTITY does not silently leave 25 tables claiming the old one.
+  const quantityMessage = `${t('quantityInvalid', lang)} (1–${MAX_QUANTITY})`
   const envParameters = resolvedParameters.filter(
     (p) => p.environmentId === null || String(p.environmentId) === envId,
   )
@@ -99,15 +118,46 @@ export function OrderForm({
   // Load existing deployments for the selected project+product so the user can copy parameters
   useEffect(() => {
     if (!projectId) { setTemplates([]); setTemplateId(''); return }
-    get<InfrastructureElement[]>(
+    // Switching project before this resolves must not let the old project's
+    // elements land in the list — they belong to a project the user left, and
+    // the selection would then be validated against the wrong set.
+    let stale = false
+    get<InfrastructurePage>(
       `/api/infrastructure?productId=${product.id}&projectId=${projectId}`,
-      token,
     )
-      .then((rows) => { setTemplates(rows ?? []); setTemplateId('') })
-      .catch(() => { setTemplates([]) })
-  }, [projectId, product.id, token])
+      .then((page) => {
+        if (stale) return
+        // One page of the elements for this product in this project. The list is
+        // a "copy the settings from" picker, and it was already unusable as a
+        // scroll long before it was unbounded — the default window is the
+        // honest shape for it.
+        setTemplates(page?.items ?? [])
+        // Keep the current selection if it is still in the list. Clearing
+        // unconditionally discarded a quick-reorder prefill whenever this effect
+        // ran a second time (projectId settles after the projects load), and the
+        // reorder effect below will not re-apply because it has already fired —
+        // so the form kept the environment and parameters but lost the template,
+        // and with it the "pre-filled from this element" confirmation.
+        setTemplateId((current) =>
+          current !== '' && (page?.items ?? []).some((row) => String(row.id) === current) ? current : '',
+        )
+      })
+      .catch(() => { if (!stale) setTemplates([]) })
+    return () => { stale = true }
+  }, [projectId, product.id])
 
   // Quick reorder: once the project's elements have loaded, adopt the one the
+  // Sensitive parameter values come back redacted (#131), so a template or a
+  // reorder hands us the sentinel rather than the real value. Dropping those keys
+  // leaves the field empty, which prompts the user, instead of showing a value
+  // that looks real and is not. The backend refuses the sentinel too — that is
+  // the authoritative guard; this is so the form does not lie about it.
+  //
+  // The constant is shared rather than written out on both sides: if the two ever
+  // disagreed, a reorder would store the placeholder as the secret again.
+  const withoutRedacted = (params: Record<string, string>): Record<string, string> =>
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== REDACTED_PARAMETER_VALUE))
+
   // link named. Routed through applyTemplate rather than duplicating its logic,
   // so a reorder fills the form exactly the way picking the template by hand
   // does — same parameters, same environment.
@@ -117,7 +167,7 @@ export function OrderForm({
     if (!match) return
     setReorderApplied(true)
     setTemplateId(fromInfraId)
-    setParamValues(match.parameters ?? {})
+    setParamValues(withoutRedacted(match.parameters ?? {}))
     setEnvId(String(match.environmentId))
   }, [fromInfraId, reorderApplied, templates])
 
@@ -130,10 +180,10 @@ export function OrderForm({
       setParamValues({})
       return
     }
-    const tpl = templates.find((tpl) => String(tpl.id) === id)
+    const tpl = templates.find((candidate) => String(candidate.id) === id)
     if (!tpl) return
     setTemplateId(id)
-    setParamValues(tpl.parameters ?? {})
+    setParamValues(withoutRedacted(tpl.parameters ?? {}))
     if (String(tpl.environmentId) !== envId) setEnvId(String(tpl.environmentId))
   }
 
@@ -141,6 +191,19 @@ export function OrderForm({
     e.preventDefault()
     if (!envId || !projectId) {
       setError(t('selectEnvProject', lang))
+      return
+    }
+    if (needsSize && !sizeCode) {
+      setError(t('selectSize', lang))
+      return
+    }
+    // Refused here rather than by disabling the button. Clearing the field makes
+    // `Number('')` zero, and a disabled <button> is not focusable — so the form
+    // used to become unsubmittable in silence, and a screen-reader user tabbing
+    // to the end found no submit control at all and nothing saying why (WCAG
+    // 3.3.1 — #186). Every other refusal in this form goes through `Alert`.
+    if (!quantityValid) {
+      setError(quantityMessage)
       return
     }
     setLoading(true)
@@ -160,11 +223,16 @@ export function OrderForm({
         projectId: Number(projectId),
         parameters: parametersWithDefaults,
         ...(needsCostCenter && costCenterId ? { costCenterId: Number(costCenterId) } : {}),
+        // Only when the offering has sizes: the server refuses one for an offering
+        // without any, and switching environment must not smuggle the old code
+        // through.
+        ...(needsSize ? { sizeCode } : {}),
+        ...(parsedQuantity > 1 ? { quantity: parsedQuantity } : {}),
         // Only sent when the selected environment offers a trial: switching
         // environments after ticking the box must not smuggle the flag through.
         ...(trialAvailable && trial ? { trial: true } : {}),
       }
-      await post<Order>('/api/orders', body, token)
+      await post<Order>('/api/orders', body)
       setSuccess(true)
       router.push('/orders')
       router.refresh()
@@ -175,12 +243,31 @@ export function OrderForm({
     }
   }
 
-  function formatEnvPrice(env: ProductDetail['environments'][number]): string {
-    const converted = convertPrice(env.price, env.currency, localeCurrency, exchangeRates, lang)
-    if (converted.currency !== env.currency) {
+  function formatPrice(price: string, currency: string): string {
+    const converted = convertPrice(price, currency, localeCurrency, exchangeRates, lang)
+    if (converted.currency !== currency) {
       return `${converted.amount} ${converted.currency}`
     }
-    return `${env.price} ${env.currency}`
+    return `${price} ${currency}`
+  }
+
+  /**
+   * What an offering costs, for the environment picker.
+   *
+   * Price moved to the size (issue #98), so an offering with sizes has no single
+   * price: the cheapest is shown, and the size picker below states the rest. An
+   * offering with no sizes still has its own price, which is what every offering
+   * that predates sizing has.
+   */
+  function formatEnvPrice(env: ProductDetail['environments'][number]): string {
+    // Named for the argument, not for the component's `sizes`: this prices every
+    // environment in the list, including ones that are not the selected one.
+    const envSizes = env.sizes ?? []
+    if (envSizes.length === 0) return formatPrice(env.price, env.currency)
+    // Compared in EUR, not by the digits: sizes carry their own currency, so the
+    // cheapest is not whichever one has the smallest number on it.
+    const cheapest = sortByValue(envSizes, exchangeRates)[0]
+    return formatPrice(cheapest.price, cheapest.currency)
   }
 
   if (success) {
@@ -203,12 +290,49 @@ export function OrderForm({
         label={t('environment', lang)}
         required
         value={envId}
-        onChange={(e) => setEnvId(e.target.value)}
+        onChange={(e) => {
+          setEnvId(e.target.value)
+          // A size code chosen for one offering means nothing in another.
+          setSizeCode('')
+        }}
         placeholder={t('selectEnvironment', lang)}
         options={product.environments.map((env) => ({
           value: env.environmentId,
           label: `${env.environmentName ?? `Env ${env.environmentId}`} — ${formatEnvPrice(env)}`,
         }))}
+      />
+
+      {needsSize && (
+        <Select
+          label={t('size', lang)}
+          required
+          value={sizeCode}
+          onChange={(e) => setSizeCode(e.target.value)}
+          placeholder={t('selectSize', lang)}
+          // The price is in the label: the size IS the price now, and a picker of
+          // bare letters asks the customer to guess what XL costs.
+          options={sizes.map((size) => ({
+            value: size.code,
+            label: `${size.label || size.code} — ${formatPrice(size.price, size.currency)}`,
+          }))}
+        />
+      )}
+
+      <Input
+        label={t('quantity', lang)}
+        type="number"
+        min={1}
+        max={MAX_QUANTITY}
+        step={1}
+        value={quantity}
+        onChange={(e) => setQuantity(e.target.value)}
+        // `Input` turns this into aria-invalid plus a described-by message, so
+        // the field says what is wrong with it where the user is, as well as at
+        // submit time.
+        error={quantityValid ? undefined : quantityMessage}
+        // Said rather than silently clamped: one order provisions this many
+        // elements, and one approval covers all of them.
+        hint={`1 – ${MAX_QUANTITY}`}
       />
 
       <Select
@@ -282,7 +406,7 @@ export function OrderForm({
           />
           {templateId && (
             <p className="mt-1 text-xs text-slate-500">
-              {t('paramsPrefilled', lang)}{templateId}. Edit as needed before submitting.
+              {`${t('paramsPrefilled', lang)}${templateId}. ${t('paramsPrefilledHint', lang)}`}
             </p>
           )}
           {fromInfraId && templateId === fromInfraId && (
@@ -302,6 +426,8 @@ export function OrderForm({
         </div>
       )}
 
+      {/* Only `loading` disables it. A quantity the form will refuse is a
+          refusal to say out loud, not a control to take away. */}
       <Button type="submit" disabled={loading} className="w-full">
         {loading ? t('submitting', lang) : t('placeOrder', lang)}
       </Button>

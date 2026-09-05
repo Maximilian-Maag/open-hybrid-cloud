@@ -15,11 +15,25 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
+/**
+ * How wide the dialog may get — and, from the second class, how narrow it must.
+ *
+ * None of these clamped below a phone. `md` is 448px, so on a 375px viewport
+ * the default dialog measured `left: 111, right: 559`: field labels sheared off
+ * the left edge and 184px hanging past the right, with no way to scroll to it
+ * (#167). That reached all 11 call sites, which is where most of this app's
+ * forms live.
+ *
+ * `calc(100vw-2rem)` leaves a 1rem gutter either side. It wins because
+ * `max-width` resolves to the smaller of the two.
+ */
+const CLAMP_TO_VIEWPORT = 'max-w-[calc(100vw-2rem)]'
+
 const sizeClass: Record<string, string> = {
-  sm: 'max-w-sm',
-  md: 'max-w-md',
-  lg: 'max-w-lg',
-  xl: 'max-w-2xl',
+  sm: `max-w-sm ${CLAMP_TO_VIEWPORT}`,
+  md: `max-w-md ${CLAMP_TO_VIEWPORT}`,
+  lg: `max-w-lg ${CLAMP_TO_VIEWPORT}`,
+  xl: `max-w-2xl ${CLAMP_TO_VIEWPORT}`,
 }
 
 export function Modal({ open, onClose, title, ariaLabel, children, size = 'md', lang }: ModalProps) {
@@ -64,7 +78,11 @@ export function Modal({ open, onClose, title, ariaLabel, children, size = 'md', 
           <h2 id={titleId} className="text-lg font-semibold text-slate-900">{title}</h2>
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-slate-500 hover:text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+            // -mr-2 buys the extra width back out of the header's px-6, so the
+            // 44px target (WCAG 2.5.5) does not push the title inward: the ✕ stays
+            // optically where it was, its clickable box just now reaches the
+            // padding it always looked like it filled.
+            className="flex h-11 w-11 -mr-2 shrink-0 items-center justify-center rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
             aria-label={closeLabel}
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

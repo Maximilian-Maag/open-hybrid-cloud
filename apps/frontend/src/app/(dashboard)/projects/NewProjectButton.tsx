@@ -12,11 +12,7 @@ import { Select } from '@/components/ui/Select'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
-interface Props {
-  token: string
-}
-
-export function NewProjectButton({ token }: Props) {
+export function NewProjectButton() {
   const router = useRouter()
   const lang = useLang()
   const [open, setOpen] = useState(false)
@@ -30,7 +26,7 @@ export function NewProjectButton({ token }: Props) {
   async function openModal() {
     setOpen(true)
     try {
-      const ccs = await get<CostCenter[]>('/api/admin/cost-centers', token)
+      const ccs = await get<CostCenter[]>('/api/admin/cost-centers')
       setCostCenters(ccs?.filter((c) => c.active) ?? [])
     } catch { /* ignore */ }
   }
@@ -46,7 +42,7 @@ export function NewProjectButton({ token }: Props) {
         description: description.trim() || undefined,
         costCenterId: costCenterId ? Number(costCenterId) : undefined,
       }
-      await post('/api/projects', body, token)
+      await post('/api/projects', body)
       setOpen(false)
       setName(''); setDescription(''); setCostCenterId('')
       router.refresh()
@@ -67,8 +63,9 @@ export function NewProjectButton({ token }: Props) {
           )}
           <Input label={t('name', lang)} value={name} onChange={(e) => setName(e.target.value)} required />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-slate-700">{t('description', lang)}</label>
+            <label htmlFor="new-project-description" className="text-sm font-medium text-slate-700">{t('description', lang)}</label>
             <textarea
+              id="new-project-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
@@ -80,7 +77,7 @@ export function NewProjectButton({ token }: Props) {
               label={t('costCenter', lang)}
               value={costCenterId}
               onChange={(e) => setCostCenterId(e.target.value)}
-              placeholder="None"
+              placeholder={t('none', lang)}
               options={costCenters.map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}` }))}
             />
           )}

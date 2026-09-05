@@ -7,8 +7,6 @@ vi.mock('@/lib/notification', () => ({
 }))
 
 vi.mock('@/lib/ci/webhooks', () => ({
-  triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-1']),
-  triggerPipelineStacks: vi.fn().mockResolvedValue([]),
   triggerProductWebhooksTracked: vi.fn().mockResolvedValue({ pipelineIds: ['pipe-1'], failures: [] }),
   triggerPipelineStacksTracked: vi.fn().mockResolvedValue({ pipelineIds: [], failures: [] }),
 }))
@@ -24,7 +22,7 @@ import {
   pruneOrphanedCartItems,
   MAX_CART_ITEMS,
 } from './cart'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
 import { cartItems, orders, parameters, products, productEnvironments, auditLog } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
@@ -42,10 +40,10 @@ import {
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
   ({ id: u.id, email: u.email, name: u.name, role: u.role as SessionUser['role'] })
 
-const mockedWebhooks = vi.mocked(triggerProductWebhooks)
+const mockedWebhooks = vi.mocked(triggerProductWebhooksTracked)
 
 beforeEach(() => {
-  mockedWebhooks.mockReset().mockResolvedValue(['pipe-1'])
+  mockedWebhooks.mockReset().mockResolvedValue({ pipelineIds: ['pipe-1'], failures: [] })
 })
 
 const setup = async () => {
@@ -123,6 +121,62 @@ describe('addToCart', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.message).toMatch(/at most/i)
   })
+
+  // The cap was a read followed by an unguarded insert, so two adds at 24 both
+  // saw 24 and the cart held 26 (#188). It is now a count and an insert inside a
+  // transaction holding FOR UPDATE on the shopper's own row.
+  //
+  // No test here claims to reproduce the race, and that is deliberate. Two
+  // concurrent `addToCart` calls only collide if their reads actually overlap,
+  // which is a matter of round-trip timing — such a test passes on the broken
+  // code most of the time, which is worse than no test. And a test that holds the
+  // lock externally proves nothing either: `cart_items.user_id` is a foreign key,
+  // so the INSERT takes FOR KEY SHARE on the users row and blocks against an
+  // outside FOR UPDATE whether or not this code asks for one. What it does NOT do
+  // is block against ANOTHER insert — two FOR KEY SHARE locks are compatible —
+  // and that is exactly the case the explicit FOR UPDATE exists to serialise.
+  it('still refuses the item that would exceed the cap', async () => {
+    const { pm, nginx, env } = await setup()
+    for (let i = 0; i < MAX_CART_ITEMS - 1; i++) {
+      await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+    }
+
+    const last = await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+    const over = await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+
+    expect(last.ok).toBe(true)
+    expect(over.ok).toBe(false)
+    const rows = await db.select().from(cartItems).where(eq(cartItems.userId, pm.id))
+    expect(rows).toHaveLength(MAX_CART_ITEMS)
+  })
+
+  // The lock is on the shopper, not on the table: two people adding at the same
+  // time must not wait on each other, and neither may be refused.
+  it('does not let one shopper\'s cap refuse another', async () => {
+    const { pm, other, nginx, env } = await setup()
+    for (let i = 0; i < MAX_CART_ITEMS; i++) {
+      await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+    }
+
+    const result = await addToCart(makeSession(other), { productId: nginx.id, environmentId: env.id })
+
+    expect(result.ok).toBe(true)
+  })
+})
+
+describe('addToCart and a withdrawn product', () => {
+  // The offering existing no longer means the product can be ordered.
+  it('refuses to add one', async () => {
+    const { pm, nginx, env } = await setup()
+    await db.update(products).set({ retiredAt: new Date() }).where(eq(products.id, nginx.id))
+
+    const result = await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(400)
+    expect(result.message).toMatch(/no longer available to order/i)
+  })
 })
 
 describe('listCart', () => {
@@ -151,6 +205,38 @@ describe('listCart', () => {
     expect(result.data[0].stillOffered).toBe(false)
   })
 
+  /*
+   * A withdrawn product keeps its offerings, so it can be put back at the price
+   * it had (#251) — which means the price still resolves and the line still
+   * looks orderable. `retiredAt` is the third way a line can have become
+   * unorderable, and it has to say so here rather than at the till.
+   */
+  it('marks a line unavailable when its product has been withdrawn', async () => {
+    const { pm, nginx, env } = await setup()
+    await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+    await db.update(products).set({ retiredAt: new Date() }).where(eq(products.id, nginx.id))
+
+    const result = await listCart(makeSession(pm))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data).toHaveLength(1)
+    expect(result.data[0].stillOffered).toBe(false)
+    // The offering survived, which is what makes putting it back worth anything.
+    expect(result.data[0].price).not.toBeNull()
+  })
+
+  it('offers it again once the product is put back', async () => {
+    const { pm, nginx, env } = await setup()
+    await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
+    await db.update(products).set({ retiredAt: new Date() }).where(eq(products.id, nginx.id))
+    await db.update(products).set({ retiredAt: null }).where(eq(products.id, nginx.id))
+
+    const result = await listCart(makeSession(pm))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data[0].stillOffered).toBe(true)
+  })
+
   it('returns an empty cart rather than an error', async () => {
     const { pm } = await setup()
     expect((await listCart(makeSession(pm))).ok).toBe(true)
@@ -163,7 +249,7 @@ describe('updateCartItem / removeFromCart / clearCart', () => {
     const added = await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
     if (!added.ok) throw new Error('setup failed')
 
-    const result = await updateCartItem(makeSession(pm), added.data.id, { HOST: 'web-01' })
+    const result = await updateCartItem(makeSession(pm), added.data.id, { parameters: { HOST: 'web-01' } })
     expect(result.ok).toBe(true)
     const [row] = await db.select().from(cartItems)
     expect(row.parameters).toEqual({ HOST: 'web-01' })
@@ -174,7 +260,7 @@ describe('updateCartItem / removeFromCart / clearCart', () => {
     const added = await addToCart(makeSession(pm), { productId: nginx.id, environmentId: env.id })
     if (!added.ok) throw new Error('setup failed')
 
-    const updated = await updateCartItem(makeSession(other), added.data.id, { HOST: 'stolen' })
+    const updated = await updateCartItem(makeSession(other), added.data.id, { parameters: { HOST: 'stolen' } })
     expect(updated.ok).toBe(false)
     if (!updated.ok) expect(updated.status).toBe(404)
 
@@ -413,7 +499,7 @@ describe('checkoutCart', () => {
     if (!a.ok || !b.ok) throw new Error('setup failed')
 
     mockedWebhooks
-      .mockResolvedValueOnce(['pipe-ok'])
+      .mockResolvedValueOnce({ pipelineIds: ['pipe-ok'], failures: [] })
       .mockRejectedValueOnce(new Error('CI unreachable'))
 
     const result = await checkoutCart(makeSession(ctx.admin), {
@@ -429,6 +515,59 @@ describe('checkoutCart', () => {
     // Only the successful item left the cart.
     const remaining = await db.select().from(cartItems)
     expect(remaining.map((r) => r.id)).toEqual([b.data.id])
+  })
+
+  // A double-click, or the checkout open in two tabs. Both requests read the same
+  // items, both pass validation, and before #188 both created every order: six
+  // orders from three items, six sets of pipelines, up to six times `quantity`
+  // real machines, and six lines of spend. The loser's delete was a no-op, which
+  // is why nothing surfaced it.
+  it('orders a cart once when two checkouts race', async () => {
+    const ctx = await setup()
+    const a = await addToCart(makeSession(ctx.admin), { productId: ctx.nginx.id, environmentId: ctx.env.id })
+    const b = await addToCart(makeSession(ctx.admin), { productId: ctx.postgres.id, environmentId: ctx.env.id })
+    if (!a.ok || !b.ok) throw new Error('setup failed')
+    const body = { projectId: ctx.adminProject.id, items: [item(a.data.id), item(b.data.id)] }
+
+    const [first, second] = await Promise.all([
+      checkoutCart(makeSession(ctx.admin), body),
+      checkoutCart(makeSession(ctx.admin), body),
+    ])
+
+    const winners = [first, second].filter((r) => r.ok)
+    const losers = [first, second].filter((r) => !r.ok)
+    expect(winners).toHaveLength(1)
+    expect(losers).toHaveLength(1)
+
+    // Two items ordered, not four.
+    const placed = await db.select().from(orders)
+    expect(placed).toHaveLength(2)
+    // And the cart is empty — the loser put nothing back that the winner took.
+    expect(await db.select().from(cartItems)).toHaveLength(0)
+  })
+
+  // A lost race must leave the cart exactly as it found it, or the second tab
+  // silently eats the items the first one did not get to.
+  it('leaves the cart untouched for the checkout that loses the race', async () => {
+    const ctx = await setup()
+    const a = await addToCart(makeSession(ctx.admin), { productId: ctx.nginx.id, environmentId: ctx.env.id })
+    const b = await addToCart(makeSession(ctx.admin), { productId: ctx.postgres.id, environmentId: ctx.env.id })
+    if (!a.ok || !b.ok) throw new Error('setup failed')
+
+    // One checkout takes only the first item; the other asks for both and must
+    // find one of them already gone.
+    const [, both] = await Promise.all([
+      checkoutCart(makeSession(ctx.admin), { projectId: ctx.adminProject.id, items: [item(a.data.id)] }),
+      checkoutCart(makeSession(ctx.admin), { projectId: ctx.adminProject.id, items: [item(a.data.id), item(b.data.id)] }),
+    ])
+
+    // Whichever way the two land, the second item is never ordered twice and is
+    // never lost: it is either in the cart or in exactly one order.
+    const remaining = await db.select().from(cartItems)
+    const placed = await db.select().from(orders)
+    expect(placed.length + remaining.length).toBe(2)
+    expect(remaining.every((r) => r.id === a.data.id || r.id === b.data.id)).toBe(true)
+    void both
   })
 
   it('returns 502 when no order at all could be created', async () => {

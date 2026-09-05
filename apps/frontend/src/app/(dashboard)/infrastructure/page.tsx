@@ -1,15 +1,20 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
+import { get } from '@/lib/serverApi'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import type { InfrastructureElement, InfraFacets, Role } from '@open-hybrid-cloud/types'
+import type { InfrastructureElement, InfraFacets, Role, InfrastructurePage } from '@open-hybrid-cloud/types'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { RefreshButton } from '@/components/ui/RefreshButton'
+import { AutoRefresh } from '@/components/ui/AutoRefresh'
+import { hasUnsettled } from '@/lib/unsettled'
 import { Card } from '@/components/ui/Card'
+import { Pager } from '@/components/ui/Pager'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { InfraActions } from './InfraActions'
 import { InfraFilters } from './InfraFilters'
 import { InfraExport } from './InfraExport'
 import { t, isValidLang } from '@/lib/i18n'
+import Link from 'next/link'
 
 // Filters live in the URL (see InfraFilters), so every distinct filter
 // combination is its own render — nothing here may be cached across them.
@@ -40,7 +45,6 @@ export default async function InfrastructurePage({ searchParams }: Props) {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await detectLang()
   const params = await searchParams
   // The export endpoint is admin-and-above, so don't offer a button that would
@@ -51,6 +55,10 @@ export default async function InfrastructurePage({ searchParams }: Props) {
   const canRetry = canExport
 
   const query = new URLSearchParams()
+  // Set first so it survives whatever the filters add, and so a bookmarked URL
+  // that happens to carry its own `lang` cannot make the rows disagree with the
+  // rest of the page.
+  query.set('lang', lang)
   for (const key of FILTER_KEYS) {
     const raw = params[key]
     // Take the first value if a key was repeated: the API expects one, and
@@ -58,12 +66,22 @@ export default async function InfrastructurePage({ searchParams }: Props) {
     const value = Array.isArray(raw) ? raw[0] : raw
     if (value) query.set(key, value)
   }
+  // Not one of FILTER_KEYS: `isFiltered` drives the "clear filters" affordance,
+  // and page two of an unfiltered list is not a filtered list.
+  const rawOffset = Array.isArray(params.offset) ? params.offset[0] : params.offset
+  if (rawOffset) query.set('offset', rawOffset)
+
   const qs = query.toString()
-  const isFiltered = qs !== ''
+  // `lang` is not a filter — it is always present now, so asking whether the
+  // query string is empty would report every page as filtered.
+  const isFiltered = FILTER_KEYS.some((key) => query.has(key))
 
   const [listRes, facetsRes] = await Promise.allSettled([
-    get<InfrastructureElement[]>(`/api/infrastructure${qs ? `?${qs}` : ''}`, token),
-    get<InfraFacets>('/api/infrastructure/facets', token),
+    get<InfrastructurePage>(`/api/infrastructure?${qs}`),
+    // Same language as the rows: the facets are the option list for the filters
+    // above them, and a dropdown naming products in another language reads as a
+    // list of products the user does not have.
+    get<InfraFacets>(`/api/infrastructure/facets?lang=${lang}`),
   ])
 
   // A rejected list is NOT an empty inventory. An invalid bookmarked filter comes
@@ -71,7 +89,13 @@ export default async function InfrastructurePage({ searchParams }: Props) {
   // and a backend outage rejects too; showing "nothing matches" for either claims
   // the infrastructure is gone.
   const listFailed = listRes.status === 'rejected'
-  const elements = listRes.status === 'fulfilled' ? (listRes.value ?? []) : []
+  // One window, not every element ever provisioned (#158). An installation
+  // accumulates these forever — decommissioned rows stay for the history — so
+  // this is the list that grows without anybody placing an order.
+  const page = listRes.status === 'fulfilled'
+    ? (listRes.value ?? { items: [], total: 0, limit: 0, offset: 0 })
+    : { items: [], total: 0, limit: 0, offset: 0 }
+  const elements = page.items
   // Empty facets degrade to unpopulated dropdowns rather than a broken page —
   // the free-text search and date filters still work.
   const facets = facetsRes.status === 'fulfilled'
@@ -96,8 +120,21 @@ export default async function InfrastructurePage({ searchParams }: Props) {
       <PageHeader
         title={t('infrastructureTitle', lang)}
         subtitle={t('infrastructureSubtitle', lang)}
-        actions={canExport ? <InfraExport token={token} lang={lang} /> : undefined}
+        actions={
+          <>
+            {/* `router.refresh()` and not a reload: the rows are disclosures, and
+                a reload would close every one the user had opened. */}
+            <RefreshButton />
+            {canExport ? <InfraExport lang={lang} /> : null}
+          </>
+        }
       />
+
+      {/* `displayStatus` and not `status`: an element is 'active' from the
+          moment its row is written, and what says it is still being built lives
+          on its order (#287). Watching the stored column would stop polling
+          exactly when there is something to wait for. */}
+      <AutoRefresh active={hasUnsettled(elements.map((el) => el.displayStatus ?? el.status))} />
 
       <InfraFilters facets={facets} lang={lang} resultCount={elements.length} />
 
@@ -116,7 +153,7 @@ export default async function InfrastructurePage({ searchParams }: Props) {
           <Card key={projectName} title={projectName}>
             <div className="space-y-3">
               {items.map((item) => (
-                <InfraRow key={item.id} item={item} token={token} lang={lang} canRetry={canRetry} />
+                <InfraRow key={item.id} item={item} lang={lang} canRetry={canRetry} />
               ))}
             </div>
           </Card>
@@ -125,24 +162,34 @@ export default async function InfrastructurePage({ searchParams }: Props) {
         <Card>
           <div className="space-y-3">
             {elements.map((item) => (
-              <InfraRow key={item.id} item={item} token={token} lang={lang} canRetry={canRetry} showProject />
+              <InfraRow key={item.id} item={item} lang={lang} canRetry={canRetry} showProject />
             ))}
           </div>
         </Card>
       )}
+
+      {/* Below the grouping, not inside it: the project cards group ONE page of
+          elements, so a project's rows can legitimately continue on the next
+          page and a pager per card would claim otherwise. */}
+      <Pager
+        total={page.total}
+        limit={page.limit}
+        offset={page.offset}
+        basePath="/infrastructure"
+        params={Object.fromEntries(query)}
+        lang={lang}
+      />
     </div>
   )
 }
 
 function InfraRow({
   item,
-  token,
   lang,
   canRetry = false,
   showProject = false,
 }: {
   item: InfrastructureElement
-  token: string
   lang: string
   canRetry?: boolean
   /** Set in the flat (explicitly-sorted) view, where no Card header names it. */
@@ -150,19 +197,33 @@ function InfraRow({
 }) {
   const outputs = Object.entries(item.outputs ?? {})
   const outputLabel = outputs.length === 1 ? t('output', lang) : t('outputs', lang)
-  // An element whose provisioning pipeline failed is still stored as 'active' —
-  // it is created when provisioning starts. Showing only that badge claims
-  // infrastructure that was never successfully deployed, so say so explicitly.
-  const deploymentFailed = item.orderStatus === 'failed'
+  // The server derives what to show (#287): the stored column is 'active' from
+  // the moment provisioning starts, so it cannot tell a machine still being
+  // built from one that is running, nor either from one whose pipeline failed.
+  // This page used to derive half of that itself and the detail page derived
+  // the same half again, which is how the provisioning case stayed missing in
+  // both.
+  const deploymentFailed = item.displayStatus === 'failed'
   return (
     <div className="rounded-lg border border-slate-200 p-4">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
+      {/* Wraps, and the text column may shrink: the actions cluster beside it
+          is itself several buttons wide (#168). */}
+      <div className="flex flex-wrap items-start justify-between gap-y-3">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-1">
-            <span className="font-medium text-slate-900">
+            {/* The row's own heading is the way in: the outputs, parameters and
+                pipeline runs are on the detail page, not in this list. */}
+            <Link
+              href={`/infrastructure/${item.id}`}
+              className="font-medium text-slate-900 hover:underline"
+            >
               {item.productName ?? `Product #${item.productId}`}
-            </span>
-            <StatusBadge status={deploymentFailed ? 'failed' : item.status} lang={lang} />
+              {/* Two elements provisioned from the same product give two links with
+                  the same name and different destinations (WCAG 2.4.9). The element
+                  id is what distinguishes them, and it is already in the URL. */}
+              <span className="sr-only"> #{item.id}</span>
+            </Link>
+            <StatusBadge status={item.displayStatus ?? item.status} lang={lang} />
             {deploymentFailed && (
               <span className="text-xs text-slate-500">
                 {t('deploymentFailed', lang)} · #{item.orderId}
@@ -184,12 +245,22 @@ function InfraRow({
           </div>
           <p className="text-xs text-slate-500">
             {showProject && <>{item.projectName ?? `Project #${item.projectId}`} · </>}
-            {item.environmentName} ·{' '}
+            {item.environmentName}
+            {/* The size this element runs at (issue #98) … */}
+            {item.sizeCode && <> · {t('size', lang)}: {item.sizeCode}</>}
+            {/* … and which of its order's N it is (issue #104). Twenty elements
+                from one order are otherwise twenty identical rows, and teardown is
+                per element, so knowing which one you are about to destroy is not
+                cosmetic. */}
+            {item.orderQuantity !== undefined && item.orderQuantity !== null && item.orderQuantity > 1 && (
+              <> · {item.sequence ?? 1}/{item.orderQuantity}</>
+            )}
+            {' · '}
             {item.deployedAt ? new Date(item.deployedAt).toLocaleString(lang) : t('notDeployed', lang)}
           </p>
           {outputs.length > 0 && (
             <details className="mt-2">
-              <summary className="cursor-pointer text-xs text-blue-600 hover:text-blue-700 select-none">
+              <summary className="inline-flex min-h-11 items-center cursor-pointer text-xs text-blue-600 hover:text-blue-700 select-none">
                 {outputs.length} {outputLabel}
               </summary>
               <div className="mt-2 rounded bg-slate-50 p-2 space-y-1">
@@ -203,7 +274,7 @@ function InfraRow({
             </details>
           )}
         </div>
-        <InfraActions item={item} token={token} lang={lang} canRetry={canRetry} />
+        <InfraActions item={item} lang={lang} canRetry={canRetry} />
       </div>
     </div>
   )

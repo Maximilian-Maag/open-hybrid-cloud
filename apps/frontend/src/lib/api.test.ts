@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ApiError, apiRequest, get, post, put, del } from './api'
 
+const signOut = vi.fn()
+vi.mock('next-auth/react', () => ({ signOut: (...args: unknown[]) => signOut(...args) }))
+
 const mockFetch = vi.fn()
 
 beforeEach(() => {
@@ -62,13 +65,20 @@ describe('apiRequest', () => {
     expect(result).toBeUndefined()
   })
 
-  it('sends Authorization header when token is provided', async () => {
+  it('sends no Authorization header from the browser, and goes through the proxy', async () => {
+    // Issue #146: the browser must never hold the backend JWT. It sends the
+    // HttpOnly session cookie to this origin's own /api/proxy, which attaches
+    // the bearer token server-side. These tests run in jsdom, so `window`
+    // exists and this is the browser branch.
     mockFetch.mockResolvedValueOnce(makeResponse({}))
-    await apiRequest('/secured', { token: 'my-jwt-token' })
-    const [, init] = mockFetch.mock.calls[0]
-    expect((init as RequestInit).headers).toMatchObject({
-      Authorization: 'Bearer my-jwt-token',
-    })
+    // A token passed here is ignored rather than sent. The browser branch has to
+    // be the one that is safe when it is wrong, because client components are
+    // server-rendered too — and because the day someone reintroduces a token
+    // prop, this is what has to stop it reaching the wire.
+    await apiRequest('/api/orders', { token: 'must-not-be-sent' })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/proxy/api/orders')
+    expect((init as RequestInit).headers).not.toHaveProperty('Authorization')
   })
 
   it('sets Content-Type for JSON body', async () => {
@@ -100,14 +110,14 @@ describe('apiRequest', () => {
 describe('convenience helpers', () => {
   it('get() calls apiRequest with GET method', async () => {
     mockFetch.mockResolvedValueOnce(makeResponse({ ok: true }))
-    const result = await get<{ ok: boolean }>('/items', 'token')
+    const result = await get<{ ok: boolean }>('/items')
     expect(result.ok).toBe(true)
     expect(mockFetch.mock.calls[0][1]).toMatchObject({ method: 'GET' })
   })
 
   it('post() sends body as JSON', async () => {
     mockFetch.mockResolvedValueOnce(makeResponse({ created: true }))
-    await post('/items', { name: 'new' }, 'token')
+    await post('/items', { name: 'new' })
     const [, init] = mockFetch.mock.calls[0]
     expect((init as RequestInit).method).toBe('POST')
     expect((init as RequestInit).body).toBe(JSON.stringify({ name: 'new' }))
@@ -121,7 +131,118 @@ describe('convenience helpers', () => {
 
   it('del() sends DELETE request', async () => {
     mockFetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
-    await del('/items/1', 'token')
+    await del('/items/1')
     expect(mockFetch.mock.calls[0][1]).toMatchObject({ method: 'DELETE' })
+  })
+})
+
+// Issue #103. A 401 means the session is over, not that this one call was
+// unlucky; the caller-by-caller handling left people on a page that looked
+// logged in with no data on it.
+describe('apiRequest on 401', () => {
+  beforeEach(() => {
+    signOut.mockClear()
+    // The module keeps a "sign-out already under way" flag, so each test needs
+    // its own instance of it.
+    vi.resetModules()
+    window.history.pushState({}, '', '/orders/7')
+  })
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/')
+  })
+
+  it('signs out and comes back to the page you were on', async () => {
+    // Destructured from the same fresh module: `vi.resetModules()` gives the
+    // re-import its own ApiError class, so the statically imported one would not
+    // match it.
+    const { apiRequest: request, ApiError: FreshApiError } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ error: 'Unauthorized' }, 401))
+
+    await expect(request('/orders')).rejects.toThrow(FreshApiError)
+
+    expect(signOut).toHaveBeenCalledWith({
+      redirectTo: '/login?expired=1&callbackUrl=%2Forders%2F7',
+    })
+  })
+
+  it('still throws, so a caller mid-render is not left waiting', async () => {
+    const { apiRequest: request, ApiError: FreshApiError } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ error: 'Unauthorized' }, 401))
+
+    // `request` is generic with no argument here, so its rejection widens to
+    // unknown: assert the shape after narrowing, not through it.
+    const err = (await request('/orders').catch((e: unknown) => e)) as ApiError
+    expect(err).toBeInstanceOf(FreshApiError)
+    expect(err.status).toBe(401)
+  })
+
+  it('signs out once when a page full of parallel requests all fail', async () => {
+    // A dead token fails everything in flight at once, and one redirect is the
+    // only sensible outcome.
+    const { apiRequest: request } = await import('./api')
+    mockFetch.mockResolvedValue(makeResponse({ error: 'Unauthorized' }, 401))
+
+    await Promise.allSettled([request('/a'), request('/b'), request('/c')])
+
+    expect(signOut).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not sign out on the login page itself', async () => {
+    window.history.pushState({}, '', '/login')
+    const { apiRequest: request, ApiError: FreshApiError } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ error: 'Unauthorized' }, 401))
+
+    await expect(request('/api/auth/whatever')).rejects.toThrow(FreshApiError)
+
+    expect(signOut).not.toHaveBeenCalled()
+  })
+
+  it('leaves other error statuses to the caller', async () => {
+    const { apiRequest: request, ApiError: FreshApiError } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ error: 'Forbidden' }, 403))
+
+    await expect(request('/orders')).rejects.toThrow(FreshApiError)
+
+    expect(signOut).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The server half of the same rule (issue #146).
+ *
+ * The token is attached only on the server, and only by `lib/serverApi.ts` — the
+ * `get`/`post`/`put`/`del` exported here do not take one, so client code has no
+ * way to send one and nothing to send. These tests make `typeof window`
+ * undefined so the module takes its server branch.
+ */
+describe('apiRequest on the server', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.stubGlobal('window', undefined)
+  })
+
+  it('calls the API host directly and attaches the token it was given', async () => {
+    const { apiRequest: request } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ ok: true }))
+
+    await request('/api/orders', { token: 'server-side-jwt' })
+
+    const [url, init] = mockFetch.mock.calls[0]
+    // No NEXT_PUBLIC_API_URL in the test env, so the base is '' — what matters
+    // is that it is NOT the proxy prefix, which only the browser uses.
+    expect(url).toBe('/api/orders')
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer server-side-jwt',
+    })
+  })
+
+  it('sends no Authorization header when there is no token', async () => {
+    const { apiRequest: request } = await import('./api')
+    mockFetch.mockResolvedValueOnce(makeResponse({ ok: true }))
+
+    await request('/api/public/branding')
+
+    expect((mockFetch.mock.calls[0][1] as RequestInit).headers).not.toHaveProperty('Authorization')
   })
 })

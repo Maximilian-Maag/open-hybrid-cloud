@@ -8,12 +8,18 @@ const CreateParameterSchema = z.object({
   scope: z.enum(['global', 'category', 'product']),
   scopeId: z.number().int().default(0),
   environmentId: z.number().int().positive().nullable().optional(),
+  // Which projects this parameter is narrowed to; absent means "leave alone" on
+  // an update and "all projects" on a create, and `[]` clears the narrowing
+  // (#275). `positive()` because a project id is a bigserial and 0 is the
+  // "no scope" sentinel `scopeId` uses.
+  projectIds: z.array(z.number().int().positive()).optional(),
   name: z.string().min(1),
   label: z.string().default(''),
-  type: z.enum(['string', 'number', 'bool', 'dropdown']),
+  type: z.enum(['string', 'number', 'bool', 'dropdown', 'size']),
   description: z.string().default(''),
   defaultValue: z.string().default(''),
   required: z.boolean().default(false),
+  sizeValues: z.record(z.string(), z.string()).optional(),
   sensitive: z.boolean().default(false),
 })
 

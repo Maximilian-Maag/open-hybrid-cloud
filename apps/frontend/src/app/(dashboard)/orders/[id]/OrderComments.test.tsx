@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { OrderComment } from '@open-hybrid-cloud/types'
 
@@ -38,7 +38,7 @@ const renderThread = (
       initialComments={initialComments}
       currentUserId={opts.currentUserId ?? ME}
       canWriteInternal={opts.canWriteInternal ?? false}
-      token="test-token"
+     
       lang="en"
     />,
   )
@@ -81,7 +81,7 @@ describe('OrderComments', () => {
     await user.click(screen.getByRole('button', { name: /add comment/i }))
 
     await waitFor(() =>
-      expect(mockedPost).toHaveBeenCalledWith('/api/orders/7/comments', { body: 'New one' }, 'test-token'),
+      expect(mockedPost).toHaveBeenCalledWith('/api/orders/7/comments', { body: 'New one' }),
     )
     expect(await screen.findByTestId('comment-101')).toBeInTheDocument()
     // The box is cleared so the next comment starts empty.
@@ -162,7 +162,7 @@ describe('OrderComments', () => {
     await user.click(screen.getByRole('button', { name: /save changes/i }))
 
     await waitFor(() =>
-      expect(mockedPut).toHaveBeenCalledWith('/api/orders/7/comments/100', { body: 'Revised' }, 'test-token'),
+      expect(mockedPut).toHaveBeenCalledWith('/api/orders/7/comments/100', { body: 'Revised' }),
     )
     expect(await screen.findByText('Revised')).toBeInTheDocument()
     expect(screen.getByText(/\(edited\)/i)).toBeInTheDocument()
@@ -186,7 +186,7 @@ describe('OrderComments', () => {
     renderThread([comment()])
 
     await user.click(within(screen.getByTestId('comment-100')).getByRole('button', { name: /delete/i }))
-    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/orders/7/comments/100', 'test-token'))
+    await waitFor(() => expect(mockedDel).toHaveBeenCalledWith('/api/orders/7/comments/100'))
     await waitFor(() => expect(screen.queryByTestId('comment-100')).not.toBeInTheDocument())
     expect(screen.getByText(/no comments yet/i)).toBeInTheDocument()
   })
@@ -202,6 +202,47 @@ describe('OrderComments', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/cannot be empty/i)
     // Losing what the user typed on a failed post would be its own bug.
     expect(screen.getByLabelText(/add comment/i)).toHaveValue('attempt')
+  })
+
+  it('does not send a second DELETE for a double-click on the same comment (#146)', async () => {
+    // Without a guard, `handlePost` was the only action that checked whether
+    // a request was already in flight — a double-click here sent two DELETEs
+    // and the second reported "Failed to delete the comment" for one that
+    // had already been removed.
+    let resolveDel: () => void = () => {}
+    mockedDel.mockImplementation(() => new Promise((resolve) => { resolveDel = () => resolve(undefined as never) }))
+    renderThread([comment()])
+
+    const button = within(screen.getByTestId('comment-100')).getByRole('button', { name: /delete/i })
+    fireEvent.click(button)
+    fireEvent.click(button)
+
+    expect(mockedDel).toHaveBeenCalledTimes(1)
+    resolveDel()
+    await waitFor(() => expect(screen.queryByTestId('comment-100')).not.toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('does not send a second PUT for a double-click on Save Changes (#146)', async () => {
+    let resolvePut: () => void = () => {}
+    mockedPut.mockImplementation(
+      () => new Promise((resolve) => { resolvePut = () => resolve(comment({ body: 'Revised', edited: true }) as never) }),
+    )
+    const user = userEvent.setup()
+    renderThread([comment()])
+
+    await user.click(within(screen.getByTestId('comment-100')).getByRole('button', { name: /edit/i }))
+    const box = screen.getByLabelText(/^edit$/i)
+    await user.clear(box)
+    await user.type(box, 'Revised')
+
+    const save = screen.getByRole('button', { name: /save changes/i })
+    fireEvent.click(save)
+    fireEvent.click(save)
+
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    resolvePut()
+    await waitFor(() => expect(screen.getByText('Revised')).toBeInTheDocument())
   })
 
   it('leaves the comment in place when a delete fails', async () => {

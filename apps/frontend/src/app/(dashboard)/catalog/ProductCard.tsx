@@ -3,16 +3,29 @@
 import Link from 'next/link'
 import { t } from '@/lib/i18n'
 import { FavoriteButton } from './FavoriteButton'
+import { ProductImage } from '@/components/ui/ProductImage'
 
 interface Props {
   id: number
   name: string
   description: string
+  /** The picture's own description; falls back to the product name. */
+  imageAlt?: string | null
   categoryName?: string
   favorited: boolean
   busy?: boolean
   onToggleFavorite: () => void
   lang: string
+  /**
+   * Where this card's title sits in the page outline.
+   *
+   * The two grids on /catalog are at different depths: the main one hangs
+   * straight off the page's <h1>, the favourites shelf off its own <h2>. A
+   * fixed <h3> was fine while the page had no h1 at all, and became an
+   * h1 → h3 skip the moment it got one (#185). Only the level differs — the
+   * card still renders identically, which is the point of the component.
+   */
+  level?: 2 | 3
 }
 
 /**
@@ -26,12 +39,15 @@ export function ProductCard({
   id,
   name,
   description,
+  imageAlt,
   categoryName,
   favorited,
   busy,
   onToggleFavorite,
   lang,
+  level = 3,
 }: Props) {
+  const Heading = `h${level}` as const
   return (
     <div
       data-testid={`product-card-${id}`}
@@ -40,12 +56,22 @@ export function ProductCard({
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = '')}
     >
       <div
-        className="relative h-40 flex items-center justify-center border-b border-slate-100"
+        className="relative h-40 border-b border-slate-100"
         style={{ backgroundColor: 'color-mix(in srgb, var(--bp) 8%, white)' }}
       >
-        <svg className="h-14 w-14 opacity-25" style={{ color: 'var(--bp-text)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
-        </svg>
+        {/* The picture is the obvious thing to click, so it is the link. Named for
+            the product rather than left nameless: when the fallback placeholder
+            renders there is no alt text for the link to borrow. */}
+        <Link
+          href={`/catalog/${id}`}
+          aria-label={name}
+          className="block h-full w-full p-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+        >
+          <ProductImage productId={id} alt={imageAlt ?? name} />
+        </Link>
+        {/* A SIBLING of the link, not a child: a button inside a link is invalid
+            HTML and splits one control in two. The axe gate does not reject it —
+            see ButtonLink — so keeping them siblings is on the author. */}
         <div className="absolute top-2 right-2">
           <FavoriteButton favorited={favorited} busy={busy} onToggle={onToggleFavorite} lang={lang} />
         </div>
@@ -56,16 +82,29 @@ export function ProductCard({
             {categoryName}
           </span>
         )}
-        <h3 className="font-semibold text-sm text-slate-800 leading-snug mb-1 line-clamp-2">{name}</h3>
+        <Heading className="font-semibold text-sm text-slate-800 leading-snug mb-1 line-clamp-2">{name}</Heading>
         {description && (
           <p className="text-xs text-slate-500 leading-relaxed flex-1 mb-3 line-clamp-2">{description}</p>
         )}
+        {/* "Details", not "Place Order": it opens the product page, where the
+            environment, the price and the parameters are chosen. Promising an order
+            and delivering a form is a broken promise. */}
         <Link
           href={`/catalog/${id}`}
-          className="w-full py-2 px-3 rounded text-center text-sm font-semibold block text-gray-900 hover:brightness-95 transition-all mt-auto"
-          style={{ backgroundColor: 'var(--bs)' }}
+          className="w-full py-2 px-3 min-h-11 rounded text-center text-sm font-semibold flex items-center justify-center hover:brightness-95 transition-all mt-auto"
+          // The ink is derived from the secondary, not fixed: `--bs` is whatever
+          // the operator saved, and a hard-coded dark foreground goes unreadable
+          // the moment they pick a dark one. `--bs-ink` is readableInk's answer
+          // for that exact colour, which is what every other `--bs` surface uses.
+          style={{ backgroundColor: 'var(--bs)', color: 'var(--bs-ink)' }}
         >
-          {t('placeOrder', lang)}
+          {t('details', lang)}
+          {/* A grid of twenty links all called "Details" is WCAG 2.4.9: read out of
+              context, none of them says what it opens. The product name goes in the
+              accessible name only — visibly repeating it under its own heading would
+              be noise, and keeping "Details" as the visible label keeps the
+              accessible name a superset of it (2.5.3 Label in Name). */}
+          <span className="sr-only">: {name}</span>
         </Link>
       </div>
     </div>

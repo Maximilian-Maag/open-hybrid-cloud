@@ -1,18 +1,24 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { updateParameter, deleteParameter } from '@/lib/services/admin/parameters'
 
 const UpdateParameterSchema = z.object({
   name: z.string().min(1).optional(),
   label: z.string().optional(),
-  type: z.enum(['string', 'number', 'bool', 'dropdown']).optional(),
+  type: z.enum(['string', 'number', 'bool', 'dropdown', 'size']).optional(),
   description: z.string().optional(),
   defaultValue: z.string().optional(),
   required: z.boolean().optional(),
+  sizeValues: z.record(z.string(), z.string()).optional(),
   sensitive: z.boolean().optional(),
   environmentId: z.number().int().positive().nullable().optional(),
+  // Which projects this parameter is narrowed to; absent means "leave alone" on
+  // an update and "all projects" on a create, and `[]` clears the narrowing
+  // (#275). `positive()` because a project id is a bigserial and 0 is the
+  // "no scope" sentinel `scopeId` uses.
+  projectIds: z.array(z.number().int().positive()).optional(),
 })
 
 export async function PUT(
@@ -23,13 +29,15 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id } = await params
+  const parameterId = parseRouteId(id)
+  if (parameterId === null) return invalidId('parameter id')
   const body = await req.json().catch(() => null)
   const parsed = UpdateParameterSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateParameter(parseInt(id, 10), parsed.data, session.id))
+  return toResponse(await updateParameter(parameterId, parsed.data, session.id))
 }
 
 export async function DELETE(
@@ -40,5 +48,7 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await deleteParameter(parseInt(id, 10), session.id))
+  const parameterId = parseRouteId(id)
+  if (parameterId === null) return invalidId('parameter id')
+  return toResponse(await deleteParameter(parameterId, session.id))
 }

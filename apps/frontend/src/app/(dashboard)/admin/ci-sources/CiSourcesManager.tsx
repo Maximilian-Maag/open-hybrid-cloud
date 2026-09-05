@@ -9,18 +9,20 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
+// Provider names are proper nouns — not translated, same as "SMTP" and "Branding".
 const PROVIDERS: { value: CiProvider; label: string }[] = [
   { value: 'gitlab', label: 'GitLab' },
   { value: 'github', label: 'GitHub' },
   { value: 'bitbucket', label: 'Bitbucket' },
 ]
 
-interface Props { token: string }
-
 const emptyForm = () => ({ name: '', url: '', accessToken: '', provider: 'gitlab' as CiProvider })
 
-export function CiSourcesManager({ token }: Props) {
+export function CiSourcesManager() {
+  const lang = useLang()
   const [sources, setSources] = useState<CiSource[]>([])
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
@@ -34,16 +36,16 @@ export function CiSourcesManager({ token }: Props) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setSources((await get<CiSource[]>('/api/admin/ci-sources', token)) ?? [])
+      setSources((await get<CiSource[]>('/api/admin/ci-sources')) ?? [])
       setDeleteError(null)
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : 'Failed to load CI sources.')
+      setDeleteError(e instanceof Error ? e.message : t('failedToLoadCiSources', lang))
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [lang])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   function setField(k: keyof typeof form, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
@@ -72,11 +74,11 @@ export function CiSourcesManager({ token }: Props) {
         accessToken: form.accessToken.trim(),
         provider: form.provider,
       }
-      await post('/api/admin/ci-sources', body, token)
+      await post('/api/admin/ci-sources', body)
       setAddOpen(false)
-      load()
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed to create.')
+      void load()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : t('failedToCreateGeneric', lang))
     } finally {
       setSaving(false)
     }
@@ -94,11 +96,11 @@ export function CiSourcesManager({ token }: Props) {
         provider: form.provider,
         ...(form.accessToken ? { accessToken: form.accessToken.trim() } : {}),
       }
-      await put(`/api/admin/ci-sources/${editTarget.id}`, body, token)
+      await put(`/api/admin/ci-sources/${editTarget.id}`, body)
       setEditTarget(null)
-      load()
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed to update.')
+      void load()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : t('failedToUpdateGeneric', lang))
     } finally {
       setSaving(false)
     }
@@ -108,11 +110,11 @@ export function CiSourcesManager({ token }: Props) {
     if (!deleteTarget) return
     setSaving(true); setDeleteError(null)
     try {
-      await del(`/api/admin/ci-sources/${deleteTarget.id}`, token)
+      await del(`/api/admin/ci-sources/${deleteTarget.id}`)
       setDeleteTarget(null)
-      load()
+      void load()
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : 'Failed to delete.')
+      setDeleteError(e instanceof Error ? e.message : t('failedToDeleteGeneric', lang))
     } finally {
       setSaving(false)
     }
@@ -126,14 +128,14 @@ export function CiSourcesManager({ token }: Props) {
 
   return (
     <>
-      <Card title="CI Sources" action={<Button size="sm" onClick={openAdd}>Add CI Source</Button>}>
+      <Card title={t('ciSources', lang)} action={<Button size="sm" onClick={openAdd}>{t('addCiSource', lang)}</Button>}>
         {deleteError && !deleteTarget && (
           <Alert className="mb-3">{deleteError}</Alert>
         )}
         {loading ? (
           <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
         ) : sources.length === 0 ? (
-          <p className="text-center py-6 text-slate-600">No CI sources yet.</p>
+          <p className="text-center py-6 text-slate-600">{t('noCiSourcesYet', lang)}</p>
         ) : (
           <div className="space-y-2">
             {sources.map((src) => (
@@ -148,8 +150,8 @@ export function CiSourcesManager({ token }: Props) {
                   <p className="text-xs text-slate-500 font-mono">{src.url}</p>
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(src)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(src) }}>Delete</Button>
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(src)}>{t('edit', lang)}</Button>
+                  <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(src) }}>{t('delete', lang)}</Button>
                 </div>
               </div>
             ))}
@@ -157,38 +159,38 @@ export function CiSourcesManager({ token }: Props) {
         )}
       </Card>
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add CI Source" size="md">
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('addCiSource', lang)} size="md">
         <form onSubmit={handleAdd} className="space-y-4">
           {formError && <Alert>{formError}</Alert>}
-          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
-          <Input label="URL" type="url" value={form.url} onChange={(e) => setField('url', e.target.value)} required />
-          <Select label="Provider" value={form.provider} onChange={(e) => setField('provider', e.target.value)} options={PROVIDERS} />
-          <Input label="Access Token" type="password" value={form.accessToken} onChange={(e) => setField('accessToken', e.target.value)} required />
+          <Input label={t('name', lang)} value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <Input label={t('url', lang)} type="url" value={form.url} onChange={(e) => setField('url', e.target.value)} required />
+          <Select label={t('provider', lang)} value={form.provider} onChange={(e) => setField('provider', e.target.value)} options={PROVIDERS} />
+          <Input label={t('accessToken', lang)} type="password" value={form.accessToken} onChange={(e) => setField('accessToken', e.target.value)} required />
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
           </div>
         </form>
       </Modal>
-      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Edit CI Source" size="md">
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={t('editCiSource', lang)} size="md">
         <form onSubmit={handleEdit} className="space-y-4">
           {formError && <Alert>{formError}</Alert>}
-          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
-          <Input label="URL" type="url" value={form.url} onChange={(e) => setField('url', e.target.value)} required />
-          <Select label="Provider" value={form.provider} onChange={(e) => setField('provider', e.target.value)} options={PROVIDERS} />
-          <Input label="Access Token (leave blank to keep)" type="password" value={form.accessToken} onChange={(e) => setField('accessToken', e.target.value)} />
+          <Input label={t('name', lang)} value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <Input label={t('url', lang)} type="url" value={form.url} onChange={(e) => setField('url', e.target.value)} required />
+          <Select label={t('provider', lang)} value={form.provider} onChange={(e) => setField('provider', e.target.value)} options={PROVIDERS} />
+          <Input label={t('accessTokenKeepLabel', lang)} type="password" value={form.accessToken} onChange={(e) => setField('accessToken', e.target.value)} />
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
           </div>
         </form>
       </Modal>
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete CI Source" size="sm">
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title={t('deleteCiSourceTitle', lang)} size="sm">
         {deleteError && <Alert className="mb-4">{deleteError}</Alert>}
-        <p className="text-sm text-slate-600 mb-6">Delete <strong>{deleteTarget?.name}</strong>?</p>
+        <p className="text-sm text-slate-600 mb-6">{t('delete', lang)} <strong>{deleteTarget?.name}</strong>?</p>
         <div className="flex justify-end gap-3">
-          <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button variant="danger" onClick={handleDelete} disabled={saving}>{saving ? 'Deleting…' : 'Delete'}</Button>
+          <Button variant="secondary" onClick={() => setDeleteTarget(null)}>{t('cancel', lang)}</Button>
+          <Button variant="danger" onClick={handleDelete} disabled={saving}>{saving ? t('deleting', lang) : t('delete', lang)}</Button>
         </div>
       </Modal>
     </>

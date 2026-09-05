@@ -2,15 +2,37 @@ import { afterAll, beforeAll, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from '@/lib/db/schema'
-import { sql } from 'drizzle-orm'
+import { getTableName, sql } from 'drizzle-orm'
+import { migrate } from 'drizzle-orm/postgres-js/migrator'
+import { join } from 'node:path'
+import { acquireTestDatabase, wipeIfUnaccountedFor } from './database'
 
-// Module-level client for setup/teardown — tests use the app's db singleton
-const client = postgres(process.env.DATABASE_URL ?? '')
+// Claimed at MODULE scope, before any test file is imported: the app's db
+// singleton reads process.env.DATABASE_URL when its module first loads, so a URL
+// decided later in beforeAll would arrive too late to matter.
+const acquired = await acquireTestDatabase(process.env.DATABASE_URL ?? '')
+process.env.DATABASE_URL = acquired.url
+console.warn(`[test] database: ${acquired.name}`)
+
+// Module-level client for setup/teardown — tests use the app's db singleton.
+const client = postgres(acquired.url)
 export const testDb = drizzle(client, { schema })
 
-// Tables in dependency order so truncation respects FKs
+// Every table the suite writes to. Order no longer matters for truncation (see
+// TRUNCATE_ALL below), but it is kept dependency-ordered because it reads as the
+// schema's shape and new tables get added in the right place by habit.
 const TABLES = [
   schema.auditLog,
+  // Narrowing rows outlive nothing: they cascade from both sides, but a test
+  // that leaves one behind narrows a parameter for the NEXT test, which then
+  // sees it apply nowhere (#275).
+  schema.parameterProjects,
+  schema.approvalDelegations,
+  schema.sessions,
+  schema.userRecoveryCodes,
+  schema.userTotp,
+  schema.webauthnChallenges,
+  schema.webauthnCredentials,
   schema.productFavorites,
   schema.orderComments,
   schema.productVersions,
@@ -19,272 +41,182 @@ const TABLES = [
   schema.orders,
   schema.pipelineStacks,
   schema.productWebhooks,
+  schema.productEnvironmentSizes,
   schema.productEnvironments,
   schema.parameters,
   schema.productTranslations,
+  schema.productImages,
   schema.products,
   schema.categories,
+  // Before deployment_environments: integrations.environment_id references it.
+  schema.integrations,
   schema.deploymentEnvironments,
   schema.ciSources,
   schema.projects,
   schema.users,
   schema.costCenters,
   schema.exchangeRates,
+  // Singleton tables. In the list because a test that rewrites the branding or
+  // the AI config must not leak it into the next one — the quietest failure
+  // there is, a suite that passes alone and fails in a full run. Their one row
+  // is put back by `beforeEach`, below, so "truncated" does not mean "absent".
+  schema.branding,
+  schema.appConfig,
 ] as const
 
 beforeAll(async () => {
-  // Push schema to test DB (idempotent — creates tables that don't exist)
-  await testDb.execute(sql`
-    CREATE TABLE IF NOT EXISTS users (
-      id BIGSERIAL PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('admin','project_manager','root')),
-      active BOOLEAN NOT NULL DEFAULT TRUE,
-      sso_sub TEXT UNIQUE,
-      password_hash TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS categories (
-      id BIGSERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      display_order INT NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS products (
-      id BIGSERIAL PRIMARY KEY,
-      category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-      base_language TEXT NOT NULL DEFAULT 'de',
-      image BYTEA,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS product_translations (
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      language_code TEXT NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      PRIMARY KEY (product_id, language_code)
-    );
-    CREATE TABLE IF NOT EXISTS parameters (
-      id BIGSERIAL PRIMARY KEY,
-      scope TEXT NOT NULL CHECK (scope IN ('global','category','product')),
-      scope_id BIGINT NOT NULL DEFAULT 0,
-      environment_id BIGINT,
-      name TEXT NOT NULL,
-      label TEXT NOT NULL DEFAULT '',
-      type TEXT NOT NULL CHECK (type IN ('string','number','bool','dropdown')),
-      description TEXT NOT NULL DEFAULT '',
-      default_value TEXT NOT NULL DEFAULT '',
-      required BOOLEAN NOT NULL DEFAULT FALSE,
-      sensitive BOOLEAN NOT NULL DEFAULT FALSE
-    );
-    CREATE TABLE IF NOT EXISTS ci_sources (
-      id BIGSERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      url TEXT NOT NULL,
-      access_token TEXT NOT NULL,
-      provider TEXT NOT NULL DEFAULT 'gitlab' CHECK (provider IN ('gitlab','github','bitbucket'))
-    );
-    CREATE TABLE IF NOT EXISTS deployment_environments (
-      id BIGSERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      ci_source_id BIGINT NOT NULL REFERENCES ci_sources(id),
-      webhook_url TEXT NOT NULL,
-      webhook_token TEXT NOT NULL,
-      callback_secret TEXT NOT NULL DEFAULT ''
-    );
-    -- Older test DBs may not have callback_secret; add and backfill.
-    ALTER TABLE deployment_environments ADD COLUMN IF NOT EXISTS callback_secret TEXT NOT NULL DEFAULT '';
-    UPDATE deployment_environments SET callback_secret = webhook_token WHERE callback_secret = '';
-    -- Migration 0006: the callback secret identifies the calling environment on
-    -- an inbound callback, so it must be unique. Dropped first so re-running
-    -- setup against an existing test DB is idempotent.
-    ALTER TABLE deployment_environments
-      DROP CONSTRAINT IF EXISTS deployment_environments_callback_secret_unique;
-    ALTER TABLE deployment_environments
-      ADD CONSTRAINT deployment_environments_callback_secret_unique UNIQUE (callback_secret);
-    CREATE TABLE IF NOT EXISTS product_environments (
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
-      price NUMERIC(12,2) NOT NULL DEFAULT 0,
-      currency TEXT NOT NULL DEFAULT 'EUR',
-      cost_center_mode TEXT NOT NULL DEFAULT 'project' CHECK (cost_center_mode IN ('project','select','overhead')),
-      forced_cost_center BOOLEAN NOT NULL DEFAULT FALSE,
-      PRIMARY KEY (product_id, environment_id)
-    );
-    CREATE TABLE IF NOT EXISTS product_webhooks (
-      id BIGSERIAL PRIMARY KEY,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
-      name TEXT NOT NULL,
-      webhook_url TEXT NOT NULL,
-      webhook_token TEXT NOT NULL,
-      exec_order INT NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS pipeline_stacks (
-      id BIGSERIAL PRIMARY KEY,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      state_key_param TEXT NOT NULL DEFAULT 'hostname',
-      steps JSONB NOT NULL DEFAULT '[]'
-    );
-    -- Existing test DBs may have webhook_url/webhook_token columns; align with migration 0003.
-    ALTER TABLE pipeline_stacks DROP COLUMN IF EXISTS webhook_url;
-    ALTER TABLE pipeline_stacks DROP COLUMN IF EXISTS webhook_token;
-    CREATE TABLE IF NOT EXISTS cost_centers (
-      id BIGSERIAL PRIMARY KEY,
-      code TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      active BOOLEAN NOT NULL DEFAULT TRUE
-    );
-    -- Added here rather than in the product_environments block above: the FK
-    -- target has to exist first, and cost_centers is created after it.
-    ALTER TABLE product_environments
-      ADD COLUMN IF NOT EXISTS overhead_cost_center_id BIGINT
-      REFERENCES cost_centers(id) ON DELETE SET NULL;
-    -- Migration 0011: time-boxed trials.
-    ALTER TABLE product_environments
-      ADD COLUMN IF NOT EXISTS trial_enabled BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE product_environments
-      ADD COLUMN IF NOT EXISTS trial_duration_minutes INTEGER NOT NULL DEFAULT 30;
-    CREATE TABLE IF NOT EXISTS product_favorites (
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (user_id, product_id)
-    );
-    CREATE TABLE IF NOT EXISTS projects (
-      id BIGSERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      owner_id BIGINT NOT NULL REFERENCES users(id),
-      cost_center_id BIGINT REFERENCES cost_centers(id),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS orders (
-      id BIGSERIAL PRIMARY KEY,
-      project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
-      user_id BIGINT NOT NULL REFERENCES users(id),
-      status TEXT NOT NULL DEFAULT 'pending',
-      parameters JSONB NOT NULL DEFAULT '{}',
-      cost_center_id BIGINT REFERENCES cost_centers(id),
-      rejection_note TEXT,
-      pipeline_id JSONB NOT NULL DEFAULT '[]',
-      pipeline_status JSONB NOT NULL DEFAULT '{}',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    -- Older test DBs may not have pipeline_status; add it (migration 0005).
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
-    -- Migration 0011: the order carries the trial intent to approval time.
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_trial BOOLEAN NOT NULL DEFAULT FALSE;
-    -- Migration 0013: what the customer was offered when the order was placed.
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_snapshot JSONB;
-    CREATE TABLE IF NOT EXISTS cart_items (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id) ON DELETE CASCADE,
-      parameters JSONB NOT NULL DEFAULT '{}',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS product_versions (
-      id BIGSERIAL PRIMARY KEY,
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      environment_id BIGINT REFERENCES deployment_environments(id) ON DELETE SET NULL,
-      changelog TEXT NOT NULL DEFAULT '',
-      summary TEXT NOT NULL DEFAULT '',
-      snapshot JSONB,
-      created_by BIGINT REFERENCES users(id),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS order_comments (
-      id BIGSERIAL PRIMARY KEY,
-      order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-      user_id BIGINT NOT NULL REFERENCES users(id),
-      body TEXT NOT NULL,
-      internal BOOLEAN NOT NULL DEFAULT FALSE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS infrastructure_elements (
-      id BIGSERIAL PRIMARY KEY,
-      order_id BIGINT NOT NULL REFERENCES orders(id),
-      project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      environment_id BIGINT NOT NULL REFERENCES deployment_environments(id),
-      product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-      status TEXT NOT NULL DEFAULT 'active',
-      parameters JSONB NOT NULL DEFAULT '{}',
-      outputs JSONB NOT NULL DEFAULT '{}',
-      pipeline_id JSONB NOT NULL DEFAULT '[]',
-      pipeline_status JSONB NOT NULL DEFAULT '{}',
-      deployed_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    -- Older test DBs may not have pipeline_status; add it (migration 0007).
-    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS pipeline_status JSONB NOT NULL DEFAULT '{}';
-    -- Migration 0010: scheduled automatic teardown.
-    ALTER TABLE infrastructure_elements ADD COLUMN IF NOT EXISTS scheduled_decommission_at TIMESTAMPTZ;
-    CREATE TABLE IF NOT EXISTS audit_log (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT,
-      action TEXT NOT NULL,
-      entity_id BIGINT,
-      details TEXT NOT NULL DEFAULT '',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS exchange_rates (
-      currency_code TEXT PRIMARY KEY,
-      rate NUMERIC(18,6) NOT NULL DEFAULT 1,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE TABLE IF NOT EXISTS branding (
-      id INT PRIMARY KEY DEFAULT 1,
-      logo_data BYTEA,
-      logo_mime TEXT,
-      primary_color TEXT NOT NULL DEFAULT '#1e40af',
-      secondary_color TEXT NOT NULL DEFAULT '#3b82f6',
-      shop_name TEXT NOT NULL DEFAULT 'Open Hybrid Cloud',
-      shop_subtitle TEXT NOT NULL DEFAULT '',
-      imprint_text TEXT NOT NULL DEFAULT ''
-    );
-    CREATE TABLE IF NOT EXISTS app_config (
-      id INT PRIMARY KEY DEFAULT 1,
-      smtp_host TEXT,
-      smtp_port INT,
-      smtp_from TEXT,
-      smtp_user TEXT,
-      smtp_pass TEXT,
-      smtp_tls BOOLEAN DEFAULT TRUE,
-      ai_provider TEXT,
-      ai_endpoint TEXT,
-      ai_api_key TEXT,
-      ai_model TEXT
-    );
-    INSERT INTO exchange_rates (currency_code, rate) VALUES ('EUR', 1.000000) ON CONFLICT DO NOTHING;
-    INSERT INTO branding (id) VALUES (1) ON CONFLICT DO NOTHING;
-    INSERT INTO app_config (id) VALUES (1) ON CONFLICT DO NOTHING;
-  `)
+  /*
+   * A statement that cannot finish must FAIL, not hang.
+   *
+   * Set on the database, so every connection the app opens afterwards inherits
+   * it. Without it a query that blocks on a lock waits for ever: the suite stops
+   * making progress and the CI job dies on its own timeout, minutes later, with
+   * nothing saying which test or which statement. That is what the
+   * `createDelegation` deadlock did once the audit_log FK was added (#195) — an
+   * in-transaction `logAudit` on the pool connection blocks on the transaction's
+   * own `FOR UPDATE`, and only one backend is waiting, so Postgres' deadlock
+   * detector never fires either.
+   *
+   * Fifteen seconds is far past any legitimate statement here — the slowest is
+   * this DDL, which runs once and takes well under a second — and short enough
+   * that the failure names itself: "canceling statement due to statement timeout".
+   */
+  await testDb.execute(sql.raw(`ALTER DATABASE "${acquired.name}" SET statement_timeout = '15s'`))
+  await client.unsafe(`SET statement_timeout = '15s'`)
 
-  // Realign orders.product_id FK with schema.ts (ON DELETE CASCADE). Older
-  // test databases created before this constraint change still have the
-  // non-cascading FK, so drop-and-recreate keeps local dev in sync with CI.
-  await testDb.execute(sql`
-    ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_product_id_fkey;
-    ALTER TABLE orders ADD CONSTRAINT orders_product_id_fkey
-      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE;
-  `)
+  /*
+   * The schema comes from the MIGRATIONS, not from a copy of them (#147).
+   *
+   * This used to be ~400 lines of hand-written DDL — a third definition of the
+   * schema beside `lib/db/schema.ts` and `drizzle/*.sql`, and the only one of
+   * the three that had drifted. Column by column it was:
+   *
+   *   * CHECK constraints on five tables that exist in no migration, so an
+   *     out-of-range enum was REFUSED under test and stored happily in
+   *     production — a test double stricter than the thing it stands in for,
+   *     which is the wrong direction;
+   *   * `callback_secret DEFAULT ''` and `rate DEFAULT 1`, neither of them real,
+   *     so a row the suite could insert was one production would reject;
+   *   * a different `branding.primary_color` default;
+   *   * nine indexes missing, so query plans under test were not the deployed
+   *     ones.
+   *
+   * And the cost of keeping it: every new column had to be added in two places,
+   * which is how migration 0034 came to need a second edit here on the same day
+   * it was written.
+   *
+   * Running the real files removes the copy AND buys something the copy never
+   * could — the migrations are now exercised on every suite run, so one that
+   * does not apply fails here rather than in a deployment.
+   *
+   * Idempotent by construction: the migrator reads `drizzle.__drizzle_migrations`
+   * and applies only what is missing, so the cost after the first file in a
+   * worker is one SELECT. Each worker holds its own database under an advisory
+   * lock (see `acquireTestDatabase`), so no two of them migrate the same one.
+   */
+  // A schema the journal does not account for is not stale, it is unusable —
+  // and it stays that way until someone drops the database by hand (#308).
+  if (await wipeIfUnaccountedFor(client)) {
+    console.warn(`[test] ${acquired.name} held a schema no migration claimed; rebuilt it from empty`)
+  }
+
+  await migrate(testDb, { migrationsFolder: join(process.cwd(), 'drizzle') })
+
 })
 
-beforeEach(async () => {
-  // Truncate all tables in safe order before each test
-  for (const table of TABLES) {
-    await testDb.execute(sql`TRUNCATE TABLE ${table} RESTART IDENTITY CASCADE`)
+/**
+ * One statement for every table, not one statement per table.
+ *
+ * This runs before every one of ~1300 tests, and each `TRUNCATE` is its own
+ * transaction waiting on its own commit — so the loop it replaces spent the suite
+ * doing 26,000 round trips to Postgres. `TRUNCATE a, b, c` truncates them
+ * together, in one transaction, and `CASCADE` no longer has anything to reach for
+ * because every referencing table is already in the list. FK order stops
+ * mattering for the same reason.
+ */
+const TRUNCATE_ALL = `TRUNCATE TABLE ${TABLES.map((table) => `"${getTableName(table)}"`).join(', ')} RESTART IDENTITY CASCADE`
+
+/**
+ * The two singleton rows the app assumes exist, put back after the truncate.
+ *
+ * `getBranding` and the config reader both read row 1 and have no answer for its
+ * absence, so these are part of an empty database rather than fixtures. They are
+ * in TABLES as well, so a test that rewrites the branding does not leak it into
+ * the next one.
+ *
+ * NOT `exchange_rates`, deliberately. It was seeded once in `beforeAll` and has
+ * been in TABLES all along, so the EUR row survived exactly one test — and the
+ * suite is written against that: `exchangeRates.test.ts` asserts an empty table
+ * ("empty after truncate") and exact row sets. A missing rate degrades to the
+ * original currency rather than breaking anything, so there is nothing to put
+ * back.
+ *
+ * In the same statement as the truncate, so it is still one round trip per test.
+ */
+const RESET_ALL = `${TRUNCATE_ALL};
+  INSERT INTO branding (id) VALUES (1) ON CONFLICT DO NOTHING;
+  INSERT INTO app_config (id) VALUES (1) ON CONFLICT DO NOTHING`
+
+/**
+ * How long the per-test reset may take before it is worth explaining itself.
+ *
+ * The reset is one round trip and normally costs single-digit milliseconds. A
+ * second means something is holding a lock on one of these tables, and that is
+ * the moment worth capturing — afterwards, all anybody sees is a different test
+ * failing for a reason of its own.
+ */
+const SLOW_RESET_MS = 1_000
+
+/**
+ * Say WHY the suite stalled, at the moment it stalls.
+ *
+ * #282: a full run intermittently reports exactly one failed test, a different
+ * one each time, and every one of them passes when its file is run alone. The
+ * standing theory was a query from a previous test still in flight on the app's
+ * pool, blocking this TRUNCATE's ACCESS EXCLUSIVE lock until something timed
+ * out. That theory is now unsupported — there is not one un-awaited database
+ * write left in `apps/backend/src` — but "unsupported" is not "disproved", and
+ * the runs that produced the report were captured with a filter that threw the
+ * error message away.
+ *
+ * So rather than guess again: when the reset is slow, print what Postgres says
+ * is in the way. A blocked TRUNCATE names its blocker here; an ordinary busy
+ * server shows nothing and the run continues. Either way the next occurrence
+ * arrives with its own evidence instead of needing another six runs to catch.
+ */
+const explainSlowReset = async (elapsedMs: number): Promise<void> => {
+  try {
+    const blockers = await testDb.execute(sql`
+      SELECT pid, state, wait_event_type, wait_event,
+             left(query, 120) AS query,
+             EXTRACT(EPOCH FROM (NOW() - COALESCE(xact_start, query_start)))::int AS age_s
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND pid <> pg_backend_pid()
+        AND state <> 'idle'
+      ORDER BY age_s DESC NULLS LAST
+      LIMIT 5
+    `)
+    console.warn(
+      `[test] reset took ${elapsedMs}ms (#282). Other activity on this database:\n` +
+        JSON.stringify(blockers, null, 2),
+    )
+  } catch (e) {
+    // The diagnostic must never be the reason a run fails.
+    console.warn(`[test] reset took ${elapsedMs}ms (#282); could not read pg_stat_activity:`, e)
   }
+}
+
+beforeEach(async () => {
+  const started = Date.now()
+  await testDb.execute(sql.raw(RESET_ALL))
+  const elapsed = Date.now() - started
+  if (elapsed >= SLOW_RESET_MS) await explainSlowReset(elapsed)
 })
 
 afterAll(async () => {
   await client.end()
+  // Releases the advisory lock on this run's database, freeing the name for the
+  // next run in this directory.
+  await acquired.release()
 })

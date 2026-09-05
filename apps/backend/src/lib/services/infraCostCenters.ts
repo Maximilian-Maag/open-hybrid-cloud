@@ -1,37 +1,67 @@
 import { db } from '@/lib/db/client'
-import { orders, costCenters } from '@/lib/db/schema'
-import { eq, inArray } from 'drizzle-orm'
+import { orders, costCenters, projects } from '@/lib/db/schema'
+import { eq, inArray, sql } from 'drizzle-orm'
 
 /**
  * Resolve the cost centre label for each of the given orders, keyed by order id.
  *
  * Infrastructure elements carry no cost centre of their own — attribution is
- * decided when the order is placed (see validateCostCenter) and stored on
- * `orders`. One batched query rather than a join inside listInfrastructure,
- * because only the export needs this column and every list render would
- * otherwise pay for it.
+ * decided when the order is placed (see validateCostCenter). One batched query
+ * rather than a join inside listInfrastructure, because only the export needs
+ * this column and every list render would otherwise pay for it.
+ *
+ * Attribution falls through from the order to its project, and it has to:
+ * `cost_center_mode` DEFAULTS to 'project', and in that mode `validateCostCenter`
+ * deliberately stores NULL on the order because the project is what the spend
+ * belongs to. Reading only `orders.cost_center_id` therefore leaves the column
+ * blank for the MAJORITY of elements — while the element's own detail page and
+ * both cost reports resolve the same fall-through and show one.
+ *
+ * That disagreement is the bug this fixes (#189). An operator exporting the
+ * inventory to reconcile chargeback got blank cost centres from the export and a
+ * full attribution from the dashboard for the same period, with the export
+ * looking like the inventory of record.
  */
+/**
+ * How many ids one `IN (...)` may carry.
+ *
+ * postgres.js binds one parameter per element and the wire protocol allows
+ * 65,535 of them in a statement, so a single list past that does not run slowly
+ * — it fails outright, and the export it belongs to fails with it (#158). Well
+ * under the limit rather than at it, because the same statement binds a handful
+ * of other parameters and a ceiling that is exactly the breaking point is one
+ * off from being wrong.
+ */
+const MAX_IDS_PER_QUERY = 30_000
+
 export const getCostCentersForInfra = async (
   orderIds: number[],
 ): Promise<Map<number, string>> => {
   const unique = [...new Set(orderIds)]
   if (unique.length === 0) return new Map()
 
-  const rows = await db
-    .select({
-      orderId: orders.id,
-      code: costCenters.code,
-      name: costCenters.name,
-    })
-    .from(orders)
-    .leftJoin(costCenters, eq(orders.costCenterId, costCenters.id))
-    .where(inArray(orders.id, unique))
-
   const byOrder = new Map<number, string>()
-  for (const row of rows) {
-    // An order in 'project' cost-centre mode has none of its own; leave the cell
-    // empty rather than inventing a label for it.
-    if (row.code) byOrder.set(row.orderId, `${row.code} — ${row.name}`)
+  for (let start = 0; start < unique.length; start += MAX_IDS_PER_QUERY) {
+    const rows = await db
+      .select({
+        orderId: orders.id,
+        code: costCenters.code,
+        name: costCenters.name,
+      })
+      .from(orders)
+      .leftJoin(projects, eq(orders.projectId, projects.id))
+      // The same COALESCE getInfrastructureElement uses, for the same reason.
+      .leftJoin(
+        costCenters,
+        eq(sql`COALESCE(${orders.costCenterId}, ${projects.costCenterId})`, costCenters.id),
+      )
+      .where(inArray(orders.id, unique.slice(start, start + MAX_IDS_PER_QUERY)))
+
+    for (const row of rows) {
+      // Empty only when neither the order nor its project has one, which is a real
+      // state rather than a default.
+      if (row.code) byOrder.set(row.orderId, `${row.code} — ${row.name}`)
+    }
   }
   return byOrder
 }

@@ -1,0 +1,116 @@
+name: Mutation testing
+
+on:
+  # The full runs are far too slow for a pull request — the backend suite is
+  # database-backed and single-threaded, so its full run is measured in hours.
+  # Nightly is what establishes the baseline #127's gate can be set from.
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Override the mutate glob (empty = the config default)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mutate:
+    name: Mutate (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    # The backend leg is hours, the frontend leg is minutes. Neither should be
+    # cut short by the other, and neither should be cut short by the six-hour
+    # default: say the limit out loud so a run that dies says why.
+    timeout-minutes: ${{ matrix.app == 'backend' && 330 || 60 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [frontend, backend]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: open_hybrid_cloud_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      # Incremental mode reuses last night's verdicts for code that has not
+      # changed, which is what turns "everything, always" into "what moved". The
+      # file has to survive between runs; a cache keyed by run number with a
+      # prefix restore is the cheapest place for something that is an
+      # optimisation and never a correctness input.
+      - name: Restore incremental report
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: apps/${{ matrix.app }}/reports/mutation/incremental.json
+          key: stryker-${{ matrix.app }}-${{ github.run_number }}
+          restore-keys: stryker-${{ matrix.app }}-
+
+      - name: Run Stryker
+        working-directory: apps/${{ matrix.app }}
+        env:
+          # Only the backend leg uses it; harmless for the frontend.
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          # Through the environment, never interpolated into the script: a
+          # workflow_dispatch input spliced into a `run:` block is shell injection
+          # by whoever can press the button.
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          # pipefail: without it, `| tee` masks Stryker's exit code and a run that
+          # breaks the 80% threshold reports success.
+          set -o pipefail
+          args=()
+          if [ -n "${SCOPE:-}" ]; then
+            args+=(--mutate "$SCOPE")
+          fi
+          pnpm exec stryker run \
+            --incremental \
+            --incrementalFile reports/mutation/incremental.json \
+            --reporters clear-text,html,progress \
+            "${args[@]}" \
+            | tee stryker.log
+
+      # The score lives in the clear-text table's "All files" row. Parsed rather
+      # than read from a machine-readable file because Stryker's JSON report
+      # carries the per-mutant verdicts, not the computed score.
+      - name: Summarise
+        if: always()
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          score=$(grep -E '^[[:space:]]*All files' stryker.log | head -1 | awk -F'|' '{gsub(/ /,"",$2); print $2}')
+          {
+            echo "## Mutation score — ${{ matrix.app }}"
+            echo
+            echo "**${score:-unknown}%**"
+            echo
+            echo '```'
+            grep -E '^[[:space:]]*(File|All files|-)' stryker.log | head -20 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the HTML report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutation-report-${{ matrix.app }}
+          path: apps/${{ matrix.app }}/reports/mutation/
+          retention-days: 14

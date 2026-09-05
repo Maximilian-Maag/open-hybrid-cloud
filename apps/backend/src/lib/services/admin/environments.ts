@@ -11,6 +11,8 @@ import {
 import { eq } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { randomBytes } from 'node:crypto'
+import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
+import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 
 // Portal-generated shared secret sent as the X-Gitlab-Token header of the
 // pipeline event webhook. 32 bytes → 64 hex chars, matches Linode-style
@@ -34,11 +36,14 @@ export interface UpdateEnvironmentInput {
   webhookToken?: string
 }
 
-// Public column projection for a deployment environment — everything EXCEPT
-// the inbound callback secret. The secret is revealed only through the
-// root-only getCallbackSecret/regenerateCallbackSecret endpoints, never leaked
-// from the general create/get/update/list paths.
-const publicEnvironmentColumns = {
+// Column projection for a deployment environment — everything EXCEPT the inbound
+// callback secret. That secret is revealed only through the root-only
+// getCallbackSecret/regenerateCallbackSecret endpoints, never leaked from the
+// general create/get/update/list paths.
+//
+// It still selects the OUTBOUND webhook_token, which `toPublic` strips before the
+// row leaves this module: see below for why the two are handled differently.
+const environmentColumns = {
   id: deploymentEnvironments.id,
   name: deploymentEnvironments.name,
   description: deploymentEnvironments.description,
@@ -47,32 +52,51 @@ const publicEnvironmentColumns = {
   webhookToken: deploymentEnvironments.webhookToken,
 }
 
-export type PublicEnvironment = Omit<DeploymentEnvironment, 'callbackSecret'>
+export type PublicEnvironment = Omit<DeploymentEnvironment, 'callbackSecret' | 'webhookToken'> & {
+  /**
+   * Whether an outbound trigger token is configured — NOT the token itself.
+   *
+   * webhook_token is the credential that lets its holder fire arbitrary pipelines
+   * in the CI project, and it used to come back in cleartext from every admin-level
+   * read while the inbound callback_secret was correctly root-gated: the more
+   * dangerous of the two, at the lower role (issue #144). An admin managing an
+   * environment needs to know a token is set, and can always replace it through
+   * updateEnvironment — neither needs the current value.
+   */
+  webhookTokenSet: boolean
+}
 
 export interface EnvironmentRow extends PublicEnvironment {
   ciSourceName: string | null
 }
 
+/**
+ * Drop the outbound trigger token, keeping the one fact a caller needs about it.
+ *
+ * Done in JS rather than as a SQL projection because the boolean is derived from
+ * the column — but the token never leaves this function either way, and every
+ * public return path in this module goes through it.
+ */
+const toPublic = <T extends { webhookToken: string }>(
+  row: T,
+): Omit<T, 'webhookToken'> & { webhookTokenSet: boolean } => {
+  const { webhookToken, ...rest } = row
+  return { ...rest, webhookTokenSet: webhookToken !== '' }
+}
+
 export const listEnvironments = async (): Promise<Result<EnvironmentRow[]>> => {
   const rows = await db
-    .select({
-      id: deploymentEnvironments.id,
-      name: deploymentEnvironments.name,
-      description: deploymentEnvironments.description,
-      ciSourceId: deploymentEnvironments.ciSourceId,
-      webhookUrl: deploymentEnvironments.webhookUrl,
-      webhookToken: deploymentEnvironments.webhookToken,
-      ciSourceName: ciSources.name,
-    })
+    .select({ ...environmentColumns, ciSourceName: ciSources.name })
     .from(deploymentEnvironments)
     .leftJoin(ciSources, eq(deploymentEnvironments.ciSourceId, ciSources.id))
     .orderBy(deploymentEnvironments.name)
 
-  return ok(rows as EnvironmentRow[])
+  return ok(rows.map(toPublic) as EnvironmentRow[])
 }
 
 export const createEnvironment = async (
   input: CreateEnvironmentInput,
+  actorId?: number,
 ): Promise<Result<PublicEnvironment>> => {
   const [env] = await db
     .insert(deploymentEnvironments)
@@ -88,23 +112,42 @@ export const createEnvironment = async (
     })
     // Never return callback_secret here — it is only revealed via the
     // dedicated root-only endpoints.
-    .returning(publicEnvironmentColumns)
+    .returning(environmentColumns)
 
-  return ok(env)
+  // The webhook token is part of `input` and is not recorded; the name and the CI
+  // source it points at are what an auditor needs.
+  await logAudit(
+    actorId ?? null,
+    'environment.created',
+    env.id,
+    `Created environment ${input.name} on CI source #${input.ciSourceId}`,
+  )
+
+  return ok(toPublic(env))
 }
 
-export const getCallbackSecret = async (id: number): Promise<Result<{ callbackSecret: string }>> => {
+export const getCallbackSecret = async (
+  id: number,
+  actorId?: number,
+): Promise<Result<{ callbackSecret: string }>> => {
   const rows = await db
     .select({ callbackSecret: deploymentEnvironments.callbackSecret })
     .from(deploymentEnvironments)
     .where(eq(deploymentEnvironments.id, id))
     .limit(1)
   if (!rows.length) return err(404, 'Not found')
+
+  // A read, but audited: this is the one endpoint that hands out a live shared
+  // secret, so who revealed it and when is the whole point of the record. The
+  // secret itself obviously does not go in.
+  await logAudit(actorId ?? null, 'environment.callback_secret_revealed', id, 'Callback secret revealed')
+
   return ok({ callbackSecret: rows[0].callbackSecret })
 }
 
 export const regenerateCallbackSecret = async (
   id: number,
+  actorId?: number,
 ): Promise<Result<{ callbackSecret: string }>> => {
   const next = generateCallbackSecret()
   const [updated] = await db
@@ -113,42 +156,54 @@ export const regenerateCallbackSecret = async (
     .where(eq(deploymentEnvironments.id, id))
     .returning({ id: deploymentEnvironments.id, callbackSecret: deploymentEnvironments.callbackSecret })
   if (!updated) return err(404, 'Not found')
+
+  // Rotating it invalidates every CI job still configured with the old value, so
+  // the rotation has to be findable afterwards.
+  await logAudit(actorId ?? null, 'environment.callback_secret_rotated', id, 'Callback secret rotated')
+
   return ok({ callbackSecret: updated.callbackSecret })
 }
 
 export const getEnvironmentById = async (id: number): Promise<Result<PublicEnvironment>> => {
   const rows = await db
-    .select(publicEnvironmentColumns)
+    .select(environmentColumns)
     .from(deploymentEnvironments)
     .where(eq(deploymentEnvironments.id, id))
     .limit(1)
 
   if (!rows.length) return err(404, 'Not found')
-  return ok(rows[0])
+  return ok(toPublic(rows[0]))
 }
 
 export const updateEnvironment = async (
   id: number,
   input: UpdateEnvironmentInput,
+  actorId?: number,
 ): Promise<Result<PublicEnvironment>> => {
+  if (isEmptyUpdate(input)) return err(400, EMPTY_UPDATE_MESSAGE)
+
   const [updated] = await db
     .update(deploymentEnvironments)
     .set(input)
     .where(eq(deploymentEnvironments.id, id))
-    .returning(publicEnvironmentColumns)
+    .returning(environmentColumns)
 
   if (!updated) return err(404, 'Not found')
-  return ok(updated)
+
+  // Field names only — `webhookToken` is one of them.
+  await logAudit(actorId ?? null, 'environment.updated', id, changedFields(input))
+
+  return ok(toPublic(updated))
 }
 
-export const deleteEnvironment = async (id: number): Promise<Result<void>> => {
+export const deleteEnvironment = async (id: number, actorId?: number): Promise<Result<void>> => {
   // Serialize the reference checks and the DELETE in one transaction, holding a
   // FOR UPDATE lock on the environment row. A concurrent insert of a referencing
   // row takes a FK KEY-SHARE lock on the same row, so it can't slip in between
   // the pre-check and the delete (which would resurrect the 500 this guards).
   return db.transaction(async (tx): Promise<Result<void>> => {
     const existing = await tx
-      .select({ id: deploymentEnvironments.id })
+      .select({ id: deploymentEnvironments.id, name: deploymentEnvironments.name })
       .from(deploymentEnvironments)
       .where(eq(deploymentEnvironments.id, id))
       .for('update')
@@ -184,6 +239,9 @@ export const deleteEnvironment = async (id: number): Promise<Result<void>> => {
       .returning({ id: deploymentEnvironments.id })
 
     if (!deleted.length) return err(404, 'Not found')
+
+    await logAuditWith(tx, actorId ?? null, 'environment.deleted', id, `Deleted environment ${existing[0].name}`)
+
     return ok(undefined)
   })
 }

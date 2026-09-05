@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { SessionProvider } from 'next-auth/react'
 import { ToastProvider } from '@/components/ui/Toast'
+import { HydrationMarker } from '@/components/system/HydrationMarker'
 import { getLang } from '@/lib/getLang'
 import './globals.css'
 
@@ -22,6 +23,8 @@ export default async function RootLayout({
       <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
         <SessionProvider>
           <ToastProvider>{children}</ToastProvider>
+          {/* After the children, deliberately: see HydrationMarker. */}
+          <HydrationMarker />
         </SessionProvider>
       </body>
     </html>

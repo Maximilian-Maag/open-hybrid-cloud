@@ -1,9 +1,12 @@
 import type { SessionUser } from '@open-hybrid-cloud/types'
-import { db } from '@/lib/db/client'
-import { parameters, orders } from '@/lib/db/schema'
-import { eq, inArray } from 'drizzle-orm'
-import type { ProductSnapshot } from '@/lib/services/snapshot'
-import { ok, type Result } from '@/lib/services/result'
+import {
+  REDACTED,
+  loadSensitiveParameterNames,
+  loadSnapshotSensitiveNames,
+  union,
+} from '@/lib/services/parameterRedaction'
+import { ok, err, type Result } from '@/lib/services/result'
+import { EXPORT_MAX_ROWS } from '@/lib/services/page'
 import { listInfrastructure, type InfraFilters } from '@/lib/services/infrastructure'
 import { getCostCentersForInfra } from '@/lib/services/infraCostCenters'
 
@@ -14,11 +17,16 @@ export interface InfraExportRow {
   projectName: string
   costCenter: string
   status: string
+  /** The size this element runs at (issue #98); blank when the offering has none. */
+  size: string
+  /** "3/20" for element three of an order of twenty (issue #104), else "1/1". */
+  element: string
   deployedAt: string
   parameters: string
 }
 
-export const REDACTED = '[redacted]'
+// Re-exported for the export route and its tests, which import it from here.
+export { REDACTED } from '@/lib/services/parameterRedaction'
 
 /**
  * Flatten the filtered infrastructure list into export rows.
@@ -34,10 +42,30 @@ export const buildInfraExportRows = async (
   filters: InfraFilters,
   options: { includeParameters?: boolean } = {},
 ): Promise<Result<InfraExportRow[]>> => {
-  const listed = await listInfrastructure(session, filters)
+  // The export asks for one window as wide as an export is allowed to be. It is
+  // not the list's ceiling — a CSV legitimately wants more than a screenful —
+  // but it is a ceiling, which is what stands between a large download and the
+  // container running out of memory building it (#158).
+  const listed = await listInfrastructure(
+    session,
+    { ...filters, limit: EXPORT_MAX_ROWS, offset: 0 },
+    'en',
+    EXPORT_MAX_ROWS,
+  )
   if (!listed.ok) return listed
 
-  const elements = listed.data
+  // Refused rather than truncated, the way the audit export already does it: a
+  // file that quietly stops at ten thousand rows looks like a complete
+  // inventory, and an operator reconciling chargeback against it would find
+  // nothing wrong with it.
+  if (listed.data.total > EXPORT_MAX_ROWS) {
+    return err(
+      413,
+      `This export matches ${listed.data.total.toLocaleString('en-US')} elements, which is more than one export can carry. Narrow it with the project, environment or deployed-date filters and take the inventory a slice at a time.`,
+    )
+  }
+
+  const elements = listed.data.items
   const costCenters = await getCostCentersForInfra(elements.map((e) => e.orderId))
   // Two sources, unioned per row: the live catalogue, and the sensitivity recorded
   // in each order's own snapshot. The catalogue alone loses the flag as soon as a
@@ -58,6 +86,10 @@ export const buildInfraExportRows = async (
       projectName: el.projectName ?? `#${el.projectId}`,
       costCenter: costCenters.get(el.orderId) ?? '',
       status: el.status,
+      size: el.sizeCode ?? '',
+      // Which of its order's elements this is. An inventory of twenty identical
+      // rows is unreadable without it.
+      element: `${el.sequence}/${el.orderQuantity ?? el.sequence}`,
       deployedAt: el.deployedAt ? new Date(el.deployedAt).toISOString() : '',
       parameters: options.includeParameters
         ? formatParameters(el.parameters, union(sensitive, sensitivePerOrder.get(el.orderId)))
@@ -65,53 +97,6 @@ export const buildInfraExportRows = async (
     })),
   )
 }
-
-/**
- * Names of parameters flagged sensitive anywhere in the catalogue.
- *
- * Matched by name across every scope rather than resolved per product: an export
- * file gets mailed around and archived, so over-redacting a name that is
- * sensitive for one product and not another is the right way to be wrong.
- */
-const loadSensitiveParameterNames = async (): Promise<Set<string>> => {
-  const rows = await db
-    .select({ name: parameters.name })
-    .from(parameters)
-    .where(eq(parameters.sensitive, true))
-  return new Set(rows.map((r) => r.name))
-}
-
-/**
- * Parameter names each order's snapshot recorded as sensitive.
- *
- * The snapshot is the durable record of the definitions that applied when the order
- * was placed (issue #38), so it still knows a parameter was secret after the
- * definition itself has been edited away. Orders that predate snapshots contribute
- * nothing and fall back to the catalogue.
- */
-const loadSnapshotSensitiveNames = async (
-  orderIds: number[],
-): Promise<Map<number, Set<string>>> => {
-  const byOrder = new Map<number, Set<string>>()
-  if (orderIds.length === 0) return byOrder
-
-  const rows = await db
-    .select({ id: orders.id, snapshot: orders.productSnapshot })
-    .from(orders)
-    .where(inArray(orders.id, orderIds))
-
-  for (const row of rows) {
-    const snapshot = row.snapshot as ProductSnapshot | null
-    if (!snapshot?.parameters) continue
-    const names = snapshot.parameters.filter((p) => p.sensitive).map((p) => p.name)
-    if (names.length > 0) byOrder.set(row.id, new Set(names))
-  }
-  return byOrder
-}
-
-/** Redact if EITHER source says sensitive — over-redacting is the safe direction. */
-const union = (a: Set<string>, b?: Set<string>): Set<string> =>
-  b === undefined ? a : new Set([...a, ...b])
 
 const formatParameters = (
   values: Record<string, string>,

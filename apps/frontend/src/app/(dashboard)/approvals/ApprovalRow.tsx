@@ -13,10 +13,15 @@ import { t } from '@/lib/i18n'
 
 interface Props {
   order: Order
-  token: string
+  /**
+   * The viewer. Needed because nobody approves their own order (issue #35) —
+   * the backend refuses it, and hiding the button is how the viewer finds that
+   * out before clicking rather than after.
+   */
+  currentUserId: number
 }
 
-export function ApprovalRow({ order, token }: Props) {
+export function ApprovalRow({ order, currentUserId }: Props) {
   const router = useRouter()
   const lang = useLang()
   const [rejecting, setRejecting] = useState(false)
@@ -29,7 +34,10 @@ export function ApprovalRow({ order, token }: Props) {
     setLoading(true)
     setError(null)
     try {
-      await post(`/api/orders/${order.id}/approve`, {}, token)
+      // /api/approvals, not /api/orders: the approve and reject endpoints live
+      // under the approvals resource, and this pointed at a path the backend has
+      // never served.
+      await post(`/api/approvals/${order.id}/approve`, {})
       setDone(true)
       router.refresh()
     } catch (err) {
@@ -44,7 +52,7 @@ export function ApprovalRow({ order, token }: Props) {
     setLoading(true)
     setError(null)
     try {
-      await post(`/api/orders/${order.id}/reject`, { rejectionNote }, token)
+      await post(`/api/approvals/${order.id}/reject`, { rejectionNote })
       setDone(true)
       router.refresh()
     } catch (err) {
@@ -56,9 +64,11 @@ export function ApprovalRow({ order, token }: Props) {
 
   if (done) return null
 
+  const ownOrder = order.userId === currentUserId
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-1">
             <span className="font-mono text-xs text-slate-600">#{order.id}</span>
@@ -69,21 +79,42 @@ export function ApprovalRow({ order, token }: Props) {
             {order.isTrial && <TrialBadge lang={lang} />}
           </div>
           <p className="text-sm text-slate-500">
-            {order.environmentName} · {order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`} on{' '}
-            {new Date(order.createdAt).toLocaleDateString(lang)}
+            {order.environmentName}
+            {/* Size and quantity change what the approver is agreeing to: one
+                decision covers all N elements (issues #98/#104), so "20 × XL" must
+                not be something they have to open the order to discover. */}
+            {order.sizeCode && <> · {t('size', lang)}: {order.sizeCode}</>}
+            {order.quantity !== undefined && order.quantity > 1 && (
+              <> · {t('quantity', lang)}: {order.quantity}</>
+            )}
+            {/* A separator rather than a translated "on": as a bare preposition
+                it takes a different form with the date in several of the 25
+                languages, and the rest of this line already reads as a
+                separated list. */}
+            {' · '}{order.projectName} · {t('orderedBy', lang)} {order.userName ?? `User #${order.userId}`}
+            {' · '}{new Date(order.createdAt).toLocaleDateString(lang)}
           </p>
         </div>
 
         {!rejecting && (
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={handleApprove}
-              disabled={loading}
-            >
-              {t('approve', lang)}
-            </Button>
+          /* `shrink-0` on a cluster of two buttons pinned the row 70px past a
+             320px viewport. It may wrap onto its own line instead (#168).
+
+             A plain block comment: this is an expression position inside
+             `{!rejecting && (…)}`, where `{/* … *\/}` is not valid JSX. */
+          <div className="flex flex-wrap items-center gap-2">
+            {ownOrder ? (
+              <span className="text-sm text-slate-500">{t('cannotApproveOwnOrder', lang)}</span>
+            ) : (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={handleApprove}
+                disabled={loading}
+              >
+                {t('approve', lang)}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="danger"
@@ -105,8 +136,10 @@ export function ApprovalRow({ order, token }: Props) {
       {rejecting && (
         <form onSubmit={handleReject} className="mt-4 space-y-3">
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-slate-700">{t('rejectionNote', lang)}</label>
+            {/* Per-order id: the approvals list renders one of these per row. */}
+            <label htmlFor={`rejection-note-${order.id}`} className="text-sm font-medium text-slate-700">{t('rejectionNote', lang)}</label>
             <textarea
+              id={`rejection-note-${order.id}`}
               value={rejectionNote}
               onChange={(e) => setRejectionNote(e.target.value)}
               rows={2}
@@ -115,7 +148,8 @@ export function ApprovalRow({ order, token }: Props) {
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
             />
           </div>
-          <div className="flex gap-2">
+          {/* Wraps (#168). */}
+          <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="danger" size="sm" disabled={loading}>
               {loading ? t('rejecting', lang) : t('confirmRejection', lang)}
             </Button>

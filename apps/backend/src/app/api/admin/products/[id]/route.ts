@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId, requestLang } from '@/lib/http'
 import { getProductAdmin, updateProduct, deleteProduct } from '@/lib/services/admin/products'
 
 const UpdateProductSchema = z.object({
@@ -9,6 +9,11 @@ const UpdateProductSchema = z.object({
   baseLanguage: z.string().optional(),
   name: z.string().min(1).optional(),
   description: z.string().optional(),
+  // Trust content for the product page (issue #107). Nullable as well as
+  // optional: the admin form has to be able to clear a field, and "absent" has to
+  // keep meaning "leave it alone".
+  owner: z.string().max(200).nullable().optional(),
+  docsUrl: z.string().max(2000).nullable().optional(),
   // Optional free text describing the change (issue #38).
   changelog: z.string().max(2000).optional(),
 })
@@ -21,7 +26,9 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await getProductAdmin(parseInt(id, 10)))
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
+  return toResponse(await getProductAdmin(productId, requestLang(req)))
 }
 
 export async function PUT(
@@ -32,6 +39,8 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id } = await params
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
   const body = await req.json().catch(() => null)
   const parsed = UpdateProductSchema.safeParse(body)
   if (!parsed.success) {
@@ -40,7 +49,7 @@ export async function PUT(
 
   // The author comes from the session, never the body — a history entry that could
   // be attributed to somebody else is not a history.
-  return toResponse(await updateProduct(parseInt(id, 10), { ...parsed.data, userId: session.id }))
+  return toResponse(await updateProduct(productId, { ...parsed.data, userId: session.id }))
 }
 
 export async function DELETE(
@@ -51,5 +60,7 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await deleteProduct(parseInt(id, 10)))
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
+  return toResponse(await deleteProduct(productId, session.id))
 }

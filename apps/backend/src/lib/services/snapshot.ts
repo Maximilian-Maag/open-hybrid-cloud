@@ -2,6 +2,7 @@ import { db } from '@/lib/db/client'
 import {
   productTranslations,
   productEnvironments,
+  productEnvironmentSizes,
   deploymentEnvironments,
   costCenters,
 } from '@/lib/db/schema'
@@ -38,8 +39,29 @@ export interface ProductSnapshot {
   productName: string
   productDescription: string
   environmentName: string
+  /**
+   * The UNIT price that applied — the chosen size's, or the offering's when the
+   * order named no size (issue #98).
+   *
+   * Kept as `price`, the field it has always been, precisely so that every
+   * existing reader (the cost report, the order detail page, the CSV/PDF export)
+   * becomes correct by reading what it already read. The line total is this times
+   * the order's quantity, which lives on the order row rather than here: quantity
+   * is a fact about the order, not about what the catalogue offered.
+   */
   price: string
   currency: string
+  /**
+   * The size that was ordered (issue #98), and its label as it read at the time.
+   *
+   * Both optional and both null-able, and the two absences mean different things:
+   * ABSENT means the snapshot predates sizing, NULL means the offering had no
+   * sizes when the order was placed. Recorded as text rather than an id because an
+   * admin may retire or re-price a size, and this record has to survive that — it
+   * is the whole reason the snapshot exists.
+   */
+  sizeCode?: string | null
+  sizeLabel?: string | null
   costCenterMode: string
   forcedCostCenter: boolean
   /**
@@ -70,6 +92,27 @@ export const captureProductSnapshot = async (
   productId: number,
   categoryId: number,
   environmentId: number,
+  /**
+   * The size the order chose, if any.
+   *
+   * Three states, not two, matching the ABSENT/NULL distinction the snapshot
+   * documents: omitting the argument leaves `sizeCode`/`sizeLabel` out of the
+   * snapshot altogether, which is what the admin version-history paths want —
+   * they snapshot an OFFERING, not an order, and have no answer to give. Passing
+   * null records "this order named no size", which order creation does whenever
+   * the offering has none.
+   */
+  sizeCode?: string | null,
+  /**
+   * The project the order is for, when there is one.
+   *
+   * Only affects which parameter definitions are captured: a parameter narrowed
+   * to specific projects (#275) applies to those and no others, and a snapshot
+   * that recorded the unfiltered set would describe an offer this order was
+   * never made. Omitted by the admin version-history paths, which describe a
+   * product rather than an order and have no project to speak of.
+   */
+  projectId?: number,
 ): Promise<ProductSnapshot | null> => {
   const [offering] = await db
     .select({
@@ -96,6 +139,31 @@ export const captureProductSnapshot = async (
 
   if (!offering) return null
 
+  // The size's price, not the offering's, whenever the order named one. Read here
+  // rather than passed in so the snapshot records what the DATABASE said at
+  // capture time — the one thing this record is for. A code that no longer
+  // resolves (retired between validation and capture) falls back to the offering's
+  // price rather than losing the snapshot altogether.
+  const size = sizeCode
+    ? (
+        await db
+          .select({
+            label: productEnvironmentSizes.label,
+            price: productEnvironmentSizes.price,
+            currency: productEnvironmentSizes.currency,
+          })
+          .from(productEnvironmentSizes)
+          .where(
+            and(
+              eq(productEnvironmentSizes.productId, productId),
+              eq(productEnvironmentSizes.environmentId, environmentId),
+              eq(productEnvironmentSizes.code, sizeCode),
+            ),
+          )
+          .limit(1)
+      )[0]
+    : undefined
+
   const [translation] = await db
     .select({ name: productTranslations.name, description: productTranslations.description })
     .from(productTranslations)
@@ -111,7 +179,7 @@ export const captureProductSnapshot = async (
   // against, so the snapshot records the definitions that actually applied rather
   // than every row that happened to match.
   const defs = resolveParameterDefs(
-    await loadApplicableParameters(productId, categoryId, environmentId),
+    await loadApplicableParameters(productId, categoryId, environmentId, projectId),
   )
 
   return {
@@ -120,8 +188,13 @@ export const captureProductSnapshot = async (
     productName: translation?.name ?? `Product #${productId}`,
     productDescription: translation?.description ?? '',
     environmentName: offering.environmentName ?? `Environment #${environmentId}`,
-    price: offering.price,
-    currency: offering.currency,
+    price: size?.price ?? offering.price,
+    currency: size?.currency ?? offering.currency,
+    // Spread, so an omitted argument leaves both fields absent rather than
+    // writing null. Null here means "the order named no size", and a snapshot
+    // that predates sizing means "nobody asked" — writing null unconditionally
+    // made every version-history snapshot claim the first of those.
+    ...(sizeCode !== undefined ? { sizeCode, sizeLabel: size?.label ?? null } : {}),
     costCenterMode: offering.costCenterMode,
     forcedCostCenter: offering.forcedCostCenter,
     // Null, not omitted: "no overhead account is configured" is a fact worth

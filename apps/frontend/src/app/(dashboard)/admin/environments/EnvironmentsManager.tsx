@@ -15,9 +15,10 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { useLang } from '@/lib/useLang'
+import { t } from '@/lib/i18n'
 
 interface Props {
-  token: string
   ciSources: CiSource[]
 }
 
@@ -25,7 +26,8 @@ const emptyForm = () => ({
   name: '', description: '', ciSourceId: '', webhookUrl: '', webhookToken: '',
 })
 
-export function EnvironmentsManager({ token, ciSources }: Props) {
+export function EnvironmentsManager({ ciSources }: Props) {
+  const lang = useLang()
   const [envs, setEnvs] = useState<DeploymentEnvironment[]>([])
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
@@ -34,17 +36,25 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setEnvs((await get<DeploymentEnvironment[]>('/api/admin/environments', token)) ?? [])
+      setEnvs((await get<DeploymentEnvironment[]>('/api/admin/environments')) ?? [])
+      setLoadError(null)
+    } catch (err) {
+      // Without this, an admin-API outage left `envs` empty and rendered
+      // "no environments yet" — telling an administrator their environments do
+      // not exist, at the moment they are least able to check. Every sibling
+      // manager on this page already reports its load failure; this one did not.
+      setLoadError(err instanceof Error ? err.message : t('failedToLoadEnvironments', lang))
     } finally {
       setLoading(false)
     }
-  }, [token])
+  }, [lang])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   function setField(k: keyof typeof form, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
@@ -80,11 +90,11 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
         webhookUrl: form.webhookUrl.trim(),
         webhookToken: form.webhookToken.trim(),
       }
-      await post('/api/admin/environments', body, token)
+      await post('/api/admin/environments', body)
       setAddOpen(false)
-      load()
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed to create.')
+      void load()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : t('failedToCreateGeneric', lang))
     } finally {
       setSaving(false)
     }
@@ -103,11 +113,11 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
         ...(form.webhookUrl ? { webhookUrl: form.webhookUrl.trim() } : {}),
         ...(form.webhookToken ? { webhookToken: form.webhookToken.trim() } : {}),
       }
-      await put(`/api/admin/environments/${editTarget.id}`, body, token)
+      await put(`/api/admin/environments/${editTarget.id}`, body)
       closeEdit()
-      load()
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : 'Failed to update.')
+      void load()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : t('failedToUpdateGeneric', lang))
     } finally {
       setSaving(false)
     }
@@ -132,11 +142,11 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
     setSecretBusy(true)
     setSecretError(null)
     try {
-      const res = await get<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`, token)
+      const res = await get<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`)
       setCallbackSecret(res?.callbackSecret ?? null)
     } catch (e) {
       setCallbackSecret(null)
-      setSecretError(e instanceof Error ? e.message : 'Failed to load callback secret.')
+      setSecretError(e instanceof Error ? e.message : t('failedToLoadSecret', lang))
     } finally {
       setSecretBusy(false)
     }
@@ -148,10 +158,10 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
     setSecretBusy(true)
     setSecretError(null)
     try {
-      const res = await post<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`, {}, token)
+      const res = await post<CallbackSecretResponse>(`/api/admin/environments/${editTarget.id}/callback-secret`, {})
       setCallbackSecret(res?.callbackSecret ?? null)
     } catch (e) {
-      setSecretError(e instanceof Error ? e.message : 'Failed to regenerate callback secret.')
+      setSecretError(e instanceof Error ? e.message : t('failedToRegenerateSecret', lang))
     } finally {
       setSecretBusy(false)
     }
@@ -164,7 +174,7 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (e) {
-      setSecretError(e instanceof Error ? e.message : 'Failed to copy to clipboard.')
+      setSecretError(e instanceof Error ? e.message : t('failedToCopyClipboard', lang))
     }
   }
 
@@ -173,11 +183,11 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
     setSaving(true)
     setDeleteError(null)
     try {
-      await del(`/api/admin/environments/${deleteTarget.id}`, token)
+      await del(`/api/admin/environments/${deleteTarget.id}`)
       setDeleteTarget(null)
-      load()
+      void load()
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : 'Failed to delete environment.')
+      setDeleteError(e instanceof Error ? e.message : t('failedToDeleteEnvironment', lang))
     } finally {
       setSaving(false)
     }
@@ -187,11 +197,13 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
 
   return (
     <>
-      <Card title="Environments" action={<Button size="sm" onClick={openAdd}>Add Environment</Button>}>
+      <Card title={t('environments', lang)} action={<Button size="sm" onClick={openAdd}>{t('addEnvironment', lang)}</Button>}>
         {loading ? (
           <div className="flex justify-center py-8"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div>
+        ) : loadError ? (
+          <Alert>{loadError}</Alert>
         ) : envs.length === 0 ? (
-          <p className="text-center py-6 text-slate-600">No environments yet.</p>
+          <p className="text-center py-6 text-slate-600">{t('noEnvironmentsYet', lang)}</p>
         ) : (
           <div className="space-y-2">
             {envs.map((env) => (
@@ -201,8 +213,8 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
                   {env.description && <p className="text-xs text-slate-500">{env.description}</p>}
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(env)}>Edit</Button>
-                  <Button size="sm" variant="danger" onClick={() => setDeleteTarget(env)}>Delete</Button>
+                  <Button size="sm" variant="secondary" onClick={() => openEdit(env)}>{t('edit', lang)}</Button>
+                  <Button size="sm" variant="danger" onClick={() => setDeleteTarget(env)}>{t('delete', lang)}</Button>
                 </div>
               </div>
             ))}
@@ -210,35 +222,35 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
         )}
       </Card>
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add Environment" size="md">
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title={t('addEnvironment', lang)} size="md">
         <form onSubmit={handleAdd} className="space-y-4">
           {formError && <Alert>{formError}</Alert>}
-          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
-          <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
-          <Select label="CI Source" required value={form.ciSourceId} onChange={(e) => setField('ciSourceId', e.target.value)}
-            placeholder="Select CI source…" options={ciOptions} />
-          <Input label="Webhook URL" type="url" value={form.webhookUrl} onChange={(e) => setField('webhookUrl', e.target.value)} required />
-          <Input label="Webhook Token" value={form.webhookToken} onChange={(e) => setField('webhookToken', e.target.value)} required />
+          <Input label={t('name', lang)} value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <Input label={t('description', lang)} value={form.description} onChange={(e) => setField('description', e.target.value)} />
+          <Select label={t('ciSourceLabel', lang)} required value={form.ciSourceId} onChange={(e) => setField('ciSourceId', e.target.value)}
+            placeholder={t('selectCiSourcePlaceholder', lang)} options={ciOptions} />
+          <Input label={t('webhookUrl', lang)} type="url" value={form.webhookUrl} onChange={(e) => setField('webhookUrl', e.target.value)} required />
+          <Input label={t('webhookToken', lang)} value={form.webhookToken} onChange={(e) => setField('webhookToken', e.target.value)} required />
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" variant="secondary" onClick={() => { setAddOpen(false); setEditTarget(null) }}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
           </div>
         </form>
       </Modal>
-      <Modal open={!!editTarget} onClose={closeEdit} title="Edit Environment" size="md">
+      <Modal open={!!editTarget} onClose={closeEdit} title={t('editEnvironment', lang)} size="md">
         <form onSubmit={handleEdit} className="space-y-4">
           {formError && <Alert>{formError}</Alert>}
-          <Input label="Name" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
-          <Input label="Description" value={form.description} onChange={(e) => setField('description', e.target.value)} />
-          <Select label="CI Source" required value={form.ciSourceId} onChange={(e) => setField('ciSourceId', e.target.value)}
-            placeholder="Select CI source…" options={ciOptions} />
-          <Input label="Webhook URL (leave blank to keep)" type="url" value={form.webhookUrl} onChange={(e) => setField('webhookUrl', e.target.value)} />
-          <Input label="Webhook Token — outbound trigger (leave blank to keep)" value={form.webhookToken} onChange={(e) => setField('webhookToken', e.target.value)} hint="This is the token GitLab expects on the pipeline-trigger POST (Settings → CI/CD → Pipeline trigger tokens)." />
+          <Input label={t('name', lang)} value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+          <Input label={t('description', lang)} value={form.description} onChange={(e) => setField('description', e.target.value)} />
+          <Select label={t('ciSourceLabel', lang)} required value={form.ciSourceId} onChange={(e) => setField('ciSourceId', e.target.value)}
+            placeholder={t('selectCiSourcePlaceholder', lang)} options={ciOptions} />
+          <Input label={t('webhookUrlKeepHint', lang)} type="url" value={form.webhookUrl} onChange={(e) => setField('webhookUrl', e.target.value)} />
+          <Input label={t('webhookTokenOutbound', lang)} value={form.webhookToken} onChange={(e) => setField('webhookToken', e.target.value)} hint={t('webhookTokenOutboundHint', lang)} />
           <div className="rounded-lg border border-slate-200 p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-700">Callback Secret — inbound pipeline events</p>
-                <p className="text-xs text-slate-500">Portal-generated. Paste this into GitLab → Settings → Webhooks → Secret token so pipeline-event callbacks are accepted.</p>
+                <p className="text-sm font-medium text-slate-700">{t('callbackSecretLabel', lang)}</p>
+                <p className="text-xs text-slate-500">{t('callbackSecretHint', lang)}</p>
               </div>
             </div>
             {secretError && (
@@ -246,45 +258,44 @@ export function EnvironmentsManager({ token, ciSources }: Props) {
             )}
             {callbackSecret ? (
               <div className="flex items-center gap-2">
-                <input readOnly value={callbackSecret} className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs font-mono text-slate-700 bg-slate-50" />
-                <Button type="button" size="sm" variant="secondary" onClick={copyCallbackSecret}>{copied ? 'Copied' : 'Copy'}</Button>
+                <input readOnly value={callbackSecret} className="min-h-11 flex-1 rounded border border-slate-300 px-2 py-1 text-xs font-mono text-slate-700 bg-slate-50" />
+                <Button type="button" size="sm" variant="secondary" onClick={copyCallbackSecret}>{copied ? t('copied', lang) : t('copy', lang)}</Button>
               </div>
             ) : (
               <Button type="button" size="sm" variant="secondary" onClick={revealCallbackSecret} disabled={secretBusy}>
-                {secretBusy ? 'Loading…' : 'Reveal current'}
+                {secretBusy ? t('loading', lang) : t('revealCurrent', lang)}
               </Button>
             )}
             <div>
               <Button type="button" size="sm" variant="danger" onClick={() => setRegenConfirmOpen(true)} disabled={secretBusy}>
-                {secretBusy ? 'Regenerating…' : 'Regenerate'}
+                {secretBusy ? t('regenerating', lang) : t('regenerate', lang)}
               </Button>
             </div>
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={closeEdit}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" variant="secondary" onClick={closeEdit}>{t('cancel', lang)}</Button>
+            <Button type="submit" disabled={saving}>{saving ? t('saving', lang) : t('save', lang)}</Button>
           </div>
         </form>
       </Modal>
-      <Modal open={!!deleteTarget} onClose={() => { setDeleteTarget(null); setDeleteError(null) }} title="Delete Environment" size="sm">
-        <p className="text-sm text-slate-600 mb-4">Delete <strong>{deleteTarget?.name}</strong>?</p>
+      <Modal open={!!deleteTarget} onClose={() => { setDeleteTarget(null); setDeleteError(null) }} title={t('deleteEnvironmentTitle', lang)} size="sm">
+        <p className="text-sm text-slate-600 mb-4">{t('delete', lang)} <strong>{deleteTarget?.name}</strong>?</p>
         {deleteError && (
           <Alert className="mb-4">{deleteError}</Alert>
         )}
         <div className="flex justify-end gap-3">
-          <Button variant="secondary" onClick={() => { setDeleteTarget(null); setDeleteError(null) }}>Cancel</Button>
-          <Button variant="danger" onClick={handleDelete} disabled={saving}>{saving ? 'Deleting…' : 'Delete'}</Button>
+          <Button variant="secondary" onClick={() => { setDeleteTarget(null); setDeleteError(null) }}>{t('cancel', lang)}</Button>
+          <Button variant="danger" onClick={handleDelete} disabled={saving}>{saving ? t('deleting', lang) : t('delete', lang)}</Button>
         </div>
       </Modal>
-      <Modal open={regenConfirmOpen} onClose={() => setRegenConfirmOpen(false)} title="Regenerate Callback Secret" size="sm">
+      <Modal open={regenConfirmOpen} onClose={() => setRegenConfirmOpen(false)} title={t('regenerateSecretTitle', lang)} size="sm">
         <p className="text-sm text-slate-600 mb-4">
-          Regenerate the callback secret? You will need to paste the new value into GitLab → Settings → Webhooks for
-          pipeline events to keep updating this portal.
+          {t('regenerateSecretConfirm', lang)}
         </p>
         <div className="flex justify-end gap-3">
-          <Button type="button" variant="secondary" onClick={() => setRegenConfirmOpen(false)}>Cancel</Button>
+          <Button type="button" variant="secondary" onClick={() => setRegenConfirmOpen(false)}>{t('cancel', lang)}</Button>
           <Button type="button" variant="danger" onClick={doRegenerateCallbackSecret} disabled={secretBusy}>
-            {secretBusy ? 'Regenerating…' : 'Regenerate'}
+            {secretBusy ? t('regenerating', lang) : t('regenerate', lang)}
           </Button>
         </div>
       </Modal>

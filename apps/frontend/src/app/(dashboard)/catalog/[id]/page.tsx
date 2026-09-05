@@ -1,15 +1,26 @@
 import { auth } from '@/lib/auth'
-import { get } from '@/lib/api'
-import Link from 'next/link'
+import { get } from '@/lib/serverApi'
 import { redirect, notFound } from 'next/navigation'
-import type { ProductDetail, Project, CostCenter, ExchangeRate, Category } from '@open-hybrid-cloud/types'
+import Link from 'next/link'
+import type {
+  ProductDetail,
+  Project,
+  CostCenter,
+  ExchangeRate,
+  Category,
+  CatalogPage,
+  Role,
+} from '@open-hybrid-cloud/types'
 import { Card } from '@/components/ui/Card'
 import { OrderForm } from '@/components/forms/OrderForm'
 import { AddToCart } from './AddToCart'
-import { ProductImage } from './ProductImage'
+import { ProductGallery } from '@/components/ui/ProductGallery'
+import { ProductSpecs } from '@/components/ui/ProductSpecs'
+import { ProductImage } from '@/components/ui/ProductImage'
+import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
-import { localeToCurrency, convertPrice } from '@/lib/locale'
+import { localeToCurrency, convertPrice, sortByValue } from '@/lib/locale'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -36,20 +47,28 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
   const session = await auth()
   if (!session) redirect('/login')
 
-  const token = (session as unknown as { apiToken: string }).apiToken
   const lang = await getLang()
   const localeCurrency = localeToCurrency(lang)
 
   const [productRes, projectsRes, costCentersRes, ratesRes, categoriesRes] = await Promise.allSettled([
-    get<ProductDetail>(`/api/catalog/${id}?lang=${lang}`, token),
-    get<Project[]>('/api/projects', token),
-    get<CostCenter[]>('/api/admin/cost-centers', token),
-    get<ExchangeRate[]>('/api/admin/exchange-rates', token),
-    get<Category[]>('/api/admin/categories', token),
+    get<ProductDetail>(`/api/catalog/${id}?lang=${lang}`),
+    get<Project[]>('/api/projects'),
+    get<CostCenter[]>('/api/admin/cost-centers'),
+    get<ExchangeRate[]>('/api/admin/exchange-rates'),
+    get<Category[]>('/api/admin/categories'),
   ])
 
   if (productRes.status === 'rejected') notFound()
   const product = productRes.value
+
+  // Cross-selling, at the size this catalogue actually is: "other products in this
+  // category" (issue #107). No new endpoint — the paged catalogue list already
+  // filters by category, and asking for one more than we show covers the case
+  // where this product is in the page it returns.
+  const relatedRes = await get<CatalogPage>(
+    `/api/catalog?lang=${lang}&categoryId=${product.categoryId}&limit=5`,
+  ).catch(() => null)
+  const related = (relatedRes?.items ?? []).filter((item) => item.id !== product.id).slice(0, 4)
   const projects = projectsRes.status === 'fulfilled' ? (projectsRes.value ?? []) : []
   const costCenters = costCentersRes.status === 'fulfilled' ? (costCentersRes.value ?? []) : []
   const categories = categoriesRes.status === 'fulfilled' ? (categoriesRes.value ?? []) : []
@@ -60,35 +79,89 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
       ? Object.fromEntries((ratesRes.value ?? []).map((r) => [r.currencyCode, parseFloat(r.rate)]))
       : {}
 
-  /** An offering's price in the viewer's currency, with the original alongside. */
-  const priceOf = (env: { price: string; currency: string }) => {
-    const converted = convertPrice(env.price, env.currency, localeCurrency, ratesMap, lang)
+  /** One amount in the viewer's currency, with the original alongside. */
+  const priceOf = (amount: { price: string; currency: string }) => {
+    const converted = convertPrice(amount.price, amount.currency, localeCurrency, ratesMap, lang)
     return {
       display: `${converted.amount} ${converted.currency}`,
-      original: converted.currency !== env.currency ? `${env.price} ${env.currency}` : null,
+      original: converted.currency !== amount.currency ? `${amount.price} ${amount.currency}` : null,
     }
   }
 
-  // The buy box leads with the cheapest offering, because that is the number a
-  // shopper reads as "the price" — the full list is right below it.
-  const cheapest = [...product.environments].sort(
-    (a, b) => Number(a.price) - Number(b.price),
-  )[0]
+  // Whether this viewer's order is provisioned straight away or queued for
+  // approval is a property of their role, not of the product — createOrder branches
+  // on exactly this. Saying so here is the honest version of "does this need
+  // approval", and it needs no schema of its own.
+  const role = (session.user as unknown as { role: Role }).role
+  const ordersNeedApproval = role !== 'admin' && role !== 'root'
+
+  /**
+   * What an offering can cost — one amount per size, or its own single price when
+   * it has no sizes (issue #98).
+   *
+   * Price moved to the size, so "the price of an environment" is no longer one
+   * number. `product_environments.price` is still the answer for an offering that
+   * defines no sizes, which is every offering that predates sizing.
+   */
+  type Offering = ProductDetail['environments'][number]
+  const amountsOf = (env: Offering) =>
+    env.sizes && env.sizes.length > 0
+      ? env.sizes.map((size) => ({ price: size.price, currency: size.currency }))
+      : [{ price: env.price, currency: env.currency }]
+
+  // Compared in EUR rather than by the digits: each size carries its own
+  // currency, so the smallest number is not the cheapest offer.
+  const cheapestOf = (env: Offering) => sortByValue(amountsOf(env), ratesMap)[0]
+
+  /**
+   * An offering's price as a shopper reads it: one figure, or a range across its
+   * sizes.
+   *
+   * A range rather than "from X": it is a dash between two prices, which needs no
+   * word and therefore no twenty-fifth translation of one.
+   */
+  const rangeOf = (env: Offering): { display: string; original: string | null } => {
+    const sorted = sortByValue(amountsOf(env), ratesMap)
+    const cheapest = sorted[0]
+    const dearest = sorted[sorted.length - 1]
+    const low = priceOf(cheapest)
+    // Currency as well as price: two sizes at "10" in different currencies are
+    // two different prices, and collapsing them to one figure hides that.
+    if (cheapest.price === dearest.price && cheapest.currency === dearest.currency) return low
+    const high = priceOf(dearest)
+    return { display: `${low.display} – ${high.display}`, original: null }
+  }
+
+  // The buy box leads with the cheapest thing the product can be bought for,
+  // because that is the number a shopper reads as "the price" — the full list is
+  // right below it.
+  const cheapest = sortByValue(
+    product.environments.map((env) => ({ ...cheapestOf(env), env })),
+    ratesMap,
+  )[0]?.env
 
   return (
     <div className="max-w-screen-xl mx-auto">
-      <nav aria-label={t('catalog', lang)} className="mb-3 text-xs text-slate-500">
-        <Link href="/catalog" className="hover:underline" style={{ color: 'var(--bp-text)' }}>
-          {t('catalog', lang)}
-        </Link>
-        {categoryName && <> <span aria-hidden="true">›</span> {categoryName}</>}
-      </nav>
+      {/* Was an ad-hoc <nav> named "Catalog" that stopped at the category and
+          never named the product — so it read as a second nav landmark rather
+          than a location. */}
+      <Breadcrumbs
+        label={t('breadcrumb', lang)}
+        items={[
+          { label: t('catalog', lang), href: '/catalog' },
+          // No href: the catalogue's category filter is client state, not a URL
+          // parameter, so there is nothing to link to. A crumb that is not a link
+          // is still a location.
+          ...(categoryName ? [{ label: categoryName }] : []),
+          { label: product.name },
+        ]}
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Picture */}
+        {/* Pictures */}
         <div className="lg:col-span-4">
-          <div className="h-72 rounded-lg border border-slate-200 bg-white p-4 lg:sticky lg:top-28">
-            <ProductImage productId={product.id} name={product.name} />
+          <div className="h-96 rounded-lg border border-slate-200 bg-white p-4 lg:sticky lg:top-28">
+            <ProductGallery productId={product.id} images={product.images} lang={lang} />
           </div>
         </div>
 
@@ -103,6 +176,69 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
           <hr className="my-4 border-slate-200" />
           <p className="leading-relaxed text-slate-600">{product.description}</p>
 
+          {/* The short description has to fit a catalogue tile, so it was never
+              going to carry the product's story. This is the long one, and it is
+              simply absent when nobody has written it. */}
+          {product.longDescription && (
+            <>
+              <h2 className="mt-6 mb-2 text-sm font-semibold text-slate-700">
+                {t('aboutThisProduct', lang)}
+              </h2>
+              {/* Split on blank lines rather than rendering the text as HTML:
+                  paragraphs are what a description needs, and the alternative is
+                  injecting operator-supplied markup into the page. */}
+              {product.longDescription
+                .split(/\n\s*\n/)
+                .map((paragraph) => paragraph.trim())
+                .filter(Boolean)
+                .map((paragraph, index) => (
+                  <p key={index} className="mt-2 leading-relaxed text-slate-600 whitespace-pre-line">
+                    {paragraph}
+                  </p>
+                ))}
+            </>
+          )}
+
+          {/* What a shopper checks before ordering, in the order they ask: who runs
+              it, whether ordering it means waiting for someone, and where the real
+              documentation is. */}
+          <h2 className="mt-6 mb-2 text-sm font-semibold text-slate-700">{t('goodToKnow', lang)}</h2>
+          <dl className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white text-sm">
+            {product.owner && (
+              <div className="flex items-baseline justify-between gap-3 px-4 py-2">
+                <dt className="text-slate-500">{t('owner', lang)}</dt>
+                <dd className="text-right font-medium text-slate-900">{product.owner}</dd>
+              </div>
+            )}
+            <div className="flex items-baseline justify-between gap-3 px-4 py-2">
+              {/* "Order" rather than "Approval": the row answers what happens when
+                  you order this, and the sentence in the value says whether that
+                  involves waiting for somebody. */}
+              <dt className="text-slate-500">{t('order', lang)}</dt>
+              <dd className="text-right text-slate-700">
+                {ordersNeedApproval ? t('approvalRequired', lang) : t('approvalImmediate', lang)}
+              </dd>
+            </div>
+            {product.docsUrl && (
+              <div className="flex items-baseline justify-between gap-3 px-4 py-2">
+                <dt className="text-slate-500">{t('documentation', lang)}</dt>
+                <dd className="text-right">
+                  {/* Underlined at rest, like the breadcrumb above and for the same
+                      reason: colour alone is not enough (WCAG 1.4.1). */}
+                  <a
+                    href={product.docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="break-all underline"
+                    style={{ color: 'var(--bp-text)' }}
+                  >
+                    {product.docsUrl}
+                  </a>
+                </dd>
+              </div>
+            )}
+          </dl>
+
           {product.environments.length > 0 && (
             <>
               <h2 className="mt-6 mb-2 text-sm font-semibold text-slate-700">
@@ -110,7 +246,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
               </h2>
               <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
                 {product.environments.map((env) => {
-                  const price = priceOf(env)
+                  const price = rangeOf(env)
                   return (
                     <li key={env.environmentId} className="flex items-baseline justify-between gap-3 px-4 py-2">
                       <span className="text-sm text-slate-700">
@@ -135,23 +271,22 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
         {cheapest && (
           <div className="lg:col-span-3">
             <div className="rounded-lg border border-slate-200 bg-white p-4 lg:sticky lg:top-28">
-              <p className="text-2xl font-bold text-slate-900">{priceOf(cheapest).display}</p>
-              {product.environments.length > 1 && (
-                <p className="mt-1 text-xs text-slate-500">
-                  {cheapest.environmentName ?? `Env ${cheapest.environmentId}`}
-                </p>
-              )}
-              <div className="mt-4 space-y-3">
+              <div className="space-y-3">
+                {/* The price used to be rendered here, server-side, as the
+                    cheapest thing the product could be bought for — a figure
+                    that never moved while the shopper picked a size. Since the
+                    size IS the price, it belongs with the picker: AddToCart
+                    renders it and it follows the choice. */}
                 {/* Environment plus one click, and nothing else: parameters are
                     what checkout is for (issue #28). */}
-                <AddToCart product={product} token={token} lang={lang} />
+                <AddToCart product={product} ratesMap={ratesMap} lang={lang} />
                 {/* Styled as a link, not a Button inside a Link: nested
                     interactives fail the axe gate in e2e/a11y.spec.ts. Outlined
                     rather than filled — it is the second action, and it only jumps
                     to the form below. */}
                 <a
                   href="#order"
-                  className="block w-full rounded-full border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  className="flex min-h-11 w-full items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-center text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 >
                   {t('orderNow', lang)}
                 </a>
@@ -161,6 +296,16 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
         )}
       </div>
 
+      {/* The specification table: the parameters this product takes, which are the
+          closest thing here to "technical details" and were previously visible
+          only once you had scrolled into the order form. */}
+      {product.parameters.length > 0 && (
+        <div className="mt-8 max-w-3xl">
+          <h2 className="mb-2 text-sm font-semibold text-slate-700">{t('specifications', lang)}</h2>
+          <ProductSpecs parameters={product.parameters} lang={lang} />
+        </div>
+      )}
+
       {/* The form proper, linked from the buy box above. */}
       <div id="order" className="mt-8 max-w-3xl scroll-mt-28">
         <Card title={t('placeOrder', lang)}>
@@ -168,7 +313,6 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
             product={product}
             projects={projects}
             costCenters={costCenters}
-            token={token}
             lang={lang}
             exchangeRates={ratesMap}
             localeCurrency={localeCurrency}
@@ -177,6 +321,38 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
           />
         </Card>
       </div>
+
+      {/* Cross-selling that means something in an internal catalogue: not
+          "customers also bought" — there is no such signal here — but the other
+          things in the same category, which is what a shopper who is comparing
+          would go looking for next. */}
+      {related.length > 0 && (
+        <section aria-labelledby="related-heading" className="mt-10">
+          <h2 id="related-heading" className="mb-3 text-sm font-semibold text-slate-700">
+            {t('otherInCategory', lang)}
+          </h2>
+          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {related.map((item) => (
+              <li key={item.id}>
+                <Link
+                  href={`/catalog/${item.id}`}
+                  className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-200 bg-white transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  <span
+                    className="block h-28 border-b border-slate-100 p-2"
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--bp) 8%, white)' }}
+                  >
+                    {/* Decorative: the link's own text names the product, so the
+                        picture would be announced twice. */}
+                    <ProductImage productId={item.id} alt="" />
+                  </span>
+                  <span className="block p-3 text-sm font-medium text-slate-900">{item.name}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }

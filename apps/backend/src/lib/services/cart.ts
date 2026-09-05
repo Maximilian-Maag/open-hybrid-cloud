@@ -4,13 +4,24 @@ import {
   cartItems,
   products,
   productEnvironments,
-  productTranslations,
   deploymentEnvironments,
+  users,
+  type CartItem,
 } from '@/lib/db/schema'
 import { and, eq, sql, inArray } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 import { prepareOrder, createPreparedOrder, type PreparedOrder } from '@/lib/services/orders'
+import {
+  resolveOfferingPrice,
+  validateQuantity,
+  linePriceSql,
+  lineCurrencySql,
+  lineSizeLabelSql,
+  lineSizeStillOfferedSql,
+} from '@/lib/services/sizes'
+import { primaryImageAltSql } from '@/lib/services/catalog'
+import { productNameSql } from '@/lib/db/productText'
 
 export interface CartRow {
   id: number
@@ -19,12 +30,28 @@ export interface CartRow {
   parameters: Record<string, string>
   createdAt: Date
   productName: string | null
+  imageAlt: string | null
   environmentName: string | null
+  /**
+   * The chosen size (issue #98), null when the offering has none, and the label it
+   * reads as today. The label is resolved for display only — the code is what the
+   * line stores and what checkout is validated against.
+   */
+  sizeCode: string | null
+  sizeLabel: string | null
+  /** How many elements this line will provision (issue #104). */
+  quantity: number
+  /**
+   * UNIT price — the chosen size's, or the offering's when the line has no size.
+   * The line total is this times `quantity`, computed where it is displayed so the
+   * conversion to the viewer's currency happens once.
+   */
   price: string | null
   currency: string | null
   /**
-   * False when the product is no longer offered in that environment. The item
-   * stays in the cart and says so, rather than vanishing without explanation.
+   * False when the product is no longer offered in that environment, OR when the
+   * size the line chose has been retired. The item stays in the cart and says so,
+   * rather than vanishing without explanation or failing at checkout.
    */
   stillOffered: boolean
 }
@@ -33,13 +60,24 @@ export interface CartRow {
 export const MAX_CART_ITEMS = 25
 
 /**
+ * Ceiling on the ELEMENTS one checkout may provision.
+ *
+ * MAX_CART_ITEMS alone stopped bounding the work once a line could ask for twenty
+ * elements: 25 lines × 20 is 500 pipeline runs from one request. The cap is on the
+ * sum rather than on the lines, because that is the number that actually reaches
+ * CI. A cart that exceeds it is checked out in two goes, which is a far better
+ * answer than a request that fires 500 pipelines.
+ */
+export const MAX_CHECKOUT_ELEMENTS = 100
+
+/**
  * The caller's cart, oldest first.
  *
  * Product and environment names are resolved here so the overview does not need a
  * request per item, and the offering is checked so an item whose product was
  * withdrawn can be shown as unavailable instead of silently failing at checkout.
  */
-export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>> => {
+export const listCart = async (session: SessionUser, lang = 'en'): Promise<Result<CartRow[]>> => {
   const rows = await db
     .select({
       id: cartItems.id,
@@ -47,19 +85,30 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
       environmentId: cartItems.environmentId,
       parameters: cartItems.parameters,
       createdAt: cartItems.createdAt,
-      productName: productTranslations.name,
+      productName: productNameSql(lang, cartItems.productId),
+      imageAlt: primaryImageAltSql,
       environmentName: deploymentEnvironments.name,
-      price: productEnvironments.price,
-      currency: productEnvironments.currency,
+      sizeCode: cartItems.sizeCode,
+      quantity: cartItems.quantity,
+      // The chosen size's price, falling back to the offering's for a line with no
+      // size. Shared SQL rather than a local copy — see `linePriceSql` for why
+      // there is exactly one definition of "which price applies".
+      price: linePriceSql(cartItems.productId, cartItems.environmentId, cartItems.sizeCode),
+      currency: lineCurrencySql(cartItems.productId, cartItems.environmentId, cartItems.sizeCode),
+      sizeLabel: lineSizeLabelSql(cartItems.productId, cartItems.environmentId, cartItems.sizeCode),
+      sizeStillOffered: lineSizeStillOfferedSql(
+        cartItems.productId,
+        cartItems.environmentId,
+        cartItems.sizeCode,
+      ),
+      productRetiredAt: products.retiredAt,
     })
     .from(cartItems)
-    .leftJoin(
-      productTranslations,
-      and(
-        eq(cartItems.productId, productTranslations.productId),
-        eq(productTranslations.languageCode, 'en'),
-      ),
-    )
+    // The image description is read by a subquery correlated on `products.id`, so
+    // that table has to be in the join chain — correlating on a table that is not
+    // joined produces a cross join, which is how adding imageAlt broke every cart
+    // test at once.
+    .leftJoin(products, eq(cartItems.productId, products.id))
     .leftJoin(deploymentEnvironments, eq(cartItems.environmentId, deploymentEnvironments.id))
     // Left, not inner: an item whose offering was withdrawn must still be listed,
     // so the user can see why checkout will refuse it.
@@ -73,7 +122,21 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
     .where(eq(cartItems.userId, session.id))
     .orderBy(cartItems.createdAt, cartItems.id)
 
-  return ok(rows.map((row) => ({ ...row, stillOffered: row.price !== null })))
+  return ok(
+    rows.map(({ sizeStillOffered, productRetiredAt, ...row }) => ({
+      ...row,
+      // THREE ways a line can have become unorderable, and all of them have to say
+      // so here rather than at checkout: the offering was withdrawn (no price
+      // resolves at all), the size it names was retired, or the product itself was
+      // taken out of the catalogue (#251).
+      //
+      // The third is new because a withdrawn product now KEEPS its offerings, so
+      // it can be put back at the price it had. That is what makes disabling
+      // reversible, and it is also why the price still resolving no longer means
+      // the line can be ordered.
+      stillOffered: row.price !== null && sizeStillOffered && productRetiredAt === null,
+    })),
+  )
 }
 
 /**
@@ -86,11 +149,18 @@ export const listCart = async (session: SessionUser): Promise<Result<CartRow[]>>
  */
 export const addToCart = async (
   session: SessionUser,
-  input: { productId: number; environmentId: number; parameters?: Record<string, string> },
+  input: {
+    productId: number
+    environmentId: number
+    parameters?: Record<string, string>
+    sizeCode?: string | null
+    quantity?: number
+  },
 ): Promise<Result<CartRow>> => {
   const [offering] = await db
-    .select({ productId: productEnvironments.productId })
+    .select({ productId: productEnvironments.productId, retiredAt: products.retiredAt })
     .from(productEnvironments)
+    .innerJoin(products, eq(products.id, productEnvironments.productId))
     .where(
       and(
         eq(productEnvironments.productId, input.productId),
@@ -101,26 +171,65 @@ export const addToCart = async (
 
   if (!offering) return err(400, 'Product is not offered in the selected environment')
 
-  const [{ count }] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(cartItems)
-    .where(eq(cartItems.userId, session.id))
-
-  if (count >= MAX_CART_ITEMS) {
-    return err(400, `A cart can hold at most ${MAX_CART_ITEMS} items`)
+  // A withdrawn product keeps its offerings so it can be put back unchanged
+  // (#251), so the offering existing no longer means it can be ordered.
+  if (offering.retiredAt !== null) {
+    return err(400, 'This product is no longer available to order')
   }
 
-  // Duplicates are allowed on purpose: two instances of the same product in the
-  // same environment is a normal thing to want, and they differ by parameters.
-  const [item] = await db
-    .insert(cartItems)
-    .values({
-      userId: session.id,
-      productId: input.productId,
-      environmentId: input.environmentId,
-      parameters: input.parameters ?? {},
-    })
-    .returning()
+  // The size and quantity ARE validated on the way in, unlike the parameters: they
+  // are not something the user fills in later at checkout, they are what the line
+  // IS. A line naming a size that does not exist is not an incomplete shopping
+  // list entry, it is a line that can never be ordered.
+  const priced = await resolveOfferingPrice(input.productId, input.environmentId, input.sizeCode)
+  if (!priced.ok) return priced
+  const quantity = validateQuantity(input.quantity)
+  if (!quantity.ok) return quantity
+
+  /*
+   * Count and insert under a lock on the OWNER row (issue #188).
+   *
+   * The cap used to be a read followed by an unguarded insert: two concurrent
+   * adds at 24 items both saw 24, both passed, and the cart held 26. The same
+   * shape as the gallery upload cap, and the same remedy — an invariant that
+   * spans a SET of rows cannot be guarded by a row-level predicate, and even
+   * `INSERT … SELECT … HAVING COUNT(*) < n` reads its snapshot before either
+   * writer is visible to the other.
+   *
+   * The user row is the natural thing to lock: a cart belongs to exactly one, so
+   * the lock is per shopper and two people adding at once never wait on each
+   * other.
+   */
+  const inserted = await db.transaction(async (tx): Promise<Result<CartItem>> => {
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, session.id)).for('update').limit(1)
+
+    const [{ count }] = await tx
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(cartItems)
+      .where(eq(cartItems.userId, session.id))
+
+    if (count >= MAX_CART_ITEMS) {
+      return err(400, `A cart can hold at most ${MAX_CART_ITEMS} items`)
+    }
+
+    // Duplicates are allowed on purpose: two instances of the same product in the
+    // same environment is a normal thing to want, and they differ by parameters.
+    const [row] = await tx
+      .insert(cartItems)
+      .values({
+        userId: session.id,
+        productId: input.productId,
+        environmentId: input.environmentId,
+        parameters: input.parameters ?? {},
+        sizeCode: priced.data.sizeCode,
+        quantity: quantity.data,
+      })
+      .returning()
+    return ok(row)
+  })
+
+  if (!inserted.ok) return inserted
+  const item = inserted.data
 
   const listed = await listCart(session)
   const enriched = listed.ok ? listed.data.find((r) => r.id === item.id) : undefined
@@ -128,28 +237,80 @@ export const addToCart = async (
     enriched ?? {
       ...item,
       productName: null,
+      imageAlt: null,
       environmentName: null,
-      price: null,
-      currency: null,
+      sizeLabel: priced.data.sizeLabel,
+      price: priced.data.price,
+      currency: priced.data.currency,
       stillOffered: true,
     },
   )
 }
 
 /**
- * Update one item's parameter prefill.
+ * Update one line: its parameter prefill, its size, or how many it asks for.
  *
  * Lets the checkout form save progress without re-adding the item, and keeps the
- * cart the single source of what the user has typed.
+ * cart the single source of what the user has typed. Quantity is editable HERE
+ * because that is where a shopper changes it (issue #104) — the alternative,
+ * removing the line and adding it again, loses the parameters they had typed.
+ *
+ * A patch, not a replacement: sending only `quantity` must not wipe the
+ * parameters, so an absent field means "leave it alone".
  */
 export const updateCartItem = async (
   session: SessionUser,
   itemId: number,
-  parameters: Record<string, string>,
+  patch: {
+    parameters?: Record<string, string>
+    sizeCode?: string | null
+    quantity?: number
+  },
 ): Promise<Result<void>> => {
+  // Read first: changing the size has to be validated against THIS line's
+  // offering, which only the stored row knows.
+  const [existing] = await db
+    .select({
+      productId: cartItems.productId,
+      environmentId: cartItems.environmentId,
+      sizeCode: cartItems.sizeCode,
+    })
+    .from(cartItems)
+    .where(and(eq(cartItems.id, itemId), eq(cartItems.userId, session.id)))
+    .limit(1)
+
+  if (!existing) return err(404, 'Cart item not found')
+
+  const values: {
+    parameters?: Record<string, string>
+    sizeCode?: string | null
+    quantity?: number
+  } = {}
+
+  if (patch.parameters !== undefined) values.parameters = patch.parameters
+
+  if (patch.sizeCode !== undefined) {
+    const priced = await resolveOfferingPrice(
+      existing.productId,
+      existing.environmentId,
+      patch.sizeCode,
+    )
+    if (!priced.ok) return priced
+    values.sizeCode = priced.data.sizeCode
+  }
+
+  if (patch.quantity !== undefined) {
+    const quantity = validateQuantity(patch.quantity)
+    if (!quantity.ok) return quantity
+    values.quantity = quantity.data
+  }
+
+  // Nothing to change is not an error — the caller's intent is already the state.
+  if (Object.keys(values).length === 0) return ok(undefined)
+
   const updated = await db
     .update(cartItems)
-    .set({ parameters })
+    .set(values)
     // Scoped by user id, so an item id from another user's cart cannot be touched.
     .where(and(eq(cartItems.id, itemId), eq(cartItems.userId, session.id)))
     .returning({ id: cartItems.id })
@@ -208,6 +369,45 @@ export interface CheckoutResult {
  * residual risk is inherent: once item one's pipeline is running, item two failing
  * cannot undo it. Reporting which items did land is the only honest answer.
  */
+/** One cart row as the claim took it, with everything needed to put it back. */
+interface ClaimedCartItem {
+  id: number
+  productId: number
+  environmentId: number
+  sizeCode: string | null
+  quantity: number
+  parameters: Record<string, string>
+}
+
+/**
+ * Put claimed cart rows back, unchanged.
+ *
+ * With their ORIGINAL ids. That is safe — the sequence has already issued them,
+ * so a later insert cannot collide — and it matters: the caller's own cart list
+ * is keyed by these ids, and a restored item under a new one would read as a
+ * different item. The row the user sees after a failure is the row they had.
+ */
+const restoreCartItems = async (
+  userId: number,
+  items: ClaimedCartItem[],
+  ids: Set<number>,
+): Promise<void> => {
+  const restore = items.filter((item) => ids.has(item.id))
+  if (restore.length === 0) return
+
+  await db.insert(cartItems).values(
+    restore.map((item) => ({
+      id: item.id,
+      userId,
+      productId: item.productId,
+      environmentId: item.environmentId,
+      sizeCode: item.sizeCode,
+      quantity: item.quantity,
+      parameters: item.parameters,
+    })),
+  )
+}
+
 export const checkoutCart = async (
   session: SessionUser,
   input: { projectId: number; items: CheckoutItemInput[] },
@@ -223,9 +423,26 @@ export const checkoutCart = async (
   }
 
   const owned = await db
-    .select({ id: cartItems.id, productId: cartItems.productId, environmentId: cartItems.environmentId })
+    .select({
+      id: cartItems.id,
+      productId: cartItems.productId,
+      environmentId: cartItems.environmentId,
+      sizeCode: cartItems.sizeCode,
+      quantity: cartItems.quantity,
+      parameters: cartItems.parameters,
+    })
     .from(cartItems)
     .where(and(eq(cartItems.userId, session.id), inArray(cartItems.id, ids)))
+
+  // Counted over the ELEMENTS, not the lines: with quantity, the number of lines
+  // no longer bounds the number of pipeline runs this request will start.
+  const totalElements = owned.reduce((sum, item) => sum + Math.max(item.quantity, 1), 0)
+  if (totalElements > MAX_CHECKOUT_ELEMENTS) {
+    return err(
+      400,
+      `A checkout can provision at most ${MAX_CHECKOUT_ELEMENTS} elements; this one asks for ${totalElements}`,
+    )
+  }
 
   if (owned.length !== input.items.length) {
     // Either an id belongs to somebody else's cart or the cart changed in another
@@ -248,6 +465,11 @@ export const checkoutCart = async (
       parameters: item.parameters,
       costCenterId: item.costCenterId,
       trial: item.trial,
+      // From the stored line, never from the request: the size and the quantity
+      // are what the user put in the cart, and accepting them again here would let
+      // a checkout re-price or multiply a line the cart never showed.
+      sizeCode: cartItem.sizeCode,
+      quantity: cartItem.quantity,
     })
     if (result.ok) prepared.push({ cartItemId: item.cartItemId, order: result.data })
     else invalid.push({ cartItemId: item.cartItemId, message: result.message })
@@ -264,17 +486,49 @@ export const checkoutCart = async (
     )
   }
 
+  /*
+   * Phase one and a half: CLAIM the rows, and let their deletion be the claim
+   * (issue #188).
+   *
+   * Validation above is a read, and creation below spends money. Between the two
+   * there used to be nothing at all: a double-submit — a double-click, or the
+   * checkout open in two tabs — had both requests read the same items, both pass
+   * validation, and both create every order. Six orders from three items, six
+   * sets of pipelines, up to six times `quantity` real machines, and six lines of
+   * spend against the cost centre. The delete came last and the loser's was a
+   * harmless no-op, which is exactly why nothing ever surfaced it.
+   * `MAX_CHECKOUT_ELEMENTS` is evaluated per request, so two requests could
+   * provision two hundred elements from one cart.
+   *
+   * `DELETE … RETURNING` is atomic, so exactly one request gets the rows. Every
+   * other multi-step path in this codebase claims first — `approveOrder`,
+   * `retryProvisioning`, `claimAndDestroy` — and checkout was the one that did
+   * not, and the one that spends money.
+   *
+   * It happens AFTER validation, not before: the all-or-nothing gate above must
+   * be able to reject without emptying the cart.
+   */
+  const claimed = await db
+    .delete(cartItems)
+    .where(and(eq(cartItems.userId, session.id), inArray(cartItems.id, ids)))
+    .returning({ id: cartItems.id })
+
+  if (claimed.length !== owned.length) {
+    // Another request took them between the read and here. Put back whatever we
+    // did take, so a lost race leaves the cart exactly as it found it.
+    await restoreCartItems(session.id, owned, new Set(claimed.map((c) => c.id)))
+    return err(400, 'The cart changed — reload the checkout and try again')
+  }
+
   // Phase two: create. Past this point failures are per item and cannot be undone.
   const orderIds: number[] = []
   const failed: CheckoutFailure[] = []
-  const orderedCartItemIds: number[] = []
 
   for (const { cartItemId, order } of prepared) {
     try {
       const created = await createPreparedOrder(session, order)
       if (created.ok) {
         orderIds.push(created.data.id)
-        orderedCartItemIds.push(cartItemId)
       } else {
         failed.push({ cartItemId, message: created.message })
       }
@@ -283,13 +537,10 @@ export const checkoutCart = async (
     }
   }
 
-  // Only the items that actually became orders leave the cart. A failed item stays
-  // so the user can retry it rather than having to reconstruct it from memory.
-  if (orderedCartItemIds.length > 0) {
-    await db
-      .delete(cartItems)
-      .where(and(eq(cartItems.userId, session.id), inArray(cartItems.id, orderedCartItemIds)))
-  }
+  // The rows left the cart when they were claimed, so this is the opposite of
+  // what it used to be: an item whose order could NOT be created is put back, and
+  // one that succeeded simply stays gone.
+  await restoreCartItems(session.id, owned, new Set(failed.map((f) => f.cartItemId)))
 
   await logAudit(
     session.id,

@@ -19,16 +19,62 @@ const getSecret = (): Uint8Array => {
   return cachedSecret
 }
 
-export const signToken = (user: SessionUser): Promise<string> =>
-  new SignJWT({ user })
+/**
+ * What a session token says.
+ *
+ * `sid` is the `sessions` row this token was issued for (issue #37). It is the
+ * whole reason a token can be revoked: the signature only proves we minted the
+ * token, and nothing about a signature can ever be un-minted. The row can.
+ */
+export interface TokenClaims {
+  user: SessionUser
+  sid: number
+}
+
+export interface SignTokenOptions {
+  /** `sessions.id` this token belongs to. */
+  sessionId: number
+  /**
+   * Lifetime in seconds. Passed in rather than fixed here because it is now a
+   * per-session decision — 8 h normally, up to 30 days with "remember me" — and
+   * the value has to be the same one written to `sessions.expires_at`.
+   */
+  expiresInSeconds: number
+}
+
+export const signToken = (user: SessionUser, opts: SignTokenOptions): Promise<string> =>
+  new SignJWT({ user, sid: opts.sessionId })
     .setProtectedHeader({ alg: ALG })
-    .setExpirationTime('24h')
+    .setIssuedAt()
+    .setExpirationTime(Math.floor(Date.now() / 1000) + opts.expiresInSeconds)
     .sign(getSecret())
 
-export const verifyToken = async (token: string): Promise<SessionUser | null> => {
+/**
+ * Verify the signature and read the claims back.
+ *
+ * A token with no usable `sid` is rejected outright rather than treated as a
+ * session-less token that still works. Only the holder of JWT_SECRET can mint
+ * one, so in practice these are tokens we issued before #37 shipped — and
+ * accepting them would mean revocation quietly did nothing for everyone still
+ * carrying one. "Revocable except for the next day" is not revocable.
+ *
+ * The `user` claim is shape-checked for the same reason it is checked at all: a
+ * correctly signed token without one used to come back as `undefined`, which
+ * every caller treated as "not signed in" only because `undefined` happens to be
+ * falsy. Since #36 there is a second signed token in the system — the MFA
+ * challenge (lib/auth/mfaChallenge.ts), which deliberately carries no `user` —
+ * and "fails closed by accident" is not a property to rely on for the difference
+ * between a half-finished sign-in and a session. That challenge is signed with a
+ * separate key and so cannot verify here at all; this is the second lock.
+ */
+export const verifyToken = async (token: string): Promise<TokenClaims | null> => {
   try {
     const { payload } = await jwtVerify(token, getSecret(), { algorithms: [ALG] })
-    return (payload as { user: SessionUser }).user
+    const claims = payload as unknown as Partial<TokenClaims>
+    const user = claims.user
+    if (!user || typeof user.id !== 'number' || typeof user.role !== 'string') return null
+    if (typeof claims.sid !== 'number' || !Number.isInteger(claims.sid)) return null
+    return { user, sid: claims.sid }
   } catch {
     return null
   }

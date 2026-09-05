@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { convertPrice, localeToCurrency } from './locale'
+import { convertPrice, localeToCurrency, priceInEur, sortByValue } from './locale'
 
 const rates = { USD: 1.1, GBP: 0.85 } // relative to EUR
 
@@ -48,5 +48,74 @@ describe('localeToCurrency', () => {
 
   it('defaults to EUR for unknown locales', () => {
     expect(localeToCurrency('zz')).toBe('EUR')
+  })
+})
+
+describe('priceInEur', () => {
+  it('takes EUR as 1 without needing a rate entry', () => {
+    expect(priceInEur('9', 'EUR', rates)).toBe(9)
+  })
+
+  it('divides by the rate, which is quoted against EUR', () => {
+    // 1.1 USD to the euro, so 11 USD is 10 EUR.
+    expect(priceInEur('11', 'USD', rates)).toBeCloseTo(10)
+  })
+
+  it('is null when nothing says what the currency is worth', () => {
+    expect(priceInEur('100', 'JPY', rates)).toBeNull()
+    expect(priceInEur('100', 'JPY', { JPY: 0 })).toBeNull()
+    expect(priceInEur('n/a', 'EUR', rates)).toBeNull()
+  })
+})
+
+describe('sortByValue', () => {
+  it('ranks by value, not by the digits', () => {
+    // 9 GBP is 10.59 EUR at 0.85 to the euro, so the smaller number is the DEARER
+    // offer. Sorting on Number(price) put it first and called it the cheapest.
+    const sorted = sortByValue(
+      [
+        { price: '10', currency: 'EUR' },
+        { price: '9', currency: 'GBP' },
+      ],
+      rates,
+    )
+    expect(sorted.map((a) => a.currency)).toEqual(['EUR', 'GBP'])
+  })
+
+  it('sorts an unconvertible amount last instead of assuming 1:1', () => {
+    // Read as 1:1 it would be the cheapest of the three and lead the buy box.
+    const sorted = sortByValue(
+      [
+        { price: '1', currency: 'JPY' },
+        { price: '20', currency: 'EUR' },
+        { price: '11', currency: 'USD' },
+      ],
+      rates,
+    )
+    expect(sorted.map((a) => a.currency)).toEqual(['USD', 'EUR', 'JPY'])
+  })
+
+  it('keeps the catalogue order among amounts it cannot separate', () => {
+    // Sizes are listed in a deliberate order, so ties and unconvertibles must not
+    // be reshuffled into an arbitrary one.
+    const sorted = sortByValue(
+      [
+        { code: 'a', price: '5', currency: 'JPY' },
+        { code: 'b', price: '5', currency: 'SEK' },
+        { code: 'c', price: '10', currency: 'EUR' },
+        { code: 'd', price: '10', currency: 'EUR' },
+      ],
+      rates,
+    )
+    expect(sorted.map((a) => a.code)).toEqual(['c', 'd', 'a', 'b'])
+  })
+
+  it('does not mutate the input', () => {
+    const input = [
+      { price: '20', currency: 'EUR' },
+      { price: '1', currency: 'EUR' },
+    ]
+    sortByValue(input, rates)
+    expect(input.map((a) => a.price)).toEqual(['20', '1'])
   })
 })

@@ -1,12 +1,29 @@
 # Dependencies
-node_modules/
-apps/*/node_modules/
-packages/*/node_modules/
+# No trailing slash, deliberately. `node_modules/` matches a DIRECTORY only, so
+# a symlink of that name slips straight past it — which is what happens the
+# moment anyone runs `git worktree add` and links the dependencies in rather
+# than installing them again. `git add -A` then commits the links, and CI dies
+# on `ENOTDIR: not a directory, mkdir '.../node_modules'` in `pnpm install`,
+# several confusing steps away from the cause.
+node_modules
+apps/*/node_modules
+packages/*/node_modules
 
 # Next.js build output
 apps/*/.next/
 apps/*/out/
 .next/
+
+# Mutation-testing sandboxes (Stryker copies the source tree per run) and the
+# HTML reports the runs write to apps/<app>/reports/mutation/
+.stryker-tmp/
+apps/*/.stryker-tmp/
+reports/mutation/
+apps/*/reports/mutation/
+
+# Agent worktrees (an isolated checkout per background agent). Deliberately narrow:
+# a project's own .claude/settings.json is worth committing, a scratch checkout is not.
+.claude/worktrees/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
@@ -40,7 +57,13 @@ e2e/.auth/
 docs/architecture/.structurizr/
 docs/architecture/workspace.json
 
-# LaTeX auxiliary files (docs/handbook.pdf is committed, aux files are not)
+# The compiled handbook is not committed — `make handbook` builds it locally,
+# CI compiles it on PRs that touch handbook.tex and uploads it as a build
+# artifact, and the release workflow attaches a freshly-built copy to each
+# GitHub Release. See README.md ("Technical Handbook").
+docs/handbook.pdf
+
+# LaTeX auxiliary files
 docs/handbook.aux
 docs/handbook.log
 docs/handbook.out
@@ -75,3 +98,7 @@ Desktop.ini
 # Playwright
 test-results/
 playwright-report/
+
+# The pinned opa binary for `make policy` (50 MB, fetched by `make policy-install-opa`)
+# Same reason as node_modules above: no trailing slash.
+.opa

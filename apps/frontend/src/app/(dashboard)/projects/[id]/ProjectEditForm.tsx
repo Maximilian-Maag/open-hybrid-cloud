@@ -17,10 +17,9 @@ import { t } from '@/lib/i18n'
 interface Props {
   project: Project
   costCenters: CostCenter[]
-  token: string
 }
 
-export function ProjectEditForm({ project, costCenters, token }: Props) {
+export function ProjectEditForm({ project, costCenters }: Props) {
   const router = useRouter()
   const lang = useLang()
   const { toast } = useToast()
@@ -42,7 +41,7 @@ export function ProjectEditForm({ project, costCenters, token }: Props) {
         description: description.trim() || undefined,
         costCenterId: costCenterId ? Number(costCenterId) : undefined,
       }
-      await put(`/api/projects/${project.id}`, body, token)
+      await put(`/api/projects/${project.id}`, body)
       toast(t('projectSaved', lang))
       router.refresh()
     } catch (err) {
@@ -55,7 +54,7 @@ export function ProjectEditForm({ project, costCenters, token }: Props) {
   async function handleDelete() {
     setDeleting(true)
     try {
-      await del(`/api/projects/${project.id}`, token)
+      await del(`/api/projects/${project.id}`)
       router.push('/projects')
       router.refresh()
     } catch (err) {
@@ -95,7 +94,7 @@ export function ProjectEditForm({ project, costCenters, token }: Props) {
               label={t('costCenter', lang)}
               value={costCenterId}
               onChange={(e) => setCostCenterId(e.target.value)}
-              placeholder="None"
+              placeholder={t('none', lang)}
               options={costCenters.map((cc) => ({ value: cc.id, label: `${cc.code} — ${cc.name}` }))}
             />
           )}

@@ -1,9 +1,11 @@
 import type { SessionUser } from '@open-hybrid-cloud/types'
 import { db } from '@/lib/db/client'
-import { projects, users, costCenters, infrastructureElements, type Project } from '@/lib/db/schema'
-import { eq, sql, and } from 'drizzle-orm'
+import { projects, users, costCenters, infrastructureElements, orders, type Project } from '@/lib/db/schema'
+import { eq, sql, and, isNull, count } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
-import { fireDestroyTriggers } from '@/lib/services/teardown'
+import { fireDestroyTriggers, destroyVariables } from '@/lib/services/teardown'
+import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
+import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
 
 export interface ProjectRow {
   id: number
@@ -39,7 +41,9 @@ export const listProjects = async (session: SessionUser): Promise<Result<Project
     .from(projects)
     .leftJoin(users, eq(projects.ownerId, users.id))
     .leftJoin(costCenters, eq(projects.costCenterId, costCenters.id))
-    .where(isAdmin ? undefined : eq(projects.ownerId, session.id))
+    // Retired projects are gone from every screen. Their rows survive only so the
+    // orders inside them keep a `project_id` that resolves (#187).
+    .where(isAdmin ? isNull(projects.retiredAt) : and(isNull(projects.retiredAt), eq(projects.ownerId, session.id)))
     .orderBy(sql`${projects.createdAt} DESC`)
 
   return ok(rows as ProjectRow[])
@@ -63,7 +67,8 @@ export const getProjectById = async (
     .from(projects)
     .leftJoin(users, eq(projects.ownerId, users.id))
     .leftJoin(costCenters, eq(projects.costCenterId, costCenters.id))
-    .where(eq(projects.id, projectId))
+    // A retired project is gone from every screen, including its own (#187).
+    .where(and(eq(projects.id, projectId), isNull(projects.retiredAt)))
     .limit(1)
 
   if (!rows.length) return err(404, 'Project not found')
@@ -90,6 +95,11 @@ export const createProject = async (
     })
     .returning()
 
+  // Projects were the last mutating endpoint in the backend writing nothing to
+  // the append-only log — #137 closed without them, presumably because they live
+  // in `services/` rather than `services/admin/` (#187).
+  await logAudit(session.id, 'project.created', project.id, `Created project ${project.name}`)
+
   return ok(project)
 }
 
@@ -115,11 +125,19 @@ export const updateProject = async (
   if (input.description !== undefined) update.description = input.description
   if (input.costCenterId !== undefined) update.costCenterId = input.costCenterId
 
+  // A well-formed `{}` used to reach `.set({})`, where Drizzle's mapUpdateSet
+  // throws "No values to set" — an unhandled 500 any project manager could hit on
+  // their own project (issue #143). Checked after the ownership check so it cannot
+  // be used to probe which projects exist.
+  if (isEmptyUpdate(update)) return err(400, EMPTY_UPDATE_MESSAGE)
+
   const [updated] = await db
     .update(projects)
     .set(update)
     .where(eq(projects.id, projectId))
     .returning()
+
+  await logAudit(session.id, 'project.updated', projectId, changedFields(update))
 
   return ok(updated)
 }
@@ -137,7 +155,7 @@ export const deleteProject = async (
 
   // fire destroy webhooks for all active infra elements
   const activeInfra = await db
-    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters })
+    .select({ id: infrastructureElements.id, orderId: infrastructureElements.orderId, productId: infrastructureElements.productId, environmentId: infrastructureElements.environmentId, parameters: infrastructureElements.parameters, sequence: infrastructureElements.sequence, sizeCode: infrastructureElements.sizeCode, stateKeyNamespace: infrastructureElements.stateKeyNamespace, stateKeys: infrastructureElements.stateKeys })
     .from(infrastructureElements)
     .where(and(eq(infrastructureElements.projectId, projectId), eq(infrastructureElements.status, 'active')))
 
@@ -156,7 +174,7 @@ export const deleteProject = async (
       .where(and(eq(infrastructureElements.id, infra.id), eq(infrastructureElements.status, 'active')))
       .returning({ id: infrastructureElements.id })
     if (!claimed.length) continue
-    const destroyVars = { ...infra.parameters, TF_ACTION: 'destroy', INFRA_ID: String(infra.id), ORDER_ID: String(infra.orderId) }
+    const destroyVars = destroyVariables(infra)
     try {
       // Fires destroy for BOTH product webhooks and pipeline stacks — stack-
       // provisioned infra would otherwise leak on project deletion.
@@ -179,7 +197,69 @@ export const deleteProject = async (
     )
   }
 
-  const deleted = await db.delete(projects).where(eq(projects.id, projectId)).returning({ id: projects.id })
-  if (!deleted.length) return err(404, 'Project not found')
-  return ok(undefined)
+  /*
+   * Whether this delete has to preserve order history (#187).
+   *
+   * `orders.project_id` is ON DELETE CASCADE and `order_comments.order_id`
+   * cascades from there, so deleting a project deleted every order inside it —
+   * and with them `orders.product_snapshot`, the column that exists precisely so
+   * a later catalogue change cannot rewrite what a customer was charged. The
+   * spend those orders represent then leaves the dashboard, the CSV and the PDF,
+   * retroactively and permanently.
+   *
+   * #142 gave `deleteProduct` and `deleteCategory` the retire-instead-of-delete
+   * treatment. This one never got it, and it is the one of the three that
+   * cascades to `orders` DIRECTLY rather than through `products`.
+   *
+   * So: a project that holds orders is RETIRED and its row stays, as the
+   * `project_id` those orders point at. A project that never held one has no
+   * history to keep and is still deleted outright.
+   */
+  return await db.transaction(async (tx) => {
+    // FOR UPDATE and the count in the same transaction, so an order placed
+    // between the two cannot be cascaded away by a delete that decided the
+    // project was empty.
+    const [locked] = await tx
+      .select({ id: projects.id, name: projects.name, retiredAt: projects.retiredAt })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1)
+      .for('update')
+
+    // An already-retired project is gone from every screen, so asking to delete
+    // it again is a 404 like any other missing project.
+    if (!locked || locked.retiredAt !== null) return err(404, 'Project not found')
+
+    const [{ orderCount }] = await tx
+      .select({ orderCount: count() })
+      .from(orders)
+      .where(eq(orders.projectId, projectId))
+
+    if (orderCount > 0) {
+      await tx.update(projects).set({ retiredAt: new Date() }).where(eq(projects.id, projectId))
+
+      // On the transaction's own connection, so it rolls back with the retirement.
+      await logAuditWith(
+        tx,
+        session.id,
+        'project.retired',
+        projectId,
+        `Retired project ${locked.name} (${orderCount} order(s) keep their history), decommissioning ${activeInfra.length} infrastructure element(s)`,
+      )
+
+      return ok(undefined)
+    }
+
+    await tx.delete(projects).where(eq(projects.id, projectId))
+
+    await logAuditWith(
+      tx,
+      session.id,
+      'project.deleted',
+      projectId,
+      `Deleted empty project ${locked.name}, decommissioning ${activeInfra.length} infrastructure element(s)`,
+    )
+
+    return ok(undefined)
+  })
 }

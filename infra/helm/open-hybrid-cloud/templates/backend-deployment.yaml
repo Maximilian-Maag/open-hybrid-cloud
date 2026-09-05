@@ -41,16 +41,6 @@ spec:
               value: {{ .Values.backend.env.frontendUrl | quote }}
             - name: EXCHANGE_RATE_API_URL
               value: {{ .Values.backend.env.exchangeRateApiUrl | quote }}
-            {{- with .Values.backend.env.entra }}
-            {{- if .tenantId }}
-            - name: ENTRA_TENANT_ID
-              value: {{ .tenantId | quote }}
-            - name: ENTRA_CLIENT_ID
-              value: {{ .clientId | quote }}
-            - name: ENTRA_CLIENT_SECRET
-              value: {{ .clientSecret | quote }}
-            {{- end }}
-            {{- end }}
             {{- if .Values.decommissionSweep.enabled }}
             # Presence of this secret is what enables POST
             # /api/internal/decommission-sweep; without it the endpoint returns
@@ -90,6 +80,25 @@ spec:
                 secretKeyRef:
                   name: {{ include "open-hybrid-cloud.backend.fullname" . }}
                   key: ADMIN_PASSWORD
+            {{- with .Values.backend.secrets.totpEncryptionKey }}
+            - name: TOTP_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
+                  key: TOTP_ENCRYPTION_KEY
+            {{- end }}
+            {{- with .Values.backend.webauthn }}
+            {{- if .rpId }}
+            # Plain env, not a secret: these are public identifiers the browser
+            # already knows. Required in production — see values.yaml (#197).
+            - name: WEBAUTHN_RP_ID
+              value: {{ .rpId | quote }}
+            {{- end }}
+            {{- if .rpOrigin }}
+            - name: WEBAUTHN_RP_ORIGIN
+              value: {{ .rpOrigin | quote }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.backend.env.smtp }}
             {{- if .pass }}
             - name: SMTP_PASS
@@ -98,6 +107,17 @@ spec:
                   name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
                   key: SMTP_PASS
             {{- end }}
+            {{- end }}
+            {{- if .Values.backend.secrets.secretEncryptionKey }}
+            # Optional, and the secret only carries this key when it is set, so
+            # the reference has to be conditional too: an unconditional
+            # secretKeyRef would hold the pod in CreateContainerConfigError on
+            # every release that leaves the integration registry off.
+            - name: SECRET_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  key: SECRET_ENCRYPTION_KEY
             {{- end }}
           livenessProbe:
             httpGet:

@@ -71,12 +71,12 @@ describe('OrderForm parameter resolution', () => {
       return []
     }) as never)
 
-    render(<OrderForm product={product} projects={[]} costCenters={[]} token="t" />)
+    render(<OrderForm product={product} projects={[]} costCenters={[]} />)
 
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
 
     await waitFor(() => {
-      expect(mockedGet).toHaveBeenCalledWith('/api/catalog/7?lang=en&environmentId=1', 't')
+      expect(mockedGet).toHaveBeenCalledWith('/api/catalog/7?lang=en&environmentId=1')
     })
 
     // Exactly one REGION control, and it is the definition createOrder will
@@ -94,7 +94,7 @@ describe('OrderForm parameter resolution', () => {
       return []
     }) as never)
 
-    render(<OrderForm product={product} projects={[]} costCenters={[]} token="t" />)
+    render(<OrderForm product={product} projects={[]} costCenters={[]} />)
 
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '2')
 
@@ -142,7 +142,7 @@ describe('OrderForm parameter resolution', () => {
   it('offers a cost-centre picker in select mode', async () => {
     const detail = envWithMode('select')
     mockCatalogFor(detail)
-    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} />)
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
 
     expect(await screen.findByLabelText(/^cost center/i)).toBeInTheDocument()
@@ -152,7 +152,7 @@ describe('OrderForm parameter resolution', () => {
   it('shows the fixed account instead of a picker in overhead mode', async () => {
     const detail = envWithMode('overhead', { overheadCostCenterId: 10, overheadCostCenterName: 'Shared Platform' })
     mockCatalogFor(detail)
-    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} />)
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
 
     expect(await screen.findByTestId('overhead-cost-center')).toHaveTextContent('Shared Platform')
@@ -163,7 +163,7 @@ describe('OrderForm parameter resolution', () => {
   it('renders a placeholder when an overhead offering has no account configured', async () => {
     const detail = envWithMode('overhead')
     mockCatalogFor(detail)
-    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} />)
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
 
     expect(await screen.findByTestId('overhead-cost-center')).toHaveTextContent('—')
@@ -172,7 +172,7 @@ describe('OrderForm parameter resolution', () => {
   it('shows no cost-centre control at all in project mode', async () => {
     const detail = envWithMode('project')
     mockCatalogFor(detail)
-    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} token="t" />)
+    render(<OrderForm product={detail} projects={[]} costCenters={costCenters} />)
     await userEvent.selectOptions(screen.getByLabelText(/environment/i), '1')
 
     expect(screen.queryByLabelText(/^cost center/i)).not.toBeInTheDocument()
@@ -200,7 +200,11 @@ describe('OrderForm parameter resolution', () => {
 
   const mockReorderApi = (elements: unknown[] = [infraElement]) => {
     mockedGet.mockImplementation((async (path: string) => {
-      if (path.startsWith('/api/infrastructure')) return elements
+      // A page, not a bare array: /api/infrastructure stopped returning every
+      // element ever provisioned (#158). This picker reads one window of it.
+      if (path.startsWith('/api/infrastructure')) {
+        return { items: elements, total: elements.length, limit: 50, offset: 0 }
+      }
       if (path.startsWith('/api/catalog/')) {
         return { ...product, parameters: [param({ id: 2, name: 'REGION', environmentId: 2, scope: 'product', scopeId: 7, label: 'Region (env two)' })] }
       }
@@ -210,7 +214,7 @@ describe('OrderForm parameter resolution', () => {
 
   it('preselects the project it was given', async () => {
     mockReorderApi()
-    render(<OrderForm product={product} projects={projects} costCenters={[]} token="t" initialProjectId="5" />)
+    render(<OrderForm product={product} projects={projects} costCenters={[]} initialProjectId="5" />)
 
     expect(screen.getByLabelText(/project/i)).toHaveValue('5')
   })
@@ -218,7 +222,7 @@ describe('OrderForm parameter resolution', () => {
   it('adopts the named element: its environment and its parameters', async () => {
     mockReorderApi()
     render(
-      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+      <OrderForm product={product} projects={projects} costCenters={[]}
         fromInfraId="99" initialProjectId="5" />,
     )
 
@@ -231,7 +235,7 @@ describe('OrderForm parameter resolution', () => {
   it('explains that the form was pre-filled', async () => {
     mockReorderApi()
     render(
-      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+      <OrderForm product={product} projects={projects} costCenters={[]}
         fromInfraId="99" initialProjectId="5" />,
     )
 
@@ -244,7 +248,7 @@ describe('OrderForm parameter resolution', () => {
     // A stale or hand-edited link must not silently apply someone else's config.
     mockReorderApi([])
     render(
-      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+      <OrderForm product={product} projects={projects} costCenters={[]}
         fromInfraId="99" initialProjectId="5" />,
     )
 
@@ -257,7 +261,7 @@ describe('OrderForm parameter resolution', () => {
     const user = userEvent.setup()
     mockReorderApi()
     render(
-      <OrderForm product={product} projects={projects} costCenters={[]} token="t"
+      <OrderForm product={product} projects={projects} costCenters={[]}
         fromInfraId="99" initialProjectId="5" />,
     )
 
@@ -270,7 +274,7 @@ describe('OrderForm parameter resolution', () => {
 
   it('ignores the reorder hint when no element was named', async () => {
     mockReorderApi()
-    render(<OrderForm product={product} projects={projects} costCenters={[]} token="t" initialProjectId="5" />)
+    render(<OrderForm product={product} projects={projects} costCenters={[]} initialProjectId="5" />)
 
     await waitFor(() => expect(mockedGet).toHaveBeenCalled())
     expect(screen.queryByText(/parameters were pre-filled/i)).not.toBeInTheDocument()
@@ -318,7 +322,7 @@ describe('OrderForm parameter resolution', () => {
         product={detail}
         projects={[{ id: 5, name: 'Webshop', description: '', ownerId: 1, costCenterId: null, createdAt: '' }] as never}
         costCenters={[]}
-        token="t"
+       
       />,
     )
   }
@@ -396,5 +400,61 @@ describe('OrderForm parameter resolution', () => {
 
     await waitFor(() => expect(screen.getByLabelText(/project/i)).toBeInTheDocument())
     expect(screen.queryByLabelText(/try it out/i)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * An invalid quantity used to disable the submit button and say nothing.
+ *
+ * `Number('')` is 0, so clearing the field made the form unsubmittable in
+ * silence — and a disabled <button> is not focusable, so a screen-reader user
+ * tabbing this form reached the end and found no submit control at all, with no
+ * explanation of where it went. This is the app's primary conversion path
+ * (WCAG 3.3.1, 3.3.3 — #186).
+ */
+describe('OrderForm quantity', () => {
+  const projects = [{ id: 5, name: 'Proj', costCenterId: null }] as never
+
+  async function fillOrder() {
+    const user = userEvent.setup()
+    render(<OrderForm product={product} projects={projects} costCenters={[]} />)
+    await user.selectOptions(screen.getByLabelText(/environment/i), '1')
+    await user.selectOptions(await screen.findByLabelText(/project/i), '5')
+    return user
+  }
+
+  it('keeps the submit control reachable when the quantity is empty', async () => {
+    const user = await fillOrder()
+    await user.clear(screen.getByLabelText(/quantity/i))
+
+    expect(screen.getByRole('button', { name: /place order/i })).toBeEnabled()
+  })
+
+  it('says what is wrong with the field rather than only refusing', async () => {
+    const user = await fillOrder()
+    await user.clear(screen.getByLabelText(/quantity/i))
+
+    const field = screen.getByLabelText(/quantity/i)
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(field).toHaveAccessibleDescription(/permitted range/i)
+  })
+
+  it('refuses the order through the same alert every other refusal uses', async () => {
+    const user = await fillOrder()
+    await user.clear(screen.getByLabelText(/quantity/i))
+    await user.click(screen.getByRole('button', { name: /place order/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/permitted range/i)
+    expect(mockedPost).not.toHaveBeenCalled()
+  })
+
+  it('lets a valid quantity through', async () => {
+    const user = await fillOrder()
+    await user.clear(screen.getByLabelText(/quantity/i))
+    await user.type(screen.getByLabelText(/quantity/i), '3')
+    await user.click(screen.getByRole('button', { name: /place order/i }))
+
+    await waitFor(() => expect(mockedPost).toHaveBeenCalled())
+    expect((mockedPost.mock.calls[0][1] as Record<string, unknown>).quantity).toBe(3)
   })
 })

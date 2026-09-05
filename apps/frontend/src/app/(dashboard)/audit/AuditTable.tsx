@@ -1,21 +1,17 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { AuditEntry, PaginatedResponse } from '@open-hybrid-cloud/types'
-import { get } from '@/lib/api'
+import { get, PROXY_PREFIX } from '@/lib/api'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { Alert } from '@/components/ui/Alert'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
-interface Props {
-  token: string
-}
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
-
-export function AuditTable({ token }: Props) {
+export function AuditTable() {
   const lang = useLang()
   const [entries, setEntries] = useState<AuditEntry[]>([])
   const [total, setTotal] = useState(0)
@@ -30,8 +26,18 @@ export function AuditTable({ token }: Props) {
   const [debouncedUser, setDebouncedUser] = useState('')
   const [debouncedAction, setDebouncedAction] = useState('')
   const [exportError, setExportError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const pageSize = 20
+
+  // Bumped on every load, so a response can tell whether it is still the
+  // newest one asked for by the time it comes back. Pagination and filters
+  // both refire `load()` without waiting for the previous request, and
+  // clicking Next twice quickly (or a filter change while a page fetch is in
+  // flight) must not let the older answer land on top of the newer one — the
+  // stale `total` it carries also drives the Next/Previous disabled state
+  // (#138).
+  const loadGeneration = useRef(0)
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -42,6 +48,7 @@ export function AuditTable({ token }: Props) {
   }, [userFilter, actionFilter])
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -54,8 +61,10 @@ export function AuditTable({ token }: Props) {
 
       const result = await get<PaginatedResponse<AuditEntry> | AuditEntry[]>(
         `/api/audit?${params.toString()}`,
-        token,
       )
+      // A newer request (another page or filter change) has since gone out —
+      // its answer, not this one, must decide what is on screen.
+      if (loadGeneration.current !== generation) return
       if (Array.isArray(result)) {
         setEntries(result)
         setTotal(result.length)
@@ -63,14 +72,26 @@ export function AuditTable({ token }: Props) {
         setEntries(result.data ?? [])
         setTotal(result.total ?? 0)
       }
-    } catch {
-      /* empty */
+      setLoadError(null)
+    } catch (err) {
+      // The failure used to be dropped here, and the table then rendered "no
+      // audit entries" — which for the audit log specifically is the wrong
+      // default. "No entries match" is a statement about the record, and an
+      // administrator checking who changed something reads it as evidence. An
+      // outage produced the same screen as a clean record.
+      //
+      // Guarded by the same generation check as the success path: a stale
+      // FAILURE must not overwrite a newer success either. The rows are left
+      // alone rather than cleared, so a filter change that fails does not also
+      // destroy the answer the operator was reading.
+      if (loadGeneration.current !== generation) return
+      setLoadError(err instanceof Error ? err.message : t('failedToLoadAuditEntries', lang))
     } finally {
-      setLoading(false)
+      if (loadGeneration.current === generation) setLoading(false)
     }
-  }, [token, page, debouncedUser, debouncedAction, fromFilter, toFilter])
+  }, [page, debouncedUser, debouncedAction, fromFilter, toFilter, lang])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   async function handleExport(format: 'csv' | 'pdf') {
     const params = new URLSearchParams()
@@ -81,16 +102,25 @@ export function AuditTable({ token }: Props) {
     params.set('format', format)
 
     setExportError(null)
-    // The export endpoint authenticates via the Authorization header, which a
-    // plain window.open GET cannot set — fetch it and trigger a download from
-    // the response blob. This also keeps the token out of the URL/history/logs.
+    // Fetched as a blob rather than opened in a tab, so nothing that identifies
+    // the caller ever lands in a URL, in history or in a proxy log. It goes
+    // through /api/proxy like every other call: the session cookie rides along
+    // and the bearer token is attached on the server, out of script's reach
+    // (#146).
     try {
-      const res = await fetch(`${API_URL}/api/audit/export?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await fetch(`${PROXY_PREFIX}/api/audit/export?${params.toString()}`, {
         cache: 'no-store',
       })
       if (!res.ok) {
-        setExportError(t('exportFailed', lang))
+        // Prefer the server's own message. An export over the row cap comes back
+        // as a 413 that names the cap and says to narrow the range — advice the
+        // generic string would swallow, leaving the admin to retry the same query.
+        const detail = await res.json().catch(() => null)
+        setExportError(
+          typeof detail?.error === 'string' && detail.error !== ''
+            ? detail.error
+            : t('exportFailed', lang),
+        )
         return
       }
       const blob = await res.blob()
@@ -159,37 +189,47 @@ export function AuditTable({ token }: Props) {
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
         </div>
       ) : (
-        <Table<AuditEntry>
-          columns={[
-            { header: t('id', lang), accessor: 'id', className: 'w-16' },
-            {
-              header: t('user', lang),
-              render: (row) => <span>{row.userName ?? (row.userId ? `#${row.userId}` : t('system', lang))}</span>,
-            },
-            { header: t('action', lang), accessor: 'action' },
-            {
-              header: t('entity', lang),
-              render: (row) => <span>{row.entityId ?? '—'}</span>,
-            },
-            { header: t('details', lang), accessor: 'details', className: 'max-w-xs truncate' },
-            {
-              header: t('date', lang),
-              render: (row) => (
-                <span className="text-xs text-slate-500 whitespace-nowrap">
-                  {new Date(row.createdAt).toLocaleString(lang)}
-                </span>
-              ),
-            },
-          ]}
-          data={entries}
-          emptyMessage={t('noAuditEntries', lang)}
-        />
+        <>
+          {/* Above the rows, not instead of them. A refresh that fails must not
+              also take away the answer the operator was reading — but on a first
+              load there is nothing to keep, and rendering the table's "no audit
+              entries" copy underneath an error is the very confusion #221 is
+              about: it reads as a statement that the record is empty. */}
+          {loadError && <Alert className="mb-4">{loadError}</Alert>}
+          {(!loadError || entries.length > 0) && (
+            <Table<AuditEntry>
+              columns={[
+                { header: t('id', lang), accessor: 'id', className: 'w-16' },
+                {
+                  header: t('user', lang),
+                  render: (row) => <span>{row.userName ?? (row.userId ? `#${row.userId}` : t('system', lang))}</span>,
+                },
+                { header: t('action', lang), accessor: 'action' },
+                {
+                  header: t('entity', lang),
+                  render: (row) => <span>{row.entityId ?? '—'}</span>,
+                },
+                { header: t('details', lang), accessor: 'details', className: 'max-w-xs truncate' },
+                {
+                  header: t('date', lang),
+                  render: (row) => (
+                    <span className="text-xs text-slate-500 whitespace-nowrap">
+                      {new Date(row.createdAt).toLocaleString(lang)}
+                    </span>
+                  ),
+                },
+              ]}
+              data={entries}
+              emptyMessage={t('noAuditEntries', lang)}
+            />
+          )}
+        </>
       )}
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-slate-500">
-            Page {page} of {totalPages} ({total} entries)
+            {t('page', lang)} {page} / {totalPages} · {total} {t('entriesLower', lang)}
           </p>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>

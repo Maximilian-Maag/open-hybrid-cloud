@@ -13,8 +13,8 @@ vi.mock('@/lib/ci/webhooks', () => ({
 import { listProjects, getProjectById, createProject, updateProject, deleteProject } from './projects'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { projects, infrastructureElements } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { projects, infrastructureElements, orders, orderComments, auditLog } from '@/lib/db/schema'
+import { eq, desc } from 'drizzle-orm'
 import {
   createUser,
   createProject as seedProject,
@@ -167,7 +167,7 @@ describe('deleteProject', () => {
     if (!result.ok) expect(result.status).toBe(403)
   })
 
-  it('deletes the project from DB and returns ok(undefined)', async () => {
+  it('deletes an EMPTY project from DB and returns ok(undefined)', async () => {
     const admin = await createUser({ role: 'admin' })
     const pm = await createUser({ role: 'project_manager', email: 'pm@test.dev' })
     const p = await seedProject(pm.id)
@@ -202,6 +202,8 @@ describe('deleteProject', () => {
       product.id,
       env.id,
       expect.objectContaining({ TF_ACTION: 'destroy' }),
+      // The recorder that stores each pipeline id as it starts (issue #132).
+      expect.any(Function),
     )
     // Pipeline-stack destroy fired for every active element too, so stack-
     // provisioned infra is not leaked on project deletion.
@@ -210,10 +212,27 @@ describe('deleteProject', () => {
       product.id,
       env.id,
       expect.objectContaining({ TF_ACTION: 'destroy' }),
+      expect.any(Function),
+      // Fifth argument, which the webhook trigger does not take: the element's
+      // parameters with reserved names still in them, read only to derive the
+      // state key. A legacy stack keyed on a reserved name has no other way to
+      // find the value its own apply used.
+      expect.anything(),
+      // Sixth: the keys this element was PROVISIONED under (#200). The destroy
+      // has to address the state that exists, not one re-derived from a stack
+      // row that may have moved since.
+      expect.anything(),
     )
-    // The project is gone (its infra elements cascade-delete via FK)
+    // The elements are NOT gone. An infrastructure element always has an order
+    // (`order_id` is NOT NULL), so a project holding infrastructure is always a
+    // project holding orders, and is retired rather than deleted (#187). Their
+    // rows survive as the record of what was torn down, marked decommissioning.
     const rows = await db.select().from(infrastructureElements).where(eq(infrastructureElements.projectId, project.id))
-    expect(rows.length).toBe(0)
+    expect(rows).toHaveLength(2)
+    expect(rows.every((r) => r.status === 'decommissioning')).toBe(true)
+
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id))
+    expect(row.retiredAt).not.toBeNull()
   })
 
   // FA-09.8: already-decommissioning / decommissioned elements are skipped
@@ -239,6 +258,7 @@ describe('deleteProject', () => {
       product.id,
       env.id,
       expect.objectContaining({ TF_ACTION: 'destroy' }),
+      expect.any(Function),
     )
     expect(mockedStacks).toHaveBeenCalledTimes(1)
   })
@@ -274,9 +294,13 @@ describe('deleteProject', () => {
     expect(projectExistedAtTrigger).toBe(true)
     expect(infraExistedAtTrigger).toBe(true)
 
-    // And afterwards the project is gone
-    const rows = await db.select().from(projects).where(eq(projects.id, project.id))
-    expect(rows.length).toBe(0)
+    // And afterwards the project is retired rather than deleted — it holds an
+    // order, and that order's history is the thing #187 exists to keep. The row
+    // survives; it is gone from every screen.
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id))
+    expect(row.retiredAt).not.toBeNull()
+    const visible = await listProjects(makeSession(admin))
+    expect(visible.ok && visible.data.some((p) => p.id === project.id)).toBe(false)
   })
 
   it('refuses to delete the project when a destroy trigger could not be started', async () => {
@@ -307,5 +331,155 @@ describe('deleteProject', () => {
       .from(infrastructureElements)
       .where(eq(infrastructureElements.projectId, project.id))
     expect(infra.length).toBe(1)
+  })
+})
+
+// `orders.project_id` is ON DELETE CASCADE and `order_comments.order_id` cascades
+// from there, so deleting a project took every order inside it — and with them
+// `product_snapshot`, the column that exists so a catalogue edit cannot rewrite
+// what a customer was charged. The spend then left the dashboard, the CSV and the
+// PDF, retroactively. Proved on a real Postgres before this was written (#187).
+describe('deleteProject keeps order history (issue #187)', () => {
+  async function projectWithAnOrder() {
+    const admin = await createUser({ role: 'admin' })
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await seedProject(pm.id)
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
+    return { admin, pm, project, order }
+  }
+
+  it('retires a project that holds orders instead of deleting it', async () => {
+    const { admin, project, order } = await projectWithAnOrder()
+
+    const result = await deleteProject(makeSession(admin), project.id)
+
+    expect(result.ok).toBe(true)
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id))
+    expect(row).toBeDefined()
+    expect(row.retiredAt).not.toBeNull()
+    // The point of the whole change.
+    const kept = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(kept).toHaveLength(1)
+  })
+
+  it('keeps the comments on those orders too', async () => {
+    const { admin, pm, project, order } = await projectWithAnOrder()
+    await db.insert(orderComments).values({ orderId: order.id, userId: pm.id, body: 'approved by finance' })
+
+    await deleteProject(makeSession(admin), project.id)
+
+    const kept = await db.select().from(orderComments).where(eq(orderComments.orderId, order.id))
+    expect(kept).toHaveLength(1)
+  })
+
+  // Retired is not "still there" — it is gone from every screen, and its row
+  // survives only as the project_id those orders point at.
+  it('hides a retired project from the list and from its own page', async () => {
+    const { admin, pm, project } = await projectWithAnOrder()
+    await deleteProject(makeSession(admin), project.id)
+
+    const list = await listProjects(makeSession(admin))
+    expect(list.ok && list.data.some((p) => p.id === project.id)).toBe(false)
+
+    const own = await listProjects(makeSession(pm))
+    expect(own.ok && own.data.some((p) => p.id === project.id)).toBe(false)
+
+    const detail = await getProjectById(makeSession(admin), project.id)
+    expect(detail.ok).toBe(false)
+    if (!detail.ok) expect(detail.status).toBe(404)
+  })
+
+  it('answers 404 when asked to delete an already retired project', async () => {
+    const { admin, project } = await projectWithAnOrder()
+    await deleteProject(makeSession(admin), project.id)
+
+    const again = await deleteProject(makeSession(admin), project.id)
+
+    expect(again.ok).toBe(false)
+    if (!again.ok) expect(again.status).toBe(404)
+  })
+
+  // A project nobody ever ordered in has no history to keep, and tombstoning it
+  // would fill the table for nothing.
+  it('still hard-deletes a project with no orders', async () => {
+    const admin = await createUser({ role: 'admin' })
+    const pm = await createUser({ role: 'project_manager' })
+    const project = await seedProject(pm.id)
+
+    const result = await deleteProject(makeSession(admin), project.id)
+
+    expect(result.ok).toBe(true)
+    expect(await db.select().from(projects).where(eq(projects.id, project.id))).toHaveLength(0)
+  })
+})
+
+// `grep -c logAudit services/projects.ts` was 0: the most destructive operation
+// in the system was the one writing nothing to the append-only log. #137 closed
+// without projects, presumably because they live in `services/` rather than
+// `services/admin/`.
+describe('project audit trail (issue #187)', () => {
+  const lastEntry = async (action: string) => {
+    const [row] = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, action))
+      .orderBy(desc(auditLog.id))
+      .limit(1)
+    return row
+  }
+
+  it('records a creation', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+
+    const created = await createProject(makeSession(pm), { name: 'Pilot' })
+
+    expect(created.ok).toBe(true)
+    const entry = await lastEntry('project.created')
+    expect(entry.userId).toBe(pm.id)
+    expect(entry.details).toContain('Pilot')
+  })
+
+  it('records what an update changed', async () => {
+    const pm = await createUser({ role: 'project_manager' })
+    const project = await seedProject(pm.id)
+
+    await updateProject(makeSession(pm), project.id, { name: 'Renamed' })
+
+    const entry = await lastEntry('project.updated')
+    expect(entry.entityId).toBe(project.id)
+    expect(entry.details).toContain('name')
+  })
+
+  it('records a retirement, and says how much history it kept', async () => {
+    const admin = await createUser({ role: 'admin' })
+    const pm = await createUser({ role: 'project_manager' })
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const project = await seedProject(pm.id)
+    await seedOrder(project.id, product.id, env.id, pm.id, { status: 'completed' })
+
+    await deleteProject(makeSession(admin), project.id)
+
+    const entry = await lastEntry('project.retired')
+    expect(entry.userId).toBe(admin.id)
+    expect(entry.entityId).toBe(project.id)
+    expect(entry.details).toMatch(/1 order/)
+  })
+
+  it('records a hard delete of an empty project', async () => {
+    const admin = await createUser({ role: 'admin' })
+    const pm = await createUser({ role: 'project_manager' })
+    const project = await seedProject(pm.id)
+
+    await deleteProject(makeSession(admin), project.id)
+
+    const entry = await lastEntry('project.deleted')
+    expect(entry.entityId).toBe(project.id)
   })
 })

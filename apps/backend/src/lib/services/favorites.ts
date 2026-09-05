@@ -3,21 +3,27 @@ import { db } from '@/lib/db/client'
 import { productFavorites, products } from '@/lib/db/schema'
 import { and, eq, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
+import { primaryImageAltSql } from '@/lib/services/catalog'
+import { productNameSql, productDescriptionSql } from '@/lib/db/productText'
 
 export interface FavoriteProduct {
   productId: number
   categoryId: number
   name: string
   description: string
+  /** Carried for the same reason the catalogue carries it: the card needs an alt text. */
+  imageAlt: string | null
   createdAt: Date
 }
 
 /**
  * The caller's favourited products, resolved to catalogue rows.
  *
- * Returns the same name/description shape as the catalogue list, translated with
- * the same COALESCE fallback chain, so the favourites section can render product
- * cards without a second round trip per product.
+ * Returns the same name/description/imageAlt shape as the catalogue list,
+ * translated with the same COALESCE fallback chain, so the favourites section can
+ * render product cards without a second round trip per product — and without
+ * needing the product to be on the catalogue page the browser happens to hold,
+ * which is what paging the catalogue (#91) took away.
  */
 export const listFavorites = async (
   session: SessionUser,
@@ -27,19 +33,10 @@ export const listFavorites = async (
     .select({
       productId: productFavorites.productId,
       categoryId: products.categoryId,
+      imageAlt: primaryImageAltSql,
       createdAt: productFavorites.createdAt,
-      name: sql<string>`COALESCE(
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
-        (SELECT name FROM product_translations WHERE product_id = ${products.id} LIMIT 1)
-      )`,
-      description: sql<string>`COALESCE(
-        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = ${lang}),
-        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'en'),
-        (SELECT description FROM product_translations WHERE product_id = ${products.id} AND language_code = 'de'),
-        ''
-      )`,
+      name: productNameSql(lang),
+      description: productDescriptionSql(lang),
     })
     .from(productFavorites)
     // Inner join, not left: a favourite whose product is gone has nothing to

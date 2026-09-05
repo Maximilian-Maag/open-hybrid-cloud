@@ -93,15 +93,29 @@ changed blind.
 
 ---
 
-## Deferred — confirmed findings needing a decision (not changed)
+## Fixed since the audit
 
-- **GitHub-backed orders never complete (HIGH).** `triggerGitHubWorkflow` returns
-  a synthetic id `owner/repo/workflow@branch` (workflow_dispatch has no run id),
-  but the callback stores the numeric `workflow_run.id`. They can never match in
-  `handlePipelineEvent`, so GitHub orders stay `provisioning` forever. Proper fix
-  requires correlating on a unique dispatch input (e.g. `ORDER_ID` echoed into
-  the run) and can't be verified without a live GitHub — needs design + real
-  testing. *File:* `lib/ci/github.ts`, `webhook/handler.ts`.
+- **GitHub-backed orders never complete (HIGH).** `triggerGitHubWorkflow`
+  returned a synthetic id `owner/repo/workflow@branch` while the callback stored
+  the numeric `workflow_run.id`, so the two never matched and GitHub orders
+  stayed `provisioning` forever. `workflow_dispatch` still answers 204 with no
+  body; the run is now looked up afterwards on
+  `/actions/workflows/{workflow}/runs`, filtered to `event=workflow_dispatch`,
+  the dispatched branch, and a `created_at` no earlier than the dispatch less a
+  10-second clock-skew allowance — `created_at` is GitHub's clock, and a portal
+  running a few seconds fast would otherwise reject the run it just asked for.
+
+  A correlation, not an identity: two orders dispatching the same workflow on
+  the same branch within the lookup window are indistinguishable, and eliminating
+  that needs the customer's workflow to echo a portal-generated input into
+  `run-name:` — which cannot be required of an existing workflow. A dispatch
+  whose run cannot be found raises an error that says the workflow may be running
+  untracked, rather than recording an id that will never match.
+  *File:* `lib/ci/github.ts`. Issue #207.
+
+---
+
+## Deferred — confirmed findings needing a decision (not changed)
 
 - **Multi-pipeline orders complete on the first success (HIGH).**
   `handlePipelineEvent` completes an order as soon as *any* pipeline in its array
@@ -128,11 +142,19 @@ changed blind.
   snapshots exist, and 0001 is stale. The runtime migrator is unaffected, but the
   next `drizzle-kit generate` will fail or emit a corrupt duplicate migration.
   Regenerate the snapshots with `drizzle-kit`. *Dir:* `drizzle/meta/`.
+  **FIXED (issue #141).** It was worse than "will fail": by the time the gap ran
+  0002–0031 it emitted 194 lines of already-applied DDL including `ALTER TABLE
+  "pipeline_stacks" DROP COLUMN "webhook_url"`, whose 42703 is not idempotent to
+  `runBootstrap`, so the app would not boot. Closed by snapshotting the journal
+  tip rather than rewriting history — see the follow-up entry below.
 
-- **OAuth login flow (LOW–MEDIUM).** The Entra `id_token` is decoded but not
+- **OAuth login flow (LOW–MEDIUM).** ~~The Entra `id_token` is decoded but not
   verified (no JWKS/`aud`/`iss`), there's no `state`/`nonce` (login-CSRF), and
-  the session JWT is delivered as a URL query param. Needs an auth-flow rework.
-  *File:* `auth/callback/route.ts`.
+  the session JWT is delivered as a URL query param. Needs an auth-flow rework.~~
+  Resolved by removal in #139: the flow was dead end-to-end — no route started
+  it and nothing on the frontend read its result — so the handler, the `ENTRA_*`
+  configuration and the proxy rules that advertised it are gone rather than
+  reworked; #250 carries what a real implementation needs. *File was:* `auth/callback/route.ts`.
 
 - **Login rate-limit is bypassable (MEDIUM).** Keyed on the spoofable
   `X-Forwarded-For`; the in-memory bucket is also unbounded. Derive the IP from
@@ -295,6 +317,11 @@ at all levels are in `docs/TEST_PLAN.md`.
   status transitions are now atomic, the destroy rows are claimed before
   triggering, and the misleading "destroy complete before delete" comment was
   corrected. Full launch-failure propagation is tracked as a follow-up.
+  *Resolved (issues #132/#134).* The pipelines-only wrappers are gone: every
+  caller now uses the `*Tracked` variants and records a `trigger-failed:*`
+  sentinel, so an order waiting on a trigger that never started cannot complete,
+  and `deleteCategory` joined `deleteProject`/`deleteProduct` in refusing to
+  cascade when a destroy could not be launched (issue #133).
 - **Full `admin/**` CRUD form/manager i18n.** StatusBadge, detail pages, footer
   and imprint are done, but the admin create/edit/delete forms and manager
   headers remain hardcoded English — ~100 strings needing accurate translation
@@ -307,6 +334,19 @@ at all levels are in `docs/TEST_PLAN.md`.
   runtime migrator (`readMigrationFiles`) is unaffected; only `drizzle-kit
   generate` is impacted. Fix in a dedicated effort: regenerate the snapshot chain
   with drizzle-kit and verify against a fresh DB before relying on `db:generate`.
+  **FIXED (issue #141), without rewriting history.** The reasoning above holds —
+  the .sql files and `_journal.json` are untouched. What was missing is that
+  drizzle-kit only ever reads ONE snapshot when generating: the lexicographically
+  last `meta/*.json` (`preparePrevSnapshot`). The intermediate snapshots were
+  never needed; only the newest one is. `drizzle/meta/0031_snapshot.json` now
+  describes the journal tip, `pnpm --filter backend db:snapshot` regenerates it
+  after a hand-written migration, and `src/lib/db/journal.test.ts` fails if it
+  falls behind schema.ts again. Verified by building one database from the 28
+  migrations and another with `db:push` from schema.ts and diffing
+  `information_schema` — every column, index, check and foreign key now matches;
+  the only remaining differences are constraint NAMES (`*_fkey` from Postgres
+  versus drizzle's `*_users_id_fk`), which no code refers to and which renaming
+  would cost a 40-constraint migration to buy nothing.
 - **GitHub workflow-run ID correlation** — needs a design decision (correlate via
   a unique dispatch input / run-name) and live-GitHub testing.
 - **OAuth hardening** (id_token signature/`aud`/`iss` verification, `state`/`nonce`,

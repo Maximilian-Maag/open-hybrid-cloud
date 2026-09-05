@@ -43,14 +43,17 @@ const seed = async () => {
     { scope: 'product', scopeId: nginx.id, name: 'admin_password', type: 'string', sensitive: true },
   ])
 
-  const o1 = await seedOrder(project.id, nginx.id, frankfurt.id, pm.id)
+  // Completed, not the helper's 'pending' default: since #287 the displayed
+  // status follows the order, and an element hanging off a pending order is a
+  // state the provisioning path never produces.
+  const o1 = await seedOrder(project.id, nginx.id, frankfurt.id, pm.id, { status: 'completed' })
   await db.update(orders).set({ costCenterId: cc.id }).where(eq(orders.id, o1.id))
   const el1 = await createInfraElement(o1.id, project.id, frankfurt.id, nginx.id, {
     parameters: { hostname: 'web-01', admin_password: 'sup3rs3cret' },
     deployedAt: new Date('2026-03-01T00:00:00.000Z'),
   })
 
-  const o2 = await seedOrder(project.id, postgres.id, vienna.id, pm.id)
+  const o2 = await seedOrder(project.id, postgres.id, vienna.id, pm.id, { status: 'completed' })
   const el2 = await createInfraElement(o2.id, project.id, vienna.id, postgres.id, {
     status: 'decommissioned',
     deployedAt: new Date('2026-05-01T00:00:00.000Z'),
@@ -83,7 +86,11 @@ describe('GET /api/infrastructure/export', () => {
     expect(res.headers.get('content-disposition')).toContain('infrastructure.csv')
 
     const text = await res.text()
-    expect(text.split('\n')[0]).toBe('id,product,environment,project,costCenter,status,deployedAt')
+    // `size` and `element` (issues #98/#104): an inventory of twenty identical
+    // rows from one order is unreadable without which one each is.
+    expect(text.split('\n')[0]).toBe(
+      'id,product,environment,project,costCenter,status,size,element,deployedAt',
+    )
     expect(text).toContain('Nginx Gateway')
     expect(text).toContain('AWS Frankfurt')
     expect(text).toContain('Webshop Platform')

@@ -2,24 +2,36 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
+import { LangProvider } from '@/components/layout/LangProvider'
 import { TopNav } from '@/components/layout/TopNav'
 import type { Branding } from '@open-hybrid-cloud/types'
 import { getLang } from '@/lib/getLang'
+import { isApiTokenExpired, expiredLoginUrl } from '@/lib/session'
 import { t } from '@/lib/i18n'
-import { readableInk, readableAccent, AA_NON_TEXT } from '@/lib/contrast'
+import { readableInk, readableAccent, accentRamp, AA_NON_TEXT } from '@/lib/contrast'
+import { CHART_STEPS } from '@/lib/chartTokens'
 
 const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
 
-  // THIS IS THE CRITICAL FIX:
   // Validate the session and all its required properties safely.
   // If anything is missing, the session is invalid; redirect to login.
   if (!session || !session.user || !session.apiToken || !session.user.role) {
     redirect('/login')
   }
 
+  // The middleware catches this first for any normal navigation; this is the
+  // render path's own guard, so a request that reached the layout with a dead
+  // backend token does not spend the page fetching 401s (#103).
+  if (isApiTokenExpired(session.apiTokenExp)) {
+    redirect(expiredLoginUrl('/'))
+  }
+
+  // Server-side, and it stays there. This layout renders on the server, so the
+  // Authorization headers below never cross the wire to a browser — which is the
+  // whole distinction #146 turns on. Nothing here may become a prop.
   const token = session.apiToken
   const role = session.user.role
   const lang = await getLang()
@@ -32,10 +44,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
     imprintText: '',
   }
   try {
-    const res = await fetch(`${API_SSR}/api/admin/branding`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    })
+    // The public route, not /api/admin/branding: this shell renders for every
+    // role and that route is root-only. Same six fields.
+    const res = await fetch(`${API_SSR}/api/public/branding`, { cache: 'no-store' })
     if (res.ok) branding = await res.json()
   } catch { /* use defaults */ }
 
@@ -76,20 +87,27 @@ export default async function DashboardLayout({ children }: { children: React.Re
     imprintText = '',
   } = branding
 
+  // Chart fills, derived here for the same reason --bp-text is: a page that painted
+  // its own segments would have to refetch the branding, and a ramp mixed in CSS
+  // could not guarantee the 3:1 (1.4.11) floor on an operator's pale colour.
+  const chartRamp = accentRamp(primaryColor, CHART_STEPS)
+
   return (
     <div
       className="min-h-screen flex flex-col bg-slate-50 text-slate-900 antialiased"
       style={{
         '--bp': primaryColor,
         '--bs': secondaryColor,
+        ...Object.fromEntries(chartRamp.map((tone, i) => [`--chart-${i + 1}`, tone])),
         // Foreground for anything painted ON the branding colours. Derived from
         // each colour's luminance instead of hardcoded white, which only stayed
         // legible while the operator happened to pick something dark.
         '--bp-ink': readableInk(primaryColor).ink,
         '--bs-ink': readableInk(secondaryColor).ink,
-        // The brand colour used AS text on a card — darkened until it clears AA
-        // against the app's own surfaces (see contrast.SURFACE; tuning against pure
-        // white left 12px links at 4.3:1 on the slate-50 body).
+        // The brand colour used AS text on a card — darkened until it clears
+        // readableAccent's default target (now 7:1, AAA) against the app's own
+        // surfaces (see contrast.SURFACE; tuning against pure white left 12px
+        // links at 4.3:1 on the slate-50 body).
         '--bp-text': readableAccent(primaryColor),
         // Boundary for filled controls painted in the secondary colour. A near-white
         // secondary is otherwise invisible against the page — a button that reads as
@@ -119,7 +137,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <TopNav role={role} lang={lang} />
       <main id="main" tabIndex={-1} className="flex-1">
         <div className="max-w-screen-2xl mx-auto px-4 py-6 animate-page-in">
-          {children}
+          {/* So a client component inside a page renders in the same language the
+              page around it was rendered in. */}
+          <LangProvider lang={lang}>{children}</LangProvider>
         </div>
       </main>
       {imprintText && (

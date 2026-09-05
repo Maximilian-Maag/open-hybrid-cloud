@@ -8,7 +8,14 @@ const UpdateAiSchema = z.object({
   provider: z.enum(['claude', 'openai', 'azure_openai', 'ollama', 'localai']),
   endpoint: z.string(),
   apiKey: z.string().optional(),
-  model: z.string().min(1),
+  /*
+   * Clearable, for the reason `.min(1)` was wrong on SMTP's host (#317): a
+   * value that can be set and never removed is a one-way door. NULL is what
+   * `lib/ai` already means by "no model configured" — it falls back to a
+   * default — and `updateAiConfig` stores NULL for an empty string so that
+   * fallback actually fires.
+   */
+  model: z.string(),
 })
 
 export async function GET(req: NextRequest) {
@@ -28,6 +35,6 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  await updateAiConfig(parsed.data)
+  await updateAiConfig(parsed.data, session.id)
   return NextResponse.json({ success: true })
 }

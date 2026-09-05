@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { UpdateProfileRequest, ChangePasswordRequest } from '@open-hybrid-cloud/types'
+import type { UpdateProfileRequest, ChangePasswordRequest, Role } from '@open-hybrid-cloud/types'
 import { put } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
@@ -9,14 +9,16 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
+import { TwoFactorCard } from './TwoFactorCard'
+import { SecurityKeysCard } from './SecurityKeysCard'
 
 interface Props {
-  token: string
   initialName: string
   email: string
+  role: Role | undefined
 }
 
-export function SettingsForms({ token, initialName, email }: Props) {
+export function SettingsForms({ initialName, email, role }: Props) {
   const lang = useLang()
   const [name, setName] = useState(initialName)
   const [profileSaving, setProfileSaving] = useState(false)
@@ -37,7 +39,7 @@ export function SettingsForms({ token, initialName, email }: Props) {
     setProfileSuccess(false)
     try {
       const body: UpdateProfileRequest = { name: name.trim() }
-      await put('/api/users/me', body, token)
+      await put('/api/users/me', body)
       setProfileSuccess(true)
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : t('failedToUpdateProfile', lang))
@@ -57,7 +59,7 @@ export function SettingsForms({ token, initialName, email }: Props) {
     setPwSuccess(false)
     try {
       const body: ChangePasswordRequest = { currentPassword, newPassword }
-      await put('/api/users/me/password', body, token)
+      await put('/api/users/me/password', body)
       setPwSuccess(true)
       setCurrentPassword('')
       setNewPassword('')
@@ -125,6 +127,26 @@ export function SettingsForms({ token, initialName, email }: Props) {
           </div>
         </form>
       </Card>
+
+      {/* Cosmetic only. The gate is `loadTwoFactorAccount` on the server, which
+          answers 403 to every 2FA endpoint for any other role; this just keeps a
+          card nobody can use off the page. An SSO administrator sees it and is
+          told by the backend that their MFA belongs to the identity provider
+          (issue #36).
+
+          Both administrative roles, since #197: `admin` must hold a factor too,
+          and a card that stayed root-only would have left them required to enroll
+          with nowhere to do it. */}
+      {(role === 'root' || role === 'admin') && (
+        <>
+          <TwoFactorCard />
+          {/* A sibling, not a tab inside it: the two are not alternatives to pick
+              between. Either satisfies the requirement, and holding both is the
+              sensible thing — a key for every day, an app for the day the key is
+              in the other coat (#197 part 2). */}
+          <SecurityKeysCard />
+        </>
+      )}
     </div>
   )
 }

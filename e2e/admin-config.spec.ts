@@ -1,5 +1,33 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures'
+import type { Page } from '@playwright/test'
 import { loginAsRoot } from './helpers'
+
+/**
+ * Save, and wait for a toast THIS save produced.
+ *
+ * Both tests below save twice and used to assert `toBeVisible()` on the toast
+ * after each — which the FIRST toast already satisfies, because it is still on
+ * screen. The second assertion could not fail, so a restore that was rejected
+ * looked exactly like one that worked, and the test only came apart two lines
+ * later at the reload (#317).
+ *
+ * Waiting for the previous toast to go away first is what makes the second
+ * assertion mean something. Playwright's auto-waiting cannot help here: the
+ * locator matches, it is simply matching the wrong instance.
+ */
+const saveAndConfirm = async (page: Page, button: RegExp, toast: RegExp) => {
+  await expect(page.getByText(toast)).toHaveCount(0)
+  await page.getByRole('button', { name: button }).click()
+
+  const confirmation = page.getByText(toast)
+  await expect(confirmation).toBeVisible({ timeout: 8000 })
+
+  // Dismissed rather than waited out. A success toast clears itself after 3.5s,
+  // and two of those plus two `next dev` cold compiles is most of the 30s test
+  // budget — this is the same clean slate for the price of a click.
+  await page.getByRole('button', { name: /dismiss/i }).click()
+  await expect(confirmation).toHaveCount(0, { timeout: 8000 })
+}
 
 test.describe('Admin - Branding Configuration', () => {
   test.beforeEach(async ({ page }) => {
@@ -43,12 +71,38 @@ test.describe('Admin - SMTP Configuration', () => {
     await expect(page.getByRole('button', { name: /save configuration/i })).toBeVisible()
   })
 
+  /**
+   * Puts the configuration back (#156).
+   *
+   * `app_config` is a singleton row shared by the whole deployment, so this test
+   * used to leave `smtp.example.com:587` configured for every run after it — and
+   * for whoever next opened the page by hand. Anything that then tried to send
+   * mail would attempt a connection to a host that does not exist.
+   */
   test('filling SMTP fields and saving shows success', async ({ page }) => {
-    await page.getByLabel(/^host/i).fill('smtp.example.com')
-    await page.getByLabel(/^port/i).fill('587')
-    await page.getByLabel(/from address/i).fill('noreply@example.com')
-    await page.getByRole('button', { name: /save configuration/i }).click()
-    await expect(page.getByText(/smtp.*saved|saved.*smtp/i)).toBeVisible({ timeout: 8000 })
+    const host = page.getByLabel(/^host/i)
+    const port = page.getByLabel(/^port/i)
+    const from = page.getByLabel(/from address/i)
+    const before = {
+      host: await host.inputValue(),
+      port: await port.inputValue(),
+      from: await from.inputValue(),
+    }
+
+    await host.fill('smtp.example.com')
+    await port.fill('587')
+    await from.fill('noreply@example.com')
+    await saveAndConfirm(page, /save configuration/i, /smtp.*saved|saved.*smtp/i)
+
+    // Restore, and assert the restore itself landed — a silent failure here is
+    // the leak this test is meant to stop having.
+    await host.fill(before.host)
+    await port.fill(before.port)
+    await from.fill(before.from)
+    await saveAndConfirm(page, /save configuration/i, /smtp.*saved|saved.*smtp/i)
+
+    await page.reload()
+    await expect(page.getByLabel(/^host/i)).toHaveValue(before.host)
   })
 })
 
@@ -73,10 +127,20 @@ test.describe('Admin - AI Configuration', () => {
     await expect(providerSelect.locator('option', { hasText: /ollama/i })).toBeAttached()
   })
 
+  // Same singleton, same restore (#156): this used to leave the AI model set to
+  // whatever string the test happened to use.
   test('saving AI config shows success toast', async ({ page }) => {
-    await page.getByLabel(/model/i).fill('claude-opus-4-5')
-    await page.getByRole('button', { name: /save/i }).click()
-    await expect(page.getByText(/ai.*saved|saved.*ai/i)).toBeVisible({ timeout: 8000 })
+    const model = page.getByLabel(/model/i)
+    const before = await model.inputValue()
+
+    await model.fill('claude-opus-4-5')
+    await saveAndConfirm(page, /save/i, /ai.*saved|saved.*ai/i)
+
+    await model.fill(before)
+    await saveAndConfirm(page, /save/i, /ai.*saved|saved.*ai/i)
+
+    await page.reload()
+    await expect(page.getByLabel(/model/i)).toHaveValue(before)
   })
 })
 

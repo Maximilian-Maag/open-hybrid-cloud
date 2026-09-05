@@ -3,6 +3,7 @@ import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { db, client } from '@/lib/db/client'
 import { users, branding } from '@/lib/db/schema'
 import bcrypt from 'bcryptjs'
+import { reportConfigProblems } from '@/lib/config/validate'
 
 // PostgreSQL error codes that mean the object already exists — safe to skip
 // when the DB was seeded via db:push instead of the migration runner.
@@ -50,6 +51,11 @@ export const runBootstrap = async (): Promise<void> => {
   if (bootstrapped) return
   bootstrapped = true
 
+  // Before anything else, and never fatal: a server that refuses logins is
+  // easier to diagnose than one that will not start, but the reason has to be
+  // on stderr at boot rather than surfacing later as a failed sign-in.
+  reportConfigProblems()
+
   try {
     await runMigrations()
   } catch (err) {
@@ -63,8 +69,13 @@ export const runBootstrap = async (): Promise<void> => {
     await db.insert(branding).values({
       shopName: 'Open Hybrid Cloud',
       shopSubtitle: 'Self-Service Portal',
-      primaryColor: '#ca8a04',
-      secondaryColor: '#f5f5f4',
+      // Matches the fallbacks the frontend uses when branding cannot be loaded
+      // (see app/(dashboard)/layout.tsx). They disagreed: this seeded #ca8a04 with
+      // a near-white #f5f5f4 secondary, so every primary button was painted in a
+      // colour indistinguishable from the page and read as disabled — and #ca8a04
+      // is the very value e2e/a11y.spec.ts uses as its "hostile" colour.
+      primaryColor: '#131921',
+      secondaryColor: '#febd69',
     })
     console.warn(`[bootstrap] Default branding created.`)
   }

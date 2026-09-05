@@ -2,7 +2,7 @@
 # Prerequisites:
 #   - docker login (to pull images from Docker Hub)
 #   - .env filled in (see .env.example)
-#   - nginx.conf in place (see nginx.conf.example)
+#   - SERVER_NAME in .env (nginx.conf.template is mounted, never copied)
 #   - TLS certificates in ./certs/ (fullchain.pem + privkey.pem)
 
 services:
@@ -14,8 +14,22 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      # The one host-specific value in the template. It must match NEXTAUTH_URL
+      # and the name on the certificate.
+      SERVER_NAME: ${SERVER_NAME:?SERVER_NAME must be your public domain, e.g. hcp.example.com}
+      # Where the image writes the rendered template. Default is conf.d, which is
+      # included from inside `http` — this template IS the whole nginx.conf.
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+      # Substitute SERVER_NAME and nothing else. Without the filter, envsubst
+      # also eats $$host, $$scheme, $$remote_addr and the upstream variables, and
+      # nginx cannot parse what comes out.
+      NGINX_ENVSUBST_FILTER: "^SERVER_NAME$$"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      # Mounted as a TEMPLATE, so the deployed config is this repository's file
+      # and cannot drift from it. See the header of nginx.conf.template for the
+      # outage that made this necessary.
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
       - ./certs:/etc/nginx/certs:ro
     depends_on:
       frontend:
@@ -26,7 +40,7 @@ services:
 
   # ── Frontend (Next.js UI) ──────────────────────────────────────────────────────
   frontend:
-    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-frontend:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-frontend:${IMAGE_TAG:?IMAGE_TAG must be set to the release you intend to run}
     container_name: open-hybrid-cloud-frontend
     expose:
       - "3000"
@@ -56,7 +70,7 @@ services:
 
   # ── Backend (Next.js API) ──────────────────────────────────────────────────────
   backend:
-    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-backend:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-backend:${IMAGE_TAG:?IMAGE_TAG must be set to the release you intend to run}
     container_name: open-hybrid-cloud-backend
     expose:
       - "3001"
@@ -65,13 +79,11 @@ services:
       JWT_SECRET: "${JWT_SECRET}"
       ADMIN_EMAIL: "${ADMIN_EMAIL}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
+      # Encrypts the root account's TOTP secret at rest. Blank derives it from
+      # JWT_SECRET — see ../../.env.example.
+      TOTP_ENCRYPTION_KEY: "${TOTP_ENCRYPTION_KEY:-}"
       FRONTEND_URL: "${NEXTAUTH_URL}"
       EXCHANGE_RATE_API_URL: "${EXCHANGE_RATE_API_URL}"
-      # Optional — Microsoft Entra ID (OIDC). Leave blank to disable.
-      ENTRA_TENANT_ID: "${ENTRA_TENANT_ID:-}"
-      ENTRA_CLIENT_ID: "${ENTRA_CLIENT_ID:-}"
-      ENTRA_CLIENT_SECRET: "${ENTRA_CLIENT_SECRET:-}"
-      ENTRA_REDIRECT_URI: "${ENTRA_REDIRECT_URI:-}"
       # Optional — SMTP. Leave blank to disable email.
       SMTP_HOST: "${SMTP_HOST:-}"
       SMTP_PORT: "${SMTP_PORT:-587}"
@@ -79,6 +91,9 @@ services:
       SMTP_USER: "${SMTP_USER:-}"
       SMTP_PASS: "${SMTP_PASS:-}"
       SMTP_TLS: "${SMTP_TLS:-true}"
+      # Optional — encrypts the integration registry's credentials (issue #111).
+      # Blank leaves the feature off; it never falls back to plain text.
+      SECRET_ENCRYPTION_KEY: "${SECRET_ENCRYPTION_KEY:-}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,7 +128,10 @@ services:
 
   # ── Auto-updater ───────────────────────────────────────────────────────────────
   watchtower:
-    image: containrrr/watchtower:latest
+    # 1.7.1, the version running on the dev host. Watchtower is the component
+    # that PULLS new images, so leaving it on a floating tag means the thing
+    # deciding what to update is itself updated without anyone deciding (#180).
+    image: containrrr/watchtower:1.7.1
     container_name: open-hybrid-cloud-watchtower
     environment:
       DOCKER_API_VERSION: "1.47"

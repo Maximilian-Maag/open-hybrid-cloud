@@ -5,10 +5,14 @@ import { getCostRows, getCostReport, assertMaySeeProject, type CostRowExport } f
 import { parseCostFilters } from '@/lib/services/costFilters'
 import { getBranding } from '@/lib/services/admin/branding'
 import PDFDocument from 'pdfkit'
+import { requestLang } from '@/lib/http'
 
+// `price` is the UNIT price and `lineTotalEur` is what reconciles with the report
+// total — an order of 20 costs 20 times one (issues #98/#104).
 const HEADER = [
   'orderId', 'createdAt', 'project', 'costCenter', 'product', 'environment',
-  'status', 'price', 'currency', 'priceEur', 'estimated',
+  'size', 'quantity', 'status', 'price', 'currency', 'priceEur', 'lineTotalEur',
+  'estimated',
 ] as const
 
 const cells = (row: CostRowExport) => [
@@ -18,11 +22,14 @@ const cells = (row: CostRowExport) => [
   row.costCenter,
   row.productName,
   row.environmentName,
+  row.size,
+  row.quantity,
   row.status,
   row.price,
   row.currency,
   // Blank rather than 0 when no rate was available: 0 would read as "free".
   row.priceEur === null ? '' : row.priceEur,
+  row.lineTotalEur === null ? '' : row.lineTotalEur,
   row.estimated ? 'yes' : 'no',
 ]
 
@@ -51,16 +58,20 @@ const buildPdf = async (
     )
     doc.moveDown()
 
+    // Widths narrowed rather than the page widened: Size and Qty are short, and
+    // the total still has to fit one landscape A4 line.
     const cols = [
-      { label: 'Order', width: 45 },
-      { label: 'Date', width: 105 },
-      { label: 'Project', width: 105 },
-      { label: 'Cost Center', width: 105 },
-      { label: 'Product', width: 105 },
-      { label: 'Environment', width: 95 },
-      { label: 'Price', width: 70 },
+      { label: 'Order', width: 42 },
+      { label: 'Date', width: 92 },
+      { label: 'Project', width: 92 },
+      { label: 'Cost Center', width: 92 },
+      { label: 'Product', width: 92 },
+      { label: 'Environment', width: 82 },
+      { label: 'Size', width: 45 },
+      { label: 'Qty', width: 28 },
+      { label: 'Price', width: 62 },
       { label: 'EUR', width: 65 },
-      { label: 'Est.', width: 35 },
+      { label: 'Est.', width: 30 },
     ]
 
     const rowHeight = 18
@@ -97,8 +108,11 @@ const buildPdf = async (
         row.costCenter,
         row.productName,
         row.environmentName,
+        row.size,
+        String(row.quantity),
         `${row.price} ${row.currency}`,
-        row.priceEur === null ? '—' : row.priceEur.toFixed(2),
+        // The LINE total, so the column sums to the figure in the header.
+        row.lineTotalEur === null ? '—' : row.lineTotalEur.toFixed(2),
         row.estimated ? 'yes' : '',
       ], y, false)
       y += rowHeight
@@ -132,11 +146,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid format — expected csv or pdf' }, { status: 400 })
   }
 
-  const result = await getCostRows(session, filters.data)
+  const result = await getCostRows(session, filters.data, requestLang(req))
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
 
   if (format === 'pdf') {
-    const report = await getCostReport(session, filters.data)
+    const report = await getCostReport(session, filters.data, new Date(), requestLang(req))
     const branding = await getBranding()
     const pdf = await buildPdf(
       result.data,

@@ -182,6 +182,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: ./.github/actions/setup
+
+      # The handbook includes four figures rendered from
+      # docs/architecture/workspace.dsl, and they are not committed. Without this
+      # the LaTeX step below cannot find them and `-halt-on-error` fails the
+      # release — so this step is what keeps releases building at all.
+      #
+      # `make diagrams-png`, the same command CI and a developer's machine run.
+      - name: Render the C4 diagrams
+        run: make diagrams-png
+
       - name: Compile handbook (LaTeX)
         uses: xu-cheng/latex-action@e2f99d4b3685b0da93f97e1b86ad8fab81105098 # v3
         with:

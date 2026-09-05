@@ -102,3 +102,11 @@ playwright-report/
 # The pinned opa binary for `make policy` (50 MB, fetched by `make policy-install-opa`)
 # Same reason as node_modules above: no trailing slash.
 .opa
+
+# Pinned diagram tooling (see scripts/diagramTools.ts) and its scratch output.
+.diagrams
+# Generated from docs/architecture/workspace.dsl by `make diagrams`. Not
+# committed, for the same reason handbook.pdf is not: a checked-in rendering
+# drifts from the model the moment nobody regenerates it, and the model is the
+# source of truth. `make handbook` regenerates them first.
+docs/architecture/diagrams/

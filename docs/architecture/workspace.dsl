@@ -17,14 +17,17 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
 
             frontend = container "Frontend" "React UI; server-side rendered with NextAuth.js sessions, communicates with Backend API via REST." "Next.js / React / Tailwind CSS / NextAuth.js" {
 
-                ui_auth = component "Auth Pages" "Login with local credentials; JWT in HttpOnly cookie forwarded to Backend. SSO is planned, not shipped (#139)."
+                ui_proxy = component "API Proxy" "The browser's ONLY route to the backend (#146). A Next.js route handler that reads the backend JWT from the server-side NextAuth session and attaches it as an Authorization header. The token is never handed to the browser — before #146 it was."
+                ui_auth = component "Auth Pages" "Login with local credentials. The backend JWT it receives is kept in the server-side NextAuth session, not in a cookie the browser can read (#146). SSO is planned, not shipped (#139)."
                 ui_catalog = component "Catalog" "Filtered product grid with locale currency prices; environment and parameter selection for ordering."
                 ui_orders = component "Orders" "Order form with dynamic parameters, project/cost-centre assignment and live status polling."
                 ui_approvals = component "Approvals" "Pending order queue for admins with inline approve/reject actions."
-                ui_infrastructure = component "Infrastructure" "Infrastructure items grouped by project/environment; shows outputs and decommission trigger."
+                ui_infrastructure = component "Infrastructure" "Infrastructure items grouped by project/environment; shows outputs, retry for a failed deployment, and both immediate and scheduled decommissioning."
                 ui_audit = component "Audit Log" "Filterable compliance log with CSV/PDF export."
                 ui_admin = component "Administration" "Manages catalog entities, environments, CI sources, users, branding and system config."
-                ui_settings = component "Settings" "User profile update and password change."
+                ui_settings = component "Settings" "Profile and password, plus second-factor enrolment (TOTP), passkeys (WebAuthn) and the active-session list."
+                ui_cart = component "Cart" "Collects catalogue lines before checkout; checkout needs a project and turns the cart into orders."
+                ui_projects = component "Projects" "Projects and their members, which are what scope a project manager's view of orders and infrastructure."
             }
 
             backend = container "Backend API" "RESTful API; thin route handlers delegate to a typed service layer; Zod-validated inputs; Result<T> error handling; OpenAPI docs at /api/docs." "Next.js / TypeScript / Drizzle ORM / Zod / JWT" {
@@ -34,16 +37,21 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
                 api_orders = component "Order Routes" "Thin HTTP shell: validate body, call orders or approvals service."
                 api_infrastructure = component "Infrastructure Routes" "Thin HTTP shell: call infrastructure service for list and decommission."
                 api_admin = component "Admin Routes" "Thin HTTP shells for catalog, environments, CI sources, users and config — each delegates to its service."
-                api_webhook = component "CI Webhook Receiver" "Verifies inbound X-Gitlab-Token against each deployment_environments.callback_secret (portal-generated, separate from the outbound trigger token stored in webhook_token); calls handlePipelineEvent to transition order/infra state and parse OpenTofu outputs."
+                api_webhook = component "CI Webhook Receiver" "Verifies inbound events against each deployment_environments.callback_secret — X-Gitlab-Token by equality for GitLab, X-Hub-Signature-256 / X-Hub-Signature by HMAC for GitHub and Bitbucket (portal-generated, separate from the outbound trigger token stored in webhook_token); calls handlePipelineEvent to transition order/infra state and parse OpenTofu outputs."
                 api_audit = component "Audit Routes" "Thin HTTP shell: call audit service for filterable log and CSV/PDF export."
                 svc_orders = component "Orders Service" "State machine: pending → provisioning → completed/failed/rejected. Calls CI trigger, writes audit, sends emails."
                 svc_approvals = component "Approvals Service" "Approve (triggers CI, creates infra element) and reject (stores note, notifies orderer)."
-                svc_infrastructure = component "Infrastructure Service" "Ownership check, status guard, CI destroy trigger, audit write."
-                svc_admin = component "Admin Services" "One service per domain: users, products, categories, environments, ciSources, parameters, costCenters, exchangeRates, config, branding, pipelineStacks."
+                svc_infrastructure = component "Infrastructure Service" "Ownership check, status guard, CI destroy trigger, audit write. Also the retry of a failed deployment and a DEFERRED decommission, which stores a time and is acted on later by the sweep rather than torn down now."
+                svc_cart = component "Cart Service" "Cart lines and checkout. Caps the elements one checkout may provision, and the count and the insert run in one transaction holding the owner row so two checkouts cannot both pass the cap (#188)."
+                svc_projects = component "Projects Service" "Projects and their membership, which is what scopes a project manager to their own orders and infrastructure."
+                svc_comments = component "Order Comments Service" "The thread on an order, including internal notes only staff see. Notifies via sendOrderComment."
+                svc_twofactor = component "Second Factor & Sessions" "TOTP enrolment and verification with a lockout, single-use recovery codes, WebAuthn passkeys, and the active-session list with per-session revocation."
+                svc_integrations = component "Integrations Registry" "External systems beyond CI — foreman, ansible, nexus, pulp, loki, grafana (#111). Stores kind, base URL, credentials and per-environment binding; each is configured but not yet driven by provisioning."
+                svc_admin = component "Admin Services" "One service per domain: users, products, categories, sizes, environments, ciSources, parameters, costCenters, exchangeRates, config, branding, pipelineStacks, templateImport and integrations."
                 svc_auth = component "Auth Service" "Bcrypt credential verify, JWT issue. Returns Result<T>. The SSO user upsert went with the removed callback (#139)."
                 lib_queries = component "Query Helpers" "Shared DB reads used across services: findProductName, findUserEmail, findAdminEmails, findCiSourceForEnv."
                 lib_result = component "Result<T> / toResponse" "Ok<T>|Err discriminated union; toResponse() maps Result to NextResponse."
-                api_notification = component "Notification" "Seven typed send functions; HTML-escapes all user strings before embedding in email bodies."
+                api_notification = component "Notification" "Eight typed send functions (the eighth, sendOrderComment, arrived with order comments); HTML-escapes all user strings before embedding in email bodies."
                 api_ai = component "AI Translation" "Translates product content into 25 languages via the configured AI provider."
                 api_exchange = component "Exchange Rates" "Fetches and caches exchange rates; converts amounts between currencies."
                 api_ci = component "CI Provider Client" "Unified client for GitLab, GitHub and Bitbucket: trigger pipelines, browse repos, fetch job traces. triggerProductWebhooks() orchestrates webhook execOrder; triggerPipelineStacks() sends stack steps (each with execOrder for parallel groups and optional upstreamRefs for cross-step state passing) as PIPELINE_STACK JSON to the CI orchestrator."
@@ -89,35 +97,59 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         admin -> ui_auth "Logs in with a local account (SSO planned, #139)"
         project_manager -> ui_auth "Logs in with a local account (SSO planned, #139)"
         root -> ui_auth "Logs in with local account"
-        ui_auth -> backend "POST /api/auth/login" "JSON/HTTPS"
+        ui_auth -> ui_proxy "POST /api/auth/login" "JSON/HTTPS"
         ui_auth -> oidc_provider "PLANNED (#139): OIDC Authorization Code Flow via NextAuth.js. There has never been an SSO provider in the NextAuth config or a button on the login page." "OIDC/HTTPS"
 
         admin -> ui_catalog "Browses infrastructure products"
         project_manager -> ui_catalog "Browses infrastructure products"
-        ui_catalog -> backend "GET /api/catalog, GET /api/catalog/{id}" "JSON/HTTPS"
+        ui_catalog -> ui_proxy "GET /api/catalog, GET /api/catalog/{id}" "JSON/HTTPS"
 
         admin -> ui_orders "Orders directly without approval"
         project_manager -> ui_orders "Places order, awaits approval"
-        ui_orders -> backend "POST /api/orders, GET /api/orders, GET /api/orders/{id}" "JSON/HTTPS"
+        ui_orders -> ui_proxy "POST /api/orders, GET /api/orders, GET /api/orders/{id}" "JSON/HTTPS"
 
         admin -> ui_approvals "Reviews and decides on pending orders"
-        ui_approvals -> backend "GET /api/approvals, POST /api/approvals/{id}/approve, POST /api/approvals/{id}/reject" "JSON/HTTPS"
+        ui_approvals -> ui_proxy "GET /api/approvals, POST /api/approvals/{id}/approve, POST /api/approvals/{id}/reject" "JSON/HTTPS"
 
         admin -> ui_infrastructure "Views all projects and infrastructure"
         root -> ui_infrastructure "Views all projects and infrastructure"
         project_manager -> ui_infrastructure "Views own projects and infrastructure"
-        ui_infrastructure -> backend "GET /api/infrastructure, POST /api/infrastructure/{id}/decommission" "JSON/HTTPS"
+        ui_infrastructure -> ui_proxy "GET /api/infrastructure, POST /api/infrastructure/{id}/decommission" "JSON/HTTPS"
 
         admin -> ui_audit "Views and exports the audit log"
         root -> ui_audit "Views and exports the audit log"
-        ui_audit -> backend "GET /api/audit, GET /api/audit/export" "JSON/HTTPS"
+        ui_audit -> ui_proxy "GET /api/audit, GET /api/audit/export" "JSON/HTTPS"
 
         root -> ui_admin "Manages catalog, configuration and users"
-        ui_admin -> backend "REST API calls to /api/admin/*" "JSON/HTTPS"
+        ui_admin -> ui_proxy "REST API calls to /api/admin/*" "JSON/HTTPS"
 
         admin -> ui_settings "Updates profile and password"
         project_manager -> ui_settings "Updates profile and password"
-        ui_settings -> backend "GET /api/users/me, PUT /api/users/me, PUT /api/users/me/password" "JSON/HTTPS"
+        ui_settings -> ui_proxy "GET /api/users/me, PUT /api/users/me/password, /api/users/me/2fa/*, /api/users/me/webauthn/*, /api/sessions" "JSON/HTTPS"
+
+        admin -> ui_cart "Collects lines, then checks out against a project"
+        project_manager -> ui_cart "Collects lines, then checks out against a project"
+        ui_cart -> ui_proxy "GET/POST/DELETE /api/cart, POST /api/cart/checkout" "JSON/HTTPS"
+
+        root -> ui_projects "Creates projects and assigns members"
+        admin -> ui_projects "Manages projects"
+        project_manager -> ui_projects "Sees the projects they belong to"
+        ui_projects -> ui_proxy "GET/POST/PUT /api/projects, /api/projects/{id}/members" "JSON/HTTPS"
+
+        # The one hop that actually crosses the container boundary. Drawn once,
+        # here, rather than eight times from eight page components — which is the
+        # point of #146 and was the thing the old model got wrong.
+        ui_proxy -> backend "Server-side fetch with the session's JWT as a Bearer token" "JSON/HTTPS"
+
+        # Relationships — the capabilities added after the model was last revised
+        api_orders -> svc_cart "Delegates cart and checkout" "internal"
+        svc_cart -> database "Reads and writes cart lines and the orders a checkout creates" "SQL/TCP"
+        svc_projects -> database "Reads and writes projects and membership" "SQL/TCP"
+        svc_comments -> database "Reads and writes order comments" "SQL/TCP"
+        svc_comments -> api_notification "sendOrderComment" "internal"
+        api_auth -> svc_twofactor "Verifies the second factor, or a passkey, after the password" "internal"
+        svc_twofactor -> database "Reads and writes user_totp, user_recovery_codes, webauthn_credentials and sessions" "SQL/TCP"
+        svc_integrations -> database "Reads and writes the integrations registry" "SQL/TCP"
 
         # Relationships — backend components
         # Route handler → service
@@ -171,7 +203,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         # Deployment — Docker Host
         deploymentEnvironment "Docker Host" {
             deploymentNode "Docker Host" "Single server for local development and initial deployment" "Docker Engine" {
-                deploymentNode "nginx" "HTTPS termination and reverse proxy. Routes /api/* to the backend EXCEPT the frontend's own /api/auth, /api/login-challenge and /api/ping; everything else to the frontend. The /api/auth/callback exact match went with the SSO flow (#139) and has to come back with it." "Docker Container / Nginx" {
+                deploymentNode "nginx" "HTTPS termination and reverse proxy. Routes /api/* to the backend EXCEPT four prefixes that belong to the frontend: /api/proxy, /api/auth, /api/login-challenge and /api/ping; everything else to the frontend. /api/proxy is the important one and must sit ABOVE the general /api/ block — it is the browser's only path to the backend since #146, and a general /api/ rule swallows it, which breaks every dashboard action. The /api/auth/callback exact match went with the SSO flow (#139) and has to come back with it." "Docker Container / Nginx" {
                 }
                 deploymentNode "frontend" "Next.js frontend server" "Docker Container / Node.js" {
                     containerInstance frontend
@@ -207,7 +239,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         deploymentEnvironment "Kubernetes" {
             deploymentNode "Kubernetes Cluster" "Production cluster" "Kubernetes" {
                 deploymentNode "open-hybrid-cloud" "Application namespace" "Kubernetes Namespace" {
-                    deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes /api/* to the backend service EXCEPT the frontend's own /api/auth, /api/login-challenge and /api/ping; everything else to the frontend service. The /api/auth/callback exact match went with the SSO flow (#139) and has to come back with it." "Nginx Ingress / cert-manager" {
+                    deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes /api/* to the backend service EXCEPT four prefixes that belong to the frontend: /api/proxy, /api/auth, /api/login-challenge and /api/ping; everything else to the frontend service. /api/proxy is the browser's only path to the backend since #146 and must be matched before the general /api/ rule. The /api/auth/callback exact match went with the SSO flow (#139) and has to come back with it." "Nginx Ingress / cert-manager" {
                     }
                     deploymentNode "frontend Deployment" "Next.js frontend pods, horizontally scalable." "Kubernetes Deployment" {
                         containerInstance frontend
@@ -215,6 +247,11 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
                     deploymentNode "backend Deployment" "Next.js API pods, horizontally scalable. Stateless — all state in PostgreSQL." "Kubernetes Deployment" {
                         containerInstance backend
                     }
+                    # Only in this view: the Docker-host deployment has no equivalent
+                    # and expects an external scheduler to call the endpoint instead.
+                    deploymentNode "decommission-sweep CronJob" "Calls POST /api/internal/decommission-sweep on a schedule, authenticated with X-Sweep-Secret. Without it a scheduled decommission is only ever a stored timestamp and nothing is ever torn down." "Kubernetes CronJob" {
+                    }
+
                     deploymentNode "postgres StatefulSet" "PostgreSQL with persistent volume" "Kubernetes StatefulSet" {
                         containerInstance database
                     }

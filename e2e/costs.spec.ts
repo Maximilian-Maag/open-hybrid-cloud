@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot, expectNoServerError, pageAlerts } from './helpers'
+import { expectNoServerError, loginAsRoot, pageAlerts, requireSeeded } from './helpers'
 
 // Issue #32. What the report contains depends on what the stack has provisioned,
 // so the contracts pinned here are the ones that hold either way: the page renders,
@@ -146,7 +146,7 @@ test.describe('Cost dashboard filtering', () => {
   test('a project filter can be set and undone in place', async ({ page }) => {
     const projectSelect = page.getByLabel(/^project$/i)
     const options = await projectSelect.locator('option:not([value=""])').count()
-    if (options === 0) { test.skip(); return }
+    requireSeeded(options > 0, 'the costs page offers no project to filter by')
 
     await projectSelect.selectOption({ index: 1 })
     await expect(page).toHaveURL(/[?&]projectId=\d+/)

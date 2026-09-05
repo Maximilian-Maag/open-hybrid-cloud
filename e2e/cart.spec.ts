@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot } from './helpers'
+import { appears, loginAsRoot, requireSeeded } from './helpers'
 
 // Issue #28. The cart is per user and persisted server-side, so what is asserted
 // here is that an added item survives a reload and that checkout's validation gate
@@ -20,9 +20,12 @@ test.describe('Shopping cart', () => {
     if (await noProducts.isVisible()) return false
 
     await order.click()
+    // Waited for, not counted. `count()` here ran before the product page had
+    // rendered and answered 0, so this helper returned false and every test
+    // using it skipped — the `toBeVisible` below would have waited, but it came
+    // one line too late (#332).
     const addButton = page.getByRole('button', { name: /add to cart/i })
-    if (await addButton.count() === 0) return false
-    await expect(addButton).toBeVisible({ timeout: 10000 })
+    if (!(await appears(addButton))) return false
 
     // The environment select next to Add to cart; skip when nothing is offered.
     const envSelect = page.locator('form, div').filter({ has: addButton }).last().getByLabel(/environment/i).first()
@@ -57,7 +60,7 @@ test.describe('Shopping cart', () => {
     const order = page.getByRole('link', { name: /^details\b/i }).first()
     const noProducts = page.getByText(/no products/i)
     await expect(order.or(noProducts)).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /catalog to open')
 
     await order.click()
     // Both paths are offered: collect for later, or order right now.
@@ -66,7 +69,7 @@ test.describe('Shopping cart', () => {
   })
 
   test('an added item persists across a reload and can be removed', async ({ page }) => {
-    if (!(await addFirstProduct(page))) { test.skip(); return }
+    requireSeeded(await addFirstProduct(page), 'nothing on /catalog could be added to the cart')
 
     await page.goto('/cart')
     const firstItem = page.locator('[data-testid^="cart-item-"]').first()
@@ -81,7 +84,7 @@ test.describe('Shopping cart', () => {
   })
 
   test('checkout needs a project chosen first', async ({ page }) => {
-    if (!(await addFirstProduct(page))) { test.skip(); return }
+    requireSeeded(await addFirstProduct(page), 'nothing on /catalog could be added to the cart')
 
     await page.goto('/cart')
     const checkout = page.getByRole('button', { name: /check out/i })

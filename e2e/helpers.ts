@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createHmac } from 'node:crypto'
 import path from 'node:path'
-import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test'
+import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test'
 
 /**
  * Read a value from the backend's .env.
@@ -262,6 +262,71 @@ export async function expectNoServerError(page: Page): Promise<void> {
   await expect(page.locator('body')).not.toContainText('Internal Server Error')
   await expect(page.locator('body')).not.toContainText('Application error')
   await expect(page.locator('body')).not.toContainText('This page could not be found')
+}
+
+/**
+ * Whether a locator turns up within the budget.
+ *
+ * `count()` does not wait. Guarding on it straight after a click or a
+ * navigation reads the page before it has rendered, answers 0, and — in front of
+ * a `test.skip` — skips the test. Every run. `addFirstProduct` did exactly that:
+ * `count()` on the Add-to-cart button on the line BEFORE the `toBeVisible` that
+ * would have waited for it, so the whole cart suite skipped for months and the
+ * report said "skipped", not "broken" (#332).
+ *
+ * Use this for any precondition read after the page has been asked to change.
+ */
+export const appears = async (locator: Locator, timeout = 15_000): Promise<boolean> =>
+  locator
+    .first()
+    .waitFor({ state: 'visible', timeout })
+    .then(() => true)
+    .catch(() => false)
+
+/**
+ * A precondition the demo seed is supposed to satisfy.
+ *
+ * Locally, with no demo data, this is an honest skip and the message says which
+ * command fixes it. In CI it is a failure, because the shards run
+ * `src/seed-demo.ts` before the suite and `seedDemoData` is not vague about what
+ * it writes: one category, three products with their environment offerings and
+ * parameters, a project, cost centres, three orders (completed, pending and
+ * failed) and two infrastructure elements. On that database an empty catalogue,
+ * an empty orders list or an empty approvals queue is not an unmet precondition
+ * — it is a defect, and #285 is the story of what happens when a suite reports
+ * one as a skip.
+ *
+ * Every call passes a reason whether it fails or skips. 63 of the 64 skips in
+ * this suite used to be a bare `test.skip()`, which announces nothing: the
+ * report could not distinguish "no demo data on my laptop" from "the catalogue
+ * is throwing 500s" (#332). Policy rule 19 now holds that.
+ */
+export function requireSeeded(ok: boolean, reason: string): void {
+  if (ok) return
+  if (process.env.E2E_SEEDED === '1') {
+    throw new Error(`${reason} — but this run seeded the demo data, so this is a defect, not a missing fixture`)
+  }
+  test.skip(true, `${reason} — seed the demo data (make db-seed-demo)`)
+}
+
+/**
+ * A precondition that needs a PIPELINE STACK, which is a different switch.
+ *
+ * `seedDemoData` writes a stack only when `DEMO_CI_URL` points at a CI that will
+ * answer, because provisioning fires a trigger the moment an order is placed and
+ * against the default `.invalid` host that fails and the order is refused. So a
+ * seeded database is not enough for anything that orders — `DEMO_CI_URL` is, and
+ * it is the switch the message has to name.
+ *
+ * Same shape as #322's fix in `provisioning.spec.ts`: unset, skip and say so;
+ * set, a missing stack is the regression the test exists to catch.
+ */
+export function requireStack(ok: boolean, reason: string): void {
+  if (ok) return
+  if (process.env.DEMO_CI_URL?.trim()) {
+    throw new Error(`${reason} — but DEMO_CI_URL is set, so the demo should have seeded a pipeline stack (#157)`)
+  }
+  test.skip(true, `${reason} — set DEMO_CI_URL so the demo seeds a pipeline stack (#157)`)
 }
 
 /**

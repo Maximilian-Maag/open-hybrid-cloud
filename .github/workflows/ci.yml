@@ -286,6 +286,12 @@ jobs:
       # `gitlab.example.invalid` and skips the stack — which is how sharding
       # this job first silently undid #322.
       DEMO_CI_URL: http://localhost:8080
+      # This job seeds `src/seed-demo.ts` below, so the fixtures that seed
+      # guarantees — a catalogue, three orders, two infrastructure elements, a
+      # pending approval — are present. `requireSeeded` reads this and FAILS on
+      # a missing one instead of skipping: an empty catalogue here is a defect,
+      # and #285 is what happens when the suite reports one as a skip (#332).
+      E2E_SEEDED: '1'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -524,6 +530,12 @@ jobs:
       # `gitlab.example.invalid` and skips the stack — which is how sharding
       # this job first silently undid #322.
       DEMO_CI_URL: http://localhost:8080
+      # This job seeds `src/seed-demo.ts` below, so the fixtures that seed
+      # guarantees — a catalogue, three orders, two infrastructure elements, a
+      # pending approval — are present. `requireSeeded` reads this and FAILS on
+      # a missing one instead of skipping: an empty catalogue here is a defect,
+      # and #285 is what happens when the suite reports one as a skip (#332).
+      E2E_SEEDED: '1'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:

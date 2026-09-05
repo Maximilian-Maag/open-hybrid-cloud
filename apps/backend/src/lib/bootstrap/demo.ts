@@ -11,6 +11,7 @@ import {
   parameters,
   productEnvironments,
   productImages,
+  pipelineStacks,
   productTranslations,
   products,
   projects,
@@ -66,6 +67,76 @@ const refusedByEnvironment = (): boolean => {
   )
   return true
 }
+
+/**
+ * Loopback, by the names a WireMock is actually reached on. `.localhost` is
+ * loopback by RFC 6761, and `URL.hostname` hands back the IPv6 form still
+ * bracketed — `new URL('http://[::1]:8080').hostname` is `'[::1]'`.
+ */
+const isLoopback = (hostname: string): boolean =>
+  hostname === 'localhost' ||
+  hostname.endsWith('.localhost') ||
+  hostname === '::1' ||
+  hostname === '[::1]' ||
+  /^127\.\d+\.\d+\.\d+$/.test(hostname)
+
+/**
+ * The GitLab the demo data points at.
+ *
+ * `gitlab.example.invalid` by default, and `.invalid` is reserved by RFC 2606
+ * precisely so it can never resolve — a developer's demo catalogue must not be
+ * able to reach a real CI system by accident.
+ *
+ * `DEMO_CI_URL` points it somewhere that will answer. The e2e job sets it to
+ * the WireMock in `infra/wiremock/mappings`, whose twelve stubs already model
+ * the whole GitLab side of a provisioning run: the trigger returns pipeline 42,
+ * its bridges lead to child pipeline 43, and 43's apply job has a trace with
+ * Terraform outputs in it. Until now nothing in CI ever spoke to them (#157).
+ *
+ * Checked before anything is seeded against it. The seeded stack holds a
+ * trigger token, and provisioning sends that token to this host the moment an
+ * order is placed — over plaintext http to anywhere but loopback that is a
+ * credential on the wire, so it is refused here rather than at the point the
+ * token leaves. A seed that cannot be used safely should not be written.
+ *
+ * Loopback stays http on purpose: that WireMock speaks http on :8080.
+ */
+const ciUrl = (): string => {
+  const raw = process.env.DEMO_CI_URL?.trim()
+  if (!raw) return 'https://gitlab.example.invalid'
+
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    throw new Error(`[demo] DEMO_CI_URL is not a URL: ${raw}`)
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`[demo] DEMO_CI_URL must be http or https, not ${parsed.protocol}`)
+  }
+  if (parsed.protocol === 'http:' && !isLoopback(parsed.hostname)) {
+    throw new Error(
+      `[demo] DEMO_CI_URL is plaintext http to ${parsed.hostname}. The seeded stack's ` +
+        'trigger token would go out over that connection. Use https, or point it at loopback.',
+    )
+  }
+  return raw
+}
+
+/**
+ * Whether the demo should seed a pipeline stack.
+ *
+ * A stack is what makes a product PROVISIONABLE, and provisioning fires a
+ * trigger the moment an order is placed. Against `.invalid` that trigger fails
+ * and the order is refused — so seeding one unconditionally would break
+ * ordering for every developer running `make db-seed-demo`, which is why there
+ * has never been one and why seven e2e tests skip for want of it.
+ *
+ * Tied to `DEMO_CI_URL` rather than to a flag of its own: "somebody has pointed
+ * this at a CI system that will answer" is exactly the condition under which a
+ * stack is useful, and one switch cannot be set half way.
+ */
+const seedsPipelineStack = (): boolean => Boolean(process.env.DEMO_CI_URL?.trim())
 
 /** A small PNG, generated rather than committed as a binary blob. */
 const gradientPng = (hue: 'blue' | 'green' | 'amber'): Buffer => {
@@ -185,6 +256,10 @@ const CATALOGUE: DemoProduct[] = [
 ]
 
 export const seedDemoData = async (): Promise<{ created: boolean }> => {
+  // Validated before the transaction opens: a DEMO_CI_URL that cannot be used
+  // safely should stop the seed, not leave half a catalogue behind.
+  const ciBaseUrl = ciUrl()
+
   if (refusedByEnvironment()) return { created: false }
 
   // One transaction around the marker lookup AND every write. Without it a
@@ -212,7 +287,7 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
     const [category] = await tx.insert(categories).values({ name: MARKER_CATEGORY }).returning()
     const [ci] = await tx
       .insert(ciSources)
-      .values({ name: 'Demo GitLab', url: 'https://gitlab.example.invalid', accessToken: demoSecret(), provider: 'gitlab' })
+      .values({ name: 'Demo GitLab', url: ciBaseUrl, accessToken: demoSecret(), provider: 'gitlab' })
       .returning()
 
     const [frankfurt] = await tx
@@ -221,7 +296,7 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
         name: 'AWS Frankfurt',
         description: 'Public cloud, eu-central-1',
         ciSourceId: ci.id,
-        webhookUrl: 'https://gitlab.example.invalid/api/v4/projects/1/trigger/pipeline',
+        webhookUrl: `${ciBaseUrl}/api/v4/projects/1/trigger/pipeline`,
         webhookToken: 'demo-trigger-1',
         callbackSecret: demoSecret(),
       })
@@ -233,7 +308,7 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
         name: 'On-Premise Vienna',
         description: 'vSphere cluster in the Vienna datacentre',
         ciSourceId: ci.id,
-        webhookUrl: 'https://gitlab.example.invalid/api/v4/projects/2/trigger/pipeline',
+        webhookUrl: `${ciBaseUrl}/api/v4/projects/2/trigger/pipeline`,
         webhookToken: 'demo-trigger-2',
         callbackSecret: demoSecret(),
       })
@@ -333,6 +408,32 @@ export const seedDemoData = async (): Promise<{ created: boolean }> => {
         sensitive: true,
       },
     ])
+
+    /*
+     * A pipeline stack for the first product, when something can answer it.
+     *
+     * This is what makes a product provisionable, and its absence is the single
+     * cause of seven skipped e2e tests: no stack means no order can be placed,
+     * and with no order there is no approval to act on, no cart item to keep,
+     * and no element mid-provisioning (#296).
+     *
+     * One step, and it matches the WireMock stubs exactly — `linode/virtual-
+     * machine` is the template the entry pipeline's dispatch bridge is named
+     * for. A second step would need a second trigger response and there is one
+     * stub for POST.
+     *
+     * `hostname` as the state key because it is the first product's required
+     * parameter, so every order carries one.
+     */
+    if (seedsPipelineStack()) {
+      await tx.insert(pipelineStacks).values({
+        productId: created[0].id,
+        environmentId: frankfurt.id,
+        name: 'Gateway VM',
+        stateKeyParam: 'hostname',
+        steps: [{ template: 'linode/virtual-machine', stateSuffix: 'vm', execOrder: 0 }],
+      })
+    }
 
     // Orders across the states the UI renders differently: a completed one with
     // infrastructure, one still waiting for approval, and a failed deployment —

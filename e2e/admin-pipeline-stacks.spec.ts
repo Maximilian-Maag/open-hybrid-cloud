@@ -215,19 +215,25 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
     // Submit
     await form.getByRole('button', { name: /^add$/i }).click()
 
-    // Stack should appear in the list
-    await expect(page.getByText('E2E Test Stack')).toBeVisible({ timeout: 5000 })
-    await expect(page.getByText(/1 step/i)).toBeVisible()
-
-    // Delete the stack
+    // Stack should appear in the list — asserted on the stack's OWN row.
+    //
+    // Unscoped, `/1 step/i` matched every stack on the page that has one step.
+    // This PR seeds a pipeline stack into the demo catalogue, so that went from
+    // one match to two and the assertion failed as a strict mode violation. The
+    // seed is the point — without a stack no seeded product is provisionable,
+    // which is what kept the whole order flow skipping — so the assertion is
+    // what has to become specific, not the data.
     // `data-testid="stack-item"`, not a div filtered by text. `locator('div')`
     // matches every ancestor containing the string too, so on a page that has
-    // grown — the size matrix arrived in #249 — the filter resolves to a stack
-    // of nested divs and the click lands on whichever Playwright picks (#296).
-    const deleteBtn = page
-      .locator('[data-testid="stack-item"]')
-      .filter({ hasText: 'E2E Test Stack' })
-      .getByRole('button', { name: /delete/i })
+    // grown — the size matrix arrived in #249 — the filter resolves to a stack of
+    // nested divs and a click lands on whichever Playwright picks (#296). Defined
+    // once here and used for the assertions and the delete alike.
+    const row = page.locator('[data-testid="stack-item"]').filter({ hasText: 'E2E Test Stack' })
+    await expect(row).toBeVisible({ timeout: 5000 })
+    await expect(row.getByText(/1 step/i)).toBeVisible()
+
+    // Delete the stack
+    const deleteBtn = row.getByRole('button', { name: /delete/i })
     await deleteBtn.click()
 
     // Stack should be removed

@@ -54,6 +54,8 @@ const TABLES = [
   // scheduler rather than as leaked state.
   schema.deploymentWindows,
   schema.holidays,
+  // Drift observations (#108). Independent of everything else.
+  schema.unclaimedStates,
   // Before deployment_environments: integrations.environment_id references it.
   schema.integrations,
   schema.deploymentEnvironments,
@@ -69,6 +71,7 @@ const TABLES = [
   schema.branding,
   schema.appConfig,
   schema.holidayFeedState,
+  schema.driftReportState,
 ] as const
 
 beforeAll(async () => {
@@ -144,7 +147,7 @@ beforeAll(async () => {
 const TRUNCATE_ALL = `TRUNCATE TABLE ${TABLES.map((table) => `"${getTableName(table)}"`).join(', ')} RESTART IDENTITY CASCADE`
 
 /**
- * The three singleton rows the app assumes exist, put back after the truncate.
+ * The four singleton rows the app assumes exist, put back after the truncate.
  *
  * `getBranding` and the config reader both read row 1 and have no answer for its
  * absence, so these are part of an empty database rather than fixtures. They are
@@ -163,7 +166,8 @@ const TRUNCATE_ALL = `TRUNCATE TABLE ${TABLES.map((table) => `"${getTableName(ta
 const RESET_ALL = `${TRUNCATE_ALL};
   INSERT INTO branding (id) VALUES (1) ON CONFLICT DO NOTHING;
   INSERT INTO app_config (id) VALUES (1) ON CONFLICT DO NOTHING;
-  INSERT INTO holiday_feed_state (id) VALUES (1) ON CONFLICT DO NOTHING`
+  INSERT INTO holiday_feed_state (id) VALUES (1) ON CONFLICT DO NOTHING;
+  INSERT INTO drift_report_state (id) VALUES (1) ON CONFLICT DO NOTHING`
 
 /**
  * How long the per-test reset may take before it is worth explaining itself.

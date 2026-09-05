@@ -894,6 +894,22 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   // becomes 'decommissioned' once EVERY id in pipeline_id succeeded.
   pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   outputs: jsonb().$type<Record<string, string>>().notNull().default({}),
+  /*
+   * What the scheduled drift report last said about this element (#108).
+   *
+   * All nullable, and that is the point: NULL means "never heard", which is a
+   * different thing from "checked and clean". An element whose reports stopped
+   * arriving must not read as healthy — that is the same confusion #108 opens
+   * with, where `active` means "we once started a pipeline for this".
+   *
+   * There is no outbound pipeline tracking here because the portal does not
+   * trigger the refresh. A single scheduled pipeline POSTs what it found.
+   */
+  lastRefreshedAt: timestamp('last_refreshed_at', { withTimezone: true }),
+  lastRefreshOutcome: text('last_refresh_outcome', { enum: ['clean', 'drifted', 'locked', 'error'] }),
+  /** Set when drift is found and CLEARED when a later report is clean, so it describes current drift. */
+  driftDetectedAt: timestamp('drift_detected_at', { withTimezone: true }),
+  driftSummary: jsonb('drift_summary').$type<DriftSummary>(),
   /**
    * Why the LAST attempt to read the Terraform outputs did not produce any (#215).
    *
@@ -1060,6 +1076,53 @@ export const holidayFeedState = pgTable('holiday_feed_state', {
 }, (t) => [
   // One feed, so one row. Same shape as `branding` and `app_config`.
   check('holiday_feed_state_singleton', sql`${t.id} = 1`),
+])
+
+/** One drifted resource, as the reporting pipeline saw it. */
+export interface DriftedResource {
+  /** Terraform address, e.g. `module.vm.linode_instance.this`. */
+  address: string
+  /** `update`, `delete`, `create` — what a plan would do to reconcile it. */
+  action: string
+}
+
+export interface DriftSummary {
+  resources: DriftedResource[]
+}
+
+/**
+ * Terraform states in the backend that no element claims (#108).
+ *
+ * NOT #109. That is about resources created outside Terraform altogether, which
+ * no state file mentions and which finding would need the modules to tag —
+ * `infra-templates` currently filters ORDER_ID and INFRA_ID out of the TF_VAR
+ * export, so nothing provisioned today carries either.
+ *
+ * This is the narrower case that IS detectable: a state file the reporting
+ * pipeline can see and the portal cannot account for — an element deleted from
+ * the portal while its infrastructure stayed up, or a stack renamed.
+ */
+export const unclaimedStates = pgTable('unclaimed_states', {
+  stateKey: text('state_key').primaryKey(),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  outcome: text({ enum: ['clean', 'drifted', 'locked', 'error'] }),
+  summary: jsonb().$type<DriftSummary>(),
+})
+
+/**
+ * When the portal last heard from the reporting pipeline at all.
+ *
+ * Per-element timestamps cannot answer this: if the pipeline stops, every
+ * element simply stops being updated and nothing says why. One row.
+ */
+export const driftReportState = pgTable('drift_report_state', {
+  id: integer().primaryKey().default(1),
+  lastReportAt: timestamp('last_report_at', { withTimezone: true }),
+  elementsReported: integer('elements_reported').notNull().default(0),
+  unclaimedReported: integer('unclaimed_reported').notNull().default(0),
+}, (t) => [
+  check('drift_report_state_singleton', sql`${t.id} = 1`),
 ])
 
 export const appConfig = pgTable('app_config', {

@@ -2732,6 +2732,8 @@ The table below shows the current effective schema.
     \code{deployment\_windows}      & When provisioning may run: minutes past local midnight and a duration, one row per window per working day \\
     \code{holidays}                 & Non-working dates, cached from the configured feed so the decision never depends on it answering. \code{source} distinguishes feed rows, replaced wholesale by a refresh, from manual ones that survive it \\
     \code{holiday\_feed\_state}     & Single-row record of what the holiday feed last did, so the admin UI can say how old the answer is \\
+    \code{unclaimed\_states}        & Terraform states the drift report can see and no element claims — an element deleted while its infrastructure stayed up, or a stack renamed \\
+    \code{drift\_report\_state}     & Single-row record of when the drift pipeline last reported, so silence is distinguishable from "no drift" \\
     \bottomrule
   \end{tabular}
 \end{table}

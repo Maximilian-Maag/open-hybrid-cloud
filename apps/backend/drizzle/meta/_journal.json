@@ -246,6 +246,13 @@
       "when": 1789171200000,
       "tag": "0038_deployment_windows",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1789257600000,
+      "tag": "0039_drift_reports",
+      "breakpoints": true
     }
   ]
 }

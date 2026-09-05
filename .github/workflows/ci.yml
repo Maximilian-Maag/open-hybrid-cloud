@@ -266,6 +266,12 @@ jobs:
       E2E_BASE_URL: http://localhost:3000
       E2E_ADMIN_EMAIL: root@test.dev
       E2E_ADMIN_PASSWORD: testpassword123
+      # Points the demo catalogue at the WireMock started below, which is what
+      # makes a pipeline stack worth seeding and the provisioning journey
+      # runnable at all (#157). Left unset, the seed uses
+      # `gitlab.example.invalid` and skips the stack — which is how sharding
+      # this job first silently undid #322.
+      DEMO_CI_URL: http://localhost:8080
       # This job seeds `src/seed-demo.ts` below, so the fixtures that seed
       # guarantees — a catalogue, three orders, two infrastructure elements, a
       # pending approval — are present. `requireSeeded` reads this and FAILS on
@@ -278,6 +284,30 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/setup
+
+      # A `docker run` step rather than a `services:` entry, and not by
+      # preference: service containers start BEFORE the checkout, so there is no
+      # repository yet to mount the mappings from — and the mappings are the
+      # whole point.
+      #
+      # Twelve stubs have been sitting in infra/wiremock/mappings since #121
+      # proved the full GitLab path against them — trigger → bridges → child
+      # pipeline → apply job → parsed outputs. Every shard needs its own, since
+      # each is a separate runner with its own database and its own seed.
+      #
+      # Pinned to the version the mappings were written against, same as
+      # infra/docker-compose.dev.yml. A health poll rather than a sleep: a suite
+      # that starts before the stubs are loaded fails as a provisioning bug.
+      - name: Start the GitLab stub (WireMock)
+        run: |
+          docker run -d --name ohc-wiremock -p 8080:8080 \
+            -v "$PWD/infra/wiremock/mappings:/home/wiremock/mappings:ro" \
+            wiremock/wiremock:3.13.2 --verbose --global-response-templating
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/__admin/mappings >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://localhost:8080/__admin/mappings >/dev/null
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
@@ -480,6 +510,12 @@ jobs:
       E2E_BASE_URL: http://localhost:3000
       E2E_ADMIN_EMAIL: root@test.dev
       E2E_ADMIN_PASSWORD: testpassword123
+      # Points the demo catalogue at the WireMock started below, which is what
+      # makes a pipeline stack worth seeding and the provisioning journey
+      # runnable at all (#157). Left unset, the seed uses
+      # `gitlab.example.invalid` and skips the stack — which is how sharding
+      # this job first silently undid #322.
+      DEMO_CI_URL: http://localhost:8080
       # This job seeds `src/seed-demo.ts` below, so the fixtures that seed
       # guarantees — a catalogue, three orders, two infrastructure elements, a
       # pending approval — are present. `requireSeeded` reads this and FAILS on
@@ -492,6 +528,30 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/setup
+
+      # A `docker run` step rather than a `services:` entry, and not by
+      # preference: service containers start BEFORE the checkout, so there is no
+      # repository yet to mount the mappings from — and the mappings are the
+      # whole point.
+      #
+      # Twelve stubs have been sitting in infra/wiremock/mappings since #121
+      # proved the full GitLab path against them — trigger → bridges → child
+      # pipeline → apply job → parsed outputs. Every shard needs its own, since
+      # each is a separate runner with its own database and its own seed.
+      #
+      # Pinned to the version the mappings were written against, same as
+      # infra/docker-compose.dev.yml. A health poll rather than a sleep: a suite
+      # that starts before the stubs are loaded fails as a provisioning bug.
+      - name: Start the GitLab stub (WireMock)
+        run: |
+          docker run -d --name ohc-wiremock -p 8080:8080 \
+            -v "$PWD/infra/wiremock/mappings:/home/wiremock/mappings:ro" \
+            wiremock/wiremock:3.13.2 --verbose --global-response-templating
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/__admin/mappings >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://localhost:8080/__admin/mappings >/dev/null
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium

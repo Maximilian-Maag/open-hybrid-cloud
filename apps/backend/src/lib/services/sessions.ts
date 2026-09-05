@@ -169,7 +169,20 @@ export const revokeSession = async (
   }
   if (row.revokedAt !== null) return ok({ revoked: 0 })
 
-  await db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.id, sessionId))
+  // The read above decides WHO may revoke and WHETHER there is anything left to
+  // do, but by the time this runs it can be stale: two callers revoking the same
+  // session both pass it having both read `revokedAt: null`, and an unconditional
+  // UPDATE here would let both believe they were the one who ended it. The
+  // `revokedAt IS NULL` predicate is the actual compare-and-swap — only whichever
+  // UPDATE lands first can still match it, so `returning` tells this caller,
+  // truthfully, whether IT was the one that changed the row (#195).
+  const revokedRows = await db
+    .update(sessions)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(sessions.id, sessionId), isNull(sessions.revokedAt)))
+    .returning({ id: sessions.id })
+
+  if (revokedRows.length === 0) return ok({ revoked: 0 })
 
   await logAudit(
     caller.id,

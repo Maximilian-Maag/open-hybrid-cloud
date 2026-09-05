@@ -83,6 +83,7 @@ Orders can also be placed one at a time (`POST /api/orders`) or collected in a *
 | `SESSION_REMEMBER_ME_TTL_SECONDS` | No | How long a "remember me" session lives |
 | `ALLOW_DEMO_SEED_IN_PRODUCTION` | No | Set to `1` to let `make db-seed-demo` run with `NODE_ENV=production`. Refused otherwise — the demo writes a catalogue, a CI source and two environments that are not real |
 | `DEMO_CI_URL` | No | Points the demo catalogue at a CI that will answer, which is what makes it seed a pipeline stack. Left blank the demo uses `gitlab.example.invalid`, which cannot resolve, so nothing seeded is orderable |
+| `ALLOW_INSECURE_CI_TRANSPORT` | No | Set to `1` to permit plaintext http to a CI host that is not loopback. Every call to a CI source carries a credential, so this is refused by default — see [CI transport security](#ci-transport-security) |
 | `DECOMMISSION_SWEEP_SECRET` | No | Shared secret for the scheduled-decommission sweep. Blank leaves `POST /api/internal/decommission-sweep` disabled (503) — see [Scheduled decommissioning](#scheduled-decommissioning) |
 | `TRUST_PROXY` | No | Set to `1`/`true` when the backend sits behind a reverse proxy you trust to set `X-Forwarded-For` (nginx, an Ingress). Enables the **per-IP** half of the login rate limiter (`apps/backend/src/app/api/auth/login/route.ts`); the per-account half applies regardless. Leave unset when the backend is reachable directly, or the header becomes a spoofable bypass. |
 | `WEBAUTHN_RP_ID` | In production | The **bare domain** security keys are scoped to — no scheme, no port, no path (`portal.example.com`, or `example.com` to work across subdomains). Blank falls back to `localhost`, so a fresh clone works with a key straight away; required when `NODE_ENV=production`. Changing it invalidates every registered credential |
@@ -185,6 +186,8 @@ Run `make help` to see all available commands.
 | `make db-push` | Push Drizzle schema to the database |
 | `make db-studio` | Open Drizzle Studio (visual DB browser) |
 | `make handbook` | Compile the technical handbook to `docs/handbook.pdf` (not committed — see [Technical Handbook](#technical-handbook)) |
+| `make diagrams` | Render the C4 views from `docs/architecture/workspace.dsl` — PNGs and one combined PDF (`make diagrams-png` / `make diagrams-pdf` for one of them) |
+| `make diagrams-install` | Fetch the two checksum-pinned jars the renderer needs into `.diagrams/` (gitignored) |
 | `make clean` | Remove build artifacts |
 
 ---
@@ -454,6 +457,42 @@ Response codes: `200` all due elements torn down, `207` some could not be starte
 
 Required GitHub secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`.
 
+## CI transport security
+
+Every outbound call to a CI source carries a credential: the trigger token on a
+pipeline trigger, `PRIVATE-TOKEN` on every project, branch, tree and file read.
+An `http://` CI source therefore puts all of it on the wire in clear.
+
+The portal refuses that. A GitLab URL must be `https://`, unless the host is
+loopback — `127.0.0.0/8`, `localhost`, `*.localhost`, `[::1]` — which is how the
+e2e suite points `DEMO_CI_URL` at a WireMock on `:8080` that never leaves the
+machine.
+
+```
+Refusing to send CI credentials over plaintext http to gitlab.internal.example.com.
+Use https, or set ALLOW_INSECURE_CI_TRANSPORT=1 if this host is genuinely
+reachable only over http and the network between is trusted.
+```
+
+`ALLOW_INSECURE_CI_TRANSPORT=1` is the opt-out, and it is deployment-wide rather
+than per source: it is a statement about the network the portal sits on, which
+is not a property of one row in `ci_sources`.
+
+**Upgrading with an http CI source.** The change refuses at the point of the
+call, so an existing source keeps looking fine in the admin UI and fails when
+somebody places an order. To make that visible, the bootstrap names every
+affected source on stderr at boot:
+
+```
+[bootstrap] 1 CI source(s) cannot be used: On-Prem GitLab (http://gitlab.internal.example.com).
+Every call to them carries a credential, so plaintext http off loopback is refused (#329).
+Move them to https, or set ALLOW_INSECURE_CI_TRANSPORT=1 to accept the risk.
+```
+
+GitHub and Bitbucket are unaffected: those clients always talk to
+`api.github.com` and `api.bitbucket.org` over https and ignore the configured
+URL entirely.
+
 ## Policy Gate
 
 `make policy` evaluates the Rego policies in `policy/` against the source tree
@@ -502,17 +541,56 @@ production: its input is the source tree and its only output is a CI verdict.
 generated artefact next to its source drifts the moment someone edits the source
 and forgets to recompile, and nothing enforced regenerating it. Instead:
 
-- `make handbook` compiles it locally to `docs/handbook.pdf` (gitignored).
+- `make handbook` compiles it locally to `docs/handbook.pdf` (gitignored). It depends on `make diagrams-png`, because four of its figures are rendered from the C4 model rather than drawn in the document — see [Architecture Diagrams](#architecture-diagrams).
 - Any pull request that touches `docs/handbook.tex` gets a CI job (`.github/workflows/ci.yml`) that compiles it and uploads the result as a build artifact ("handbook-pdf") — so a LaTeX error is caught in review, not discovered when someone tries to build a release.
 - Every push to `main` compiles it fresh and attaches it to that push's GitHub Release (`.github/workflows/cd-release.yml`) — the canonical place to download the current handbook.
 
 Both CI jobs use the same pinned LaTeX action (`xu-cheng/latex-action`, pinned by commit SHA like every other third-party action in this repo), so the PR check and the release build agree with each other. `make handbook` is *not* that toolchain — it shells out to your local `pdflatex` — so a green local build is evidence the source compiles, not proof CI will produce the same PDF.
 
+## Architecture Diagrams
+
+`docs/architecture/workspace.dsl` is the C4 model and it is the **only** place
+the architecture is drawn. The handbook used to redraw its first three levels by
+hand in TikZ, so the same diagrams existed twice — once as the model and once as
+a picture of it — and only one of them ever got updated.
+
+```bash
+make diagrams            # PNGs and the combined PDF
+make diagrams-png        # --jpeg: one PNG per view
+make diagrams-pdf        # --pdf:  one vector PDF, C4 levels then deployment
+make diagrams-clean      # drop the output, keep the pinned jars
+```
+
+Output lands in `docs/architecture/diagrams/` and is **gitignored**, for the same
+reason `handbook.pdf` is: a checked-in rendering drifts from the model the moment
+nobody regenerates it. `make handbook` renders them first, and both the PR check
+and the release build call the same target.
+
+**`--jpeg` writes PNG.** These are line drawings — flat fills, thin rules and
+small type — and JPEG's block artefacts land exactly on the glyph edges that have
+to stay legible.
+
+Two jars do the work, both pinned by SHA-256 in `scripts/diagramTools.ts` the way
+`scripts/opa.ts` pins opa: **structurizr-cli** exports each view to C4-PlantUML,
+and **PlantUML** lays it out with Graphviz. They need a JRE and `dot` on PATH;
+`make diagrams-install` fetches them and verifies the bytes before writing.
+
+Two things worth knowing before editing the DSL:
+
+- **Structurizr's `autoLayout` does nothing here.** Layout happens in Graphviz at
+  render time, so the direction and separation hints in the DSL are not what
+  positions anything — `scripts/diagrams.ts` sets spacing as PlantUML directives
+  instead.
+- **PlantUML's default 4096px ceiling silently clips.** The backend component view
+  is 4899px wide; the first render of it lost Microsoft Entra ID, Bitbucket and
+  the Mail Server off the right edge with no warning. The renderer raises the
+  limit; do not lower it.
+
 ## Documentation
 
 | Document | Path |
 |----------|------|
-| Architecture (C4) | `docs/architecture/workspace.dsl` |
+| Architecture (C4) | `docs/architecture/workspace.dsl` — the only place the architecture is drawn; `make diagrams` renders it |
 | Requirements | `docs/requirements/requirements.md` |
 | Root Manual | `docs/guides/root.md` |
 | Admin Manual | `docs/guides/admin.md` |

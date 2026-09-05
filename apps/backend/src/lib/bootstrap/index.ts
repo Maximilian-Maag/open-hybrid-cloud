@@ -1,9 +1,10 @@
 import path from 'node:path'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { db, client } from '@/lib/db/client'
-import { users, branding } from '@/lib/db/schema'
+import { users, branding, ciSources } from '@/lib/db/schema'
 import bcrypt from 'bcryptjs'
 import { reportConfigProblems } from '@/lib/config/validate'
+import { insecureTransportRefusal, INSECURE_TRANSPORT_FLAG } from '@/lib/ci/transport'
 
 // PostgreSQL error codes that mean the object already exists — safe to skip
 // when the DB was seeded via db:push instead of the migration runner.
@@ -47,6 +48,39 @@ async function runMigrations() {
 
 let bootstrapped = false
 
+/**
+ * CI sources this deployment can no longer talk to, named at boot.
+ *
+ * #329 turned plaintext http to a non-loopback CI host into a refusal. That is
+ * the right default, but on an existing deployment it changes behaviour: an
+ * on-premise GitLab configured as `http://` still LOOKS fine in the admin UI and
+ * only fails when somebody places an order, as a provisioning error nobody
+ * connects to an upgrade.
+ *
+ * So it is said once, at boot, on stderr, naming each source and the switch.
+ * Never fatal, for the reason `reportConfigProblems` gives: a server that
+ * refuses one operation is easier to diagnose than one that will not start.
+ */
+export const reportInsecureCiSources = async (): Promise<void> => {
+  let rows: { name: string; url: string }[]
+  try {
+    rows = await db.select({ name: ciSources.name, url: ciSources.url }).from(ciSources)
+  } catch {
+    // Pre-migration, or a database that has no `ci_sources` yet. Nothing to say.
+    return
+  }
+
+  const refused = rows.filter((row) => insecureTransportRefusal(row.url) !== null)
+  if (refused.length === 0) return
+
+  console.error(
+    `[bootstrap] ${refused.length} CI source(s) cannot be used: ` +
+      refused.map((r) => `${r.name} (${r.url})`).join(', ') +
+      `. Every call to them carries a credential, so plaintext http off loopback is refused (#329). ` +
+      `Move them to https, or set ${INSECURE_TRANSPORT_FLAG}=1 to accept the risk.`,
+  )
+}
+
 export const runBootstrap = async (): Promise<void> => {
   if (bootstrapped) return
   bootstrapped = true
@@ -62,6 +96,12 @@ export const runBootstrap = async (): Promise<void> => {
     bootstrapped = false
     throw err
   }
+
+  // After the migrations, so `ci_sources` is certainly there, and awaited rather
+  // than fired and forgotten: the point is that it lands in the boot log next to
+  // the other startup lines rather than somewhere in the middle of the first
+  // request.
+  await reportInsecureCiSources()
 
   // Seed branding data if it does not exist
   const brandingExists = await db.select({ id: branding.id }).from(branding).limit(1)

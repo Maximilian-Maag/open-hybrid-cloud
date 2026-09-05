@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { NextRequest } from 'next/server'
-import { eq, desc } from 'drizzle-orm'
+import { and, eq, desc, sql } from 'drizzle-orm'
 import { GET, DELETE } from './route'
 import { DELETE as DELETE_ONE } from './[id]/route'
 import { PUT as PUT_USER } from '@/app/api/admin/users/[id]/route'
@@ -128,6 +128,37 @@ describe('GET /api/sessions', () => {
   })
 })
 
+/**
+ * Whether some other backend is currently stuck waiting for a row lock on
+ * `sessions`. Mirrors the same technique `twoFactor.test.ts` uses for its
+ * `user_totp` races: polling this is what turns "two requests raced" into a
+ * test that reliably hits the exact interleaving instead of hoping two
+ * `Promise.all`-ed calls happen to overlap.
+ */
+const blockedOnSessions = async (): Promise<number> => {
+  const rows = (await db.execute(sql`
+    SELECT COUNT(*)::int AS n
+    FROM pg_stat_activity a
+    WHERE a.datname = current_database()
+      AND a.wait_event_type = 'Lock'
+      AND a.query ILIKE '%sessions%'
+      AND cardinality(pg_blocking_pids(a.pid)) > 0
+  `)) as unknown as { n: number }[]
+  return Number(rows[0]?.n ?? 0)
+}
+
+const waitUntilBlockedOnSessions = async (): Promise<void> => {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    if ((await blockedOnSessions()) > 0) return
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  throw new Error(
+    'no backend reached a blocking statement on sessions within 30000ms — the racing ' +
+      'revoke never started, or it did not take the row lock it is supposed to wait for',
+  )
+}
+
 describe('DELETE /api/sessions/[id]', () => {
   it('requires authentication', async () => {
     expect((await DELETE_ONE(makeReq('http://localhost/api/sessions/1'), idParams(1))).status).toBe(401)
@@ -215,6 +246,49 @@ describe('DELETE /api/sessions/[id]', () => {
 
     const rows = await db.select().from(auditLog).where(eq(auditLog.action, 'session.revoked'))
     expect(rows).toHaveLength(1)
+  })
+
+  // The sequential case above passes even on a read-then-write revoke: the
+  // second call's own SELECT sees what the first one already committed. Two
+  // revokes only collide when their reads overlap BEFORE either write lands,
+  // which this drives for real rather than hoping two `Promise.all`-ed HTTP
+  // calls happen to interleave that way (#195). A transaction takes `FOR
+  // UPDATE` on the row first, so the real racing revoke gets past its own
+  // (unguarded) SELECT — which sees `revokedAt: null`, exactly like a second
+  // concurrent caller would — and then blocks on its UPDATE. Only once it is
+  // proven to be sitting there does this test revoke the row itself, standing
+  // in for "the other caller finished first", and release it.
+  it('does not audit — or claim — a revoke that lost the race to another caller', async () => {
+    const user = await createUser({ email: 'rv-race@test.dev' })
+    const mine = await makeSession(user)
+    const other = await makeSession(user)
+
+    const holder = db.transaction(async (tx) => {
+      await tx.select().from(sessions).where(eq(sessions.id, other.sessionId)).for('update')
+      await waitUntilBlockedOnSessions()
+
+      // Stands in for the other caller's revoke having already committed while
+      // this one was blocked behind it.
+      await tx.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.id, other.sessionId))
+    })
+
+    const racer = DELETE_ONE(
+      makeReq(`http://localhost/api/sessions/${other.sessionId}`, mine.auth),
+      idParams(other.sessionId),
+    )
+
+    const [res] = await Promise.all([racer, holder])
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ revoked: 0 })
+
+    // The racer changed nothing, so it must not have logged anything either —
+    // that is the whole point of gating the audit write on the CAS result
+    // rather than on the (now stale) read at the top of `revokeSession`.
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.action, 'session.revoked'), eq(auditLog.entityId, other.sessionId)))
+    expect(rows).toHaveLength(0)
   })
 
   it.each(['0', '-1', 'abc', '1.5'])('rejects a malformed session id (%s)', async (raw) => {

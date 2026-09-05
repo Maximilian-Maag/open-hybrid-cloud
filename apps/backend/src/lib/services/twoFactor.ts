@@ -384,6 +384,22 @@ export const startEnrollment = async (
   userId: number,
   accountEmail: string,
   issuer: string,
+  {
+    /**
+     * Set when the route skipped the code check because, at the moment it
+     * looked, `requiresSecondFactor` was false — the ONLY branch a stolen
+     * session and a phished password alone can reach. That answer is a read,
+     * not a lock: if a confirmed factor lands in the gap between it and this
+     * write — the real owner finishing their own first enrollment while this
+     * call was in flight — writing anyway plants a pending secret nobody had
+     * to prove they could replace, and a later `confirmEnrollment` with a code
+     * from it would promote it over the owner's, silently taking the account
+     * over. Same read-then-write shape `revokeSession` and `addToCart` were
+     * fixed for (#195): the upsert below is conditioned on `confirmed_at IS
+     * NULL` so that landing makes it a no-op instead of a write.
+     */
+    requireStillUnconfirmed = false,
+  }: { requireStillUnconfirmed?: boolean } = {},
 ): Promise<Result<EnrollmentOffer>> => {
   // The route has already loaded the account to check the password; this second
   // primary-key lookup is what makes the gate hold for any other caller too.
@@ -394,13 +410,25 @@ export const startEnrollment = async (
   const envelope = encryptTotpSecret(secret, userId)
   const now = new Date()
 
-  await db
+  const written = await db
     .insert(userTotp)
     .values({ userId, pendingSecret: envelope, pendingCreatedAt: now, updatedAt: now })
     .onConflictDoUpdate({
       target: userTotp.userId,
       set: { pendingSecret: envelope, pendingCreatedAt: now, updatedAt: now },
+      ...(requireStillUnconfirmed ? { setWhere: isNull(userTotp.confirmedAt) } : {}),
     })
+    .returning({ userId: userTotp.userId })
+
+  // A brand new row always writes (there is nothing confirmed to protect); an
+  // existing one that failed the `setWhere` above is left untouched and comes
+  // back empty here — that is the CAS actually firing, not an error.
+  if (requireStillUnconfirmed && written.length === 0) {
+    return err(
+      409,
+      'Two-factor authentication was confirmed on this account while this request was in flight. Refresh and provide the current code to re-enroll.',
+    )
+  }
 
   await logAudit(userId, 'auth.2fa.enroll_started', userId, 'TOTP enrollment started')
 

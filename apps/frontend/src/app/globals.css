@@ -8,7 +8,10 @@
      lib/contrast.ts); these defaults match the shipped --bp/--bs. */
   --bp-ink: #ffffff;
   --bs-ink: #101827;
-  /* Brand colour used as text on a light surface, AA-adjusted. */
+  /* Brand colour used as text on a light surface, darkened to AAA (1.4.6, 7:1
+     body) — `readableAccent`'s default target. Said "AA-adjusted" until #195
+     caught it: #178 moved the goal and updated both runtime setters, but not
+     the comment describing the value they compute. */
   --bp-text: #131921;
   /* Overlay for states on the branding colour — opposite pole of --bp-ink. */
   --bp-tint: #000000;

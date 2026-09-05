@@ -81,7 +81,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Current password is incorrect' }, { status: 403 })
   }
 
-  if (await requiresSecondFactor(session.id)) {
+  const hadConfirmedFactor = await requiresSecondFactor(session.id)
+  if (hadConfirmedFactor) {
     if (!parsed.data.code) {
       return NextResponse.json(
         {
@@ -101,7 +102,13 @@ export async function POST(req: NextRequest) {
   const branding = await getBranding()
   const issuer = totpIssuer(branding.ok ? branding.data.shopName : null)
 
-  const offer = await startEnrollment(session.id, account.data.email, issuer)
+  // `hadConfirmedFactor` is a read, not a lock (#195): only when it came back
+  // false — the branch that let this request skip the code check above — does
+  // the write below have to re-check for itself that nothing was confirmed in
+  // the meantime. See the comment on `requireStillUnconfirmed`.
+  const offer = await startEnrollment(session.id, account.data.email, issuer, {
+    requireStillUnconfirmed: !hadConfirmedFactor,
+  })
   if (!offer.ok) {
     return NextResponse.json({ error: offer.message }, { status: offer.status })
   }

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { expectNoServerError, loginAsRoot } from './helpers'
+import { appears, expectNoServerError, loginAsRoot } from './helpers'
 
 test.describe('Approvals', () => {
   test.beforeEach(async ({ page }) => {
@@ -91,8 +91,12 @@ test.describe('Approvals', () => {
      * describe the button rather than the order, or it contradicts the page it
      * is looking at (#332).
      */
+    // A short budget, not the default: this button is EXPECTED to be absent for
+    // the reason above, so a full wait would add it to every run for nothing —
+    // but a snapshot read would also skip on a list that simply had not painted
+    // yet, which is the failure this whole PR is about.
     test.skip(
-      !(await approveBtn.isVisible()),
+      !(await appears(approveBtn, 3_000)),
       'no order on /approvals offers Approve — the demo seeds one pending order and root placed it',
     )
 
@@ -110,7 +114,7 @@ test.describe('Approvals', () => {
   test('rejecting a pending order with a note removes it from the list', async ({ page }) => {
     const rejectBtn = page.getByRole('button', { name: /^reject$/i }).first()
     test.skip(
-      !(await rejectBtn.isVisible()),
+      !(await appears(rejectBtn, 3_000)),
       'no order on /approvals offers Reject — see the approval test above for why the seeded one may not be',
     )
 

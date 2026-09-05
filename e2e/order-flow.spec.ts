@@ -104,8 +104,12 @@ test.describe('Order Placement Flow', () => {
     }
 
     // Submit the order
+    // `appears`, not `isVisible()`: nothing above waits for this button, and a
+    // snapshot read of a form that is still hydrating answers false — which on a
+    // seeded run does not skip, it FAILS. The one guard in this file where the
+    // race costs a red build rather than a quiet skip.
     const submitButton = page.locator('#order').getByRole('button', { name: /place order/i })
-    requireSeeded(await submitButton.isVisible(), 'the order form offers no Place order button')
+    requireSeeded(await appears(submitButton), 'the order form offers no Place order button')
     await submitButton.click()
 
     /*

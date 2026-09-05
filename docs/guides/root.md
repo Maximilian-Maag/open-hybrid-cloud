@@ -440,6 +440,22 @@ Logged action types (this list has grown since the feature was first documented 
 | `infra.decommission_scheduled` / `infra.decommission_schedule_cleared` | A future decommission time is set or cleared on an element |
 | `infra.retried` / `infra.retry_failed` | A failed deployment's triggers are retried, and whether that retry itself succeeded to start |
 | `product.version_recorded` | A product or one of its offerings is edited, recording a new version |
+| `product.updated` / `product.translation_updated` / `product.image_alt_updated` | A product, one of its translations, or an image's alt text is edited |
+| `product.webhook_updated` / `product.webhook_deleted` | An order callback on a product is saved or removed |
+| `category.created` / `category.updated` | A catalogue category is added or edited |
+| `cost_center.created` / `cost_center.updated` | A cost centre is added or edited |
+| `project.created` / `project.updated` | A project is added or edited |
+| `user.created` / `user.updated` | An account is created, or its role/details change |
+| `environment.updated` | A deployment environment is edited |
+| `environment.callback_secret_revealed` / `environment.callback_secret_rotated` | An environment's callback secret is shown or replaced — both, because seeing it is as sensitive as changing it |
+| `ci_source.updated` | A CI source is edited |
+| `pipeline_stack.deleted` | A pipeline stack is removed from an offering |
+| `config.smtp_updated` / `config.ai_updated` | SMTP or AI provider settings are saved |
+| `branding.updated` / `branding.logo_updated` | Branding colours/text are saved, or the logo is replaced |
+| `integration.probed` | An external integration's reachability is tested |
+| `category.deleted` / `cost_center.deleted` / `ci_source.deleted` / `environment.deleted` / `user.deleted` | A catalogue category, cost centre, CI source, environment or account is deleted — the entries an audit reader looks for first |
+| `product.offering_withdrawn` | A product's offering in one environment is withdrawn, so it can no longer be ordered there |
+| `exchange_rate.refreshed` | Currency rates are refreshed from the configured API |
 
 ---
 

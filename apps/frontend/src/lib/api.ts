@@ -112,6 +112,11 @@ const endExpiredSession = async (): Promise<void> => {
   // Imported here, not at module scope: this module is used by server components
   // too, and `next-auth/react` is a client library.
   const { signOut } = await import('next-auth/react')
+  // The other way a session ends. Same reason as the menu item: the caches must
+  // not survive it (#148). Imported here for the same reason `signOut` is —
+  // this module is reachable from server components.
+  const { clearServiceWorkerCaches } = await import('@/lib/serviceWorker')
+  await clearServiceWorkerCaches()
   await signOut({ redirectTo: expiredLoginUrl(window.location.pathname) })
 }
 

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { SessionProvider } from 'next-auth/react'
 import { ToastProvider } from '@/components/ui/Toast'
 import { HydrationMarker } from '@/components/system/HydrationMarker'
+import { ServiceWorker } from '@/components/system/ServiceWorker'
 import { getLang } from '@/lib/getLang'
 import { readBranding } from '@/lib/pwaBranding'
 import './globals.css'
@@ -68,6 +69,7 @@ export default async function RootLayout({
           <ToastProvider>{children}</ToastProvider>
           {/* After the children, deliberately: see HydrationMarker. */}
           <HydrationMarker />
+          <ServiceWorker />
         </SessionProvider>
       </body>
     </html>

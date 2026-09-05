@@ -35,7 +35,7 @@ describe('manifest', () => {
   it('shortens a long name for the home screen', async () => {
     branded()
     const m = await manifest()
-    expect(m.short_name!.length).toBeLessThanOrEqual(12)
+    expect(m.short_name?.length ?? Infinity).toBeLessThanOrEqual(12)
     expect(m.short_name).toBe('Acme Cloud')
   })
 
@@ -102,7 +102,11 @@ describe('buildIcon', () => {
   it('insets the artwork further for the maskable variant', () => {
     const plain = buildIcon({ name: 'A', background: '#000', ink: '#fff', logo: 'data:image/png;base64,AA', safeZone: 0.12 })
     const masked = buildIcon({ name: 'A', background: '#000', ink: '#fff', logo: 'data:image/png;base64,AA', safeZone: 0.2 })
-    const width = (svg: string) => Number(/<image[^>]*width="(\d+)"/.exec(svg)![1])
+    const width = (svg: string) => {
+      const m = /<image[^>]*width="(\d+)"/.exec(svg)
+      if (!m) throw new Error('no <image> in the icon')
+      return Number(m[1])
+    }
     expect(width(masked)).toBeLessThan(width(plain))
   })
 })

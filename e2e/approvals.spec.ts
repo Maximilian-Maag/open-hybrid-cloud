@@ -77,15 +77,24 @@ test.describe('Approvals', () => {
   test('approving a pending order removes it from the list', async ({ page }) => {
     const approveBtn = page.getByRole('button', { name: /^approve$/i }).first()
     /*
-     * A reasoned skip and NOT `requireSeeded`, deliberately.
+     * A reasoned skip and NOT `requireSeeded`, and the reason is narrower than
+     * "no pending order".
      *
-     * The demo seeds exactly one pending order, and this test consumes it — the
-     * rejection test below then has nothing left unless another spec happened to
-     * place one first. So "no pending order" here is legitimately variable state,
-     * not the missing fixture `requireSeeded` is for. What it must not be is
-     * silent, which is the whole of #332.
+     * `seedDemoData` writes exactly one pending order and writes it with
+     * `userId: root.id`. Nobody may approve their own order — the test above
+     * says so in its own comment — so signed in as root there IS a pending
+     * order on this page and there is no Approve button on it, for a reason the
+     * app is right about.
+     *
+     * So this cannot be a `requireSeeded`: the fixture is present and the
+     * absence is correct. What it must not be is silent, and the message has to
+     * describe the button rather than the order, or it contradicts the page it
+     * is looking at (#332).
      */
-    test.skip(!(await approveBtn.isVisible()), 'no pending order on /approvals to approve')
+    test.skip(
+      !(await approveBtn.isVisible()),
+      'no order on /approvals offers Approve — the demo seeds one pending order and root placed it',
+    )
 
     // Count pending orders before approval
     const beforeCount = await page.getByRole('button', { name: /^approve$/i }).count()
@@ -100,7 +109,10 @@ test.describe('Approvals', () => {
 
   test('rejecting a pending order with a note removes it from the list', async ({ page }) => {
     const rejectBtn = page.getByRole('button', { name: /^reject$/i }).first()
-    test.skip(!(await rejectBtn.isVisible()), 'no pending order on /approvals to reject — the approval test above consumes the one the demo seeds')
+    test.skip(
+      !(await rejectBtn.isVisible()),
+      'no order on /approvals offers Reject — see the approval test above for why the seeded one may not be',
+    )
 
     const beforeCount = await page.getByRole('button', { name: /^reject$/i }).count()
     await rejectBtn.click()

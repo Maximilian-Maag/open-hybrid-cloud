@@ -180,6 +180,8 @@ Run `make help` to see all available commands.
 | `make db-push` | Push Drizzle schema to the database |
 | `make db-studio` | Open Drizzle Studio (visual DB browser) |
 | `make handbook` | Compile the technical handbook to `docs/handbook.pdf` (not committed — see [Technical Handbook](#technical-handbook)) |
+| `make diagrams` | Render the C4 views from `docs/architecture/workspace.dsl` — PNGs and one combined PDF (`make diagrams-png` / `make diagrams-pdf` for one of them) |
+| `make diagrams-install` | Fetch the two checksum-pinned jars the renderer needs into `.diagrams/` (gitignored) |
 | `make clean` | Remove build artifacts |
 
 ---
@@ -497,17 +499,56 @@ production: its input is the source tree and its only output is a CI verdict.
 generated artefact next to its source drifts the moment someone edits the source
 and forgets to recompile, and nothing enforced regenerating it. Instead:
 
-- `make handbook` compiles it locally to `docs/handbook.pdf` (gitignored).
+- `make handbook` compiles it locally to `docs/handbook.pdf` (gitignored). It depends on `make diagrams-png`, because four of its figures are rendered from the C4 model rather than drawn in the document — see [Architecture Diagrams](#architecture-diagrams).
 - Any pull request that touches `docs/handbook.tex` gets a CI job (`.github/workflows/ci.yml`) that compiles it and uploads the result as a build artifact ("handbook-pdf") — so a LaTeX error is caught in review, not discovered when someone tries to build a release.
 - Every push to `main` compiles it fresh and attaches it to that push's GitHub Release (`.github/workflows/cd-release.yml`) — the canonical place to download the current handbook.
 
 Both CI jobs use the same pinned LaTeX action (`xu-cheng/latex-action`, pinned by commit SHA like every other third-party action in this repo), so the PR check and the release build agree with each other. `make handbook` is *not* that toolchain — it shells out to your local `pdflatex` — so a green local build is evidence the source compiles, not proof CI will produce the same PDF.
 
+## Architecture Diagrams
+
+`docs/architecture/workspace.dsl` is the C4 model and it is the **only** place
+the architecture is drawn. The handbook used to redraw its first three levels by
+hand in TikZ, so the same diagrams existed twice — once as the model and once as
+a picture of it — and only one of them ever got updated.
+
+```bash
+make diagrams            # PNGs and the combined PDF
+make diagrams-png        # --jpeg: one PNG per view
+make diagrams-pdf        # --pdf:  one vector PDF, C4 levels then deployment
+make diagrams-clean      # drop the output, keep the pinned jars
+```
+
+Output lands in `docs/architecture/diagrams/` and is **gitignored**, for the same
+reason `handbook.pdf` is: a checked-in rendering drifts from the model the moment
+nobody regenerates it. `make handbook` renders them first, and both the PR check
+and the release build call the same target.
+
+**`--jpeg` writes PNG.** These are line drawings — flat fills, thin rules and
+small type — and JPEG's block artefacts land exactly on the glyph edges that have
+to stay legible.
+
+Two jars do the work, both pinned by SHA-256 in `scripts/diagramTools.ts` the way
+`scripts/opa.ts` pins opa: **structurizr-cli** exports each view to C4-PlantUML,
+and **PlantUML** lays it out with Graphviz. They need a JRE and `dot` on PATH;
+`make diagrams-install` fetches them and verifies the bytes before writing.
+
+Two things worth knowing before editing the DSL:
+
+- **Structurizr's `autoLayout` does nothing here.** Layout happens in Graphviz at
+  render time, so the direction and separation hints in the DSL are not what
+  positions anything — `scripts/diagrams.ts` sets spacing as PlantUML directives
+  instead.
+- **PlantUML's default 4096px ceiling silently clips.** The backend component view
+  is 4899px wide; the first render of it lost Microsoft Entra ID, Bitbucket and
+  the Mail Server off the right edge with no warning. The renderer raises the
+  limit; do not lower it.
+
 ## Documentation
 
 | Document | Path |
 |----------|------|
-| Architecture (C4) | `docs/architecture/workspace.dsl` |
+| Architecture (C4) | `docs/architecture/workspace.dsl` — the only place the architecture is drawn; `make diagrams` renders it |
 | Requirements | `docs/requirements/requirements.md` |
 | Root Manual | `docs/guides/root.md` |
 | Admin Manual | `docs/guides/admin.md` |

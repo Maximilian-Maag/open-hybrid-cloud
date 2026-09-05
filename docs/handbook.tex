@@ -196,6 +196,35 @@
 
 % ── Misc packages ─────────────────────────────────────────────
 \usepackage{graphicx}
+% Rotated pages for the C4 diagrams. They are generated from workspace.dsl and
+% are 2.2:1 to 2.8:1 — many sibling components sit at the same rank, so the
+% pictures are wide and short. Scaled into a portrait text block their labels
+% are unreadable; on a landscape page the same picture is ~1.6x larger.
+\usepackage{pdflscape}
+
+% One C4 figure on a page of its own, turned sideways.
+%
+% Not `\c4figure`: a control sequence cannot contain a digit, so LaTeX reads
+% that as the `\c` cedilla accent applied to `4figure`.
+%
+% The long edge has to be captured BEFORE entering `landscape`. Measured:
+% outside it \textwidth is 441pt and \textheight 674pt; inside, pdflscape
+% rotates the page but leaves the typeblock portrait-shaped and sets
+% \textheight := \textwidth, so BOTH read 441pt and neither names the 674pt
+% the rotated page actually offers. Sizing against either printed the diagram at
+% two-thirds width in the middle of an empty page.
+\newlength{\dsllongedge}
+\newcommand{\dslfigure}[3]{%
+  \setlength{\dsllongedge}{\textheight}%
+  \begin{landscape}
+  \begin{figure}[p]
+  \centering
+  \includegraphics[width=\dsllongedge,height=0.86\textheight,keepaspectratio]{#1}
+  \caption{#2}
+  \label{#3}
+  \end{figure}
+  \end{landscape}%
+}
 \usepackage{enumitem}
 \usepackage{parskip}
 \usepackage{float}
@@ -398,48 +427,7 @@ Component, Code). Each level zooms in one step deeper.
 Figure~\ref{fig:c4-l1} shows who uses the webshop and which external
 systems it depends on.
 
-\begin{figure}[H]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[node distance=1.0cm and 1.2cm]
-
-  % Central system
-  \node[c4system, text width=4cm, minimum height=2.4cm] (ws)
-    {\textbf{Open Hybrid Cloud}\\[4pt]
-     \scriptsize Self-service portal for ordering, managing and decommissioning IT infrastructure.\\
-     \scriptsize Next.js · React · PostgreSQL};
-
-  % Persons (top)
-  \node[c4person, above left=1.8cm and 2.6cm of ws] (dua)
-    {\textbf{Admin}\\[4pt]\scriptsize Orders directly, approves/rejects, sees all infrastructure};
-  \node[c4person, above=1.8cm of ws] (sa)
-    {\textbf{Root}\\[4pt]\scriptsize Manages catalog \& config};
-  \node[c4person, above right=1.8cm and 2.6cm of ws] (pl)
-    {\textbf{Project Manager}\\[4pt]\scriptsize Orders own infrastructure};
-
-  % External systems (bottom row)
-  \node[c4external, below left=2.0cm and 4.0cm of ws] (gl)
-    {\textbf{CI Provider}\\[4pt]\scriptsize GitLab / GitHub / Bitbucket — webhook target, repo browser};
-  \node[c4external, below right=2.0cm and 0.8cm of ws] (er)
-    {\textbf{Exchange Rate API}\\[4pt]\scriptsize Currency conversion rates (optional)};
-  \node[c4external, below right=2.0cm and 4.0cm of ws] (smtp)
-    {\textbf{Mail Server}\\[4pt]\scriptsize SMTP transactional email};
-
-  % Arrows — persons to webshop
-  \draw[c4arrow] (dua)  -- node[c4label, right=1pt]{Uses HTTPS} (ws);
-  \draw[c4arrow] (sa)   -- node[c4label, right=1pt]{Uses HTTPS} (ws);
-  \draw[c4arrow] (pl)   -- node[c4label, right=1pt]{Uses HTTPS} (ws);
-
-  % Arrows — webshop to external
-  \draw[c4arrow] (ws) -- node[c4label, left=1pt, align=right]
-    {Webhooks, API\\JSON/HTTPS} (gl);
-  \draw[c4arrow] (ws) -- node[c4label, right=1pt]{JSON/HTTPS} (er);
-  \draw[c4arrow] (ws) -- node[c4label, right=1pt]{SMTP} (smtp);
-
-\end{tikzpicture}}%
-\caption{C4 Level 1 — System Context Diagram}
-\label{fig:c4-l1}
-\end{figure}
+\dslfigure{architecture/diagrams/structurizr-SystemContext}{C4 Level 1 — System Context Diagram}{fig:c4-l1}
 
 \subsection{Actors}
 
@@ -485,65 +473,7 @@ systems it depends on.
 \section{Level 2 — Container Diagram}
 \label{sec:c4-l2}
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[node distance=1.4cm and 1.8cm]
-
-  % System boundary
-  \begin{scope}[on background layer]
-    \node[c4boundary, fit={(-0.5,-0.5)(12,6.5)}, inner sep=0.6cm,
-          label={[font=\small\itshape]above left:Open Hybrid Cloud System}] (bound) {};
-  \end{scope}
-
-  % Frontend container
-  \node[c4container, text width=3.6cm, minimum height=3.0cm] (fe) at (2,3)
-    {\textbf{Frontend}\\[4pt]
-     \scriptsize React UI, App Router pages,\\
-     NextAuth v5 session,\\
-     typed API client.\\[4pt]
-     \scriptsize\textit{Next.js 15 · React 19 · :3000}};
-
-  % Backend container
-  \node[c4container, text width=3.6cm, minimum height=3.0cm] (be) at (7,3)
-    {\textbf{Backend API}\\[4pt]
-     \scriptsize REST route handlers,\\
-     JWT auth middleware,\\
-     Drizzle ORM, webhooks,\\
-     notifications.\\[4pt]
-     \scriptsize\textit{Next.js 15 · Node.js 22 · :3001}};
-
-  % Database
-  \node[c4database, right=2.2cm of be] (db)
-    {\textbf{PostgreSQL}\\[4pt]
-     \scriptsize All persistent data};
-
-  % Persons (above)
-  \node[c4person, above left=1.6cm and 0.4cm of fe] (dua)
-    {\textbf{Admin}};
-  \node[c4person, above=1.6cm of fe] (sa)
-    {\textbf{Root}};
-  \node[c4person, above right=1.6cm and 0.4cm of fe] (pl)
-    {\textbf{Project Manager}};
-
-  % External below
-  \node[c4external, below left=1.6cm and 0.5cm of be, text width=2.8cm] (ci)
-    {\textbf{CI Provider}};
-  \node[c4external, below right=1.6cm and 0.5cm of be, text width=2.8cm] (smtp)
-    {\textbf{SMTP}};
-
-  % Arrows
-  \draw[c4arrow] (dua) -- (fe);
-  \draw[c4arrow] (sa)  -- (fe);
-  \draw[c4arrow] (pl)  -- (fe);
-  \draw[c4arrow] (fe) -- node[c4label,above]{REST/HTTPS} (be);
-  \draw[c4arrow] (be) -- node[c4label,above]{Drizzle/TCP} (db);
-  \draw[c4arrow] (be) -- node[c4label,right=2pt]{JSON/HTTPS} (ci);
-  \draw[c4arrow] (be) -- node[c4label,right=2pt]{SMTP} (smtp);
-
-\end{tikzpicture}
-\caption{C4 Level 2 — Container Diagram}
-\label{fig:c4-l2}
-\end{figure}
+\dslfigure{architecture/diagrams/structurizr-Container}{C4 Level 2 — Container Diagram}{fig:c4-l2}
 
 The system has three containers (plus the shared database):
 
@@ -581,73 +511,13 @@ The system has three containers (plus the shared database):
 Figure~\ref{fig:c4-l3} decomposes the backend API container into
 its major logical components.
 
-\begin{figure}[H]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[node distance=0.7cm and 0.6cm]
+\dslfigure{architecture/diagrams/structurizr-Component_Backend}{C4 Level 3 — Component Diagram (Backend API)}{fig:c4-l3}
 
-  % Top row — thin route handler groups
-  \node[c4component] (auth)
-    {\textbf{Auth Routes}\\[2pt]\scriptsize login, me, password};
-  \node[c4component, right=of auth] (catalog)
-    {\textbf{Catalog Routes}\\[2pt]\scriptsize Products, categories, pricing};
-  \node[c4component, right=of catalog] (order)
-    {\textbf{Order Routes}\\[2pt]\scriptsize Place, approve, reject};
-  \node[c4component, right=of order] (infra)
-    {\textbf{Infrastructure Routes}\\[2pt]\scriptsize Overview, decommission};
-  \node[c4component, right=of infra] (admin)
-    {\textbf{Admin Routes}\\[2pt]\scriptsize Catalog \& config mgmt};
+The frontend decomposes the same way. Both figures are generated from
+\code{docs/architecture/workspace.dsl} by \code{make diagrams}; the model is the
+source of truth and this handbook includes what it renders.
 
-  % Middle row — service layer
-  \node[c4component, below=0.9cm of auth] (sauth)
-    {\textbf{Auth Service}\\[2pt]\scriptsize credentials, sessions};
-  \node[c4component, right=of sauth] (sorder)
-    {\textbf{Order Service}\\[2pt]\scriptsize state machine, CI trigger};
-  \node[c4component, right=of sorder] (sinfra)
-    {\textbf{Infrastructure Service}\\[2pt]\scriptsize decommission logic};
-  \node[c4component, right=of sinfra] (sadmin)
-    {\textbf{Admin Services}\\[2pt]\scriptsize CRUD, exchange, config};
-
-  % Lower-middle row — lib modules
-  \node[c4component, below=0.9cm of sauth] (jwtmw)
-    {\textbf{JWT Middleware}\\[2pt]\scriptsize Verify token, role guards};
-  \node[c4component, right=of jwtmw] (ci)
-    {\textbf{CI Dispatch}\\[2pt]\scriptsize GitLab/GitHub/Bitbucket};
-  \node[c4component, right=of ci] (webhook)
-    {\textbf{Webhook Handler}\\[2pt]\scriptsize Inbound pipeline events};
-  \node[c4component, right=of webhook] (email)
-    {\textbf{Notification}\\[2pt]\scriptsize nodemailer SMTP};
-  \node[c4component, right=of email] (queries)
-    {\textbf{Query Helpers}\\[2pt]\scriptsize findProductName, findUserEmail};
-
-  % Bottom row — data layer
-  \node[c4database, below=0.9cm of jwtmw, text width=2.8cm] (drizzle)
-    {\textbf{Drizzle ORM}\\[2pt]\scriptsize Schema + typed queries};
-
-  % Arrows: routes → services
-  \draw[->, thick] (auth) -- (sauth);
-  \draw[->, thick] (catalog) -- (sorder);
-  \draw[->, thick] (order) -- (sorder);
-  \draw[->, thick] (infra) -- (sinfra);
-  \draw[->, thick] (admin) -- (sadmin);
-
-  % Arrows: services to lib
-  \foreach \n in {sauth, sorder, sinfra, sadmin}
-    \draw[->, thick, draw=gray!60] (\n) -- (ci);
-  \foreach \n in {sauth, sorder, sinfra, sadmin}
-    \draw[->, thick, draw=gray!60] (\n) -- (email);
-  \foreach \n in {sauth, sorder, sinfra, sadmin}
-    \draw[->, thick, draw=gray!60] (\n) -- (queries);
-
-  % Arrows: everything to drizzle
-  \foreach \n in {jwtmw, ci, webhook, email, queries, sauth, sorder, sinfra, sadmin}
-    \draw[->, thick, draw=gray!40, dashed] (\n) -- (drizzle);
-
-\end{tikzpicture}
-}
-\caption{C4 Level 3 — Component Diagram (Backend API)}
-\label{fig:c4-l3}
-\end{figure}
+\dslfigure{architecture/diagrams/structurizr-Component_Frontend}{C4 Level 3 — Component Diagram (Frontend)}{fig:c4-l3-frontend}
 
 \subsection{Component Descriptions}
 

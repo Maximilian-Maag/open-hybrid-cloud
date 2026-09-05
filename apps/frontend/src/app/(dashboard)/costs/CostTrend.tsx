@@ -1,7 +1,7 @@
 import type { CostPeriod } from '@open-hybrid-cloud/types'
 import { Card } from '@/components/ui/Card'
 import { t } from '@/lib/i18n'
-import { CHART_PRIMARY, CHART_GRID } from '@/lib/chartTokens'
+import { CHART_PRIMARY, CHART_GRID, CHART_AXIS } from '@/lib/chartTokens'
 import { monthLabel } from './chartData'
 import { CostCaveats } from './CostCaveats'
 
@@ -145,7 +145,7 @@ export function CostTrend({ series, money, lang, estimatedOrders, unconverted }:
         )}
         <line
           x1="0" y1={VIEW_H - 1} x2={VIEW_W} y2={VIEW_H - 1}
-          stroke="#cbd5e1" strokeWidth="1" vectorEffect="non-scaling-stroke"
+          stroke={CHART_AXIS} strokeWidth="1" vectorEffect="non-scaling-stroke"
         />
 
         {series.map((period, i) => {
@@ -192,7 +192,17 @@ export function CostTrend({ series, money, lang, estimatedOrders, unconverted }:
           here as text, for a reader who cannot see the picture and for anyone who
           wants the exact figure the axis only approximates. */}
       <details className="mt-2">
-        <summary className="cursor-pointer text-xs text-slate-600">{t('details', lang)}</summary>
+        {/* `min-h-11`, because this is a pointer target and not just a label.
+            It is the ONLY text alternative to the chart — the whole table below
+            is behind it — and it shipped as a bare `text-xs` summary about
+            16px tall, against the 44px floor #178 set for every other control
+            in the app. /costs is axe-scanned, but axe has no rule for WCAG
+            2.5.5, so nothing was ever going to catch it (#195, F1).
+
+            Padding rather than `flex`: a summary set to display:flex loses its
+            disclosure triangle in Chrome, and the marker is what says the thing
+            opens. */}
+        <summary className="cursor-pointer text-xs text-slate-600 min-h-11 py-3">{t('details', lang)}</summary>
         <table className="mt-2 w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500">

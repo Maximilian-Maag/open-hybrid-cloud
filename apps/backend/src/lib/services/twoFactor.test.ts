@@ -243,6 +243,58 @@ describe('startEnrollment', () => {
     await startEnrollment(u.id, u.email, 'OHC')
     expect(await auditActions(u.id)).toContain('auth.2fa.enroll_started')
   })
+
+  /*
+   * #195, leftovers. The route reads `requiresSecondFactor` and only asks for a
+   * code when it comes back true — the one branch a stolen session and a
+   * phished password alone can reach. `requireStillUnconfirmed` is what the
+   * route passes when it read false, and it has to keep meaning that all the
+   * way to the write: if the account's REAL owner finishes their own first
+   * enrollment in the gap, this call must not get to plant a pending secret it
+   * never had to prove it could replace — confirming that later would silently
+   * take the account over.
+   *
+   * Driven for real, the same way `does not promote its own secret over an
+   * enrollment that replaced it` is above: a transaction takes `FOR UPDATE` on
+   * the row a first (unraced) `startEnrollment` created, so the call under test
+   * gets past its own read and blocks on the write. Only once it is proven to
+   * be sitting there does the "owner" finish confirming, and release it.
+   */
+  it('refuses to plant a pending secret once a factor was confirmed after this call read none', async () => {
+    const u = await createRoot()
+    // The account's own first, unraced enrollment — there has to be a row for
+    // a second call to race against.
+    const first = await startEnrollment(u.id, u.email, 'OHC')
+    if (!first.ok) return expect.unreachable()
+
+    const ownerSecret = encryptTotpSecret(generateTotpSecret(), u.id)
+    const holder = db.transaction(async (tx) => {
+      await tx.select().from(userTotp).where(eq(userTotp.userId, u.id)).for('update')
+      await waitUntilBlocked()
+
+      // Stands in for the real owner confirming their OWN enrollment while the
+      // call under test was blocked behind it — a factor now exists that this
+      // call never asked to prove.
+      await tx
+        .update(userTotp)
+        .set({ secret: ownerSecret, pendingSecret: null, pendingCreatedAt: null, confirmedAt: new Date() })
+        .where(eq(userTotp.userId, u.id))
+    })
+
+    const racer = startEnrollment(u.id, u.email, 'OHC', { requireStillUnconfirmed: true })
+    const [result] = await Promise.all([racer, holder])
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(409)
+
+    // The owner's freshly confirmed factor is untouched — nothing was planted
+    // over it, and there is nothing left for a later `confirmEnrollment` with
+    // this call's code to promote.
+    const stored = await row(u.id)
+    expect(stored.secret).toBe(ownerSecret)
+    expect(stored.confirmedAt).not.toBeNull()
+    expect(stored.pendingSecret).toBeNull()
+  })
 })
 
 describe('confirmEnrollment', () => {

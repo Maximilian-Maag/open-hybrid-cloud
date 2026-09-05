@@ -80,6 +80,19 @@ jobs:
       - name: Lint frontend
         run: pnpm --filter frontend lint
 
+      # A step in THIS job rather than a job of its own, deliberately: `dev` and
+      # `staging` require four checks by exact name, and a new required job would
+      # have to be added to both protections before it gated anything — while an
+      # extra step here is covered by "Type-check & Lint" the moment it merges.
+      #
+      # `e2e/` was in neither the type-check nor the lint scripts, both of which
+      # filter to `./apps/*`. It is the largest test code in the repo and nothing
+      # read it statically: two type errors were sitting in it, one of them a
+      # `ready(page)` missing the timeout argument its own signature requires
+      # (#328).
+      - name: Type-check e2e
+        run: pnpm exec tsc --noEmit -p e2e/tsconfig.json
+
   # ── Policy ───────────────────────────────────────────────────────────────────
   #
   # Codebase invariants as Rego (issue #149). Every rule here is one that spans

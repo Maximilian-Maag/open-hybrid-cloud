@@ -157,6 +157,19 @@ interface PageRule {
 }
 
 /**
+ * The generous budget, for content that is supposed to arrive. CI runs a cold
+ * `next dev`, so the first render of a route compiles it.
+ */
+const READY_MS = 30_000
+
+/**
+ * The brief one, for content that is supposed to NEVER arrive. Thirty seconds
+ * apiece across every forbidden page would add minutes to the run waiting for
+ * things that are correctly not going to happen.
+ */
+const DENIED_PROBE_MS = 3_000
+
+/**
  * A page is "reachable" when its own content renders — not merely when it responds.
  *
  * Each `ready` waits for something that requires the page's data to have loaded,
@@ -421,7 +434,7 @@ for (const role of ALL_ROLES) {
         await hydrated(page)
         await expect(page, `${role} was bounced away from ${rule.path}`).not.toHaveURL(/\/login/)
         await expectNoServerError(page)
-        await rule.ready(page)
+        await rule.ready(page, READY_MS)
       }
     })
 
@@ -446,7 +459,7 @@ for (const role of ALL_ROLES) {
         // A short budget on purpose: this is waiting for something that should
         // never arrive, and `ready` resolving at all is the failure.
         const showedItsData = await rule
-          .ready(page, 3_000)
+          .ready(page, DENIED_PROBE_MS)
           .then(() => true)
           .catch(() => false)
         expect(

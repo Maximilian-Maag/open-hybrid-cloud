@@ -56,7 +56,8 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
                 api_exchange = component "Exchange Rates" "Fetches and caches exchange rates; converts amounts between currencies."
                 api_ci = component "CI Provider Client" "Unified client for GitLab, GitHub and Bitbucket: trigger pipelines, browse repos, fetch job traces. triggerProductWebhooks() orchestrates webhook execOrder; triggerPipelineStacks() sends stack steps (each with execOrder for parallel groups and optional upstreamRefs for cross-step state passing) as PIPELINE_STACK JSON to the CI orchestrator."
                 api_windows = component "Deployment Window Routes" "Root defines when provisioning may run (#330): GET/PUT /api/admin/deployment-windows replaces the window set, POST /api/orders/{id}/deploy-now releases one scheduled order early, and POST /api/internal/deployment-window-sweep releases every order whose window has opened."
-                svc_windows = component "Window Policy" "Decides what happens to an approved order: provision now, or wait in `scheduled` until the next window. Pure wall-clock arithmetic over a zone, the window set and the observed holidays; weekends and holidays are excluded. Releases due orders under the same atomic claim root's override races against."
+                svc_windows = component "Window Policy" "Decides what happens to an approved order: provision now, or wait in `scheduled` until the next window. Pure wall-clock arithmetic over a zone, the window set and the observed holidays; weekends and holidays are excluded. Releases due orders under the same atomic claim root's override races against. Fails OPEN when a configured holiday feed has never been read: with no holiday data it cannot tell a holiday from a working day, so it stops applying windows rather than deploying on Christmas."
+                svc_holidays = component "Holiday Feed" "Pulls an ICS or JSON feed on a schedule and caches the dates, so the decision path never makes a network call. Feed rows are replaced wholesale; manual rows — a company shutdown, a holiday worked through — survive a refresh. A failed refresh keeps the last good set."
                 api_drift = component "Drift Routes" "Two internal endpoints for the scheduled drift loop (#108), both authenticated with a shared secret in X-Drift-Secret and both 503 when it is unset: GET /api/internal/drift-targets hands out the work list, POST /api/internal/drift-report records what the plans found."
                 svc_drift = component "Drift Service" "Builds the work list from active elements and their stack steps, and records each report. Matches a reported state key by composing <base>-<stateSuffix> the same way generate_stack.py does; aggregates an element's states into one reading (drift anywhere wins) and refuses a report older than the one already stored."
                 api_docs = component "OpenAPI / Swagger UI" "Swagger UI and OpenAPI 3.0 spec auto-generated from Zod schemas."
@@ -188,6 +189,9 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         api_webhook -> lib_queries "Shared reads" "internal"
 
         # Deployment windows (#330) — an approved order may wait for the clock
+        api_windows -> svc_holidays "Feed config, preview, manual dates, refresh" "internal"
+        svc_holidays -> database "Caches the resolved dates and the feed's health" "SQL/TCP"
+        svc_windows -> svc_holidays "Asks whether there is holiday data to trust" "internal"
         api_windows -> svc_windows "Delegates the window set, the release and the override" "internal"
         svc_windows -> database "Reads windows, holidays and the zone; claims due orders" "SQL/TCP"
         svc_windows -> svc_orders "Provisions an order once its window opens" "internal"

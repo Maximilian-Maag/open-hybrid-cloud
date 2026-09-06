@@ -39,8 +39,15 @@ export default defineConfig({
    *      workers on a 4-vCPU runner starved it and plain `page.goto` calls blew
    *      past the timeout: run 31807504622, four failures and three flakes,
    *      every one a navigation timeout with no assertion or API error in it.
-   *      CI now serves PRODUCTION BUILDS (see `webServer`), so there is no
-   *      per-request compilation left to starve.
+   *      That was the reason to serve production builds instead, and it is
+   *      what #364 set out to do — but the `webServer` change was never
+   *      actually made, so CI still runs `next dev` and the objection was
+   *      never removed. It was also never TESTED: at two workers there was no
+   *      starvation at all, across four shards, so the concern turns out to
+   *      bite somewhere above that rather than immediately. #374 is the
+   *      experiment to run properly; until then this stays where the evidence
+   *      is, and `workers` is deliberately a fraction rather than a big
+   *      number.
    *
    *   2. A group of specs mutates GLOBAL singletons — CI sources, environments,
    *      products, categories, users, branding, SMTP and AI config — against one
@@ -78,10 +85,13 @@ export default defineConfig({
    * the useful figure is a fraction rather than a constant — and a constant
    * tuned on a 4-vCPU runner is wrong the day the runner changes.
    *
-   * Measured on shard 1 against production builds, retries off, on an 8-core
-   * box: 2m52s at one worker, 2m44s at two, 2m04s at four. The gain is real but
-   * sublinear, because much of this suite waits on sign-ins rather than on CPU
-   * — which is also why oversubscribing would cost more than it returns.
+   * Measured locally on shard 1, retries off, on an 8-core box: 2m52s at one
+   * worker, 2m44s at two, 2m04s at four. Sublinear, because much of this suite
+   * waits on sign-ins rather than on CPU — which is also why oversubscribing
+   * would cost more than it returns.
+   *
+   * And measured on the runner, which is the number that counts: the slowest
+   * shard went from 796s to 720s, and shard 1 from 437s to 309s.
    *
    * The singleton pass overrides this to 1 on the command line.
    */

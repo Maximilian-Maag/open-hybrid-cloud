@@ -116,7 +116,19 @@ const endExpiredSession = async (): Promise<void> => {
   // not survive it (#148). Imported here for the same reason `signOut` is —
   // this module is reachable from server components.
   const { clearServiceWorkerCaches } = await import('@/lib/serviceWorker')
-  await clearServiceWorkerCaches()
+  /*
+   * Guarded, and here it matters more than on the menu item (#359).
+   *
+   * `endingSession` latches to stop a burst of 401s each starting a sign-out,
+   * so a throw on this line would not merely skip one redirect — it would leave
+   * the latch set and every later expiry silently do nothing, for the life of
+   * the page. Cache-clearing is best-effort; ending the session is not.
+   */
+  try {
+    await clearServiceWorkerCaches()
+  } catch {
+    // Tidiness failed. The session still has to end.
+  }
   await signOut({ redirectTo: expiredLoginUrl(window.location.pathname) })
 }
 

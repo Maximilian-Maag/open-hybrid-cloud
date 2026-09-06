@@ -155,10 +155,24 @@ export function Header({
               <hr className="my-1 border-slate-100" />
               <button
                 onClick={async () => {
-                  // Awaited before the redirect: the worker's caches hold the
-                  // shell and this operator's branding, and on a shared device
-                  // they must not outlive the session (#148).
-                  await clearServiceWorkerCaches()
+                  /*
+                   * Awaited before the redirect: the worker's caches hold the
+                   * shell and this operator's branding, and on a shared device
+                   * they must not outlive the session (#148).
+                   *
+                   * But never at the cost of the sign-out itself (#359). This
+                   * is the only sign-out affordance in the app, and it awaited
+                   * a call that could hang for ever — so the session did not
+                   * end and the user was told it had. `clearServiceWorkerCaches`
+                   * is time-boxed on its own side now; the `catch` here is the
+                   * second half of the same rule, so a rejection cannot do what
+                   * the hang did.
+                   */
+                  try {
+                    await clearServiceWorkerCaches()
+                  } catch {
+                    // Tidiness failed. Ending the session is what was asked for.
+                  }
                   await signOut({ redirectTo: '/login' })
                 }}
                 className="w-full text-left flex min-h-11 items-center px-4 py-2 text-sm text-slate-700 hover:text-red-600 transition-colors"

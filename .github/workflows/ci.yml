@@ -392,6 +392,13 @@ jobs:
           --reporter=list,blob
 
       - name: Run E2E tests (specs that share global state)
+        # Runs even when the parallel pass failed, for the same reason the
+        # matrix sets `fail-fast: false`: these are two slices of one suite, not
+        # two stages of it. Skipping them on a red first pass would hide their
+        # results AND leave the shard's second blob missing, so the merged report
+        # — and the skip budget computed from it — would silently describe less
+        # than the whole run.
+        if: ${{ !cancelled() }}
         env:
           PLAYWRIGHT_BLOB_OUTPUT_FILE: blob-report/singletons-${{ matrix.shard }}.zip
         run: >-

@@ -104,6 +104,21 @@ services:
       # blank leaves both disabled (503). The reporter is a pipeline schedule in
       # the infra-templates project, which needs the same value.
       DRIFT_REPORT_SECRET: "${DRIFT_REPORT_SECRET:-}"
+      # Passkeys (issues #197, #241). NOT secrets — they are public identifiers
+      # the browser already knows — but they are deployment-specific, and the
+      # backend refuses to run a WebAuthn ceremony without them in production
+      # rather than issuing credentials nobody can use.
+      #
+      # RP_ID is a BARE DOMAIN (portal.example.com — no scheme, no port, no
+      # path). RP_ORIGIN is the full origin the browser sees, with scheme
+      # (https://portal.example.com); comma-separate several if the portal
+      # answers on more than one hostname, and RP_ID must be a suffix of each.
+      #
+      # Blank rather than required, so an existing deployment that never set
+      # them keeps starting — passkey enrolment is what fails, not the server.
+      # Changing RP_ID invalidates every credential already registered.
+      WEBAUTHN_RP_ID: "${WEBAUTHN_RP_ID:-}"
+      WEBAUTHN_RP_ORIGIN: "${WEBAUTHN_RP_ORIGIN:-}"
     depends_on:
       postgres:
         condition: service_healthy

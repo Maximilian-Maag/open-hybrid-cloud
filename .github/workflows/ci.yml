@@ -326,6 +326,18 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
+      # Playwright serves PRODUCTION builds in CI rather than `next dev` (#364).
+      # `next dev` compiles each route on first request, inside the test's own
+      # 30s clock — tolerable with one worker, and the thing that starved the
+      # runner into navigation timeouts with more. Building here moves that cost
+      # somewhere no timeout is running, which is what lets `workers` exceed one.
+      - name: Build the apps Playwright will serve
+        run: pnpm --filter backend build && pnpm --filter frontend build
+        env:
+          # Inlined into the client bundle at build time, so it has to match what
+          # the run will use.
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+
       # Without this the e2e database holds a root user, default branding and
       # nothing else: `runBootstrap()` is all the app does on start, and
       # `make db-seed-demo` was never called here. So 56 of 283 tests skipped —
@@ -355,10 +367,38 @@ jobs:
       # The a11y gate has moved to its own job. It used to be a step here, after
       # the suite, which made it wait for a full E2E run before it started — and
       # with four shards it would have run four times over the same pages.
-      - name: Run E2E tests
+      # Two passes, because the suite has two kinds of spec in it (#364).
+      #
+      # The first is everything that keeps to itself: parallel, at the worker
+      # count in playwright.config.ts. The second is the ten specs that mutate
+      # global singletons and then assert on lists — those get `--workers=1`, so
+      # they serialise against each other and against nothing else.
+      #
+      # `--no-deps` on the second pass: the `setup` project already ran in the
+      # first and wrote e2e/.auth/root.json, and running it again would re-do a
+      # sign-in and a TOTP enrolment for no reason.
+      #
+      # Distinct blob filenames because both write into blob-report/ and the
+      # merge job downloads the directory whole — same name twice would silently
+      # keep one.
+      - name: Run E2E tests (parallel specs)
+        env:
+          PLAYWRIGHT_BLOB_OUTPUT_FILE: blob-report/parallel-${{ matrix.shard }}.zip
         run: >-
           pnpm exec playwright test
+          --project=chromium
           --grep-invert "Accessibility"
+          --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+          --reporter=list,blob
+
+      - name: Run E2E tests (specs that share global state)
+        env:
+          PLAYWRIGHT_BLOB_OUTPUT_FILE: blob-report/singletons-${{ matrix.shard }}.zip
+        run: >-
+          pnpm exec playwright test
+          --project=chromium-singletons
+          --no-deps
+          --workers=1
           --shard=${{ matrix.shard }}/${{ strategy.job-total }}
           --reporter=list,blob
 
@@ -569,6 +609,14 @@ jobs:
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
+
+      # Same reason as the E2E job: the config serves production builds in CI
+      # (#364), so a build has to exist before Playwright starts the servers.
+      # This job would otherwise fail at `next start` with nothing to serve.
+      - name: Build the apps Playwright will serve
+        run: pnpm --filter backend build && pnpm --filter frontend build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3001
 
       # The five detail pages in this spec each walk in from a list, and an empty
       # list has nothing to walk to — so an unseeded database silently skips them

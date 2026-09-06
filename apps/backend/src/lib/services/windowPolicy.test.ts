@@ -8,7 +8,10 @@ import {
   createUser, createCategory, createProduct, createCiSource,
   createEnvironment, createProject, createOrder,
 } from '@/test/helpers'
-import { loadWindowPolicy, whenMayItDeploy, dueScheduledOrders, releaseDueScheduledOrders } from './windowPolicy'
+import {
+  loadWindowPolicy, whenMayItDeploy, dueScheduledOrders, releaseDueScheduledOrders,
+  deployScheduledOrderNow,
+} from './windowPolicy'
 import type * as OrdersService from '@/lib/services/orders'
 import type * as AuditModule from '@/lib/audit'
 import { logAudit } from '@/lib/audit'
@@ -304,5 +307,127 @@ describe('releaseDueScheduledOrders', () => {
 
     expect(out.released).toEqual([])
     expect(vi.mocked(provisionOrderElements)).not.toHaveBeenCalled()
+  })
+})
+
+/*
+ * Root deploying a scheduled order early (#330).
+ *
+ * #330 shipped the `scheduled` state with no way out of it but the sweep. This
+ * is the way out, and it is the one place where the guarantee the feature makes
+ * is deliberately stepped over — so what it records matters as much as what it
+ * does.
+ */
+describe('deployScheduledOrderNow', () => {
+  const AT = new Date('2026-09-02T20:00:00Z')
+  const ROOT = { id: 0, email: 'root@test.dev' }
+
+  const scheduledOrder = async () => {
+    const { user, product, environment, project } = await setup()
+    const order = await createOrder(project.id, product.id, environment.id, user.id, { status: 'pending' })
+    await db
+      .update(orders)
+      .set({ status: 'scheduled', scheduledFor: new Date('2026-09-03T06:00:00Z') })
+      .where(eq(orders.id, order.id))
+    return { order, actor: { ...ROOT, id: user.id } }
+  }
+
+  const reload = async (id: number) => (await db.select().from(orders).where(eq(orders.id, id)))[0]
+
+  beforeEach(() => {
+    vi.mocked(provisionOrderElements).mockReset()
+    vi.mocked(logAudit).mockReset()
+    vi.mocked(provisionOrderElements).mockResolvedValue({ elementIds: [1], pipelineIds: ['p1'], failures: [] } as never)
+    vi.mocked(logAudit).mockResolvedValue(undefined as never)
+  })
+
+  it('provisions the order and records who overrode the window', async () => {
+    const { order, actor } = await scheduledOrder()
+
+    expect(await deployScheduledOrderNow(order.id, actor, AT)).toEqual({ ok: true })
+
+    const row = await reload(order.id)
+    expect(row.status).toBe('provisioning')
+    expect(row.windowOverrideBy).toBe(actor.id)
+    expect(row.windowOverrideAt?.toISOString()).toBe(AT.toISOString())
+    // Left in place on purpose: it says which window this order was waiting
+    // for, which is the context that makes the override legible later.
+    expect(row.scheduledFor).not.toBeNull()
+  })
+
+  it('audits the override before provisioning, naming who and what was due', async () => {
+    const { order, actor } = await scheduledOrder()
+
+    await deployScheduledOrderNow(order.id, actor, AT)
+
+    expect(vi.mocked(logAudit)).toHaveBeenCalledWith(
+      actor.id,
+      'order.window_overridden',
+      order.id,
+      expect.stringContaining('without waiting for its window'),
+    )
+  })
+
+  /*
+   * The decision to step over the guardrail was made whether or not CI then
+   * answered. An override recorded only on success would leave the least
+   * explicable case — forced out of hours, and it broke — with no audit entry.
+   */
+  it('records the override even when provisioning fails', async () => {
+    const { order, actor } = await scheduledOrder()
+    vi.mocked(provisionOrderElements).mockRejectedValue(new Error('CI unreachable'))
+
+    const outcome = await deployScheduledOrderNow(order.id, actor, AT)
+
+    expect(outcome).toMatchObject({ ok: false, status: 502 })
+    expect(vi.mocked(logAudit)).toHaveBeenCalledWith(
+      actor.id,
+      'order.window_overridden',
+      order.id,
+      expect.any(String),
+    )
+    const row = await reload(order.id)
+    expect(row.status, 'nothing started, so it goes back in the queue').toBe('scheduled')
+    expect(row.windowOverrideBy).toBe(actor.id)
+  })
+
+  /*
+   * The trap a human being present does NOT remove. Putting the order back to
+   * 'scheduled' with `scheduled_for` still due hands it to the sweep, which
+   * would deploy the same infrastructure again hours later with nobody watching.
+   */
+  it('leaves the order provisioning when its pipelines had already started', async () => {
+    const { order, actor } = await scheduledOrder()
+    vi.mocked(provisionOrderElements).mockImplementation(async () => {
+      await db.update(orders).set({ pipelineId: ['pipe-1'] }).where(eq(orders.id, order.id))
+      throw new Error('finishOrderTriggerRun exploded')
+    })
+
+    const outcome = await deployScheduledOrderNow(order.id, actor, AT)
+
+    expect(outcome).toMatchObject({ ok: false })
+    if (outcome.ok) return
+    expect(outcome.message).toContain('deploy the same infrastructure twice')
+    expect((await reload(order.id)).status).toBe('provisioning')
+  })
+
+  /*
+   * Root pressing "Deploy now" at 07:59 while the 08:00 sweep fires must
+   * provision the order once. The claim is what settles it, so whoever loses
+   * has to be told something true.
+   */
+  it('refuses an order the sweep has already claimed', async () => {
+    const { order, actor } = await scheduledOrder()
+    await db.update(orders).set({ status: 'provisioning' }).where(eq(orders.id, order.id))
+
+    const outcome = await deployScheduledOrderNow(order.id, actor, AT)
+
+    expect(outcome).toMatchObject({ ok: false, status: 400 })
+    if (!outcome.ok) expect(outcome.message).toContain('provisioning')
+    expect(vi.mocked(provisionOrderElements)).not.toHaveBeenCalled()
+  })
+
+  it('is a 404 for an order that does not exist', async () => {
+    expect(await deployScheduledOrderNow(999_999, ROOT, AT)).toMatchObject({ ok: false, status: 404 })
   })
 })

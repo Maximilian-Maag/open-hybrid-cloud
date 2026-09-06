@@ -108,6 +108,134 @@ const trialDurationFor = async (productId: number, environmentId: number): Promi
 }
 
 /**
+ * Did this order's fan-out get anything started?
+ *
+ * `pipeline_id` is appended to as each trigger returns rather than in one write
+ * at the end, so it is a truthful answer even from inside a failure — which is
+ * what makes it usable as the guard below.
+ *
+ * The question matters because an order put back to 'scheduled' with its
+ * `scheduled_for` still due is an order the sweep will provision again.
+ * `provisionOrderElements` throws only when NOTHING started (it deletes its own
+ * element rows on that path), but a throw from the bracket that CLOSES the run
+ * arrives with pipelines already running — and that one must not be retried.
+ */
+const anythingStarted = async (orderId: number): Promise<boolean> => {
+  const [row] = await db.select({ pipelineId: orders.pipelineId }).from(orders).where(eq(orders.id, orderId))
+  return (row?.pipelineId ?? []).length > 0
+}
+
+/**
+ * Root deploys a scheduled order now, without waiting for its window (#330).
+ *
+ * The same atomic claim the sweep uses, and for the same reason: root pressing
+ * "Deploy now" at 07:59 while the 08:00 sweep fires must provision the order
+ * once, not twice. Whoever loses the claim gets zero rows back and is told the
+ * order is no longer scheduled, which is true and is what the UI should say.
+ *
+ * `windowOverrideBy` and `windowOverrideAt` are written in the SAME statement as
+ * the claim rather than afterwards. They are the record of a guardrail being
+ * stepped over, and a second write could fail and leave an order provisioned
+ * outside its window with nothing saying who decided that.
+ *
+ * `scheduledFor` is deliberately left in place: it says which window this order
+ * was waiting for, which is the context that makes the override legible months
+ * later. The status is what stops the sweep touching it again.
+ */
+export const deployScheduledOrderNow = async (
+  orderId: number,
+  actor: { id: number; email: string },
+  now: Date,
+): Promise<{ ok: true } | { ok: false; status: number; message: string }> => {
+  const claimed = await db
+    .update(orders)
+    .set({
+      status: 'provisioning',
+      windowOverrideBy: actor.id,
+      windowOverrideAt: now,
+      updatedAt: now,
+    })
+    .where(and(eq(orders.id, orderId), eq(orders.status, 'scheduled')))
+    .returning({
+      id: orders.id, projectId: orders.projectId, productId: orders.productId,
+      environmentId: orders.environmentId, parameters: orders.parameters,
+      sizeCode: orders.sizeCode, quantity: orders.quantity, isTrial: orders.isTrial,
+      scheduledFor: orders.scheduledFor,
+    })
+
+  if (claimed.length === 0) {
+    const [existing] = await db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId))
+    if (!existing) return { ok: false, status: 404, message: 'Order not found' }
+    return {
+      ok: false,
+      status: 400,
+      message: `Only a scheduled order can be deployed early; this one is ${existing.status}`,
+    }
+  }
+
+  const order = claimed[0]
+
+  /*
+   * Audited BEFORE provisioning, not after.
+   *
+   * Everything below can take minutes and can fail, and the decision to step
+   * over the guardrail was made either way. An override recorded only on
+   * success would leave the least explicable case — root forced a deployment
+   * out of hours and it broke — as the one with no audit entry.
+   */
+  await logAudit(
+    actor.id,
+    'order.window_overridden',
+    order.id,
+    `${actor.email} deployed order #${order.id} without waiting for its window` +
+      (order.scheduledFor ? ` (was due ${order.scheduledFor.toISOString()})` : ''),
+  )
+
+  try {
+    const { provisionOrderElements } = await import('@/lib/services/orders')
+    await provisionOrderElements({
+      orderId: order.id,
+      projectId: order.projectId,
+      productId: order.productId,
+      environmentId: order.environmentId,
+      parameters: order.parameters,
+      sizeCode: order.sizeCode,
+      quantity: order.quantity > 0 ? order.quantity : 1,
+      isTrial: order.isTrial,
+      // Re-read for the reason the sweep re-reads it: a trial's clock starts
+      // when it provisions, and passing 0 would give it a zero-minute life.
+      trialDurationMinutes: order.isTrial ? await trialDurationFor(order.productId, order.environmentId) : 0,
+    })
+  } catch (e) {
+    /*
+     * Back to 'scheduled' only when nothing started — the same guard the sweep
+     * uses, and needed here for the same reason.
+     *
+     * A human standing in front of this does NOT make it safe to reschedule an
+     * order whose pipelines are already running: `scheduled_for` is still due,
+     * so the next sweep would pick it up and deploy the same infrastructure a
+     * second time, hours later, with nobody watching. The override stays
+     * recorded either way — the decision was made.
+     */
+    const started = await anythingStarted(order.id)
+    if (!started) {
+      await db.update(orders).set({ status: 'scheduled', updatedAt: new Date() }).where(eq(orders.id, order.id))
+    }
+    return {
+      ok: false,
+      status: 502,
+      message:
+        (e instanceof Error ? e.message : 'Provisioning could not be started') +
+        (started
+          ? ' — the order was left provisioning: its pipelines had already started, so returning it to the queue would deploy the same infrastructure twice'
+          : ''),
+    }
+  }
+
+  return { ok: true }
+}
+
+/**
  * Release every scheduled order whose window has opened.
  *
  * The claim is `scheduled -> provisioning` conditioned on the row still being
@@ -178,11 +306,7 @@ export const releaseDueScheduledOrders = async (
        * each trigger returns, not at the end, so it is a truthful answer to
        * "did anything start".
        */
-      const [row] = await db
-        .select({ pipelineId: orders.pipelineId })
-        .from(orders)
-        .where(eq(orders.id, order.id))
-      const started = (row?.pipelineId ?? []).length > 0
+      const started = await anythingStarted(order.id)
 
       if (!started) {
         await db.update(orders).set({ status: 'scheduled', updatedAt: new Date() }).where(eq(orders.id, order.id))

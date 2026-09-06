@@ -43,14 +43,29 @@ import {
  * ── What is deliberately not here ───────────────────────────────────────────
  * A test for the 401 handler in `lib/api.ts`, which shares the broken await and
  * is worse there (`endingSession` latches, so a throw would leave every later
- * expiry doing nothing). Three shapes were tried and each passed while proving
- * nothing: a document `goto` is answered by the middleware, an in-app move to a
- * server-rendered page fetches nothing at all, and an in-app move to a
- * client-rendered one has the router's RSC request 401 first and fall back to a
- * document load. The fourth — a form submit with no navigation — could not be
- * made to see a 401 at all: with the session cookie removed, the proxy still
- * answered its PUT with 200, which is worth understanding before a test is
- * written on top of it. Unit coverage holds that path for now.
+ * expiry doing nothing). Four shapes were tried and each proved nothing:
+ *
+ *   - a document `goto` is answered by the middleware, so it redirects with the
+ *     handler deleted;
+ *   - an in-app move to a server-rendered page (/projects) makes no browser
+ *     fetch at all — it simply sat there;
+ *   - an in-app move to a client-rendered one (/catalog) has the router's own
+ *     RSC request 401 first and fall back to a document load, which the
+ *     middleware redirects;
+ *   - a form submit with no navigation is the right SHAPE, but never sees a 401.
+ *
+ * The last one is worth writing down, because it is not obvious and it wasted a
+ * long time. Deleting `authjs.session-token` does not end the session: NextAuth's
+ * SessionProvider polls `/api/auth/session`, and the rolling refresh puts the
+ * cookie straight back — measured at under three seconds, after which the proxy
+ * authorises again. It is not an authorisation hole (a page fetch made while the
+ * cookie is genuinely absent gets `401 {"error":"Not signed in"}`), it is simply
+ * that a client-side cookie delete is not an expiry.
+ *
+ * Simulating one faithfully means revoking the session SERVER-side — the app has
+ * per-session revocation from #37 — and that belongs with the cross-account work
+ * in #363, which already needs a second signed-in account to do it. Unit coverage
+ * holds this path until then.
  */
 
 /** Sign out through the account menu, the way a user does. */

@@ -20,11 +20,21 @@ metadata:
 spec:
   schedule: {{ .Values.decommissionSweep.schedule | quote }}
   concurrencyPolicy: Forbid
+  # A run missed while the controller was down is skipped rather than fired at
+  # some arbitrary later moment. The sweep is idempotent and runs every quarter
+  # hour; catching up is not worth a decommission at an unexpected time.
+  startingDeadlineSeconds: 120
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
       backoffLimit: 2
+      # Bounded, because `Forbid` above turns an unbounded run into a permanent
+      # outage rather than a slow one: a Job that stays Active suppresses EVERY
+      # later sweep, so scheduled decommissioning simply stops, expired
+      # infrastructure keeps running and costing money, and nothing says why
+      # (#366).
+      activeDeadlineSeconds: 300
       template:
         metadata:
           labels:
@@ -47,7 +57,12 @@ spec:
               args:
                 - |
                   set -eu
+                  # --max-time for a backend that accepts and then stalls;
+                  # --connect-timeout separately, because a Service with no
+                  # ready endpoints hangs at connect and that is the ordinary
+                  # shape of a rolling deploy rather than an exception.
                   STATUS=$(curl -sS -o /tmp/out -w '%{http_code}' \
+                    --connect-timeout 5 --max-time 120 \
                     -X POST \
                     -H "X-Sweep-Secret: ${DECOMMISSION_SWEEP_SECRET}" \
                     "http://{{ include "open-hybrid-cloud.backend.fullname" . }}:{{ .Values.backend.service.port }}/api/internal/decommission-sweep")

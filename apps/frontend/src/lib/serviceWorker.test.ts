@@ -8,6 +8,27 @@ import { clearServiceWorkerCaches, registerServiceWorker } from './serviceWorker
  * not take out again. Both paths that end a session call this — the menu item
  * and the 401 handler — and a third one added without it is how this regresses.
  */
+/**
+ * A service-worker container stub.
+ *
+ * `getRegistration` is part of the surface now: `ready` alone was what made the
+ * old tests pass while sign-out was broken in every browser (#359). Every stub
+ * here resolved `ready` immediately, which is the one case where the bug does
+ * not appear.
+ */
+const stubWorker = (over: {
+  ready?: Promise<unknown>
+  registration?: unknown
+  controller?: { postMessage: (m: unknown) => void } | null
+} = {}) =>
+  vi.stubGlobal('navigator', {
+    serviceWorker: {
+      ready: over.ready ?? Promise.resolve(),
+      getRegistration: vi.fn().mockResolvedValue('registration' in over ? over.registration : {}),
+      controller: over.controller ?? null,
+    },
+  })
+
 const stubCaches = (names: string[]) => {
   const deleted: string[] = []
   vi.stubGlobal('caches', {
@@ -23,7 +44,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 describe('clearServiceWorkerCaches', () => {
   it('deletes every cache, not only the shell', async () => {
     const deleted = stubCaches(['ohc-shell-v1', 'ohc-assets-v1', 'something-else'])
-    vi.stubGlobal('navigator', { serviceWorker: { ready: Promise.resolve(), controller: null } })
+    stubWorker()
 
     await clearServiceWorkerCaches()
 
@@ -35,7 +56,7 @@ describe('clearServiceWorkerCaches', () => {
   it('also tells the worker, which may hold caches this page cannot enumerate', async () => {
     stubCaches([])
     const postMessage = vi.fn()
-    vi.stubGlobal('navigator', { serviceWorker: { ready: Promise.resolve(), controller: { postMessage } } })
+    stubWorker({ controller: { postMessage } })
 
     await clearServiceWorkerCaches()
 
@@ -49,7 +70,7 @@ describe('clearServiceWorkerCaches', () => {
    */
   it('does not throw when the browser refuses cache access', async () => {
     vi.stubGlobal('caches', { keys: vi.fn().mockRejectedValue(new Error('blocked')), delete: vi.fn() })
-    vi.stubGlobal('navigator', { serviceWorker: { ready: Promise.resolve(), controller: null } })
+    stubWorker()
 
     await expect(clearServiceWorkerCaches()).resolves.toBeUndefined()
   })
@@ -61,9 +82,44 @@ describe('clearServiceWorkerCaches', () => {
     await expect(clearServiceWorkerCaches()).resolves.toBeUndefined()
   })
 
+  /*
+   * The bug (#359), and the reason this function is time-boxed rather than
+   * merely wrapped in a `try`.
+   *
+   * `ServiceWorkerContainer.ready` resolves when a worker becomes active and
+   * NEVER REJECTS. With `/sw.js` returning 404 the registration failed, no
+   * worker ever activated, and the old code's `await navigator.serviceWorker
+   * .ready` hung for the life of the page — with no rejection for the `try` to
+   * catch. `signOut()` on the next line was never reached, so the only sign-out
+   * button in the app did nothing while telling the user it had.
+   */
+  it('settles even when the worker never activates', async () => {
+    stubCaches(['ohc-shell-v1'])
+    // Never resolves, never rejects — exactly what a failed registration gives.
+    stubWorker({ ready: new Promise(() => {}), registration: {} })
+
+    await expect(clearServiceWorkerCaches()).resolves.toBeUndefined()
+  })
+
+  it('does not wait on a worker that was never registered', async () => {
+    stubCaches(['ohc-shell-v1'])
+    stubWorker({ ready: new Promise(() => {}), registration: undefined })
+
+    // `getRegistration()` answers `undefined` rather than waiting for a worker
+    // that is not coming, so this settles without needing the budget at all.
+    await expect(clearServiceWorkerCaches()).resolves.toBeUndefined()
+  })
+
+  it('settles even when cache deletion itself hangs', async () => {
+    vi.stubGlobal('caches', { keys: vi.fn(() => new Promise(() => {})), delete: vi.fn() })
+    stubWorker()
+
+    await expect(clearServiceWorkerCaches()).resolves.toBeUndefined()
+  })
+
   it('does not throw when caches are unavailable entirely', async () => {
     vi.stubGlobal('caches', undefined)
-    vi.stubGlobal('navigator', { serviceWorker: { ready: Promise.resolve(), controller: null } })
+    stubWorker()
 
     await expect(clearServiceWorkerCaches()).resolves.toBeUndefined()
   })

@@ -99,6 +99,32 @@ describe('DeploymentWindowsManager', () => {
   })
 
   /*
+   * A window being TYPED can cross midnight even though a saved one cannot —
+   * `validateWindows` and the table's CHECK both refuse those. Treated as a
+   * single linear interval, 23:30–01:30 leaves 00:00 looking free, and `Add
+   * window` would offer a slot underneath it.
+   */
+  it('does not offer a slot underneath a window that runs past midnight', async () => {
+    const user = userEvent.setup()
+    mockedGet.mockResolvedValue({
+      // Every working hour taken, plus one running to 01:30 the next day.
+      timeZone: 'UTC',
+      windows: [
+        { startMinute: 9 * 60, durationMinutes: 15 * 60 - 30 },
+        { startMinute: 23 * 60 + 30, durationMinutes: 120 },
+      ],
+    })
+    render(<DeploymentWindowsManager />)
+    await screen.findByDisplayValue('23:30')
+
+    await user.click(screen.getByRole('button', { name: /add window/i }))
+
+    // 00:00 and 01:00 are under the midnight-crossing window; 02:00 is the
+    // first hour genuinely free.
+    expect(await screen.findByDisplayValue('02:00')).toBeInTheDocument()
+  })
+
+  /*
    * An empty set is a real answer, not a mistake: it turns the restriction off.
    * A component that refused to save it would leave root unable to undo.
    */

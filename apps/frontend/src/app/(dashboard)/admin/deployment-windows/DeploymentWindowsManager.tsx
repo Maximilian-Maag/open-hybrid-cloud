@@ -80,8 +80,24 @@ export function DeploymentWindowsManager() {
    * validated as a whole on save, so the default has to respect the rest of it.
    */
   const nextFreeHour = (rows: WindowRow[]): WindowRow | null => {
-    const taken = (start: number) =>
-      rows.some((w) => start < w.startMinute + w.durationMinutes && w.startMinute < start + 60)
+    /*
+     * Each window as one or two linear intervals, split at midnight.
+     *
+     * A saved window can never cross midnight — `validateWindows` refuses it and
+     * the table's CHECK constraint refuses it again — but one being TYPED can:
+     * set 23:30 and then a two-hour duration and, for the moment before saving,
+     * the set on screen runs to 01:30. Comparing that as a single linear
+     * interval leaves 00:00 and 01:00 looking free, so `Add window` would offer
+     * a slot underneath it. The save would still be rejected, but for the wrong
+     * reason and after the click.
+     */
+    const intervals = rows.flatMap(({ startMinute, durationMinutes }) => {
+      const end = startMinute + durationMinutes
+      return end <= 1440
+        ? [[startMinute, end]]
+        : [[startMinute, 1440], [0, end - 1440]]
+    })
+    const taken = (start: number) => intervals.some(([from, to]) => start < to && from < start + 60)
     /*
      * From 09:00 FORWARD through the day, then wrapping to the early hours.
      *

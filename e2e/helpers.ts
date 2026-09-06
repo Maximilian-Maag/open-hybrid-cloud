@@ -518,10 +518,26 @@ export async function enrolSecondFactorFor(page: Page, account: TestAccount): Pr
 export async function signInAsAccount(
   browser: Browser,
   account: TestAccount,
+  /**
+   * Run against the fresh context BEFORE anything is loaded in it.
+   *
+   * For anything that has to be in place from the very first navigation — a
+   * route interception, most obviously. The root layout mounts the service
+   * worker registration, so `/login` itself already asks for `/sw.js`: a route
+   * installed after this function returns is installed too late to affect the
+   * registration, and a test that meant to run without a worker quietly runs
+   * with one (#362).
+   */
+  onContext?: (context: BrowserContext) => Promise<void>,
 ): Promise<{ page: Page; context: BrowserContext; secret: string | null }> {
   const context = await browser.newContext({ storageState: undefined })
-  const page = await context.newPage()
+  // Both inside the try, so the cleanup at the bottom covers them: a hook that
+  // rejects — or a `newPage` that fails — would otherwise leak the context and
+  // leave its browser process outliving the run.
+  let page: Page
   try {
+    if (onContext) await onContext(context)
+    page = await context.newPage()
     await page.goto('/login')
     await page.getByLabel(/email address/i).fill(account.email)
     await page.getByLabel(/password/i).fill(account.password)

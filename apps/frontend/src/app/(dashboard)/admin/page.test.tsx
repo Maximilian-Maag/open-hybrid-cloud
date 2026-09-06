@@ -21,16 +21,20 @@ async function cardTexts(forLang: string): Promise<string[]> {
 beforeEach(() => { lang = 'en' })
 
 /**
- * The 11 destinations were written out in English in a module-level array,
- * where nothing that looks at JSX could see them — so the gate stayed green
- * while a German root admin got a translated page heading over 22 untranslated
- * strings (WCAG 3.1.2 — #186).
+ * The destinations were written out in English in a module-level array, where
+ * nothing that looks at JSX could see them — so the gate stayed green while a
+ * German root admin got a translated page heading over untranslated strings
+ * (WCAG 3.1.2 — #186).
+ *
+ * The count is asserted so that adding a destination without translating it
+ * fails here rather than on somebody's German portal. Deployment windows (#330)
+ * made it twelve.
  */
 describe('AdminPage', () => {
-  it('offers eleven destinations, each with a title and a description', async () => {
+  it('offers twelve destinations, each with a title and a description', async () => {
     render(await AdminPage())
-    expect(screen.getAllByRole('link')).toHaveLength(11)
-    expect(await cardTexts('en')).toHaveLength(22)
+    expect(screen.getAllByRole('link')).toHaveLength(12)
+    expect(await cardTexts('en')).toHaveLength(24)
   })
 
   it('leaves no card written in English on a German page', async () => {

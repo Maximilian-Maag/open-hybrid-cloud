@@ -34,6 +34,16 @@ export interface UpdateEnvironmentInput {
   ciSourceId?: number
   webhookUrl?: string
   webhookToken?: string
+  /*
+   * The second half of #330's opt-in. Default false on the column, so an
+   * upgrade changes nothing; until this was updatable the feature could not be
+   * turned on at all except by hand at psql.
+   *
+   * Here rather than on its own endpoint because it is a property of the
+   * environment, edited on the same form as the rest of it — a second way to
+   * change one column is a second thing to keep in step.
+   */
+  respectsDeploymentWindows?: boolean
 }
 
 // Column projection for a deployment environment — everything EXCEPT the inbound

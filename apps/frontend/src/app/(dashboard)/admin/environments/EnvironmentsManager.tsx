@@ -24,6 +24,9 @@ interface Props {
 
 const emptyForm = () => ({
   name: '', description: '', ciSourceId: '', webhookUrl: '', webhookToken: '',
+  // #330, and false is the default that matters: turning this on for every
+  // environment at upgrade would strand every sandbox deploy after 18:00.
+  respectsDeploymentWindows: false,
 })
 
 export function EnvironmentsManager({ ciSources }: Props) {
@@ -56,7 +59,13 @@ export function EnvironmentsManager({ ciSources }: Props) {
 
   useEffect(() => { void load() }, [load])
 
-  function setField(k: keyof typeof form, v: string) {
+  // Value typed per field rather than as `string`: the form gained a boolean
+  // with #330, and widening to `string | boolean` would let a checkbox be set
+  // to a string without tsc noticing.
+  function setField<K extends keyof ReturnType<typeof emptyForm>>(
+    k: K,
+    v: ReturnType<typeof emptyForm>[K],
+  ) {
     setForm((f) => ({ ...f, [k]: v }))
   }
 
@@ -73,6 +82,7 @@ export function EnvironmentsManager({ ciSources }: Props) {
       ciSourceId: String(env.ciSourceId),
       webhookUrl: '',
       webhookToken: '',
+      respectsDeploymentWindows: env.respectsDeploymentWindows ?? false,
     })
     setFormError(null)
     setEditTarget(env)
@@ -112,6 +122,10 @@ export function EnvironmentsManager({ ciSources }: Props) {
         ciSourceId: Number(form.ciSourceId),
         ...(form.webhookUrl ? { webhookUrl: form.webhookUrl.trim() } : {}),
         ...(form.webhookToken ? { webhookToken: form.webhookToken.trim() } : {}),
+        // Always sent, unlike the two above: those are "leave unchanged when
+        // blank" secrets, while a checkbox cleared on purpose has to reach the
+        // server as false or it could never be turned back off.
+        respectsDeploymentWindows: form.respectsDeploymentWindows,
       }
       await put(`/api/admin/environments/${editTarget.id}`, body)
       closeEdit()
@@ -246,6 +260,18 @@ export function EnvironmentsManager({ ciSources }: Props) {
             placeholder={t('selectCiSourcePlaceholder', lang)} options={ciOptions} />
           <Input label={t('webhookUrlKeepHint', lang)} type="url" value={form.webhookUrl} onChange={(e) => setField('webhookUrl', e.target.value)} />
           <Input label={t('webhookTokenOutbound', lang)} value={form.webhookToken} onChange={(e) => setField('webhookToken', e.target.value)} hint={t('webhookTokenOutboundHint', lang)} />
+          {/* #330's second switch. The windows themselves are defined once, by
+              root, under Admin → Deployment windows; this says which
+              environments honour them. */}
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={form.respectsDeploymentWindows}
+              onChange={(e) => setField('respectsDeploymentWindows', e.target.checked)}
+            />
+            <span>{t('respectsWindows', lang)}</span>
+          </label>
           <div className="rounded-lg border border-slate-200 p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div>

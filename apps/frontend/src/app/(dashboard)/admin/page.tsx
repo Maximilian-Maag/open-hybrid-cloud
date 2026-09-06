@@ -7,7 +7,7 @@ import { t, type Translations } from '@/lib/i18n'
 import { getLang } from '@/lib/getLang'
 
 /**
- * The 11 destinations, as keys rather than as words.
+ * The 12 destinations, as keys rather than as words.
  *
  * Every one of these was written out in English, in a module-level array, so
  * nothing that looks at JSX could see them: a root admin on a German portal got
@@ -28,6 +28,7 @@ const adminSections: { href: string; title: keyof Translations; description: key
   { href: '/admin/config/smtp', title: 'smtpConfiguration', description: 'smtpSubtitle' },
   { href: '/admin/config/ai', title: 'aiConfiguration', description: 'aiSubtitle' },
   { href: '/admin/exchange-rates', title: 'exchangeRates', description: 'exchangeRatesSubtitle' },
+  { href: '/admin/deployment-windows', title: 'deploymentWindows', description: 'deploymentWindowsSubtitle' },
 ]
 
 export default async function AdminPage() {

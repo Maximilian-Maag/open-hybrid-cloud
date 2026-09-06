@@ -10,6 +10,8 @@ const UpdateEnvironmentSchema = z.object({
   ciSourceId: z.number().int().positive().optional(),
   webhookUrl: z.string().url().optional(),
   webhookToken: z.string().min(1).optional(),
+  // #330: whether an approved order for this environment waits for a window.
+  respectsDeploymentWindows: z.boolean().optional(),
 })
 
 export async function GET(

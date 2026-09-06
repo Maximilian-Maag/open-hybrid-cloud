@@ -55,6 +55,7 @@ const AUTHED_PAGES = [
   '/admin/config/smtp',
   '/admin/config/ai',
   '/admin/exchange-rates',
+  '/admin/deployment-windows',
 ]
 
 /**

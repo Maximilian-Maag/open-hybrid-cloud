@@ -1,0 +1,113 @@
+{{- if .Values.deploymentWindowSweep.enabled }}
+{{- /*
+  Deployment window sweep (issue #330).
+
+  Releases the orders whose window has opened. Same reasoning as the
+  decommissioning sweep next door: the backend has no worker process, and an
+  interval inside a horizontally scaled app would fire once per replica.
+
+  Run it OFTEN — every minute or two. Its interval is the delay between a window
+  opening and the orders waiting on it actually deploying, and an admin who came
+  in to watch the 08:00 deployment should not be watching an empty screen at
+  08:14. That is why the default schedule here is not the sweep's every-15.
+
+  Overlap is concurrencyPolicy: Forbid for tidiness only — the atomic
+  scheduled -> provisioning claim already makes concurrent runs safe, and it is
+  the same claim root's "deploy now" races against.
+
+  ── On sending the secret over http ─────────────────────────────────────────
+  The call is plaintext http to a ClusterIP Service, and it carries the sweep
+  secret in a header. That is deliberate and worth stating rather than leaving
+  to be noticed: the chart terminates TLS at the Ingress and speaks http inside
+  the cluster, as the decommission sweep next door has since it shipped, so a
+  single https call here would need a certificate and a trust store that nothing
+  else in the chart has.
+
+  What actually protects it is the network, and that is the operator's to
+  provide: a NetworkPolicy restricting who may reach the backend Service, or a
+  mesh with mTLS. Both are outside this chart deliberately — a chart that
+  installed its own CA would be harder to trust, not easier. If your cluster
+  does neither, this secret is visible to anything that can sniff pod traffic,
+  and the endpoint it opens releases queued orders early.
+*/}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "open-hybrid-cloud.fullname" . }}-deployment-window-sweep
+  labels:
+    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: deployment-window-sweep
+spec:
+  schedule: {{ .Values.deploymentWindowSweep.schedule | quote }}
+  concurrencyPolicy: Forbid
+  # A run that cannot finish before the next one is due is a run to abandon, not
+  # to queue behind: this fires every couple of minutes, and `Forbid` would let
+  # one stuck Job suppress every later sweep indefinitely.
+  startingDeadlineSeconds: 60
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      # Bounded, because nothing else bounds it. Without this a Job whose curl
+      # hangs on a half-open connection sits Active for ever, and `Forbid` then
+      # means no sweep ever runs again — a scheduled order would wait for ever
+      # with nothing in the cluster saying why.
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+            {{- include "open-hybrid-cloud.labels" . | nindent 12 }}
+            app.kubernetes.io/component: deployment-window-sweep
+        spec:
+          restartPolicy: Never
+          {{- with .Values.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: sweep
+              image: curlimages/curl:8.11.1
+              # --fail-with-body so a 401/503 fails the Job (and shows why in the
+              # logs) instead of passing silently. 207 is a partial success — some
+              # teardowns started, some could not — and must NOT fail the Job, so
+              # it is matched explicitly.
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  # --max-time so a hung backend fails the Job instead of
+                  # holding it open; --connect-timeout separately, because a
+                  # Service with no ready endpoints hangs at connect and that is
+                  # the ordinary shape of a deploy in progress.
+                  STATUS=$(curl -sS -o /tmp/out -w '%{http_code}' \
+                    --connect-timeout 5 --max-time 60 \
+                    -X POST \
+                    -H "X-Sweep-Secret: ${DEPLOYMENT_WINDOW_SWEEP_SECRET}" \
+                    "http://{{ include "open-hybrid-cloud.backend.fullname" . }}:{{ .Values.backend.service.port }}/api/internal/deployment-window-sweep")
+                  cat /tmp/out
+                  echo
+                  case "$STATUS" in
+                    200) exit 0 ;;
+                    207) echo "some orders could not be released — see the failed[] entries above"; exit 0 ;;
+                    *)   echo "sweep failed with HTTP $STATUS"; exit 1 ;;
+                  esac
+              env:
+                - name: DEPLOYMENT_WINDOW_SWEEP_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                      key: DEPLOYMENT_WINDOW_SWEEP_SECRET
+              {{- with .Values.deploymentWindowSweep.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

@@ -273,6 +273,9 @@
 \newcommand{\term}[1]{\textit{#1}}
 \newcommand{\route}[1]{\texttt{\textcolor{ForestGreen}{#1}}}
 \newcommand{\env}[1]{\texttt{\textcolor{Maroon}{#1}}}
+% A path through the UI, as the reader would click it: Admin -> Environments.
+% Distinct from \code, which is for things typed rather than clicked.
+\newcommand{\menu}[1]{\textsf{\textbf{#1}}}
 \newcommand{\role}[1]{\textsf{\textbf{#1}}}
 
 % ── Version info ──────────────────────────────────────────────
@@ -633,8 +636,13 @@ All domain logic is in the service layer.
   \item The route handler validates auth and delegates to
         \code{approveOrder(session, orderId)} in
         \file{lib/services/approvals.ts}.
-  \item The service fetches the order (returns \code{Err 400} if not
-        \code{pending}), then calls \code{triggerProductWebhooks()} and
+  \item The service claims the order (returns \code{Err 400} if it is not
+        \code{pending}). Where the environment sets
+        \code{respectsDeploymentWindows} and no window is open, the path stops
+        here: the order becomes \code{scheduled} carrying the instant its window
+        opens, the approval succeeds, and provisioning waits for the sweep or for
+        root's \menu{Deploy now} (\S\ref{sec:deployment-windows}). Otherwise it
+        continues straight on, and calls \code{triggerProductWebhooks()} and
         \code{triggerPipelineStacks()} in \file{lib/ci/webhooks.ts} in
         parallel. Product webhooks fire in \code{exec\_order}; pipeline
         stacks serialise the configured step sequence as \code{PIPELINE\_STACK}
@@ -3425,6 +3433,9 @@ page renders correctly.
   \node[state, right=of prov]  (done) {Completed};
   \node[state, below=0.8cm of pend] (rej) {Rejected};
   \node[state, below=0.8cm of prov] (fail) {Failed};
+  % #330. Above the row rather than below it, so the ordinary path stays a
+  % straight line: this is a detour an approved order takes, not a failure.
+  \node[state, above=0.8cm of prov] (sched) {Scheduled};
 
   \draw[arr] (placed) -- node[c4label,above]{\scriptsize Admin\\(direct)} (prov);
   \draw[arr] (placed) -- node[c4label,above]{\scriptsize Project Mgr} (pend);
@@ -3432,11 +3443,70 @@ page renders correctly.
   \draw[arr] (pend)   -- node[c4label,right]{\scriptsize rejected} (rej);
   \draw[arr] (prov)   -- node[c4label,above]{\scriptsize pipeline OK} (done);
   \draw[arr] (prov)   -- node[c4label,right]{\scriptsize pipeline fail} (fail);
+  \draw[arr] (pend)   -- node[c4label,above left]{\scriptsize approved,\\outside a window} (sched);
+  \draw[arr] (sched)  -- node[c4label,right]{\scriptsize window opens,\\or root deploys now} (prov);
 
 \end{tikzpicture}}%
 \caption{Order lifecycle state machine}
 \label{fig:lifecycle}
 \end{figure}
+
+\section{Deployment Windows}
+\label{sec:deployment-windows}
+
+An approved order does not always provision immediately. Where an environment
+opts in, provisioning waits until a \emph{deployment window} is open --- so that
+deployments happen while admins are present to watch them, rather than at
+22:00 on a Friday.
+
+\paragraph{What root configures.} Under \menu{Admin $\rightarrow$ Deployment
+windows}: a time zone, and any number of windows given as a start time and a
+duration. The same pattern applies every working day; there is no per-weekday
+editing, because the question the feature answers is ``when is somebody
+watching'', and that is a property of the working day rather than of Tuesday.
+
+Windows are validated as a set --- no overlaps, none crossing midnight, each at
+least a minute long --- and saved as a set. That is deliberate: an overlap is a
+property of the collection, so neither of two overlapping windows is wrong on
+its own, and moving 08:00 to 13:00 while 13:00 still exists has to be one save
+rather than an illegal intermediate state.
+
+Saturdays and Sundays are excluded by the weekday arithmetic. Public holidays
+come from the \code{holidays} table.
+
+\paragraph{The second switch.} A window set alone changes nothing. Each
+environment carries \code{respectsDeploymentWindows}, \textbf{default off},
+edited on the environment itself under \menu{Admin $\rightarrow$ Environments}.
+Production honours the windows; a sandbox that stops deploying after 18:00 is an
+obstacle rather than a safeguard. The default matters on upgrade: turning this on
+globally would strand every out-of-hours deploy in the portal at once.
+
+\paragraph{What an order does.} The approval itself never fails for being out of
+hours --- the admin's decision is recorded either way and the work is not thrown
+away. Only the provisioning waits, in the \code{scheduled} state, carrying the
+instant its window opens. The order page shows that instant rather than only the
+badge.
+
+\paragraph{Releasing them.} \code{POST /api/internal/deployment-window-sweep},
+authenticated with \env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET} in
+\code{X-Sweep-Secret}, releases every order whose window has opened. The backend
+has no worker process and is horizontally scaled, so an in-process timer would
+fire once per replica; an external scheduler is the single caller instead --- the
+Helm chart ships a CronJob (\code{deploymentWindowSweep.enabled}), and a Docker
+host wants a cron entry.
+
+Call it \emph{often}, every minute or two. That interval is the delay between a
+window opening and the orders waiting on it actually deploying, and an admin who
+came in to watch the 08:00 deployment should not be watching an empty screen at
+08:14.
+
+\paragraph{Deploying early.} Root, and only root, can release a scheduled order
+without waiting, with \menu{Deploy now} on the order. An admin approving decides
+that an order should happen; this decides it should happen outside the hours the
+company said it watches its systems, so it is root's call --- audited as
+\code{order.window\_overridden}, naming who and which window was skipped. The
+override is recorded before provisioning is attempted: the decision was made
+whether or not CI then answered.
 
 \section{Placing an Order}
 
@@ -3949,6 +4019,7 @@ translation:
   \env{TRUST\_PROXY}            & Trust \code{X-Forwarded-For}. Set only behind a proxy you control: it decides the per-IP login rate-limit bucket and the address shown in a session list. Unset records no address at all & No \\
   \env{DECOMMISSION\_SWEEP\_SECRET} & Shared secret for \code{POST /api/internal/decommission-sweep}, sent as \code{X-Sweep-Secret}. Blank disables the endpoint (503) & No \\
   \env{DRIFT\_REPORT\_SECRET}   & Shared secret for the scheduled drift loop, sent as \code{X-Drift-Secret}. Authorises \emph{both} \code{GET /api/internal/drift-targets} and \code{POST /api/internal/drift-report}. Blank disables both (503) & No \\
+  \env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET} & Shared secret for \code{POST /api/internal/deployment-window-sweep} (\S\ref{sec:deployment-windows}), sent as \code{X-Sweep-Secret}. Blank disables the endpoint (503), and an order that reached \code{scheduled} then waits indefinitely & No \\
   \env{ALLOW\_INSECURE\_CI\_TRANSPORT} & Accept a plaintext \code{http} CI source off loopback. Every call to one carries a credential, so this is refused by default (\#329) & No \\
   \env{DEMO\_CI\_URL}           & CI endpoint the demo seed points its stack at; without it the seeded catalogue has nothing provisionable & No \\
   \env{ALLOW\_DEMO\_SEED\_IN\_PRODUCTION} & Permit \code{make db-seed-demo} with \code{NODE\_ENV=production}, which it otherwise refuses & No \\
@@ -4213,19 +4284,37 @@ The \textbf{Role} column uses the following abbreviations:
   POST & \code{/api/internal/decommission-sweep}                     & Tear down elements past their expiry     & secret \\
   GET  & \code{/api/internal/drift-targets}                          & Work list for the drift pipeline         & secret \\
   POST & \code{/api/internal/drift-report}                           & Record what \code{plan -refresh-only} found & secret \\
+  POST & \code{/api/internal/deployment-window-sweep}                 & Release orders whose window has opened   & secret \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Deployment windows (root)}} \\[2pt]
+  GET  & \code{/api/admin/deployment-windows}                         & The windows and the time zone            & root \\
+  PUT  & \code{/api/admin/deployment-windows}                         & Replace the window set                   & root \\
+  POST & \code{/api/orders/\{id\}/deploy-now}                          & Deploy a scheduled order early           & root \\
   \bottomrule
   \caption{Complete REST API route reference}
   \label{tab:routes}
 \end{longtable}
 
-\paragraph{The internal routes.} These three have no user. A scheduler has no
+\paragraph{The internal routes.} These four have no user. A scheduler has no
 session to present, so each is authenticated with a shared secret in a request
 header, compared in constant time, and each returns \code{503} outright when its
 secret is unset --- an unconfigured deployment must not be writable by an
-anonymous caller. \code{X-Sweep-Secret} carries
-\env{DECOMMISSION\_SWEEP\_SECRET}; \code{X-Drift-Secret} carries
-\env{DRIFT\_REPORT\_SECRET} and authorises both drift routes, so a deployment
-that sets it enables the whole loop and one that does not enables neither.
+anonymous caller.
+
+Three secrets, not one, and \code{X-Sweep-Secret} carries a \emph{different}
+one depending on the route --- configure the scheduler with the value that
+belongs to the endpoint it calls:
+
+\begin{itemize}
+  \item \code{POST /api/internal/decommission-sweep} ---
+        \code{X-Sweep-Secret}: \env{DECOMMISSION\_SWEEP\_SECRET}
+  \item \code{POST /api/internal/deployment-window-sweep} ---
+        \code{X-Sweep-Secret}: \env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET}
+        (\S\ref{sec:deployment-windows})
+  \item both drift routes --- \code{X-Drift-Secret}:
+        \env{DRIFT\_REPORT\_SECRET}, which authorises the pair, so a deployment
+        that sets it enables the whole loop and one that does not enables neither
+\end{itemize}
 
 The two drift routes are one cycle, run from a schedule in the
 \code{infra-templates} project (\code{.ci/drift-report.gitlab-ci.yml}). The

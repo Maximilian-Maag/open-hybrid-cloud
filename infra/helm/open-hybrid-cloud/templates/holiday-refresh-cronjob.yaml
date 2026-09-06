@@ -1,0 +1,99 @@
+{{- if .Values.deploymentWindowSweep.enabled }}
+{{- /*
+  Holiday feed refresh (issue #330).
+
+  Pulls the configured feed into the database so the DECISION path never makes a
+  network call: whether an order may deploy is answered from a table, and a feed
+  that is down becomes staleness rather than an outage.
+
+  Daily, not every couple of minutes like the sweep beside it. Public holidays
+  are published a year ahead and move about as often as the calendar does.
+
+  It reuses DEPLOYMENT_WINDOW_SWEEP_SECRET rather than introducing a third
+  secret — same feature, same operator, and a secret per endpoint is a secret
+  somebody forgets to set. That is also why this CronJob is gated on
+  `deploymentWindowSweep.enabled`: without the sweep there is nothing to release
+  the orders a holiday would defer, so the pair belongs together.
+*/}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "open-hybrid-cloud.fullname" . }}-holiday-refresh
+  labels:
+    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    app.kubernetes.io/component: holiday-refresh
+spec:
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  # A run that cannot finish before the next one is due is a run to abandon, not
+  # to queue behind: this fires every couple of minutes, and `Forbid` would let
+  # one stuck Job suppress every later sweep indefinitely.
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      # Bounded, because nothing else bounds it. Without this a Job whose curl
+      # hangs on a half-open connection sits Active for ever, and `Forbid` then
+      # means no sweep ever runs again — a scheduled order would wait for ever
+      # with nothing in the cluster saying why.
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            {{- include "open-hybrid-cloud.labels" . | nindent 12 }}
+            app.kubernetes.io/component: holiday-refresh
+        spec:
+          restartPolicy: Never
+          {{- with .Values.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: sweep
+              image: curlimages/curl:8.11.1
+              # 200 whatever the feed did: the endpoint answers 200 with
+              # `refreshed: false` when the feed is unreachable, ON PURPOSE. The
+              # cached dates are untouched, and a Job that failed would have the
+              # scheduler retry against a feed that is down for a set of dates
+              # that has not changed. A non-200 here means the ENDPOINT is wrong
+              # — unset secret (503) or a bad one (401) — and that does fail.
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  # --max-time so a hung backend fails the Job instead of
+                  # holding it open; --connect-timeout separately, because a
+                  # Service with no ready endpoints hangs at connect and that is
+                  # the ordinary shape of a deploy in progress.
+                  STATUS=$(curl -sS -o /tmp/out -w '%{http_code}' \
+                    --connect-timeout 5 --max-time 120 \
+                    -X POST \
+                    -H "X-Sweep-Secret: ${DEPLOYMENT_WINDOW_SWEEP_SECRET}" \
+                    "http://{{ include "open-hybrid-cloud.backend.fullname" . }}:{{ .Values.backend.service.port }}/api/internal/holiday-refresh")
+                  cat /tmp/out
+                  echo
+                  case "$STATUS" in
+                    200) exit 0 ;;
+                    *)   echo "holiday refresh could not be called: HTTP $STATUS"; exit 1 ;;
+                  esac
+              env:
+                - name: DEPLOYMENT_WINDOW_SWEEP_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                      key: DEPLOYMENT_WINDOW_SWEEP_SECRET
+              {{- with .Values.deploymentWindowSweep.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

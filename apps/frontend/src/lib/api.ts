@@ -170,4 +170,10 @@ export const post = <T>(path: string, body: unknown) =>
 export const put = <T>(path: string, body: unknown) =>
   apiRequest<T>(path, { method: 'PUT', body })
 
+// PATCH for a request that acts on a resource without replacing it — the
+// holiday feed's preview and refresh, which change nothing about the
+// representation a PUT would send (#330).
+export const patch = <T>(path: string, body: unknown) =>
+  apiRequest<T>(path, { method: 'PATCH', body })
+
 export const del = <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' })

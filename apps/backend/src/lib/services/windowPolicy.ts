@@ -5,6 +5,7 @@ import {
 } from '@/lib/db/schema'
 import { isWithinWindow, nextWindowStart, type WindowPolicy } from './deploymentWindows'
 import { logAudit, logAuditWith } from '@/lib/audit'
+import { holidayGuard } from './holidayFeed'
 
 /**
  * Reading the window policy out of the database (#330).
@@ -55,6 +56,31 @@ export const whenMayItDeploy = async (
     .limit(1)
 
   if (!environment?.respects) return null
+
+  /*
+   * Fail closed, and note which way "closed" points (#330).
+   *
+   * If a holiday feed is configured and has never once been read, the portal has
+   * no holiday data — so a public holiday and a working day are
+   * indistinguishable, and applying the windows would mean provisioning on
+   * Christmas morning while claiming the opposite. The promise cannot be kept,
+   * so it is not made: the order provisions now, exactly as it would have before
+   * the feature existed, and the admin UI says loudly why.
+   *
+   * Deliberately NOT the other direction. Holding every order until somebody
+   * fixes a feed would turn a third party's outage into a queue nobody asked
+   * for, and the requester would have no idea. Deploying is the behaviour this
+   * deployment had yesterday; refusing to deploy is a new failure invented by a
+   * safety feature.
+   *
+   * A feed that worked once and is failing now does not reach here: it has a
+   * last good answer, and public holidays do not move often.
+   */
+  const guard = await holidayGuard()
+  if (guard) {
+    console.error(`[windowPolicy] deployment windows are not being applied: ${guard}`)
+    return null
+  }
 
   const policy = await loadWindowPolicy()
   if (isWithinWindow(now, policy)) return null

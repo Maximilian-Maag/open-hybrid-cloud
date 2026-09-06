@@ -438,6 +438,31 @@ the orders in it deploying.
 > Without the sweep configured, an order that reaches **Scheduled** waits
 > indefinitely. If you turn the environment switch on, turn the sweep on too.
 
+**Holidays.** Under the same screen. Give a **feed URL** — an ICS calendar or a
+JSON list of holidays, both are read — and press **Preview** to see the dates
+before saving. The resolved dates are cached in the database, so deciding
+whether an order may deploy never waits on the feed.
+
+- The screen shows how old the last successful read is, and complains past 30
+  days. A failed refresh changes nothing: the last good set stays.
+- **Add a date by hand** for a company shutdown week no public calendar knows
+  about.
+- **Work through** un-ticks a public holiday this company does not take. Use
+  that rather than removing the row — a deleted feed date comes back on the next
+  refresh, because the feed is the source for those.
+
+> **If a feed is configured and has never been read successfully, deployment
+> windows are switched off entirely** and orders deploy immediately. With no
+> holiday data the portal cannot tell a holiday from a working day, and quietly
+> deploying on Christmas morning is the thing this feature exists to prevent —
+> so it stops claiming to do the job instead. The screen says so in red. Fix the
+> feed, or clear the URL.
+
+Refreshing needs the same scheduler as the sweep: `POST
+/api/internal/holiday-refresh` with `DEPLOYMENT_WINDOW_SWEEP_SECRET` in
+`X-Sweep-Secret`. On Kubernetes the chart ships a daily CronJob with the sweep;
+on a Docker host add a daily cron entry. You can also refresh from the screen.
+
 **Deploying early.** **Root only** — not admins, and not the person who placed
 the order. On a scheduled order the Root account sees a **Deploy now** button,
 which provisions it immediately. It is written to the

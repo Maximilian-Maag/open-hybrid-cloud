@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import {
-  appConfig, auditLog, deploymentEnvironments, deploymentWindows, holidays, orders,
+  appConfig, auditLog, deploymentEnvironments, deploymentWindows, holidays,
+  holidayFeedState, orders,
 } from '@/lib/db/schema'
 import {
   createUser, createCategory, createProduct, createCiSource,
@@ -128,6 +129,50 @@ describe('whenMayItDeploy', () => {
   it('is null for an environment that does not exist, rather than throwing', async () => {
     await setup()
     expect(await whenMayItDeploy(999_999, OUTSIDE)).toBeNull()
+  })
+})
+
+/*
+ * The fail-closed rule (#330), asserted where it actually bites.
+ *
+ * With a feed configured and never once read, the portal has no holiday data —
+ * so a public holiday and a working day are indistinguishable. Applying the
+ * windows anyway would mean provisioning on Christmas morning while claiming
+ * the opposite, so the windows are not applied at all and the order goes
+ * straight through, as it would have before the feature existed.
+ */
+describe('whenMayItDeploy — the holiday feed guard', () => {
+  const OUTSIDE = new Date('2026-09-02T20:00:00Z')
+
+  it('does not hold an order when a configured feed has never been read', async () => {
+    const { environment } = await setup()
+    await db.update(holidayFeedState).set({ url: 'https://feed.test/h.ics' }).where(eq(holidayFeedState.id, 1))
+
+    // 22:00 Berlin, far outside the 08:00 window — it would normally wait.
+    expect(await whenMayItDeploy(environment.id, OUTSIDE)).toBeNull()
+  })
+
+  it('holds it as usual once the feed has been read at least once', async () => {
+    const { environment } = await setup()
+    await db
+      .update(holidayFeedState)
+      .set({ url: 'https://feed.test/h.ics', lastSuccessAt: new Date('2026-09-01T00:00:00Z') })
+      .where(eq(holidayFeedState.id, 1))
+
+    const wait = await whenMayItDeploy(environment.id, OUTSIDE)
+    expect(wait?.scheduledFor.toISOString()).toBe('2026-09-03T06:00:00.000Z')
+  })
+
+  /*
+   * A deployment that never configured a feed has said it does not want holiday
+   * exclusion. Weekends still work, and refusing to apply windows there would
+   * disable the feature for everyone who does not use a feed.
+   */
+  it('applies the windows normally when no feed is configured at all', async () => {
+    const { environment } = await setup()
+
+    const wait = await whenMayItDeploy(environment.id, OUTSIDE)
+    expect(wait?.scheduledFor.toISOString()).toBe('2026-09-03T06:00:00.000Z')
   })
 })
 

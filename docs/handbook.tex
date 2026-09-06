@@ -3472,7 +3472,48 @@ its own, and moving 08:00 to 13:00 while 13:00 still exists has to be one save
 rather than an illegal intermediate state.
 
 Saturdays and Sundays are excluded by the weekday arithmetic. Public holidays
-come from the \code{holidays} table.
+come from the \code{holidays} table, which is the subject of the rest of this
+section.
+
+\paragraph{Where the holidays come from.} Root gives a feed URL --- an ICS
+calendar or a JSON list, both shapes are read --- and the resolved dates are
+\emph{cached in the database}. Deciding whether an order may deploy therefore
+never makes a network call, which is the whole point: an order must not wait on
+somebody else's web server.
+
+The cost of that trade is that stale data looks exactly like fresh data, so the
+admin screen says how old the answer is and complains past thirty days. A
+refresh that fails changes nothing: the last good set stays, and the failure is
+recorded rather than replacing the dates with none --- which would turn ``the
+feed is down'' into ``no day is a holiday''.
+
+\paragraph{Two things no feed knows.} A company shutdown week that no public
+calendar lists, and a public holiday this company works through. Both are added
+or amended by hand and stamped \code{manual}, and a refresh leaves those rows
+alone --- otherwise the nightly job would quietly undo the decision every night.
+Un-observing a date takes the row over rather than deleting it, because a
+deleted \code{feed} row simply comes back on the next refresh.
+
+\paragraph{Fail closed, and which way that points.} If a feed is configured and
+has \emph{never} been read successfully, the portal has no holiday data at all
+--- a public holiday and a working day are indistinguishable. Applying the
+windows then would mean provisioning on Christmas morning while claiming the
+opposite, so the windows are \textbf{not applied}: orders provision immediately,
+exactly as they did before the feature existed, and the admin screen says so in
+red.
+
+That is deliberately not the other direction. Holding every order until somebody
+fixes a feed would turn a third party's outage into a queue nobody asked for and
+the requester would have no idea. A feed that worked once and is failing now
+does \emph{not} trigger this: it has a last good answer, and public holidays do
+not move often.
+
+\paragraph{Refreshing it.} \code{POST /api/internal/holiday-refresh}, with
+\env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET} in \code{X-Sweep-Secret} --- the same
+secret as the sweep, because it is the same feature run by the same operator.
+The Helm chart ships a daily CronJob alongside the sweep's; daily is ample, as
+public holidays are published a year ahead. Root can also refresh from the admin
+screen, and preview a feed's dates before saving the URL.
 
 \paragraph{The second switch.} A window set alone changes nothing. Each
 environment carries \code{respectsDeploymentWindows}, \textbf{default off},
@@ -4284,18 +4325,23 @@ The \textbf{Role} column uses the following abbreviations:
   POST & \code{/api/internal/decommission-sweep}                     & Tear down elements past their expiry     & secret \\
   GET  & \code{/api/internal/drift-targets}                          & Work list for the drift pipeline         & secret \\
   POST & \code{/api/internal/drift-report}                           & Record what \code{plan -refresh-only} found & secret \\
-  POST & \code{/api/internal/deployment-window-sweep}                 & Release orders whose window has opened   & secret \\[6pt]
+  POST & \code{/api/internal/deployment-window-sweep}                 & Release orders whose window has opened   & secret \\
+  POST & \code{/api/internal/holiday-refresh}                        & Pull the holiday feed into the cache     & secret \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Deployment windows (root)}} \\[2pt]
   GET  & \code{/api/admin/deployment-windows}                         & The windows and the time zone            & root \\
   PUT  & \code{/api/admin/deployment-windows}                         & Replace the window set                   & root \\
+  GET  & \code{/api/admin/holidays}                                   & Feed status and the cached dates         & root \\
+  PATCH & \code{/api/admin/holidays}                                  & Set, preview or refresh the feed         & root \\
+  PUT  & \code{/api/admin/holidays}                                   & Add or amend one date by hand            & root \\
+  DELETE & \code{/api/admin/holidays}                                 & Remove one date                          & root \\
   POST & \code{/api/orders/\{id\}/deploy-now}                          & Deploy a scheduled order early           & root \\
   \bottomrule
   \caption{Complete REST API route reference}
   \label{tab:routes}
 \end{longtable}
 
-\paragraph{The internal routes.} These four have no user. A scheduler has no
+\paragraph{The internal routes.} These five have no user. A scheduler has no
 session to present, so each is authenticated with a shared secret in a request
 header, compared in constant time, and each returns \code{503} outright when its
 secret is unset --- an unconfigured deployment must not be writable by an
@@ -4308,9 +4354,12 @@ belongs to the endpoint it calls:
 \begin{itemize}
   \item \code{POST /api/internal/decommission-sweep} ---
         \code{X-Sweep-Secret}: \env{DECOMMISSION\_SWEEP\_SECRET}
-  \item \code{POST /api/internal/deployment-window-sweep} ---
-        \code{X-Sweep-Secret}: \env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET}
-        (\S\ref{sec:deployment-windows})
+  \item \code{POST /api/internal/deployment-window-sweep} and
+        \code{POST /api/internal/holiday-refresh} --- \code{X-Sweep-Secret}:
+        \env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET} for both
+        (\S\ref{sec:deployment-windows}). One secret rather than two: same
+        feature, same operator, and a secret per endpoint is a secret somebody
+        forgets to set
   \item both drift routes --- \code{X-Drift-Secret}:
         \env{DRIFT\_REPORT\_SECRET}, which authorises the pair, so a deployment
         that sets it enables the whole loop and one that does not enables neither

@@ -83,27 +83,51 @@ beforeEach(async () => {
  * teaches everyone to re-run rather than to read.
  *
  * That applied to the DROP and not to the two `end()` calls around it, which is
- * how this file failed a green run: all four tests passed, then `probe.end()`
- * exceeded its 5-second grace under a full parallel suite and took the file down
- * with it. Closing a connection is cleanup too. Everything in here is now
- * best-effort and says so on stderr when it does not work.
+ * how this file first failed a green run: all four tests passed, then
+ * `probe.end()` exceeded its 5-second grace and took the file down with it.
+ *
+ * Catching was still not enough. The next green run failed the same way with
+ * the whole hook timing out at two minutes, because the thing that goes wrong
+ * under a loaded suite is not a rejection but a WAIT: DROP DATABASE blocks on a
+ * peer worker's connection and simply never returns. A `try` does not bound a
+ * hang.
+ *
+ * So every step is bounded as well as caught. Cleanup that cannot finish in a
+ * few seconds is cleanup that has to be abandoned — `make test-db-prune` sweeps
+ * the name, and a red suite over tidiness is exactly the failure that teaches
+ * everyone to re-run rather than to read.
  */
-const closeQuietly = async (sql: postgres.Sql | undefined, name: string) => {
+const GRACE_MS = 5_000
+
+/** Best-effort: bounded, caught, and never a reason for the file to fail. */
+const bestEffort = async (what: string, run: () => Promise<unknown>): Promise<void> => {
+  let timer: NodeJS.Timeout | undefined
   try {
-    await sql?.end({ timeout: 5 })
+    await Promise.race([
+      run(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`did not finish within ${GRACE_MS}ms`)), GRACE_MS)
+        // Nothing should stay alive on account of a cleanup timer.
+        timer.unref?.()
+      }),
+    ])
   } catch (e) {
-    console.warn(`[databaseWipe] ${name} did not close cleanly; the pool is torn down with the worker anyway: ${e}`)
+    console.warn(`[databaseWipe] ${what}: ${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
 afterAll(async () => {
-  await closeQuietly(probe, 'the probe connection')
-  try {
-    await admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`)
-  } catch (e) {
-    console.warn(`[databaseWipe] could not drop the probe database ${PROBE}; \`make test-db-prune\` will: ${e}`)
-  }
-  await closeQuietly(admin, 'the admin connection')
+  await bestEffort('the probe connection did not close; the worker tears the pool down anyway', () =>
+    probe?.end({ timeout: 5 }) ?? Promise.resolve(),
+  )
+  await bestEffort(`could not drop the probe database ${PROBE}; \`make test-db-prune\` will`, () =>
+    admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`),
+  )
+  await bestEffort('the admin connection did not close; the worker tears the pool down anyway', () =>
+    admin.end({ timeout: 5 }),
+  )
 }, DB_HOOK_TIMEOUT_MS)
 
 const publicTables = async (db: postgres.Sql): Promise<number> => {

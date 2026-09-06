@@ -401,6 +401,50 @@ Under **Administration → Cost Centers**:
 
 ---
 
+## 5a. Deployment Windows
+
+Under **Administration → Deployment Windows**:
+
+Provisioning normally happens the moment an order is approved. Where you would
+rather it happened while somebody is watching, define **deployment windows** —
+the hours during which provisioning may run.
+
+- A **time zone** (an IANA name such as `Europe/Berlin`), and any number of
+  windows, each a **start time** and a **duration in minutes**.
+- The same pattern applies every working day. There is no per-weekday editing:
+  the question being answered is "when is somebody watching", which is a
+  property of the working day rather than of Tuesday.
+- Windows may not overlap and may not cross midnight. They are saved as a set,
+  so a rearrangement is one save rather than a sequence of half-valid states.
+- **Saturdays, Sundays and public holidays are excluded automatically.**
+
+This changes nothing on its own. Each environment carries its own switch, under
+**Administration → Environments → Edit → "Waits for a deployment window"**, and
+it is **off by default** — Production honours the windows; a sandbox that stops
+deploying after 18:00 is an obstacle rather than a safeguard.
+
+**What happens to an order.** The approval never fails for being out of hours:
+the decision is recorded and the work is kept. Only the provisioning waits, and
+the order shows as **Scheduled** with the time its window opens.
+
+**Releasing them needs a scheduler.** The portal has no background worker, so
+something outside it must call
+`POST /api/internal/deployment-window-sweep` with the shared secret
+`DEPLOYMENT_WINDOW_SWEEP_SECRET` in the `X-Sweep-Secret` header. On Kubernetes
+set `deploymentWindowSweep.enabled`; on a Docker host add a cron entry. Call it
+every minute or two — that interval is the delay between a window opening and
+the orders in it deploying.
+
+> Without the sweep configured, an order that reaches **Scheduled** waits
+> indefinitely. If you turn the environment switch on, turn the sweep on too.
+
+**Deploying early.** On a scheduled order you (and only you — not admins) get a
+**Deploy now** button, which provisions it immediately. It is written to the
+audit log as `order.window_overridden`, naming you and the window that was
+skipped.
+
+---
+
 ## 6. User Management
 
 Under **Administration → Users**:

@@ -119,6 +119,13 @@ services:
       # Changing RP_ID invalidates every credential already registered.
       WEBAUTHN_RP_ID: "${WEBAUTHN_RP_ID:-}"
       WEBAUTHN_RP_ORIGIN: "${WEBAUTHN_RP_ORIGIN:-}"
+      # Optional — enables POST /api/internal/deployment-window-sweep (#330),
+      # which releases approved orders once their window opens. Blank leaves it
+      # disabled (503), and an order that reached `scheduled` then waits for
+      # ever. Only needed if an environment sets respectsDeploymentWindows.
+      # Call it every minute or two: this interval is the delay between a window
+      # opening and the orders in it deploying.
+      DEPLOYMENT_WINDOW_SWEEP_SECRET: "${DEPLOYMENT_WINDOW_SWEEP_SECRET:-}"
     depends_on:
       postgres:
         condition: service_healthy

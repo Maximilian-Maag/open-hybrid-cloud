@@ -51,6 +51,16 @@ spec:
                   name: {{ include "open-hybrid-cloud.backend.fullname" . }}
                   key: DECOMMISSION_SWEEP_SECRET
             {{- end }}
+            {{- if .Values.deploymentWindowSweep.enabled }}
+            # Presence of this secret is what enables POST
+            # /api/internal/deployment-window-sweep (#330); without it the
+            # endpoint returns 503 and a scheduled order waits for ever.
+            - name: DEPLOYMENT_WINDOW_SWEEP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  key: DEPLOYMENT_WINDOW_SWEEP_SECRET
+            {{- end }}
             {{- if .Values.driftReport.secret }}
             # Presence of this secret is what enables the scheduled drift loop
             # (issue #108) — GET /api/internal/drift-targets and

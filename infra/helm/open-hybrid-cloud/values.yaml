@@ -61,6 +61,28 @@ decommissionSweep:
       cpu: 100m
       memory: 64Mi
 
+# ── Deployment window sweep (issue #330) ──────────────────────────────────────
+# Releases approved orders once the window they are waiting for opens. Only
+# needed where at least one environment sets `respectsDeploymentWindows`; with
+# it disabled a scheduled order waits for ever, so the portal warns rather than
+# scheduling if no window can open.
+deploymentWindowSweep:
+  enabled: false
+  # Every two minutes, not every fifteen. This interval IS the delay between a
+  # window opening and the orders deploying, and an admin who came in to watch
+  # the 08:00 deployment should not be watching an empty screen at 08:14.
+  schedule: "*/2 * * * *"
+  # Shared secret sent as X-Sweep-Secret. Required when enabled; the endpoint
+  # stays disabled (503) while unset, so it can never be called anonymously.
+  secret: ""
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
 # ── Scheduled drift report (issue #108) ───────────────────────────────────────
 # There is no CronJob here, unlike decommissionSweep above, and that is
 # deliberate: the reporter is a pipeline SCHEDULE in the infra-templates project

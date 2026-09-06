@@ -6,6 +6,7 @@ import {
   hydrated,
   rootStorageStateFile,
   signInAsAccount,
+  signOutViaMenu,
   waitForTotpStepAfter,
   totpStepOf,
   type TestAccount,
@@ -67,16 +68,6 @@ import {
  * in #363, which already needs a second signed-in account to do it. Unit coverage
  * holds this path until then.
  */
-
-/** Sign out through the account menu, the way a user does. */
-async function signOutViaMenu(page: Page): Promise<void> {
-  await page.getByText(/my account/i).click()
-  await page.getByRole('button', { name: /sign out/i }).click()
-  // Generous, and deliberately so: the button awaits cache-clearing before it
-  // ends the session, and the whole point of #359 is that this step is where a
-  // sign-out can silently never happen.
-  await expect(page).toHaveURL(/\/login/, { timeout: 30_000 })
-}
 
 /**
  * Sign in again in the SAME context, after a sign-out.

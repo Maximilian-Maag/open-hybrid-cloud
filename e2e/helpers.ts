@@ -590,3 +590,16 @@ export async function signInAsAccount(
   }
 }
 
+/**
+ * Sign out through the account menu, the way a user does.
+ *
+ * Generous timeout, and deliberately so: the button awaits cache-clearing
+ * before it ends the session, and #359 was precisely that step never finishing
+ * — the only sign-out affordance in the app doing nothing while telling the
+ * user it had.
+ */
+export async function signOutViaMenu(page: Page): Promise<void> {
+  await page.getByText(/my account/i).click()
+  await page.getByRole('button', { name: /sign out/i }).click()
+  await page.waitForURL(/\/login/, { timeout: 30_000 })
+}

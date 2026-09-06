@@ -67,7 +67,11 @@ export function ApprovalRow({ order, currentUserId }: Props) {
   const ownOrder = order.userId === currentUserId
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    /* `data-order-id` so a test can act on a SPECIFIC order rather than on
+       whichever row happens to be first. The approvals queue holds other
+       people's orders too, and a cross-account journey that clicks "the first
+       Approve button" can approve the wrong one and still go green (#363). */
+    <div data-order-id={order.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-1">

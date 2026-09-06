@@ -2304,11 +2304,52 @@ browser locale and applying the stored rate.
       \textbf{Auth method} & \textbf{DB role} \\
     \midrule
     Admin         & Full access; direct ordering; approval & Local & \code{admin} \\
-    Root    & Catalog \& config; no ordering          & Local & \code{root} \\
+    Root    & Catalog \& config; everything an admin can do & Local & \code{root} \\
     Project Manager  & Orders own infra; approval required     & Local & \code{project\_leader} \\
     \bottomrule
   \end{tabularx}
 \end{table}
+
+\noindent This table said ``Root: no ordering'' until \#363, and that was
+simply false --- \code{POST /api/cart/checkout} and \code{POST /api/orders}
+call \code{requireAuth}, not \code{requireRole}, so root has always been able
+to order. Worth naming, because a capability table that is wrong is worse than
+no table: it is the thing somebody checks instead of reading the code.
+
+\subsection*{What each role is responsible for}
+\label{sec:role-responsibilities}
+
+The table above is about \emph{permission}. This one is about \emph{purpose} —
+the journey each role exists to complete, which is a different question: an
+endpoint can be reachable and the journey through it still broken at a handover.
+
+\begin{table}[H]
+  \centering
+  \caption{Role responsibilities, and where each is proven}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+    \toprule
+    \textbf{Role} & \textbf{Responsible for} \\
+    \midrule
+    Project Manager & Placing orders for their own projects; managing those
+      projects and their members; seeing their own orders and infrastructure.
+      Approves nothing --- not even their own order. \\
+    Admin & Approving or rejecting orders, including under a delegation;
+      ordering directly, with no approval step; seeing every order and every
+      infrastructure element; decommissioning. \\
+    Root & The catalogue, environments, CI sources, users, cost centres,
+      branding and configuration; deployment windows and the deploy-now
+      override (\S\ref{sec:deployment-windows}); everything an admin can do. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\noindent \file{e2e/role-journeys.spec.ts} is the executable half. It plays the
+handovers as separate sessions with real sign-outs between them --- a project
+manager orders and goes home, an admin decides the next morning, the project
+manager signs back in and sees the answer --- because two people signed in at
+once in one browser is not what happens, and a suite that only ever tests it
+that way cannot see a session that fails to survive the round trip. It did not
+see \#359, where signing out did nothing at all.
 
 \section{Creating a Local Account}
 

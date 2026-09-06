@@ -531,9 +531,13 @@ export async function signInAsAccount(
   onContext?: (context: BrowserContext) => Promise<void>,
 ): Promise<{ page: Page; context: BrowserContext; secret: string | null }> {
   const context = await browser.newContext({ storageState: undefined })
-  if (onContext) await onContext(context)
-  const page = await context.newPage()
+  // Both inside the try, so the cleanup at the bottom covers them: a hook that
+  // rejects — or a `newPage` that fails — would otherwise leak the context and
+  // leave its browser process outliving the run.
+  let page: Page
   try {
+    if (onContext) await onContext(context)
+    page = await context.newPage()
     await page.goto('/login')
     await page.getByLabel(/email address/i).fill(account.email)
     await page.getByLabel(/password/i).fill(account.password)

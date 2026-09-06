@@ -14,6 +14,21 @@
   Overlap is concurrencyPolicy: Forbid for tidiness only — the atomic
   scheduled -> provisioning claim already makes concurrent runs safe, and it is
   the same claim root's "deploy now" races against.
+
+  ── On sending the secret over http ─────────────────────────────────────────
+  The call is plaintext http to a ClusterIP Service, and it carries the sweep
+  secret in a header. That is deliberate and worth stating rather than leaving
+  to be noticed: the chart terminates TLS at the Ingress and speaks http inside
+  the cluster, as the decommission sweep next door has since it shipped, so a
+  single https call here would need a certificate and a trust store that nothing
+  else in the chart has.
+
+  What actually protects it is the network, and that is the operator's to
+  provide: a NetworkPolicy restricting who may reach the backend Service, or a
+  mesh with mTLS. Both are outside this chart deliberately — a chart that
+  installed its own CA would be harder to trust, not easier. If your cluster
+  does neither, this secret is visible to anything that can sniff pod traffic,
+  and the endpoint it opens releases queued orders early.
 */}}
 apiVersion: batch/v1
 kind: CronJob
@@ -25,11 +40,20 @@ metadata:
 spec:
   schedule: {{ .Values.deploymentWindowSweep.schedule | quote }}
   concurrencyPolicy: Forbid
+  # A run that cannot finish before the next one is due is a run to abandon, not
+  # to queue behind: this fires every couple of minutes, and `Forbid` would let
+  # one stuck Job suppress every later sweep indefinitely.
+  startingDeadlineSeconds: 60
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
       backoffLimit: 2
+      # Bounded, because nothing else bounds it. Without this a Job whose curl
+      # hangs on a half-open connection sits Active for ever, and `Forbid` then
+      # means no sweep ever runs again — a scheduled order would wait for ever
+      # with nothing in the cluster saying why.
+      activeDeadlineSeconds: 120
       template:
         metadata:
           labels:
@@ -52,7 +76,12 @@ spec:
               args:
                 - |
                   set -eu
+                  # --max-time so a hung backend fails the Job instead of
+                  # holding it open; --connect-timeout separately, because a
+                  # Service with no ready endpoints hangs at connect and that is
+                  # the ordinary shape of a deploy in progress.
                   STATUS=$(curl -sS -o /tmp/out -w '%{http_code}' \
+                    --connect-timeout 5 --max-time 60 \
                     -X POST \
                     -H "X-Sweep-Secret: ${DEPLOYMENT_WINDOW_SWEEP_SECRET}" \
                     "http://{{ include "open-hybrid-cloud.backend.fullname" . }}:{{ .Values.backend.service.port }}/api/internal/deployment-window-sweep")

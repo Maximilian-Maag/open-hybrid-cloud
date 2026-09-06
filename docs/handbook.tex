@@ -636,8 +636,13 @@ All domain logic is in the service layer.
   \item The route handler validates auth and delegates to
         \code{approveOrder(session, orderId)} in
         \file{lib/services/approvals.ts}.
-  \item The service fetches the order (returns \code{Err 400} if not
-        \code{pending}), then calls \code{triggerProductWebhooks()} and
+  \item The service claims the order (returns \code{Err 400} if it is not
+        \code{pending}). Where the environment sets
+        \code{respectsDeploymentWindows} and no window is open, the path stops
+        here: the order becomes \code{scheduled} carrying the instant its window
+        opens, the approval succeeds, and provisioning waits for the sweep or for
+        root's \menu{Deploy now} (\S\ref{sec:deployment-windows}). Otherwise it
+        continues straight on, and calls \code{triggerProductWebhooks()} and
         \code{triggerPipelineStacks()} in \file{lib/ci/webhooks.ts} in
         parallel. Product webhooks fire in \code{exec\_order}; pipeline
         stacks serialise the configured step sequence as \code{PIPELINE\_STACK}
@@ -4290,14 +4295,26 @@ The \textbf{Role} column uses the following abbreviations:
   \label{tab:routes}
 \end{longtable}
 
-\paragraph{The internal routes.} These three have no user. A scheduler has no
+\paragraph{The internal routes.} These four have no user. A scheduler has no
 session to present, so each is authenticated with a shared secret in a request
 header, compared in constant time, and each returns \code{503} outright when its
 secret is unset --- an unconfigured deployment must not be writable by an
-anonymous caller. \code{X-Sweep-Secret} carries
-\env{DECOMMISSION\_SWEEP\_SECRET}; \code{X-Drift-Secret} carries
-\env{DRIFT\_REPORT\_SECRET} and authorises both drift routes, so a deployment
-that sets it enables the whole loop and one that does not enables neither.
+anonymous caller.
+
+Three secrets, not one, and \code{X-Sweep-Secret} carries a \emph{different}
+one depending on the route --- configure the scheduler with the value that
+belongs to the endpoint it calls:
+
+\begin{itemize}
+  \item \code{POST /api/internal/decommission-sweep} ---
+        \code{X-Sweep-Secret}: \env{DECOMMISSION\_SWEEP\_SECRET}
+  \item \code{POST /api/internal/deployment-window-sweep} ---
+        \code{X-Sweep-Secret}: \env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET}
+        (\S\ref{sec:deployment-windows})
+  \item both drift routes --- \code{X-Drift-Secret}:
+        \env{DRIFT\_REPORT\_SECRET}, which authorises the pair, so a deployment
+        that sets it enables the whole loop and one that does not enables neither
+\end{itemize}
 
 The two drift routes are one cycle, run from a schedule in the
 \code{infra-templates} project (\code{.ci/drift-report.gitlab-ci.yml}). The

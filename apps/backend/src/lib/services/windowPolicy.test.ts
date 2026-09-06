@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import {
-  appConfig, deploymentEnvironments, deploymentWindows, holidays, orders,
+  appConfig, auditLog, deploymentEnvironments, deploymentWindows, holidays, orders,
 } from '@/lib/db/schema'
 import {
   createUser, createCategory, createProduct, createCiSource,
@@ -355,17 +355,44 @@ describe('deployScheduledOrderNow', () => {
     expect(row.scheduledFor).not.toBeNull()
   })
 
+  /*
+   * Read from the TABLE, not from a mocked `logAudit`. The entry is written with
+   * `logAuditWith(tx, ...)` inside the claim's transaction — a mock would assert
+   * that a function was called and say nothing about whether the row survived
+   * the commit, which is the only part that matters here.
+   */
   it('audits the override before provisioning, naming who and what was due', async () => {
     const { order, actor } = await scheduledOrder()
 
     await deployScheduledOrderNow(order.id, actor, AT)
 
-    expect(vi.mocked(logAudit)).toHaveBeenCalledWith(
-      actor.id,
-      'order.window_overridden',
-      order.id,
-      expect.stringContaining('without waiting for its window'),
-    )
+    const [entry] = await db.select().from(auditLog).where(eq(auditLog.action, 'order.window_overridden'))
+    expect(entry.userId).toBe(actor.id)
+    expect(entry.entityId).toBe(order.id)
+    expect(entry.details).toContain('without waiting for its window')
+  })
+
+  /*
+   * The reason it is one transaction. The claim commits `scheduled ->
+   * provisioning`; if the audit insert then failed on its own, the order would
+   * be left where no sweep looks — `dueScheduledOrders` selects on `scheduled`
+   * — with nothing recording who moved it. Rolling back together keeps the
+   * order in the queue, which is recoverable.
+   */
+  it('leaves the order queued if the override cannot be recorded', async () => {
+    const { order, actor } = await scheduledOrder()
+    // The audit table is the thing that fails; the claim must go back with it.
+    await db.execute(sql`ALTER TABLE audit_log ADD CONSTRAINT tmp_no_override CHECK (action <> 'order.window_overridden')`)
+    try {
+      await expect(deployScheduledOrderNow(order.id, actor, AT)).rejects.toThrow()
+    } finally {
+      await db.execute(sql`ALTER TABLE audit_log DROP CONSTRAINT tmp_no_override`)
+    }
+
+    const row = await reload(order.id)
+    expect(row.status, 'the claim outlived the audit that justifies it').toBe('scheduled')
+    expect(row.windowOverrideBy).toBeNull()
+    expect(vi.mocked(provisionOrderElements)).not.toHaveBeenCalled()
   })
 
   /*
@@ -380,12 +407,8 @@ describe('deployScheduledOrderNow', () => {
     const outcome = await deployScheduledOrderNow(order.id, actor, AT)
 
     expect(outcome).toMatchObject({ ok: false, status: 502 })
-    expect(vi.mocked(logAudit)).toHaveBeenCalledWith(
-      actor.id,
-      'order.window_overridden',
-      order.id,
-      expect.any(String),
-    )
+    const [entry] = await db.select().from(auditLog).where(eq(auditLog.action, 'order.window_overridden'))
+    expect(entry.entityId).toBe(order.id)
     const row = await reload(order.id)
     expect(row.status, 'nothing started, so it goes back in the queue').toBe('scheduled')
     expect(row.windowOverrideBy).toBe(actor.id)

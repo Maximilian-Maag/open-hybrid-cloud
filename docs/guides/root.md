@@ -438,8 +438,9 @@ the orders in it deploying.
 > Without the sweep configured, an order that reaches **Scheduled** waits
 > indefinitely. If you turn the environment switch on, turn the sweep on too.
 
-**Deploying early.** On a scheduled order you (and only you — not admins) get a
-**Deploy now** button, which provisions it immediately. It is written to the
+**Deploying early.** **Root only** — not admins, and not the person who placed
+the order. On a scheduled order the Root account sees a **Deploy now** button,
+which provisions it immediately. It is written to the
 audit log as `order.window_overridden`, naming you and the window that was
 skipped.
 

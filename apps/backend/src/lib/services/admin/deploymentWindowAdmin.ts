@@ -2,7 +2,7 @@ import { db } from '@/lib/db/client'
 import { appConfig, deploymentWindows } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
-import { logAudit } from '@/lib/audit'
+import { logAuditWith } from '@/lib/audit'
 import { validateWindows, type DeploymentWindow } from '@/lib/services/deploymentWindows'
 
 /**
@@ -91,15 +91,25 @@ export const replaceWindowSettings = async (
       )
     }
     await tx.update(appConfig).set({ deploymentTimeZone: input.timeZone }).where(eq(appConfig.id, 1))
-  })
 
-  // No entity id: the change is to the window SET, which is not a row.
-  await logAudit(
-    actorId,
-    'deployment_windows.updated',
-    undefined,
-    describeChange(before?.zone ?? 'UTC', previous, input),
-  )
+    /*
+     * Inside the transaction, with the writes it describes.
+     *
+     * The audit entry is the only record of who narrowed the window that an
+     * order then waited for. Written after the commit, a failing insert would
+     * leave the new schedule live and unattributed, and the caller would see an
+     * error for a change that had in fact taken effect — the worst of both
+     * readings. Together they either both happen or neither does.
+     */
+    await logAuditWith(
+      tx,
+      actorId,
+      'deployment_windows.updated',
+      // No entity id: the change is to the window SET, which is not a row.
+      undefined,
+      describeChange(before?.zone ?? 'UTC', previous, input),
+    )
+  })
 
   return getWindowSettings()
 }

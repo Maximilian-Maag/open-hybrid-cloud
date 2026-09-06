@@ -71,11 +71,45 @@ export function DeploymentWindowsManager() {
     setWindows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
 
+  /**
+   * The first free hour at or after 09:00, wrapping to whatever is free.
+   *
+   * A fixed 09:00 default was wrong the moment a window already covered it: the
+   * save came back 400 "two windows overlap", and the button that is supposed
+   * to be the easy path produced an error the user did not ask for. The set is
+   * validated as a whole on save, so the default has to respect the rest of it.
+   */
+  const nextFreeHour = (rows: WindowRow[]): WindowRow | null => {
+    const taken = (start: number) =>
+      rows.some((w) => start < w.startMinute + w.durationMinutes && w.startMinute < start + 60)
+    /*
+     * From 09:00 FORWARD through the day, then wrapping to the early hours.
+     *
+     * Scanning from midnight would answer 00:00 for a schedule that already
+     * covers the morning, which is a legal window and an absurd suggestion —
+     * this feature exists so deployments happen while somebody is watching.
+     * Working hours first, night-time only if there is nothing else left.
+     */
+    const hours = [...Array.from({ length: 15 }, (_, i) => (9 + i) * 60), ...Array.from({ length: 9 }, (_, h) => h * 60)]
+    for (const start of hours) {
+      if (start + 60 <= 1440 && !taken(start)) return { startMinute: start, durationMinutes: 60 }
+    }
+    return null
+  }
+
   const addWindow = () => {
     setSaved(false)
-    // 09:00 for an hour: a plausible working-hours default, so the common case
-    // is two clicks rather than four fields.
-    setWindows((rows) => [...rows, { startMinute: 9 * 60, durationMinutes: 60 }])
+    setWindows((rows) => {
+      const slot = nextFreeHour(rows)
+      // A day with no free hour left. Saying so beats appending a row that
+      // cannot be saved and letting the server explain it.
+      if (!slot) {
+        setError(t('windowsNoRoom', lang))
+        return rows
+      }
+      setError(null)
+      return [...rows, slot]
+    })
   }
 
   const removeWindow = (index: number) => {

@@ -4,7 +4,7 @@ import {
   appConfig, deploymentEnvironments, deploymentWindows, holidays, orders, productEnvironments,
 } from '@/lib/db/schema'
 import { isWithinWindow, nextWindowStart, type WindowPolicy } from './deploymentWindows'
-import { logAudit } from '@/lib/audit'
+import { logAudit, logAuditWith } from '@/lib/audit'
 
 /**
  * Reading the window policy out of the database (#330).
@@ -147,21 +147,52 @@ export const deployScheduledOrderNow = async (
   actor: { id: number; email: string },
   now: Date,
 ): Promise<{ ok: true } | { ok: false; status: number; message: string }> => {
-  const claimed = await db
-    .update(orders)
-    .set({
-      status: 'provisioning',
-      windowOverrideBy: actor.id,
-      windowOverrideAt: now,
-      updatedAt: now,
-    })
-    .where(and(eq(orders.id, orderId), eq(orders.status, 'scheduled')))
-    .returning({
-      id: orders.id, projectId: orders.projectId, productId: orders.productId,
-      environmentId: orders.environmentId, parameters: orders.parameters,
-      sizeCode: orders.sizeCode, quantity: orders.quantity, isTrial: orders.isTrial,
-      scheduledFor: orders.scheduledFor,
-    })
+  /*
+   * The claim and its audit entry in ONE transaction.
+   *
+   * They were two statements, and the gap between them was a trap: the claim
+   * commits `scheduled -> provisioning`, and if the audit insert then rejected,
+   * the throw left an order no sweep will ever look at again —
+   * `dueScheduledOrders` selects on `scheduled` — with no record of who moved
+   * it. Stuck, and unattributed. Either both land or the order stays queued.
+   */
+  const claimed = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(orders)
+      .set({
+        status: 'provisioning',
+        windowOverrideBy: actor.id,
+        windowOverrideAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(orders.id, orderId), eq(orders.status, 'scheduled')))
+      .returning({
+        id: orders.id, projectId: orders.projectId, productId: orders.productId,
+        environmentId: orders.environmentId, parameters: orders.parameters,
+        sizeCode: orders.sizeCode, quantity: orders.quantity, isTrial: orders.isTrial,
+        scheduledFor: orders.scheduledFor,
+      })
+
+    if (rows.length === 0) return rows
+
+    /*
+     * Audited here — before provisioning, not after it.
+     *
+     * Everything below can take minutes and can fail, and the decision to step
+     * over the guardrail was made either way. An override recorded only on
+     * success would leave the least explicable case — root forced a deployment
+     * out of hours and it broke — as the one with no audit entry.
+     */
+    await logAuditWith(
+      tx,
+      actor.id,
+      'order.window_overridden',
+      rows[0].id,
+      `${actor.email} deployed order #${rows[0].id} without waiting for its window` +
+        (rows[0].scheduledFor ? ` (was due ${rows[0].scheduledFor.toISOString()})` : ''),
+    )
+    return rows
+  })
 
   if (claimed.length === 0) {
     const [existing] = await db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId))
@@ -174,22 +205,6 @@ export const deployScheduledOrderNow = async (
   }
 
   const order = claimed[0]
-
-  /*
-   * Audited BEFORE provisioning, not after.
-   *
-   * Everything below can take minutes and can fail, and the decision to step
-   * over the guardrail was made either way. An override recorded only on
-   * success would leave the least explicable case — root forced a deployment
-   * out of hours and it broke — as the one with no audit entry.
-   */
-  await logAudit(
-    actor.id,
-    'order.window_overridden',
-    order.id,
-    `${actor.email} deployed order #${order.id} without waiting for its window` +
-      (order.scheduledFor ? ` (was due ${order.scheduledFor.toISOString()})` : ''),
-  )
 
   try {
     const { provisionOrderElements } = await import('@/lib/services/orders')

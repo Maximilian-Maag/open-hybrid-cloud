@@ -45,12 +45,38 @@ describe('DeploymentWindowsManager', () => {
     await waitFor(() => expect(mockedPut).toHaveBeenCalled())
     expect(mockedPut).toHaveBeenCalledWith('/api/admin/deployment-windows', {
       timeZone: 'Europe/Berlin',
-      // The existing window plus the 09:00-for-an-hour default.
+      // 08:00–10:00 already exists, so the new row starts at 10:00 rather than
+      // at a fixed 09:00 — see below.
       windows: [
         { startMinute: 480, durationMinutes: 120 },
-        { startMinute: 540, durationMinutes: 60 },
+        { startMinute: 600, durationMinutes: 60 },
       ],
     })
+  })
+
+  /*
+   * The default has to respect the rest of the set.
+   *
+   * `Add window` used to append a fixed 09:00–10:00. With an 08:00–10:00 window
+   * already there, that overlaps, and the save came back 400 "two windows
+   * overlap" — the button that is meant to be the easy path producing an error
+   * the user did not ask for.
+   */
+  it('adds a window that does not overlap one already there', async () => {
+    const user = userEvent.setup()
+    mockedGet.mockResolvedValue({
+      timeZone: 'UTC',
+      windows: [{ startMinute: 9 * 60, durationMinutes: 60 }],
+    })
+    render(<DeploymentWindowsManager />)
+    await screen.findByDisplayValue('09:00')
+
+    await user.click(screen.getByRole('button', { name: /add window/i }))
+
+    // 09:00 is taken, so the next free WORKING hour is offered — not 00:00,
+    // which scanning from midnight would have produced.
+    expect(await screen.findByDisplayValue('10:00')).toBeInTheDocument()
+    expect(screen.getByText('09:00–10:00')).toBeInTheDocument()
   })
 
   it('removes a window without touching the others', async () => {

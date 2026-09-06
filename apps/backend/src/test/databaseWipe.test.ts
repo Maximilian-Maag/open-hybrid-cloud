@@ -99,8 +99,15 @@ beforeEach(async () => {
  */
 const GRACE_MS = 5_000
 
-/** Best-effort: bounded, caught, and never a reason for the file to fail. */
-const bestEffort = async (what: string, run: () => Promise<unknown>): Promise<void> => {
+/**
+ * Best-effort: bounded, caught, and never a reason for the file to fail.
+ *
+ * Answers whether the step actually finished, because the caller has to know.
+ * `Promise.race` does not cancel the loser — a timed-out query is still pending
+ * on its connection — so a graceful close afterwards would sit and wait for the
+ * very thing that just proved it will not finish.
+ */
+const bestEffort = async (what: string, run: () => Promise<unknown>): Promise<boolean> => {
   let timer: NodeJS.Timeout | undefined
   try {
     await Promise.race([
@@ -111,8 +118,10 @@ const bestEffort = async (what: string, run: () => Promise<unknown>): Promise<vo
         timer.unref?.()
       }),
     ])
+    return true
   } catch (e) {
     console.warn(`[databaseWipe] ${what}: ${e instanceof Error ? e.message : String(e)}`)
+    return false
   } finally {
     if (timer) clearTimeout(timer)
   }
@@ -122,11 +131,16 @@ afterAll(async () => {
   await bestEffort('the probe connection did not close; the worker tears the pool down anyway', () =>
     probe?.end({ timeout: 5 }) ?? Promise.resolve(),
   )
-  await bestEffort(`could not drop the probe database ${PROBE}; \`make test-db-prune\` will`, () =>
-    admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`),
+  const dropped = await bestEffort(
+    `could not drop the probe database ${PROBE}; \`make test-db-prune\` will`,
+    () => admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`),
   )
+  // `timeout: 0` destroys rather than drains. Only reached when the DROP above
+  // is still pending on this pool, so draining would mean waiting out a second
+  // grace period for a query already abandoned — the whole cleanup would cost
+  // twice GRACE_MS while claiming to cost one.
   await bestEffort('the admin connection did not close; the worker tears the pool down anyway', () =>
-    admin.end({ timeout: 5 }),
+    admin.end({ timeout: dropped ? 5 : 0 }),
   )
 }, DB_HOOK_TIMEOUT_MS)
 

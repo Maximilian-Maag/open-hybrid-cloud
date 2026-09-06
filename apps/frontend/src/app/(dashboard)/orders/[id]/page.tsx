@@ -146,7 +146,11 @@ export default async function OrderDetailPage({ params }: Props) {
           )}
           <div>
             <dt className="font-medium text-slate-500">{t('status', lang)}</dt>
-            <dd><StatusBadge status={order.status} lang={lang} /></dd>
+            {/* `data-testid` because "Pending" appears twice on this page with
+                two different meanings: the ORDER's status here, and the
+                placeholder for a pipeline that has not reported below. A test
+                asserting on the word alone reads the wrong one (#363). */}
+            <dd data-testid="order-status"><StatusBadge status={order.status} lang={lang} /></dd>
           </div>
           {/* A badge reading "Scheduled" with no time is the same complaint
               #330 opens with: the portal knows when, and not saying so leaves

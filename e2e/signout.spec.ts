@@ -39,6 +39,18 @@ import {
  * and "no longer works" is checked twice: a navigation that must bounce, and an
  * API call through the proxy that must be refused. The second matters because
  * the first can pass on a cached page.
+ *
+ * ── What is deliberately not here ───────────────────────────────────────────
+ * A test for the 401 handler in `lib/api.ts`, which shares the broken await and
+ * is worse there (`endingSession` latches, so a throw would leave every later
+ * expiry doing nothing). Three shapes were tried and each passed while proving
+ * nothing: a document `goto` is answered by the middleware, an in-app move to a
+ * server-rendered page fetches nothing at all, and an in-app move to a
+ * client-rendered one has the router's RSC request 401 first and fall back to a
+ * document load. The fourth — a form submit with no navigation — could not be
+ * made to see a 401 at all: with the session cookie removed, the proxy still
+ * answered its PUT with 200, which is worth understanding before a test is
+ * written on top of it. Unit coverage holds that path for now.
  */
 
 /** Sign out through the account menu, the way a user does. */
@@ -157,13 +169,30 @@ test.describe('signing out', () => {
       await rootContext.close()
     }
 
-    const { page, context } = await signInAsAccount(browser, account)
+    /*
+     * The route goes on BEFORE the first navigation, not after signing in.
+     *
+     * The root layout registers the worker, so `/login` already asks for
+     * `/sw.js`. Installed afterwards, the interception would miss the
+     * registration that matters and the test would quietly run WITH a working
+     * worker — passing while proving nothing. `swRequests` is the receipt.
+     */
+    const swRequests: string[] = []
+    const { page, context } = await signInAsAccount(browser, account, async (ctx) => {
+      await ctx.route('**/sw.js', (route) => {
+        swRequests.push(route.request().url())
+        // Exactly what the deployed image did: the file is simply not there.
+        return route.fulfill({ status: 404, body: 'Not Found' })
+      })
+    })
     try {
-      // Exactly what the deployed image did: the file is simply not there.
-      await context.route('**/sw.js', (route) => route.fulfill({ status: 404, body: 'Not Found' }))
-
       await page.goto('/orders')
       await hydrated(page)
+
+      expect(
+        swRequests.length,
+        'the page never asked for /sw.js, so this test reproduced nothing',
+      ).toBeGreaterThan(0)
 
       await signOutViaMenu(page)
 
@@ -171,38 +200,6 @@ test.describe('signing out', () => {
       await expect(page, 'the sign-out hung on a worker that never arrived').toHaveURL(/\/login/, {
         timeout: 30_000,
       })
-    } finally {
-      await context.close()
-    }
-  })
-
-  /*
-   * The 401 path out of the app, which shares its implementation with the menu
-   * item and was broken by the same await (#359). It matters more there:
-   * `endingSession` latches, so a throw would leave every later expiry silently
-   * doing nothing for the life of the page.
-   */
-  test('a session revoked underneath the browser sends it back to login', async ({ browser }) => {
-    const rootContext = await browser.newContext({ storageState: rootStorageStateFile })
-    const rootPage = await rootContext.newPage()
-    let account: TestAccount
-    try {
-      account = await createAccount(rootPage, 'project_manager')
-    } finally {
-      await rootContext.close()
-    }
-
-    const { page, context } = await signInAsAccount(browser, account)
-    try {
-      await page.goto('/orders')
-      await hydrated(page)
-
-      // Take the cookie away without telling the page: the next request it
-      // makes gets a 401 it did not expect, which is what an expiry looks like.
-      await context.clearCookies()
-
-      await page.goto('/orders')
-      await expect(page).toHaveURL(/\/login/, { timeout: 30_000 })
     } finally {
       await context.close()
     }

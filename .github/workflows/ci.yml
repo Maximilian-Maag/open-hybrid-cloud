@@ -216,6 +216,33 @@ jobs:
           NEXTAUTH_URL: http://localhost:3000
           NEXTAUTH_SECRET: ci-build-placeholder-not-used-at-runtime
           API_URL: http://localhost:3001
+          # Inlined into the client bundle, so it has to be what the e2e run
+          # will actually talk to — this build is the one those jobs serve.
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+
+      # Published so the e2e and accessibility jobs can SERVE this build instead
+      # of each making their own (#364).
+      #
+      # They need production builds — `next dev` compiles on first request,
+      # inside the test's own timeout, which is what kept `workers` at 1. But
+      # building per job cost 123s on every one of the five, and measurement said
+      # that ate the whole parallelism gain and more: shard 4 went 796s → 887s
+      # even though its test time fell from 728s to 672s. Building once and
+      # copying is the only version of this that is actually faster.
+      #
+      # `.next/cache` is excluded: it is the incremental-build cache, it is the
+      # bulk of the directory, and nothing that only SERVES a build reads it.
+      - name: Publish the builds for the test jobs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: next-builds
+          path: |
+            apps/backend/.next
+            apps/frontend/.next
+            !apps/backend/.next/cache
+            !apps/frontend/.next/cache
+          retention-days: 1
+          include-hidden-files: true
 
   # ── E2E ──────────────────────────────────────────────────────────────────────
   e2e:
@@ -326,17 +353,16 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
-      # Playwright serves PRODUCTION builds in CI rather than `next dev` (#364).
-      # `next dev` compiles each route on first request, inside the test's own
-      # 30s clock — tolerable with one worker, and the thing that starved the
-      # runner into navigation timeouts with more. Building here moves that cost
-      # somewhere no timeout is running, which is what lets `workers` exceed one.
-      - name: Build the apps Playwright will serve
-        run: pnpm --filter backend build && pnpm --filter frontend build
-        env:
-          # Inlined into the client bundle at build time, so it has to match what
-          # the run will use.
-          NEXT_PUBLIC_API_URL: http://localhost:3001
+      # The build made once in the `build` job, rather than a fifth remake of it
+      # (#364). Playwright serves production builds in CI because `next dev`
+      # compiles inside the test's own timeout, which is what kept `workers` at
+      # 1 — but building per job cost 123s on each of five jobs and turned a
+      # 56s test-time saving into a 91s regression on the slowest shard.
+      - name: Fetch the builds to serve
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: next-builds
+          path: .
 
       # Without this the e2e database holds a root user, default branding and
       # nothing else: `runBootstrap()` is all the app does on start, and
@@ -617,13 +643,13 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
-      # Same reason as the E2E job: the config serves production builds in CI
-      # (#364), so a build has to exist before Playwright starts the servers.
-      # This job would otherwise fail at `next start` with nothing to serve.
-      - name: Build the apps Playwright will serve
-        run: pnpm --filter backend build && pnpm --filter frontend build
-        env:
-          NEXT_PUBLIC_API_URL: http://localhost:3001
+      # Same as the E2E job: serve the build the `build` job already made,
+      # rather than making a fifth copy of it (#364).
+      - name: Fetch the builds to serve
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: next-builds
+          path: .
 
       # The five detail pages in this spec each walk in from a list, and an empty
       # list has nothing to walk to — so an unseeded database silently skips them

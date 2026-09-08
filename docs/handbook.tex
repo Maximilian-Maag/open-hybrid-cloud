@@ -1270,8 +1270,8 @@ data "terraform_remote_state" "vm" {
   backend = "http"
   config = {
     address  = "${var.ci_api_url}/projects/${var.ci_project_id}/terraform/state/${var.vm_state_name}"
-    username = "gitlab-ci-token"
-    password = var.ci_job_token
+    username = var.gitlab_state_username
+    password = var.gitlab_state_token
   }
 }
 

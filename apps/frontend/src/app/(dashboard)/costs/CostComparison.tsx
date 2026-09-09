@@ -1,4 +1,4 @@
-import type { CostComparison as Comparison, CostPeriod } from '@open-hybrid-cloud/types'
+import type { CostComparison as Comparison, CostPeriod } from '@infrashelf/types'
 import { Card } from '@/components/ui/Card'
 import { t } from '@/lib/i18n'
 import { CHART_PRIMARY, CHART_MUTED } from '@/lib/chartTokens'
@@ -16,7 +16,7 @@ interface Props {
 
 const BAR_W = 320
 const BAR_H = 10
-const HATCH_ID = 'ohc-cost-comparison-hatch'
+const HATCH_ID = 'infrashelf-cost-comparison-hatch'
 
 /**
  * This month against last (issue #106).

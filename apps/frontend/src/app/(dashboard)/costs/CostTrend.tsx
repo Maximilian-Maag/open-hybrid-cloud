@@ -1,4 +1,4 @@
-import type { CostPeriod } from '@open-hybrid-cloud/types'
+import type { CostPeriod } from '@infrashelf/types'
 import { Card } from '@/components/ui/Card'
 import { t } from '@/lib/i18n'
 import { CHART_PRIMARY, CHART_GRID, CHART_AXIS } from '@/lib/chartTokens'
@@ -27,7 +27,7 @@ const GAP = 2
 const MIN_H = 2
 /** At most this many x labels, so they never collide on a twelve-month window. */
 const MAX_TICKS = 6
-const HATCH_ID = 'ohc-cost-trend-hatch'
+const HATCH_ID = 'infrashelf-cost-trend-hatch'
 
 /** A column with a 4px rounded cap and a square foot on the baseline. */
 const columnPath = (x: number, width: number, top: number): string => {

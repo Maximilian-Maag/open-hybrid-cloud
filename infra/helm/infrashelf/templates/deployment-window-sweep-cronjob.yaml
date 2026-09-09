@@ -33,9 +33,9 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ include "open-hybrid-cloud.fullname" . }}-deployment-window-sweep
+  name: {{ include "infrashelf.fullname" . }}-deployment-window-sweep
   labels:
-    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    {{- include "infrashelf.labels" . | nindent 4 }}
     app.kubernetes.io/component: deployment-window-sweep
 spec:
   schedule: {{ .Values.deploymentWindowSweep.schedule | quote }}
@@ -57,7 +57,7 @@ spec:
       template:
         metadata:
           labels:
-            {{- include "open-hybrid-cloud.labels" . | nindent 12 }}
+            {{- include "infrashelf.labels" . | nindent 12 }}
             app.kubernetes.io/component: deployment-window-sweep
         spec:
           restartPolicy: Never
@@ -84,7 +84,7 @@ spec:
                     --connect-timeout 5 --max-time 60 \
                     -X POST \
                     -H "X-Sweep-Secret: ${DEPLOYMENT_WINDOW_SWEEP_SECRET}" \
-                    "http://{{ include "open-hybrid-cloud.backend.fullname" . }}:{{ .Values.backend.service.port }}/api/internal/deployment-window-sweep")
+                    "http://{{ include "infrashelf.backend.fullname" . }}:{{ .Values.backend.service.port }}/api/internal/deployment-window-sweep")
                   cat /tmp/out
                   echo
                   case "$STATUS" in
@@ -96,7 +96,7 @@ spec:
                 - name: DEPLOYMENT_WINDOW_SWEEP_SECRET
                   valueFrom:
                     secretKeyRef:
-                      name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                      name: {{ include "infrashelf.backend.fullname" . }}
                       key: DEPLOYMENT_WINDOW_SWEEP_SECRET
               {{- with .Values.deploymentWindowSweep.resources }}
               resources:

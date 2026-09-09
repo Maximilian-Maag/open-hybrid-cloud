@@ -88,7 +88,7 @@ test.describe('Admin - Environment Management', () => {
   // Migration 0004: callback secret is portal-generated and rotatable
   // independently from the outbound trigger token. Verify the Edit modal
   // exposes Reveal + Regenerate, and that Regenerate produces a fresh
-  // `ohc-cb-<hex>` value that persists on re-reveal.
+  // `infrashelf-cb-<hex>` value that persists on re-reveal.
   test('Edit modal reveals and regenerates the callback secret', async ({ page }) => {
     // Ensure at least one CI source + one environment exist
     await page.goto('/admin/ci-sources')
@@ -125,7 +125,7 @@ test.describe('Admin - Environment Management', () => {
     const revealed = dialog.locator('input[readonly]')
     await expect(revealed).toBeVisible({ timeout: 5000 })
     const firstValue = await revealed.inputValue()
-    expect(firstValue).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+    expect(firstValue).toMatch(/^infrashelf-cb-[0-9a-f]{64}$/)
 
     // Regenerate — the edit modal's Regenerate opens a confirmation modal
     // (the app uses a Modal, not a native confirm()); confirm it there.
@@ -135,7 +135,7 @@ test.describe('Admin - Environment Management', () => {
     // New value replaces old one
     await expect.poll(async () => await revealed.inputValue()).not.toBe(firstValue)
     const newValue = await revealed.inputValue()
-    expect(newValue).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+    expect(newValue).toMatch(/^infrashelf-cb-[0-9a-f]{64}$/)
 
     // Close + reopen the modal to confirm the new value is persisted
     await dialog.getByRole('button', { name: /^cancel$/i }).click()

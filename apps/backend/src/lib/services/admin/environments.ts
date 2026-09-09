@@ -16,9 +16,9 @@ import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 
 // Portal-generated shared secret sent as the X-Gitlab-Token header of the
 // pipeline event webhook. 32 bytes → 64 hex chars, matches Linode-style
-// tokens and is comfortably URL-safe. Prefix `ohc-cb-` so it's obvious what
+// tokens and is comfortably URL-safe. Prefix `infrashelf-cb-` so it's obvious what
 // this is if it shows up in a log or a copy-paste error.
-export const generateCallbackSecret = (): string => `ohc-cb-${randomBytes(32).toString('hex')}`
+export const generateCallbackSecret = (): string => `infrashelf-cb-${randomBytes(32).toString('hex')}`
 
 export interface CreateEnvironmentInput {
   name: string

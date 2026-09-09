@@ -18,7 +18,7 @@ const MIGRATION_SQL = readFileSync(
   'utf8',
 )
 
-const PORTAL_GENERATED = /^ohc-cb-[0-9a-f]{64}$/
+const PORTAL_GENERATED = /^infrashelf-cb-[0-9a-f]{64}$/
 
 const seedEnv = async (name: string, webhookToken: string, callbackSecret: string) => {
   const [env] = await db
@@ -44,7 +44,7 @@ describe('migration 0025 — rotate reused callback secrets', () => {
     const blank = await seedEnv('Blank', 'unrelated-trigger-token', '')
     // Already rotated by an operator — must survive untouched, otherwise the
     // migration silently breaks working webhook configurations.
-    const healthy = await seedEnv('Healthy', 'trigger', `ohc-cb-${'b'.repeat(64)}`)
+    const healthy = await seedEnv('Healthy', 'trigger', `infrashelf-cb-${'b'.repeat(64)}`)
 
     await db.execute(sql.raw(MIGRATION_SQL))
 
@@ -58,7 +58,7 @@ describe('migration 0025 — rotate reused callback secrets', () => {
     expect(byId.get(reused.id)).not.toBe('gitlab-trigger-token')
     expect(byId.get(reused.id)).toMatch(PORTAL_GENERATED)
     expect(byId.get(blank.id)).toMatch(PORTAL_GENERATED)
-    expect(byId.get(healthy.id)).toBe(`ohc-cb-${'b'.repeat(64)}`)
+    expect(byId.get(healthy.id)).toBe(`infrashelf-cb-${'b'.repeat(64)}`)
 
     // Rotating two rows to the same value would violate the UNIQUE constraint
     // added by 0006; the assertion is here because the statement rotates them in

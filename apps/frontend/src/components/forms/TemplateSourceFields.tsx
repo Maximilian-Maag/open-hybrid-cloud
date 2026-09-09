@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { CiSource, CiProject, CiBranch } from '@open-hybrid-cloud/types'
+import type { CiSource, CiProject, CiBranch } from '@infrashelf/types'
 import { get } from '@/lib/api'
 import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'

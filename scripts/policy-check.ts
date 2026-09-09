@@ -83,7 +83,7 @@ function main(): void {
     process.exit(1)
   }
 
-  const factsFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ohc-policy-')), 'facts.json')
+  const factsFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'infrashelf-policy-')), 'facts.json')
   fs.writeFileSync(factsFile, `${JSON.stringify(collectFacts(), null, 2)}\n`)
 
   const evaluated = run(opa, [

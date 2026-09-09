@@ -2,7 +2,7 @@ import { db } from '@/lib/db/client'
 import { parameters, orders } from '@/lib/db/schema'
 import { eq, inArray } from 'drizzle-orm'
 import type { ProductSnapshot } from '@/lib/services/snapshot'
-import { REDACTED_PARAMETER_VALUE } from '@open-hybrid-cloud/types'
+import { REDACTED_PARAMETER_VALUE } from '@infrashelf/types'
 
 /**
  * Which stored parameter values must never be shown, and what to show instead.

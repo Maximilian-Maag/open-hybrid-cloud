@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { and, eq, lt } from 'drizzle-orm'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 import { db } from '@/lib/db/client'
 import { sessions, users } from '@/lib/db/schema'
 import { signToken } from './jwt'

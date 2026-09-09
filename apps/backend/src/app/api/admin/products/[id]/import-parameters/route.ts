@@ -7,7 +7,7 @@ import { ciSources, products } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { ok, err } from '@/lib/services/result'
 import { scanTemplate, importScannedParameters } from '@/lib/services/admin/templateImport'
-import type { CiProvider } from '@open-hybrid-cloud/types'
+import type { CiProvider } from '@infrashelf/types'
 
 const ImportSchema = z.object({
   ciSourceId: z.number().int().positive(),

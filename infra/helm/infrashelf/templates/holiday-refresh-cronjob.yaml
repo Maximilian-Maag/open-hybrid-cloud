@@ -18,9 +18,9 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ include "open-hybrid-cloud.fullname" . }}-holiday-refresh
+  name: {{ include "infrashelf.fullname" . }}-holiday-refresh
   labels:
-    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    {{- include "infrashelf.labels" . | nindent 4 }}
     app.kubernetes.io/component: holiday-refresh
 spec:
   schedule: "17 3 * * *"
@@ -42,7 +42,7 @@ spec:
       template:
         metadata:
           labels:
-            {{- include "open-hybrid-cloud.labels" . | nindent 12 }}
+            {{- include "infrashelf.labels" . | nindent 12 }}
             app.kubernetes.io/component: holiday-refresh
         spec:
           restartPolicy: Never
@@ -71,7 +71,7 @@ spec:
                     --connect-timeout 5 --max-time 120 \
                     -X POST \
                     -H "X-Sweep-Secret: ${DEPLOYMENT_WINDOW_SWEEP_SECRET}" \
-                    "http://{{ include "open-hybrid-cloud.backend.fullname" . }}:{{ .Values.backend.service.port }}/api/internal/holiday-refresh")
+                    "http://{{ include "infrashelf.backend.fullname" . }}:{{ .Values.backend.service.port }}/api/internal/holiday-refresh")
                   cat /tmp/out
                   echo
                   case "$STATUS" in
@@ -82,7 +82,7 @@ spec:
                 - name: DEPLOYMENT_WINDOW_SWEEP_SECRET
                   valueFrom:
                     secretKeyRef:
-                      name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                      name: {{ include "infrashelf.backend.fullname" . }}
                       key: DEPLOYMENT_WINDOW_SWEEP_SECRET
               {{- with .Values.deploymentWindowSweep.resources }}
               resources:

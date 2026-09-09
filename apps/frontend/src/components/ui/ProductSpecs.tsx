@@ -1,4 +1,4 @@
-import type { Parameter } from '@open-hybrid-cloud/types'
+import type { Parameter } from '@infrashelf/types'
 import { t } from '@/lib/i18n'
 
 interface Props {

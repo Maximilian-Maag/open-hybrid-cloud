@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { CartItem, Project, CostCenter, Parameter, CheckoutResponse } from '@open-hybrid-cloud/types'
+import type { CartItem, Project, CostCenter, Parameter, CheckoutResponse } from '@infrashelf/types'
 
 const push = vi.fn()
 const refresh = vi.fn()

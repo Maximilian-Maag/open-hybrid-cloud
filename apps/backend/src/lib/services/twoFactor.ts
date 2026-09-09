@@ -859,7 +859,7 @@ const verifyRecoveryCode = async (
  */
 export const totpIssuer = (shopName: string | null | undefined): string => {
   const cleaned = (shopName ?? '').replace(/:/g, ' ').trim()
-  return cleaned.length > 0 ? cleaned : 'Open Hybrid Cloud'
+  return cleaned.length > 0 ? cleaned : 'InfraShelf'
 }
 
 export interface TwoFactorAccount {

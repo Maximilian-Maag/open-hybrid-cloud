@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ProductDetail, Category, DeploymentEnvironment, CostCenter, SizeMatrix } from '@open-hybrid-cloud/types'
+import type { ProductDetail, Category, DeploymentEnvironment, CostCenter, SizeMatrix } from '@infrashelf/types'
 
 // jsdom does not implement the native <dialog> methods; stub them so Modal's
 // open/close effects don't throw (same stub as Modal.test.tsx).

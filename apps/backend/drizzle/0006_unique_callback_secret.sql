@@ -20,10 +20,10 @@
 -- being applied to the WRONG environment.
 UPDATE "deployment_environments" AS d
   SET "callback_secret" =
-    -- 'ohc-cb-' matches the portal-generated format; two UUIDs give the same
+    -- 'infrashelf-cb-' matches the portal-generated format; two UUIDs give the same
     -- 64 hex chars as generateCallbackSecret() and gen_random_uuid() is
     -- built in (no pgcrypto dependency).
-    'ohc-cb-' || replace(gen_random_uuid()::text, '-', '')
+    'infrashelf-cb-' || replace(gen_random_uuid()::text, '-', '')
               || replace(gen_random_uuid()::text, '-', '')
   WHERE EXISTS (
     SELECT 1 FROM "deployment_environments" AS other

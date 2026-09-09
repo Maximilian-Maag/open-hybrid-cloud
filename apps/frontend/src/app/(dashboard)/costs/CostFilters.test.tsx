@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { Project } from '@open-hybrid-cloud/types'
+import type { Project } from '@infrashelf/types'
 
 const replace = vi.fn()
 let currentParams = new URLSearchParams()

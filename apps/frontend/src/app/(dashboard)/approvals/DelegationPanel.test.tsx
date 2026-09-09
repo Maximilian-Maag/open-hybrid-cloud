@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ApprovalDelegation, ApprovalDelegationsResponse } from '@open-hybrid-cloud/types'
+import type { ApprovalDelegation, ApprovalDelegationsResponse } from '@infrashelf/types'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 vi.mock('@/lib/api', () => ({ post: vi.fn(), del: vi.fn() }))

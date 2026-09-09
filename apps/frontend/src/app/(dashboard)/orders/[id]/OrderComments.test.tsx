@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { OrderComment } from '@open-hybrid-cloud/types'
+import type { OrderComment } from '@infrashelf/types'
 
 vi.mock('@/lib/api', () => ({ post: vi.fn(), put: vi.fn(), del: vi.fn() }))
 

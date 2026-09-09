@@ -18,7 +18,7 @@ import {
   type ProductWebhook,
   type Parameter,
 } from '@/lib/db/schema'
-import type { ProductImageMeta } from '@open-hybrid-cloud/types'
+import type { ProductImageMeta } from '@infrashelf/types'
 import { count, eq, sql, and, inArray } from 'drizzle-orm'
 import { translateProduct } from '@/lib/ai'
 import { ok, err, type Result } from '@/lib/services/result'
@@ -1331,7 +1331,7 @@ export const deleteProductEnvironment = async (
  * row handed it back in cleartext from list, create and update. `webhookTokenSet`
  * is what the admin UI actually needs — it renders the name and URL and nothing
  * else — and the token can still be replaced through updateProductWebhook. Same
- * shape as `ProductWebhook` in @open-hybrid-cloud/types, which never had the token
+ * shape as `ProductWebhook` in @infrashelf/types, which never had the token
  * in it: the frontend was already typed against the secret-free row.
  */
 const publicWebhookColumns = {

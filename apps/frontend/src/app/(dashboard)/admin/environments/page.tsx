@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import type { Role, CiSource } from '@open-hybrid-cloud/types'
+import type { Role, CiSource } from '@infrashelf/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EnvironmentsManager } from './EnvironmentsManager'
 import { get } from '@/lib/serverApi'

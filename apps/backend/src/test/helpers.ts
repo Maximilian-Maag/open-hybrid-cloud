@@ -5,7 +5,7 @@ import * as schema from '@/lib/db/schema'
 import { createSession } from '@/lib/auth/sessions'
 import { generateTotpSecret, totp } from '@/lib/auth/totp'
 import { encryptTotpSecret } from '@/lib/auth/totpSecret'
-import type { Role } from '@open-hybrid-cloud/types'
+import type { Role } from '@infrashelf/types'
 
 /**
  * A user, with a confirmed second factor if their role requires one (#197).

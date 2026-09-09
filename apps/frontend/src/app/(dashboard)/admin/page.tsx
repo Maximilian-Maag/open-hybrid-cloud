@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import type { Role } from '@open-hybrid-cloud/types'
+import type { Role } from '@infrashelf/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { t, type Translations } from '@/lib/i18n'
 import { getLang } from '@/lib/getLang'

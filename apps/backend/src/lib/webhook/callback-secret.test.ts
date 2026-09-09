@@ -3,7 +3,7 @@ import { isUsableCallbackSecret } from './callback-secret'
 
 describe('isUsableCallbackSecret', () => {
   it('accepts a portal-generated secret', () => {
-    expect(isUsableCallbackSecret(`ohc-cb-${'a'.repeat(64)}`)).toBe(true)
+    expect(isUsableCallbackSecret(`infrashelf-cb-${'a'.repeat(64)}`)).toBe(true)
   })
 
   it('accepts a short but non-blank legacy secret', () => {

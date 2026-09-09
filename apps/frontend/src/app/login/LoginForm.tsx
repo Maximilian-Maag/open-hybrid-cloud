@@ -9,7 +9,7 @@ import { Alert } from '@/components/ui/Alert'
 import { readableInk, readableAccent, AA_LARGE, AA_NON_TEXT } from '@/lib/contrast'
 import { MFA_LOCKED_OUT } from '@/lib/loginErrors'
 import { startAuthentication } from '@simplewebauthn/browser'
-import type { SecondFactorMethod } from '@open-hybrid-cloud/types'
+import type { SecondFactorMethod } from '@infrashelf/types'
 
 /** The options object `startAuthentication` takes, named from its own signature. */
 type AuthOptions = Parameters<typeof startAuthentication>[0]['optionsJSON']

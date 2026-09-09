@@ -17,7 +17,7 @@ import './globals.css'
  * fetched once, out of band.
  */
 export const metadata: Metadata = {
-  title: 'Open Hybrid Cloud',
+  title: 'InfraShelf',
   description: 'Self-service IT infrastructure portal',
   // Generated per request from the `branding` row; see app/manifest.ts.
   manifest: '/manifest.webmanifest',
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     // opens in a browser tab with its chrome, which is the whole thing #148 is
     // asking for the absence of.
     capable: true,
-    title: 'Open Hybrid Cloud',
+    title: 'InfraShelf',
     statusBarStyle: 'black-translucent',
   },
   icons: {

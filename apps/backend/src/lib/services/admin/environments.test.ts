@@ -68,7 +68,7 @@ describe('createEnvironment', () => {
       const revealed = await getCallbackSecret(result.data.id)
       expect(revealed.ok).toBe(true)
       if (revealed.ok) {
-        expect(revealed.data.callbackSecret).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+        expect(revealed.data.callbackSecret).toMatch(/^infrashelf-cb-[0-9a-f]{64}$/)
         // and NOT equal to the outbound trigger token — separate concerns
         expect(revealed.data.callbackSecret).not.toBe('tok')
       }
@@ -124,11 +124,11 @@ describe('createEnvironment', () => {
 })
 
 describe('generateCallbackSecret', () => {
-  it('produces the ohc-cb-<hex> shape and yields unique values', () => {
+  it('produces the infrashelf-cb-<hex> shape and yields unique values', () => {
     const a = generateCallbackSecret()
     const b = generateCallbackSecret()
-    expect(a).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
-    expect(b).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+    expect(a).toMatch(/^infrashelf-cb-[0-9a-f]{64}$/)
+    expect(b).toMatch(/^infrashelf-cb-[0-9a-f]{64}$/)
     expect(a).not.toBe(b)
   })
 })
@@ -186,7 +186,7 @@ describe('regenerateCallbackSecret', () => {
     const rotated = await regenerateCallbackSecret(created.data.id)
     expect(rotated.ok).toBe(true)
     if (!rotated.ok) return
-    expect(rotated.data.callbackSecret).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+    expect(rotated.data.callbackSecret).toMatch(/^infrashelf-cb-[0-9a-f]{64}$/)
     expect(rotated.data.callbackSecret).not.toBe(before)
 
     const reread = await getCallbackSecret(created.data.id)

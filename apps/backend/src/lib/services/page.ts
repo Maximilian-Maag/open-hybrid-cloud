@@ -1,4 +1,4 @@
-import type { Page } from '@open-hybrid-cloud/types'
+import type { Page } from '@infrashelf/types'
 
 export type { Page }
 

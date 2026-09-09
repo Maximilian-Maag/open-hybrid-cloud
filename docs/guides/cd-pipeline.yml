@@ -1,4 +1,4 @@
-# Sample GitLab CI/CD pipeline for Open Hybrid Cloud
+# Sample GitLab CI/CD pipeline for InfraShelf
 #
 # Copy this file to your infrastructure repository as .gitlab-ci.yml.
 # The portal triggers this pipeline via the GitLab Pipeline Trigger API and

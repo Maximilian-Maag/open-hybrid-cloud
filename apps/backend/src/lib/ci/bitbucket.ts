@@ -1,4 +1,4 @@
-import type { CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
+import type { CiProject, CiBranch, CiFile } from '@infrashelf/types'
 import { triggerFailure } from './triggerError'
 
 // See gitlab.ts — bound the number of pages followed.

@@ -21,7 +21,7 @@ UPDATE "deployment_environments"
   SET "callback_secret" =
     -- Same format and length as generateCallbackSecret(); gen_random_uuid() is
     -- built in, so no pgcrypto dependency (as in migration 0006).
-    'ohc-cb-' || replace(gen_random_uuid()::text, '-', '')
+    'infrashelf-cb-' || replace(gen_random_uuid()::text, '-', '')
               || replace(gen_random_uuid()::text, '-', '')
   WHERE "callback_secret" = "webhook_token"
      OR btrim("callback_secret") = '';

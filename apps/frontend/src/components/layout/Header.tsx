@@ -21,7 +21,7 @@ interface HeaderProps {
 
 export function Header({
   userName,
-  shopName = 'Open Hybrid Cloud',
+  shopName = 'InfraShelf',
   logoDataUrl,
   lang: initialLang = 'en',
   cartCount = 0,

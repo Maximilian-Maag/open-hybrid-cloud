@@ -1,4 +1,4 @@
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 import { db } from '@/lib/db/client'
 import { projects, users, costCenters, infrastructureElements, orders, type Project } from '@/lib/db/schema'
 import { eq, sql, and, isNull, count } from 'drizzle-orm'

@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
-import type { CostReport, CostBucket, ExchangeRate, Project } from '@open-hybrid-cloud/types'
+import type { CostReport, CostBucket, ExchangeRate, Project } from '@infrashelf/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { CostFilters } from './CostFilters'

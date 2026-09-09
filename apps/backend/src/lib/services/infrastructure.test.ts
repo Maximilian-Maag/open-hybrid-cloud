@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 
 vi.mock('@/lib/ci/webhooks', () => ({
   triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-destroy']),

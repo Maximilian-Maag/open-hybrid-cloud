@@ -87,7 +87,7 @@ export const clearServiceWorkerCaches = async (): Promise<void> => {
       .then(() => {
         // Also tell the worker, which may hold caches this page's `caches` view
         // does not enumerate in every browser.
-        container.controller?.postMessage({ type: 'ohc-signout' })
+        container.controller?.postMessage({ type: 'infrashelf-signout' })
       }),
   )
 }

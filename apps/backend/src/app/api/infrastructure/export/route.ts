@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
 
   if (format === 'pdf') {
     const branding = await getBranding()
-    const shopName = branding.ok ? branding.data.shopName : 'Open Hybrid Cloud'
+    const shopName = branding.ok ? branding.data.shopName : 'InfraShelf'
     const pdf = await buildPdf(result.data, shopName, includeParameters)
     return new NextResponse(new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), {
       headers: { 'Content-Disposition': 'attachment; filename="infrastructure.pdf"' },

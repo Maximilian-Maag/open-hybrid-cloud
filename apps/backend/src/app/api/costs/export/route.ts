@@ -155,7 +155,7 @@ export async function GET(req: NextRequest) {
     const pdf = await buildPdf(
       result.data,
       report.ok ? report.data.totalEur : 0,
-      branding.ok ? branding.data.shopName : 'Open Hybrid Cloud',
+      branding.ok ? branding.data.shopName : 'InfraShelf',
     )
     return new NextResponse(new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), {
       headers: { 'Content-Disposition': 'attachment; filename="costs.pdf"' },

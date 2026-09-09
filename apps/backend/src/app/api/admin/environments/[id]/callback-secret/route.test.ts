@@ -52,7 +52,7 @@ describe('POST /api/admin/environments/[id]/callback-secret (rotate)', () => {
     const res = await POST(makeReq(String(env.id), 'POST', auth), { params: Promise.resolve({ id: String(env.id) }) })
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.callbackSecret).toMatch(/^ohc-cb-[0-9a-f]{64}$/)
+    expect(body.callbackSecret).toMatch(/^infrashelf-cb-[0-9a-f]{64}$/)
     expect(body.callbackSecret).not.toBe(beforeBody.callbackSecret)
 
     const after = await GET(makeReq(String(env.id), 'GET', auth), { params: Promise.resolve({ id: String(env.id) }) })

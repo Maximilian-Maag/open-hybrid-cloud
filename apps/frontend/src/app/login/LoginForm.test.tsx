@@ -17,7 +17,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/useLang', () => ({ useLang: () => 'en' }))
 
 const props = {
-  shopName: 'Open Hybrid Cloud',
+  shopName: 'InfraShelf',
   shopSubtitle: '',
   logoDataUrl: null,
   primaryColor: '#131921',

@@ -1,7 +1,7 @@
 import { db } from '@/lib/db/client'
 import { appConfig } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import type { AiProviderType } from '@open-hybrid-cloud/types'
+import type { AiProviderType } from '@infrashelf/types'
 
 const LANGUAGES = [
   'de', 'en', 'fr', 'it', 'es', 'pt', 'nl', 'pl', 'cs', 'sk', 'sl', 'hr',

@@ -1,4 +1,4 @@
-import type { CiProvider, CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
+import type { CiProvider, CiProject, CiBranch, CiFile } from '@infrashelf/types'
 import {
   triggerGitLabPipeline,
   getGitLabApplyTraces,

@@ -558,7 +558,7 @@ Under **Administration → Shop Design** (or directly at `/admin/branding`):
 
 ### 9.3 Shop Name and Subtitle
 
-- **Shop name**: Displayed in the header and browser title. Defaults to "Open Hybrid Cloud" — there is no `APP_NAME` environment variable; the name lives only in this database-backed setting.
+- **Shop name**: Displayed in the header and browser title. Defaults to "InfraShelf" — there is no `APP_NAME` environment variable; the name lives only in this database-backed setting.
 - **Subtitle / Tagline**: Short description shown in the footer. Defaults to empty — likewise, there is no `APP_SUBTITLE` environment variable.
 
 ### 9.4 Imprint (Legal Notice)
@@ -689,7 +689,7 @@ provide.
 Docker Compose:
 
 ```sh
-docker exec -i ohc-postgres psql -U postgres -d open_hybrid_cloud <<'SQL'
+docker exec -i infrashelf-postgres psql -U postgres -d infrashelf <<'SQL'
 BEGIN;
 DELETE FROM user_recovery_codes
   WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
@@ -702,7 +702,7 @@ SQL
 Kubernetes:
 
 ```sh
-kubectl exec -n open-hybrid-cloud deploy/ohc-postgres --   psql -U postgres -d open_hybrid_cloud -c   "DELETE FROM user_recovery_codes WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');    DELETE FROM user_totp WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');"
+kubectl exec -n infrashelf deploy/infrashelf-postgres --   psql -U postgres -d infrashelf -c   "DELETE FROM user_recovery_codes WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');    DELETE FROM user_totp WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');"
 ```
 
 Replace `root@example.com` with the account's own address. Deleting the

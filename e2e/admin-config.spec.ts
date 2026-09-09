@@ -49,7 +49,7 @@ test.describe('Admin - Branding Configuration', () => {
     // Read the current shop name and save it unchanged
     const shopNameInput = page.getByLabel(/shop name/i)
     const currentName = await shopNameInput.inputValue()
-    await shopNameInput.fill(currentName || 'Open Hybrid Cloud')
+    await shopNameInput.fill(currentName || 'InfraShelf')
     await page.getByRole('button', { name: /save/i }).click()
     await expect(page.getByText(/branding saved/i)).toBeVisible({ timeout: 8000 })
   })

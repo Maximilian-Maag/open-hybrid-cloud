@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { renderToString } from 'react-dom/server'
 import userEvent from '@testing-library/user-event'
-import type { SessionInfo } from '@open-hybrid-cloud/types'
+import type { SessionInfo } from '@infrashelf/types'
 import { ActiveSessions } from './ActiveSessions'
 
 /**

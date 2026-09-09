@@ -1,4 +1,4 @@
-Open Hybrid Cloud deployed successfully.
+InfraShelf deployed successfully.
 
 {{- if .Values.migrate.enabled }}
 Database migrations were run as a pre-install/pre-upgrade hook.
@@ -13,10 +13,10 @@ The application is available at:
 No Ingress is configured. Access the services via port-forward:
 
   # Frontend
-  kubectl port-forward svc/{{ include "open-hybrid-cloud.frontend.fullname" . }} 3000:{{ .Values.frontend.service.port }} -n {{ .Release.Namespace }}
+  kubectl port-forward svc/{{ include "infrashelf.frontend.fullname" . }} 3000:{{ .Values.frontend.service.port }} -n {{ .Release.Namespace }}
 
   # Backend API
-  kubectl port-forward svc/{{ include "open-hybrid-cloud.backend.fullname" . }} 3001:{{ .Values.backend.service.port }} -n {{ .Release.Namespace }}
+  kubectl port-forward svc/{{ include "infrashelf.backend.fullname" . }} 3001:{{ .Values.backend.service.port }} -n {{ .Release.Namespace }}
 
 Then open: http://localhost:3000
 {{- end }}
@@ -26,5 +26,5 @@ Initial admin credentials:
   Password: (value of backend.secrets.adminPassword — change immediately after first login)
 
 To check rollout status:
-  kubectl rollout status deployment/{{ include "open-hybrid-cloud.frontend.fullname" . }} -n {{ .Release.Namespace }}
-  kubectl rollout status deployment/{{ include "open-hybrid-cloud.backend.fullname" . }} -n {{ .Release.Namespace }}
+  kubectl rollout status deployment/{{ include "infrashelf.frontend.fullname" . }} -n {{ .Release.Namespace }}
+  kubectl rollout status deployment/{{ include "infrashelf.backend.fullname" . }} -n {{ .Release.Namespace }}

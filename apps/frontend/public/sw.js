@@ -37,8 +37,8 @@
 // Bump to retire every previous cache. The activate handler deletes anything
 // that is not this exact name, so a stale shell cannot outlive a deploy.
 const VERSION = 'v1'
-const SHELL = `ohc-shell-${VERSION}`
-const ASSETS = `ohc-assets-${VERSION}`
+const SHELL = `infrashelf-shell-${VERSION}`
+const ASSETS = `infrashelf-assets-${VERSION}`
 const OFFLINE_URL = '/offline'
 
 self.addEventListener('install', (event) => {
@@ -148,6 +148,6 @@ self.addEventListener('fetch', (event) => {
  * keep.
  */
 self.addEventListener('message', (event) => {
-  if (event.data?.type !== 'ohc-signout') return
+  if (event.data?.type !== 'infrashelf-signout') return
   event.waitUntil(caches.keys().then((names) => Promise.all(names.map((n) => caches.delete(n)))))
 })

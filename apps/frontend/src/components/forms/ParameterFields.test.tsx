@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ParameterFields, SizeDerivedValues } from './ParameterFields'
-import type { Parameter } from '@open-hybrid-cloud/types'
+import type { Parameter } from '@infrashelf/types'
 
 const base: Parameter = {
   id: 1,

@@ -7,7 +7,7 @@ import { eq, and } from 'drizzle-orm'
 import { getFileContent } from '@/lib/ci'
 import { parseTerraformVariables } from '@/lib/tfparser'
 import { logAudit } from '@/lib/audit'
-import type { CiProvider } from '@open-hybrid-cloud/types'
+import type { CiProvider } from '@infrashelf/types'
 import { isReservedCiVariable, isPipelineSuppliedVariable } from '@/lib/ci/reserved'
 
 export async function POST(

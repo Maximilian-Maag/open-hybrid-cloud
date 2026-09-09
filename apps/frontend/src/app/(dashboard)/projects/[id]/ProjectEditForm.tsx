@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Project, CostCenter, UpdateProjectRequest } from '@open-hybrid-cloud/types'
+import type { Project, CostCenter, UpdateProjectRequest } from '@infrashelf/types'
 import { put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'

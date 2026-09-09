@@ -1,4 +1,4 @@
-workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and decommissioning IT infrastructure. Next.js frontend + REST API backend, PostgreSQL." {
+workspace "InfraShelf" "Self-service portal for ordering, managing and decommissioning IT infrastructure. Next.js frontend + REST API backend, PostgreSQL." {
 
     model {
         admin = person "Admin" "Views all orders and infrastructure, orders directly, approves or rejects project manager orders." "Person"
@@ -13,7 +13,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         smtp = softwaresystem "Mail Server" "SMTP server for transactional order and deployment notification emails." "Existing System"
         exchange_rate_api = softwaresystem "Exchange Rate API" "Provides current exchange rates for per-locale currency conversion." "Existing System"
 
-        webshop = softwaresystem "Open Hybrid Cloud" "Self-service portal for ordering, managing and decommissioning IT infrastructure." {
+        webshop = softwaresystem "InfraShelf" "Self-service portal for ordering, managing and decommissioning IT infrastructure." {
 
             frontend = container "Frontend" "React UI; server-side rendered with NextAuth.js sessions, communicates with Backend API via REST." "Next.js / React / Tailwind CSS / NextAuth.js" {
 
@@ -257,7 +257,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         # Deployment — Kubernetes
         deploymentEnvironment "Kubernetes" {
             deploymentNode "Kubernetes Cluster" "Production cluster" "Kubernetes" {
-                deploymentNode "open-hybrid-cloud" "Application namespace" "Kubernetes Namespace" {
+                deploymentNode "infrashelf" "Application namespace" "Kubernetes Namespace" {
                     deploymentNode "Ingress + cert-manager" "HTTPS termination via Let's Encrypt or internal CA. Routes /api/* to the backend service EXCEPT four prefixes that belong to the frontend: /api/proxy, /api/auth, /api/login-challenge and /api/ping; everything else to the frontend service. /api/proxy is the browser's only path to the backend since #146 and must be matched before the general /api/ rule. The /api/auth/callback exact match went with the SSO flow (#139) and has to come back with it." "Nginx Ingress / cert-manager" {
                     }
                     deploymentNode "frontend Deployment" "Next.js frontend pods, horizontally scalable." "Kubernetes Deployment" {
@@ -308,7 +308,7 @@ workspace "Open Hybrid Cloud" "Self-service portal for ordering, managing and de
         systemcontext webshop "SystemContext" {
             include *
             autoLayout
-            description "System context: Open Hybrid Cloud and all external systems"
+            description "System context: InfraShelf and all external systems"
         }
 
         container webshop "Container" {

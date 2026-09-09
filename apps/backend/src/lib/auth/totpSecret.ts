@@ -38,6 +38,10 @@ const KEY_BYTES = 32
  * losing everyone's second factor on a routine secret rotation is exactly the
  * kind of surprise an operator should be told about once, up front.
  */
+// This string is an HKDF input, not a display name: every TOTP secret stored
+// before the InfraShelf rename was encrypted with a key derived from it, so it
+// must stay 'open-hybrid-cloud/...' forever or those enrollments decrypt to
+// garbage and every user has to re-enrol.
 const KEY_DERIVATION_INFO = 'open-hybrid-cloud/totp-secret/v1'
 
 let cachedKey: Buffer | null = null

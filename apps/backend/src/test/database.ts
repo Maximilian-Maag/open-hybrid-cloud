@@ -17,7 +17,7 @@ import postgres from 'postgres'
  * one case a directory cannot tell apart — two runs started by hand in the same
  * checkout.
  */
-const BASE = 'open_hybrid_cloud_test'
+const BASE = 'infrashelf_test'
 
 /** Only what this module reads, so a test can pass a fixture. */
 type Env = { [key: string]: string | undefined }

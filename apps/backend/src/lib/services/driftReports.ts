@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import type { StackStep } from '@open-hybrid-cloud/types'
+import type { StackStep } from '@infrashelf/types'
 import {
   infrastructureElements, unclaimedStates, driftReportState, pipelineStacks,
   type DriftSummary,

@@ -193,21 +193,21 @@ describe('otpauthUrl', () => {
   const secret = Buffer.from('12345678901234567890', 'ascii')
 
   it('produces a key URI an authenticator app can read', () => {
-    const url = otpauthUrl({ issuer: 'Open Hybrid Cloud', account: 'root@example.org', secret })
+    const url = otpauthUrl({ issuer: 'InfraShelf', account: 'root@example.org', secret })
     const parsed = new URL(url)
 
     expect(parsed.protocol).toBe('otpauth:')
     expect(parsed.host).toBe('totp')
-    expect(decodeURIComponent(parsed.pathname)).toBe('/Open Hybrid Cloud:root@example.org')
+    expect(decodeURIComponent(parsed.pathname)).toBe('/InfraShelf:root@example.org')
     expect(parsed.searchParams.get('secret')).toBe('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ')
-    expect(parsed.searchParams.get('issuer')).toBe('Open Hybrid Cloud')
+    expect(parsed.searchParams.get('issuer')).toBe('InfraShelf')
     expect(parsed.searchParams.get('algorithm')).toBe('SHA1')
     expect(parsed.searchParams.get('digits')).toBe('6')
     expect(parsed.searchParams.get('period')).toBe('30')
   })
 
   it('strips base32 padding, which some apps reject', () => {
-    const url = otpauthUrl({ issuer: 'OHC', account: 'a@b.c', secret: Buffer.from('foo') })
+    const url = otpauthUrl({ issuer: 'InfraShelf', account: 'a@b.c', secret: Buffer.from('foo') })
     expect(url).toContain('secret=MZXW6')
     expect(url).not.toContain('%3D')
   })

@@ -20,7 +20,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   return {
     name: branding.shopName,
     // Cut at a word boundary, not at character twelve — see `shortNameFor`. The
-    // subtitle is not appended on purpose: "Open Hybrid Cloud Self-Service
+    // subtitle is not appended on purpose: "InfraShelf Self-Service
     // Portal" under an icon is a name nobody can read.
     short_name: shortNameFor(branding.shopName),
     description: branding.shopSubtitle,

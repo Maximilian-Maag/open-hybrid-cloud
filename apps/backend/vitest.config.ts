@@ -1,43 +1,20 @@
 import { defineConfig } from 'vitest/config'
 import path from 'path'
 import { testDatabaseUrl } from './src/test/database'
+import { TEST_TIMEOUT_MS } from './src/test/timeouts'
 
-/**
- * Stryker wraps every expression in the source tree in a mutant switch, so the
- * same test is several times slower under a mutation run than under an ordinary
- * one. Vitest's default 5s per-test limit is generous for the second and not for
- * the first — and the failure is silent in the worst way: Stryker aborts its
- * DRY RUN with "There were failed tests in the initial test run", never mutates
- * anything, and reports no score. The nightly backend leg had been doing exactly
- * that, so `thresholds.break = 80` was enforcing nothing at all.
+/*
+ * `testTimeout` and the lock-synchronising specs' wait budget both live in
+ * `src/test/timeouts.ts`, with the reasoning behind the numbers.
  *
- * Raised only under Stryker, which sets STRYKER_MUTATOR_WORKER in each test
- * runner process.
- *
- * An ordinary run used to keep vitest's default 5s, on the argument that a test
- * genuinely taking six seconds is worth being told about. The argument is sound
- * and the number was not: this suite runs four workers against ONE Postgres, and
- * a budget of five seconds measures how busy that server is at least as much as
- * it measures the code.
- *
- * That is #282 — a full run reporting exactly one failure, a different test each
- * time, every one of them passing alone. The theory was a blocked TRUNCATE; the
- * diagnostic added to `src/test/setup.ts` disproves it, reporting an EMPTY
- * `pg_stat_activity` every time the reset ran slow. Nothing is holding a lock.
- * The server is simply saturated, and the tests that lose are whichever ones
- * happened to be doing the most I/O at the time.
- *
- * 15s, then. Still tight enough to catch a test that has genuinely gone wrong —
- * nothing here does real work for fifteen seconds — and slack enough that a
- * queue on a shared server is not reported as a failing assertion.
+ * They are in one file because they have to agree: a wait longer than the
+ * timeout that kills the test is a wait that never finishes, and the
+ * diagnostic it exists to print never runs (#386).
  */
-const underMutationTesting = process.env.STRYKER_MUTATOR_WORKER !== undefined
-
 export default defineConfig({
   test: {
-    testTimeout: 15_000,
-    hookTimeout: 15_000,
-    ...(underMutationTesting ? { testTimeout: 60_000, hookTimeout: 60_000 } : {}),
+    testTimeout: TEST_TIMEOUT_MS,
+    hookTimeout: TEST_TIMEOUT_MS,
     globals: true,
     environment: 'node',
     // Stryker copies the whole source tree into .stryker-tmp/sandbox-*/ while a

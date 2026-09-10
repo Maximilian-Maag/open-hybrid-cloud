@@ -139,7 +139,7 @@ export function CiSourcesManager() {
         ) : (
           <div className="space-y-2">
             {sources.map((src) => (
-              <div key={src.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
+              <div key={src.id} className="flex flex-wrap items-center justify-between gap-y-2 rounded-lg border border-slate-100 px-4 py-3">
                 <div>
                   <div className="flex items-center gap-2 mb-0.5">
                     <p className="font-medium text-slate-900">{src.name}</p>

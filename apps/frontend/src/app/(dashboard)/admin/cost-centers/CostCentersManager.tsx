@@ -111,7 +111,7 @@ export function CostCentersManager() {
         ) : (
           <div className="space-y-2">
             {ccs.map((cc) => (
-              <div key={cc.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
+              <div key={cc.id} className="flex flex-wrap items-center justify-between gap-y-2 rounded-lg border border-slate-100 px-4 py-3">
                 <div className="flex items-center gap-3">
                   <span className={`inline-block h-2 w-2 rounded-full ${cc.active ? 'bg-green-500' : 'bg-slate-300'}`} />
                   <div>

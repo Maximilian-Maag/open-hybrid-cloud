@@ -49,3 +49,24 @@ overrides:
   # security patch should not be the thing that drags a major bump into a
   # transitive dependency its parent never asked for.
   fast-uri: ">=3.1.6 <4"
+  # ── Held one release back, and ONLY because of their age ──────────────────
+  #
+  # pnpm 11 rejects a lockfile entry published inside `minimumReleaseAge`, which
+  # is the right default: a package hours old is the shape a compromised release
+  # arrives in, and these three are exactly the kind that gets targeted — a nanoid
+  # and a napi runtime reach almost everything.
+  #
+  # Next 15.5.24 resolved all three to versions published the same day, so the
+  # bump could not install. Pinning to the previous release keeps the guard fully
+  # enforced rather than switching it off or regenerating the lockfile around it,
+  # which is what the error message warns against.
+  #
+  # Nothing here is a fix or a constraint that matters — REMOVE these three the
+  # next time this file is touched. They are dated so a reader can see they have
+  # long since aged out:
+  #   @csstools/css-syntax-patches-for-csstree 1.1.13  published 2026-09-10
+  #   @napi-rs/wasm-runtime                    1.2.4   published 2026-09-10
+  #   nanoid                                   3.3.19  published 2026-09-10
+  "@csstools/css-syntax-patches-for-csstree": "1.1.12"
+  "@napi-rs/wasm-runtime": "1.2.3"
+  nanoid: "3.3.18"

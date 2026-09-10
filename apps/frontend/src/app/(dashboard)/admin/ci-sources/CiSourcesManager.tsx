@@ -140,16 +140,25 @@ export function CiSourcesManager() {
           <div className="space-y-2">
             {sources.map((src) => (
               <div key={src.id} className="flex flex-wrap items-center justify-between gap-y-2 rounded-lg border border-slate-100 px-4 py-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-0.5">
+                {/* `min-w-0` because a flex child defaults to `min-width: auto`
+                    and so refuses to shrink below its content — wrapping the ROW
+                    does nothing while this column is still as wide as the URL
+                    inside it. `break-all` on the URL itself for the same reason:
+                    a repository path can outgrow a 320px phone. `break-words`
+                    rather than `break-all`: a URL already breaks at its slashes
+                    and hyphens, and measured at 320px a 130-character one wraps
+                    on its own — this is the fallback for the one that cannot,
+                    not a licence to split every path mid-token. */}
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-0.5">
                     <p className="font-medium text-slate-900">{src.name}</p>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${providerBadge[src.provider]}`}>
                       {src.provider}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 font-mono">{src.url}</p>
+                  <p className="text-xs text-slate-500 font-mono break-words">{src.url}</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(src)}>{t('edit', lang)}</Button>
                   <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(src) }}>{t('delete', lang)}</Button>
                 </div>

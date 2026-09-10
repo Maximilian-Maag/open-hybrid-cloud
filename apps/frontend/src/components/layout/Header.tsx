@@ -173,7 +173,28 @@ export function Header({
                   } catch {
                     // Tidiness failed. Ending the session is what was asked for.
                   }
-                  await signOut({ redirectTo: '/login' })
+                  /*
+                   * `redirect: false`, then navigate ourselves.
+                   *
+                   * With `redirectTo`, next-auth starts the sign-out POST and
+                   * the navigation together, and the navigation can cancel the
+                   * request in flight — so the response that CLEARS the session
+                   * cookie is never processed. The user lands on /login looking
+                   * signed out while the cookie is still valid, which is the
+                   * worst possible version of this bug: on a shared device the
+                   * next person presses Back.
+                   *
+                   * Latent until #374 served production builds and navigation
+                   * got fast enough to win that race regularly — `signout.spec`
+                   * caught it as "the session survived the sign-out".
+                   *
+                   * Awaiting the POST first costs one round trip and makes the
+                   * order guaranteed rather than lucky. `location.assign`
+                   * rather than the router, because the point is to discard
+                   * every bit of client state that belonged to the session.
+                   */
+                  await signOut({ redirect: false })
+                  window.location.assign('/login')
                 }}
                 className="w-full text-left flex min-h-11 items-center px-4 py-2 text-sm text-slate-700 hover:text-red-600 transition-colors"
               >

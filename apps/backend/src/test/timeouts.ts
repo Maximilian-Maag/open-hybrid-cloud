@@ -1,48 +1,24 @@
 /**
- * Test timeouts, in one file because two of them have to agree.
+ * The budget a lock-synchronising spec waits on, and the per-test timeout that
+ * has to be larger than it.
  *
- * `vitest.config.ts` takes `TEST_TIMEOUT_MS`; the lock-synchronising specs take
- * `BLOCKED_WAIT_MS` and `LOCK_TEST_TIMEOUT_MS`. Keeping them apart is what went
- * wrong: the wait was raised to 30s while the timeout that kills the test
- * stayed at 15s, so the raise did nothing and the diagnostic the wait exists to
- * print became unreachable (#386).
+ * Both live here because the bug they exist to prevent is that they disagree:
+ * the wait was raised to 30s while `vitest.config.ts` killed the test at 15s,
+ * so the raise did nothing and the diagnostic the wait exists to print became
+ * unreachable (#386).
+ *
+ * `vitest.config.ts` deliberately does NOT import these. Its own timeout is a
+ * default for three thousand ordinary tests and has nothing to say about a lock
+ * wait; the four specs that wait on a lock override it per test with
+ * `LOCK_TEST_TIMEOUT_MS`. That override is what makes the relationship correct,
+ * and it makes it correct without the config and this file having to agree on a
+ * number at all — which is a better guarantee than the one it replaces.
+ *
+ * It also keeps `process.env.STRYKER_MUTATOR_WORKER` out of `src/`, where the
+ * policy gate reads every env access as an operator-facing setting that must be
+ * documented in `.env.example`. Stryker sets that variable itself; documenting
+ * it would be telling an operator to set something they must not.
  */
-
-/**
- * Stryker wraps every expression in the source tree in a mutant switch, so the
- * same test is several times slower under a mutation run than under an ordinary
- * one. Vitest's default 5s per-test limit is generous for the second and not for
- * the first — and the failure is silent in the worst way: Stryker aborts its
- * DRY RUN with "There were failed tests in the initial test run", never mutates
- * anything, and reports no score. The nightly backend leg had been doing exactly
- * that, so `thresholds.break = 80` was enforcing nothing at all.
- *
- * Raised only under Stryker, which sets STRYKER_MUTATOR_WORKER in each test
- * runner process.
- */
-const underMutationTesting = process.env.STRYKER_MUTATOR_WORKER !== undefined
-
-/**
- * The per-test budget for an ordinary test.
- *
- * An ordinary run used to keep vitest's default 5s, on the argument that a test
- * genuinely taking six seconds is worth being told about. The argument is sound
- * and the number was not: this suite runs four workers against ONE Postgres, and
- * a budget of five seconds measures how busy that server is at least as much as
- * it measures the code.
- *
- * That is #282 — a full run reporting exactly one failure, a different test each
- * time, every one of them passing alone. The theory was a blocked TRUNCATE; the
- * diagnostic added to `src/test/setup.ts` disproves it, reporting an EMPTY
- * `pg_stat_activity` every time the reset ran slow. Nothing is holding a lock.
- * The server is simply saturated, and the tests that lose are whichever ones
- * happened to be doing the most I/O at the time.
- *
- * 15s, then. Still tight enough to catch a test that has genuinely gone wrong —
- * nothing here does real work for fifteen seconds — and slack enough that a
- * queue on a shared server is not reported as a failing assertion.
- */
-export const TEST_TIMEOUT_MS = underMutationTesting ? 60_000 : 15_000
 
 /**
  * How long a spec may wait for another backend to reach a blocking statement.
@@ -64,20 +40,18 @@ export const BLOCKED_WAIT_MS = 30_000
  * The per-test timeout a lock-synchronising spec needs, so `BLOCKED_WAIT_MS` is
  * actually reachable.
  *
- * A test that vitest can kill before its own wait expires reports
+ * A test vitest can kill before its own wait expires reports
  * `Test timed out in 15000ms` against the `it(...)` line, and that says neither
- * which of the synchronisation points hung nor whether the lock was ever taken.
- * The wait's own error says both. So the wait has to be able to win that race,
- * which means the timeout must sit above it with room for the rest of the test —
- * the fixtures, the key derivation and the transaction either side.
+ * which synchronisation point hung nor whether the lock was ever taken. The
+ * wait's own error says both, so the wait has to be able to win that race.
  *
- * Raising the timeout rather than shrinking the wait, because the wait is the
- * part that absorbs a loaded runner. Trimming it to fit 15s would turn an
- * occasional anonymous timeout into a more frequent explicit one, which is the
- * opposite of what #386 is for.
+ * Double the wait, which leaves a full thirty seconds for the rest of the test —
+ * the fixtures, the key derivation and the transaction either side — and stays
+ * at or above the 60s a mutation run grants, so applying it never LOWERS the
+ * budget for the tests that can least afford it.
  *
- * `max` rather than a bare sum: a mutation run's 60s is already larger, and a
- * per-test timeout would otherwise LOWER it for exactly the tests that can
- * least afford it.
+ * Raising this rather than trimming the wait: the wait is the part that absorbs
+ * a loaded runner, and shrinking it to fit would turn an occasional anonymous
+ * timeout into a more frequent explicit one.
  */
-export const LOCK_TEST_TIMEOUT_MS = Math.max(TEST_TIMEOUT_MS, BLOCKED_WAIT_MS + 15_000)
+export const LOCK_TEST_TIMEOUT_MS = BLOCKED_WAIT_MS * 2

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { TEST_TIMEOUT_MS, BLOCKED_WAIT_MS, LOCK_TEST_TIMEOUT_MS } from './timeouts'
+import { BLOCKED_WAIT_MS, LOCK_TEST_TIMEOUT_MS } from './timeouts'
 
 /*
  * The invariant, asserted, because the bug it guards against is invisible.
@@ -10,7 +10,7 @@ import { TEST_TIMEOUT_MS, BLOCKED_WAIT_MS, LOCK_TEST_TIMEOUT_MS } from './timeou
  * without the other is the exact mistake, and it is the kind a reviewer reads
  * straight past — so it is worth a test rather than a comment.
  */
-describe('test timeouts', () => {
+describe('lock-synchronising test timeouts', () => {
   it('lets a lock wait finish before vitest kills the test', () => {
     expect(LOCK_TEST_TIMEOUT_MS).toBeGreaterThan(BLOCKED_WAIT_MS)
   })
@@ -20,7 +20,12 @@ describe('test timeouts', () => {
     expect(LOCK_TEST_TIMEOUT_MS - BLOCKED_WAIT_MS).toBeGreaterThanOrEqual(10_000)
   })
 
-  it('never lowers the budget a mutation run already grants', () => {
-    expect(LOCK_TEST_TIMEOUT_MS).toBeGreaterThanOrEqual(TEST_TIMEOUT_MS)
+  /*
+   * A mutation run raises vitest's own timeout to 60s. A per-test override
+   * REPLACES that rather than extending it, so an override below 60s would
+   * quietly shorten exactly the tests Stryker makes slowest.
+   */
+  it('never lowers the budget a mutation run grants', () => {
+    expect(LOCK_TEST_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000)
   })
 })

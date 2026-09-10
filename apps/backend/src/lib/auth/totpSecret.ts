@@ -37,6 +37,11 @@ const KEY_BYTES = 32
  * makes every enrolled authenticator undecryptable. Hence the warning: silently
  * losing everyone's second factor on a routine secret rotation is exactly the
  * kind of surprise an operator should be told about once, up front.
+ *
+ * The info string keeps the portal's old name on purpose: it is an input to the
+ * key derivation, so changing it derives a different key and makes every secret
+ * already encrypted with the old one undecryptable — the same failure the
+ * warning above is about. It is opaque and versioned; only the `/v1` matters.
  */
 const KEY_DERIVATION_INFO = 'open-hybrid-cloud/totp-secret/v1'
 

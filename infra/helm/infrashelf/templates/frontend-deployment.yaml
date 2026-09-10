@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "open-hybrid-cloud.frontend.fullname" . }}
+  name: {{ include "infrashelf.frontend.fullname" . }}
   labels:
-    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    {{- include "infrashelf.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 spec:
   {{- if not .Values.frontend.autoscaling.enabled }}
@@ -11,7 +11,7 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "open-hybrid-cloud.frontend.selectorLabels" . | nindent 6 }}
+      {{- include "infrashelf.frontend.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -20,7 +20,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "open-hybrid-cloud.frontend.selectorLabels" . | nindent 8 }}
+        {{- include "infrashelf.frontend.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.podSecurityContext }}
       securityContext:
@@ -28,7 +28,7 @@ spec:
       {{- end }}
       containers:
         - name: frontend
-          image: {{ include "open-hybrid-cloud.frontend.image" . }}
+          image: {{ include "infrashelf.frontend.image" . }}
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
           ports:
             - name: http
@@ -42,7 +42,7 @@ spec:
             - name: NEXTAUTH_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.frontend.fullname" . }}
+                  name: {{ include "infrashelf.frontend.fullname" . }}
                   key: NEXTAUTH_SECRET
           livenessProbe:
             httpGet:

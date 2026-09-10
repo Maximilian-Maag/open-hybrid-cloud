@@ -23,7 +23,7 @@ export interface PwaBranding {
 
 /** What the app is called and coloured when branding cannot be read. */
 export const FALLBACK: PwaBranding = {
-  shopName: 'Open Hybrid Cloud',
+  shopName: 'InfraShelf',
   shopSubtitle: 'Self-Service Portal',
   // The same pair `bootstrap/index.ts` seeds, so an unbranded install and a
   // freshly bootstrapped one look alike rather than subtly different.
@@ -92,7 +92,7 @@ export const shortNameFor = (name: string, budget = 12): string => {
   return out || name.slice(0, budget)
 }
 
-/** `Open Hybrid Cloud` -> `OH`. What the icon shows when there is no logo. */
+/** `InfraShelf` -> `IN`. What the icon shows when there is no logo. */
 export const initialsOf = (name: string): string => {
   const words = name.split(/\s+/).filter(Boolean)
   if (words.length === 0) return '?'

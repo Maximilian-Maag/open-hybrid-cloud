@@ -6,7 +6,7 @@ import {
   createUser, createCategory, createProduct, createCiSource,
   createEnvironment, createProject, createOrder, createInfraElement,
 } from '@/test/helpers'
-import type { StackStep } from '@open-hybrid-cloud/types'
+import type { StackStep } from '@infrashelf/types'
 import { recordDriftReport, driftReportStatus, driftTargets } from './driftReports'
 
 /**

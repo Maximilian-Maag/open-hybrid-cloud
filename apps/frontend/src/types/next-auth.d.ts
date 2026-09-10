@@ -1,4 +1,4 @@
-import type { Role } from '@open-hybrid-cloud/types'
+import type { Role } from '@infrashelf/types'
 
 declare module 'next-auth' {
   interface Session {

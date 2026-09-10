@@ -1,4 +1,4 @@
-# Open Hybrid Cloud
+# InfraShelf
 
 Self-service portal through which Admins and Project Managers can order, manage, and decommission IT infrastructure. The backend triggers CI/CD pipelines (GitLab, GitHub, Bitbucket) via webhook, which deploy the desired infrastructure using OpenTofu. Pipeline status is pushed back to the backend via CI provider webhooks — no polling worker required.
 
@@ -104,7 +104,7 @@ Only `JWT_SECRET` and `DATABASE_URL` are enforced at startup (`apps/backend/src/
 ## Project Structure
 
 ```
-open-hybrid-cloud/
+infrashelf/
 ├── apps/
 │   ├── backend/                  # Next.js API-only app (port 3001)
 │   │   ├── src/
@@ -198,7 +198,7 @@ Run `make help` to see all available commands.
 
 ```bash
 git clone <repo-url>
-cd open-hybrid-cloud
+cd infrashelf
 make install
 ```
 
@@ -232,7 +232,7 @@ cp apps/frontend/.env.example apps/frontend/.env
 
 ```dotenv
 # The example points at the Docker service name; change to localhost for running outside Docker
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/open_hybrid_cloud
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/infrashelf
 
 # Any random string — used to sign JWTs
 JWT_SECRET=my-local-dev-secret
@@ -416,8 +416,8 @@ There is deliberately no `nginx.conf` to copy: `nginx.conf.template` is mounted 
 
 See `infra/helm/` for the Helm chart. The images are published to Docker Hub:
 
-- `maximilianmaag/open-hybrid-cloud-backend`
-- `maximilianmaag/open-hybrid-cloud-frontend`
+- `maximilianmaag/infrashelf-backend`
+- `maximilianmaag/infrashelf-frontend`
 
 ### Scheduled decommissioning
 

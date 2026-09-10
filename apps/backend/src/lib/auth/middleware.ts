@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from './jwt'
 import { validateSession } from './sessions'
 import { canHoldSecondFactor, secondFactorOutstanding } from '@/lib/services/twoFactor'
-import type { SessionUser, Role } from '@open-hybrid-cloud/types'
+import type { SessionUser, Role } from '@infrashelf/types'
 
 const ROLE_RANK: Record<Role, number> = { project_manager: 1, admin: 2, root: 3 }
 

@@ -10,7 +10,7 @@ import type {
   Category,
   CatalogPage,
   Role,
-} from '@open-hybrid-cloud/types'
+} from '@infrashelf/types'
 import { Card } from '@/components/ui/Card'
 import { OrderForm } from '@/components/forms/OrderForm'
 import { AddToCart } from './AddToCart'

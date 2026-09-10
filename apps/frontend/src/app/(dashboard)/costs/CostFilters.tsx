@@ -2,7 +2,7 @@
 
 import { useTransition } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import type { Project } from '@open-hybrid-cloud/types'
+import type { Project } from '@infrashelf/types'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'

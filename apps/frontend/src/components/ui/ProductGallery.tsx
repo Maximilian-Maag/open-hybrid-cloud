@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { ProductImageMeta } from '@open-hybrid-cloud/types'
+import type { ProductImageMeta } from '@infrashelf/types'
 import { Modal } from '@/components/ui/Modal'
 import { ProductImagePlaceholder } from '@/components/ui/ProductImage'
 import { t } from '@/lib/i18n'

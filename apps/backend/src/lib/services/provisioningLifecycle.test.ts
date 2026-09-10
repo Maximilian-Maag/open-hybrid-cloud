@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 
 vi.mock('@/lib/ci/webhooks', () => ({
   triggerProductWebhooksTracked: vi.fn(),
@@ -347,18 +347,18 @@ describe('terminal webhook effects and the point of no return (issue #136)', () 
    */
   const blockOutputWrites = async (): Promise<() => Promise<void>> => {
     await db.execute(sql`
-      DROP TRIGGER IF EXISTS ohc_test_block_outputs ON infrastructure_elements;
-      CREATE OR REPLACE FUNCTION ohc_test_block_outputs() RETURNS trigger AS $$
+      DROP TRIGGER IF EXISTS isf_test_block_outputs ON infrastructure_elements;
+      CREATE OR REPLACE FUNCTION isf_test_block_outputs() RETURNS trigger AS $$
       BEGIN RAISE EXCEPTION 'simulated database outage'; END;
       $$ LANGUAGE plpgsql;
-      CREATE TRIGGER ohc_test_block_outputs
+      CREATE TRIGGER isf_test_block_outputs
         BEFORE UPDATE OF outputs ON infrastructure_elements
-        FOR EACH ROW EXECUTE FUNCTION ohc_test_block_outputs();
+        FOR EACH ROW EXECUTE FUNCTION isf_test_block_outputs();
     `)
     return async () => {
       await db.execute(sql`
-        DROP TRIGGER IF EXISTS ohc_test_block_outputs ON infrastructure_elements;
-        DROP FUNCTION IF EXISTS ohc_test_block_outputs();
+        DROP TRIGGER IF EXISTS isf_test_block_outputs ON infrastructure_elements;
+        DROP FUNCTION IF EXISTS isf_test_block_outputs();
       `)
     }
   }

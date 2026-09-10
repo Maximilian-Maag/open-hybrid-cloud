@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "open-hybrid-cloud.fullname" . }}
+  name: {{ include "infrashelf.fullname" . }}
   labels:
-    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    {{- include "infrashelf.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -57,7 +57,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "open-hybrid-cloud.frontend.fullname" $ }}
+                name: {{ include "infrashelf.frontend.fullname" $ }}
                 port:
                   number: {{ $.Values.frontend.service.port }}
           {{- end }}
@@ -67,7 +67,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
+                name: {{ include "infrashelf.backend.fullname" $ }}
                 port:
                   number: {{ $.Values.backend.service.port }}
 
@@ -76,7 +76,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "open-hybrid-cloud.frontend.fullname" $ }}
+                name: {{ include "infrashelf.frontend.fullname" $ }}
                 port:
                   number: {{ $.Values.frontend.service.port }}
     {{- end }}

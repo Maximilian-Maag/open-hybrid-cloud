@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+  name: {{ include "infrashelf.backend.fullname" . }}
   labels:
-    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    {{- include "infrashelf.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
 spec:
   {{- if not .Values.backend.autoscaling.enabled }}
@@ -11,7 +11,7 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "open-hybrid-cloud.backend.selectorLabels" . | nindent 6 }}
+      {{- include "infrashelf.backend.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -20,7 +20,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "open-hybrid-cloud.backend.selectorLabels" . | nindent 8 }}
+        {{- include "infrashelf.backend.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.podSecurityContext }}
       securityContext:
@@ -28,7 +28,7 @@ spec:
       {{- end }}
       containers:
         - name: backend
-          image: {{ include "open-hybrid-cloud.backend.image" . }}
+          image: {{ include "infrashelf.backend.image" . }}
           imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
           ports:
             - name: http
@@ -48,7 +48,7 @@ spec:
             - name: DECOMMISSION_SWEEP_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  name: {{ include "infrashelf.backend.fullname" . }}
                   key: DECOMMISSION_SWEEP_SECRET
             {{- end }}
             {{- if .Values.deploymentWindowSweep.enabled }}
@@ -58,7 +58,7 @@ spec:
             - name: DEPLOYMENT_WINDOW_SWEEP_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  name: {{ include "infrashelf.backend.fullname" . }}
                   key: DEPLOYMENT_WINDOW_SWEEP_SECRET
             {{- end }}
             {{- if .Values.driftReport.secret }}
@@ -69,7 +69,7 @@ spec:
             - name: DRIFT_REPORT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  name: {{ include "infrashelf.backend.fullname" . }}
                   key: DRIFT_REPORT_SECRET
             {{- end }}
             {{- with .Values.backend.env.smtp }}
@@ -89,23 +89,23 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  name: {{ include "infrashelf.backend.fullname" . }}
                   key: DATABASE_URL
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  name: {{ include "infrashelf.backend.fullname" . }}
                   key: JWT_SECRET
             - name: ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  name: {{ include "infrashelf.backend.fullname" . }}
                   key: ADMIN_PASSWORD
             {{- with .Values.backend.secrets.totpEncryptionKey }}
             - name: TOTP_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
+                  name: {{ include "infrashelf.backend.fullname" $ }}
                   key: TOTP_ENCRYPTION_KEY
             {{- end }}
             {{- with .Values.backend.webauthn }}
@@ -125,7 +125,7 @@ spec:
             - name: SMTP_PASS
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" $ }}
+                  name: {{ include "infrashelf.backend.fullname" $ }}
                   key: SMTP_PASS
             {{- end }}
             {{- end }}
@@ -137,7 +137,7 @@ spec:
             - name: SECRET_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  name: {{ include "infrashelf.backend.fullname" . }}
                   key: SECRET_ENCRYPTION_KEY
             {{- end }}
           livenessProbe:

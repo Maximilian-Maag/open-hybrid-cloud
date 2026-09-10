@@ -56,7 +56,7 @@ describe('manifest', () => {
   it('is still installable when branding cannot be read', async () => {
     vi.spyOn(global, 'fetch').mockRejectedValue(new Error('backend down'))
     const m = await manifest()
-    expect(m.name).toBe('Open Hybrid Cloud')
+    expect(m.name).toBe('InfraShelf')
     expect(m.display).toBe('standalone')
   })
 })
@@ -74,8 +74,8 @@ describe('buildIcon', () => {
   })
 
   it('falls back to the initials on the brand colour', () => {
-    const svg = buildIcon({ name: 'Open Hybrid Cloud', background: '#123456', ink: '#ffffff', logo: null, safeZone: 0.12 })
-    expect(svg).toContain('>OH<')
+    const svg = buildIcon({ name: 'InfraShelf', background: '#123456', ink: '#ffffff', logo: null, safeZone: 0.12 })
+    expect(svg).toContain('>IN<')
     expect(svg).toContain('fill="#123456"')
     expect(svg).toContain('fill="#ffffff"')
   })

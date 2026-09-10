@@ -15,7 +15,7 @@ export const generateOpenApiDocument = () => {
   return generator.generateDocument({
     openapi: '3.0.0',
     info: {
-      title: 'Open Hybrid Cloud API',
+      title: 'InfraShelf API',
       version: '1.0.0',
       description:
         'Self-service IT infrastructure portal API. Three roles: root (webshop admin), admin (IT admin), project_manager (end user).',

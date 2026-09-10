@@ -87,13 +87,13 @@ describe('Header account menu', () => {
 describe('Header brand', () => {
   it('falls back to the product name when the operator set none', () => {
     render(<Header lang="en" />)
-    expect(screen.getByText('Open Hybrid Cloud')).toBeInTheDocument()
+    expect(screen.getByText('InfraShelf')).toBeInTheDocument()
   })
 
   it('renders the operator shop name instead when there is one', () => {
     render(<Header lang="en" shopName="Contoso Cloud" />)
     expect(screen.getByText('Contoso Cloud')).toBeInTheDocument()
-    expect(screen.queryByText('Open Hybrid Cloud')).not.toBeInTheDocument()
+    expect(screen.queryByText('InfraShelf')).not.toBeInTheDocument()
   })
 
   // The logo replaces the wordmark rather than joining it, and carries the shop

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { ProductVersion, ProductVersionDiff } from '@open-hybrid-cloud/types'
+import type { ProductVersion, ProductVersionDiff } from '@infrashelf/types'
 import { get } from '@/lib/api'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'

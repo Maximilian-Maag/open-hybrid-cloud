@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/serverApi'
 import { redirect, notFound } from 'next/navigation'
-import type { Order, OrderComment, Role } from '@open-hybrid-cloud/types'
+import type { Order, OrderComment, Role } from '@infrashelf/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { RefreshButton } from '@/components/ui/RefreshButton'
 import { AutoRefresh } from '@/components/ui/AutoRefresh'

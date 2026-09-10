@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { TwoFactorStatusResponse } from '@open-hybrid-cloud/types'
+import type { TwoFactorStatusResponse } from '@infrashelf/types'
 import { get, post } from '@/lib/api'
 import { TwoFactorCard } from './TwoFactorCard'
 
@@ -34,7 +34,7 @@ const status = (overrides: Partial<TwoFactorStatusResponse> = {}): TwoFactorStat
 const OFFER = {
   secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ',
   secretFormatted: 'GEZD GNBV GY3T QOJQ GEZD GNBV GY3T QOJQ',
-  otpauthUrl: 'otpauth://totp/OHC:root@test.dev?secret=GEZDGNBVGY3TQOJQ',
+  otpauthUrl: 'otpauth://totp/ISF:root@test.dev?secret=GEZDGNBVGY3TQOJQ',
   qrSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100"/></svg>',
 }
 

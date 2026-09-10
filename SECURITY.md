@@ -52,7 +52,7 @@ Please include:
 
 ## Security Baseline for Deployments
 
-When deploying Open Hybrid Cloud:
+When deploying InfraShelf:
 
 - Set strong secrets for `JWT_SECRET` and `NEXTAUTH_SECRET` (minimum 32 characters)
 - Protect and rotate `DECOMMISSION_SWEEP_SECRET`, webhook callback secrets, and CI tokens

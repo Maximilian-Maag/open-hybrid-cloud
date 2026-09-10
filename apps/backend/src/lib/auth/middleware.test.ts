@@ -15,7 +15,7 @@ import {
 import { db } from '@/lib/db/client'
 import { sessions, userTotp } from '@/lib/db/schema'
 import { createUser, enrollTotp } from '@/test/helpers'
-import type { Role } from '@open-hybrid-cloud/types'
+import type { Role } from '@infrashelf/types'
 
 const makeReq = (token?: string): NextRequest =>
   new NextRequest('http://localhost/api/test', {

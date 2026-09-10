@@ -1,4 +1,4 @@
-import type { OrderStatus, InfraStatus } from '@open-hybrid-cloud/types'
+import type { OrderStatus, InfraStatus } from '@infrashelf/types'
 import { t, type Translations } from '@/lib/i18n'
 
 type Status = OrderStatus | InfraStatus

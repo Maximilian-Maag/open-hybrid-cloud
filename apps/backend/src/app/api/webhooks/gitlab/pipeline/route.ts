@@ -4,7 +4,7 @@ import { handlePipelineEvent } from '@/lib/webhook/handler'
 import { db } from '@/lib/db/client'
 import { deploymentEnvironments } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import type { PipelineEvent } from '@open-hybrid-cloud/types'
+import type { PipelineEvent } from '@infrashelf/types'
 
 interface GitLabPipelineBody {
   object_kind: string

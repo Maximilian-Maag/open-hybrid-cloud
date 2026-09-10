@@ -97,7 +97,7 @@ jobs:
           # No tags here on purpose: a tag would make this leg's single-arch
           # image the thing `:dev` points at, and the second leg would then
           # overwrite it. The manifest below is what gets tagged.
-          outputs: type=image,name=${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ secrets.DOCKERHUB_USERNAME }}/infrashelf-${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
           # Per architecture, or the two legs overwrite each other's cache.
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
@@ -151,7 +151,7 @@ jobs:
       - name: Create and push the manifest list
         working-directory: /tmp/digests
         env:
-          REPO: ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-${{ matrix.image }}
+          REPO: ${{ secrets.DOCKERHUB_USERNAME }}/infrashelf-${{ matrix.image }}
           TAG: ${{ needs.tags.outputs.tag }}
           SHA_TAG: ${{ needs.tags.outputs.sha-tag }}
         run: |
@@ -164,7 +164,7 @@ jobs:
 
       - name: Show what was published
         env:
-          REPO: ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-${{ matrix.image }}
+          REPO: ${{ secrets.DOCKERHUB_USERNAME }}/infrashelf-${{ matrix.image }}
           TAG: ${{ needs.tags.outputs.tag }}
         run: docker buildx imagetools inspect "$REPO:$TAG"
 
@@ -216,12 +216,12 @@ jobs:
 
             ```bash
             # Backend
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-backend:${{ needs.tags.outputs.sha-tag }}
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-backend:latest
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/infrashelf-backend:${{ needs.tags.outputs.sha-tag }}
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/infrashelf-backend:latest
 
             # Frontend
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-frontend:${{ needs.tags.outputs.sha-tag }}
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/open-hybrid-cloud-frontend:latest
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/infrashelf-frontend:${{ needs.tags.outputs.sha-tag }}
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/infrashelf-frontend:latest
             ```
 
             See `infra/docker-host/docker-compose.yml` for the full Docker host deployment configuration.

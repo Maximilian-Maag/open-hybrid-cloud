@@ -11,7 +11,7 @@ services:
     build:
       context: ..
       dockerfile: apps/frontend/Dockerfile
-    container_name: ohc-frontend
+    container_name: isf-frontend
     env_file: ./docker-host/.env
     expose:
       - "3000"
@@ -31,7 +31,7 @@ services:
     build:
       context: ..
       dockerfile: apps/backend/Dockerfile
-    container_name: ohc-backend
+    container_name: isf-backend
     env_file: ./docker-host/.env
     expose:
       - "3001"
@@ -52,7 +52,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: ohc-nginx
+    container_name: isf-nginx
     ports:
       - "80:80"
     volumes:
@@ -70,17 +70,17 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: ohc-postgres
+    container_name: isf-postgres
     env_file: ./docker-host/.env
     environment:
-      POSTGRES_DB: open_hybrid_cloud
+      POSTGRES_DB: infrashelf
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d open_hybrid_cloud"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d infrashelf"]
       interval: 2s
       timeout: 5s
       retries: 15

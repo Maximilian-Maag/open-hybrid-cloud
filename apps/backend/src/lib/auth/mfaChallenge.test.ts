@@ -95,7 +95,7 @@ describe('a challenge is not a session token', () => {
     // did, anyone who could mint a session token could mint a challenge, and the
     // separation would be cosmetic.
     const secret = process.env.JWT_SECRET ?? ''
-    const forged = await new SignJWT({ typ: 'ohc-mfa-challenge-v1', pwf: 'deadbeefdeadbeef' })
+    const forged = await new SignJWT({ typ: 'isf-mfa-challenge-v1', pwf: 'deadbeefdeadbeef' })
       .setProtectedHeader({ alg: 'HS256' })
       .setSubject('1')
       .setExpirationTime('5m')

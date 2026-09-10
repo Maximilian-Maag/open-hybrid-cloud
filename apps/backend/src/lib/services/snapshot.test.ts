@@ -10,6 +10,7 @@ import {
   createEnvironment,
   linkProductEnvironment,
   createCostCenter,
+  createSize,
 } from '@/test/helpers'
 
 const build = async (over?: Parameters<typeof linkProductEnvironment>[2]) => {
@@ -134,6 +135,34 @@ describe('captureProductSnapshot', () => {
     const { cat, product, env } = await build({ trialEnabled: true, trialDurationMinutes: 45 })
     const snapshot = await captureProductSnapshot(product.id, cat.id, env.id)
     expect(snapshot).toMatchObject({ trialEnabled: true, trialDurationMinutes: 45 })
+  })
+
+  it('tells the three size states apart: omitted, explicit null, and a real size', async () => {
+    // ABSENT and NULL are different facts (see the ProductSnapshot docblock) and
+    // only the caller knows which applies. The version-history paths pass nothing
+    // — they snapshot an offering, not an order — and a snapshot of theirs that
+    // said `sizeCode: null` would be indistinguishable from an order that
+    // genuinely had no size to choose.
+    const { cat, product, env } = await build()
+    await createSize(product.id, env.id, { code: 'L', label: 'Large', price: '30.00', currency: 'USD' })
+
+    const omitted = await captureProductSnapshot(product.id, cat.id, env.id)
+    expect(omitted).not.toHaveProperty('sizeCode')
+    expect(omitted).not.toHaveProperty('sizeLabel')
+    // The offering's own price, which is the only answer without a size.
+    expect(omitted).toMatchObject({ price: '12.50', currency: 'CHF' })
+
+    const explicitNull = await captureProductSnapshot(product.id, cat.id, env.id, null)
+    expect(explicitNull).toHaveProperty('sizeCode', null)
+    expect(explicitNull).toHaveProperty('sizeLabel', null)
+
+    const sized = await captureProductSnapshot(product.id, cat.id, env.id, 'L')
+    expect(sized).toMatchObject({
+      sizeCode: 'L',
+      sizeLabel: 'Large',
+      price: '30.00',
+      currency: 'USD',
+    })
   })
 
   it('falls back to a placeholder name when there is no English translation', async () => {

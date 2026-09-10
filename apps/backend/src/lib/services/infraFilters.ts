@@ -1,4 +1,5 @@
 import { ok, err, type Result } from '@/lib/services/result'
+import { parsePageWindow } from '@/lib/services/page'
 import {
   INFRA_STATUS_FILTERS,
   INFRA_SORT_FIELDS,
@@ -69,6 +70,13 @@ export const parseInfraFilters = (params: URLSearchParams): Result<InfraFilters>
     if (direction !== 'asc' && direction !== 'desc') return err(400, 'Invalid direction — expected asc or desc')
     filters.direction = direction
   }
+
+  // The export shares this parser and then overrides the window with its own
+  // ceiling, so a `limit` in the query string narrows an export and cannot widen
+  // one past EXPORT_MAX_ROWS.
+  const window = parsePageWindow(params)
+  if (window === 'invalid') return err(400, 'Invalid limit or offset — expected a non-negative whole number')
+  Object.assign(filters, window)
 
   return ok(filters)
 }

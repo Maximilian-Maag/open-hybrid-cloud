@@ -22,6 +22,7 @@ import {
   createProject,
   createOrder,
   makeAuthHeader,
+  createProductWebhook,
 } from '@/test/helpers'
 import { sendOrderApproved } from '@/lib/notification'
 import { db } from '@/lib/db/client'
@@ -70,6 +71,10 @@ describe('POST /api/approvals/[id]/approve', () => {
     const product = await createProduct(cat.id)
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
+    // Something to deploy it with: since #206 an order whose product has no
+    // webhook and no pipeline stack is refused rather than left in a provisioning
+    // state nothing can complete.
+    await createProductWebhook(product.id, env.id)
     const proj = await createProject(pm.id)
 
     const order = await createOrder(proj.id, product.id, env.id, pm.id, { status: 'pending' })

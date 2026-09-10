@@ -1,5 +1,6 @@
-import { test, expect } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { test, expect } from './fixtures'
+import type { Page } from '@playwright/test'
+import { loginAsRoot, expectNoServerError } from './helpers'
 
 test.describe('Admin area', () => {
   test.beforeEach(async ({ page }) => {
@@ -22,7 +23,7 @@ test.describe('Admin area', () => {
     // Links include description text in accessible name, so use partial match (no $ anchor)
     await expect(page.getByRole('link', { name: /^categories/i })).toBeVisible()
     await expect(page.getByRole('link', { name: /^products/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /^environments/i })).toBeVisible()
+    await expect(page.getByRole('link', { name: /^deployment environments/i })).toBeVisible()
     await expect(page.getByRole('link', { name: /^users/i })).toBeVisible()
     await expect(page.getByRole('link', { name: /^branding/i })).toBeVisible()
     await expect(page.getByRole('link', { name: /^cost centers/i })).toBeVisible()
@@ -36,79 +37,79 @@ test.describe('Admin area', () => {
   test('user management page loads', async ({ page }) => {
     await page.goto('/admin/users')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('categories page loads', async ({ page }) => {
     await page.goto('/admin/categories')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('products page loads', async ({ page }) => {
     await page.goto('/admin/products')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('environments page loads', async ({ page }) => {
     await page.goto('/admin/environments')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('cost centers page loads', async ({ page }) => {
     await page.goto('/admin/cost-centers')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('branding page loads', async ({ page }) => {
     await page.goto('/admin/branding')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('SMTP config page loads', async ({ page }) => {
     await page.goto('/admin/config/smtp')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('AI config page loads', async ({ page }) => {
     await page.goto('/admin/config/ai')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('exchange rates page loads', async ({ page }) => {
     await page.goto('/admin/exchange-rates')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('CI sources page loads', async ({ page }) => {
     await page.goto('/admin/ci-sources')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('global parameters page loads', async ({ page }) => {
     await page.goto('/admin/parameters')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('approvals page is accessible to root user', async ({ page }) => {
     await page.goto('/approvals')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('audit log page is accessible to root user', async ({ page }) => {
     await page.goto('/audit')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('unauthenticated user is redirected to /login from /admin', async ({ page }) => {
@@ -120,24 +121,34 @@ test.describe('Admin area', () => {
   test('new product page loads', async ({ page }) => {
     await page.goto('/admin/products/new')
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 })
 
 test.describe('Admin - Internationalization', () => {
+  /**
+   * Not by accessible name. The switcher names itself in the page language now
+   * (#186) — "Sprache: DE – Deutsch" once German is chosen — so a /language/i
+   * match finds the toggle before the switch and nothing after it, which is
+   * precisely the half of these tests that matters. `aria-expanded` is on this
+   * button and on no other control the app renders — scoped to the header
+   * because Next's dev-tools button carries one too, and the dev server is what
+   * these tests run against.
+   */
+  const languageToggle = (page: Page) => page.locator('header button[aria-expanded]')
+
   test('language switcher is visible in header', async ({ page }) => {
     await loginAsRoot(page)
     await page.goto('/')
     // Language switcher shows current language code (e.g. "EN")
-    await expect(page.getByRole('button', { name: /language/i })).toBeVisible()
+    await expect(languageToggle(page)).toBeVisible()
   })
 
   test('switching language updates UI text', async ({ page }) => {
     await loginAsRoot(page)
     await page.goto('/')
 
-    // Open language switcher (aria-label: "Language: English")
-    await page.getByRole('button', { name: /language/i }).click()
+    await languageToggle(page).click()
     // Select German — button contains both code span "DE" and name span "Deutsch"
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^DE$/ }) }).click()
 
@@ -145,7 +156,7 @@ test.describe('Admin - Internationalization', () => {
     await expect(page.getByRole('link', { name: 'Katalog', exact: true })).toBeVisible({ timeout: 5000 })
 
     // Switch back to English
-    await page.getByRole('button', { name: /language/i }).click()
+    await languageToggle(page).click()
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^EN$/ }) }).click()
     await expect(page.getByRole('link', { name: /^catalog$/i })).toBeVisible({ timeout: 5000 })
   })
@@ -155,7 +166,7 @@ test.describe('Admin - Internationalization', () => {
     await page.goto('/')
 
     // Switch to German
-    await page.getByRole('button', { name: /language/i }).click()
+    await languageToggle(page).click()
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^DE$/ }) }).click()
     await expect(page.getByRole('link', { name: 'Katalog', exact: true })).toBeVisible({ timeout: 5000 })
 
@@ -164,7 +175,7 @@ test.describe('Admin - Internationalization', () => {
     await expect(page.getByRole('link', { name: 'Katalog', exact: true })).toBeVisible({ timeout: 5000 })
 
     // Switch back to English
-    await page.getByRole('button', { name: /language/i }).click()
+    await languageToggle(page).click()
     await page.locator('button').filter({ has: page.locator('span').filter({ hasText: /^EN$/ }) }).click()
     await expect(page.getByRole('link', { name: /^catalog$/i })).toBeVisible({ timeout: 5000 })
   })

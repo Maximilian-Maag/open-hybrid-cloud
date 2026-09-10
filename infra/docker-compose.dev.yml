@@ -8,17 +8,20 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: ohc-postgres
+    container_name: isf-postgres
     environment:
-      POSTGRES_DB: open_hybrid_cloud
+      POSTGRES_DB: infrashelf
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Creates the test and e2e databases on a FRESH volume. An existing volume
+      # never runs these — use `make test-db` there.
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d open_hybrid_cloud"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d infrashelf"]
       interval: 2s
       timeout: 5s
       retries: 15
@@ -28,8 +31,11 @@ services:
   # ── SMTP mock (catches all outgoing emails) ───────────────────────────────────
 
   mailpit:
-    image: axllent/mailpit
-    container_name: ohc-mailpit
+    # Pinned, like every other image here: the e2e suite reads mail out of this
+    # container, and a silent upstream bump breaks a suite nobody changed on a
+    # machine nobody touched. v1.30.1 is what the dev stack is running (#180).
+    image: axllent/mailpit:v1.30.1
+    container_name: isf-mailpit
     ports:
       - "1026:1025"   # SMTP
       - "8026:8025"   # Web UI → http://localhost:8025
@@ -45,8 +51,11 @@ services:
   # and header: X-Gitlab-Token: dev-webhook-token
 
   wiremock:
-    image: wiremock/wiremock:latest
-    container_name: ohc-wiremock
+    # 3.13.2, the version the stub mappings in ./wiremock/mappings were written
+    # against and the one currently running. This is the pin that matters most:
+    # the e2e suite depends on those stubs answering exactly as they do today.
+    image: wiremock/wiremock:3.13.2
+    container_name: isf-wiremock
     ports:
       - "8080:8080"
     volumes:
@@ -62,7 +71,7 @@ services:
     # stub that exits immediately (Structurizr Lite is being sunset). Pin to
     # the last working release until this is migrated to the successor tooling.
     image: structurizr/lite:2025.11.08
-    container_name: ohc-structurizr
+    container_name: isf-structurizr
     ports:
       - "8088:8080"   # Web UI → http://localhost:8088
     volumes:

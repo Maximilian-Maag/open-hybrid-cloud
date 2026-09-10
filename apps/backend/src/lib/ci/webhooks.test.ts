@@ -4,10 +4,11 @@ vi.mock('@/lib/ci', () => ({
   triggerPipeline: vi.fn(),
 }))
 
-import { triggerProductWebhooks, triggerProductWebhooksTracked } from './webhooks'
+import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from './webhooks'
+import { elementStateSuffix } from './stateKey'
 import { triggerPipeline } from './index'
 import { db } from '@/lib/db/client'
-import { productWebhooks } from '@/lib/db/schema'
+import { productWebhooks, pipelineStacks } from '@/lib/db/schema'
 import {
   createCategory,
   createProduct,
@@ -22,14 +23,14 @@ beforeEach(() => {
   mockedTriggerPipeline.mockResolvedValue('pipe-default')
 })
 
-describe('triggerProductWebhooks', () => {
+describe('triggerProductWebhooksTracked — pipeline ids', () => {
   it('returns an empty array when no webhooks are configured for the product/env', async () => {
     const cat = await createCategory()
     const product = await createProduct(cat.id)
     const ci = await createCiSource()
     const env = await createEnvironment(ci.id)
 
-    const result = await triggerProductWebhooks(product.id, env.id, { FOO: 'bar' })
+    const { pipelineIds: result } = await triggerProductWebhooksTracked(product.id, env.id, { FOO: 'bar' })
     expect(result).toEqual([])
     expect(mockedTriggerPipeline).not.toHaveBeenCalled()
   })
@@ -64,7 +65,7 @@ describe('triggerProductWebhooks', () => {
       .mockResolvedValueOnce('pipe-1')
       .mockResolvedValueOnce('pipe-2')
 
-    const result = await triggerProductWebhooks(product.id, env.id, { ORDER_ID: '42' })
+    const { pipelineIds: result } = await triggerProductWebhooksTracked(product.id, env.id, { ORDER_ID: '42' })
 
     expect(result).toEqual(['pipe-1', 'pipe-2'])
     expect(mockedTriggerPipeline).toHaveBeenCalledTimes(2)
@@ -79,7 +80,7 @@ describe('triggerProductWebhooks', () => {
     const cat = await createCategory()
     const product = await createProduct(cat.id)
     // No env created at all — environmentId 999 won't resolve to a CI source
-    const result = await triggerProductWebhooks(product.id, 999, { FOO: 'bar' })
+    const { pipelineIds: result } = await triggerProductWebhooksTracked(product.id, 999, { FOO: 'bar' })
     expect(result).toEqual([])
     expect(mockedTriggerPipeline).not.toHaveBeenCalled()
   })
@@ -116,7 +117,7 @@ describe('triggerProductWebhooks', () => {
     // Silence the expected console.error
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const result = await triggerProductWebhooks(product.id, env.id, {})
+    const { pipelineIds: result } = await triggerProductWebhooksTracked(product.id, env.id, {})
 
     expect(result).toEqual(['pipe-ok'])
     expect(mockedTriggerPipeline).toHaveBeenCalledTimes(2)
@@ -187,5 +188,287 @@ describe('triggerProductWebhooksTracked', () => {
 
     const outcome = await triggerProductWebhooksTracked(product.id, env.id, {})
     expect(outcome).toEqual({ pipelineIds: ['pipe-1'], failures: [] })
+  })
+})
+
+describe('elementStateSuffix', () => {
+  it('leaves element 1 unsuffixed and suffixes the rest', () => {
+    // Element 1 has to be byte-identical to the pre-quantity behaviour, or the
+    // teardown of every element provisioned before this change would target a
+    // state file that does not exist.
+    expect(elementStateSuffix('1')).toBe('')
+    expect(elementStateSuffix(1)).toBe('')
+    expect(elementStateSuffix(undefined)).toBe('')
+    expect(elementStateSuffix('not a number')).toBe('')
+    expect(elementStateSuffix('2')).toBe('-2')
+    expect(elementStateSuffix(20)).toBe('-20')
+  })
+})
+
+describe('TF_STATE_NAME per element (issue #104)', () => {
+  const seedStack = async (stateKeyParam: string) => {
+    const cat = await createCategory()
+    const product = await createProduct(cat.id)
+    const ci = await createCiSource()
+    const env = await createEnvironment(ci.id)
+    const [stack] = await db.insert(pipelineStacks).values({
+      productId: product.id,
+      environmentId: env.id,
+      name: 'stack',
+      stateKeyParam,
+      steps: [{ template: 'vm', suffix: 'vm' }] as never,
+    }).returning()
+    return { product, env, stack }
+  }
+
+  const stateNameOf = () =>
+    (mockedTriggerPipeline.mock.calls[0][3] as Record<string, string>).TF_STATE_NAME
+
+  it('derives the state key from ORDER_ID and suffixes it per element', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacksTracked(product.id, env.id, { ORDER_ID: '42', ELEMENT_SEQUENCE: '1' })
+    expect(stateNameOf()).toBe('42')
+
+    mockedTriggerPipeline.mockClear()
+    await triggerPipelineStacksTracked(product.id, env.id, { ORDER_ID: '42', ELEMENT_SEQUENCE: '3' })
+    // Element three of order 42 gets its own state, so it cannot apply on top of
+    // element one's.
+    expect(stateNameOf()).toBe('42-3')
+  })
+
+  it("suffixes the stack's own stateKeyParam too", async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacksTracked(product.id, env.id, {
+      hostname: 'web-01',
+      ORDER_ID: '42',
+      ELEMENT_SEQUENCE: '2',
+    })
+
+    // The parameter is the same for every element of one line — it is what the
+    // customer typed — so without the suffix all twenty would share a state file.
+    expect(stateNameOf()).toBe('web-01-2')
+  })
+
+  it('never produces a bare suffix when nothing identifies the state', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacksTracked(product.id, env.id, { ELEMENT_SEQUENCE: '2' })
+
+    // '-2' is not a state name; empty is the existing signal for "unidentified".
+    expect(stateNameOf()).toBe('')
+  })
+
+  // Issue #183. The stateKeyParam value is typed by whoever places the order, so
+  // before these the state key was too.
+  it('namespaces the stateKeyParam value with the order id', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacksTracked(product.id, env.id, {
+      hostname: 'web-01',
+      ORDER_ID: '42',
+      ELEMENT_SEQUENCE: '1',
+      TF_STATE_NAMESPACE: '42',
+    })
+
+    expect(stateNameOf()).toBe('web-01-42')
+  })
+
+  it('gives two orders that typed the same hostname different states', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacksTracked(product.id, env.id, {
+      hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: '42',
+    })
+    const first = stateNameOf()
+
+    mockedTriggerPipeline.mockClear()
+    // A different user, same product, same value typed into the same field. This
+    // pipeline used to point at the state the first one created — and destroying
+    // this element then destroyed the first user's infrastructure.
+    await triggerPipelineStacksTracked(product.id, env.id, {
+      hostname: 'web-01', ORDER_ID: '43', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: '43',
+    })
+
+    expect(stateNameOf()).not.toBe(first)
+    expect(stateNameOf()).toBe('web-01-43')
+  })
+
+  /*
+   * #200. The key used to be derived afresh at every trigger, from the stack row
+   * AS IT IS NOW. An admin editing `stateKeyParam` therefore moved the key of
+   * every element already running under it: the destroy addressed a state that
+   * was never created, reported success, and left the infrastructure up while
+   * the portal showed it torn down.
+   */
+  describe('a recorded state key', () => {
+    it('is returned so provisioning can record what it used', async () => {
+      const { product, env, stack } = await seedStack('hostname')
+
+      const outcome = await triggerPipelineStacksTracked(product.id, env.id, {
+        hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: 'o42',
+      })
+
+      expect(outcome.stateKeys).toEqual({ [String(stack.id)]: 'web-01-o42' })
+    })
+
+    // The point of recording it: the stack now says something different, and the
+    // element still gets the state its own apply created.
+    it('wins over what the stack would derive today', async () => {
+      const { product, env, stack } = await seedStack('vm_name')
+
+      await triggerPipelineStacksTracked(
+        product.id, env.id,
+        { hostname: 'web-01', vm_name: 'renamed', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: 'o42' },
+        undefined,
+        undefined,
+        { [String(stack.id)]: 'web-01-o42' },
+      )
+
+      expect(stateNameOf()).toBe('web-01-o42')
+    })
+
+    // An element provisioned before the column. Deriving is the only way to
+    // reach the state its own apply created.
+    it('falls back to deriving when the element has none', async () => {
+      const { product, env } = await seedStack('hostname')
+
+      await triggerPipelineStacksTracked(
+        product.id, env.id,
+        { hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: 'o42' },
+        undefined,
+        undefined,
+        {},
+      )
+
+      expect(stateNameOf()).toBe('web-01-o42')
+    })
+
+    /*
+     * A stack added AFTER this element was provisioned. Nothing here was ever
+     * applied by it, so a destroy would address a state that never existed — and
+     * the pipeline would report success for having done nothing.
+     */
+    it('skips a stack it was never provisioned by', async () => {
+      const { product, env, stack } = await seedStack('hostname')
+      await db.insert(pipelineStacks).values({
+        productId: product.id,
+        environmentId: env.id,
+        name: 'added later',
+        stateKeyParam: 'hostname',
+        steps: [{ template: 'disk', suffix: 'disk' }] as never,
+      })
+
+      const outcome = await triggerPipelineStacksTracked(
+        product.id, env.id,
+        { hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: 'o42' },
+        undefined,
+        undefined,
+        { [String(stack.id)]: 'web-01-o42' },
+      )
+
+      expect(mockedTriggerPipeline).toHaveBeenCalledTimes(1)
+      expect(outcome.stateKeys).toEqual({ [String(stack.id)]: 'web-01-o42' })
+    })
+  })
+
+  it('strips what a state key may not contain from the typed value', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacksTracked(product.id, env.id, {
+      hostname: '../../other/state',
+      ORDER_ID: '42',
+      ELEMENT_SEQUENCE: '1',
+      TF_STATE_NAMESPACE: '42',
+    })
+
+    // The orchestrator treats the name as a path, so the separators go and the
+    // leading dots with them.
+    expect(stateNameOf()).toBe('other-state-42')
+  })
+
+  it('still suffixes a namespaced key per element', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    await triggerPipelineStacksTracked(product.id, env.id, {
+      hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '3', TF_STATE_NAMESPACE: '42',
+    })
+
+    expect(stateNameOf()).toBe('web-01-42-3')
+  })
+
+  it('leaves the key of an element provisioned before the namespace exactly as it was', async () => {
+    const { product, env } = await seedStack('hostname')
+
+    // No TF_STATE_NAMESPACE: the element predates #183, and its Terraform state
+    // exists under the raw value. Re-deriving it would point the teardown at a
+    // state that was never created.
+    await triggerPipelineStacksTracked(product.id, env.id, {
+      hostname: 'web-01',
+      ORDER_ID: '42',
+      ELEMENT_SEQUENCE: '2',
+    })
+
+    expect(stateNameOf()).toBe('web-01-2')
+  })
+
+  // The interaction between the two halves of #183, and a regression the filter
+  // introduced on its own: a pre-#183 stack may be keyed on a name that is now
+  // RESERVED. `REF` is the realistic one — it was a creatable parameter name, and
+  // a deployment that used it as its state key parameter still has elements
+  // running under it.
+  describe('a legacy stack keyed on a reserved parameter name', () => {
+    it('derives the state key from the value the filter removed', async () => {
+      const { product, env } = await seedStack('REF')
+
+      // What the services pass: REF is gone from the trigger variables, because
+      // it decides which git ref the pipeline runs and is not the orderer's to
+      // choose. The unfiltered map is passed alongside for derivation only.
+      await triggerPipelineStacksTracked(
+        product.id,
+        env.id,
+        { ORDER_ID: '42', ELEMENT_SEQUENCE: '1' },
+        undefined,
+        { REF: 'legacy-state' },
+      )
+
+      // Not '42'. Falling back to the order id would address a state this
+      // element's apply never created, so destroy would report success having
+      // destroyed nothing.
+      expect(stateNameOf()).toBe('legacy-state')
+    })
+
+    it('still keeps the reserved name out of the pipeline request', async () => {
+      const { product, env } = await seedStack('REF')
+
+      await triggerPipelineStacksTracked(
+        product.id,
+        env.id,
+        { ORDER_ID: '42', ELEMENT_SEQUENCE: '1' },
+        undefined,
+        { REF: 'legacy-state' },
+      )
+
+      // Derivation reads it; the request must not carry it. This is the whole
+      // point of the filter — REF chooses the code that runs.
+      expect(mockedTriggerPipeline.mock.calls[0][3]).not.toHaveProperty('REF')
+    })
+
+    it('prefers the filtered map when the name is not reserved', async () => {
+      const { product, env } = await seedStack('hostname')
+
+      // The ordinary case must be untouched by the fallback: hostname is present
+      // in `variables`, so the unfiltered map is never consulted.
+      await triggerPipelineStacksTracked(
+        product.id,
+        env.id,
+        { hostname: 'web-01', ORDER_ID: '42', ELEMENT_SEQUENCE: '1', TF_STATE_NAMESPACE: '42' },
+        undefined,
+        { hostname: 'stale-value' },
+      )
+
+      expect(stateNameOf()).toBe('web-01-42')
+    })
   })
 })

@@ -1,6 +1,6 @@
-import { type NextRequest, NextResponse } from 'next/server'
+import { type NextRequest } from 'next/server'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { addFavorite, removeFavorite } from '@/lib/services/favorites'
 
 /**
@@ -8,11 +8,6 @@ import { addFavorite, removeFavorite } from '@/lib/services/favorites'
  * is never accepted from the request, so there is no way to star something on
  * another user's behalf.
  */
-const parseProductId = (raw: string): number | null => {
-  const id = Number(raw)
-  return Number.isInteger(id) && id > 0 ? id : null
-}
-
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ productId: string }> },
@@ -20,8 +15,8 @@ export async function PUT(
   const session = await requireAuth(req)
   if (!isAuth(session)) return session
 
-  const productId = parseProductId((await params).productId)
-  if (productId === null) return NextResponse.json({ error: 'Invalid product id' }, { status: 400 })
+  const productId = parseRouteId((await params).productId)
+  if (productId === null) return invalidId('product id')
 
   return toResponse(await addFavorite(session, productId))
 }
@@ -33,8 +28,8 @@ export async function DELETE(
   const session = await requireAuth(req)
   if (!isAuth(session)) return session
 
-  const productId = parseProductId((await params).productId)
-  if (productId === null) return NextResponse.json({ error: 'Invalid product id' }, { status: 400 })
+  const productId = parseRouteId((await params).productId)
+  if (productId === null) return invalidId('product id')
 
   return toResponse(await removeFavorite(session, productId))
 }

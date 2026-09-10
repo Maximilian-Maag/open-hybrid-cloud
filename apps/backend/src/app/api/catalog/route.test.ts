@@ -27,7 +27,8 @@ describe('GET /api/catalog', () => {
     const res = await GET(makeReq('http://localhost/api/catalog', auth))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.length).toBe(2)
+    expect(body.items.length).toBe(2)
+    expect(body.total).toBe(2)
   })
 
   it('returns empty array when no products exist', async () => {
@@ -36,7 +37,8 @@ describe('GET /api/catalog', () => {
     const res = await GET(makeReq('http://localhost/api/catalog', auth))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toEqual([])
+    expect(body.items).toEqual([])
+    expect(body.total).toBe(0)
   })
 
   it('filters by categoryId', async () => {
@@ -52,8 +54,8 @@ describe('GET /api/catalog', () => {
     )
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.length).toBe(1)
-    expect(body[0].categoryId).toBe(cat1.id)
+    expect(body.items.length).toBe(1)
+    expect(body.items[0].categoryId).toBe(cat1.id)
   })
 
   it('includes name from translations', async () => {
@@ -65,7 +67,7 @@ describe('GET /api/catalog', () => {
     const res = await GET(makeReq('http://localhost/api/catalog', auth))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body[0].name).toBe('Named Product')
+    expect(body.items[0].name).toBe('Named Product')
   })
 
   it('filters by search term', async () => {
@@ -78,7 +80,35 @@ describe('GET /api/catalog', () => {
     const res = await GET(makeReq('http://localhost/api/catalog?search=Unique', auth))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.length).toBe(1)
-    expect(body[0].name).toContain('Unique')
+    expect(body.items.length).toBe(1)
+    expect(body.items[0].name).toContain('Unique')
+  })
+
+  // Issue #91: the endpoint pages, and it refuses a filter it cannot honour
+  // rather than returning the whole catalogue as if the filter had matched
+  // everything.
+  it('pages, reporting the window and the full total', async () => {
+    const user = await createUser()
+    const cat = await createCategory()
+    for (let i = 0; i < 3; i++) await createProduct(cat.id, `Product ${i}`)
+
+    const auth = await makeAuthHeader(user)
+    const res = await GET(makeReq('http://localhost/api/catalog?limit=2&offset=2', auth))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.items.length).toBe(1)
+    expect(body.total).toBe(3)
+    expect(body.limit).toBe(2)
+    expect(body.offset).toBe(2)
+  })
+
+  it('rejects a malformed filter instead of ignoring it', async () => {
+    const user = await createUser()
+    const auth = await makeAuthHeader(user)
+
+    for (const query of ['categoryId=abc', 'limit=0', 'limit=-3', 'offset=-1', 'offset=x']) {
+      const res = await GET(makeReq(`http://localhost/api/catalog?${query}`, auth))
+      expect(res.status, query).toBe(400)
+    }
   })
 })

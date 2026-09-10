@@ -51,7 +51,9 @@ export function CartLink({ count: initialCount, lang }: Props) {
     <Link
       href="/cart"
       aria-label={t('cart', lang)}
-      className="flex items-end gap-1 rounded px-1 py-0.5 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
+      // min-h-11: the 28px trolley in a 32px box was the smallest target in the
+      // chrome, on the one control a shop is built around (WCAG 2.5.5).
+      className="flex items-end gap-1 min-h-11 py-2 rounded px-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
       style={{ color: 'var(--bp-ink)' }}
     >
       <span className="relative">

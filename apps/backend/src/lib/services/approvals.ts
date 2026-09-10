@@ -1,8 +1,7 @@
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 import { db } from '@/lib/db/client'
 import {
   orders,
-  infrastructureElements,
   deploymentEnvironments,
   users,
   projects,
@@ -11,10 +10,13 @@ import {
 import { eq, and, sql } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
 import { sendOrderApproved, sendOrderRejected } from '@/lib/notification'
-import { triggerProductWebhooks, triggerPipelineStacks } from '@/lib/ci/webhooks'
 import { findProductName, findUserEmail } from '@/lib/db/queries'
 import { ok, err, type Result } from '@/lib/services/result'
-import { trialVariables, trialExpiry } from '@/lib/services/trial'
+import { redactParametersForOrders } from '@/lib/services/parameterRedaction'
+import { activeDelegationsHeldBy, type DelegationRow } from '@/lib/services/delegations'
+import { provisionOrderElements } from '@/lib/services/orders'
+import { whenMayItDeploy } from '@/lib/services/windowPolicy'
+import { productNameSql } from '@/lib/db/productText'
 
 export interface ApprovalRow {
   id: number
@@ -35,13 +37,20 @@ export interface ApprovalRow {
    * after it comes up, and asks the pipeline for elevated rights inside it.
    */
   isTrial: boolean
+  /**
+   * The chosen size and how many elements the order asks for (issues #98/#104).
+   * Both are shown in the queue because they change what the approver is agreeing
+   * to: "20 x XL" is a different decision from "1 x XS".
+   */
+  sizeCode: string | null
+  quantity: number
   productName: string
   environmentName: string | null
   userName: string | null
   projectName: string | null
 }
 
-export const listApprovals = async (): Promise<Result<ApprovalRow[]>> => {
+export const listApprovals = async (lang = 'en'): Promise<Result<ApprovalRow[]>> => {
   const rows = await db
     .select({
       id: orders.id,
@@ -57,12 +66,9 @@ export const listApprovals = async (): Promise<Result<ApprovalRow[]>> => {
       createdAt: orders.createdAt,
       updatedAt: orders.updatedAt,
       isTrial: orders.isTrial,
-      productName: sql<string>`(
-        SELECT name FROM product_translations
-        WHERE product_id = ${orders.productId}
-          AND language_code = 'en'
-        LIMIT 1
-      )`,
+      sizeCode: orders.sizeCode,
+      quantity: orders.quantity,
+      productName: productNameSql(lang, orders.productId),
       environmentName: deploymentEnvironments.name,
       userName: users.name,
       projectName: projects.name,
@@ -74,13 +80,98 @@ export const listApprovals = async (): Promise<Result<ApprovalRow[]>> => {
     .where(eq(orders.status, 'pending'))
     .orderBy(sql`${orders.createdAt} ASC`)
 
-  return ok(rows as ApprovalRow[])
+  // The queue is every pending order, shown to every admin, and the approvals page
+  // renders none of these values — so returning them in cleartext shipped every
+  // orderer's secrets to every admin for nothing (issue #131).
+  return ok(await redactParametersForOrders(rows as ApprovalRow[], (row) => row.id))
 }
+
+/**
+ * The delegated authority the actor holds at this moment, as an audit suffix.
+ *
+ * Empty when they hold none, which is the normal case. The wording is
+ * deliberately "while holding", not "as": the substitute acted as themselves and
+ * the `order.approved` entry already names them — this records the authority that
+ * was in force, not a different actor.
+ */
+const authoritySuffix = (held: DelegationRow[]): string =>
+  held.length === 0
+    ? ''
+    : ` while holding delegated approval authority ${held
+        .map((d) => `#${d.id} from ${d.fromUserEmail}`)
+        .join(', ')}`
+
+/**
+ * One audit entry per delegation that was in force, keyed on the DELEGATION.
+ *
+ * `order.approved` answers "who approved order 12"; these answer "what was done
+ * under delegation 7" — which is the question a delegation has to be auditable
+ * for, and the one an entry keyed on the order alone cannot be filtered for.
+ */
+const logDelegatedUse = async (
+  session: SessionUser,
+  held: DelegationRow[],
+  verb: 'approved' | 'rejected',
+  orderId: number,
+): Promise<void> => {
+  for (const d of held) {
+    await logAudit(
+      session.id,
+      'approval_delegation.used',
+      d.id,
+      `${session.email} ${verb} order #${orderId} under delegation #${d.id} from ${d.fromUserEmail} ` +
+        `(in force ${d.startsOn} to ${d.endsOn})`,
+    )
+  }
+}
+
+/**
+ * Nobody approves their own order — not even with a delegation in hand.
+ *
+ * Two ways an admin can end up as the orderer of a PENDING order: they placed it
+ * as a project manager and were promoted afterwards, or an admin's own order was
+ * left pending by an earlier code path. Either way, self-approval is the one
+ * separation of duties this workflow has, so it is checked BEFORE the order is
+ * claimed — a rejection after the claim would strand the order in 'provisioning'.
+ *
+ * A delegation cannot route around this because the check compares the ACTOR's id
+ * with the orderer's, and a delegation never changes who the actor is. Delegating
+ * to the orderer and having them approve "as" the delegator is precisely what
+ * an identity-swapping design would have allowed.
+ */
+const assertNotOwnOrder = async (
+  session: SessionUser,
+  orderId: number,
+): Promise<Result<void>> => {
+  const [existing] = await db
+    .select({ userId: orders.userId })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1)
+
+  if (!existing) return err(404, 'Order not found')
+  if (existing.userId === session.id) return err(403, 'You cannot approve your own order')
+  return ok(undefined)
+}
+
+/**
+ * What approving an order did.
+ *
+ * A union rather than nullable fields, so a caller cannot read `infraId` off a
+ * scheduled approval and get `null` where it expected a number. `scheduled` is
+ * discriminated on, and the route renders a different message for it (#330).
+ */
+export type ApprovalOutcome =
+  | { success: true; scheduled: false; infraId: number; infraIds: number[]; pipelineIds: string[] }
+  | { success: true; scheduled: true; scheduledFor: Date }
 
 export const approveOrder = async (
   session: SessionUser,
   orderId: number,
-): Promise<Result<{ success: true; infraId: number; pipelineIds: string[] }>> => {
+): Promise<Result<ApprovalOutcome>> => {
+  const separation = await assertNotOwnOrder(session, orderId)
+  if (!separation.ok) return separation
+
   // Atomically claim the order (pending → provisioning). Only one concurrent
   // caller can win this conditional update, which prevents a double-clicked or
   // concurrently-approved order from triggering provisioning twice.
@@ -100,6 +191,60 @@ export const approveOrder = async (
   }
 
   const order = claimed[0]
+
+  /*
+   * Does a window have to open first (#330)?
+   *
+   * After the claim, not before: the claim is what makes this the one caller
+   * acting on the order, and asking first would let two approvals both decide
+   * to schedule it. The order is already out of 'pending', so nothing else can
+   * touch it while this decides.
+   *
+   * The approval itself never fails for being out of hours — the admin's
+   * decision is recorded either way and the work is not thrown away. Only the
+   * provisioning waits.
+   */
+  let wait: Awaited<ReturnType<typeof whenMayItDeploy>>
+  try {
+    wait = await whenMayItDeploy(order.environmentId, new Date())
+  } catch (e) {
+    /*
+     * The claim above already moved this order out of 'pending'.
+     *
+     * A policy read that throws would otherwise strand it in 'provisioning'
+     * for good: no second approval can claim it, because the claim is
+     * conditioned on 'pending'; and the window sweep cannot pick it up, because
+     * it only looks at 'scheduled'. Nothing has been provisioned at this point,
+     * so the same undo the provisioning failure below performs is the right one.
+     */
+    await db
+      .update(orders)
+      .set({ status: 'pending', updatedAt: new Date() })
+      .where(eq(orders.id, orderId))
+    throw e
+  }
+
+  if (wait) {
+    await db
+      .update(orders)
+      .set({ status: 'scheduled', scheduledFor: wait.scheduledFor, updatedAt: new Date() })
+      .where(eq(orders.id, order.id))
+
+    await logAudit(
+      session.id,
+      'order.scheduled',
+      order.id,
+      `Approved, waiting for a deployment window at ${wait.scheduledFor.toISOString()}`,
+    )
+
+    return ok({ success: true as const, scheduled: true as const, scheduledFor: wait.scheduledFor })
+  }
+
+  // Snapshotted at the moment of the claim, not at logging time: everything
+  // below — webhooks, pipeline stacks, the infrastructure insert — can take
+  // minutes, and a delegation that expires at midnight or is revoked mid-run
+  // would otherwise be audited as absent from a decision it actually authorised.
+  const held = await activeDelegationsHeldBy(session.id)
 
   // A trial's clock starts HERE, at provisioning, not when the order was placed:
   // the order may have waited for approval, and starting the clock then could
@@ -125,18 +270,27 @@ export const approveOrder = async (
     trialDurationMinutes = offering && offering.trialDurationMinutes > 0 ? offering.trialDurationMinutes : 30
   }
 
-  const triggerVars = {
-    ...(order.parameters as Record<string, string>),
-    ORDER_ID: String(order.id),
-    ...(order.isTrial ? trialVariables(trialDurationMinutes) : {}),
-  }
-  let pipelineIds: string[]
+  // One decision, N elements: approving an order of twenty approves all twenty
+  // (the owner's decision on #104). The fan-out is the same code the admin's
+  // direct order runs, so the two cannot derive different Terraform state keys.
+  let provisioned: Awaited<ReturnType<typeof provisionOrderElements>>
   try {
-    const webhookIds = await triggerProductWebhooks(order.productId, order.environmentId, triggerVars)
-    const stackIds = await triggerPipelineStacks(order.productId, order.environmentId, triggerVars)
-    pipelineIds = [...webhookIds, ...stackIds]
+    provisioned = await provisionOrderElements({
+      orderId: order.id,
+      projectId: order.projectId,
+      productId: order.productId,
+      environmentId: order.environmentId,
+      sizeCode: order.sizeCode,
+      // Defensive: a row written before the column existed reads as 1 through the
+      // schema default, but a hand-edited 0 would silently provision nothing.
+      quantity: order.quantity >= 1 ? order.quantity : 1,
+      parameters: order.parameters as Record<string, string>,
+      isTrial: order.isTrial,
+      trialDurationMinutes,
+    })
   } catch (e) {
-    // Provisioning could not be started — release the claim so it can be retried.
+    // Not one element could be started, so nothing is provisioned — release the
+    // claim and let the approval be retried.
     await db
       .update(orders)
       .set({ status: 'pending', updatedAt: new Date() })
@@ -144,28 +298,14 @@ export const approveOrder = async (
     throw e
   }
 
-  await db
-    .update(orders)
-    .set({ pipelineId: pipelineIds, updatedAt: new Date() })
-    .where(eq(orders.id, orderId))
-
-  const [infra] = await db
-    .insert(infrastructureElements)
-    .values({
-      orderId: order.id,
-      projectId: order.projectId,
-      environmentId: order.environmentId,
-      productId: order.productId,
-      status: 'active',
-      parameters: order.parameters as Record<string, string>,
-      pipelineId: pipelineIds,
-      // The scheduled-decommission sweep (issue #30) tears the trial down, so a
-      // trial needs no expiry mechanism of its own.
-      ...(order.isTrial ? { scheduledDecommissionAt: trialExpiry(trialDurationMinutes) } : {}),
-    })
-    .returning()
-
-  await logAudit(session.id, 'order.approved', order.id, `Order approved by ${session.email}`)
+  await logAudit(
+    session.id,
+    'order.approved',
+    order.id,
+    `Order approved by ${session.email}${authoritySuffix(held)}` +
+      (provisioned.elementIds.length > 1 ? ` (${provisioned.elementIds.length} elements)` : ''),
+  )
+  await logDelegatedUse(session, held, 'approved', order.id)
 
   const email = await findUserEmail(order.userId)
   const productName = await findProductName(order.productId)
@@ -173,9 +313,25 @@ export const approveOrder = async (
     await sendOrderApproved(email, productName, order.id)
   }
 
-  return ok({ success: true as const, infraId: infra.id, pipelineIds })
+  return ok({
+    success: true as const,
+    // Discriminates the union: this one provisioned, the early return above did not.
+    scheduled: false as const,
+    // The first element, for the callers written when an order had exactly one.
+    infraId: provisioned.elementIds[0],
+    infraIds: provisioned.elementIds,
+    pipelineIds: provisioned.pipelineIds,
+  })
 }
 
+/**
+ * Reject a pending order.
+ *
+ * Deliberately NOT subject to the self-approval guard: an admin rejecting an
+ * order they placed themselves is withdrawing it, which grants nobody anything.
+ * The asymmetry is the point — separation of duties exists to stop a person
+ * granting themselves resources, not to stop them giving them up.
+ */
 export const rejectOrder = async (
   session: SessionUser,
   orderId: number,
@@ -200,7 +356,14 @@ export const rejectOrder = async (
 
   const order = rejected[0]
 
-  await logAudit(session.id, 'order.rejected', order.id, `Rejected: ${rejectionNote}`)
+  const held = await activeDelegationsHeldBy(session.id)
+  await logAudit(
+    session.id,
+    'order.rejected',
+    order.id,
+    `Rejected by ${session.email}${authoritySuffix(held)}: ${rejectionNote}`,
+  )
+  await logDelegatedUse(session, held, 'rejected', order.id)
 
   const email = await findUserEmail(order.userId)
   const productName = await findProductName(order.productId)

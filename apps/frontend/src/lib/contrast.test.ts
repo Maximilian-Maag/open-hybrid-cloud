@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import { parseHex, contrastRatio, readableInk, meetsAaBody, AA_BODY, readableAccent, SURFACE, AA_NON_TEXT } from './contrast'
+import {
+  parseHex,
+  contrastRatio,
+  readableInk,
+  meetsAaBody,
+  meetsAaaBody,
+  AA_BODY,
+  AAA_BODY,
+  readableAccent,
+  accentRamp,
+  SURFACE,
+  AA_NON_TEXT,
+} from './contrast'
 
 describe('parseHex', () => {
   it('parses #rrggbb', () => {
@@ -145,5 +157,112 @@ describe('readableAccent', () => {
 
   it('returns the input unchanged when it cannot be parsed', () => {
     expect(readableAccent('not-a-colour')).toBe('not-a-colour')
+  })
+
+  it('defaults to the AAA target, on every surface the app paints it on', () => {
+    // This is the half of 1.4.6 the app can actually deliver: a DERIVED colour can
+    // always be darkened to 7:1, unlike the two fixed inks readableInk chooses
+    // between. If this drops back to 4.5 the AAA claim in
+    // docs/guides/accessibility.md becomes false.
+    for (const brand of ['#febd69', '#ca8a04', '#0ea5e9', '#16a34a', '#e11d48', '#f5f5f4']) {
+      const accent = readableAccent(brand)
+      for (const surface of ['#ffffff', '#f8fafc', '#f1f5f9']) {
+        expect(contrastRatio(accent, surface), `${brand} on ${surface}`).toBeGreaterThanOrEqual(AAA_BODY)
+      }
+    }
+  })
+
+  it('still leaves a colour alone when it already clears 7:1', () => {
+    // The shipped primary is dark enough that raising the target changed nothing —
+    // which is the point: the cost of AAA falls only on pale brands.
+    expect(readableAccent('#131921')).toBe('#131921')
+  })
+})
+
+describe('meetsAaaBody', () => {
+  it('is true only where one of the two inks actually reaches 7:1', () => {
+    expect(meetsAaaBody('#131921')).toBe(true)  // 17.67 with white
+    expect(meetsAaaBody('#febd69')).toBe(true)  // 10.74 with the dark ink
+  })
+
+  it('is false across the mid-tone band, which is why 1.4.6 is out of scope', () => {
+    // Neither near-black nor white gets there. These are not exotic choices —
+    // they are the default 600-weight of four common palettes. There is no fix
+    // available to the app: the background is the operator's brand.
+    expect(meetsAaaBody('#1d4ed8')).toBe(false) // 6.70
+    expect(meetsAaaBody('#0ea5e9')).toBe(false) // 6.41
+    expect(meetsAaaBody('#ca8a04')).toBe(false) // 6.05
+    expect(meetsAaaBody('#16a34a')).toBe(false) // 5.39
+  })
+
+  it('is stricter than meetsAaBody, never looser', () => {
+    for (const c of ['#131921', '#febd69', '#ca8a04', '#7b7b7b', '#ffffff', '#000000']) {
+      if (meetsAaaBody(c)) expect(meetsAaBody(c), c).toBe(true)
+    }
+  })
+})
+
+describe('accentRamp', () => {
+  // The chart palette. Every branding colour in this repo's own data, plus the two
+  // hostile extremes, because the ramp is painted on top of whatever an operator saved.
+  const COLOURS = ['#131921', '#febd69', '#ca8a04', '#1d4ed8', '#f5f5f4', '#000000', '#ffffff']
+
+  it('returns exactly as many tones as asked for', () => {
+    expect(accentRamp('#1d4ed8', 6)).toHaveLength(6)
+    expect(accentRamp('#1d4ed8', 1)).toHaveLength(1)
+    expect(accentRamp('#1d4ed8', 0)).toEqual([])
+  })
+
+  it('keeps every tone above the 1.4.11 floor, whatever the operator picked', () => {
+    // The whole point: a chart segment is a non-text UI element, so 3:1 against the
+    // card it sits on is required — and a pale brand colour would otherwise be
+    // invisible for the lighter half of the ramp.
+    for (const colour of COLOURS) {
+      for (const tone of accentRamp(colour, 6)) {
+        expect(contrastRatio(tone, SURFACE), `${colour} → ${tone}`).toBeGreaterThanOrEqual(
+          AA_NON_TEXT - 0.01,
+        )
+        // Cards are white; the body is slate-50. All three surfaces must hold.
+        expect(contrastRatio(tone, '#ffffff'), `${colour} → ${tone} on white`).toBeGreaterThanOrEqual(
+          AA_NON_TEXT - 0.01,
+        )
+      }
+    }
+  })
+
+  it('steps monotonically from dark to light, so the order carries magnitude', () => {
+    for (const colour of COLOURS) {
+      const ratios = accentRamp(colour, 6).map((tone) => contrastRatio(tone, SURFACE))
+      for (let i = 1; i < ratios.length; i++) {
+        expect(ratios[i], `${colour} step ${i}`).toBeLessThan(ratios[i - 1])
+      }
+    }
+  })
+
+  it('separates adjacent tones enough to be told apart', () => {
+    // A ramp whose steps collapse to the same tone encodes nothing. Contrast is the
+    // proxy for lightness distance here; a ratio gap under 1.0 reads as one colour.
+    for (const colour of COLOURS) {
+      const ratios = accentRamp(colour, 6).map((tone) => contrastRatio(tone, SURFACE))
+      for (let i = 1; i < ratios.length; i++) {
+        expect(ratios[i - 1] - ratios[i], `${colour} step ${i}`).toBeGreaterThan(0.8)
+      }
+    }
+  })
+
+  it('produces a real ramp where readableAccent could not', () => {
+    // readableAccent returns a colour that already clears its target unchanged, so
+    // six calls to it would yield six identical tones. This is why the ramp exists.
+    const tones = accentRamp('#131921', 6)
+    expect(new Set(tones).size).toBe(6)
+  })
+
+  it('is deterministic, so two renders paint the same chart', () => {
+    expect(accentRamp('#ca8a04', 6)).toEqual(accentRamp('#ca8a04', 6))
+  })
+
+  it('falls back to the input colour when it cannot be parsed', () => {
+    // A broken branding value must not blank the chart out.
+    expect(accentRamp('not-a-colour', 3)).toEqual(['not-a-colour', 'not-a-colour', 'not-a-colour'])
   })
 })

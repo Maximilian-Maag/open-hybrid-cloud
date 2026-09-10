@@ -1,6 +1,6 @@
 import { type NextRequest } from 'next/server'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { decommissionInfra } from '@/lib/services/infrastructure'
 
 export async function POST(
@@ -11,5 +11,7 @@ export async function POST(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await decommissionInfra(session, parseInt(id, 10)))
+  const elementId = parseRouteId(id)
+  if (elementId === null) return invalidId('infrastructure id')
+  return toResponse(await decommissionInfra(session, elementId))
 }

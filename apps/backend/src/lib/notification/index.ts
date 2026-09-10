@@ -104,16 +104,38 @@ export const sendOrderCreated = async (
     `<p>Your order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> has been created and is pending approval.</p>`,
   )
 
+/**
+ * Ask an approver to act on a pending order.
+ *
+ * `substitutingFor` names the admins whose approval authority this recipient is
+ * currently holding (issue #35). Delegation is reflected here as a **CC**, not a
+ * redirect: the away admin stays on the recipient list and the substitute's copy
+ * gains a line saying why they are also expected to act.
+ *
+ * Redirecting was the alternative and was rejected. Removing the delegator from
+ * the list would turn a delegation into a mail filter that whoever created it can
+ * point at somebody else's inbox — an accidental or malicious delegation would
+ * make approval traffic invisible to the admin who is still accountable for it.
+ * An away mailbox filling up is the cheaper failure, and an admin who returns
+ * early or reads mail on their phone keeps working.
+ */
 export const sendApprovalRequest = async (
   to: string,
   productName: string,
   orderId: number,
   ordererName: string,
+  substitutingFor: string[] = [],
 ): Promise<void> =>
   send(
     to,
     `Approval Required: Order #${orderId} — ${headerSafe(productName)}`,
-    `<p><strong>${escapeHtml(ordererName)}</strong> has placed order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> and it requires your approval.</p><p>Please log in to review and approve or reject the order.</p>`,
+    `<p><strong>${escapeHtml(ordererName)}</strong> has placed order <strong>#${orderId}</strong> for <strong>${escapeHtml(productName)}</strong> and it requires your approval.</p>` +
+      (substitutingFor.length
+        ? `<p>You are also receiving this as the substitute approver for ` +
+          `<strong>${substitutingFor.map(escapeHtml).join('</strong>, <strong>')}</strong>. ` +
+          `You approve under your own name; the delegation is recorded in the audit log.</p>`
+        : '') +
+      `<p>Please log in to review and approve or reject the order.</p>`,
   )
 
 export const sendOrderApproved = async (
@@ -143,11 +165,20 @@ export const sendProvisioningCompleted = async (
   to: string,
   productName: string,
   infraId: number,
+  /**
+   * How many elements the order provisioned (issue #104). Defaults to 1, which is
+   * what every order was before quantity existed and keeps the single-element mail
+   * word for word what it was.
+   */
+  elementCount = 1,
 ): Promise<void> =>
   send(
     to,
     `Provisioning Completed — ${headerSafe(productName)}`,
-    `<p>Provisioning of <strong>${escapeHtml(productName)}</strong> has completed successfully. Infrastructure element ID: <strong>${infraId}</strong>.</p>`,
+    `<p>Provisioning of <strong>${escapeHtml(productName)}</strong> has completed successfully. ` +
+      (elementCount > 1
+        ? `<strong>${elementCount}</strong> infrastructure elements were created, starting with ID <strong>${infraId}</strong>.</p>`
+        : `Infrastructure element ID: <strong>${infraId}</strong>.</p>`),
   )
 
 export const sendProvisioningFailed = async (

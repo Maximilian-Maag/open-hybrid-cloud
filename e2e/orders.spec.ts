@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { test, expect } from './fixtures'
+import { expectNoServerError, hydrated, loginAsRoot, requireSeeded } from './helpers'
 
 test.describe('Orders', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,7 +9,7 @@ test.describe('Orders', () => {
 
   test('orders page loads without error', async ({ page }) => {
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('shows page title "Orders"', async ({ page }) => {
@@ -48,8 +48,14 @@ test.describe('Orders', () => {
     const orderLinks = page.getByRole('link').filter({ hasText: /^#\d+$/ })
     const count = await orderLinks.count()
     if (count > 0) {
+      // A Link that has not hydrated is clickable and inert; without this the
+      // URL assertion below times out on a page that never moved (#152).
+      await hydrated(page)
       await orderLinks.first().click()
-      await expect(page).toHaveURL(/\/orders\/\d+/)
+      // Generous, for the same reason as `openFirstOrder` below: `next dev`
+      // compiles /orders/[id] on its first request, and the default 5s
+      // assertion timeout expires while it is still building (#296).
+      await expect(page).toHaveURL(/\/orders\/\d+/, { timeout: 30_000 })
     }
   })
 })
@@ -67,13 +73,23 @@ test.describe('Order comments', () => {
     const noOrders = page.getByText(/no orders/i)
     await expect(detailLinks.first().or(noOrders)).toBeVisible({ timeout: 10000 })
     if (await noOrders.isVisible()) return false
+    await hydrated(page)
     await detailLinks.first().click()
-    await expect(page.getByRole('heading', { name: /comments/i })).toBeVisible({ timeout: 10000 })
+    // And again on the page that was navigated to: the comment box below is a
+    // client component, and its Post button does nothing until it is live.
+    // 30s, not 10: this suite runs against `next dev`, which compiles a route
+    // the first time it is requested. The first order detail page of a run pays
+    // that once and can exceed ten seconds on a cold cache — which showed up as
+    // this test being flaky rather than as anything being wrong with it (#296).
+    await expect(page.getByRole('heading', { name: /comments/i })).toBeVisible({ timeout: 30_000 })
+    // With the path, because this one follows a client-side navigation: the
+    // bare marker is still set from /orders and would return immediately.
+    await hydrated(page, /^\/orders\/\d+$/)
     return true
   }
 
   test('the order detail page carries a comment thread', async ({ page }) => {
-    if (!(await openFirstOrder(page))) { test.skip(); return }
+    requireSeeded(await openFirstOrder(page), 'no order on /orders to open')
 
     await expect(page.getByLabel(/add comment/i)).toBeVisible()
     // Empty box, nothing to post.
@@ -81,11 +97,20 @@ test.describe('Order comments', () => {
   })
 
   test('a posted comment appears immediately and survives a reload', async ({ page }) => {
-    if (!(await openFirstOrder(page))) { test.skip(); return }
+    requireSeeded(await openFirstOrder(page), 'no order on /orders to open')
 
     const body = `e2e comment ${Date.now()}`
     await page.getByLabel(/add comment/i).fill(body)
+    // Wait for the POST to come back before reloading. The component renders the
+    // server's response rather than an optimistic entry, so the text appearing
+    // means the request finished — but the reload on the next line was racing
+    // the tail of it, and an aborted POST leaves nothing to find afterwards
+    // (ECONNRESET in the server log, #296).
+    const posted = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && /\/comments(\?|$)/.test(r.url()),
+    )
     await page.getByRole('button', { name: /add comment/i }).click()
+    await posted
 
     await expect(page.getByText(body)).toBeVisible({ timeout: 8000 })
     await page.reload()
@@ -98,7 +123,7 @@ test.describe('Order comments', () => {
   })
 
   test('an edited comment is marked as edited', async ({ page }) => {
-    if (!(await openFirstOrder(page))) { test.skip(); return }
+    requireSeeded(await openFirstOrder(page), 'no order on /orders to open')
 
     const body = `e2e edit ${Date.now()}`
     await page.getByLabel(/add comment/i).fill(body)
@@ -121,7 +146,7 @@ test.describe('Order comments', () => {
   })
 
   test('root can post an internal note and it is labelled as one', async ({ page }) => {
-    if (!(await openFirstOrder(page))) { test.skip(); return }
+    requireSeeded(await openFirstOrder(page), 'no order on /orders to open')
 
     const body = `e2e internal ${Date.now()}`
     await page.getByLabel(/add comment/i).fill(body)
@@ -147,7 +172,7 @@ test.describe('Order product snapshot', () => {
     const detailLinks = page.getByRole('link', { name: /^#\d+$/ })
     const noOrders = page.getByText(/no orders/i)
     await expect(detailLinks.first().or(noOrders)).toBeVisible({ timeout: 10000 })
-    if (await noOrders.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noOrders.isVisible()), 'no order on /orders to list')
 
     await detailLinks.first().click()
     await expect(page.getByRole('heading', { name: /order details/i })).toBeVisible({ timeout: 10000 })

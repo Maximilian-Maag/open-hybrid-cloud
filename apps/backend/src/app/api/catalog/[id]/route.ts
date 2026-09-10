@@ -1,6 +1,6 @@
 import { type NextRequest } from 'next/server'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { getProduct } from '@/lib/services/catalog'
 
 export async function GET(
@@ -11,7 +11,8 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  const productId = parseInt(id, 10)
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
   const { searchParams } = new URL(req.url)
   const lang = searchParams.get('lang') ?? 'en'
   const environmentIdParam = searchParams.get('environmentId')

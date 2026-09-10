@@ -7,7 +7,9 @@ vi.mock('@/lib/exchange', () => ({
 import { getExchangeRates, refreshExchangeRates } from './exchangeRates'
 import { refreshRates } from '@/lib/exchange'
 import { db } from '@/lib/db/client'
-import { exchangeRates } from '@/lib/db/schema'
+import { exchangeRates, auditLog } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
+import { createUser } from '@/test/helpers'
 
 const mockedRefresh = vi.mocked(refreshRates)
 
@@ -58,5 +60,18 @@ describe('refreshExchangeRates', () => {
       const codes = result.data.map((r) => r.currencyCode).sort()
       expect(codes).toEqual(['CHF', 'USD'])
     }
+  })
+
+  // The entity prefix `logAudit` documents is singular, like `cost_center.` and
+  // `pipeline_stack.`. This one was `exchange_rates.`, so a filter written to the
+  // convention missed it entirely.
+  it('records the refresh under a singular entity prefix', async () => {
+    const actor = await createUser({ role: 'admin' })
+
+    await refreshExchangeRates(actor.id)
+
+    const rows = await db.select().from(auditLog).where(eq(auditLog.userId, actor.id))
+    expect(rows.length).toBe(1)
+    expect(rows[0].action).toBe('exchange_rate.refreshed')
   })
 })

@@ -1,0 +1,21 @@
+-- Deleting a project erased every order inside it (issue #187).
+--
+-- `orders.project_id` is ON DELETE CASCADE and `order_comments.order_id` cascades
+-- from there, so one DELETE took orders, their comments and their infrastructure
+-- elements with it. Proved against a real Postgres built from these migrations:
+--
+--   BEFORE  orders=1  order_comments=1  infrastructure_elements=1
+--   DELETE FROM projects WHERE name='P2';
+--   AFTER   orders=0  order_comments=0  infrastructure_elements=0
+--
+-- What goes with the orders is `product_snapshot` — the column that exists so a
+-- later catalogue edit cannot rewrite what a customer was charged — and with it
+-- the spend those orders represent, retroactively, from the dashboard, the CSV
+-- and the PDF. #142 gave `deleteProduct` and `deleteCategory` the
+-- retire-instead-of-delete treatment. `deleteProject` never got it, even though
+-- it is the one of the three that cascades to `orders` directly.
+--
+-- NULL means live. A project holding orders is retired; an empty one is still
+-- deleted outright, so this does not fill the table with tombstones.
+ALTER TABLE "projects" ADD COLUMN "retired_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "projects_live_idx" ON "projects" USING btree ("id") WHERE retired_at IS NULL;

@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test'
-import { loginAs } from './helpers'
+import { test, expect } from './fixtures'
+import { loginAs, rootEmail, rootPassword, completeSecondFactor } from './helpers'
 
 const protectedRoutes = [
   '/',
@@ -38,6 +38,12 @@ test.describe('Authentication & route protection', () => {
 })
 
 test.describe('Role-based access control', () => {
+  // A fresh root sign-in is two-step since #197, and a TOTP code is single-use —
+  // so it may have to wait out the rest of a thirty-second window before it can
+  // present one. Playwright's default test timeout is exactly thirty seconds,
+  // which made that wait indistinguishable from a broken form.
+  test.setTimeout(90_000)
+
   test('non-admin user is redirected away from /admin', async ({ page }) => {
     // Create a project_manager user via API then test access
     // We test this by logging in as root, creating a PM user, logging in as PM, then checking /admin
@@ -46,10 +52,12 @@ test.describe('Role-based access control', () => {
 
     // Create PM user via the admin panel (logged in as root)
     await page.goto('/login')
-    await page.getByLabel(/email address/i).fill(process.env.E2E_ADMIN_EMAIL ?? 'root@local.dev')
-    await page.getByLabel(/password/i).fill(process.env.E2E_ADMIN_PASSWORD ?? 'root1234')
+    await page.getByLabel(/email address/i).fill(rootEmail)
+    await page.getByLabel(/password/i).fill(rootPassword)
     await page.getByRole('button', { name: /sign in/i }).click()
-    await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 8000 })
+    // Root holds a second factor since #197.
+    await completeSecondFactor(page)
+    await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 15_000 })
 
     await page.goto('/admin/users')
     await expect(page.getByRole('button', { name: /add user/i })).toBeVisible({ timeout: 8000 })
@@ -73,12 +81,15 @@ test.describe('Role-based access control', () => {
     await page.goto('/admin')
     await expect(page).not.toHaveURL(/\/admin$/, { timeout: 6000 })
 
-    // Clean up: log back in as root and delete the PM user
+    // Clean up: log back in as root and delete the PM user. Second factor here
+    // too — this login is as real as the one at the top, and only patching the
+    // first left the test failing on the tidy-up with a code field on screen.
     await page.goto('/login')
-    await page.getByLabel(/email address/i).fill(process.env.E2E_ADMIN_EMAIL ?? 'root@local.dev')
-    await page.getByLabel(/password/i).fill(process.env.E2E_ADMIN_PASSWORD ?? 'root1234')
+    await page.getByLabel(/email address/i).fill(rootEmail)
+    await page.getByLabel(/password/i).fill(rootPassword)
     await page.getByRole('button', { name: /sign in/i }).click()
-    await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 8000 })
+    await completeSecondFactor(page)
+    await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 15_000 })
     await page.goto('/admin/users')
     await expect(page.getByText(pmEmail)).toBeVisible({ timeout: 8000 })
     const userRow = page.locator('div').filter({ has: page.getByText(pmEmail) }).filter({ has: page.getByRole('button', { name: /^delete$/i }) }).last()

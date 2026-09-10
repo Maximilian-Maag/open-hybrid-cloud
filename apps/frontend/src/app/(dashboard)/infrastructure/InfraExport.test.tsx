@@ -16,7 +16,7 @@ const originalRevokeObjectURL = URL.revokeObjectURL
 
 const renderExport = (qs = '') => {
   currentParams = new URLSearchParams(qs)
-  return render(<InfraExport token="test-token" lang="en" />)
+  return render(<InfraExport lang="en" />)
 }
 
 const requestedUrl = () => (vi.mocked(fetch).mock.calls[0][0] as string)
@@ -46,7 +46,12 @@ afterEach(() => {
 })
 
 describe('InfraExport', () => {
-  it('sends the token in the Authorization header rather than the URL', async () => {
+  it('goes through the same-origin proxy and carries no bearer token', async () => {
+    // Issue #146. The browser holds no API token at all now: the download is
+    // fetched from this origin's /api/proxy, which attaches the credential
+    // server-side out of the HttpOnly session cookie. Still a fetch-then-blob
+    // rather than a window.open, so nothing identifying lands in the URL, in
+    // history or in an access log.
     const user = userEvent.setup()
     renderExport()
 
@@ -54,9 +59,8 @@ describe('InfraExport', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalled())
 
     const init = vi.mocked(fetch).mock.calls[0][1] as RequestInit
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-token')
-    // Keeping it out of the URL keeps it out of history and access logs.
-    expect(requestedUrl()).not.toContain('test-token')
+    expect(init.headers).toBeUndefined()
+    expect(requestedUrl()).toContain('/api/proxy/api/infrastructure/export')
   })
 
   it('forwards the current URL filters so the file matches the visible list', async () => {

@@ -1,19 +1,23 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { updateCartItem, removeFromCart } from '@/lib/services/cart'
+import { SIZE_CODE_MAX_LENGTH } from '@/lib/services/sizes'
 
-const UpdateCartItemSchema = z.object({
-  parameters: z.record(z.string()),
-})
+// Every field optional: this is a patch, so sending only `quantity` — which is
+// what the cart's quantity control does — must not wipe the parameter prefill.
+const UpdateCartItemSchema = z
+  .object({
+    parameters: z.record(z.string()).optional(),
+    sizeCode: z.string().min(1).max(SIZE_CODE_MAX_LENGTH).nullable().optional(),
+    quantity: z.number().int().positive().optional(),
+  })
+  .refine((body) => Object.keys(body).length !== 0, {
+    message: 'Nothing to update',
+  })
 
-const parseItemId = (raw: string): number | null => {
-  const id = Number(raw)
-  return Number.isInteger(id) && id > 0 ? id : null
-}
-
-/** Save the checkout form's progress on one item. */
+/** Update one cart line: its parameter prefill, its size or its quantity. */
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ itemId: string }> },
@@ -21,15 +25,15 @@ export async function PUT(
   const session = await requireAuth(req)
   if (!isAuth(session)) return session
 
-  const itemId = parseItemId((await params).itemId)
-  if (itemId === null) return NextResponse.json({ error: 'Invalid cart item id' }, { status: 400 })
+  const itemId = parseRouteId((await params).itemId)
+  if (itemId === null) return invalidId('cart item id')
 
   const parsed = UpdateCartItemSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateCartItem(session, itemId, parsed.data.parameters))
+  return toResponse(await updateCartItem(session, itemId, parsed.data))
 }
 
 export async function DELETE(
@@ -39,8 +43,8 @@ export async function DELETE(
   const session = await requireAuth(req)
   if (!isAuth(session)) return session
 
-  const itemId = parseItemId((await params).itemId)
-  if (itemId === null) return NextResponse.json({ error: 'Invalid cart item id' }, { status: 400 })
+  const itemId = parseRouteId((await params).itemId)
+  if (itemId === null) return invalidId('cart item id')
 
   return toResponse(await removeFromCart(session, itemId))
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
+import type * as WindowPolicyService from '@/lib/services/windowPolicy'
 
 vi.mock('@/lib/notification', () => ({
   sendOrderApproved: vi.fn().mockResolvedValue(undefined),
@@ -7,15 +8,27 @@ vi.mock('@/lib/notification', () => ({
 }))
 
 vi.mock('@/lib/ci/webhooks', () => ({
-  triggerProductWebhooks: vi.fn().mockResolvedValue(['pipe-42']),
-  triggerPipelineStacks: vi.fn().mockResolvedValue([]),
+  triggerProductWebhooksTracked: vi.fn().mockResolvedValue({ pipelineIds: ['pipe-42'], failures: [] }),
+  triggerPipelineStacksTracked: vi.fn().mockResolvedValue({ pipelineIds: [], failures: [] }),
+}))
+
+vi.mock('@/lib/services/windowPolicy', async (importOriginal) => ({
+  ...(await importOriginal<typeof WindowPolicyService>()),
+  whenMayItDeploy: vi.fn(),
 }))
 
 import { listApprovals, approveOrder, rejectOrder } from './approvals'
 import { sendOrderApproved, sendOrderRejected } from '@/lib/notification'
-import { triggerProductWebhooks } from '@/lib/ci/webhooks'
+import { triggerProductWebhooksTracked } from '@/lib/ci/webhooks'
+import { whenMayItDeploy } from '@/lib/services/windowPolicy'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements, productEnvironments } from '@/lib/db/schema'
+import {
+  orders,
+  infrastructureElements,
+  productEnvironments,
+  auditLog,
+  approvalDelegations,
+} from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
   createUser,
@@ -25,18 +38,19 @@ import {
   createEnvironment,
   createProject,
   createOrder as seedOrder,
+  createDelegation as seedDelegation,
   linkProductEnvironment,
 } from '@/test/helpers'
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
   ({ id: u.id, email: u.email, name: u.name, role: u.role as SessionUser['role'] })
 
-const mockedWebhooks = vi.mocked(triggerProductWebhooks)
+const mockedWebhooks = vi.mocked(triggerProductWebhooksTracked)
 const mockedApproved = vi.mocked(sendOrderApproved)
 const mockedRejected = vi.mocked(sendOrderRejected)
 
 beforeEach(() => {
-  mockedWebhooks.mockReset().mockResolvedValue(['pipe-42'])
+  mockedWebhooks.mockReset().mockResolvedValue({ pipelineIds: ['pipe-42'], failures: [] })
   mockedApproved.mockReset().mockResolvedValue(undefined)
   mockedRejected.mockReset().mockResolvedValue(undefined)
 })
@@ -101,13 +115,16 @@ describe('approveOrder', () => {
   it('updates order status to provisioning, creates infra, triggers webhooks, notifies, returns success', async () => {
     const { admin, pm, product, env, project } = await setup()
     const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
-    mockedWebhooks.mockResolvedValueOnce(['pipe-approved'])
+    mockedWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-approved'], failures: [] })
 
     const result = await approveOrder(makeSession(admin), order.id)
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
     expect(result.data.success).toBe(true)
+    // Narrows the union: this environment does not respect deployment windows,
+    // so the approval provisioned rather than scheduling (#330).
+    if (result.data.scheduled) throw new Error('expected an immediate provision, got a scheduled one')
     expect(result.data.pipelineIds).toEqual(['pipe-approved'])
     expect(result.data.infraId).toBeDefined()
 
@@ -214,6 +231,8 @@ describe('approveOrder — time-boxed trials', () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ TRIAL: 'true', TRIAL_DURATION_MINUTES: '45' }),
+      // The recorder that stores each pipeline id as it starts (issue #132).
+      expect.any(Function),
     )
   })
 
@@ -235,6 +254,7 @@ describe('approveOrder — time-boxed trials', () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ TRIAL_DURATION_MINUTES: '90' }),
+      expect.any(Function),
     )
   })
 
@@ -277,5 +297,188 @@ describe('approveOrder — time-boxed trials', () => {
     const result = await listApprovals()
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data[0].isTrial).toBe(true)
+  })
+})
+
+// Issue #35. Two rules meet here, and the second exists because of the first:
+// a delegation transfers AUTHORITY, and the one thing authority may never buy is
+// permission to approve your own order.
+describe('approveOrder — separation of duties', () => {
+  it('refuses to let the orderer approve their own order', async () => {
+    const { product, env, project } = await setup()
+    // A project manager who was promoted to admin still has their old pending
+    // orders in the queue — that is how an admin ends up as the orderer.
+    const promoted = await createUser({ role: 'admin', email: 'promoted@test.dev', name: 'Promoted' })
+    const order = await seedOrder(project.id, product.id, env.id, promoted.id, { status: 'pending' })
+
+    const result = await approveOrder(makeSession(promoted), order.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(403)
+
+    // Checked BEFORE the claim: a refusal after it would strand the order.
+    const [dbOrder] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(dbOrder.status).toBe('pending')
+    expect(mockedWebhooks).not.toHaveBeenCalled()
+  })
+
+  it('a delegation does not buy the orderer the right to approve their own order', async () => {
+    const { admin, product, env, project } = await setup()
+    const orderer = await createUser({ role: 'admin', email: 'orderer@test.dev', name: 'Orderer' })
+    const order = await seedOrder(project.id, product.id, env.id, orderer.id, { status: 'pending' })
+
+    // The admin delegates to the very person who placed the order. The
+    // delegation is legal; using it to self-approve is not, because the check
+    // compares the ACTOR with the orderer and the actor is still the orderer.
+    await seedDelegation(admin.id, orderer.id, { startsInDays: 0, endsInDays: 5 })
+
+    const result = await approveOrder(makeSession(orderer), order.id)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(403)
+  })
+
+  it('still lets an admin withdraw their own order by rejecting it', async () => {
+    const { product, env, project } = await setup()
+    const owner = await createUser({ role: 'admin', email: 'owner@test.dev', name: 'Owner' })
+    const order = await seedOrder(project.id, product.id, env.id, owner.id, { status: 'pending' })
+
+    expect((await rejectOrder(makeSession(owner), order.id, 'Changed my mind')).ok).toBe(true)
+  })
+
+  it('returns 404 rather than leaking the guard for an unknown order', async () => {
+    const { admin } = await setup()
+    const result = await approveOrder(makeSession(admin), 999_999)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(404)
+  })
+})
+
+describe('approveOrder — auditing a delegation in use', () => {
+  const entriesFor = async (action: string) =>
+    db.select().from(auditLog).where(eq(auditLog.action, action))
+
+  it('names the actor AND the authority they were holding', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const substitute = await createUser({ role: 'admin', email: 'sub@test.dev', name: 'Sub' })
+    const delegation = await seedDelegation(admin.id, substitute.id, { startsInDays: 0, endsInDays: 5 })
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
+
+    expect((await approveOrder(makeSession(substitute), order.id)).ok).toBe(true)
+
+    // "Who approved this?" — the substitute, under their own id and address.
+    const approved = await entriesFor('order.approved')
+    expect(approved).toHaveLength(1)
+    expect(approved[0].userId).toBe(substitute.id)
+    expect(approved[0].entityId).toBe(order.id)
+    expect(approved[0].details).toContain('sub@test.dev')
+    // "Under whose authority?" — named in the same entry.
+    expect(approved[0].details).toContain(`#${delegation.id}`)
+    expect(approved[0].details).toContain('admin@test.dev')
+
+    // And keyed on the DELEGATION, so "what was done under delegation N" is a
+    // filter rather than a full-text hunt through order entries.
+    const used = await entriesFor('approval_delegation.used')
+    expect(used).toHaveLength(1)
+    expect(used[0].userId).toBe(substitute.id)
+    expect(used[0].entityId).toBe(delegation.id)
+    expect(used[0].details).toContain(`order #${order.id}`)
+    expect(used[0].details).toContain('admin@test.dev')
+  })
+
+  it('records nothing about delegation when the approver holds none', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
+
+    expect((await approveOrder(makeSession(admin), order.id)).ok).toBe(true)
+
+    const approved = await entriesFor('order.approved')
+    expect(approved[0].details).not.toContain('delegat')
+    expect(await entriesFor('approval_delegation.used')).toEqual([])
+  })
+
+  it('ignores an expired delegation — no job had to expire it', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const substitute = await createUser({ role: 'admin', email: 'sub@test.dev', name: 'Sub' })
+    await seedDelegation(admin.id, substitute.id, { startsInDays: -10, endsInDays: -1 })
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
+
+    expect((await approveOrder(makeSession(substitute), order.id)).ok).toBe(true)
+    expect(await entriesFor('approval_delegation.used')).toEqual([])
+  })
+
+  it('records every authority a substitute covering two admins was holding', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const other = await createUser({ role: 'admin', email: 'other@test.dev', name: 'Other' })
+    const substitute = await createUser({ role: 'admin', email: 'sub@test.dev', name: 'Sub' })
+    await seedDelegation(admin.id, substitute.id, { startsInDays: 0, endsInDays: 5 })
+    await seedDelegation(other.id, substitute.id, { startsInDays: 0, endsInDays: 5 })
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
+
+    expect((await approveOrder(makeSession(substitute), order.id)).ok).toBe(true)
+    expect(await entriesFor('approval_delegation.used')).toHaveLength(2)
+  })
+
+  it('audits the authority in force at the CLAIM, not at logging time', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const substitute = await createUser({ role: 'admin', email: 'sub@test.dev', name: 'Sub' })
+    const delegation = await seedDelegation(admin.id, substitute.id, { startsInDays: 0, endsInDays: 5 })
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
+
+    // Provisioning is not instant, so the delegation can end — expire at midnight,
+    // or be revoked by the delegator — between the decision and the audit write.
+    // The authority that has to be recorded is the one the approval was taken
+    // under; re-reading it afterwards would record an approval as unauthorised.
+    mockedWebhooks.mockImplementation(async () => {
+      await db
+        .update(approvalDelegations)
+        .set({ revokedAt: new Date() })
+        .where(eq(approvalDelegations.id, delegation.id))
+      return { pipelineIds: ['pipe-42'], failures: [] }
+    })
+
+    expect((await approveOrder(makeSession(substitute), order.id)).ok).toBe(true)
+
+    const approved = await entriesFor('order.approved')
+    expect(approved[0].details).toContain(`#${delegation.id}`)
+    const used = await entriesFor('approval_delegation.used')
+    expect(used).toHaveLength(1)
+    expect(used[0].entityId).toBe(delegation.id)
+  })
+
+  it('audits a rejection under delegation the same way', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const substitute = await createUser({ role: 'admin', email: 'sub@test.dev', name: 'Sub' })
+    const delegation = await seedDelegation(admin.id, substitute.id, { startsInDays: 0, endsInDays: 5 })
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
+
+    expect((await rejectOrder(makeSession(substitute), order.id, 'Out of budget')).ok).toBe(true)
+
+    const rejected = await entriesFor('order.rejected')
+    expect(rejected[0].details).toContain('sub@test.dev')
+    expect(rejected[0].details).toContain('Out of budget')
+    const used = await entriesFor('approval_delegation.used')
+    expect(used).toHaveLength(1)
+    expect(used[0].entityId).toBe(delegation.id)
+    expect(used[0].details).toContain('rejected')
+  })
+
+  /*
+   * The claim is what makes this caller the one acting on the order, and it has
+   * already moved it out of 'pending' by the time the window policy is read.
+   *
+   * A policy read that throws used to leave the order in 'provisioning' for
+   * good: no second approval can claim it, because the claim is conditioned on
+   * 'pending', and the window sweep never sees it, because that only looks at
+   * 'scheduled'. Nothing has been provisioned at that point, so the claim must
+   * come back off.
+   */
+  it('releases the claim when the window policy cannot be read', async () => {
+    const { admin, pm, product, env, project } = await setup()
+    const order = await seedOrder(project.id, product.id, env.id, pm.id, { status: 'pending' })
+    vi.mocked(whenMayItDeploy).mockRejectedValueOnce(new Error('deployment_windows is unreadable'))
+
+    await expect(approveOrder(makeSession(admin), order.id)).rejects.toThrow('unreadable')
+
+    const [row] = await db.select().from(orders).where(eq(orders.id, order.id))
+    expect(row.status, 'the order is stranded: nothing can claim it and no sweep looks at it').toBe('pending')
   })
 })

@@ -1,0 +1,71 @@
+{{- if .Values.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "infrashelf.fullname" . }}-migrate
+  labels:
+    {{- include "infrashelf.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "infrashelf.backend.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "infrashelf.backend.image" . }}
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          # Start the backend server, wait for /api/health (which runs drizzle
+          # migrations and seeds the admin account), then terminate cleanly.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              node apps/backend/server.js &
+              SERVER_PID=$!
+              until wget -q -O /dev/null http://127.0.0.1:3001/api/health; do sleep 2; done
+              kill "$SERVER_PID"
+              wait "$SERVER_PID" 2>/dev/null || true
+          env:
+            - name: PORT
+              value: "3001"
+            - name: ADMIN_EMAIL
+              value: {{ .Values.backend.env.adminEmail | quote }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "infrashelf.backend.fullname" . }}
+                  key: DATABASE_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "infrashelf.backend.fullname" . }}
+                  key: JWT_SECRET
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "infrashelf.backend.fullname" . }}
+                  key: ADMIN_PASSWORD
+          {{- with .Values.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

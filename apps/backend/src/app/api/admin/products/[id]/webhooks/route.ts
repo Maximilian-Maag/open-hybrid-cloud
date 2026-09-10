@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { listProductWebhooks, createProductWebhook } from '@/lib/services/admin/products'
 
 const CreateWebhookSchema = z.object({
@@ -20,7 +20,9 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await listProductWebhooks(parseInt(id, 10)))
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
+  return toResponse(await listProductWebhooks(productId))
 }
 
 export async function POST(
@@ -31,11 +33,13 @@ export async function POST(
   if (!isAuth(session)) return session
 
   const { id } = await params
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
   const body = await req.json().catch(() => null)
   const parsed = CreateWebhookSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await createProductWebhook(parseInt(id, 10), parsed.data), 201)
+  return toResponse(await createProductWebhook(productId, parsed.data, session.id), 201)
 }

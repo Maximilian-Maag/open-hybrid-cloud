@@ -4,8 +4,8 @@ import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { t } from '@/lib/i18n'
+import { PROXY_PREFIX } from '@/lib/api'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? ''
 
 /** The filter keys the export endpoint understands — forwarded from the URL. */
 const FILTER_KEYS = [
@@ -14,7 +14,6 @@ const FILTER_KEYS = [
 ] as const
 
 interface Props {
-  token: string
   lang: string
 }
 
@@ -25,7 +24,7 @@ interface Props {
  * user is looking at — the same reason the endpoint reuses the list's filter
  * parser rather than its own.
  */
-export function InfraExport({ token, lang }: Props) {
+export function InfraExport({ lang }: Props) {
   const searchParams = useSearchParams()
   const [includeParameters, setIncludeParameters] = useState(false)
   const [busy, setBusy] = useState<'csv' | 'pdf' | null>(null)
@@ -42,12 +41,13 @@ export function InfraExport({ token, lang }: Props) {
 
     setBusy(format)
     setError(null)
-    // The endpoint authenticates via the Authorization header, which a plain
-    // window.open GET cannot set — fetch it and trigger the download from the
-    // response blob. This also keeps the token out of the URL, history and logs.
+    // Fetched as a blob rather than opened in a tab, so nothing that identifies
+    // the caller ever lands in a URL, in history or in a proxy log. It goes
+    // through /api/proxy like every other call: the session cookie rides along
+    // and the bearer token is attached on the server, out of script's reach
+    // (#146).
     try {
-      const res = await fetch(`${API_URL}/api/infrastructure/export?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await fetch(`${PROXY_PREFIX}/api/infrastructure/export?${params.toString()}`, {
         cache: 'no-store',
       })
       if (!res.ok) {

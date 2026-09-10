@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import type { Role, Branding } from '@open-hybrid-cloud/types'
-import { get } from '@/lib/api'
+import type { Role, Branding } from '@infrashelf/types'
+import { get } from '@/lib/serverApi'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { BrandingForm } from './BrandingForm'
 import { t } from '@/lib/i18n'
@@ -12,18 +12,17 @@ export default async function BrandingPage() {
   if (!session) redirect('/login')
   const role = (session.user as unknown as { role: Role }).role
   if (role !== 'root') redirect('/admin')
-  const token = (session as unknown as { apiToken: string }).apiToken
 
   let branding: Branding = {
     primaryColor: '#1e40af',
     secondaryColor: '#3b82f6',
-    shopName: 'Open Hybrid Cloud',
+    shopName: 'InfraShelf',
     shopSubtitle: '',
     imprintText: '',
   }
 
   try {
-    branding = await get<Branding>('/api/admin/branding', token)
+    branding = await get<Branding>('/api/admin/branding')
   } catch { /* use defaults */ }
 
   const lang = await getLang()
@@ -31,7 +30,7 @@ export default async function BrandingPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <PageHeader title={t('branding', lang)} subtitle={t('brandingSubtitle', lang)} />
-      <BrandingForm initial={branding} token={token} />
+      <BrandingForm initial={branding} />
     </div>
   )
 }

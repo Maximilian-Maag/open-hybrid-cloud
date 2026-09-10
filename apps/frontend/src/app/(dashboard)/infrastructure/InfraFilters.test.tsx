@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { InfraFacets } from '@open-hybrid-cloud/types'
+import type { InfraFacets } from '@infrashelf/types'
 
 const replace = vi.fn()
 let currentParams = new URLSearchParams()
@@ -56,6 +56,36 @@ describe('InfraFilters', () => {
     // Selecting the placeholder clears the filter.
     await user.selectOptions(screen.getByLabelText(/^status$/i), '')
     expect(replace).toHaveBeenCalledWith('/infrastructure?search=nginx')
+  })
+
+  it('does not revert a filter picked while the search debounce is pending (#138)', async () => {
+    // Type a search term, then — inside the 300ms debounce window — pick a
+    // Status filter. The Status select applies immediately; the debounce
+    // timer scheduled for the search box must pick up that change when it
+    // finally fires, not silently drop it by replaying the `searchParams` it
+    // captured before Status was chosen.
+    const user = userEvent.setup()
+    const { rerender } = renderBar()
+
+    await user.type(screen.getByLabelText(/^search$/i), 'nginx')
+    expect(replace).not.toHaveBeenCalled()
+
+    await user.selectOptions(screen.getByLabelText(/^status$/i), 'failed')
+    expect(replace).toHaveBeenCalledWith('/infrastructure?status=failed')
+
+    // `useSearchParams()` is mocked as a static value in this test file, so
+    // the real navigation Status's `apply` would have caused — which is what
+    // hands the component a new `searchParams` and re-renders it — has to be
+    // simulated by hand.
+    currentParams = new URLSearchParams('status=failed')
+    rerender(<InfraFilters facets={facets} lang="en" resultCount={3} />)
+
+    await waitFor(() => expect(replace).toHaveBeenCalledTimes(2), { timeout: 2000 })
+    const secondUrl = replace.mock.calls[1][0] as string
+    const params = new URLSearchParams(secondUrl.split('?')[1] ?? '')
+    expect(params.get('search')).toBe('nginx')
+    // The bug dropped this silently instead of merging into it.
+    expect(params.get('status')).toBe('failed')
   })
 
   it('debounces the search box into a single navigation', async () => {

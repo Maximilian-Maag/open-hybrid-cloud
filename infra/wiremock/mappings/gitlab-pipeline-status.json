@@ -1,8 +1,8 @@
 {
-  "name": "GitLab pipeline status",
+  "name": "GitLab pipeline status (project-scoped, as the API actually is)",
   "request": {
     "method": "GET",
-    "urlPathPattern": "/api/v4/pipelines/[0-9]+"
+    "urlPathPattern": "/api/v4/projects/[^/]+/pipelines/[0-9]+"
   },
   "response": {
     "status": 200,

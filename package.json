@@ -1,21 +1,23 @@
 {
-  "name": "open-hybrid-cloud",
+  "name": "infrashelf",
   "private": true,
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "pnpm --parallel --filter './apps/*' dev",
-    "build": "pnpm --filter '@open-hybrid-cloud/types' build && pnpm --parallel --filter './apps/*' build",
+    "build": "pnpm --filter '@infrashelf/types' build && pnpm --parallel --filter './apps/*' build",
     "lint": "pnpm --parallel --filter './apps/*' lint",
     "db:generate": "pnpm --filter backend db:generate",
     "db:migrate": "pnpm --filter backend db:migrate",
     "db:push": "pnpm --filter backend db:push",
     "test": "pnpm --filter backend test && pnpm --filter frontend test",
     "test:coverage": "pnpm --filter backend test:coverage && pnpm --filter frontend test:coverage",
+    "test:mutation": "pnpm --filter backend test:mutation && pnpm --filter frontend test:mutation",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.61.1",
+    "@types/node": "^22.20.0",
     "axe-core": "^4.13.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"

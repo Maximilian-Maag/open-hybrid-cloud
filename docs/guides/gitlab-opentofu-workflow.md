@@ -51,18 +51,98 @@ infra-templates/
 │   ├── linode-instance/
 │   ├── linode-firewall/
 │   ├── linode-dns-record/
+│   ├── linode-volume/
+│   ├── linode-lke/
+│   ├── linode-nodebalancer/
+│   ├── linode-object-storage/
+│   ├── aws-vpc/
+│   ├── aws-security-group/
+│   ├── aws-ec2-instance/
+│   ├── aws-s3-bucket/
+│   ├── aws-rds-postgres/
 │   └── vsphere-vm/
 └── templates/                           # deployable products
     ├── linode/
     │   ├── virtual-machine/             # instance + per-VM firewall
     │   ├── firewall/
-    │   └── dns-record/
+    │   ├── dns-record/
+    │   ├── block-storage/
+    │   ├── kubernetes-cluster/
+    │   ├── load-balancer/
+    │   └── object-storage/
+    ├── aws/
+    │   ├── network/                     # order first — its outputs feed the rest
+    │   ├── virtual-machine/
+    │   ├── object-storage/
+    │   └── database-postgres/
     ├── vsphere/
     │   └── virtual-machine/
     └── orchestrator/                    # pipeline stack entry point
 ```
 
 **Principle:** one trigger → `TEMPLATE` variable → one child pipeline → one OpenTofu state per resource instance. Cross-resource ordering (VM then DNS) is handled by pipeline stacks (Pattern 3) via the orchestrator template.
+
+---
+
+## Template Catalogue
+
+What `TEMPLATE` can be set to, and what each one needs. Full parameter tables with
+defaults live in the `infra-templates` README; this is the portal-side view.
+
+### Linode
+
+| `TEMPLATE` | Provisions | Key parameters | Outputs |
+|---|---|---|---|
+| `linode/virtual-machine` | Instance + its own firewall | `hostname`, `region`, `instance_type`, `image`, `inbound_ports_csv` | `hostname`, `ip_address`, `firewall_id` |
+| `linode/firewall` | Standalone firewall | `label`, `linode_id`, `inbound_ports_csv` | `firewall_id` |
+| `linode/dns-record` | DNS record | `domain`, `record_name`, `target` | `record_id`, `fqdn` |
+| `linode/block-storage` | Block storage volume, optionally attached | `volume_label`, `size_gb`, `linode_id` | `volume_id`, `device_path`, `size_gb` |
+| `linode/kubernetes-cluster` | LKE cluster with one node pool | `cluster_label`, `k8s_version`, `node_type`, `node_count`, `autoscale` | `cluster_id`, `api_endpoint`, `node_count` |
+| `linode/load-balancer` | NodeBalancer in front of given backends | `balancer_label`, `port`, `protocol`, `backends_csv` | `ip_address`, `hostname`, `backend_count` |
+| `linode/object-storage` | S3-compatible bucket | `bucket_label`, `region`, `acl`, `versioning` | `bucket_label`, `endpoint`, `region` |
+
+### AWS
+
+**Order `aws/network` first.** Its outputs are the inputs of the other AWS
+products, and RDS needs subnets in two availability zones even for a single-AZ
+instance — which is why the network template creates one subnet per AZ.
+
+| `TEMPLATE` | Provisions | Key parameters | Outputs |
+|---|---|---|---|
+| `aws/network` | VPC, internet gateway, one public subnet per AZ | `network_name`, `region`, `cidr_block`, `subnet_count` | `vpc_id`, `subnet_ids`, `first_subnet_id`, `cidr_block` |
+| `aws/virtual-machine` | EC2 instance + its own security group | `hostname`, `instance_type`, `vpc_id`, `subnet_id`, `inbound_ports_csv` | `instance_id`, `private_ip`, `public_ip`, `security_group_id` |
+| `aws/object-storage` | S3 bucket, private, encrypted, versioned | `bucket_name`, `region`, `versioning` | `bucket`, `arn`, `endpoint` |
+| `aws/database-postgres` | RDS Postgres + subnet group + security group | `database_identifier`, `vpc_id`, `subnet_ids_csv`, `instance_class`, `storage_gb` | `host`, `port`, `database_name` |
+
+Chaining them as a **pipeline stack** (Pattern 3) is the tidier route: the network
+step's state can be referenced by later steps through `Upstream State Refs`, so the
+orderer does not have to copy a VPC id from one order into the next.
+
+### vSphere
+
+| `TEMPLATE` | Provisions | Key parameters | Outputs |
+|---|---|---|---|
+| `vsphere/virtual-machine` | VM cloned from a template, Linux or Windows | `hostname`, `datacenter`, `cluster`, `datastore`, `template_name`, `guest_os_family` | `hostname`, `ip_address` |
+
+`guest_os_family` decides which guest customization runs. It matters: a Windows
+template cloned with the Linux customization comes up **unconfigured** — no
+hostname, no address, no domain membership — because the provider silently ignores
+`linux_options` on a Windows guest. Set it to `windows` and provide
+`windows_domain` (plus a domain-join account) or leave it empty for a workgroup.
+
+### Provider credentials
+
+Set as GitLab CI/CD variables on the `infra-templates` project, not as product
+parameters. Linode and vSphere pass through `TF_VAR_*`; **AWS deliberately does
+not** — the AWS provider reads its own standard environment variables, which also
+keeps the keys out of the Terraform state. The Linode provider cannot do this: it
+only accepts a `token` argument, so that token is in the state.
+
+| Provider | Variables |
+|---|---|
+| Linode | `TF_VAR_linode_token`, `TF_VAR_root_pass`, `TF_VAR_authorized_key` |
+| AWS | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` (temporary creds), `TF_VAR_db_password` |
+| vSphere | `TF_VAR_vsphere_server`, `TF_VAR_vsphere_user`, `TF_VAR_vsphere_password`, `TF_VAR_windows_admin_password`, `TF_VAR_windows_domain_admin_password` |
 
 ---
 
@@ -153,14 +233,29 @@ All CI pipeline logic is provided by `infra-templates`. To add a new product tem
        include:
          - local: templates/<provider>/<name>/.gitlab-ci.yml
        strategy: depend
+       forward:
+         pipeline_variables: true      # ← without this the template gets no parameters
      rules:
        - if: $TEMPLATE == "<provider>/<name>"
+   ```
+
+   `forward: pipeline_variables: true` is not optional. GitLab does **not** pass
+   API-trigger variables to a downstream pipeline by default, so without it the
+   order parameters never reach the template and the job fails with
+   `No value for required variable "hostname"`.
+
+5. Validate before pushing — nothing in CI does it for you, because the entry
+   pipeline only runs on `CI_PIPELINE_SOURCE == "trigger"`:
+   ```bash
+   make validate TEMPLATE=<provider>/<name>
+   tofu fmt -recursive modules/ templates/
    ```
 
 Key pipeline behaviours provided by `base.gitlab-ci.yml`:
 
 - Product parameters (uppercase CI variables) are automatically promoted to `TF_VAR_<lowercase>` so OpenTofu picks them up without extra `tfvars` files.
-- `TF_ACTION=destroy` switches the plan stage to `tofu plan -destroy`; the apply stage runs `tofu apply tfplan` in all cases.
+- `TF_ACTION=destroy` switches both stages to their destroy form: `tofu plan -destroy` and `tofu apply -destroy -auto-approve`.
+- The apply stage runs a **fresh plan and apply**, it does not consume the plan artefact from the plan stage. Applying the saved plan failed with `[401] Invalid Token` even where a live API call with the same token in the same job succeeded — the likely cause being how a `sensitive` provider-token variable is carried in a plan file. The plan artefact is still published for inspection.
 - The apply job's stdout is read by the portal to parse `Outputs:` and store them on the infrastructure element — no extra `tofu output` call needed.
 - State is stored in the `infra-templates` project itself via `CI_PROJECT_ID`; no external state backend is required.
 
@@ -261,7 +356,54 @@ output "hostname" {
 }
 ```
 
-Only string-valued outputs are captured. Complex types (maps, lists) are ignored by the parser.
+**What the parser reads back.** Outputs are recovered from the job trace, not from
+a machine-readable file, because the trace is all the webhook has. Since #97 the
+parser keeps every value type OpenTofu prints:
+
+| OpenTofu prints | Stored as |
+|---|---|
+| `name = "value"` | `value` — quotes stripped |
+| `port = 5432`, `ready = true` | `5432`, `true` — unquoted scalars are kept |
+| `secret = <sensitive>` | `<sensitive>` — the key is kept, so the UI can say a value exists |
+| a multi-line list or map | the printed text, whitespace collapsed onto one line |
+| a `<<EOT` / `<<-EOT` heredoc | the body, keeping its own line breaks |
+
+So `tostring()` is no longer needed to make a number survive, and a list no longer
+has to be flattened just to be *recorded*. Values are stored as **strings** either
+way — nothing downstream parses them back into structure.
+
+Flattening is still the convention where a value is meant to be *consumed*: every
+product parameter arrives as a string, so `aws/network` emits its subnet ids as a
+comma-separated `subnet_ids`, which is the shape `aws/database-postgres` takes back
+in as `subnet_ids_csv` (likewise `inbound_ports_csv`, `backends_csv`,
+`dns_servers_csv`). A raw map is fine to display and awkward to feed into the next
+template.
+
+**Where the portal looks for it.** The trigger API returns the id of the *entry*
+pipeline, and that pipeline holds no `apply` job — only the `trigger-*` bridge of the
+dispatch stage. `GET /projects/:id/pipelines/:pipeline_id/jobs` does not list a child
+pipeline's jobs, so the portal follows the bridges (`.../bridges` →
+`downstream_pipeline`) down to the pipeline that actually applied, three levels at
+most — enough for `entry → template` and for `orchestrator → step → template`
+(Pattern 3). It reads every successful job whose name starts with `apply`, so a
+pipeline stack contributes one `Outputs:` block per step, and the merged map is
+stored on every element of the order. Two steps that declare the same output name
+are a collision: the pipeline the portal triggered first wins, and the backend logs
+a warning naming the key (#121).
+
+Two things in the setup have to be right for any of this to happen, and the backend
+log says which one is missing:
+
+| Requirement | Why |
+|---|---|
+| The environment's **Webhook URL** contains the project: `/api/v4/projects/<id>/trigger/pipeline` | Every GitLab pipeline and job endpoint is project-scoped, and this URL is the only place the portal learns which project to read. A URL of another shape means no outputs, and a `Cannot tell which GitLab project…` warning. |
+| The CI source's **access token** has `read_api` (or `api`) on that project | The trigger token can start a pipeline but not read a job log. Without the scope the read fails with 401/404 and the log says so. |
+
+**Never output a credential.** Whatever a template prints is stored on the
+infrastructure element, shown in the UI and included in the CSV export. That is why
+`linode/kubernetes-cluster` does not output the kubeconfig and
+`linode/object-storage` does not output an access key, even though both are
+available inside the module.
 
 ---
 
@@ -272,8 +414,9 @@ Only string-valued outputs are captured. Complex types (maps, lists) are ignored
 
 terraform {
   backend "http" {
-    # All backend config is injected at runtime by base.gitlab-ci.yml
-    # using CI_PROJECT_ID and TF_STATE_NAME.
+    # All backend config is injected at runtime by base.gitlab-ci.yml —
+    # the address from CI_PROJECT_ID and TF_STATE_NAME, the credentials
+    # from GITLAB_STATE_USERNAME and GITLAB_STATE_TOKEN.
   }
 }
 ```
@@ -299,8 +442,8 @@ data "terraform_remote_state" "vm" {
   backend = "http"
   config = {
     address  = "${var.ci_api_url}/projects/${var.ci_project_id}/terraform/state/${var.vm_state_name}"
-    username = "gitlab-ci-token"
-    password = var.ci_job_token
+    username = var.gitlab_state_username
+    password = var.gitlab_state_token
   }
 }
 
@@ -312,7 +455,19 @@ resource "linode_domain_record" "a" {
 }
 ```
 
-`ci_api_url`, `ci_project_id`, `ci_job_token`, and `vm_state_name` are all exported automatically by the base CI — no manual variable wiring required.
+`ci_api_url`, `ci_project_id`, `gitlab_state_username`, `gitlab_state_token` and `vm_state_name` are all exported automatically by the base CI — no manual variable wiring required.
+
+> **Not `CI_JOB_TOKEN`.** A job token does not authenticate against the state
+> API on portal-triggered deploys — whether one is accepted at all depends on the
+> project's job-token access settings and on who owns the trigger, so it is not a
+> credential a template can rely on being granted. Both the backend and this data
+> source come back unauthenticated, and OpenTofu reports it as
+> `Error refreshing state: HTTP remote state endpoint requires auth` — which
+> reads as an expired credential rather than as the wrong kind of one. Set
+> `GITLAB_STATE_TOKEN` (an access token with `api` scope) and, unless it is a
+> personal token belonging to `gitlab-ci-token`, `GITLAB_STATE_USERNAME`
+> alongside it: GitLab authenticates the token AS an account, so a valid token
+> sent under the wrong username fails identically.
 
 ---
 
@@ -398,7 +553,8 @@ infra-templates GitLab project setup
   [ ] (Optional) Add scheduled pipeline for drift detection
 
 Portal setup
-  [ ] Create CI Source (Admin → CI Sources): GitLab URL + access token for repo browsing
+  [ ] Create CI Source (Admin → CI Sources): GitLab URL + access token for repo
+        browsing and for reading apply logs (scope: read_api on the project)
   [ ] Create Deployment Environment:
         Webhook URL:   https://gitlab.example.com/api/v4/projects/{infra-templates-ID}/trigger/pipeline
         Webhook Token: the trigger token from the step above
@@ -433,10 +589,18 @@ Verification
 
 ### Data Model
 
-A new `product_webhooks` table stores an ordered list of webhook endpoints per product+environment combination. The webshop fires them all on order approval or decommission.
+**This shipped.** The section below is written in the future tense because it was
+a proposal when it was drafted; `product_webhooks` has existed since the very
+first migration, `0000_steep_blizzard.sql` — not the `006` the snippet names, and
+`0006_unique_callback_secret.sql` is about something else entirely. The DDL is
+kept because it still describes the shape accurately.
+
+The `product_webhooks` table stores an ordered list of webhook endpoints per
+product+environment combination. The webshop fires them all on order approval or
+decommission.
 
 ```sql
--- migration: 006_product_webhooks.sql
+-- Shipped in 0000_steep_blizzard.sql; this is the shape, not a pending change.
 CREATE TABLE product_webhooks (
     id             BIGSERIAL PRIMARY KEY,
     product_id     BIGINT NOT NULL REFERENCES products(id)  ON DELETE CASCADE,
@@ -472,7 +636,7 @@ VM provisions first (order 10), then DNS and firewall in parallel (both order 20
 Because multiple pipelines run per order, the single `pipeline_id` column is extended to a JSON array:
 
 ```sql
--- included in 006_product_webhooks.sql
+-- shipped in 0000_steep_blizzard.sql alongside the table above, not in a separate migration
 ALTER TABLE orders ALTER COLUMN pipeline_id TYPE JSONB USING
     CASE WHEN pipeline_id = '' THEN '[]'::jsonb
          ELSE jsonb_build_array(pipeline_id)
@@ -484,9 +648,14 @@ The order is considered **completed** when all stored pipeline IDs reach `succes
 
 ### Root UI
 
-The product edit page (`Admin → Products → Edit`) gains a **Webhooks** section per environment where the admin can add, reorder, and delete webhook entries. This replaces the single webhook URL that is currently on the `DeploymentEnvironment`.
+The product edit page (`Admin → Products → Edit`) has a **Webhooks** section per environment where an admin can add, reorder and delete webhook entries.
 
-> **Note:** If `product_webhooks` rows exist for a product+environment, they take precedence over the environment's default `webhook_url`. This keeps existing single-webhook setups working without migration.
+> **Note:** there is no fallback to an environment-level webhook, and the
+> precedence rule this note used to claim never shipped. `hasSomethingToTrigger`
+> (`apps/backend/src/lib/services/orders.ts`) looks for `product_webhooks` rows
+> and for a pipeline stack, and for nothing else — an offering with neither is
+> simply not orderable, and the order is refused with an explanation rather than
+> accepted and left hanging. The two mechanisms are alternatives, not a chain.
 
 ### When to Use Which Pattern
 
@@ -512,7 +681,7 @@ When an order is approved (or placed directly by an Admin), the portal fires `tr
 | CI Variable | Value |
 |---|---|
 | `TEMPLATE` | `orchestrator` |
-| `TF_STATE_NAME` | Value of the order parameter named by `stateKeyParam` (e.g. `hostname` → `my-vm-01`) |
+| `TF_STATE_NAME` | The `stateKeyParam` value, namespaced with the order id (e.g. `hostname = my-vm-01` on order 42 → `my-vm-01-42`) — see [stateKeyParam](#statekeyparam) |
 | `PIPELINE_STACK` | JSON array of step objects (see below) |
 | `ORDER_ID` | Webshop order ID |
 | *(all other order parameters)* | Uppercased, same as product webhooks |
@@ -558,11 +727,13 @@ Each step object:
 
 ### stateKeyParam
 
-`stateKeyParam` (default: `hostname`) names the order parameter used as the base Terraform state key. It must be:
-- **Stable** — the same value must be submitted at provision time and is stored on the infrastructure element for use at destroy time
-- **Unique per infrastructure element** — so state files never collide across concurrent orders
+`stateKeyParam` (default: `hostname`) names the order parameter whose value forms the readable half of the Terraform state key. The portal appends the **order id** to it and restricts it to `[A-Za-z0-9._-]`; the element's position within a multi-quantity order is appended after that (`-2`, `-3`, … for elements two onwards).
 
-Example: if `stateKeyParam = "hostname"` and the order sets `hostname = "my-vm-01"`, then the state keys across steps are `my-vm-01-vm`, `my-vm-01-dns`, `my-vm-01-fw`.
+The namespace is not cosmetic. The parameter value is typed by whoever places the order, so before it existed two users who typed the same hostname got pipelines pointed at the same Terraform state — and one decommissioning their own element destroyed the other's infrastructure (issue #183). The order id is server-generated, so uniqueness no longer depends on what anyone types.
+
+Example: `stateKeyParam = "hostname"`, order 42 sets `hostname = "my-vm-01"` → the state keys across steps are `my-vm-01-42-vm`, `my-vm-01-42-dns`, `my-vm-01-42-fw`.
+
+The value is stored on the infrastructure element, so a destroy or a retry derives the same key its `apply` used. Elements provisioned before the namespace existed keep deriving theirs from the raw value (`my-vm-01-vm`) — their state lives there.
 
 ### Orchestrator pipeline
 
@@ -585,7 +756,7 @@ orchestrate:
 
 ### Configuring in the portal
 
-See the Root Guide, section 4.5 "Pipeline Stacks" for step-by-step instructions on creating and managing stacks in the portal UI.
+See the Root Guide, section 4.6 "Pipeline Stacks" for step-by-step instructions on creating and managing stacks in the portal UI.
 
 ### When to use Pipeline Stacks vs. other patterns
 

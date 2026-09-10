@@ -1,6 +1,6 @@
 import { type NextRequest } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { getCallbackSecret, regenerateCallbackSecret } from '@/lib/services/admin/environments'
 
 // GET reveals the current secret so the Root can copy it into GitLab
@@ -16,7 +16,9 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await getCallbackSecret(parseInt(id, 10)))
+  const environmentId = parseRouteId(id)
+  if (environmentId === null) return invalidId('environment id')
+  return toResponse(await getCallbackSecret(environmentId, session.id))
 }
 
 export async function POST(
@@ -27,5 +29,7 @@ export async function POST(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await regenerateCallbackSecret(parseInt(id, 10)))
+  const environmentId = parseRouteId(id)
+  if (environmentId === null) return invalidId('environment id')
+  return toResponse(await regenerateCallbackSecret(environmentId, session.id))
 }

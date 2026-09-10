@@ -1,7 +1,8 @@
-import { type NextRequest } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
 import { toResponse } from '@/lib/http'
 import { listCatalog } from '@/lib/services/catalog'
+import { parseCatalogFilters } from '@/lib/services/catalogFilters'
 
 export async function GET(req: NextRequest) {
   const session = await requireAuth(req)
@@ -9,10 +10,11 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const lang = searchParams.get('lang') ?? 'en'
-  const search = searchParams.get('search') ?? undefined
-  const categoryId = searchParams.get('categoryId')
-    ? parseInt(searchParams.get('categoryId') ?? '0', 10)
-    : undefined
 
-  return toResponse(await listCatalog(lang, search, categoryId))
+  const filters = parseCatalogFilters(searchParams)
+  if (!filters.ok) {
+    return NextResponse.json({ error: filters.message }, { status: filters.status })
+  }
+
+  return toResponse(await listCatalog(lang, filters.data))
 }

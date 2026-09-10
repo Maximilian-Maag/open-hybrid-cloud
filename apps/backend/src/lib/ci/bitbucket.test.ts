@@ -38,11 +38,34 @@ describe('bitbucket ci client', () => {
       ])
     })
 
-    it('throws with the response body on non-2xx', async () => {
+    it('throws with the status on non-2xx', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       vi.spyOn(global, 'fetch').mockResolvedValue(new Response('{"error":{"message":"nope"}}', { status: 401 }))
       await expect(
         triggerBitbucketPipeline('https://bitbucket.org/a/b', 't', 'main', {}),
       ).rejects.toThrow(/401/)
+      errSpy.mockRestore()
+    })
+
+    // Issue #144 — see gitlab.test.ts for where this message ends up (a 502 body a
+    // project manager can trigger, and logAudit).
+    it('keeps the provider response body out of the thrown message', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(global, 'fetch').mockResolvedValue(
+        new Response('{"error":{"message":"bad variable ADMIN_PASSWORD=sup3rs3cret"}}', { status: 400 }),
+      )
+
+      await expect(
+        triggerBitbucketPipeline('https://bitbucket.org/a/b', 't', 'main', { ADMIN_PASSWORD: 'sup3rs3cret' }),
+      ).rejects.toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining('sup3rs3cret') }),
+      )
+
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('400'),
+        expect.stringContaining('sup3rs3cret'),
+      )
+      errSpy.mockRestore()
     })
   })
 

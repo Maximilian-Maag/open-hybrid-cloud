@@ -3,6 +3,7 @@ import { appConfig } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { ok, type Result } from '@/lib/services/result'
 import { resetSmtpCache } from '@/lib/notification'
+import { logAudit } from '@/lib/audit'
 
 export interface SmtpConfig {
   host: string
@@ -61,11 +62,25 @@ export const getSmtpConfig = async (): Promise<Result<SmtpConfig>> => {
   })
 }
 
-export const updateSmtpConfig = async (input: UpdateSmtpInput): Promise<Result<void>> => {
+/**
+ * An empty string is not a value, it is the absence of one.
+ *
+ * These columns are nullable and every reader treats NULL as "not configured" —
+ * `lib/notification` returns null for a missing host, `lib/ai` falls back to a
+ * default model. Storing `''` instead would satisfy neither: `?? 'gpt-4o-mini'`
+ * does not fire for an empty string, so a cleared model would be sent to the
+ * provider as nothing at all rather than as the default (#317).
+ */
+const orNull = (value: string): string | null => (value.trim() === '' ? null : value)
+
+export const updateSmtpConfig = async (
+  input: UpdateSmtpInput,
+  actorId?: number,
+): Promise<Result<void>> => {
   const setValues: Partial<typeof appConfig.$inferInsert> = {
-    smtpHost: input.host,
+    smtpHost: orNull(input.host),
     smtpPort: input.port,
-    smtpFrom: input.from,
+    smtpFrom: orNull(input.from),
     smtpUser: input.user ?? '',
     smtpTls: input.tls ?? true,
   }
@@ -78,6 +93,18 @@ export const updateSmtpConfig = async (input: UpdateSmtpInput): Promise<Result<v
 
   // Invalidate the cached transporter so the new settings take effect at once.
   resetSmtpCache()
+
+  // Host and port are configuration an auditor needs to see; the password is not
+  // recorded, only the fact that it was replaced. There is exactly one row here,
+  // so the entry carries no entity id.
+  await logAudit(
+    actorId ?? null,
+    'config.smtp_updated',
+    undefined,
+    orNull(input.host) === null
+      ? 'SMTP turned off'
+      : `SMTP set to ${input.host}:${input.port} (tls ${input.tls ?? true})${input.password !== undefined ? ', password replaced' : ''}`,
+  )
 
   return ok(undefined)
 }
@@ -105,11 +132,14 @@ export const getAiConfig = async (): Promise<Result<AiConfig>> => {
   })
 }
 
-export const updateAiConfig = async (input: UpdateAiInput): Promise<Result<void>> => {
+export const updateAiConfig = async (
+  input: UpdateAiInput,
+  actorId?: number,
+): Promise<Result<void>> => {
   const setValues: Partial<typeof appConfig.$inferInsert> = {
     aiProvider: input.provider,
     aiEndpoint: input.endpoint,
-    aiModel: input.model,
+    aiModel: orNull(input.model),
   }
   if (input.apiKey !== undefined) setValues.aiApiKey = input.apiKey
 
@@ -117,6 +147,14 @@ export const updateAiConfig = async (input: UpdateAiInput): Promise<Result<void>
     .insert(appConfig)
     .values({ id: 1, ...setValues })
     .onConflictDoUpdate({ target: appConfig.id, set: setValues })
+
+  // Provider, endpoint and model, never the API key — only that it was replaced.
+  await logAudit(
+    actorId ?? null,
+    'config.ai_updated',
+    undefined,
+    `AI set to ${input.provider} ${input.model} at ${input.endpoint}${input.apiKey !== undefined ? ', API key replaced' : ''}`,
+  )
 
   return ok(undefined)
 }

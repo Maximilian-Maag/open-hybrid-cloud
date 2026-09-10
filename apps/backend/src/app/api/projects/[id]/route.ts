@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireAuth, requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { getProjectById, updateProject, deleteProject } from '@/lib/services/projects'
 
 const UpdateProjectSchema = z.object({
@@ -18,7 +18,9 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await getProjectById(session, parseInt(id, 10)))
+  const projectId = parseRouteId(id)
+  if (projectId === null) return invalidId('project id')
+  return toResponse(await getProjectById(session, projectId))
 }
 
 export async function PUT(
@@ -29,6 +31,8 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id } = await params
+  const projectId = parseRouteId(id)
+  if (projectId === null) return invalidId('project id')
 
   const body = await req.json().catch(() => null)
   const parsed = UpdateProjectSchema.safeParse(body)
@@ -36,7 +40,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updateProject(session, parseInt(id, 10), parsed.data))
+  return toResponse(await updateProject(session, projectId, parsed.data))
 }
 
 export async function DELETE(
@@ -47,5 +51,7 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await deleteProject(session, parseInt(id, 10)))
+  const projectId = parseRouteId(id)
+  if (projectId === null) return invalidId('project id')
+  return toResponse(await deleteProject(session, projectId))
 }

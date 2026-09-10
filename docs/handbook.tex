@@ -1,5 +1,5 @@
 % ============================================================
-%  Open Hybrid Cloud Infrastructure Webshop — Technical Handbook
+%  InfraShelf Infrastructure Webshop — Technical Handbook
 % ============================================================
 \documentclass[12pt,a4paper,twoside]{report}
 
@@ -26,8 +26,8 @@
 
 % ── Colors ───────────────────────────────────────────────────
 \usepackage[dvipsnames,table]{xcolor}
-\definecolor{ohc-blue}{HTML}{131921}
-\definecolor{ohc-amber}{HTML}{febd69}
+\definecolor{isf-blue}{HTML}{131921}
+\definecolor{isf-amber}{HTML}{febd69}
 \definecolor{c4-person}{HTML}{08427b}
 \definecolor{c4-system}{HTML}{1168bd}
 \definecolor{c4-external}{HTML}{6b6b6b}
@@ -196,6 +196,35 @@
 
 % ── Misc packages ─────────────────────────────────────────────
 \usepackage{graphicx}
+% Rotated pages for the C4 diagrams. They are generated from workspace.dsl and
+% are 2.2:1 to 2.8:1 — many sibling components sit at the same rank, so the
+% pictures are wide and short. Scaled into a portrait text block their labels
+% are unreadable; on a landscape page the same picture is ~1.6x larger.
+\usepackage{pdflscape}
+
+% One C4 figure on a page of its own, turned sideways.
+%
+% Not `\c4figure`: a control sequence cannot contain a digit, so LaTeX reads
+% that as the `\c` cedilla accent applied to `4figure`.
+%
+% The long edge has to be captured BEFORE entering `landscape`. Measured:
+% outside it \textwidth is 441pt and \textheight 674pt; inside, pdflscape
+% rotates the page but leaves the typeblock portrait-shaped and sets
+% \textheight := \textwidth, so BOTH read 441pt and neither names the 674pt
+% the rotated page actually offers. Sizing against either printed the diagram at
+% two-thirds width in the middle of an empty page.
+\newlength{\dsllongedge}
+\newcommand{\dslfigure}[3]{%
+  \setlength{\dsllongedge}{\textheight}%
+  \begin{landscape}
+  \begin{figure}[p]
+  \centering
+  \includegraphics[width=\dsllongedge,height=0.86\textheight,keepaspectratio]{#1}
+  \caption{#2}
+  \label{#3}
+  \end{figure}
+  \end{landscape}%
+}
 \usepackage{enumitem}
 \usepackage{parskip}
 \usepackage{float}
@@ -217,10 +246,10 @@
   linkcolor=link-color,
   urlcolor=link-color,
   citecolor=link-color,
-  pdfauthor={Open Hybrid Cloud Infrastructure Team},
-  pdftitle={Open Hybrid Cloud Infrastructure Webshop — Technical Handbook},
+  pdfauthor={InfraShelf Infrastructure Team},
+  pdftitle={InfraShelf Infrastructure Webshop — Technical Handbook},
   pdfsubject={Technical documentation for administrators, developers, and project managers},
-  pdfkeywords={Open Hybrid Cloud, webshop, infrastructure, Next.js, TypeScript, OpenTofu, GitLab, C4},
+  pdfkeywords={InfraShelf, webshop, infrastructure, Next.js, TypeScript, OpenTofu, GitLab, C4},
   bookmarksnumbered=true,
   hypertexnames=true,
   unicode=true,
@@ -229,13 +258,13 @@
 % ── Chapter style ─────────────────────────────────────────────
 \usepackage{titlesec}
 \titleformat{\chapter}[display]
-  {\normalfont\huge\bfseries\color{ohc-blue}}
+  {\normalfont\huge\bfseries\color{isf-blue}}
   {\chaptertitlename\ \thechapter}{12pt}{\Huge}
 \titleformat{\section}
-  {\normalfont\Large\bfseries\color{ohc-blue!80}}
+  {\normalfont\Large\bfseries\color{isf-blue!80}}
   {\thesection}{1em}{}
 \titleformat{\subsection}
-  {\normalfont\large\bfseries\color{ohc-blue!60}}
+  {\normalfont\large\bfseries\color{isf-blue!60}}
   {\thesubsection}{1em}{}
 
 % ── Custom commands ───────────────────────────────────────────
@@ -244,6 +273,9 @@
 \newcommand{\term}[1]{\textit{#1}}
 \newcommand{\route}[1]{\texttt{\textcolor{ForestGreen}{#1}}}
 \newcommand{\env}[1]{\texttt{\textcolor{Maroon}{#1}}}
+% A path through the UI, as the reader would click it: Admin -> Environments.
+% Distinct from \code, which is for things typed rather than clicked.
+\newcommand{\menu}[1]{\textsf{\textbf{#1}}}
 \newcommand{\role}[1]{\textsf{\textbf{#1}}}
 
 % ── Version info ──────────────────────────────────────────────
@@ -256,16 +288,16 @@
 % ── Title page ───────────────────────────────────────────────
 \begin{titlepage}
   \begin{tikzpicture}[remember picture, overlay]
-    \fill[ohc-blue] (current page.north west) rectangle
+    \fill[isf-blue] (current page.north west) rectangle
       ([yshift=-5cm] current page.north east);
-    \fill[ohc-amber] ([yshift=-5cm] current page.north west) rectangle
+    \fill[isf-amber] ([yshift=-5cm] current page.north west) rectangle
       ([yshift=-5.4cm] current page.north east);
   \end{tikzpicture}
 
   \vspace*{2.5cm}
 
   {\color{white}\fontsize{28}{34}\selectfont\bfseries
-    Open Hybrid Cloud\\[6pt]
+    InfraShelf\\[6pt]
     Infrastructure Webshop}
 
   \vspace{2.2cm}
@@ -288,7 +320,7 @@
   \end{tabular}
 
   \vspace{1cm}
-  {\small\color{gray}Open Hybrid Cloud — Digital Unit Infrastructure Team}
+  {\small\color{gray}InfraShelf — Digital Unit Infrastructure Team}
 \end{titlepage}
 
 % ── Front matter ─────────────────────────────────────────────
@@ -309,7 +341,7 @@
 
 \section{Purpose of This Handbook}
 
-Open Hybrid Cloud is an open-source, self-service portal that enables Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. The source code is publicly available at \url{https://github.com/Maximilian-Maag/open-hybrid-cloud}. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
+InfraShelf is an open-source, self-service portal that enables Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. The source code is publicly available at \url{https://github.com/Maximilian-Maag/infrashelf}. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
 
 It covers:
 \begin{itemize}
@@ -398,48 +430,7 @@ Component, Code). Each level zooms in one step deeper.
 Figure~\ref{fig:c4-l1} shows who uses the webshop and which external
 systems it depends on.
 
-\begin{figure}[H]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[node distance=1.0cm and 1.2cm]
-
-  % Central system
-  \node[c4system, text width=4cm, minimum height=2.4cm] (ws)
-    {\textbf{Open Hybrid Cloud}\\[4pt]
-     \scriptsize Self-service portal for ordering, managing and decommissioning IT infrastructure.\\
-     \scriptsize Next.js · React · PostgreSQL};
-
-  % Persons (top)
-  \node[c4person, above left=1.8cm and 2.6cm of ws] (dua)
-    {\textbf{Admin}\\[4pt]\scriptsize Orders directly, approves/rejects, sees all infrastructure};
-  \node[c4person, above=1.8cm of ws] (sa)
-    {\textbf{Root}\\[4pt]\scriptsize Manages catalog \& config};
-  \node[c4person, above right=1.8cm and 2.6cm of ws] (pl)
-    {\textbf{Project Manager}\\[4pt]\scriptsize Orders own infrastructure};
-
-  % External systems (bottom row)
-  \node[c4external, below left=2.0cm and 4.0cm of ws] (gl)
-    {\textbf{CI Provider}\\[4pt]\scriptsize GitLab / GitHub / Bitbucket — webhook target, repo browser};
-  \node[c4external, below right=2.0cm and 0.8cm of ws] (er)
-    {\textbf{Exchange Rate API}\\[4pt]\scriptsize Currency conversion rates (optional)};
-  \node[c4external, below right=2.0cm and 4.0cm of ws] (smtp)
-    {\textbf{Mail Server}\\[4pt]\scriptsize SMTP transactional email};
-
-  % Arrows — persons to webshop
-  \draw[c4arrow] (dua)  -- node[c4label, right=1pt]{Uses HTTPS} (ws);
-  \draw[c4arrow] (sa)   -- node[c4label, right=1pt]{Uses HTTPS} (ws);
-  \draw[c4arrow] (pl)   -- node[c4label, right=1pt]{Uses HTTPS} (ws);
-
-  % Arrows — webshop to external
-  \draw[c4arrow] (ws) -- node[c4label, left=1pt, align=right]
-    {Webhooks, API\\JSON/HTTPS} (gl);
-  \draw[c4arrow] (ws) -- node[c4label, right=1pt]{JSON/HTTPS} (er);
-  \draw[c4arrow] (ws) -- node[c4label, right=1pt]{SMTP} (smtp);
-
-\end{tikzpicture}}%
-\caption{C4 Level 1 — System Context Diagram}
-\label{fig:c4-l1}
-\end{figure}
+\dslfigure{architecture/diagrams/structurizr-SystemContext}{C4 Level 1 — System Context Diagram}{fig:c4-l1}
 
 \subsection{Actors}
 
@@ -485,65 +476,7 @@ systems it depends on.
 \section{Level 2 — Container Diagram}
 \label{sec:c4-l2}
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[node distance=1.4cm and 1.8cm]
-
-  % System boundary
-  \begin{scope}[on background layer]
-    \node[c4boundary, fit={(-0.5,-0.5)(12,6.5)}, inner sep=0.6cm,
-          label={[font=\small\itshape]above left:Open Hybrid Cloud System}] (bound) {};
-  \end{scope}
-
-  % Frontend container
-  \node[c4container, text width=3.6cm, minimum height=3.0cm] (fe) at (2,3)
-    {\textbf{Frontend}\\[4pt]
-     \scriptsize React UI, App Router pages,\\
-     NextAuth v5 session,\\
-     typed API client.\\[4pt]
-     \scriptsize\textit{Next.js 15 · React 19 · :3000}};
-
-  % Backend container
-  \node[c4container, text width=3.6cm, minimum height=3.0cm] (be) at (7,3)
-    {\textbf{Backend API}\\[4pt]
-     \scriptsize REST route handlers,\\
-     JWT auth middleware,\\
-     Drizzle ORM, webhooks,\\
-     notifications.\\[4pt]
-     \scriptsize\textit{Next.js 15 · Node.js 22 · :3001}};
-
-  % Database
-  \node[c4database, right=2.2cm of be] (db)
-    {\textbf{PostgreSQL}\\[4pt]
-     \scriptsize All persistent data};
-
-  % Persons (above)
-  \node[c4person, above left=1.6cm and 0.4cm of fe] (dua)
-    {\textbf{Admin}};
-  \node[c4person, above=1.6cm of fe] (sa)
-    {\textbf{Root}};
-  \node[c4person, above right=1.6cm and 0.4cm of fe] (pl)
-    {\textbf{Project Manager}};
-
-  % External below
-  \node[c4external, below left=1.6cm and 0.5cm of be, text width=2.8cm] (ci)
-    {\textbf{CI Provider}};
-  \node[c4external, below right=1.6cm and 0.5cm of be, text width=2.8cm] (smtp)
-    {\textbf{SMTP}};
-
-  % Arrows
-  \draw[c4arrow] (dua) -- (fe);
-  \draw[c4arrow] (sa)  -- (fe);
-  \draw[c4arrow] (pl)  -- (fe);
-  \draw[c4arrow] (fe) -- node[c4label,above]{REST/HTTPS} (be);
-  \draw[c4arrow] (be) -- node[c4label,above]{Drizzle/TCP} (db);
-  \draw[c4arrow] (be) -- node[c4label,right=2pt]{JSON/HTTPS} (ci);
-  \draw[c4arrow] (be) -- node[c4label,right=2pt]{SMTP} (smtp);
-
-\end{tikzpicture}
-\caption{C4 Level 2 — Container Diagram}
-\label{fig:c4-l2}
-\end{figure}
+\dslfigure{architecture/diagrams/structurizr-Container}{C4 Level 2 — Container Diagram}{fig:c4-l2}
 
 The system has three containers (plus the shared database):
 
@@ -581,73 +514,13 @@ The system has three containers (plus the shared database):
 Figure~\ref{fig:c4-l3} decomposes the backend API container into
 its major logical components.
 
-\begin{figure}[H]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[node distance=0.7cm and 0.6cm]
+\dslfigure{architecture/diagrams/structurizr-Component_Backend}{C4 Level 3 — Component Diagram (Backend API)}{fig:c4-l3}
 
-  % Top row — thin route handler groups
-  \node[c4component] (auth)
-    {\textbf{Auth Routes}\\[2pt]\scriptsize login, me, password};
-  \node[c4component, right=of auth] (catalog)
-    {\textbf{Catalog Routes}\\[2pt]\scriptsize Products, categories, pricing};
-  \node[c4component, right=of catalog] (order)
-    {\textbf{Order Routes}\\[2pt]\scriptsize Place, approve, reject};
-  \node[c4component, right=of order] (infra)
-    {\textbf{Infrastructure Routes}\\[2pt]\scriptsize Overview, decommission};
-  \node[c4component, right=of infra] (admin)
-    {\textbf{Admin Routes}\\[2pt]\scriptsize Catalog \& config mgmt};
+The frontend decomposes the same way. Both figures are generated from
+\code{docs/architecture/workspace.dsl} by \code{make diagrams}; the model is the
+source of truth and this handbook includes what it renders.
 
-  % Middle row — service layer
-  \node[c4component, below=0.9cm of auth] (sauth)
-    {\textbf{Auth Service}\\[2pt]\scriptsize credentials, SSO upsert};
-  \node[c4component, right=of sauth] (sorder)
-    {\textbf{Order Service}\\[2pt]\scriptsize state machine, CI trigger};
-  \node[c4component, right=of sorder] (sinfra)
-    {\textbf{Infrastructure Service}\\[2pt]\scriptsize decommission logic};
-  \node[c4component, right=of sinfra] (sadmin)
-    {\textbf{Admin Services}\\[2pt]\scriptsize CRUD, exchange, config};
-
-  % Lower-middle row — lib modules
-  \node[c4component, below=0.9cm of sauth] (jwtmw)
-    {\textbf{JWT Middleware}\\[2pt]\scriptsize Verify token, role guards};
-  \node[c4component, right=of jwtmw] (ci)
-    {\textbf{CI Dispatch}\\[2pt]\scriptsize GitLab/GitHub/Bitbucket};
-  \node[c4component, right=of ci] (webhook)
-    {\textbf{Webhook Handler}\\[2pt]\scriptsize Inbound pipeline events};
-  \node[c4component, right=of webhook] (email)
-    {\textbf{Notification}\\[2pt]\scriptsize nodemailer SMTP};
-  \node[c4component, right=of email] (queries)
-    {\textbf{Query Helpers}\\[2pt]\scriptsize findProductName, findUserEmail};
-
-  % Bottom row — data layer
-  \node[c4database, below=0.9cm of jwtmw, text width=2.8cm] (drizzle)
-    {\textbf{Drizzle ORM}\\[2pt]\scriptsize Schema + typed queries};
-
-  % Arrows: routes → services
-  \draw[->, thick] (auth) -- (sauth);
-  \draw[->, thick] (catalog) -- (sorder);
-  \draw[->, thick] (order) -- (sorder);
-  \draw[->, thick] (infra) -- (sinfra);
-  \draw[->, thick] (admin) -- (sadmin);
-
-  % Arrows: services to lib
-  \foreach \n in {sauth, sorder, sinfra, sadmin}
-    \draw[->, thick, draw=gray!60] (\n) -- (ci);
-  \foreach \n in {sauth, sorder, sinfra, sadmin}
-    \draw[->, thick, draw=gray!60] (\n) -- (email);
-  \foreach \n in {sauth, sorder, sinfra, sadmin}
-    \draw[->, thick, draw=gray!60] (\n) -- (queries);
-
-  % Arrows: everything to drizzle
-  \foreach \n in {jwtmw, ci, webhook, email, queries, sauth, sorder, sinfra, sadmin}
-    \draw[->, thick, draw=gray!40, dashed] (\n) -- (drizzle);
-
-\end{tikzpicture}
-}
-\caption{C4 Level 3 — Component Diagram (Backend API)}
-\label{fig:c4-l3}
-\end{figure}
+\dslfigure{architecture/diagrams/structurizr-Component_Frontend}{C4 Level 3 — Component Diagram (Frontend)}{fig:c4-l3-frontend}
 
 \subsection{Component Descriptions}
 
@@ -677,7 +550,8 @@ All domain logic is in the service layer.
     and branding — each delegates to the corresponding admin service. \\[6pt]
   \multicolumn{2}{@{}l}{\textit{Service Layer (\file{src/lib/services/})}} \\[2pt]
   Auth Service &
-    Verifies bcrypt passwords, upserts SSO users, returns or invalidates JWTs.
+    Verifies bcrypt passwords, returns or invalidates JWTs. The SSO user upsert
+    went with the removed callback (issue~\#139).
     Returns \code{Result<string>} (token) or a typed error. \\[4pt]
   Order / Approval Services &
     Implements the order state machine: \textit{pending} →
@@ -762,8 +636,13 @@ All domain logic is in the service layer.
   \item The route handler validates auth and delegates to
         \code{approveOrder(session, orderId)} in
         \file{lib/services/approvals.ts}.
-  \item The service fetches the order (returns \code{Err 400} if not
-        \code{pending}), then calls \code{triggerProductWebhooks()} and
+  \item The service claims the order (returns \code{Err 400} if it is not
+        \code{pending}). Where the environment sets
+        \code{respectsDeploymentWindows} and no window is open, the path stops
+        here: the order becomes \code{scheduled} carrying the instant its window
+        opens, the approval succeeds, and provisioning waits for the sweep or for
+        root's \menu{Deploy now} (\S\ref{sec:deployment-windows}). Otherwise it
+        continues straight on, and calls \code{triggerProductWebhooks()} and
         \code{triggerPipelineStacks()} in \file{lib/ci/webhooks.ts} in
         parallel. Product webhooks fire in \code{exec\_order}; pipeline
         stacks serialise the configured step sequence as \code{PIPELINE\_STACK}
@@ -800,10 +679,13 @@ Every backend request follows the same four-step shell:
 \end{enumerate}
 
 User interactions on the frontend are handled by React Server Components or
-client components that call the backend via typed wrappers in
-\file{src/lib/api.ts}. NextAuth v5 stores the JWT in an encrypted
-server-side session cookie and forwards it as a Bearer token on every
-backend call.
+client components that call the backend via typed wrappers. NextAuth v5 stores
+the backend JWT in an encrypted, HttpOnly session cookie, and the token stays on
+the server: a Server Component calls \file{src/lib/serverApi.ts}, which reads it
+from the session and sends it as a Bearer token, while a client component calls
+\file{src/lib/api.ts}, which sends the request to this origin's own
+\code{/api/proxy} route and lets that attach the header server-side. See
+\S\ref{sec:jwt-auth}.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{Design Decisions \& Technology Rationale}
@@ -926,7 +808,7 @@ the \code{postgres} Node.js driver.
   \item \textbf{Thin abstraction:} Drizzle stays close to SQL semantics
         (no opaque magic), making it straightforward to write efficient
         queries for JSONB columns, upserts, and aggregations.
-  \item BYTEA columns store product images and the branding logo
+  \item BYTEA columns store product images (\code{product\_images.data}) and the branding logo
         directly in the database, eliminating a separate object store at
         this scale.
 \end{itemize}
@@ -940,11 +822,45 @@ containers (\code{apps/backend/Dockerfile} and
 \textbf{Rationale:}
 Separating concerns at the container boundary gives each part its own
 deployment, scaling, and environment-variable scope. The frontend never
-holds database credentials; the backend never renders HTML. Nginx
-(or any reverse proxy) routes \code{/api/*} to port 3001 and all other
-paths to port 3000. At the anticipated load (tens of users, hundreds
-of orders per month), this split adds minimal operational overhead
-while making the security boundary explicit.
+holds database credentials; the backend never renders HTML. At the
+anticipated load (tens of users, hundreds of orders per month), this
+split adds minimal operational overhead while making the security
+boundary explicit.
+
+\textbf{Routing is not simply \code{/api/*}.} Both halves are Next.js
+applications and both serve routes under \code{/api}. A reverse proxy that
+sends all of \code{/api/*} to port 3001 breaks sign-in, because these paths
+belong to the \emph{frontend} on port 3000:
+
+\begin{itemize}
+  \item \code{/api/auth/*} --- NextAuth's own endpoints (\code{csrf},
+        \code{session}, \code{callback/credentials}, \code{signin}, \ldots)
+  \item \code{/api/login-challenge} --- step one of the two-step sign-in
+  \item \code{/api/ping} --- the frontend's liveness route
+  \item \code{/api/proxy/*} --- how the browser reaches the backend API at all
+        (issue~\#146). The browser no longer holds the bearer token; it calls
+        this route with the HttpOnly session cookie and the route attaches the
+        token server-side. Sending this one to port 3001 does not produce a 404
+        --- it produces a 401 on every request the signed-in user makes, which
+        is harder to attribute.
+\end{itemize}
+
+\noindent
+There used to be one exception inside that range: \code{/api/auth/callback},
+Entra ID's OAuth callback, which was the \emph{backend's} and had to be matched
+exactly so it outranked the \code{/api/auth} prefix. That flow was removed
+(issue~\#139) --- nothing on the frontend ever consumed its result, and it handed
+the session JWT back in a query string --- so the whole of \code{/api/auth} now
+belongs to the frontend. Reinstating SSO means reinstating that exact match with
+it. Everything else under \code{/api} goes to port 3001, and every other path to
+port 3000.
+
+Getting this wrong produces a 404 that is easy to misattribute, since both
+applications answer with \code{X-Powered-By: Next.js}; the giveaway is that a
+reply from the backend also carries its CORS headers. \code{ingress.yaml} and
+\code{infra/docker-host/nginx.conf.example} both encode the split, and
+\code{apps/frontend/src/lib/apiRoutes.test.ts} fails if either falls behind the
+frontend's actual routes.
 
 \section{OpenTofu over Terraform}
 
@@ -955,7 +871,7 @@ OpenTofu is a community-governed, truly open-source fork of Terraform
 created after HashiCorp changed Terraform's license to BSL 1.1 in 2023.
 The API, HCL syntax, provider ecosystem, and state format are fully
 compatible. Using OpenTofu avoids future licensing costs and complies
-with Open Hybrid Cloud's open-source software policy.
+with InfraShelf's open-source software policy.
 
 \section{GitLab Managed Terraform State}
 
@@ -1054,11 +970,24 @@ complex custom script), whereas passing \code{PIPELINE\_STACK} JSON is a
 simple REST variable and works with any GitLab tier.
 
 \section{JWT Authentication}
+\label{sec:jwt-auth}
 
 \textbf{Decision:} The backend issues signed JWTs (HS256, 24-hour
 expiry) via the \code{jose} library. The frontend stores the JWT in
-a NextAuth v5 server-side session cookie and forwards it as a
-\code{Bearer} token on every backend API call.
+a NextAuth v5 encrypted session cookie and forwards it as a
+\code{Bearer} token on every backend API call --- \emph{from the server only}.
+Client JavaScript never holds the token: the browser calls the frontend's own
+\code{/api/proxy/*} route with the HttpOnly session cookie, and that route adds
+the Authorization header.
+
+\textbf{Why the proxy:} a bearer token is not bound to an origin, so a token in
+client JavaScript is a credential that can be read by any script on the page and
+replayed from anywhere for the rest of its 24 hours. Handing it to the browser
+--- as \code{session.apiToken} on \code{/api/auth/session}, and as a
+\code{token} prop serialised into every page's RSC payload --- turned any XSS on
+this origin into a full account takeover that outlived the page. The proxy costs
+one extra hop inside the cluster and removes the credential from the browser
+entirely.
 
 \textbf{Rationale:}
 \begin{itemize}
@@ -1341,8 +1270,8 @@ data "terraform_remote_state" "vm" {
   backend = "http"
   config = {
     address  = "${var.ci_api_url}/projects/${var.ci_project_id}/terraform/state/${var.vm_state_name}"
-    username = "gitlab-ci-token"
-    password = var.ci_job_token
+    username = var.gitlab_state_username
+    password = var.gitlab_state_token
   }
 }
 
@@ -1502,8 +1431,6 @@ Section~\ref{sec:webhook} for the JSON schema.
   \item Docker 24+ (or a Kubernetes cluster)
   \item PostgreSQL 15+ (external or containerized)
   \item SMTP server credentials (optional, can be configured later)
-  \item Microsoft Entra ID application registration for OIDC
-        (optional for local-only operation)
   \item Linode API token with Read/Write scope
   \item GitLab instance with webhook support
 \end{itemize}
@@ -1540,9 +1467,6 @@ cp apps/frontend/.env.example apps/frontend/.env
     \env{SMTP\_PASS}          & SMTP authentication password                       & No  \\
     \env{SMTP\_TLS}           & \code{true} to enable TLS                         & No  \\
     \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint                    & No  \\
-    \env{ENTRA\_TENANT\_ID}   & Microsoft Entra ID tenant ID (SSO)                & No  \\
-    \env{ENTRA\_CLIENT\_ID}   & Entra ID application client ID                     & No  \\
-    \env{ENTRA\_CLIENT\_SECRET} & Entra ID client secret                           & No  \\
     \bottomrule
   \end{tabularx}
 \end{table}
@@ -1580,7 +1504,7 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[node distance=1.2cm and 1.6cm,
-  box/.style={rectangle, draw=ohc-blue!70, fill=ohc-blue!10,
+  box/.style={rectangle, draw=isf-blue!70, fill=isf-blue!10,
               text width=2.8cm, align=center, minimum height=1.1cm, font=\small\bfseries},
   db/.style={cylinder, draw=c4-database!80, fill=c4-database!20,
              shape border rotate=90, text width=2.2cm, align=center,
@@ -1591,7 +1515,7 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 
   \node[ext] (client) {Browser\\/ API Client};
   \node[box, right=1.6cm of client] (nginx) {Nginx\\\scriptsize TLS termination\\reverse proxy};
-  \node[box, right=1.6cm of nginx] (app) {open-hybrid-cloud\\\scriptsize Docker\\:8080};
+  \node[box, right=1.6cm of nginx] (app) {infrashelf\\\scriptsize Docker\\:8080};
   \node[db, right=1.6cm of app] (pg) {PostgreSQL\\\scriptsize :5432};
   \node[box, right=1.6cm of nginx] (fe) {Frontend\\\scriptsize Next.js\\:3000};
   \node[box, right=1.6cm of fe] (be) {Backend API\\\scriptsize Next.js\\:3001};
@@ -1610,7 +1534,13 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 \end{figure}
 
 Nginx routes \code{/api/*} and \code{/api/webhooks/*} to the backend
-container (port 3001) and all other paths to the frontend (port 3000).
+container (port 3001), and all other paths to the frontend (port 3000).
+The exceptions are the frontend's own \code{/api/auth},
+\code{/api/login-challenge}, \code{/api/ping} and \code{/api/proxy}, which go
+to the frontend (see section on the two-container split). \code{/api/auth/callback} used to be
+the exception to that exception --- Entra ID's callback, matched exactly so it
+outranked the \code{/api/auth} prefix --- but the SSO flow was removed in
+issue~\#139 and the whole prefix is the frontend's again.
 
 \subsection*{Step-by-Step Deployment Procedure}
 
@@ -1625,8 +1555,8 @@ systemctl enable --now docker
 
 \item \textbf{Clone the repository.}
 \begin{lstlisting}[style=bash]
-git clone https://github.com/Maximilian-Maag/open-hybrid-cloud.git
-cd open-hybrid-cloud
+git clone https://github.com/Maximilian-Maag/infrashelf.git
+cd infrashelf
 \end{lstlisting}
 
 \item \textbf{Configure environment files.}
@@ -1661,52 +1591,57 @@ certificate and key at the paths referenced in
 
 \item \textbf{Configure Nginx as TLS-terminating reverse proxy.}
 
-Listing~\ref{lst:nginxconf} shows a minimal but production-ready
-Nginx configuration:
+The configuration is kept in the repository rather than reproduced here,
+so that it cannot drift away from what is actually deployed:
+\file{infra/docker-host/nginx.conf.example}.
 
-\begin{lstlisting}[style=yaml,caption={infra/nginx/default.conf},label={lst:nginxconf}]
-server {
-    listen 80;
-    server_name shop.example.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name shop.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/shop.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/shop.example.com/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
-
-    client_max_body_size 10m;
-
-    # Backend API (REST + webhooks)
-    location /api/ {
-        proxy_pass         http://ohc-backend:3001;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60s;
-    }
-
-    # Frontend (Next.js UI)
-    location / {
-        proxy_pass         http://ohc-frontend:3000;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60s;
-    }
-}
+\begin{lstlisting}[style=bash]
+cd infra/docker-host
+cp nginx.conf.example nginx.conf
+# Edit the ONE line marked "CHANGE THIS" -- your public domain.
+# It must match NEXTAUTH_URL in .env and the name on the certificate.
 \end{lstlisting}
 
-\item \textbf{Reload Nginx.}
+\begin{tcolorbox}[warnboxstyle]
+Do not simplify the \code{/api} routing to a single
+\code{location /api/} block. The frontend and the backend are \emph{both}
+Next.js applications and \emph{both} serve routes under \code{/api}. These
+belong to the frontend on port 3000:
+
+\begin{itemize}
+  \item \code{/api/auth/*} --- NextAuth's endpoints
+        (\code{csrf}, \code{session}, \code{callback/credentials}, \ldots)
+  \item \code{/api/login-challenge} --- step one of the two-step sign-in
+  \item \code{/api/ping} --- the frontend's liveness route
+  \item \code{/api/proxy/*} --- how the browser reaches the backend API at all
+        (issue~\#146). The browser no longer holds the bearer token; it calls
+        this route with the HttpOnly session cookie and the route attaches the
+        token server-side. Sending this one to port 3001 does not produce a 404
+        --- it produces a 401 on every request the signed-in user makes, which
+        is harder to attribute.
+\end{itemize}
+
+\noindent
+The exception that used to sit inside that range --- \code{/api/auth/callback},
+Entra ID's OAuth callback, matched exactly so it outranked the \code{/api/auth}
+prefix --- went with the SSO flow in issue~\#139. Everything else under
+\code{/api} goes to port 3001.
+
+Sending all of \code{/api} to the backend breaks sign-in with a 404 that is easy
+to misattribute, because both applications answer with
+\code{X-Powered-By: Next.js}; the giveaway is that a reply from the backend also
+carries its CORS headers. This is issue \#196, and the ordering of the
+\code{location} blocks in the example file is what prevents it.
+\end{tcolorbox}
+
+\item \textbf{Start Nginx.}
+
+Nginx runs as a container and mounts \file{nginx.conf} from the host, so a
+configuration change is applied by recreating that one container --- the
+application containers are untouched:
+
 \begin{lstlisting}[style=bash]
-nginx -t && systemctl reload nginx
+docker compose -f infra/docker-host/docker-compose.yml up -d --force-recreate nginx
 \end{lstlisting}
 
 \item \textbf{Verify the deployment.}
@@ -1727,12 +1662,12 @@ systemctl status certbot.timer
 
 \begin{lstlisting}[style=bash]
 # Backup PostgreSQL
-docker exec ohc-postgres pg_dump -U postgres open_hybrid_cloud \
+docker exec isf-postgres pg_dump -U postgres infrashelf \
   | gzip > backup-$(date +%Y%m%d).sql.gz
 
 # Restore
 zcat backup-20260101.sql.gz \
-  | docker exec -i ohc-postgres psql -U postgres open_hybrid_cloud
+  | docker exec -i isf-postgres psql -U postgres infrashelf
 \end{lstlisting}
 
 \section{Deployment on Kubernetes}
@@ -1749,7 +1684,7 @@ cluster.
 \begin{tikzpicture}[node distance=1.2cm and 1.8cm,
   pod/.style={rectangle, draw=c4-container!80, fill=c4-container!15,
               text width=2.8cm, align=center, minimum height=1.0cm, font=\small\bfseries},
-  svc/.style={rectangle, rounded corners=4pt, draw=ohc-amber!80, fill=ohc-amber!20,
+  svc/.style={rectangle, rounded corners=4pt, draw=isf-amber!80, fill=isf-amber!20,
               text width=2.4cm, align=center, minimum height=0.9cm, font=\scriptsize\bfseries},
   ext/.style={rectangle, draw=gray!60, fill=gray!10, dashed,
               text width=2.4cm, align=center, minimum height=0.9cm, font=\small},
@@ -1780,30 +1715,30 @@ cluster.
   \item Nginx Ingress Controller installed (\code{ingress-nginx})
   \item cert-manager installed with a \code{ClusterIssuer} for Let's
         Encrypt or a corporate CA
-  \item The images \code{maximilianmaag/open-hybrid-cloud-backend} and
-        \code{maximilianmaag/open-hybrid-cloud-frontend} are publicly
+  \item The images \code{maximilianmaag/infrashelf-backend} and
+        \code{maximilianmaag/infrashelf-frontend} are publicly
         available on Docker Hub — no \code{imagePullSecret} required
 \end{itemize}
 
 \subsection*{Deployment with Helm}
 
-The repository ships a Helm chart at \file{infra/helm/open-hybrid-cloud/}.
+The repository ships a Helm chart at \file{infra/helm/infrashelf/}.
 It covers the full deployment in a single command and handles database
 migrations automatically as a pre-install/pre-upgrade hook.
 
 \begin{lstlisting}[style=bash,caption={Helm install with required values},label={lst:helm-install}]
-helm upgrade --install open-hybrid-cloud \
-  infra/helm/open-hybrid-cloud \
-  --namespace open-hybrid-cloud \
+helm upgrade --install infrashelf \
+  infra/helm/infrashelf \
+  --namespace infrashelf \
   --create-namespace \
-  --set backend.env.databaseUrl="postgres://user:pass@pg.example.com:5432/open_hybrid_cloud?sslmode=require" \
+  --set backend.env.databaseUrl="postgres://user:pass@pg.example.com:5432/infrashelf?sslmode=require" \
   --set backend.env.jwtSecret="<min-32-char-secret>" \
   --set backend.env.adminPassword="<initial-password>" \
   --set frontend.env.nextauthSecret="<min-32-char-secret>" \
-  --set frontend.env.apiUrl="http://open-hybrid-cloud-backend:3001" \
+  --set frontend.env.apiUrl="http://infrashelf-backend:3001" \
   --set ingress.hosts[0].host=shop.example.com \
   --set ingress.tls[0].hosts[0]=shop.example.com \
-  --set ingress.tls[0].secretName=open-hybrid-cloud-tls
+  --set ingress.tls[0].secretName=infrashelf-tls
 \end{lstlisting}
 
 \notebox{Sensitive values should be passed via a separate
@@ -1814,7 +1749,7 @@ history.}
 \begin{lstlisting}[style=bash,caption={Example secrets.values.yaml (do not commit)},label={lst:helm-secrets}]
 backend:
   env:
-    databaseUrl: "postgres://user:pass@pg.example.com:5432/open_hybrid_cloud?sslmode=require"
+    databaseUrl: "postgres://user:pass@pg.example.com:5432/infrashelf?sslmode=require"
     jwtSecret: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
     adminPassword: "change-me-immediately"
 frontend:
@@ -1824,8 +1759,8 @@ frontend:
 \end{lstlisting}
 
 \begin{lstlisting}[style=bash]
-helm upgrade --install open-hybrid-cloud infra/helm/open-hybrid-cloud \
-  --namespace open-hybrid-cloud --create-namespace \
+helm upgrade --install infrashelf infra/helm/infrashelf \
+  --namespace infrashelf --create-namespace \
   -f values.production.yaml \
   -f secrets.values.yaml
 \end{lstlisting}
@@ -1840,13 +1775,13 @@ Table~\ref{tab:helm-values} lists the most important configurable values.
     \toprule
     \textbf{Key} & \textbf{Description} & \textbf{Default} \\
     \midrule
-    \code{backend.image.repository}       & Backend Docker Hub image          & \code{maximilianmaag/open-hybrid-cloud-backend} \\
+    \code{backend.image.repository}       & Backend Docker Hub image          & \code{maximilianmaag/infrashelf-backend} \\
     \code{backend.image.tag}              & Image tag (empty = appVersion)    & \code{""} \\
     \code{backend.replicaCount}           & Backend pod replicas              & \code{2} \\
     \code{backend.env.databaseUrl}        & PostgreSQL DSN (required)         & — \\
     \code{backend.env.jwtSecret}          & JWT signing secret (required)     & — \\
     \code{backend.env.adminPassword}      & Initial root password (required)  & — \\
-    \code{frontend.image.repository}      & Frontend Docker Hub image         & \code{maximilianmaag/open-hybrid-cloud-frontend} \\
+    \code{frontend.image.repository}      & Frontend Docker Hub image         & \code{maximilianmaag/infrashelf-frontend} \\
     \code{frontend.image.tag}             & Image tag (empty = appVersion)    & \code{""} \\
     \code{frontend.replicaCount}          & Frontend pod replicas             & \code{2} \\
     \code{frontend.env.nextauthSecret}    & NextAuth session secret (req.)    & — \\
@@ -1863,18 +1798,18 @@ Table~\ref{tab:helm-values} lists the most important configurable values.
 
 \item \textbf{Create the namespace.}
 \begin{lstlisting}[style=bash]
-kubectl create namespace open-hybrid-cloud
+kubectl create namespace infrashelf
 \end{lstlisting}
 
 \item \textbf{(Optional) Create an image pull secret.}
 
-The container image \code{maximilianmaag/open-hybrid-cloud} is publicly
+The container image \code{maximilianmaag/infrashelf} is publicly
 available on Docker Hub and requires no authentication. Skip this step
 for standard deployments. Only required if you mirror the image to a
 private registry:
 \begin{lstlisting}[style=bash]
 kubectl create secret docker-registry my-registry-secret \
-  --namespace open-hybrid-cloud \
+  --namespace infrashelf \
   --docker-server=<your-registry> \
   --docker-username=<username> \
   --docker-password=<password>
@@ -1885,11 +1820,11 @@ kubectl create secret docker-registry my-registry-secret \
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ohc-backend-env
-  namespace: open-hybrid-cloud
+  name: isf-backend-env
+  namespace: infrashelf
 type: Opaque
 stringData:
-  DATABASE_URL: "postgres://user:password@pg.example.com:5432/open_hybrid_cloud?sslmode=require"
+  DATABASE_URL: "postgres://user:password@pg.example.com:5432/infrashelf?sslmode=require"
   JWT_SECRET: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
   ADMIN_EMAIL: "root@example.com"
   ADMIN_PASSWORD: "changeme"
@@ -1897,14 +1832,14 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ohc-frontend-env
-  namespace: open-hybrid-cloud
+  name: isf-frontend-env
+  namespace: infrashelf
 type: Opaque
 stringData:
   NEXTAUTH_SECRET: "f0e1d2c3b4a596870001020304050607f0e1d2c3b4a596870001020304050607"
   NEXTAUTH_URL: "https://shop.example.com"
   NEXT_PUBLIC_API_URL: "https://shop.example.com/api"
-  API_URL: "http://ohc-backend:3001"
+  API_URL: "http://isf-backend:3001"
 \end{lstlisting}
 
 \item \textbf{Apply the database schema.}
@@ -1913,7 +1848,7 @@ The schema is pushed automatically by Drizzle on backend startup. No
 separate migration job is required. Verify via the health endpoint once
 the backend pod is running:
 \begin{lstlisting}[style=bash]
-kubectl exec -n open-hybrid-cloud deploy/ohc-backend -- \
+kubectl exec -n infrashelf deploy/isf-backend -- \
   wget -qO- http://localhost:3001/api/health
 # Expected: {"status":"ok"}
 \end{lstlisting}
@@ -1923,26 +1858,26 @@ kubectl exec -n open-hybrid-cloud deploy/ohc-backend -- \
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: open-hybrid-cloud
-  namespace: open-hybrid-cloud
+  name: infrashelf
+  namespace: infrashelf
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: open-hybrid-cloud
+      app: infrashelf
   template:
     metadata:
       labels:
-        app: open-hybrid-cloud
+        app: infrashelf
     spec:
       containers:
         - name: app
-          image: maximilianmaag/open-hybrid-cloud:latest
+          image: maximilianmaag/infrashelf:latest
           ports:
             - containerPort: 8080
           envFrom:
             - secretRef:
-                name: open-hybrid-cloud-env
+                name: infrashelf-env
           livenessProbe:
             httpGet:
               path: /health
@@ -1966,11 +1901,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: open-hybrid-cloud
-  namespace: open-hybrid-cloud
+  name: infrashelf
+  namespace: infrashelf
 spec:
   selector:
-    app: open-hybrid-cloud
+    app: infrashelf
   ports:
     - port: 80
       targetPort: 8080
@@ -1981,8 +1916,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: open-hybrid-cloud
-  namespace: open-hybrid-cloud
+  name: infrashelf
+  namespace: infrashelf
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
@@ -1991,7 +1926,7 @@ spec:
   tls:
     - hosts:
         - shop.example.com
-      secretName: open-hybrid-cloud-tls
+      secretName: infrashelf-tls
   rules:
     - host: shop.example.com
       http:
@@ -2000,7 +1935,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: open-hybrid-cloud
+                name: infrashelf
                 port:
                   number: 80
 \end{lstlisting}
@@ -2010,13 +1945,13 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: open-hybrid-cloud
-  namespace: open-hybrid-cloud
+  name: infrashelf
+  namespace: infrashelf
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: open-hybrid-cloud
+    name: infrashelf
   minReplicas: 2
   maxReplicas: 6
   metrics:
@@ -2035,8 +1970,8 @@ kubectl apply -f deployment.yaml
 kubectl apply -f ingress.yaml
 kubectl apply -f hpa.yaml      # optional
 
-kubectl rollout status deployment/open-hybrid-cloud -n open-hybrid-cloud
-kubectl get ingress -n open-hybrid-cloud
+kubectl rollout status deployment/infrashelf -n infrashelf
+kubectl get ingress -n infrashelf
 \end{lstlisting}
 
 \end{enumerate}
@@ -2061,12 +1996,196 @@ definition against the live database and applies the diff.
 
 \begin{enumerate}
   \item Navigate to the webshop URL.
-  \item Click \textbf{Local Login} (not \textbf{Sign in with Microsoft}).
   \item Enter the email and password from \env{ADMIN\_EMAIL} and
         \env{ADMIN\_PASSWORD}.
   \item Navigate to \textbf{Settings → My Profile} and change the
         default password immediately.
 \end{enumerate}
+
+\section{Mandatory Two-Factor Authentication for Administrators}
+\label{sec:root-2fa}
+
+Administrator accounts hold enough privilege to change what the portal does, and
+no identity provider stands in front of them --- SSO was removed in issue~\#139.
+They are given a second factor:
+standard TOTP (RFC~6238, SHA-1, 30-second window, six digits), compatible with
+Google Authenticator, Authy, Bitwarden and 1Password.
+
+It is \emph{required} and it covers both administrative roles, Root and Admin.
+The enforcement point is \code{requireAuth}: an administrative session with no
+confirmed factor is answered 403 with the code
+\code{second\_factor\_required} on every route except the enrolment endpoints
+and a read of the caller's own profile. The frontend redirect to Settings is a
+convenience on top of that, not the control — a client that ignores it, or calls
+the API directly with the token, meets the same refusal.
+
+The session is issued rather than withheld, deliberately: enrolling needs a
+working session, so refusing the sign-in would be a lockout with no way out of
+it. What the session can do is enrol, and nothing else.
+
+The requirement is a property of the \emph{role}, re-read per request, not a flag
+cached on the session row. That is what makes both directions work: the gate
+lifts the moment enrolment is confirmed, without a fresh sign-in, and closes
+again the moment an operator clears the row by hand.
+
+Two kinds of account are excluded, and the first exclusion is load-bearing. An
+account with no local password cannot re-authenticate an enrolment:
+\code{loadTwoFactorAccount} refuses to enrol it, so
+\code{secondFactorOutstanding} must not require a factor of it either. A gate an
+account can never satisfy is a lockout, not a policy — it would be refused every
+route and refused the one screen that could lift the refusal. Only the removed
+SSO flow (issue~\#139) ever created such an account, so no new one can appear;
+rows an earlier deployment wrote still take this branch. Note that the code keys
+on the missing password hash, not on \code{sso\_sub}, so an operator setting
+that column on a password account does not buy an exemption from it.
+
+Project Manager accounts are excluded for the ordinary reason: it is the end-user
+role, and every two-factor endpoint answers 403 for it, enforced in the service
+layer rather than per route.
+
+Setup lives under \textbf{Settings → My Profile → Two-factor authentication};
+the end-user steps are in \file{docs/guides/root.md}. What matters at the
+operator level is the following.
+
+\subsection*{Security keys and passkeys (WebAuthn)}
+
+TOTP is one of two factors an account may hold. The other is a WebAuthn
+credential --- a hardware key, or a passkey backed by Touch ID, Windows Hello or
+a phone --- and either satisfies the requirement on its own.
+
+The difference is not convenience. An assertion is signed over the origin the
+browser is actually on, and the server checks it, so a user walked onto a
+lookalike domain cannot produce one that verifies. A six-digit code can be typed
+into anything that asks for one, and \autoref{sec:root-2fa} is not the only place
+this handbook records people ending up on the wrong host.
+
+Nothing secret is stored. A registration leaves the private key on the
+authenticator and hands the server a public key; a dump of
+\code{webauthn\_credentials} authenticates nobody. That is the sharpest
+difference from \code{user\_totp.secret}, which is material a code can be computed
+from and therefore has to be encrypted.
+
+\paragraph{Configuration, and the one way to get it wrong.}
+A credential is scoped to a Relying Party ID, and the assertion names an origin.
+Both are deployment configuration:
+
+\begin{itemize}
+  \item \env{WEBAUTHN\_RP\_ID} --- a \emph{bare domain}. No scheme, no port, no
+    path. \code{portal.example.com}, or \code{example.com} to let one credential
+    work across subdomains.
+  \item \env{WEBAUTHN\_RP\_ORIGIN} --- the full origin the browser sees, with
+    scheme. Comma-separate several if the portal answers on more than one
+    hostname; the RP ID must be a suffix of every one.
+\end{itemize}
+
+Get either wrong and every key fails on the deployed instance while working
+perfectly on localhost. So the backend validates both at first use and refuses to
+start a ceremony rather than minting credentials nobody can ever use --- a
+mistyped variable becomes one loud error for the operator instead of a silent
+failure at every user. Blank values fall back to localhost, which is what makes a
+fresh clone work with a key straight away; both are required when
+\env{NODE\_ENV} is \code{production}.
+
+Changing the RP ID invalidates every registered credential --- they are scoped to
+it. Choose the broadest domain you might want before anyone enrols.
+
+\paragraph{What the server enforces.}
+The library verifies the ceremony; the service around it adds the rules that are
+not its job. A challenge lives in \code{webauthn\_challenges} and is claimed by
+the \code{DELETE ... RETURNING} that reads it, so it is spent exactly once and two
+requests racing on one cannot both proceed --- a signed stateless token, as used
+for the MFA challenge, could be replayed for as long as it was valid. The
+challenge \code{kind} is part of that \code{WHERE}: a registration challenge
+matches nothing on the authentication path, so a ceremony run inside an
+authenticated session cannot be redeemed as the second factor for a session that
+never passed one. The credential lookup is keyed by user \emph{and} credential id,
+or a valid assertion from anybody's key would satisfy a challenge issued for
+somebody else's password.
+
+The signature counter is enforced only where there is one to enforce: a value at
+or below the stored one means two authenticators are answering for one credential,
+but every passkey and much modern hardware reports a constant zero. Enforcing a
+rising counter against those would lock out most users to claim a guarantee the
+portal does not have.
+
+\paragraph{Recovery codes are shared.} Registering a first factor of
+\emph{either} kind issues them; a second key does not reissue, because that would
+silently invalidate the set the user already wrote down. A credential can be
+removed, unlike a confirmed TOTP secret --- a lost key that stays registered keeps
+prompting for something the user no longer has --- but never the last factor an
+administrator holds.
+
+\subsection*{Configuration}
+
+The shared secret is encrypted at rest with AES-256-GCM. The key comes from
+\env{TOTP\_ENCRYPTION\_KEY} — 32 bytes, hex or base64:
+
+\begin{lstlisting}[style=bash]
+openssl rand -base64 32
+\end{lstlisting}
+
+If the variable is left blank the key is derived from \env{JWT\_SECRET} instead,
+so two-factor authentication works out of the box. That couples the two secrets:
+rotating \env{JWT\_SECRET} then makes every enrolled authenticator unreadable and
+forces a re-enrollment. Set \env{TOTP\_ENCRYPTION\_KEY} separately before anyone
+enrols in production, and back it up with the rest of your secrets.
+
+\subsection*{Storage}
+
+Two tables (migration \code{0018}):
+
+\begin{itemize}
+  \item \code{user\_totp} — one row per user. The live secret, an in-flight
+        pending secret, the confirmation timestamp, the last accepted time step
+        (the replay guard) and the failure counter with its lockout deadline.
+  \item \code{user\_recovery\_codes} — ten rows per enrollment, each holding a
+        SHA-256 hash of one code and the timestamp it was spent. The codes
+        themselves exist only in the browser response that issued them.
+\end{itemize}
+
+\subsection*{Rate limiting}
+
+Five consecutive failed codes lock the second factor for fifteen minutes. The
+counter and the deadline live in the database rather than in process memory, so a
+restart or a second replica does not hand an attacker a fresh allowance. Every
+failure, every lockout and every attempt made while locked is written to the
+audit log under the \code{auth.2fa.*} actions.
+
+\subsection*{It cannot be disabled}
+
+There is no API endpoint that removes a confirmed second factor —
+\code{DELETE /api/users/me/2fa} answers \code{405} by design. The supported
+route is a replacement, which requires the password plus a current code or an
+unused recovery code.
+
+\subsection*{Emergency reset}
+
+If the authenticator and all ten recovery codes are lost — or if
+\env{TOTP\_ENCRYPTION\_KEY} was lost or rotated, which makes the stored secret
+undecryptable and every two-factor sign-in fail closed — the only way back in is
+to clear the rows. This removes the protection, so record it in your change log.
+
+\begin{lstlisting}[style=bash]
+# Docker Compose
+docker exec -i isf-postgres psql -U postgres -d infrashelf <<'SQL'
+BEGIN;
+DELETE FROM user_recovery_codes
+  WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
+DELETE FROM user_totp
+  WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
+COMMIT;
+SQL
+
+# Kubernetes
+kubectl exec -n infrashelf deploy/isf-postgres -- \
+  psql -U postgres -d infrashelf -c \
+  "DELETE FROM user_recovery_codes WHERE user_id = \
+     (SELECT id FROM users WHERE email = 'root@example.com'); \
+   DELETE FROM user_totp WHERE user_id = \
+     (SELECT id FROM users WHERE email = 'root@example.com');"
+\end{lstlisting}
+
+The account then signs in with its password alone and should enrol again at once.
 
 % ─────────────────────────────────────────────────────────────
 \chapter{System Configuration}
@@ -2184,12 +2303,53 @@ browser locale and applying the stored rate.
     \textbf{Role} & \textbf{Description} &
       \textbf{Auth method} & \textbf{DB role} \\
     \midrule
-    Admin         & Full access; direct ordering; approval & SSO  & \code{admin} \\
-    Root    & Catalog \& config; no ordering          & Local & \code{root} \\
-    Project Manager  & Orders own infra; approval required     & SSO  & \code{project\_leader} \\
+    Admin         & Full access; direct ordering; approval & Local & \code{admin} \\
+    Root    & Catalog \& config; everything an admin can do & Local & \code{root} \\
+    Project Manager  & Orders own infra; approval required     & Local & \code{project\_leader} \\
     \bottomrule
   \end{tabularx}
 \end{table}
+
+\noindent This table said ``Root: no ordering'' until \#363, and that was
+simply false --- \code{POST /api/cart/checkout} and \code{POST /api/orders}
+call \code{requireAuth}, not \code{requireRole}, so root has always been able
+to order. Worth naming, because a capability table that is wrong is worse than
+no table: it is the thing somebody checks instead of reading the code.
+
+\subsection*{What each role is responsible for}
+\label{sec:role-responsibilities}
+
+The table above is about \emph{permission}. This one is about \emph{purpose} —
+the journey each role exists to complete, which is a different question: an
+endpoint can be reachable and the journey through it still broken at a handover.
+
+\begin{table}[H]
+  \centering
+  \caption{Role responsibilities, and where each is proven}
+  \begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+    \toprule
+    \textbf{Role} & \textbf{Responsible for} \\
+    \midrule
+    Project Manager & Placing orders for their own projects; managing those
+      projects and their members; seeing their own orders and infrastructure.
+      Approves nothing --- not even their own order. \\
+    Admin & Approving or rejecting orders, including under a delegation;
+      ordering directly, with no approval step; seeing every order and every
+      infrastructure element; decommissioning. \\
+    Root & The catalogue, environments, CI sources, users, cost centres,
+      branding and configuration; deployment windows and the deploy-now
+      override (\S\ref{sec:deployment-windows}); everything an admin can do. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\noindent \file{e2e/role-journeys.spec.ts} is the executable half. It plays the
+handovers as separate sessions with real sign-outs between them --- a project
+manager orders and goes home, an admin decides the next morning, the project
+manager signs back in and sees the answer --- because two people signed in at
+once in one browser is not what happens, and a suite that only ever tests it
+that way cannot see a session that fails to survive the round trip. It did not
+see \#359, where signing out did nothing at all.
 
 \section{Creating a Local Account}
 
@@ -2202,7 +2362,9 @@ Under \textbf{Administration → Users}:
   \item Click \textbf{Save}.
 \end{enumerate}
 
-SSO users are created automatically on first login.
+Every account is created here. SSO account auto-provisioning went with the
+removed callback (issue~\#139), so there is no other way for a user row to
+appear.
 
 \section{Editing Users}
 
@@ -2282,8 +2444,8 @@ currently filtered audit log for compliance reporting.
 
 \begin{lstlisting}[style=bash]
 # Clone and enter the repo
-git clone https://github.com/Maximilian-Maag/open-hybrid-cloud.git
-cd open-hybrid-cloud
+git clone https://github.com/Maximilian-Maag/infrashelf.git
+cd infrashelf
 
 # Install all workspace dependencies
 make install
@@ -2324,7 +2486,7 @@ The frontend is available at \url{http://localhost:3000}, the backend API at
     \code{make docker-build} & Build both Docker images locally \\
     \code{make db-push}      & Push Drizzle schema to the database \\
     \code{make db-studio}    & Open Drizzle Studio \\
-    \code{make docs}         & Compile the LaTeX handbook to PDF \\
+    \code{make handbook}         & Compile the LaTeX handbook to PDF \\
     \code{make clean}        & Remove build artefacts \\
     \bottomrule
   \end{tabular}
@@ -2337,7 +2499,7 @@ The frontend is available at \url{http://localhost:3000}, the backend API at
 \section{Directory Layout}
 
 \begin{lstlisting}
-open-hybrid-cloud/
+infrashelf/
 +-- apps/
 |   +-- backend/                  # Next.js API-only app (port 3001)
 |   |   +-- src/
@@ -2374,7 +2536,7 @@ open-hybrid-cloud/
 |   +-- architecture/
 |   |   +-- workspace.dsl         # Structurizr C4 architecture
 |   +-- handbook.tex
-|   +-- handbook.pdf              # compiled output
+|   +-- handbook.pdf              # compiled output, not committed (see .gitignore)
 +-- Makefile
 +-- package.json
 +-- pnpm-workspace.yaml
@@ -2585,10 +2747,11 @@ The table below shows the current effective schema.
     \toprule
     \textbf{Table} & \textbf{Purpose} \\
     \midrule
-    \code{users}                    & User accounts (local + SSO) with role-based access \\
+    \code{users}                    & User accounts with role-based access \\
     \code{categories}               & Product catalogue categories \\
     \code{products}                 & Infrastructure products offered in the catalogue \\
-    \code{product\_translations}    & Multi-language name + description per product \\
+    \code{product\_translations}    & Multi-language name + short/long description per product \\
+    \code{product\_images}          & A product's pictures in gallery order, each with its own alt text \\
     \code{parameters}               & Configurable inputs for global/category/product scope \\
     \code{ci\_sources}              & CI provider credentials (GitLab / GitHub / Bitbucket) \\
     \code{deployment\_environments} & Named environments linked to a CI source \\
@@ -2598,10 +2761,28 @@ The table below shows the current effective schema.
     \code{projects}                 & User-owned projects that group orders \\
     \code{orders}                   & Individual infrastructure provisioning requests \\
     \code{infrastructure\_elements} & Deployed instances tracked per order \\
+    \code{product\_environment\_sizes} & Per-offering size tiers and their prices; an offering with no rows here prices off \code{product\_environments.price} \\
+    \code{product\_versions}        & Timeline of catalogue changes to a product, so an order's snapshot can be explained against what it differs from \\
+    \code{product\_favorites}       & Per-user product bookmarks; composite primary key, so a product can be favourited once \\
+    \code{pipeline\_stacks}         & Ordered pipeline stacks a product provisions through, each with its own webhook \\
+    \code{cart\_items}              & Draft order lines, kept out of \code{orders} so no query over orders has to exclude drafts \\
+    \code{order\_comments}          & Free-text discussion thread on an order \\
+    \code{approval\_delegations}    & Date-bounded delegation of approval authority between users \\
+    \code{integrations}             & External system registry: encrypted credentials, health and failure semantics \\
+    \code{sessions}                 & Server-side sessions; stores only the SHA-256 of the token, never the token \\
+    \code{user\_totp}               & Per-user second-factor secret, kept out of \code{users} so nothing selects it by accident \\
+    \code{user\_recovery\_codes}    & Single-use second-factor recovery codes, stored as SHA-256 hashes; shared by both factor kinds \\
+    \code{webauthn\_credentials}    & Registered security keys and passkeys. Public keys only — a dump of this table authenticates nobody \\
+    \code{webauthn\_challenges}     & The in-flight ceremony challenge, one row per user, deleted when it is spent \\
     \code{audit\_log}               & Append-only log of significant user actions \\
     \code{exchange\_rates}          & Cached currency conversion rates \\
     \code{branding}                 & Single-row branding config (logo, colours, texts) \\
-    \code{app\_config}              & Single-row application config (SMTP, AI) \\
+    \code{app\_config}              & Single-row application config (SMTP, AI, deployment time zone) \\
+    \code{deployment\_windows}      & When provisioning may run: minutes past local midnight and a duration, one row per window per working day \\
+    \code{holidays}                 & Non-working dates, cached from the configured feed so the decision never depends on it answering. \code{source} distinguishes feed rows, replaced wholesale by a refresh, from manual ones that survive it \\
+    \code{holiday\_feed\_state}     & Single-row record of what the holiday feed last did, so the admin UI can say how old the answer is \\
+    \code{unclaimed\_states}        & Terraform states the drift report can see and no element claims — an element deleted while its infrastructure stayed up, or a stack renamed \\
+    \code{drift\_report\_state}     & Single-row record of when the drift pipeline last reported, so silence is distinguishable from "no drift" \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -2625,7 +2806,7 @@ key, foreign keys, and notable constraints.
     \code{email}         & TEXT      & --- & NOT NULL, UNIQUE \\
     \code{name}          & TEXT      & --- & NOT NULL \\
     \code{role}          & TEXT      & --- & CHECK: \code{admin}, \code{project\_manager}, \code{root} \\
-    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; set for SSO accounts \\
+    \code{sso\_sub}      & TEXT      & NULL & UNIQUE; unused since issue~\#139 removed SSO. Kept so rows an earlier deployment wrote survive and a future implementation can link to them. \\
     \code{password\_hash}& TEXT      & NULL & set for local accounts \\
     \code{active}        & BOOLEAN   & TRUE & soft-disable without deletion \\
     \code{created\_at}   & TIMESTAMPTZ & NOW() & \\
@@ -2634,7 +2815,62 @@ key, foreign keys, and notable constraints.
 \end{table}
 
 \noindent\textbf{Constraint:} \code{sso\_sub IS NOT NULL OR password\_hash IS NOT NULL}
-(every account must have at least one credential).
+(every account must have at least one credential). With SSO removed
+(issue~\#139) nothing writes \code{sso\_sub} any more, so in practice every new
+row satisfies this through \code{password\_hash}.
+
+\subsection*{\texttt{user\_totp}}
+
+Second factor for a local account (see \autoref{sec:root-2fa}). Deliberately a
+separate table: every read of \code{users} goes through a column whitelist to
+keep \code{password\_hash} out of API responses, and secret-bearing columns on
+the table that everything selects from eventually leak.
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{user\_id}            & BIGINT      & ---   & PK, FK → \code{users(id)} ON DELETE CASCADE \\
+    \code{secret}              & TEXT        & NULL  & AES-256-GCM envelope; the live secret \\
+    \code{pending\_secret}     & TEXT        & NULL  & an enrollment in flight \\
+    \code{pending\_created\_at}& TIMESTAMPTZ & NULL  & pending enrollments expire after 15 min \\
+    \code{confirmed\_at}       & TIMESTAMPTZ & NULL  & set once a code proved the secret arrived \\
+    \code{last\_used\_step}    & BIGINT      & NULL  & replay guard: RFC 6238 step of the last accepted code \\
+    \code{failed\_attempts}    & INTEGER     & 0     & consecutive failures; cleared on success \\
+    \code{locked\_until}       & TIMESTAMPTZ & NULL  & set when the failure allowance runs out \\
+    \code{created\_at}         & TIMESTAMPTZ & NOW() & \\
+    \code{updated\_at}         & TIMESTAMPTZ & NOW() & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent\textbf{Invariant:} \code{secret IS NOT NULL AND confirmed\_at IS NOT
+NULL} is the one condition meaning ``two-factor authentication is on''. No column
+turns it off, and no API endpoint clears them.
+
+\subsection*{\texttt{user\_recovery\_codes}}
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}         & BIGSERIAL   & ---   & PK \\
+    \code{user\_id}   & BIGINT      & ---   & NOT NULL, FK → \code{users(id)} ON DELETE CASCADE \\
+    \code{code\_hash} & TEXT        & ---   & NOT NULL; SHA-256 of the code, never the code \\
+    \code{used\_at}   & TIMESTAMPTZ & NULL  & set when spent; the row is kept, not deleted \\
+    \code{created\_at}& TIMESTAMPTZ & NOW() & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\noindent\textbf{Constraint:} UNIQUE \code{(user\_id, code\_hash)} — issuing the
+same code twice to one user would make ``each code is usable once'' untrue, and
+the index is also what makes verification a single constant-time lookup rather
+than a comparison per row.
 
 \subsection*{\texttt{categories}}
 
@@ -2662,7 +2898,8 @@ key, foreign keys, and notable constraints.
     \code{id}           & BIGSERIAL & ---  & PK \\
     \code{category\_id} & BIGINT    & ---  & NOT NULL, FK \textrightarrow{} \code{categories(id)} ON DELETE CASCADE \\
     \code{base\_language}& TEXT     & \code{'de'} & fallback language for translations \\
-    \code{image}        & BYTEA     & NULL & product image stored inline \\
+    \code{owner}        & TEXT      & NULL & team that runs the product, shown on its page \\
+    \code{docs\_url}    & TEXT      & NULL & link to the product documentation (http/https only) \\
     \code{created\_at}  & TIMESTAMPTZ & NOW() & \\
     \bottomrule
   \end{tabular}
@@ -2679,7 +2916,34 @@ key, foreign keys, and notable constraints.
     \code{product\_id}    & BIGINT & --- & PK, FK \textrightarrow{} \code{products(id)} ON DELETE CASCADE \\
     \code{language\_code} & TEXT   & --- & PK, e.g.\ \code{de}, \code{en}, \code{fr} \\
     \code{name}           & TEXT   & --- & NOT NULL \\
-    \code{description}    & TEXT   & \code{''} & NOT NULL \\
+    \code{description}    & TEXT   & \code{''} & NOT NULL, the short text on the catalogue tile \\
+    \code{long\_description} & TEXT & \code{''} & NOT NULL, the long text on the product page \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{\texttt{product\_images}}
+
+A product's pictures, in gallery order. Migration 0021 moved the single
+\code{image}/\code{image\_mime}/\code{image\_alt} triple off \code{products} into
+this table and dropped those columns, so this is the only place a product picture
+lives. \code{alt} is NOT NULL here: a row exists only when there is an image, so
+``an image with no description'' is ruled out by the schema rather than only by the
+service (which additionally rejects a blank one).
+
+\begin{table}[H]
+  \centering\small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    \textbf{Column} & \textbf{Type} & \textbf{Default} & \textbf{Notes} \\
+    \midrule
+    \code{id}         & BIGSERIAL & ---  & PK \\
+    \code{product\_id}& BIGINT    & ---  & NOT NULL, FK \textrightarrow{} \code{products(id)} ON DELETE CASCADE \\
+    \code{position}   & INT       & 0    & NOT NULL, 0-based gallery order; reads order by (\code{position}, \code{id}) \\
+    \code{data}       & BYTEA     & ---  & NOT NULL, the image bytes \\
+    \code{mime}       & TEXT      & ---  & NOT NULL, detected from the bytes, never from the upload's header \\
+    \code{alt}        & TEXT      & ---  & NOT NULL, what the picture shows (WCAG 1.1.1) \\
+    \code{created\_at}& TIMESTAMPTZ & NOW() & \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -2966,11 +3230,11 @@ variables at runtime.
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[
-  tbl/.style={rectangle, draw=ohc-blue!50, fill=ohc-blue!6,
+  tbl/.style={rectangle, draw=isf-blue!50, fill=isf-blue!6,
               rounded corners=3pt, minimum width=3.2cm,
               minimum height=0.75cm, align=center, font=\small\ttfamily},
   fk/.style={->, >=Stealth, gray!70, thick},
-  casc/.style={->, >=Stealth, ohc-blue!80, thick, dashed},
+  casc/.style={->, >=Stealth, isf-blue!80, thick, dashed},
   node distance=0.45cm and 1.6cm
 ]
   % Column 1
@@ -3119,19 +3383,27 @@ export async function POST(req: NextRequest) {
 
 \subsection{Step 4: Add the Frontend API Wrapper}
 
-In \file{apps/frontend/src/lib/api.ts}, the generic \code{get} and
-\code{post} wrappers already exist. Call them from any Server Component
-or client action:
+The generic \code{get} and \code{post} wrappers already exist, in two modules.
+Import them from \file{@/lib/serverApi} in a Server Component and from
+\file{@/lib/api} in a client component; neither takes a token, because no caller
+has one to give. The split is deliberate --- \file{@/lib/api} is in the client
+bundle, so it must not import anything that reads the session:
 
 \begin{lstlisting}[style=typescript]
-import { get, post } from '@/lib/api'
-import type { Widget } from '@open-hybrid-cloud/types'
+// Server Component
+import { get } from '@/lib/serverApi'
+import type { Widget } from '@infrashelf/types'
 
-export const fetchWidgets = (token: string) =>
-  get<Widget[]>('/api/admin/widgets', token)
+export const fetchWidgets = () => get<Widget[]>('/api/admin/widgets')
+\end{lstlisting}
 
-export const createWidget = (name: string, token: string) =>
-  post<Widget>('/api/admin/widgets', { name }, token)
+\begin{lstlisting}[style=typescript]
+// Client component ('use client'). Same path, sent through /api/proxy.
+import { post } from '@/lib/api'
+import type { Widget } from '@infrashelf/types'
+
+export const createWidget = (name: string) =>
+  post<Widget>('/api/admin/widgets', { name })
 \end{lstlisting}
 
 \subsection{Step 5: Add the Frontend Page}
@@ -3147,7 +3419,9 @@ export default async function AdminWidgetsPage() {
   const session = await auth()
   if (!session) redirect('/login')
 
-  const widgets = await fetchWidgets(session.apiToken ?? '')
+  // No token argument, and never a token prop into a client component:
+  // serverApi reads it from the session on the server -- see JWT Authentication.
+  const widgets = await fetchWidgets()
 
   return (
     <div className="p-6">
@@ -3188,8 +3462,8 @@ page renders correctly.
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-  state/.style={rectangle, rounded corners=6pt, draw=ohc-blue!60,
-                fill=ohc-blue!10, minimum width=3.2cm,
+  state/.style={rectangle, rounded corners=6pt, draw=isf-blue!60,
+                fill=isf-blue!10, minimum width=3.2cm,
                 minimum height=1.0cm, align=center, font=\small},
   arr/.style={->, >=Stealth, thick, gray!70},
   node distance=0.5cm and 1.8cm
@@ -3200,6 +3474,9 @@ page renders correctly.
   \node[state, right=of prov]  (done) {Completed};
   \node[state, below=0.8cm of pend] (rej) {Rejected};
   \node[state, below=0.8cm of prov] (fail) {Failed};
+  % #330. Above the row rather than below it, so the ordinary path stays a
+  % straight line: this is a detour an approved order takes, not a failure.
+  \node[state, above=0.8cm of prov] (sched) {Scheduled};
 
   \draw[arr] (placed) -- node[c4label,above]{\scriptsize Admin\\(direct)} (prov);
   \draw[arr] (placed) -- node[c4label,above]{\scriptsize Project Mgr} (pend);
@@ -3207,11 +3484,111 @@ page renders correctly.
   \draw[arr] (pend)   -- node[c4label,right]{\scriptsize rejected} (rej);
   \draw[arr] (prov)   -- node[c4label,above]{\scriptsize pipeline OK} (done);
   \draw[arr] (prov)   -- node[c4label,right]{\scriptsize pipeline fail} (fail);
+  \draw[arr] (pend)   -- node[c4label,above left]{\scriptsize approved,\\outside a window} (sched);
+  \draw[arr] (sched)  -- node[c4label,right]{\scriptsize window opens,\\or root deploys now} (prov);
 
 \end{tikzpicture}}%
 \caption{Order lifecycle state machine}
 \label{fig:lifecycle}
 \end{figure}
+
+\section{Deployment Windows}
+\label{sec:deployment-windows}
+
+An approved order does not always provision immediately. Where an environment
+opts in, provisioning waits until a \emph{deployment window} is open --- so that
+deployments happen while admins are present to watch them, rather than at
+22:00 on a Friday.
+
+\paragraph{What root configures.} Under \menu{Admin $\rightarrow$ Deployment
+windows}: a time zone, and any number of windows given as a start time and a
+duration. The same pattern applies every working day; there is no per-weekday
+editing, because the question the feature answers is ``when is somebody
+watching'', and that is a property of the working day rather than of Tuesday.
+
+Windows are validated as a set --- no overlaps, none crossing midnight, each at
+least a minute long --- and saved as a set. That is deliberate: an overlap is a
+property of the collection, so neither of two overlapping windows is wrong on
+its own, and moving 08:00 to 13:00 while 13:00 still exists has to be one save
+rather than an illegal intermediate state.
+
+Saturdays and Sundays are excluded by the weekday arithmetic. Public holidays
+come from the \code{holidays} table, which is the subject of the rest of this
+section.
+
+\paragraph{Where the holidays come from.} Root gives a feed URL --- an ICS
+calendar or a JSON list, both shapes are read --- and the resolved dates are
+\emph{cached in the database}. Deciding whether an order may deploy therefore
+never makes a network call, which is the whole point: an order must not wait on
+somebody else's web server.
+
+The cost of that trade is that stale data looks exactly like fresh data, so the
+admin screen says how old the answer is and complains past thirty days. A
+refresh that fails changes nothing: the last good set stays, and the failure is
+recorded rather than replacing the dates with none --- which would turn ``the
+feed is down'' into ``no day is a holiday''.
+
+\paragraph{Two things no feed knows.} A company shutdown week that no public
+calendar lists, and a public holiday this company works through. Both are added
+or amended by hand and stamped \code{manual}, and a refresh leaves those rows
+alone --- otherwise the nightly job would quietly undo the decision every night.
+Un-observing a date takes the row over rather than deleting it, because a
+deleted \code{feed} row simply comes back on the next refresh.
+
+\paragraph{Fail closed, and which way that points.} If a feed is configured and
+has \emph{never} been read successfully, the portal has no holiday data at all
+--- a public holiday and a working day are indistinguishable. Applying the
+windows then would mean provisioning on Christmas morning while claiming the
+opposite, so the windows are \textbf{not applied}: orders provision immediately,
+exactly as they did before the feature existed, and the admin screen says so in
+red.
+
+That is deliberately not the other direction. Holding every order until somebody
+fixes a feed would turn a third party's outage into a queue nobody asked for and
+the requester would have no idea. A feed that worked once and is failing now
+does \emph{not} trigger this: it has a last good answer, and public holidays do
+not move often.
+
+\paragraph{Refreshing it.} \code{POST /api/internal/holiday-refresh}, with
+\env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET} in \code{X-Sweep-Secret} --- the same
+secret as the sweep, because it is the same feature run by the same operator.
+The Helm chart ships a daily CronJob alongside the sweep's; daily is ample, as
+public holidays are published a year ahead. Root can also refresh from the admin
+screen, and preview a feed's dates before saving the URL.
+
+\paragraph{The second switch.} A window set alone changes nothing. Each
+environment carries \code{respectsDeploymentWindows}, \textbf{default off},
+edited on the environment itself under \menu{Admin $\rightarrow$ Environments}.
+Production honours the windows; a sandbox that stops deploying after 18:00 is an
+obstacle rather than a safeguard. The default matters on upgrade: turning this on
+globally would strand every out-of-hours deploy in the portal at once.
+
+\paragraph{What an order does.} The approval itself never fails for being out of
+hours --- the admin's decision is recorded either way and the work is not thrown
+away. Only the provisioning waits, in the \code{scheduled} state, carrying the
+instant its window opens. The order page shows that instant rather than only the
+badge.
+
+\paragraph{Releasing them.} \code{POST /api/internal/deployment-window-sweep},
+authenticated with \env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET} in
+\code{X-Sweep-Secret}, releases every order whose window has opened. The backend
+has no worker process and is horizontally scaled, so an in-process timer would
+fire once per replica; an external scheduler is the single caller instead --- the
+Helm chart ships a CronJob (\code{deploymentWindowSweep.enabled}), and a Docker
+host wants a cron entry.
+
+Call it \emph{often}, every minute or two. That interval is the delay between a
+window opening and the orders waiting on it actually deploying, and an admin who
+came in to watch the 08:00 deployment should not be watching an empty screen at
+08:14.
+
+\paragraph{Deploying early.} Root, and only root, can release a scheduled order
+without waiting, with \menu{Deploy now} on the order. An admin approving decides
+that an order should happen; this decides it should happen outside the hours the
+company said it watches its systems, so it is root's call --- audited as
+\code{order.window\_overridden}, naming who and which window was skipped. The
+override is recorded before provisioning is attempted: the decision was made
+whether or not CI then answered.
 
 \section{Placing an Order}
 
@@ -3403,9 +3780,32 @@ Under \textbf{Administration → Products → New}:
   \item Select the \textbf{Category}.
   \item Enter the product \textbf{Name} in the primary language.
   \item Enter a detailed \textbf{Description} in the primary language.
-  \item Upload a product \textbf{Image} (PNG or JPEG, max 10 MB).
   \item Click \textbf{Save \& Continue}.
 \end{enumerate}
+
+\subsection{Images}
+
+A product has a gallery rather than a single picture. The product page shows
+the first one large with the rest as thumbnails; the catalogue tile and the
+cart row show the first one only, so put the picture that best identifies the
+product at the top.
+
+\begin{enumerate}
+  \item Type an \textbf{Image description} --- what the picture shows, at most
+        300 characters. It is required: it is the \code{alt} text screen
+        readers announce and what browsers show when the picture fails to
+        load, and the upload is refused without it.
+  \item Choose a \textbf{file} (PNG, JPEG or WebP, max 10 MB) and upload. Each
+        upload appends to the gallery instead of replacing what is there.
+  \item Reorder with the \textbf{move earlier} / \textbf{move later} buttons on
+        each picture, and drop one with \textbf{remove}. Removing the first
+        picture promotes the next one to lead.
+\end{enumerate}
+
+\notebox{Up to 8 pictures per product. The format is decided by reading the
+file's leading bytes, not the extension or the browser's declared type, so a
+renamed file is rejected rather than stored under the wrong MIME type. SVG is
+not accepted --- it can carry script.}
 
 \subsection{Parameters}
 
@@ -3459,6 +3859,33 @@ the \code{variable} block name in \file{variables.tf} exactly.}
         \end{description}
   \item Repeat for each environment.
 \end{enumerate}
+
+\subsection{Sizes}
+
+An offering's own price applies only while it has \textbf{no} sizes. Once it
+has one, the orderer must pick a size and pays that size's price.
+
+Sizes are edited in the \textbf{Sizes} card of the product edit page, as a
+matrix: one row per size code, one column per environment the product is offered
+in. Reading a row answers ``what does XL cost, and where''.
+
+\begin{enumerate}
+  \item Type a \textbf{Code} (letters, digits, dot, dash and underscore --- it
+        reaches the pipeline as \code{SIZE}) and a \textbf{Label}.
+  \item Fill in a price for each environment the size is offered in. The
+        currency is per cell: the same size may bill in EUR in one environment
+        and CHF in another.
+  \item Click \textbf{Add / update size}. One request writes every cell of the
+        row in a single transaction, so a rejected price leaves none of the
+        others written.
+\end{enumerate}
+
+\notebox{An empty cell means the size is not offered in that environment ---
+a real state, not an error. Emptying a priced cell \textbf{retires} the size
+there rather than deleting it: it stops being orderable while the row and its
+price survive, because orders that already name the code have to keep
+rendering. \textbf{Delete} removes the code from every environment at once and
+should be kept for a code that was mistyped and never ordered.}
 
 \subsection{Multiple Webhooks (Pipeline Arrays)}
 
@@ -3668,9 +4095,16 @@ translation:
   \env{SMTP\_PASS}              & SMTP authentication password                    & No  \\
   \env{SMTP\_TLS}               & \code{true} to enable SMTP TLS                  & No  \\
   \env{EXCHANGE\_RATE\_API\_URL} & Exchange rate API endpoint URL                 & No  \\
-  \env{ENTRA\_TENANT\_ID}       & Microsoft Entra ID tenant ID (future SSO)       & No  \\
-  \env{ENTRA\_CLIENT\_ID}       & Entra ID application (client) ID                & No  \\
-  \env{ENTRA\_CLIENT\_SECRET}   & Entra ID client secret                          & No  \\
+  \env{SECRET\_ENCRYPTION\_KEY} & AES-256-GCM key for stored integration credentials — 64 hex characters. Treat as unrotatable once in use: there is no re-encryption path, so a changed key means re-entering every credential & No \\
+  \env{SESSION\_TTL\_SECONDS}   & Ordinary login lifetime in seconds (default 8\,h, clamped to 30 days) & No \\
+  \env{SESSION\_REMEMBER\_ME\_TTL\_SECONDS} & Lifetime with ``remember me'' ticked (default 30 days, same clamp) & No \\
+  \env{TRUST\_PROXY}            & Trust \code{X-Forwarded-For}. Set only behind a proxy you control: it decides the per-IP login rate-limit bucket and the address shown in a session list. Unset records no address at all & No \\
+  \env{DECOMMISSION\_SWEEP\_SECRET} & Shared secret for \code{POST /api/internal/decommission-sweep}, sent as \code{X-Sweep-Secret}. Blank disables the endpoint (503) & No \\
+  \env{DRIFT\_REPORT\_SECRET}   & Shared secret for the scheduled drift loop, sent as \code{X-Drift-Secret}. Authorises \emph{both} \code{GET /api/internal/drift-targets} and \code{POST /api/internal/drift-report}. Blank disables both (503) & No \\
+  \env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET} & Shared secret for \code{POST /api/internal/deployment-window-sweep} (\S\ref{sec:deployment-windows}), sent as \code{X-Sweep-Secret}. Blank disables the endpoint (503), and an order that reached \code{scheduled} then waits indefinitely & No \\
+  \env{ALLOW\_INSECURE\_CI\_TRANSPORT} & Accept a plaintext \code{http} CI source off loopback. Every call to one carries a credential, so this is refused by default (\#329) & No \\
+  \env{DEMO\_CI\_URL}           & CI endpoint the demo seed points its stack at; without it the seeded catalogue has nothing provisionable & No \\
+  \env{ALLOW\_DEMO\_SEED\_IN\_PRODUCTION} & Permit \code{make db-seed-demo} with \code{NODE\_ENV=production}, which it otherwise refuses & No \\
   \bottomrule
   \caption{Backend environment variable reference}
   \label{tab:envvars-backend}
@@ -3842,10 +4276,11 @@ The \textbf{Role} column uses the following abbreviations:
   POST & \code{/api/auth/logout}                                     & Stateless no-op (client discards JWT)   & auth \\
   GET  & \code{/api/health}                                          & Health check + bootstrap trigger        & public \\[6pt]
 
-  \multicolumn{4}{@{}l}{\textit{Catalog}} \\[2pt]
+  \multicolumn{4}{@{}l}{\textit{Catalog (image bytes are public: a browser image request carries no bearer token)}} \\[2pt]
   GET  & \code{/api/catalog}                                         & List products by category               & auth \\
   GET  & \code{/api/catalog/\{id\}}                                  & Product detail with environments        & auth \\
-  GET  & \code{/api/catalog/\{id\}/image}                            & Serve product image (BYTEA)             & auth \\
+  GET  & \code{/api/catalog/\{id\}/image}                            & Serve the leading product image (BYTEA) & public \\
+  GET  & \code{/api/catalog/\{id\}/images/\{imageId\}}                & Serve one gallery image (BYTEA)         & public \\
   POST & \code{/api/catalog/\{id\}/order}                            & Place an order                          & auth \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Orders}} \\[2pt]
@@ -3882,7 +4317,11 @@ The \textbf{Role} column uses the following abbreviations:
   GET  & \code{/api/admin/products/\{id\}}                           & Product detail (admin view)             & root \\
   PUT  & \code{/api/admin/products/\{id\}}                           & Update product                          & root \\
   DELETE & \code{/api/admin/products/\{id\}}                         & Delete product + cascade                & root \\
-  PUT  & \code{/api/admin/products/\{id\}/image}                     & Upload product image                    & root \\[6pt]
+  GET  & \code{/api/admin/products/\{id\}/images}                    & List the product gallery                & root \\
+  POST & \code{/api/admin/products/\{id\}/images}                    & Append a picture (multipart)            & root \\
+  PATCH & \code{/api/admin/products/\{id\}/images}                   & Reorder the gallery                     & root \\
+  PATCH & \code{/api/admin/products/\{id\}/images/\{imageId\}}       & Change one picture's description        & root \\
+  DELETE & \code{/api/admin/products/\{id\}/images/\{imageId\}}      & Remove one picture                      & root \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Admin — Environments \& CI Sources (role: root)}} \\[2pt]
   GET  & \code{/api/admin/environments}                              & Deployment environment list             & root \\
@@ -3921,11 +4360,64 @@ The \textbf{Role} column uses the following abbreviations:
   \multicolumn{4}{@{}l}{\textit{CI Provider Webhooks (inbound, token-authenticated)}} \\[2pt]
   POST & \code{/api/webhooks/gitlab/pipeline}                        & GitLab pipeline status event            & public \\
   POST & \code{/api/webhooks/github/pipeline}                        & GitHub Actions workflow event           & public \\
-  POST & \code{/api/webhooks/bitbucket/pipeline}                     & Bitbucket pipeline status event         & public \\
+  POST & \code{/api/webhooks/bitbucket/pipeline}                     & Bitbucket pipeline status event         & public \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Internal (scheduler-authenticated, shared secret in a header)}} \\[2pt]
+  POST & \code{/api/internal/decommission-sweep}                     & Tear down elements past their expiry     & secret \\
+  GET  & \code{/api/internal/drift-targets}                          & Work list for the drift pipeline         & secret \\
+  POST & \code{/api/internal/drift-report}                           & Record what \code{plan -refresh-only} found & secret \\
+  POST & \code{/api/internal/deployment-window-sweep}                 & Release orders whose window has opened   & secret \\
+  POST & \code{/api/internal/holiday-refresh}                        & Pull the holiday feed into the cache     & secret \\[6pt]
+
+  \multicolumn{4}{@{}l}{\textit{Deployment windows (root)}} \\[2pt]
+  GET  & \code{/api/admin/deployment-windows}                         & The windows and the time zone            & root \\
+  PUT  & \code{/api/admin/deployment-windows}                         & Replace the window set                   & root \\
+  GET  & \code{/api/admin/holidays}                                   & Feed status and the cached dates         & root \\
+  PATCH & \code{/api/admin/holidays}                                  & Set, preview or refresh the feed         & root \\
+  PUT  & \code{/api/admin/holidays}                                   & Add or amend one date by hand            & root \\
+  DELETE & \code{/api/admin/holidays}                                 & Remove one date                          & root \\
+  POST & \code{/api/orders/\{id\}/deploy-now}                          & Deploy a scheduled order early           & root \\
   \bottomrule
   \caption{Complete REST API route reference}
   \label{tab:routes}
 \end{longtable}
+
+\paragraph{The internal routes.} These five have no user. A scheduler has no
+session to present, so each is authenticated with a shared secret in a request
+header, compared in constant time, and each returns \code{503} outright when its
+secret is unset --- an unconfigured deployment must not be writable by an
+anonymous caller.
+
+Three secrets, not one, and \code{X-Sweep-Secret} carries a \emph{different}
+one depending on the route --- configure the scheduler with the value that
+belongs to the endpoint it calls:
+
+\begin{itemize}
+  \item \code{POST /api/internal/decommission-sweep} ---
+        \code{X-Sweep-Secret}: \env{DECOMMISSION\_SWEEP\_SECRET}
+  \item \code{POST /api/internal/deployment-window-sweep} and
+        \code{POST /api/internal/holiday-refresh} --- \code{X-Sweep-Secret}:
+        \env{DEPLOYMENT\_WINDOW\_SWEEP\_SECRET} for both
+        (\S\ref{sec:deployment-windows}). One secret rather than two: same
+        feature, same operator, and a secret per endpoint is a secret somebody
+        forgets to set
+  \item both drift routes --- \code{X-Drift-Secret}:
+        \env{DRIFT\_REPORT\_SECRET}, which authorises the pair, so a deployment
+        that sets it enables the whole loop and one that does not enables neither
+\end{itemize}
+
+The two drift routes are one cycle, run from a schedule in the
+\code{infra-templates} project (\code{.ci/drift-report.gitlab-ci.yml}). The
+\code{GET} returns the work list --- one entry per \emph{active} element, with
+its base state name, its stack steps and the variables its apply used, because
+\code{plan -refresh-only} needs the module and its inputs and a state file names
+neither. The pipeline composes each step's state key as
+\code{<base>-<stateSuffix>}, exactly as \code{generate\_stack.py} does, plans
+each one, and \code{POST}s a single report. It is worth being plain that the
+\code{GET} returns provisioning variables for the whole estate at once: not a
+new class of exposure, since CI already receives exactly these when an element is
+provisioned, but everything in one response --- hence the secret, and hence
+nothing at all about inactive elements.
 
 \chapter{Requirements Traceability Matrix}
 \label{app:rtm}
@@ -3991,7 +4483,7 @@ it.
     \file{infra/docker-compose.yml} &
     \S\ref{sec:docker-deploy} \\
   NFA-01.2 & Kubernetes deployment &
-    \file{infra/helm/open-hybrid-cloud/} &
+    \file{infra/helm/infrashelf/} &
     \S\ref{sec:k8s-deploy} \\
   NFA-01.3 & Schema management via Drizzle ORM &
     \file{apps/backend/src/lib/db/schema.ts}, \code{make db-push} &
@@ -4024,7 +4516,7 @@ The handbook source is at \file{docs/handbook.tex}. Compile with:
 
 \begin{lstlisting}[style=bash]
 # From the repo root
-make docs
+make handbook
 
 # Or manually (run twice for ToC/references)
 cd docs

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
 import { exportAuditLog, type AuditRow } from '@/lib/services/audit'
+import { parseAuditFilters } from '@/lib/services/auditFilters'
 import PDFDocument from 'pdfkit'
 import { toCsv } from '@/lib/csv'
 
@@ -81,12 +82,13 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const format = searchParams.get('format') ?? 'csv'
-  const userId = searchParams.get('userId') ? parseInt(searchParams.get('userId') ?? '0', 10) : undefined
-  const action = searchParams.get('action') ?? undefined
-  const from = searchParams.get('from') ?? undefined
-  const to = searchParams.get('to') ?? undefined
+  // Same parser as the list endpoint: an export taken under a different filter set
+  // than the list it was read from is worse than no export at all. page/pageSize
+  // are irrelevant here and simply ignored.
+  const query = parseAuditFilters(searchParams)
+  if (!query.ok) return NextResponse.json({ error: query.message }, { status: query.status })
 
-  const result = await exportAuditLog({ userId, action, from, to })
+  const result = await exportAuditLog(query.data.filters)
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
 
   const rows = result.data

@@ -1,10 +1,15 @@
-import type { OrderStatus, InfraStatus } from '@open-hybrid-cloud/types'
+import type { OrderStatus, InfraStatus } from '@infrashelf/types'
 import { t, type Translations } from '@/lib/i18n'
 
 type Status = OrderStatus | InfraStatus
 
 const colorMap: Record<Status, string> = {
   pending:        'bg-yellow-100 text-yellow-800 border-yellow-200',
+  // Waiting on a clock rather than on a person, so it is deliberately not the
+  // amber of `pending`: nobody needs to act on it, and an approval queue that
+  // shows two shades of "someone must do something" is a queue people stop
+  // reading. Indigo, and no pulse — nothing is happening yet (#330).
+  scheduled:      'bg-indigo-100 text-indigo-800 border-indigo-200',
   provisioning:   'bg-blue-100 text-blue-800 border-blue-200',
   completed:      'bg-green-100 text-green-800 border-green-200',
   failed:         'bg-red-100 text-red-800 border-red-200',
@@ -16,6 +21,7 @@ const colorMap: Record<Status, string> = {
 
 const labelKeyMap: Record<Status, keyof Translations> = {
   pending:        'statusPending',
+  scheduled:      'statusScheduled',
   provisioning:   'statusProvisioning',
   completed:      'statusCompleted',
   failed:         'statusFailed',

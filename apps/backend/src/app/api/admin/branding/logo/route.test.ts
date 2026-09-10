@@ -5,7 +5,15 @@ import { createUser, makeAuthHeader } from '@/test/helpers'
 
 const makeFormReq = (auth?: string) => {
   const form = new FormData()
-  form.append('logo', new Blob([Buffer.from([0x89, 0x50, 0x4e, 0x47])], { type: 'image/png' }), 'logo.png')
+  // A real 8-byte PNG signature plus the start of the IHDR chunk. The upload path
+  // now decides the type from the bytes (#143), and detectImageMime requires the
+  // full signature and at least 12 bytes — a truncated 4-byte header is rejected
+  // with 415, which is correct behaviour and used to be what this test asserted.
+  const png = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  ])
+  form.append('logo', new Blob([png], { type: 'image/png' }), 'logo.png')
   return new NextRequest('http://localhost/api/admin/branding/logo', {
     method: 'PUT',
     body: form,

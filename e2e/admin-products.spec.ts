@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { test, expect } from './fixtures'
+import { appears, loginAsRoot, requireSeeded } from './helpers'
 
 test.describe('Admin - Product Delete Button', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,22 +9,28 @@ test.describe('Admin - Product Delete Button', () => {
   })
 
   test('list row shows both Edit and Delete buttons', async ({ page }) => {
-    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    // `^edit\b`, not `^edit$`: the row's Edit link carries the product name in an
+    // sr-only span, so that a screen reader's link list is not "Edit, Edit, Edit"
+    // against three different hrefs (WCAG 2.4.9). Its accessible name is therefore
+    // "Edit <product>", and an anchored pattern matches nothing.
+    const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     // At least one row exposes a Delete button next to the Edit link
-    await expect(page.getByRole('button', { name: /^delete$/i }).first()).toBeVisible()
+    // Anchored on a word boundary, not on the end: the row's Delete carries the
+    // product name in an sr-only span, exactly as the Edit link above does.
+    await expect(page.getByRole('button', { name: /^delete\b/i }).first()).toBeVisible()
   })
 
   test('clicking Delete opens confirmation modal warning about cascade decommission', async ({ page }) => {
-    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
-    await page.getByRole('button', { name: /^delete$/i }).first().click()
+    await page.getByRole('button', { name: /^delete\b/i }).first().click()
 
     const dialog = page.locator('dialog[open]')
     await expect(dialog).toBeVisible()
@@ -35,21 +41,21 @@ test.describe('Admin - Product Delete Button', () => {
   })
 
   test('Cancel closes the modal without deleting', async ({ page }) => {
-    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
-    const productCountBefore = await page.getByRole('button', { name: /^delete$/i }).count()
+    const productCountBefore = await page.getByRole('button', { name: /^delete\b/i }).count()
 
-    await page.getByRole('button', { name: /^delete$/i }).first().click()
+    await page.getByRole('button', { name: /^delete\b/i }).first().click()
     const dialog = page.locator('dialog[open]')
     await expect(dialog).toBeVisible()
     await dialog.getByRole('button', { name: /cancel/i }).click()
     await expect(dialog).not.toBeVisible()
 
     // Row count unchanged
-    await expect(page.getByRole('button', { name: /^delete$/i })).toHaveCount(productCountBefore)
+    await expect(page.getByRole('button', { name: /^delete\b/i })).toHaveCount(productCountBefore)
   })
 
   // Happy path: create a throw-away product, delete via UI, verify it's gone.
@@ -78,19 +84,29 @@ test.describe('Admin - Product Delete Button', () => {
 
     // After create the form redirects to the edit page — go back to the list
     await page.goto('/admin/products')
-    await expect(page.getByRole('link', { name: productName })).toBeVisible({ timeout: 8000 })
+    // exact, because the name cell and the row's Edit link ("Edit <product>") both
+    // contain the product name and a substring match resolves to both.
+    await expect(page.getByRole('link', { name: productName, exact: true })).toBeVisible({ timeout: 8000 })
 
     // Confirm-delete the product
-    const productRow = page.locator('tr').filter({ has: page.getByRole('link', { name: productName }) })
-    await productRow.getByRole('button', { name: /^delete$/i }).click()
+    const productRow = page.locator('tr').filter({ has: page.getByRole('link', { name: productName, exact: true }) })
+    // `\b`, not `$`: every row action carries the product name in an sr-only
+    // span, because a screen reader's list of controls is otherwise "Delete,
+    // Delete, Delete" with nothing to tell the rows apart. The Edit link above
+    // is matched the same way for the same reason.
+    await productRow.getByRole('button', { name: /^delete\b/i }).click()
 
     dialog = page.locator('dialog[open]')
     await expect(dialog.getByRole('heading', { name: /delete product/i })).toBeVisible()
     // Cascade-decommission warning is present (tested elsewhere) — proceed with confirm
     await dialog.getByRole('button', { name: /^delete$/i }).click()
 
-    // Wait for the row to disappear from the list
-    await expect(page.getByRole('link', { name: productName })).not.toBeVisible({ timeout: 8000 })
+    // 30s, not 8. The delete goes through `router.refresh()`, which re-renders
+    // the list on the SERVER — and against `next dev` that is a recompile the
+    // first time in a run. The row does go (the product is gone from the
+    // database when this fails), so the eight seconds were measuring the dev
+    // server rather than the deletion (#296).
+    await expect(page.getByRole('link', { name: productName, exact: true })).not.toBeVisible({ timeout: 30_000 })
 
     // Cleanup: remove the category we seeded
     await page.goto('/admin/categories')
@@ -111,17 +127,49 @@ test.describe('Admin - Product Environment Removal', () => {
   // stack with no products or no deployment environments configured.
   test('Remove asks for confirmation and explains what is discarded', async ({ page }) => {
     await page.goto('/admin/products')
-    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
-    await editLinks.first().click()
-    const envCard = page.locator('div').filter({ has: page.getByRole('heading', { name: /^environments$/i }) }).last()
-    await expect(envCard).toBeVisible({ timeout: 8000 })
+    // By href: a Next.js `<Link>` is inert until React hydrates, and `next dev`
+    // compiles this route on its first request (#296).
+    const href = await editLinks.first().getAttribute('href')
+    expect(href, 'the product list has an Edit link with no href').toBeTruthy()
+    await page.goto(href as string)
 
-    const remove = envCard.getByRole('button', { name: /^remove$/i }).first()
-    if (await remove.count() === 0) { test.skip(); return }
+    /*
+     * `/environments$/i`, not `/^environments$/i`. The card is titled
+     * "Deployment Environments" — it was renamed while this test was skipping
+     * for want of a product, and an anchored match then found nothing (#296).
+     *
+     * Located from the heading upwards rather than by filtering every `div`:
+     * `locator('div').filter(...)` matches the card AND each of its ancestors,
+     * so `.last()` is a guess about document order rather than a statement
+     * about which box is the card.
+     */
+    const envHeading = page.getByRole('heading', { name: /environments$/i }).first()
+    await expect(envHeading).toBeVisible({ timeout: 30_000 })
+
+    /*
+     * The comment above was right that `.last()` is a guess, and the guess was
+     * wrong: every ancestor of the section heading matches, and the innermost is
+     * the heading's own wrapper, which holds no buttons at all. So this found
+     * nothing and skipped — every run, for months, in silence (#332).
+     *
+     * Each offering renders its own card: a level-3 heading naming the
+     * environment, and that offering's Remove. Asking for the innermost box that
+     * holds BOTH is a statement about which box is the card rather than a bet on
+     * document order.
+     */
+    const offeringCard = page
+      .locator('div')
+      .filter({ has: page.getByRole('heading', { level: 3 }) })
+      .filter({ has: page.getByRole('button', { name: /^remove$/i }) })
+      .last()
+
+    const remove = offeringCard.getByRole('button', { name: /^remove$/i }).first()
+    requireSeeded(await appears(remove), 'the product offers no environment binding to remove')
 
     await remove.click()
     const dialog = page.locator('dialog[open]')
@@ -133,7 +181,7 @@ test.describe('Admin - Product Environment Removal', () => {
     // Cancel leaves the offering in place.
     await dialog.getByRole('button', { name: /cancel/i }).click()
     await expect(dialog).not.toBeVisible()
-    await expect(envCard.getByRole('button', { name: /^remove$/i }).first()).toBeVisible()
+    await expect(offeringCard.getByRole('button', { name: /^remove$/i }).first()).toBeVisible()
   })
 })
 
@@ -146,14 +194,17 @@ test.describe('Admin - Trial Offerings', () => {
   // the checkbox rather than always present.
   test('the trial duration appears only once the offering is opted in', async ({ page }) => {
     await page.goto('/admin/products')
-    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     await editLinks.first().click()
     const trialToggle = page.getByLabel(/offer as trial/i).first()
-    if (await trialToggle.count() === 0) { test.skip(); return }
+    // The toggle is rendered per environment offering, so it only exists once
+    // the edit page's offerings have. Counted immediately after the click, it
+    // was always 0 and this test always skipped.
+    requireSeeded(await appears(trialToggle), 'the product edit page offers no trial toggle')
 
     await expect(page.getByLabel(/trial duration/i)).toHaveCount(0)
     await trialToggle.check()
@@ -175,10 +226,10 @@ test.describe('Admin - Product Version History', () => {
   })
 
   test('the product edit page carries a version history panel', async ({ page }) => {
-    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     await editLinks.first().click()
     await expect(page.getByRole('heading', { name: /version history/i })).toBeVisible({ timeout: 10000 })
@@ -186,10 +237,10 @@ test.describe('Admin - Product Version History', () => {
   })
 
   test('saving with a changelog note adds it to the history', async ({ page }) => {
-    const editLinks = page.getByRole('link', { name: /^edit$/i })
+    const editLinks = page.getByRole('link', { name: /^edit\b/i })
     const noProducts = page.getByText(/no products/i)
-    await expect(editLinks.or(noProducts)).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    await expect(editLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /admin/products to edit')
 
     await editLinks.first().click()
     await expect(page.getByLabel(/^changelog$/i)).toBeVisible({ timeout: 10000 })

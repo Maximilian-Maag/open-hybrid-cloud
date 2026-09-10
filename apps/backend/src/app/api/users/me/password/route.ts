@@ -18,7 +18,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const result = await changePassword(session.id, parsed.data.currentPassword, parsed.data.newPassword)
+  const result = await changePassword(session, parsed.data.currentPassword, parsed.data.newPassword)
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
 
   return NextResponse.json({ success: true })

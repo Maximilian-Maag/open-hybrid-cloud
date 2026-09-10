@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { diffProductVersions } from '@/lib/services/versions'
 
 /**
@@ -16,10 +16,9 @@ export async function GET(
   const session = await requireRole('root')(req)
   if (!isAuth(session)) return session
 
-  const productId = Number((await params).id)
-  if (!Number.isInteger(productId) || productId <= 0) {
-    return NextResponse.json({ error: 'Invalid product id' }, { status: 400 })
-  }
+  const { id } = await params
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
 
   const { searchParams } = new URL(req.url)
   const from = Number(searchParams.get('from'))

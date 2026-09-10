@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { SUPPORTED_LANGUAGES } from '@/lib/i18n'
+import { SUPPORTED_LANGUAGES, t } from '@/lib/i18n'
 
 interface Props {
   lang: string
@@ -36,16 +36,31 @@ export function LanguageSwitcher({ lang }: Props) {
     router.refresh()
   }
 
-  const currentName = SUPPORTED_LANGUAGES.find((l) => l.code === current)?.name ?? current.toUpperCase()
+  // Undefined rather than the bare code when we do not ship the language: the
+  // label below already carries the code, and "Language: ZZ – ZZ" is worse than
+  // saying it once.
+  const currentName = SUPPORTED_LANGUAGES.find((l) => l.code === current)?.name
 
   return (
     <div className="relative">
       <button
         ref={toggleRef}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 text-xs font-medium border border-current/40 rounded-md px-2 py-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current active:scale-95"
+        className="flex items-center justify-center gap-1 min-h-11 min-w-11 text-xs font-medium border border-current/40 rounded-md px-2 py-1 brand-state focus:outline-none focus-visible:ring-2 focus-visible:ring-current active:scale-95"
         style={{ color: 'var(--bp-ink)' }}
-        aria-label={`Language: ${currentName}`}
+        // Two changes from `Language: Deutsch` (#186). The word is translated,
+        // so a German page does not name its own control in English; and the
+        // code is in the name, because the visible label IS `DE` and an
+        // accessible name that omits it fails WCAG 2.5.3 Label in Name —
+        // "click Language DE" is a phrase speech control can act on and
+        // "click DE" was not. The endonym stays: it is the only place the
+        // toggle says WHICH language, and it is written in the language the
+        // document is already in, so it needs no `lang` of its own.
+        aria-label={
+          currentName
+            ? `${t('language', lang)}: ${current.toUpperCase()} – ${currentName}`
+            : `${t('language', lang)}: ${current.toUpperCase()}`
+        }
         aria-expanded={open}
       >
         <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -63,7 +78,15 @@ export function LanguageSwitcher({ lang }: Props) {
                 <button
                   key={l.code}
                   onClick={() => selectLang(l.code)}
-                  className="w-full flex flex-col items-center rounded-lg px-1 py-2 transition-colors text-center active:scale-95"
+                  // 25 buttons that differ only by fill colour otherwise: a
+                  // screen-reader user could not hear which language is in
+                  // effect. `aria-current` rather than `aria-pressed` — these
+                  // are not toggles, they are one selection out of a set
+                  // (#186).
+                  aria-current={l.code === current ? 'true' : undefined}
+                  // 25 of these in a 3-column grid, so the floor matters: two lines
+                  // of 10-12px type landed within a pixel of 44 by accident.
+                  className="w-full flex flex-col items-center justify-center min-h-11 rounded-lg px-1 py-2 transition-colors text-center active:scale-95"
                   style={l.code === current
                     ? { backgroundColor: 'var(--bs)', color: 'var(--bs-ink)' }
                     : { color: '#475569' }
@@ -72,7 +95,11 @@ export function LanguageSwitcher({ lang }: Props) {
                   onMouseLeave={(e) => { if (l.code !== current) (e.currentTarget as HTMLElement).style.backgroundColor = '' }}
                 >
                   <span className="font-bold text-xs">{l.code.toUpperCase()}</span>
-                  <span className="block text-[10px] leading-tight truncate">{l.name}</span>
+                  {/* Every entry is written in its own language, so on a German
+                      page a German voice would read `Ελληνικά` with German
+                      phonemes. `lang` is what switches the pronunciation
+                      (WCAG 3.1.2 Language of Parts — #186). */}
+                  <span lang={l.code} className="block text-[10px] leading-tight truncate">{l.name}</span>
                 </button>
               ))}
             </div>

@@ -1,0 +1,27 @@
+{
+  // The e2e suite is the largest and most intricate test code in the repo and
+  // until #328 nothing type-checked it: the root scripts filter to `./apps/*`,
+  // so `e2e/` was in neither the type-check nor the lint job. It already held a
+  // type error, and a second one (a `ready(page)` missing its timeout argument)
+  // was written and merged while this file did not exist.
+  //
+  // Standalone rather than extending an app's config: `e2e/` is not a Next.js
+  // project and has no JSX, no path aliases and no DOM lib beyond what
+  // Playwright brings.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true
+  },
+  "include": ["**/*.ts", "../playwright.config.ts"]
+}

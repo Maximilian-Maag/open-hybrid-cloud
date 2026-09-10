@@ -6,8 +6,8 @@ import {
   updateAiConfig,
 } from './config'
 import { db } from '@/lib/db/client'
-import { appConfig } from '@/lib/db/schema'
-import { sql } from 'drizzle-orm'
+import { appConfig, auditLog } from '@/lib/db/schema'
+import { sql, eq } from 'drizzle-orm'
 
 // The app_config row with id=1 is seeded once in beforeAll, but the table is
 // not in the TRUNCATE list — so the row persists across tests. Reset it here
@@ -170,5 +170,46 @@ describe('updateAiConfig', () => {
     expect(row?.aiEndpoint).toBe('https://api.anthropic.com')
     expect(row?.aiModel).toBe('claude-sonnet-4-6')
     expect(row?.aiApiKey).toBe('sk-original')
+  })
+})
+
+/*
+ * Clearing has to reach the column as NULL, not as ''.
+ *
+ * Every reader means NULL by "not configured": `lib/notification` returns null
+ * for a missing host, `lib/ai` does `cfg?.aiModel ?? 'gpt-4o-mini'`. `?? ` does
+ * not fire for an empty string, so storing '' would send the provider an empty
+ * model instead of the default — a cleared setting that is worse than the one
+ * it replaced (#317).
+ */
+describe('clearing a configuration', () => {
+  it('stores NULL for an emptied SMTP host and from address', async () => {
+    await updateSmtpConfig({ host: 'smtp.example.com', port: 587, from: 'a@b.c', user: '', tls: true })
+
+    await updateSmtpConfig({ host: '', port: 587, from: '', user: '', tls: true })
+
+    const [row] = await db.execute(
+      sql`SELECT smtp_host, smtp_from FROM app_config WHERE id = 1`,
+    )
+    expect(row).toMatchObject({ smtp_host: null, smtp_from: null })
+  })
+
+  it('stores NULL for an emptied AI model', async () => {
+    await updateAiConfig({ provider: 'claude', endpoint: 'https://api.example.com', model: 'claude-opus-4-5' })
+
+    await updateAiConfig({ provider: 'claude', endpoint: 'https://api.example.com', model: '' })
+
+    const [row] = await db.execute(sql`SELECT ai_model FROM app_config WHERE id = 1`)
+    expect(row).toMatchObject({ ai_model: null })
+  })
+
+  it('says so in the audit log rather than quoting an empty host', async () => {
+    await updateSmtpConfig({ host: '', port: 587, from: '', user: '', tls: true })
+
+    const [entry] = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, 'config.smtp_updated'))
+    expect(entry.details).toBe('SMTP turned off')
   })
 })

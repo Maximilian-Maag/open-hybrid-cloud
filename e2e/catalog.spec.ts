@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test'
-import { loginAsRoot } from './helpers'
+import { test, expect } from './fixtures'
+import { type Page } from '@playwright/test'
+import { expectNoServerError, loginAsRoot, requireSeeded } from './helpers'
 
 async function goToCatalog(page: Page) {
   await loginAsRoot(page)
@@ -10,7 +11,7 @@ test.describe('Product Catalog', () => {
   test('catalog page loads without error', async ({ page }) => {
     await goToCatalog(page)
     await expect(page).not.toHaveURL(/\/login/)
-    await expect(page.locator('body')).not.toContainText('500')
+    await expectNoServerError(page)
   })
 
   test('shows catalog page title', async ({ page }) => {
@@ -36,9 +37,11 @@ test.describe('Product Catalog', () => {
     await expect(productCount.or(noProducts).first()).toBeVisible()
   })
 
-  test('products have Place Order links when catalog has items', async ({ page }) => {
+  test('every product tile links to its detail page', async ({ page }) => {
     await goToCatalog(page)
-    const placeOrderLinks = page.getByRole('link', { name: /place order/i })
+    // `^details\b`, not `^details$`: every tile's Details link carries the product
+    // name in an sr-only span (WCAG 2.4.9), so its accessible name is "Details: <product>".
+    const placeOrderLinks = page.getByRole('link', { name: /^details\b/i })
     const noProducts = page.getByText(/no products found/i)
     // Wait for catalog to finish loading (client component fetches async)
     await expect(placeOrderLinks.or(noProducts).first()).toBeVisible({ timeout: 10000 })
@@ -89,7 +92,7 @@ test.describe('Catalog favorites', () => {
     const noProducts = page.getByText(/no products/i)
     const firstStar = page.getByRole('button', { name: /add to favorites|remove from favorites/i }).first()
     await expect(firstStar.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product card on /catalog to carry a favourite toggle')
 
     // aria-pressed carries the state — the fill colour alone would not.
     await expect(firstStar).toHaveAttribute('aria-pressed', /true|false/)
@@ -99,7 +102,7 @@ test.describe('Catalog favorites', () => {
     const noProducts = page.getByText(/no products/i)
     const addStar = page.getByRole('button', { name: /add to favorites/i }).first()
     await expect(addStar.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product card on /catalog to star')
 
     await expect(page.getByRole('region', { name: /my favorites/i })).toBeHidden()
     await addStar.click()
@@ -123,10 +126,10 @@ test.describe('Catalog trial ordering', () => {
     await loginAsRoot(page)
     await page.goto('/catalog')
 
-    const firstOrder = page.getByRole('link', { name: /place order/i }).first()
+    const firstOrder = page.getByRole('link', { name: /^details\b/i }).first()
     const noProducts = page.getByText(/no products/i)
     await expect(firstOrder.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /catalog to open')
 
     await firstOrder.click()
     // The order form's select, not the buy box's: both are labelled "Environment".
@@ -134,7 +137,7 @@ test.describe('Catalog trial ordering', () => {
     await expect(envSelect).toBeVisible({ timeout: 10000 })
 
     const options = await envSelect.locator('option:not([disabled])').count()
-    if (options === 0) { test.skip(); return }
+    requireSeeded(options > 0, 'the order form offers no environment to choose')
     await envSelect.selectOption({ index: 1 })
 
     // Either the offering allows a trial and the toggle explains itself, or it

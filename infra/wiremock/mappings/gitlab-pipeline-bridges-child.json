@@ -1,0 +1,12 @@
+{
+  "name": "GitLab pipeline bridges — the child pipeline dispatches no further",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/projects/[^/]+/pipelines/43/bridges"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": [],
+    "headers": { "Content-Type": "application/json" }
+  }
+}

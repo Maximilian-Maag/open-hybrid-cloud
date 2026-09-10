@@ -11,7 +11,7 @@ import { db } from '@/lib/db/client'
 import { pipelineStacks, parameters } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { getFileContent } from '@/lib/ci'
-import type { StackStep } from '@open-hybrid-cloud/types'
+import type { StackStep } from '@infrashelf/types'
 
 const HCL_CONTENT = `
 variable "hostname" {
@@ -105,6 +105,40 @@ describe('POST /api/admin/products/[id]/sync-parameters', () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body).toEqual({ created: 2, skipped: 0 })
+  })
+
+  it('does not import a Terraform variable named after a CI variable the server sets (issue #183)', async () => {
+    // This route is why #183 needed nobody to type a dangerous name: it creates
+    // one parameter definition per Terraform variable, and a definition named
+    // `ref` or `tf_action` is what let the ordering user pick the git ref the
+    // pipeline ran, or make a provisioning order destroy instead.
+    vi.mocked(getFileContent).mockResolvedValueOnce(`
+variable "hostname" {
+  type = string
+}
+
+variable "ref" {
+  type    = string
+  default = "main"
+}
+
+variable "tf_action" {
+  type    = string
+  default = "apply"
+}
+`)
+    const root = await createUser({ role: 'root' })
+    const auth = await makeAuthHeader(root)
+    const { p } = await seedStack()
+
+    const res = await POST(makeReq(String(p.id), auth), { params: Promise.resolve({ id: String(p.id) }) })
+    expect(res.status).toBe(200)
+
+    const rows = await db
+      .select()
+      .from(parameters)
+      .where(and(eq(parameters.scope, 'product'), eq(parameters.scopeId, p.id)))
+    expect(rows.map((r) => r.name)).toEqual(['hostname'])
   })
 
   it('skips parameters that already exist on second call', async () => {

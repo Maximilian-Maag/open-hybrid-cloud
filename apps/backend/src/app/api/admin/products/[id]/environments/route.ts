@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { listProductEnvironments, createProductEnvironment } from '@/lib/services/admin/products'
 
 const UpsertProductEnvironmentSchema = z.object({
@@ -28,7 +28,9 @@ export async function GET(
   if (!isAuth(session)) return session
 
   const { id } = await params
-  return toResponse(await listProductEnvironments(parseInt(id, 10)))
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
+  return toResponse(await listProductEnvironments(productId))
 }
 
 export async function POST(
@@ -39,6 +41,8 @@ export async function POST(
   if (!isAuth(session)) return session
 
   const { id } = await params
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
   const body = await req.json().catch(() => null)
   const parsed = UpsertProductEnvironmentSchema.safeParse(body)
   if (!parsed.success) {
@@ -46,7 +50,7 @@ export async function POST(
   }
 
   return toResponse(
-    await createProductEnvironment(parseInt(id, 10), { ...parsed.data, userId: session.id }),
+    await createProductEnvironment(productId, { ...parsed.data, userId: session.id }),
     201,
   )
 }

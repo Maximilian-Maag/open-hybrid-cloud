@@ -1,8 +1,18 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import { POST } from './route'
-import { verifyToken } from '@/lib/auth/jwt'
+import type * as jwt from '@/lib/auth/jwt'
+import { verifyToken, signToken } from '@/lib/auth/jwt'
+
+vi.mock('@/lib/auth/jwt', async (importOriginal) => {
+  const actual = (await importOriginal()) as typeof jwt
+  return { ...actual, signToken: vi.fn(actual.signToken) }
+})
 import { createUser } from '@/test/helpers'
+import { hashToken } from '@/lib/auth/sessions'
+import { db } from '@/lib/db/client'
+import { sessions } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 
 const makeRequest = (body: unknown) =>
   new NextRequest('http://localhost/api/auth/login', {
@@ -11,9 +21,16 @@ const makeRequest = (body: unknown) =>
     headers: { 'content-type': 'application/json' },
   })
 
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
+
 describe('POST /api/auth/login', () => {
   it('returns a JWT token for valid credentials', async () => {
-    await createUser({ email: 'login@test.dev', password: 'correct-pass', role: 'admin' })
+    // A project manager, because since #197 an administrator holds a second
+    // factor and signing one in is a two-step flow — covered separately below.
+    await createUser({ email: 'login@test.dev', password: 'correct-pass', role: 'project_manager' })
 
     const res = await POST(makeRequest({ email: 'login@test.dev', password: 'correct-pass' }))
     expect(res.status).toBe(200)
@@ -21,10 +38,127 @@ describe('POST /api/auth/login', () => {
     const body = await res.json()
     expect(body.token).toBeDefined()
     expect(body.user.email).toBe('login@test.dev')
-    expect(body.user.role).toBe('admin')
+    expect(body.user.role).toBe('project_manager')
 
-    const session = await verifyToken(body.token)
-    expect(session?.email).toBe('login@test.dev')
+    const claims = await verifyToken(body.token)
+    expect(claims?.user.email).toBe('login@test.dev')
+    // Every token now names the session row it belongs to (#37); without one it
+    // would be refused by the very next request.
+    expect(claims?.sid).toBeGreaterThan(0)
+  })
+
+  it('records the session, with where it came from and a digest of the token', async () => {
+    const prev = process.env.TRUST_PROXY
+    process.env.TRUST_PROXY = '1'
+    try {
+      const user = await createUser({ email: 'session-row@test.dev', password: 'correct-pass' })
+      const res = await POST(
+        new NextRequest('http://localhost/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: 'session-row@test.dev', password: 'correct-pass' }),
+          headers: {
+            'content-type': 'application/json',
+            'x-forwarded-for': '198.51.100.9',
+            'user-agent': 'Mozilla/5.0 (Macintosh) TestBrowser/1.0',
+          },
+        }),
+      )
+      expect(res.status).toBe(200)
+      const token = (await res.json()).token as string
+
+      const rows = await db.select().from(sessions).where(eq(sessions.userId, user.id))
+      expect(rows).toHaveLength(1)
+      expect(rows[0].ip).toBe('198.51.100.9')
+      expect(rows[0].userAgent).toBe('Mozilla/5.0 (Macintosh) TestBrowser/1.0')
+      expect(rows[0].revokedAt).toBeNull()
+      // The token is never stored, only its SHA-256 — a database dump must not be
+      // a bag of working credentials.
+      expect(rows[0].tokenHash).toBe(hashToken(token))
+      expect(token).not.toContain(rows[0].tokenHash)
+      expect(rows[0].tokenHash).not.toContain(token.slice(0, 16))
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
+  it('leaves ip null when no proxy is trusted, rather than recording a spoofable header', async () => {
+    const prev = process.env.TRUST_PROXY
+    delete process.env.TRUST_PROXY
+    try {
+      const user = await createUser({ email: 'untrusted-ip@test.dev', password: 'correct-pass' })
+      await POST(
+        new NextRequest('http://localhost/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: 'untrusted-ip@test.dev', password: 'correct-pass' }),
+          headers: { 'content-type': 'application/json', 'x-forwarded-for': '10.0.0.1' },
+        }),
+      )
+      const rows = await db.select().from(sessions).where(eq(sessions.userId, user.id))
+      expect(rows[0].ip).toBeNull()
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
+  it('honours "remember me" with a 30-day session instead of 8 h', async () => {
+    const user = await createUser({ email: 'remember@test.dev', password: 'correct-pass' })
+
+    const before = Date.now()
+    await POST(makeRequest({ email: 'remember@test.dev', password: 'correct-pass' }))
+    await POST(makeRequest({ email: 'remember@test.dev', password: 'correct-pass', rememberMe: true }))
+
+    const rows = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.userId, user.id))
+      .orderBy(sessions.id)
+    expect(rows).toHaveLength(2)
+
+    // Measured against this process's clock, not the database's: expires_at is
+    // computed here, and the container's NOW() is a different clock.
+    const ttlSeconds = (row: typeof rows[number]) =>
+      Math.round((row.expiresAt.getTime() - before) / 1000)
+    expect(ttlSeconds(rows[0])).toBeGreaterThan(8 * 60 * 60 - 60)
+    expect(ttlSeconds(rows[0])).toBeLessThanOrEqual(8 * 60 * 60)
+    expect(ttlSeconds(rows[1])).toBeGreaterThan(30 * 24 * 60 * 60 - 60)
+    expect(ttlSeconds(rows[1])).toBeLessThanOrEqual(30 * 24 * 60 * 60)
+  })
+
+  it('rejects a rememberMe that is not a boolean rather than coercing it', async () => {
+    await createUser({ email: 'coerce@test.dev', password: 'correct-pass' })
+    const res = await POST(
+      makeRequest({ email: 'coerce@test.dev', password: 'correct-pass', rememberMe: 'yes' }),
+    )
+    expect(res.status).toBe(400)
+  })
+
+  it('reports a misconfigured signing secret as a server error, not as bad credentials', async () => {
+    // The credentials are correct here. Before, signToken threw, the route 500'd
+    // with no body, and NextAuth surfaced CredentialsSignin — so a deployment
+    // whose JWT_SECRET was too short looked exactly like a wrong password, and
+    // that is what got debugged.
+    //
+    // The failure is injected rather than provoked with a short JWT_SECRET,
+    // because jwt.ts caches the encoded secret on first use: by the time this
+    // test runs, a valid one is already cached and stubbing the env does nothing.
+    await createUser({ email: 'misconfig@test.dev', password: 'correct-pass' })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(signToken).mockRejectedValueOnce(
+      new Error('JWT_SECRET must be set and at least 32 characters long'),
+    )
+
+    const res = await POST(makeRequest({ email: 'misconfig@test.dev', password: 'correct-pass' }))
+
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toMatch(/misconfigured/i)
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('[auth]'), expect.anything())
+
+    // And no half-written session row survives it. The insert and the token-hash
+    // update are one transaction (#37), so a token that never came into existence
+    // cannot leave behind a row nothing could ever validate against.
+    expect(await db.select().from(sessions)).toEqual([])
   })
 
   it('returns 401 for wrong password', async () => {
@@ -42,11 +176,11 @@ describe('POST /api/auth/login', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns 401 for inactive user', async () => {
+  it('answers 403, not 401, for a deactivated account with the right password', async () => {
     await createUser({ email: 'inactive@test.dev', password: 'correct-pass', active: false })
 
     const res = await POST(makeRequest({ email: 'inactive@test.dev', password: 'correct-pass' }))
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(403)
   })
 
   it('returns 400 for invalid email format', async () => {
@@ -176,6 +310,74 @@ describe('POST /api/auth/login', () => {
     }
   })
 
+  // The defect (#199): the buckets were charged on the way IN, so a sign-in cost
+  // budget — and it cost two, because the form posts here twice: once with
+  // `challengeOnly` to tell "needs a code" from "wrong password", then the real
+  // one from NextAuth's `authorize`. Only the account bucket is cleared on
+  // success, so the IP bucket kept both. Ten per fifteen minutes became five
+  // sign-ins per IP per quarter hour, after which correct credentials got a 429.
+  it('a successful sign-in costs no per-IP budget at all', async () => {
+    const prev = process.env.TRUST_PROXY
+    process.env.TRUST_PROXY = '1'
+    try {
+      await createUser({ email: 'nocost@test.dev', password: 'correct-pass' })
+      const ip = `10.9.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
+      const attempt = async (email: string, password: string, challengeOnly = false) =>
+        POST(
+          new NextRequest('http://localhost/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password, ...(challengeOnly ? { challengeOnly } : {}) }),
+            headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+          }),
+        )
+
+      // Twenty sign-ins, each the two hops the form actually makes. Under the old
+      // behaviour the sixth would have been refused.
+      for (let i = 0; i < 20; i++) {
+        expect((await attempt('nocost@test.dev', 'correct-pass', true)).status).toBe(200)
+        expect((await attempt('nocost@test.dev', 'correct-pass')).status).toBe(200)
+      }
+
+      // And the bucket is untouched: a fresh account still gets its full budget
+      // of failures from this address.
+      for (let i = 0; i < 10; i++) {
+        expect((await attempt(`after-${i}@test.dev`, 'wrong')).status).toBe(401)
+      }
+      expect((await attempt('after-x@test.dev', 'wrong')).status).toBe(429)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
+  // The other half, which the issue asked to pin because neither is obvious from
+  // reading: a FAILED attempt costs exactly one, not two. The second hop is never
+  // reached when the first refuses.
+  it('a failed sign-in costs exactly one attempt', async () => {
+    const prev = process.env.TRUST_PROXY
+    process.env.TRUST_PROXY = '1'
+    try {
+      const ip = `10.11.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`
+      const attempt = async (email: string) =>
+        POST(
+          new NextRequest('http://localhost/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password: 'wrong' }),
+            headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+          }),
+        )
+
+      // Exactly ten fit before the cap; an eleventh does not.
+      for (let i = 0; i < 10; i++) {
+        expect((await attempt(`one-${i}@test.dev`)).status).toBe(401)
+      }
+      expect((await attempt('one-last@test.dev')).status).toBe(429)
+    } finally {
+      if (prev === undefined) delete process.env.TRUST_PROXY
+      else process.env.TRUST_PROXY = prev
+    }
+  })
+
   it('a successful login does not reset the per-IP spraying bucket (NFA-05.1)', async () => {
     const prev = process.env.TRUST_PROXY
     process.env.TRUST_PROXY = '1'
@@ -191,15 +393,15 @@ describe('POST /api/auth/login', () => {
           }),
         )
 
-      // 9 failed sprays across different accounts from this IP (IP bucket → 9).
-      for (let i = 0; i < 9; i++) {
+      // 10 failed sprays across different accounts from this IP fills the bucket.
+      for (let i = 0; i < 10; i++) {
         expect((await attempt(`ips-${i}@test.dev`, 'wrong')).status).toBe(401)
       }
-      // A successful login from the same IP (IP bucket → 10) resets only the
-      // account bucket — not the IP bucket.
-      expect((await attempt('ipreset@test.dev', 'correct-pass')).status).toBe(200)
-      // The next attempt from this IP is still blocked: the success did not
-      // clear the accumulated per-IP failures.
+      // Correct credentials from that IP are refused too, and stay refused. That
+      // is what the spraying cap is for, and it is unchanged: nothing a caller
+      // can do from this address clears the accumulated failures inside the
+      // window.
+      expect((await attempt('ipreset@test.dev', 'correct-pass')).status).toBe(429)
       expect((await attempt('another@test.dev', 'whatever')).status).toBe(429)
     } finally {
       if (prev === undefined) delete process.env.TRUST_PROXY
@@ -268,5 +470,40 @@ describe('POST /api/auth/login', () => {
       if (prev === undefined) delete process.env.TRUST_PROXY
       else process.env.TRUST_PROXY = prev
     }
+  })
+})
+
+// Issue #197. An administrator with no factor is signed in — enrolling needs a
+// session — and told that is all this session may do.
+describe('POST /api/auth/login — an administrator who owes a second factor', () => {
+  it.each([['root'], ['admin']] as const)(
+    'signs a %s in and flags the enrollment',
+    async (role) => {
+      const email = `owes-${role}@test.dev`
+      await createUser({ email, password: 'correct-pass', role, secondFactor: false })
+
+      const res = await POST(makeRequest({ email, password: 'correct-pass' }))
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      // A real token: without one they could not reach the enrollment endpoints,
+      // and refusing the sign-in outright would be a lockout with no way back.
+      expect(body.token).toBeDefined()
+      expect(body.mustEnrollSecondFactor).toBe(true)
+    },
+  )
+
+  it('omits the flag entirely once a factor is confirmed', async () => {
+    // An enrolled administrator never reaches this path — they get a challenge —
+    // so the flag has to be absent rather than false on every other response.
+    await createUser({ email: 'no-flag@test.dev', password: 'correct-pass', role: 'project_manager' })
+    const res = await POST(makeRequest({ email: 'no-flag@test.dev', password: 'correct-pass' }))
+    expect(await res.json()).not.toHaveProperty('mustEnrollSecondFactor')
+  })
+
+  it('does not flag a project manager, who may not hold a factor at all', async () => {
+    await createUser({ email: 'pm-login@test.dev', password: 'correct-pass', role: 'project_manager' })
+    const res = await POST(makeRequest({ email: 'pm-login@test.dev', password: 'correct-pass' }))
+    expect((await res.json()).mustEnrollSecondFactor).toBeUndefined()
   })
 })

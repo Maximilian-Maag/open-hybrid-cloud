@@ -1,4 +1,5 @@
-import type { Branding } from '@open-hybrid-cloud/types'
+import { Suspense } from 'react'
+import type { Branding } from '@infrashelf/types'
 import { LoginForm } from './LoginForm'
 
 const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
@@ -7,12 +8,12 @@ export default async function LoginPage() {
   let branding: Branding = {
     primaryColor: '#131921',
     secondaryColor: '#febd69',
-    shopName: 'Open Hybrid Cloud',
+    shopName: 'InfraShelf',
     shopSubtitle: '',
     imprintText: '',
   }
   try {
-    const res = await fetch(`${API_SSR}/api/admin/branding`, { cache: 'no-store' })
+    const res = await fetch(`${API_SSR}/api/public/branding`, { cache: 'no-store' })
     if (res.ok) branding = await res.json()
   } catch { /* use defaults */ }
 
@@ -27,13 +28,17 @@ export default async function LoginPage() {
     } catch { /* non-fatal */ }
   }
 
+  // Suspense boundary: LoginForm reads the query string (`expired`,
+  // `callbackUrl`), and `useSearchParams` requires one.
   return (
-    <LoginForm
-      shopName={branding.shopName ?? 'Open Hybrid Cloud'}
-      shopSubtitle={branding.shopSubtitle ?? ''}
-      logoDataUrl={logoDataUrl}
-      primaryColor={branding.primaryColor ?? '#131921'}
-      secondaryColor={branding.secondaryColor ?? '#febd69'}
-    />
+    <Suspense>
+      <LoginForm
+        shopName={branding.shopName ?? 'InfraShelf'}
+        shopSubtitle={branding.shopSubtitle ?? ''}
+        logoDataUrl={logoDataUrl}
+        primaryColor={branding.primaryColor ?? '#131921'}
+        secondaryColor={branding.secondaryColor ?? '#febd69'}
+      />
+    </Suspense>
   )
 }

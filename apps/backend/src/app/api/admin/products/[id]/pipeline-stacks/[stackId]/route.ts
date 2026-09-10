@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireRole, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { updatePipelineStack, deletePipelineStack } from '@/lib/services/admin/pipeline-stacks'
 
 const UpstreamRefSchema = z.object({
@@ -31,13 +31,17 @@ export async function PUT(
   if (!isAuth(session)) return session
 
   const { id, stackId } = await params
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
+  const pipelineStackId = parseRouteId(stackId)
+  if (pipelineStackId === null) return invalidId('pipeline stack id')
   const body = await req.json().catch(() => null)
   const parsed = UpdateStackSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  return toResponse(await updatePipelineStack(parseInt(id, 10), parseInt(stackId, 10), parsed.data))
+  return toResponse(await updatePipelineStack(productId, pipelineStackId, parsed.data, session.id))
 }
 
 export async function DELETE(
@@ -48,5 +52,9 @@ export async function DELETE(
   if (!isAuth(session)) return session
 
   const { id, stackId } = await params
-  return toResponse(await deletePipelineStack(parseInt(id, 10), parseInt(stackId, 10)))
+  const productId = parseRouteId(id)
+  if (productId === null) return invalidId('product id')
+  const pipelineStackId = parseRouteId(stackId)
+  if (pipelineStackId === null) return invalidId('pipeline stack id')
+  return toResponse(await deletePipelineStack(productId, pipelineStackId, session.id))
 }

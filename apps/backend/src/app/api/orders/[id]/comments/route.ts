@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireAuth, isAuth } from '@/lib/auth/middleware'
-import { toResponse } from '@/lib/http'
+import { toResponse, parseRouteId, invalidId } from '@/lib/http'
 import { listComments, createComment, MAX_COMMENT_LENGTH } from '@/lib/services/comments'
 
 const CreateCommentSchema = z.object({
@@ -10,11 +10,6 @@ const CreateCommentSchema = z.object({
   internal: z.boolean().optional(),
 })
 
-const parseOrderId = (raw: string): number | null => {
-  const id = Number(raw)
-  return Number.isInteger(id) && id > 0 ? id : null
-}
-
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -22,8 +17,8 @@ export async function GET(
   const session = await requireAuth(req)
   if (!isAuth(session)) return session
 
-  const orderId = parseOrderId((await params).id)
-  if (orderId === null) return NextResponse.json({ error: 'Invalid order id' }, { status: 400 })
+  const orderId = parseRouteId((await params).id)
+  if (orderId === null) return invalidId('order id')
 
   return toResponse(await listComments(session, orderId))
 }
@@ -35,8 +30,8 @@ export async function POST(
   const session = await requireAuth(req)
   if (!isAuth(session)) return session
 
-  const orderId = parseOrderId((await params).id)
-  if (orderId === null) return NextResponse.json({ error: 'Invalid order id' }, { status: 400 })
+  const orderId = parseRouteId((await params).id)
+  if (orderId === null) return invalidId('order id')
 
   const parsed = CreateCommentSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

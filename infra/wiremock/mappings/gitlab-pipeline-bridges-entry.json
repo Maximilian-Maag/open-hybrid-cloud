@@ -1,0 +1,19 @@
+{
+  "name": "GitLab pipeline bridges — entry pipeline 42 dispatches to child pipeline 43",
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/v4/projects/[^/]+/pipelines/42/bridges"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": [
+      {
+        "id": 100,
+        "name": "trigger-linode-virtual-machine",
+        "status": "success",
+        "downstream_pipeline": { "id": 43, "project_id": 1, "status": "success" }
+      }
+    ],
+    "headers": { "Content-Type": "application/json" }
+  }
+}

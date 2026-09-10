@@ -12,7 +12,9 @@ import { testDatabaseUrl } from './src/test/database'
  * that, so `thresholds.break = 80` was enforcing nothing at all.
  *
  * Raised only under Stryker, which sets STRYKER_MUTATOR_WORKER in each test
- * runner process.
+ * runner process. Read here rather than under `src/`, where the policy gate
+ * treats an env access as an operator-facing setting needing an `.env.example`
+ * entry — and Stryker sets this one itself.
  *
  * An ordinary run used to keep vitest's default 5s, on the argument that a test
  * genuinely taking six seconds is worth being told about. The argument is sound
@@ -30,6 +32,11 @@ import { testDatabaseUrl } from './src/test/database'
  * 15s, then. Still tight enough to catch a test that has genuinely gone wrong —
  * nothing here does real work for fifteen seconds — and slack enough that a
  * queue on a shared server is not reported as a failing assertion.
+ *
+ * This is a default for the ordinary case and says nothing about the four specs
+ * that wait on a Postgres row lock: those override it per test with
+ * `LOCK_TEST_TIMEOUT_MS` from `src/test/timeouts.ts`, because a wait longer than
+ * the timeout that kills the test never prints its own diagnostic (#386).
  */
 const underMutationTesting = process.env.STRYKER_MUTATOR_WORKER !== undefined
 

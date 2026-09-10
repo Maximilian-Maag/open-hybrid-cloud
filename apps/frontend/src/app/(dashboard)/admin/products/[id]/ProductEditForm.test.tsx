@@ -664,3 +664,97 @@ describe('ProductEditForm parameter types', () => {
     expect(body.sizeValues).toEqual({ S: 't3.micro', XL: 'm6i.2xlarge' })
   })
 })
+
+describe('ProductEditForm pipeline stacks', () => {
+  /**
+   * The interleaving that duplicated a row in CI (#384), driven directly.
+   *
+   * Both requests are deferred so the test decides the order: the create is
+   * submitted first, then the MOUNT FETCH resolves with a list that already
+   * contains the new stack — which is what the server returns once the insert
+   * has committed — and only then does the POST resolve. A plain
+   * `[...prev, created]` appends to a list that already has the record and the
+   * stack is drawn twice, sharing a React key.
+   *
+   * Deferred rather than ordered by timers: the race is between two microtask
+   * continuations, and a delay long enough to be reliable would also be long
+   * enough to hide the bug on a slow machine.
+   */
+  it('draws a created stack once when the mount fetch lands mid-create', async () => {
+    const user = userEvent.setup()
+
+    const created = {
+      id: 3,
+      productId: 7,
+      environmentId: LINKED_ENV,
+      name: 'Payments VM',
+      stateKeyParam: 'hostname',
+      steps: [{ template: 'linode/virtual-machine', stateSuffix: '-vm', execOrder: 0 }],
+    }
+
+    let resolveList: (stacks: unknown) => void = () => {}
+    const pendingList = new Promise((resolve) => { resolveList = resolve })
+    stubGet({ '/api/admin/products/7/pipeline-stacks': pendingList })
+
+    let resolveCreate: (stack: unknown) => void = () => {}
+    mockedPost.mockImplementation((() => new Promise((resolve) => { resolveCreate = resolve })) as never)
+
+    renderForm()
+
+    await user.click(screen.getByRole('button', { name: 'Add Stack' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Add Pipeline Stack' })
+
+    await user.type(within(dialog).getByLabelText(/^Name/), created.name)
+    await user.selectOptions(within(dialog).getByLabelText(/^Environment/), String(LINKED_ENV))
+    await user.click(within(dialog).getByRole('button', { name: '+ Add Step' }))
+    await user.type(within(dialog).getByLabelText(/^Template/), created.steps[0].template)
+    await user.type(within(dialog).getByLabelText(/^State Suffix/), created.steps[0].stateSuffix)
+
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledWith(
+      '/api/admin/products/7/pipeline-stacks',
+      expect.objectContaining({ name: created.name, environmentId: LINKED_ENV }),
+    ))
+
+    // The mount fetch is served after the insert committed, so it already
+    // carries the new stack — and its `.then` replaces the list.
+    resolveList([created])
+    await waitFor(() => expect(screen.getAllByTestId('stack-item')).toHaveLength(1))
+
+    // Only now does the create resolve and the handler put its record in.
+    resolveCreate(created)
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Pipeline Stack' })).not.toBeInTheDocument())
+    expect(screen.getAllByTestId('stack-item')).toHaveLength(1)
+    expect(screen.getAllByText(created.name)).toHaveLength(1)
+  })
+
+  it('appends a created stack that the list does not already carry', async () => {
+    const user = userEvent.setup()
+
+    const existing = {
+      id: 1, productId: 7, environmentId: LINKED_ENV, name: 'Gateway VM',
+      stateKeyParam: 'hostname', steps: [{ template: 'linode/virtual-machine', stateSuffix: '-gw', execOrder: 0 }],
+    }
+    const created = { ...existing, id: 2, name: 'Payments VM' }
+
+    stubGet({ '/api/admin/products/7/pipeline-stacks': [existing] })
+    mockedPost.mockResolvedValue(created as never)
+
+    renderForm()
+    await waitFor(() => expect(screen.getAllByTestId('stack-item')).toHaveLength(1))
+
+    await user.click(screen.getByRole('button', { name: 'Add Stack' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Add Pipeline Stack' })
+    await user.type(within(dialog).getByLabelText(/^Name/), created.name)
+    await user.selectOptions(within(dialog).getByLabelText(/^Environment/), String(LINKED_ENV))
+    await user.click(within(dialog).getByRole('button', { name: '+ Add Step' }))
+    await user.type(within(dialog).getByLabelText(/^Template/), 'linode/virtual-machine')
+    await user.type(within(dialog).getByLabelText(/^State Suffix/), '-vm')
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => expect(screen.getAllByTestId('stack-item')).toHaveLength(2))
+    expect(screen.getByText('Gateway VM')).toBeInTheDocument()
+    expect(screen.getByText('Payments VM')).toBeInTheDocument()
+  })
+})

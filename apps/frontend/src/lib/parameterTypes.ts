@@ -1,4 +1,4 @@
-import type { ParameterType } from '@open-hybrid-cloud/types'
+import type { ParameterType } from '@infrashelf/types'
 import { t } from '@/lib/i18n'
 
 /**

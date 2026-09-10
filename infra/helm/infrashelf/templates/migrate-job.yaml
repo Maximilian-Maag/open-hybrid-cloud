@@ -2,9 +2,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "open-hybrid-cloud.fullname" . }}-migrate
+  name: {{ include "infrashelf.fullname" . }}-migrate
   labels:
-    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    {{- include "infrashelf.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-5"
@@ -14,7 +14,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "open-hybrid-cloud.backend.selectorLabels" . | nindent 8 }}
+        {{- include "infrashelf.backend.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never
@@ -24,7 +24,7 @@ spec:
       {{- end }}
       containers:
         - name: migrate
-          image: {{ include "open-hybrid-cloud.backend.image" . }}
+          image: {{ include "infrashelf.backend.image" . }}
           imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
           # Start the backend server, wait for /api/health (which runs drizzle
           # migrations and seeds the admin account), then terminate cleanly.
@@ -44,17 +44,17 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  name: {{ include "infrashelf.backend.fullname" . }}
                   key: DATABASE_URL
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  name: {{ include "infrashelf.backend.fullname" . }}
                   key: JWT_SECRET
             - name: ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+                  name: {{ include "infrashelf.backend.fullname" . }}
                   key: ADMIN_PASSWORD
           {{- with .Values.backend.resources }}
           resources:

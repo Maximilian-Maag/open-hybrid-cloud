@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
-import type { Order, Role, ApprovalDelegationsResponse, OrderPage } from '@open-hybrid-cloud/types'
+import type { Order, Role, ApprovalDelegationsResponse, OrderPage } from '@infrashelf/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ApprovalRow } from './ApprovalRow'
 import { DelegationPanel } from './DelegationPanel'

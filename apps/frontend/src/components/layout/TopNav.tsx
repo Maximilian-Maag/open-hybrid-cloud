@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { Role } from '@open-hybrid-cloud/types'
+import type { Role } from '@infrashelf/types'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 

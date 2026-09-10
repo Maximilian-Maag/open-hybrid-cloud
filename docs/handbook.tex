@@ -1,5 +1,5 @@
 % ============================================================
-%  Open Hybrid Cloud Infrastructure Webshop — Technical Handbook
+%  InfraShelf Infrastructure Webshop — Technical Handbook
 % ============================================================
 \documentclass[12pt,a4paper,twoside]{report}
 
@@ -26,8 +26,8 @@
 
 % ── Colors ───────────────────────────────────────────────────
 \usepackage[dvipsnames,table]{xcolor}
-\definecolor{ohc-blue}{HTML}{131921}
-\definecolor{ohc-amber}{HTML}{febd69}
+\definecolor{isf-blue}{HTML}{131921}
+\definecolor{isf-amber}{HTML}{febd69}
 \definecolor{c4-person}{HTML}{08427b}
 \definecolor{c4-system}{HTML}{1168bd}
 \definecolor{c4-external}{HTML}{6b6b6b}
@@ -246,10 +246,10 @@
   linkcolor=link-color,
   urlcolor=link-color,
   citecolor=link-color,
-  pdfauthor={Open Hybrid Cloud Infrastructure Team},
-  pdftitle={Open Hybrid Cloud Infrastructure Webshop — Technical Handbook},
+  pdfauthor={InfraShelf Infrastructure Team},
+  pdftitle={InfraShelf Infrastructure Webshop — Technical Handbook},
   pdfsubject={Technical documentation for administrators, developers, and project managers},
-  pdfkeywords={Open Hybrid Cloud, webshop, infrastructure, Next.js, TypeScript, OpenTofu, GitLab, C4},
+  pdfkeywords={InfraShelf, webshop, infrastructure, Next.js, TypeScript, OpenTofu, GitLab, C4},
   bookmarksnumbered=true,
   hypertexnames=true,
   unicode=true,
@@ -258,13 +258,13 @@
 % ── Chapter style ─────────────────────────────────────────────
 \usepackage{titlesec}
 \titleformat{\chapter}[display]
-  {\normalfont\huge\bfseries\color{ohc-blue}}
+  {\normalfont\huge\bfseries\color{isf-blue}}
   {\chaptertitlename\ \thechapter}{12pt}{\Huge}
 \titleformat{\section}
-  {\normalfont\Large\bfseries\color{ohc-blue!80}}
+  {\normalfont\Large\bfseries\color{isf-blue!80}}
   {\thesection}{1em}{}
 \titleformat{\subsection}
-  {\normalfont\large\bfseries\color{ohc-blue!60}}
+  {\normalfont\large\bfseries\color{isf-blue!60}}
   {\thesubsection}{1em}{}
 
 % ── Custom commands ───────────────────────────────────────────
@@ -288,16 +288,16 @@
 % ── Title page ───────────────────────────────────────────────
 \begin{titlepage}
   \begin{tikzpicture}[remember picture, overlay]
-    \fill[ohc-blue] (current page.north west) rectangle
+    \fill[isf-blue] (current page.north west) rectangle
       ([yshift=-5cm] current page.north east);
-    \fill[ohc-amber] ([yshift=-5cm] current page.north west) rectangle
+    \fill[isf-amber] ([yshift=-5cm] current page.north west) rectangle
       ([yshift=-5.4cm] current page.north east);
   \end{tikzpicture}
 
   \vspace*{2.5cm}
 
   {\color{white}\fontsize{28}{34}\selectfont\bfseries
-    Open Hybrid Cloud\\[6pt]
+    InfraShelf\\[6pt]
     Infrastructure Webshop}
 
   \vspace{2.2cm}
@@ -320,7 +320,7 @@
   \end{tabular}
 
   \vspace{1cm}
-  {\small\color{gray}Open Hybrid Cloud — Digital Unit Infrastructure Team}
+  {\small\color{gray}InfraShelf — Digital Unit Infrastructure Team}
 \end{titlepage}
 
 % ── Front matter ─────────────────────────────────────────────
@@ -341,7 +341,7 @@
 
 \section{Purpose of This Handbook}
 
-Open Hybrid Cloud is an open-source, self-service portal that enables Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. The source code is publicly available at \url{https://github.com/Maximilian-Maag/open-hybrid-cloud}. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
+InfraShelf is an open-source, self-service portal that enables Admins and Project Managers to order, manage, and decommission IT infrastructure on Linode/Akamai Cloud through a browser-based interface. The source code is publicly available at \url{https://github.com/Maximilian-Maag/infrashelf}. This handbook is the authoritative reference for everyone who operates, extends, or uses the system.
 
 It covers:
 \begin{itemize}
@@ -871,7 +871,7 @@ OpenTofu is a community-governed, truly open-source fork of Terraform
 created after HashiCorp changed Terraform's license to BSL 1.1 in 2023.
 The API, HCL syntax, provider ecosystem, and state format are fully
 compatible. Using OpenTofu avoids future licensing costs and complies
-with Open Hybrid Cloud's open-source software policy.
+with InfraShelf's open-source software policy.
 
 \section{GitLab Managed Terraform State}
 
@@ -1270,8 +1270,8 @@ data "terraform_remote_state" "vm" {
   backend = "http"
   config = {
     address  = "${var.ci_api_url}/projects/${var.ci_project_id}/terraform/state/${var.vm_state_name}"
-    username = "gitlab-ci-token"
-    password = var.ci_job_token
+    username = var.gitlab_state_username
+    password = var.gitlab_state_token
   }
 }
 
@@ -1504,7 +1504,7 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[node distance=1.2cm and 1.6cm,
-  box/.style={rectangle, draw=ohc-blue!70, fill=ohc-blue!10,
+  box/.style={rectangle, draw=isf-blue!70, fill=isf-blue!10,
               text width=2.8cm, align=center, minimum height=1.1cm, font=\small\bfseries},
   db/.style={cylinder, draw=c4-database!80, fill=c4-database!20,
              shape border rotate=90, text width=2.2cm, align=center,
@@ -1515,7 +1515,7 @@ host using Docker and an Nginx reverse proxy with TLS termination.
 
   \node[ext] (client) {Browser\\/ API Client};
   \node[box, right=1.6cm of client] (nginx) {Nginx\\\scriptsize TLS termination\\reverse proxy};
-  \node[box, right=1.6cm of nginx] (app) {open-hybrid-cloud\\\scriptsize Docker\\:8080};
+  \node[box, right=1.6cm of nginx] (app) {infrashelf\\\scriptsize Docker\\:8080};
   \node[db, right=1.6cm of app] (pg) {PostgreSQL\\\scriptsize :5432};
   \node[box, right=1.6cm of nginx] (fe) {Frontend\\\scriptsize Next.js\\:3000};
   \node[box, right=1.6cm of fe] (be) {Backend API\\\scriptsize Next.js\\:3001};
@@ -1555,8 +1555,8 @@ systemctl enable --now docker
 
 \item \textbf{Clone the repository.}
 \begin{lstlisting}[style=bash]
-git clone https://github.com/Maximilian-Maag/open-hybrid-cloud.git
-cd open-hybrid-cloud
+git clone https://github.com/Maximilian-Maag/infrashelf.git
+cd infrashelf
 \end{lstlisting}
 
 \item \textbf{Configure environment files.}
@@ -1662,12 +1662,12 @@ systemctl status certbot.timer
 
 \begin{lstlisting}[style=bash]
 # Backup PostgreSQL
-docker exec ohc-postgres pg_dump -U postgres open_hybrid_cloud \
+docker exec isf-postgres pg_dump -U postgres infrashelf \
   | gzip > backup-$(date +%Y%m%d).sql.gz
 
 # Restore
 zcat backup-20260101.sql.gz \
-  | docker exec -i ohc-postgres psql -U postgres open_hybrid_cloud
+  | docker exec -i isf-postgres psql -U postgres infrashelf
 \end{lstlisting}
 
 \section{Deployment on Kubernetes}
@@ -1684,7 +1684,7 @@ cluster.
 \begin{tikzpicture}[node distance=1.2cm and 1.8cm,
   pod/.style={rectangle, draw=c4-container!80, fill=c4-container!15,
               text width=2.8cm, align=center, minimum height=1.0cm, font=\small\bfseries},
-  svc/.style={rectangle, rounded corners=4pt, draw=ohc-amber!80, fill=ohc-amber!20,
+  svc/.style={rectangle, rounded corners=4pt, draw=isf-amber!80, fill=isf-amber!20,
               text width=2.4cm, align=center, minimum height=0.9cm, font=\scriptsize\bfseries},
   ext/.style={rectangle, draw=gray!60, fill=gray!10, dashed,
               text width=2.4cm, align=center, minimum height=0.9cm, font=\small},
@@ -1715,30 +1715,30 @@ cluster.
   \item Nginx Ingress Controller installed (\code{ingress-nginx})
   \item cert-manager installed with a \code{ClusterIssuer} for Let's
         Encrypt or a corporate CA
-  \item The images \code{maximilianmaag/open-hybrid-cloud-backend} and
-        \code{maximilianmaag/open-hybrid-cloud-frontend} are publicly
+  \item The images \code{maximilianmaag/infrashelf-backend} and
+        \code{maximilianmaag/infrashelf-frontend} are publicly
         available on Docker Hub — no \code{imagePullSecret} required
 \end{itemize}
 
 \subsection*{Deployment with Helm}
 
-The repository ships a Helm chart at \file{infra/helm/open-hybrid-cloud/}.
+The repository ships a Helm chart at \file{infra/helm/infrashelf/}.
 It covers the full deployment in a single command and handles database
 migrations automatically as a pre-install/pre-upgrade hook.
 
 \begin{lstlisting}[style=bash,caption={Helm install with required values},label={lst:helm-install}]
-helm upgrade --install open-hybrid-cloud \
-  infra/helm/open-hybrid-cloud \
-  --namespace open-hybrid-cloud \
+helm upgrade --install infrashelf \
+  infra/helm/infrashelf \
+  --namespace infrashelf \
   --create-namespace \
-  --set backend.env.databaseUrl="postgres://user:pass@pg.example.com:5432/open_hybrid_cloud?sslmode=require" \
+  --set backend.env.databaseUrl="postgres://user:pass@pg.example.com:5432/infrashelf?sslmode=require" \
   --set backend.env.jwtSecret="<min-32-char-secret>" \
   --set backend.env.adminPassword="<initial-password>" \
   --set frontend.env.nextauthSecret="<min-32-char-secret>" \
-  --set frontend.env.apiUrl="http://open-hybrid-cloud-backend:3001" \
+  --set frontend.env.apiUrl="http://infrashelf-backend:3001" \
   --set ingress.hosts[0].host=shop.example.com \
   --set ingress.tls[0].hosts[0]=shop.example.com \
-  --set ingress.tls[0].secretName=open-hybrid-cloud-tls
+  --set ingress.tls[0].secretName=infrashelf-tls
 \end{lstlisting}
 
 \notebox{Sensitive values should be passed via a separate
@@ -1749,7 +1749,7 @@ history.}
 \begin{lstlisting}[style=bash,caption={Example secrets.values.yaml (do not commit)},label={lst:helm-secrets}]
 backend:
   env:
-    databaseUrl: "postgres://user:pass@pg.example.com:5432/open_hybrid_cloud?sslmode=require"
+    databaseUrl: "postgres://user:pass@pg.example.com:5432/infrashelf?sslmode=require"
     jwtSecret: "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
     adminPassword: "change-me-immediately"
 frontend:
@@ -1759,8 +1759,8 @@ frontend:
 \end{lstlisting}
 
 \begin{lstlisting}[style=bash]
-helm upgrade --install open-hybrid-cloud infra/helm/open-hybrid-cloud \
-  --namespace open-hybrid-cloud --create-namespace \
+helm upgrade --install infrashelf infra/helm/infrashelf \
+  --namespace infrashelf --create-namespace \
   -f values.production.yaml \
   -f secrets.values.yaml
 \end{lstlisting}
@@ -1775,13 +1775,13 @@ Table~\ref{tab:helm-values} lists the most important configurable values.
     \toprule
     \textbf{Key} & \textbf{Description} & \textbf{Default} \\
     \midrule
-    \code{backend.image.repository}       & Backend Docker Hub image          & \code{maximilianmaag/open-hybrid-cloud-backend} \\
+    \code{backend.image.repository}       & Backend Docker Hub image          & \code{maximilianmaag/infrashelf-backend} \\
     \code{backend.image.tag}              & Image tag (empty = appVersion)    & \code{""} \\
     \code{backend.replicaCount}           & Backend pod replicas              & \code{2} \\
     \code{backend.env.databaseUrl}        & PostgreSQL DSN (required)         & — \\
     \code{backend.env.jwtSecret}          & JWT signing secret (required)     & — \\
     \code{backend.env.adminPassword}      & Initial root password (required)  & — \\
-    \code{frontend.image.repository}      & Frontend Docker Hub image         & \code{maximilianmaag/open-hybrid-cloud-frontend} \\
+    \code{frontend.image.repository}      & Frontend Docker Hub image         & \code{maximilianmaag/infrashelf-frontend} \\
     \code{frontend.image.tag}             & Image tag (empty = appVersion)    & \code{""} \\
     \code{frontend.replicaCount}          & Frontend pod replicas             & \code{2} \\
     \code{frontend.env.nextauthSecret}    & NextAuth session secret (req.)    & — \\
@@ -1798,18 +1798,18 @@ Table~\ref{tab:helm-values} lists the most important configurable values.
 
 \item \textbf{Create the namespace.}
 \begin{lstlisting}[style=bash]
-kubectl create namespace open-hybrid-cloud
+kubectl create namespace infrashelf
 \end{lstlisting}
 
 \item \textbf{(Optional) Create an image pull secret.}
 
-The container image \code{maximilianmaag/open-hybrid-cloud} is publicly
+The container image \code{maximilianmaag/infrashelf} is publicly
 available on Docker Hub and requires no authentication. Skip this step
 for standard deployments. Only required if you mirror the image to a
 private registry:
 \begin{lstlisting}[style=bash]
 kubectl create secret docker-registry my-registry-secret \
-  --namespace open-hybrid-cloud \
+  --namespace infrashelf \
   --docker-server=<your-registry> \
   --docker-username=<username> \
   --docker-password=<password>
@@ -1820,11 +1820,11 @@ kubectl create secret docker-registry my-registry-secret \
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ohc-backend-env
-  namespace: open-hybrid-cloud
+  name: isf-backend-env
+  namespace: infrashelf
 type: Opaque
 stringData:
-  DATABASE_URL: "postgres://user:password@pg.example.com:5432/open_hybrid_cloud?sslmode=require"
+  DATABASE_URL: "postgres://user:password@pg.example.com:5432/infrashelf?sslmode=require"
   JWT_SECRET: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
   ADMIN_EMAIL: "root@example.com"
   ADMIN_PASSWORD: "changeme"
@@ -1832,14 +1832,14 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ohc-frontend-env
-  namespace: open-hybrid-cloud
+  name: isf-frontend-env
+  namespace: infrashelf
 type: Opaque
 stringData:
   NEXTAUTH_SECRET: "f0e1d2c3b4a596870001020304050607f0e1d2c3b4a596870001020304050607"
   NEXTAUTH_URL: "https://shop.example.com"
   NEXT_PUBLIC_API_URL: "https://shop.example.com/api"
-  API_URL: "http://ohc-backend:3001"
+  API_URL: "http://isf-backend:3001"
 \end{lstlisting}
 
 \item \textbf{Apply the database schema.}
@@ -1848,7 +1848,7 @@ The schema is pushed automatically by Drizzle on backend startup. No
 separate migration job is required. Verify via the health endpoint once
 the backend pod is running:
 \begin{lstlisting}[style=bash]
-kubectl exec -n open-hybrid-cloud deploy/ohc-backend -- \
+kubectl exec -n infrashelf deploy/isf-backend -- \
   wget -qO- http://localhost:3001/api/health
 # Expected: {"status":"ok"}
 \end{lstlisting}
@@ -1858,26 +1858,26 @@ kubectl exec -n open-hybrid-cloud deploy/ohc-backend -- \
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: open-hybrid-cloud
-  namespace: open-hybrid-cloud
+  name: infrashelf
+  namespace: infrashelf
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: open-hybrid-cloud
+      app: infrashelf
   template:
     metadata:
       labels:
-        app: open-hybrid-cloud
+        app: infrashelf
     spec:
       containers:
         - name: app
-          image: maximilianmaag/open-hybrid-cloud:latest
+          image: maximilianmaag/infrashelf:latest
           ports:
             - containerPort: 8080
           envFrom:
             - secretRef:
-                name: open-hybrid-cloud-env
+                name: infrashelf-env
           livenessProbe:
             httpGet:
               path: /health
@@ -1901,11 +1901,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: open-hybrid-cloud
-  namespace: open-hybrid-cloud
+  name: infrashelf
+  namespace: infrashelf
 spec:
   selector:
-    app: open-hybrid-cloud
+    app: infrashelf
   ports:
     - port: 80
       targetPort: 8080
@@ -1916,8 +1916,8 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: open-hybrid-cloud
-  namespace: open-hybrid-cloud
+  name: infrashelf
+  namespace: infrashelf
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
@@ -1926,7 +1926,7 @@ spec:
   tls:
     - hosts:
         - shop.example.com
-      secretName: open-hybrid-cloud-tls
+      secretName: infrashelf-tls
   rules:
     - host: shop.example.com
       http:
@@ -1935,7 +1935,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: open-hybrid-cloud
+                name: infrashelf
                 port:
                   number: 80
 \end{lstlisting}
@@ -1945,13 +1945,13 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: open-hybrid-cloud
-  namespace: open-hybrid-cloud
+  name: infrashelf
+  namespace: infrashelf
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: open-hybrid-cloud
+    name: infrashelf
   minReplicas: 2
   maxReplicas: 6
   metrics:
@@ -1970,8 +1970,8 @@ kubectl apply -f deployment.yaml
 kubectl apply -f ingress.yaml
 kubectl apply -f hpa.yaml      # optional
 
-kubectl rollout status deployment/open-hybrid-cloud -n open-hybrid-cloud
-kubectl get ingress -n open-hybrid-cloud
+kubectl rollout status deployment/infrashelf -n infrashelf
+kubectl get ingress -n infrashelf
 \end{lstlisting}
 
 \end{enumerate}
@@ -2167,7 +2167,7 @@ to clear the rows. This removes the protection, so record it in your change log.
 
 \begin{lstlisting}[style=bash]
 # Docker Compose
-docker exec -i ohc-postgres psql -U postgres -d open_hybrid_cloud <<'SQL'
+docker exec -i isf-postgres psql -U postgres -d infrashelf <<'SQL'
 BEGIN;
 DELETE FROM user_recovery_codes
   WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
@@ -2177,8 +2177,8 @@ COMMIT;
 SQL
 
 # Kubernetes
-kubectl exec -n open-hybrid-cloud deploy/ohc-postgres -- \
-  psql -U postgres -d open_hybrid_cloud -c \
+kubectl exec -n infrashelf deploy/isf-postgres -- \
+  psql -U postgres -d infrashelf -c \
   "DELETE FROM user_recovery_codes WHERE user_id = \
      (SELECT id FROM users WHERE email = 'root@example.com'); \
    DELETE FROM user_totp WHERE user_id = \
@@ -2444,8 +2444,8 @@ currently filtered audit log for compliance reporting.
 
 \begin{lstlisting}[style=bash]
 # Clone and enter the repo
-git clone https://github.com/Maximilian-Maag/open-hybrid-cloud.git
-cd open-hybrid-cloud
+git clone https://github.com/Maximilian-Maag/infrashelf.git
+cd infrashelf
 
 # Install all workspace dependencies
 make install
@@ -2499,7 +2499,7 @@ The frontend is available at \url{http://localhost:3000}, the backend API at
 \section{Directory Layout}
 
 \begin{lstlisting}
-open-hybrid-cloud/
+infrashelf/
 +-- apps/
 |   +-- backend/                  # Next.js API-only app (port 3001)
 |   |   +-- src/
@@ -3230,11 +3230,11 @@ variables at runtime.
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[
-  tbl/.style={rectangle, draw=ohc-blue!50, fill=ohc-blue!6,
+  tbl/.style={rectangle, draw=isf-blue!50, fill=isf-blue!6,
               rounded corners=3pt, minimum width=3.2cm,
               minimum height=0.75cm, align=center, font=\small\ttfamily},
   fk/.style={->, >=Stealth, gray!70, thick},
-  casc/.style={->, >=Stealth, ohc-blue!80, thick, dashed},
+  casc/.style={->, >=Stealth, isf-blue!80, thick, dashed},
   node distance=0.45cm and 1.6cm
 ]
   % Column 1
@@ -3392,7 +3392,7 @@ bundle, so it must not import anything that reads the session:
 \begin{lstlisting}[style=typescript]
 // Server Component
 import { get } from '@/lib/serverApi'
-import type { Widget } from '@open-hybrid-cloud/types'
+import type { Widget } from '@infrashelf/types'
 
 export const fetchWidgets = () => get<Widget[]>('/api/admin/widgets')
 \end{lstlisting}
@@ -3400,7 +3400,7 @@ export const fetchWidgets = () => get<Widget[]>('/api/admin/widgets')
 \begin{lstlisting}[style=typescript]
 // Client component ('use client'). Same path, sent through /api/proxy.
 import { post } from '@/lib/api'
-import type { Widget } from '@open-hybrid-cloud/types'
+import type { Widget } from '@infrashelf/types'
 
 export const createWidget = (name: string) =>
   post<Widget>('/api/admin/widgets', { name })
@@ -3462,8 +3462,8 @@ page renders correctly.
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-  state/.style={rectangle, rounded corners=6pt, draw=ohc-blue!60,
-                fill=ohc-blue!10, minimum width=3.2cm,
+  state/.style={rectangle, rounded corners=6pt, draw=isf-blue!60,
+                fill=isf-blue!10, minimum width=3.2cm,
                 minimum height=1.0cm, align=center, font=\small},
   arr/.style={->, >=Stealth, thick, gray!70},
   node distance=0.5cm and 1.8cm
@@ -4483,7 +4483,7 @@ it.
     \file{infra/docker-compose.yml} &
     \S\ref{sec:docker-deploy} \\
   NFA-01.2 & Kubernetes deployment &
-    \file{infra/helm/open-hybrid-cloud/} &
+    \file{infra/helm/infrashelf/} &
     \S\ref{sec:k8s-deploy} \\
   NFA-01.3 & Schema management via Drizzle ORM &
     \file{apps/backend/src/lib/db/schema.ts}, \code{make db-push} &

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { UpdateProfileRequest, ChangePasswordRequest, Role } from '@open-hybrid-cloud/types'
+import type { UpdateProfileRequest, ChangePasswordRequest, Role } from '@infrashelf/types'
 import { put } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'

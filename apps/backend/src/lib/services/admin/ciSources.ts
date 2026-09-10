@@ -6,7 +6,7 @@ import { parseTerraformVariables } from '@/lib/tfparser'
 import { ok, err, type Result } from '@/lib/services/result'
 import { logAudit, logAuditWith, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
-import type { CiProject, CiBranch, CiFile } from '@open-hybrid-cloud/types'
+import type { CiProject, CiBranch, CiFile } from '@infrashelf/types'
 
 export interface CiSourcePublic {
   id: number

@@ -1,6 +1,6 @@
 apiVersion: v2
-name: open-hybrid-cloud
-description: Open Hybrid Cloud Infrastructure Self-Service Webshop
+name: infrashelf
+description: InfraShelf Infrastructure Self-Service Webshop
 type: application
 version: 0.1.0
 # The image tag deployed when `frontend.image.tag` / `backend.image.tag` are left
@@ -9,8 +9,8 @@ version: 0.1.0
 # version, and CI overrides it per release.
 appVersion: "0.1.0"
 keywords:
-  - open-hybrid-cloud
+  - infrashelf
   - infrastructure
   - self-service
 maintainers:
-  - name: Open Hybrid Cloud Digital Unit
+  - name: InfraShelf Digital Unit

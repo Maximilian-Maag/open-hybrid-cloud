@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { recheckPassword } from '@/lib/auth/passwordRecheck'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 import { db } from '@/lib/db/client'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { infrastructureElements, deploymentEnvironments } from '@/lib/db/schema'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 import {
   createUser, createCategory, createProduct, createCiSource,
   createEnvironment, createProject, createOrder, createInfraElement,

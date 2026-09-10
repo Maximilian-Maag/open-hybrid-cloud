@@ -606,7 +606,7 @@ interface ImageRef extends Located {
  *
  * There is no `image:` scalar to read. `values.yaml` holds `repository` and
  * `tag` under an `image:` mapping, the deployment templates call
- * `open-hybrid-cloud.<component>.image`, and `_helpers.tpl` resolves the pair as
+ * `infrashelf.<component>.image`, and `_helpers.tpl` resolves the pair as
  * `.Values.<component>.image.tag | default .Chart.AppVersion`. So an empty `tag`
  * — which is what the chart ships — silently means `Chart.appVersion`, and that
  * is `latest`. Walking `image:` scalars alone saw none of this and reported the

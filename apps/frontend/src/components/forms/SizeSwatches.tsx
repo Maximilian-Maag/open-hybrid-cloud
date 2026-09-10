@@ -1,6 +1,6 @@
 'use client'
 
-import type { OfferingSize } from '@open-hybrid-cloud/types'
+import type { OfferingSize } from '@infrashelf/types'
 import { t } from '@/lib/i18n'
 
 /**

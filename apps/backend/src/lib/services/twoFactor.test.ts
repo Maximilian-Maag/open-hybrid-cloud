@@ -149,7 +149,7 @@ const row = async (userId: number) =>
 
 /** Enroll and confirm through the real service, returning the secret and codes. */
 const fullyEnroll = async (userId: number, email = 'root@test.dev') => {
-  const offer = await startEnrollment(userId, email, 'Open Hybrid Cloud')
+  const offer = await startEnrollment(userId, email, 'InfraShelf')
   expect(offer.ok).toBe(true)
   if (!offer.ok) throw new Error('unreachable')
   const secret = base32Decode(offer.data.secret)
@@ -181,7 +181,7 @@ describe('requiresSecondFactor', () => {
 describe('startEnrollment', () => {
   it('stores the secret encrypted, never in the clear', async () => {
     const u = await createRoot({ email: 'enc@test.dev' })
-    const offer = await startEnrollment(u.id, u.email, 'Open Hybrid Cloud')
+    const offer = await startEnrollment(u.id, u.email, 'InfraShelf')
     expect(offer.ok).toBe(true)
     if (!offer.ok) return
 
@@ -195,7 +195,7 @@ describe('startEnrollment', () => {
 
   it('offers a QR code, a key URI and a typable secret that all describe the same key', async () => {
     const u = await createRoot({ email: 'qr@test.dev' })
-    const offer = await startEnrollment(u.id, u.email, 'Open Hybrid Cloud')
+    const offer = await startEnrollment(u.id, u.email, 'InfraShelf')
     if (!offer.ok) return expect.unreachable()
 
     const fromUrl = new URL(offer.data.otpauthUrl).searchParams.get('secret')
@@ -212,7 +212,7 @@ describe('startEnrollment', () => {
     const u = await createRoot({ email: 'reenroll@test.dev' })
     const { secret } = await fullyEnroll(u.id, u.email)
 
-    await startEnrollment(u.id, u.email, 'Open Hybrid Cloud')
+    await startEnrollment(u.id, u.email, 'InfraShelf')
 
     const stored = await row(u.id)
     expect(stored.secret).toBeTruthy()
@@ -228,8 +228,8 @@ describe('startEnrollment', () => {
 
   it('replaces an earlier pending secret rather than accumulating them', async () => {
     const u = await createRoot()
-    const first = await startEnrollment(u.id, u.email, 'OHC')
-    const second = await startEnrollment(u.id, u.email, 'OHC')
+    const first = await startEnrollment(u.id, u.email, 'ISF')
+    const second = await startEnrollment(u.id, u.email, 'ISF')
     if (!first.ok || !second.ok) return expect.unreachable()
     expect(second.data.secret).not.toBe(first.data.secret)
 
@@ -240,7 +240,7 @@ describe('startEnrollment', () => {
 
   it('records the start in the audit log', async () => {
     const u = await createRoot()
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
     expect(await auditActions(u.id)).toContain('auth.2fa.enroll_started')
   })
 
@@ -264,7 +264,7 @@ describe('startEnrollment', () => {
     const u = await createRoot()
     // The account's own first, unraced enrollment — there has to be a row for
     // a second call to race against.
-    const first = await startEnrollment(u.id, u.email, 'OHC')
+    const first = await startEnrollment(u.id, u.email, 'ISF')
     if (!first.ok) return expect.unreachable()
 
     const ownerSecret = encryptTotpSecret(generateTotpSecret(), u.id)
@@ -281,7 +281,7 @@ describe('startEnrollment', () => {
         .where(eq(userTotp.userId, u.id))
     })
 
-    const racer = startEnrollment(u.id, u.email, 'OHC', { requireStillUnconfirmed: true })
+    const racer = startEnrollment(u.id, u.email, 'ISF', { requireStillUnconfirmed: true })
     const [result] = await Promise.all([racer, holder])
 
     expect(result.ok).toBe(false)
@@ -347,7 +347,7 @@ describe('confirmEnrollment', () => {
 
   it('rejects a wrong code and does not activate the factor', async () => {
     const u = await createRoot()
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
     const result = await confirmEnrollment(u.id, '000000')
     expect(result.ok).toBe(false)
 
@@ -359,7 +359,7 @@ describe('confirmEnrollment', () => {
 
   it('spends the confirming code, so it cannot be replayed at the next login', async () => {
     const u = await createRoot()
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
     const secret = base32Decode(offer.data.secret)
     const code = currentTotpCode(secret)
@@ -373,7 +373,7 @@ describe('confirmEnrollment', () => {
 
   it('accepts a code exactly once even when two requests race (replay, concurrent)', async () => {
     const u = await createRoot()
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
     const secret = base32Decode(offer.data.secret)
 
@@ -398,7 +398,7 @@ describe('confirmEnrollment', () => {
     const first = await fullyEnroll(u.id)
 
     // Re-enroll from scratch.
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
     await confirmEnrollment(u.id, currentTotpCode(base32Decode(offer.data.secret), 1))
 
@@ -412,7 +412,7 @@ describe('confirmEnrollment', () => {
 
   it('refuses an enrollment that has gone stale', async () => {
     const u = await createRoot()
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
 
     await db
@@ -435,7 +435,7 @@ describe('confirmEnrollment', () => {
 
   it('does not promote its own secret over an enrollment that replaced it', async () => {
     const u = await createRoot()
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
     const code = currentTotpCode(base32Decode(offer.data.secret))
 
@@ -467,7 +467,7 @@ describe('confirmEnrollment', () => {
 
   it('expiring a stale enrollment does not clear the one that replaced it', async () => {
     const u = await createRoot()
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
     await db
       .update(userTotp)
@@ -848,7 +848,7 @@ describe('rate limiting', () => {
     const u = await createRoot()
     await enrollTotp(u.id)
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS; i++) await verifySecondFactor(u.id, '000000')
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
 
     const result = await confirmEnrollment(u.id, '000000')
     expect(result.ok).toBe(false)
@@ -875,7 +875,7 @@ describe('getTwoFactorStatus', () => {
 
   it('reports a pending enrollment', async () => {
     const u = await createRoot()
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
     const status = await getTwoFactorStatus(u.id)
     if (!status.ok) return expect.unreachable()
     expect(status.data.pending).toBe(true)
@@ -884,7 +884,7 @@ describe('getTwoFactorStatus', () => {
 
   it('does not report a stale pending enrollment as pending', async () => {
     const u = await createRoot()
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
     await db
       .update(userTotp)
       .set({ pendingCreatedAt: new Date(Date.now() - PENDING_ENROLLMENT_TTL_MS - 1) })
@@ -962,9 +962,9 @@ describe('totpIssuer', () => {
   })
 
   it('falls back to the product name when branding is empty', () => {
-    expect(totpIssuer('')).toBe('Open Hybrid Cloud')
-    expect(totpIssuer(null)).toBe('Open Hybrid Cloud')
-    expect(totpIssuer('   ')).toBe('Open Hybrid Cloud')
+    expect(totpIssuer('')).toBe('InfraShelf')
+    expect(totpIssuer(null)).toBe('InfraShelf')
+    expect(totpIssuer('   ')).toBe('InfraShelf')
   })
 })
 
@@ -983,7 +983,7 @@ describe('administrators only (#36, widened by #197)', () => {
 
   it.each(ADMIN_ROLES)('starts an enrollment for a %s account', async (role) => {
     const u = await createUser({ role, secondFactor: false })
-    const result = await startEnrollment(u.id, u.email, 'OHC')
+    const result = await startEnrollment(u.id, u.email, 'ISF')
     expect(result.ok, role).toBe(true)
   })
 
@@ -1008,7 +1008,7 @@ describe('administrators only (#36, widened by #197)', () => {
 
   it('refuses to start an enrollment for a project manager', async () => {
     const u = await createUser({ role: 'project_manager' })
-    const result = await startEnrollment(u.id, u.email, 'OHC')
+    const result = await startEnrollment(u.id, u.email, 'ISF')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(403)
     // And nothing was written, so a role check added later cannot be walked
@@ -1128,7 +1128,7 @@ describe('2FA cannot be disabled', () => {
 
     // A pile of failures, a lock, and an abandoned re-enrollment.
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS + 3; i++) await verifySecondFactor(u.id, '000000')
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
     await confirmEnrollment(u.id, '000000')
 
     expect(await requiresSecondFactor(u.id)).toBe(true)

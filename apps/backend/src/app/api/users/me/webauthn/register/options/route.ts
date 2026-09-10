@@ -11,7 +11,7 @@ import { toResponse } from '@/lib/http'
  * Returns the creation options the browser needs, and stores the challenge
  * server-side so it can be spent exactly once. The shop name comes from branding
  * for the same reason it does for TOTP: it is what the authenticator shows the
- * user, and "Open Hybrid Cloud" on a portal branded as something else is how
+ * user, and "InfraShelf" on a portal branded as something else is how
  * people end up with entries they cannot identify.
  *
  * POST rather than GET, because it writes: each call replaces any ceremony

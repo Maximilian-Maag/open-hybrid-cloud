@@ -15,12 +15,12 @@ describe('testDatabaseName', () => {
   })
 
   it('honours an explicit suffix for two runs in one checkout', () => {
-    expect(testDatabaseName({ TEST_DB_SUFFIX: 'session-a' }, '/repo')).toBe('open_hybrid_cloud_test_session_a')
+    expect(testDatabaseName({ TEST_DB_SUFFIX: 'session-a' }, '/repo')).toBe('infrashelf_test_session_a')
   })
 
   it('sanitises a suffix down to a safe identifier', () => {
     const name = testDatabaseName({ TEST_DB_SUFFIX: 'Feature/ABC-123; DROP' }, '/repo')
-    expect(name).toMatch(/^open_hybrid_cloud_test_[a-z0-9_]+$/)
+    expect(name).toMatch(/^infrashelf_test_[a-z0-9_]+$/)
   })
 
   it('keeps the name inside Postgres\' 63-byte identifier limit', () => {
@@ -35,7 +35,7 @@ describe('testDatabaseUrl', () => {
       { TEST_DATABASE_URL: 'postgresql://user:pw@db.example.org:6543/postgres', TEST_DB_SUFFIX: 'ci' },
       '/repo',
     )
-    expect(url).toBe('postgresql://user:pw@db.example.org:6543/open_hybrid_cloud_test_ci')
+    expect(url).toBe('postgresql://user:pw@db.example.org:6543/infrashelf_test_ci')
   })
 
   it('defaults to the local dev Postgres', () => {

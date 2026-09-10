@@ -210,6 +210,18 @@ test.describe('Admin - Pipeline Stacks', () => {
 
 test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
   test('create a pipeline stack and verify it appears, then delete it', async ({ page }) => {
+    /*
+     * Unique per run, because this test deletes its own fixture at the end and
+     * therefore leaves one behind whenever it fails before getting there.
+     *
+     * With a fixed name the retry inherited that row and failed somewhere else
+     * entirely: `row` resolved to the LEFTOVER, the delete went to it
+     * (`DELETE .../pipeline-stacks/2`), and the closing `not.toBeVisible` then
+     * saw the stack this run had just created — a second, misleading failure
+     * stacked on top of the first (#384). A name nothing else can match keeps a
+     * retry reading only its own row.
+     */
+    const stackName = `E2E Test Stack ${Date.now()}`
     await loginAsRoot(page)
     requireSeeded(await openFirstProductEdit(page), 'no product on /admin/products to edit')
 
@@ -240,7 +252,7 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
      * being filled in the "Add Webhook" dialog next door.
      */
     const form = page.getByRole('dialog')
-    await form.getByLabel(/^name\*?$/i).fill('E2E Test Stack')
+    await form.getByLabel(/^name\*?$/i).fill(stackName)
     const envSelect = form.getByLabel(/^environment\*?$/i)
     const firstOption = envSelect.locator('option').nth(1)
     const optionExists = await firstOption.count() > 0
@@ -273,7 +285,7 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
     // grown — the size matrix arrived in #249 — the filter resolves to a stack of
     // nested divs and a click lands on whichever Playwright picks (#296). Defined
     // once here and used for the assertions and the delete alike.
-    const row = page.locator('[data-testid="stack-item"]').filter({ hasText: 'E2E Test Stack' })
+    const row = page.locator('[data-testid="stack-item"]').filter({ hasText: stackName })
     await expect(row).toBeVisible({ timeout: 5000 })
     await expect(row.getByText(/1 step/i)).toBeVisible()
 
@@ -282,7 +294,7 @@ test.describe('Admin - Pipeline Stacks: full create → delete flow', () => {
     await deleteBtn.click()
 
     // Stack should be removed
-    await expect(page.getByText('E2E Test Stack')).not.toBeVisible({ timeout: 3000 })
+    await expect(page.getByText(stackName)).not.toBeVisible({ timeout: 3000 })
   })
 
   test('step form exposes Exec Order and Upstream State Refs (v2 features)', async ({ page }) => {

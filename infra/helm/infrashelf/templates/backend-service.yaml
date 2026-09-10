@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "open-hybrid-cloud.backend.fullname" . }}
+  name: {{ include "infrashelf.backend.fullname" . }}
   labels:
-    {{- include "open-hybrid-cloud.labels" . | nindent 4 }}
+    {{- include "infrashelf.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
 spec:
   type: {{ .Values.backend.service.type }}
@@ -13,4 +13,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "open-hybrid-cloud.backend.selectorLabels" . | nindent 4 }}
+    {{- include "infrashelf.backend.selectorLabels" . | nindent 4 }}

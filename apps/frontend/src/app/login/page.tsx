@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import type { Branding } from '@open-hybrid-cloud/types'
+import type { Branding } from '@infrashelf/types'
 import { LoginForm } from './LoginForm'
 
 const API_SSR = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? ''
@@ -8,7 +8,7 @@ export default async function LoginPage() {
   let branding: Branding = {
     primaryColor: '#131921',
     secondaryColor: '#febd69',
-    shopName: 'Open Hybrid Cloud',
+    shopName: 'InfraShelf',
     shopSubtitle: '',
     imprintText: '',
   }
@@ -33,7 +33,7 @@ export default async function LoginPage() {
   return (
     <Suspense>
       <LoginForm
-        shopName={branding.shopName ?? 'Open Hybrid Cloud'}
+        shopName={branding.shopName ?? 'InfraShelf'}
         shopSubtitle={branding.shopSubtitle ?? ''}
         logoDataUrl={logoDataUrl}
         primaryColor={branding.primaryColor ?? '#131921'}

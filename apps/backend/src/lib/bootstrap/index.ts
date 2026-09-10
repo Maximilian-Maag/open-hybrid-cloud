@@ -107,7 +107,7 @@ export const runBootstrap = async (): Promise<void> => {
   const brandingExists = await db.select({ id: branding.id }).from(branding).limit(1)
   if (brandingExists.length === 0) {
     await db.insert(branding).values({
-      shopName: 'Open Hybrid Cloud',
+      shopName: 'InfraShelf',
       shopSubtitle: 'Self-Service Portal',
       // Matches the fallbacks the frontend uses when branding cannot be loaded
       // (see app/(dashboard)/layout.tsx). They disagreed: this seeded #ca8a04 with

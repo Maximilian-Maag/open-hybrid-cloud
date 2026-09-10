@@ -1,4 +1,4 @@
-import type { PipelineEvent } from '@open-hybrid-cloud/types'
+import type { PipelineEvent } from '@infrashelf/types'
 import { db } from '@/lib/db/client'
 import { orders, infrastructureElements } from '@/lib/db/schema'
 import { sql } from 'drizzle-orm'

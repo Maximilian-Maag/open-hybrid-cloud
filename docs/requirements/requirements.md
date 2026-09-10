@@ -1,4 +1,4 @@
-# Requirements Open Hybrid Cloud
+# Requirements InfraShelf
 
 ## 1. Functional Requirements
 
@@ -183,7 +183,7 @@
 | FA-15.1 | The Root can configure primary color, secondary/accent color, logo (PNG/SVG), shop name, subtitle/tagline, and imprint text via `/admin/branding`. | Shipped, but "logo (PNG/SVG)" undersells the actual (lack of) validation: the upload accepts any browser-declared `image/*` type with no server-side allowlist, sniffing, or size limit at all — see `apps/backend/src/app/api/admin/branding/logo/route.ts`. Default colors are `#131921`/`#febd69`, not blue — `docs/guides/root.md` §9.1 previously had the wrong defaults, corrected in this pass. |
 | FA-15.2 | The logo is served at `/branding/logo`. When a logo is uploaded it replaces the shop name text in the header. | Partially shipped — the actual route is `GET /api/admin/branding/logo` (`apps/backend/src/app/api/admin/branding/logo/route.ts`), not `/branding/logo`. The header-replacement behavior is shipped. |
 | FA-15.3 | The imprint text is publicly accessible at `/impressum` without requiring a login. If no imprint text is configured, the footer link is hidden. | Shipped — `apps/frontend/src/app/impressum` |
-| FA-15.4 | Shop name and subtitle configured via the branding UI override the `APP_NAME` and `APP_SUBTITLE` environment variables at runtime. | **Not shipped** — there is no `APP_NAME` or `APP_SUBTITLE` environment variable anywhere in the codebase (repo-wide grep: zero matches). Shop name/subtitle exist only as database-backed settings with hardcoded defaults (`apps/backend/src/lib/db/schema.ts:306-307`: `'Open Hybrid Cloud'` / `''`) — there is nothing to "override." `docs/guides/root.md` §9.3 repeated this claim; corrected in this pass. |
+| FA-15.4 | Shop name and subtitle configured via the branding UI override the `APP_NAME` and `APP_SUBTITLE` environment variables at runtime. | **Not shipped** — there is no `APP_NAME` or `APP_SUBTITLE` environment variable anywhere in the codebase (repo-wide grep: zero matches). Shop name/subtitle exist only as database-backed settings with hardcoded defaults (`apps/backend/src/lib/db/schema.ts:306-307`: `'InfraShelf'` / `''`) — there is nothing to "override." `docs/guides/root.md` §9.3 repeated this claim; corrected in this pass. |
 
 ---
 
@@ -217,8 +217,8 @@
 |----|-------------|--------------|
 | NFA-01.1 | The application runs as two stateless Docker containers: `frontend` (Next.js UI) and `backend` (Next.js API). | Shipped, with the caveat noted at NFA-02.1 |
 | NFA-01.2 | **Docker Host:** An Nginx container (official image) handles HTTPS termination and forwards requests via reverse proxy. | Shipped only in `infra/docker-host/` (TLS via mounted certs); the *other* Docker Host path, `infra/docker-compose.yml` + `infra/nginx/default.conf`, terminates HTTP only, no TLS — see README "Docker Host" |
-| NFA-01.3 | **Docker Host:** The application images (`maximilianmaag/open-hybrid-cloud-backend`, `maximilianmaag/open-hybrid-cloud-frontend`) are publicly available on Docker Hub — no registry authentication required. All other images (nginx, postgres) are official images. | Shipped |
-| NFA-01.4 | **Kubernetes:** Nginx Ingress Controller + cert-manager handle TLS termination (Let's Encrypt or internal CA). No `imagePullSecret` is required; the image is public. | Shipped — `infra/helm/open-hybrid-cloud/templates/ingress.yaml`, `values.yaml` |
+| NFA-01.3 | **Docker Host:** The application images (`maximilianmaag/infrashelf-backend`, `maximilianmaag/infrashelf-frontend`) are publicly available on Docker Hub — no registry authentication required. All other images (nginx, postgres) are official images. | Shipped |
+| NFA-01.4 | **Kubernetes:** Nginx Ingress Controller + cert-manager handle TLS termination (Let's Encrypt or internal CA). No `imagePullSecret` is required; the image is public. | Shipped — `infra/helm/infrashelf/templates/ingress.yaml`, `values.yaml` |
 | NFA-01.5 | Configuration is done exclusively via environment variables (12-Factor App). No configuration files inside the container. | Shipped, with the documented exception that SMTP/AI (and, per this pass, nothing else) can also be set at runtime in the database, overriding the env var — see NFA-06 |
 | NFA-01.6 | The GitLab server is reachable via a configurable URL. | Shipped, and broader than written — any of GitLab/GitHub/Bitbucket, via CI Sources (see FA-05.1) |
 | NFA-01.7 | The deployment configuration for the Docker Host is located under `infra/docker-host/` and contains: `docker-compose.yml`, `nginx.conf.template`, and `setup.sh`. | Shipped, but this is only one of two Docker Host deployment paths that exist — `infra/docker-compose.yml` (build from source) is the other, and this requirement does not mention it. See README "Docker Host". |

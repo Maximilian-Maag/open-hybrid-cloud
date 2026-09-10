@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { Category, DeploymentEnvironment } from '@open-hybrid-cloud/types'
+import type { Category, DeploymentEnvironment } from '@infrashelf/types'
 
 const push = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }))

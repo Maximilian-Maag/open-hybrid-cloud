@@ -11,7 +11,7 @@ beforeEach(async () => {
     UPDATE branding SET
       logo_data = NULL, logo_mime = NULL,
       primary_color = '#1e40af', secondary_color = '#3b82f6',
-      shop_name = 'Open Hybrid Cloud', shop_subtitle = '', imprint_text = ''
+      shop_name = 'InfraShelf', shop_subtitle = '', imprint_text = ''
     WHERE id = 1
   `)
 })

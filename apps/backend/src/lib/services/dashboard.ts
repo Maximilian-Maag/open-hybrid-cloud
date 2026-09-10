@@ -7,7 +7,7 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
 import { ok, type Result } from '@/lib/services/result'
-import type { SessionUser, OrderStatus } from '@open-hybrid-cloud/types'
+import type { SessionUser, OrderStatus } from '@infrashelf/types'
 
 /**
  * Everything the landing page renders, and nothing else.

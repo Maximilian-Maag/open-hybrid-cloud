@@ -1,4 +1,4 @@
-import type { OrderStatus } from '@open-hybrid-cloud/types'
+import type { OrderStatus } from '@infrashelf/types'
 import { ok, err, type Result } from '@/lib/services/result'
 import { parsePageWindow } from '@/lib/services/page'
 import type { OrderFilters } from '@/lib/services/orders'

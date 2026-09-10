@@ -11,7 +11,7 @@ import { db } from '@/lib/db/client'
 import { pipelineStacks, parameters } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { getFileContent } from '@/lib/ci'
-import type { StackStep } from '@open-hybrid-cloud/types'
+import type { StackStep } from '@infrashelf/types'
 
 const HCL_CONTENT = `
 variable "hostname" {

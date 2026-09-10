@@ -80,7 +80,7 @@ jobs:
       - uses: ./.github/actions/setup
 
       - name: Type-check types package
-        run: pnpm --filter @open-hybrid-cloud/types exec tsc --noEmit
+        run: pnpm --filter @infrashelf/types exec tsc --noEmit
 
       - name: Type-check backend
         run: pnpm --filter backend exec tsc --noEmit
@@ -170,7 +170,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: open_hybrid_cloud_test
+          POSTGRES_DB: infrashelf_test
         ports:
           - 5432:5432
         options: >-
@@ -218,7 +218,7 @@ jobs:
       - name: Build backend
         run: pnpm --filter backend build
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/open_hybrid_cloud
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/infrashelf
 
       - name: Build frontend
         run: pnpm --filter frontend build
@@ -292,7 +292,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: open_hybrid_cloud_e2e
+          POSTGRES_DB: infrashelf_e2e
         ports:
           - 5432:5432
         options: >-
@@ -301,7 +301,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/open_hybrid_cloud_e2e
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/infrashelf_e2e
       JWT_SECRET: ci-e2e-jwt-secret-not-used-in-prod
       ADMIN_EMAIL: root@test.dev
       ADMIN_PASSWORD: testpassword123
@@ -346,7 +346,7 @@ jobs:
       # that starts before the stubs are loaded fails as a provisioning bug.
       - name: Start the GitLab stub (WireMock)
         run: |
-          docker run -d --name ohc-wiremock -p 8080:8080 \
+          docker run -d --name isf-wiremock -p 8080:8080 \
             -v "$PWD/infra/wiremock/mappings:/home/wiremock/mappings:ro" \
             wiremock/wiremock:3.13.2 --verbose --global-response-templating
           for i in $(seq 1 30); do
@@ -582,7 +582,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: open_hybrid_cloud_e2e
+          POSTGRES_DB: infrashelf_e2e
         ports:
           - 5432:5432
         options: >-
@@ -591,7 +591,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/open_hybrid_cloud_e2e
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/infrashelf_e2e
       JWT_SECRET: ci-e2e-jwt-secret-not-used-in-prod
       ADMIN_EMAIL: root@test.dev
       ADMIN_PASSWORD: testpassword123
@@ -636,7 +636,7 @@ jobs:
       # that starts before the stubs are loaded fails as a provisioning bug.
       - name: Start the GitLab stub (WireMock)
         run: |
-          docker run -d --name ohc-wiremock -p 8080:8080 \
+          docker run -d --name isf-wiremock -p 8080:8080 \
             -v "$PWD/infra/wiremock/mappings:/home/wiremock/mappings:ro" \
             wiremock/wiremock:3.13.2 --verbose --global-response-templating
           for i in $(seq 1 30); do

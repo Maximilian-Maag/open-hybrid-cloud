@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import type { Role } from '@open-hybrid-cloud/types'
+import type { Role } from '@infrashelf/types'
 
 let pathname = '/'
 vi.mock('next/navigation', () => ({ usePathname: () => pathname }))

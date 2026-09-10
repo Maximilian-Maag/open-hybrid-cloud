@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import type { Role } from '@open-hybrid-cloud/types'
+import type { Role } from '@infrashelf/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { AuditTable } from './AuditTable'
 import { getLang } from '@/lib/getLang'

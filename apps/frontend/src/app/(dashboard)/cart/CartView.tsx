@@ -11,7 +11,7 @@ import type {
   CheckoutRequest,
   CheckoutResponse,
   ProductDetail,
-} from '@open-hybrid-cloud/types'
+} from '@infrashelf/types'
 import { get, post, del, put } from '@/lib/api'
 import { Alert } from '@/components/ui/Alert'
 import { Button } from '@/components/ui/Button'

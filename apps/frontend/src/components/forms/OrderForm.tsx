@@ -11,7 +11,7 @@ import {
   type Order,
   type InfrastructureElement,
   type InfrastructurePage,
-} from '@open-hybrid-cloud/types'
+} from '@infrashelf/types'
 import { post, get } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'

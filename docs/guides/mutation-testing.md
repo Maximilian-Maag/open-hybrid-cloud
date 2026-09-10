@@ -31,7 +31,7 @@ pnpm --filter frontend test:mutation -- --mutate 'src/components/forms/**/*.tsx'
 
 The backend suite talks to a real database, so the same prerequisite as
 `pnpm --filter backend test` applies: Postgres up (`make dev` or the compose
-file in `infra/docker-host/`) with the `open_hybrid_cloud_test` database
+file in `infra/docker-host/`) with the `infrashelf_test` database
 present. A mutation run starts with an unmutated dry run and aborts on the first
 failure, so a suite that is red for unrelated reasons stops Stryker before it
 mutates anything.
@@ -54,7 +54,7 @@ normal way to keep two hand-started vitest runs apart.
 
 Every sandbox gets a database and nothing ever removes it. That is the price of
 the per-directory naming, and it is not small: one developer's Postgres held
-**328** `open_hybrid_cloud_test_*` databases, about 3 GB, almost all of them from
+**328** `infrashelf_test_*` databases, about 3 GB, almost all of them from
 Stryker runs months old.
 
 ```sh
@@ -62,7 +62,7 @@ pnpm --filter backend test:db:prune          # lists what it would drop
 pnpm --filter backend test:db:prune --yes    # drops it
 ```
 
-It only touches names beginning with `open_hybrid_cloud_test`, and it skips any
+It only touches names beginning with `infrashelf_test`, and it skips any
 database it cannot take the advisory lock for — so a suite running in another
 terminal keeps its own. Dropping the database this checkout uses is harmless: the
 next run recreates it from the migrations, in about a second.

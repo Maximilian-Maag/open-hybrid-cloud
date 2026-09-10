@@ -73,18 +73,18 @@ A full `a11y.spec.ts` run ended 43 failed / 42 passed for exactly that reason
 while every targeted run of the same tests was green. **Per-spec runs are the
 only valid local signal; CI is the arbiter.**
 
-**Local e2e database.** `open_hybrid_cloud_e2e_local` exists and is seeded with
+**Local e2e database.** `infrashelf_e2e_local` exists and is seeded with
 `DEMO_CI_URL=http://localhost:8080`, including the pipeline stack. To use it:
 
 ```sh
 BASE=$(grep -oP '^DATABASE_URL=\K.*' apps/backend/.env)
-E2EDB=$(echo "$BASE" | sed 's|/[^/]*$|/open_hybrid_cloud_e2e_local|')
+E2EDB=$(echo "$BASE" | sed 's|/[^/]*$|/infrashelf_e2e_local|')
 DATABASE_URL="$E2EDB" DEMO_CI_URL=http://localhost:8080 \
   E2E_ADMIN_EMAIL=root@test.dev E2E_ADMIN_PASSWORD=testpassword123 \
   npx playwright test e2e/provisioning.spec.ts --reporter=line
 ```
 
-`ohc-wiremock` is already running on :8080 from `infra/docker-compose.dev.yml`.
+`isf-wiremock` is already running on :8080 from `infra/docker-compose.dev.yml`.
 
 **`e2e/.auth` and TOTP.** The secret is derived from `JWT_SECRET`, and only one
 checkout can hold an enrolment against a given database at a time. When
@@ -95,7 +95,7 @@ enrol", clear the one enrolment and the cached session:
 # Named in full on purpose. An unscoped `delete from user_totp` against the URL
 # in apps/backend/.env unenrols every account on the DEV database, which is not
 # this one, and the next person to sign in there has to re-pair.
-psql "$E2EDB" -c "select current_database()"   # must print open_hybrid_cloud_e2e_local
+psql "$E2EDB" -c "select current_database()"   # must print infrashelf_e2e_local
 psql "$E2EDB" -c "delete from user_totp where user_id = (select id from users where email = 'root@test.dev')"
 rm -rf e2e/.auth
 ```

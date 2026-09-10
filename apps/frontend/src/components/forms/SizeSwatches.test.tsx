@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { OfferingSize } from '@open-hybrid-cloud/types'
+import type { OfferingSize } from '@infrashelf/types'
 import { SizeSwatches } from './SizeSwatches'
 
 const size = (over: Partial<OfferingSize>): OfferingSize => ({

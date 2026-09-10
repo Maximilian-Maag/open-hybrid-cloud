@@ -1,5 +1,5 @@
 import { get } from '@/lib/serverApi'
-import type { Branding } from '@open-hybrid-cloud/types'
+import type { Branding } from '@infrashelf/types'
 import Link from 'next/link'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
@@ -14,7 +14,7 @@ export default async function ImpressumPage() {
     /* non-fatal */
   }
 
-  const shopName = branding.shopName ?? 'Open Hybrid Cloud'
+  const shopName = branding.shopName ?? 'InfraShelf'
   const imprintText = branding.imprintText ?? ''
 
   if (!imprintText) {

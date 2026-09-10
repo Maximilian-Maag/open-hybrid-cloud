@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { ExchangeRate } from '@open-hybrid-cloud/types'
+import type { ExchangeRate } from '@infrashelf/types'
 import { get, post } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'

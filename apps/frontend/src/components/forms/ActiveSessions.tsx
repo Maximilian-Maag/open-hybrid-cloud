@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SessionInfo, RevokeSessionsResponse } from '@open-hybrid-cloud/types'
+import type { SessionInfo, RevokeSessionsResponse } from '@infrashelf/types'
 import { del, get } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'

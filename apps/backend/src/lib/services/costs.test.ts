@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 import { getCostReport, getCostRows, assertMaySeeProject } from './costs'
 import { db } from '@/lib/db/client'
 import { orders, exchangeRates, productEnvironments, projects } from '@/lib/db/schema'

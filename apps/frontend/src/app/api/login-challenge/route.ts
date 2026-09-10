@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { type LoginRequest, type PasswordCheckResult, isMfaChallenge } from '@open-hybrid-cloud/types'
+import { type LoginRequest, type PasswordCheckResult, isMfaChallenge } from '@infrashelf/types'
 
 /**
  * Step one of a two-step sign-in (issue #36).

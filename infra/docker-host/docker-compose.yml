@@ -10,7 +10,7 @@ services:
   # ── Reverse proxy ─────────────────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
-    container_name: open-hybrid-cloud-nginx
+    container_name: infrashelf-nginx
     ports:
       - "80:80"
       - "443:443"
@@ -40,8 +40,8 @@ services:
 
   # ── Frontend (Next.js UI) ──────────────────────────────────────────────────────
   frontend:
-    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-frontend:${IMAGE_TAG:?IMAGE_TAG must be set to the release you intend to run}
-    container_name: open-hybrid-cloud-frontend
+    image: ${DOCKERHUB_USERNAME}/infrashelf-frontend:${IMAGE_TAG:?IMAGE_TAG must be set to the release you intend to run}
+    container_name: infrashelf-frontend
     expose:
       - "3000"
     environment:
@@ -70,12 +70,12 @@ services:
 
   # ── Backend (Next.js API) ──────────────────────────────────────────────────────
   backend:
-    image: ${DOCKERHUB_USERNAME}/open-hybrid-cloud-backend:${IMAGE_TAG:?IMAGE_TAG must be set to the release you intend to run}
-    container_name: open-hybrid-cloud-backend
+    image: ${DOCKERHUB_USERNAME}/infrashelf-backend:${IMAGE_TAG:?IMAGE_TAG must be set to the release you intend to run}
+    container_name: infrashelf-backend
     expose:
       - "3001"
     environment:
-      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/open_hybrid_cloud"
+      DATABASE_URL: "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/infrashelf"
       JWT_SECRET: "${JWT_SECRET}"
       ADMIN_EMAIL: "${ADMIN_EMAIL}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
@@ -144,9 +144,9 @@ services:
   # ── Database ───────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: open-hybrid-cloud-postgres
+    container_name: infrashelf-postgres
     environment:
-      POSTGRES_DB: open_hybrid_cloud
+      POSTGRES_DB: infrashelf
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
     volumes:
@@ -164,7 +164,7 @@ services:
     # that PULLS new images, so leaving it on a floating tag means the thing
     # deciding what to update is itself updated without anyone deciding (#180).
     image: containrrr/watchtower:1.7.1
-    container_name: open-hybrid-cloud-watchtower
+    container_name: infrashelf-watchtower
     environment:
       DOCKER_API_VERSION: "1.47"
     volumes:

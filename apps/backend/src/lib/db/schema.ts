@@ -18,7 +18,7 @@ import {
   check,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-import type { StackStep } from '@open-hybrid-cloud/types'
+import type { StackStep } from '@infrashelf/types'
 import type { ProductSnapshot } from '@/lib/services/snapshot'
 
 const bytea = customType<{ data: Buffer }>({
@@ -1048,7 +1048,7 @@ export const branding = pgTable('branding', {
   logoMime: text('logo_mime'),
   primaryColor: text('primary_color').notNull().default('#131921'),
   secondaryColor: text('secondary_color').notNull().default('#febd69'),
-  shopName: text('shop_name').notNull().default('Open Hybrid Cloud'),
+  shopName: text('shop_name').notNull().default('InfraShelf'),
   shopSubtitle: text('shop_subtitle').notNull().default(''),
   imprintText: text('imprint_text').notNull().default(''),
 })

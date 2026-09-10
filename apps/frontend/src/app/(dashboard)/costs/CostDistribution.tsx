@@ -1,4 +1,4 @@
-import type { CostBucket } from '@open-hybrid-cloud/types'
+import type { CostBucket } from '@infrashelf/types'
 import { Card } from '@/components/ui/Card'
 import { t } from '@/lib/i18n'
 import { CHART_FILL, CHART_STEPS } from '@/lib/chartTokens'

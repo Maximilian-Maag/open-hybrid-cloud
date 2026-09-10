@@ -43,14 +43,14 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('clearServiceWorkerCaches', () => {
   it('deletes every cache, not only the shell', async () => {
-    const deleted = stubCaches(['ohc-shell-v1', 'ohc-assets-v1', 'something-else'])
+    const deleted = stubCaches(['isf-shell-v1', 'isf-assets-v1', 'something-else'])
     stubWorker()
 
     await clearServiceWorkerCaches()
 
     // A version bump or a stray cache from an older worker must go too — an
     // allowlist here would leave exactly the ones nobody remembered.
-    expect(deleted.sort()).toEqual(['ohc-assets-v1', 'ohc-shell-v1', 'something-else'])
+    expect(deleted.sort()).toEqual(['isf-assets-v1', 'isf-shell-v1', 'something-else'])
   })
 
   it('also tells the worker, which may hold caches this page cannot enumerate', async () => {
@@ -60,7 +60,7 @@ describe('clearServiceWorkerCaches', () => {
 
     await clearServiceWorkerCaches()
 
-    expect(postMessage).toHaveBeenCalledWith({ type: 'ohc-signout' })
+    expect(postMessage).toHaveBeenCalledWith({ type: 'isf-signout' })
   })
 
   /*
@@ -76,7 +76,7 @@ describe('clearServiceWorkerCaches', () => {
   })
 
   it('does not throw when there is no service worker at all', async () => {
-    stubCaches(['ohc-shell-v1'])
+    stubCaches(['isf-shell-v1'])
     vi.stubGlobal('navigator', {})
 
     await expect(clearServiceWorkerCaches()).resolves.toBeUndefined()
@@ -94,7 +94,7 @@ describe('clearServiceWorkerCaches', () => {
    * button in the app did nothing while telling the user it had.
    */
   it('settles even when the worker never activates', async () => {
-    stubCaches(['ohc-shell-v1'])
+    stubCaches(['isf-shell-v1'])
     // Never resolves, never rejects — exactly what a failed registration gives.
     stubWorker({ ready: new Promise(() => {}), registration: {} })
 
@@ -102,7 +102,7 @@ describe('clearServiceWorkerCaches', () => {
   })
 
   it('does not wait on a worker that was never registered', async () => {
-    stubCaches(['ohc-shell-v1'])
+    stubCaches(['isf-shell-v1'])
     stubWorker({ ready: new Promise(() => {}), registration: undefined })
 
     // `getRegistration()` answers `undefined` rather than waiting for a worker

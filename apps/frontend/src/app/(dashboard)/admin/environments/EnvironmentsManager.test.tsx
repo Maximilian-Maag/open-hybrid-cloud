@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import type { DeploymentEnvironment } from '@open-hybrid-cloud/types'
+import type { DeploymentEnvironment } from '@infrashelf/types'
 
 // jsdom does not implement the native <dialog> methods; stub them so Modal's
 // open/close effects don't throw (same stub as CategoriesManager.test.tsx).

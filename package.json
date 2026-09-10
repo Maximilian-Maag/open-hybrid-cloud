@@ -1,10 +1,10 @@
 {
-  "name": "open-hybrid-cloud",
+  "name": "infrashelf",
   "private": true,
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "pnpm --parallel --filter './apps/*' dev",
-    "build": "pnpm --filter '@open-hybrid-cloud/types' build && pnpm --parallel --filter './apps/*' build",
+    "build": "pnpm --filter '@infrashelf/types' build && pnpm --parallel --filter './apps/*' build",
     "lint": "pnpm --parallel --filter './apps/*' lint",
     "db:generate": "pnpm --filter backend db:generate",
     "db:migrate": "pnpm --filter backend db:migrate",

@@ -20,6 +20,7 @@ import {
   totpIssuer,
   verifySecondFactor,
 } from './twoFactor'
+import { BLOCKED_WAIT_MS, LOCK_TEST_TIMEOUT_MS } from '@/test/timeouts'
 
 const auditActions = async (userId: number): Promise<string[]> => {
   const rows = await db
@@ -111,28 +112,26 @@ const blockedOnUserTotp = async (): Promise<number> => {
   return Number(rows[0]?.n ?? 0)
 }
 
-/**
- * How long to wait for the other statement to reach its blocking UPDATE.
+/*
+ * Backed off rather than a flat 10ms.
  *
- * Thirty seconds, not the three this used to allow. It is not a latency budget:
- * the wait ends the moment the lock is seen, so on an idle machine it costs
- * milliseconds and the ceiling is never approached. It is the point past which
- * "the runner is busy" stops being a possible explanation — and three seconds was
- * inside that, which is why CI failed this test on a loaded runner with
- * "the confirmation never reached its UPDATE" while the code was perfectly fine.
- *
- * A generous ceiling costs a slow failure only when something is genuinely
- * broken. A tight one costs a red build on working code, which is worse: it
- * teaches everyone to re-run.
+ * The first poll is what matters for speed — the lock is normally already there
+ * — so the interval starts short and the common case still returns in
+ * milliseconds. What it must not do is issue a `pg_stat_activity` query every
+ * 10ms for thirty seconds while waiting, because the reason a wait ever gets
+ * that long here is that the one Postgres four workers share is saturated, and
+ * three thousand probes are load applied to exactly the thing being waited on.
  */
-const BLOCKED_WAIT_MS = 30_000
-const BLOCKED_POLL_MS = 10
+const BLOCKED_POLL_START_MS = 10
+const BLOCKED_POLL_MAX_MS = 250
 
 const waitUntilBlocked = async (): Promise<void> => {
   const deadline = Date.now() + BLOCKED_WAIT_MS
+  let poll = BLOCKED_POLL_START_MS
   while (Date.now() < deadline) {
     if ((await blockedOnUserTotp()) > 0) return
-    await new Promise((r) => setTimeout(r, BLOCKED_POLL_MS))
+    await new Promise((r) => setTimeout(r, poll))
+    poll = Math.min(poll * 2, BLOCKED_POLL_MAX_MS)
   }
   // Named for what was actually being waited on, so the message does not send
   // the reader looking at `confirmEnrollment` when the truth is that nothing
@@ -294,7 +293,7 @@ describe('startEnrollment', () => {
     expect(stored.secret).toBe(ownerSecret)
     expect(stored.confirmedAt).not.toBeNull()
     expect(stored.pendingSecret).toBeNull()
-  })
+  }, LOCK_TEST_TIMEOUT_MS)
 })
 
 describe('confirmEnrollment', () => {
@@ -463,7 +462,7 @@ describe('confirmEnrollment', () => {
     expect(stored.pendingSecret).toBe(newer)
     expect(stored.secret).toBeNull()
     expect(stored.confirmedAt).toBeNull()
-  })
+  }, LOCK_TEST_TIMEOUT_MS)
 
   it('expiring a stale enrollment does not clear the one that replaced it', async () => {
     const u = await createRoot()
@@ -494,7 +493,7 @@ describe('confirmEnrollment', () => {
     // The expiry clear is conditional, so it wiped nothing: an unconditional
     // one would have thrown away a secret stored seconds ago.
     expect((await row(u.id)).pendingSecret).toBe(newer)
-  })
+  }, LOCK_TEST_TIMEOUT_MS)
 })
 
 describe('verifySecondFactor — TOTP', () => {

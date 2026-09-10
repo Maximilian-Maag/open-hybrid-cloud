@@ -9,6 +9,7 @@ import { db } from '@/lib/db/client'
 import { auditLog, sessions } from '@/lib/db/schema'
 import { createUser, makeSession } from '@/test/helpers'
 import type { SessionInfo } from '@infrashelf/types'
+import { BLOCKED_WAIT_MS, LOCK_TEST_TIMEOUT_MS } from '@/test/timeouts'
 
 /**
  * The session list and revocation API (issue #37).
@@ -147,14 +148,21 @@ const blockedOnSessions = async (): Promise<number> => {
   return Number(rows[0]?.n ?? 0)
 }
 
+/*
+ * Same budget and the same backoff as `twoFactor.test.ts` — see
+ * `src/test/timeouts.ts` for why the wait has to be able to outlive the
+ * per-test timeout rather than the other way round (#386).
+ */
 const waitUntilBlockedOnSessions = async (): Promise<void> => {
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + BLOCKED_WAIT_MS
+  let poll = 10
   while (Date.now() < deadline) {
     if ((await blockedOnSessions()) > 0) return
-    await new Promise((r) => setTimeout(r, 10))
+    await new Promise((r) => setTimeout(r, poll))
+    poll = Math.min(poll * 2, 250)
   }
   throw new Error(
-    'no backend reached a blocking statement on sessions within 30000ms — the racing ' +
+    `no backend reached a blocking statement on sessions within ${BLOCKED_WAIT_MS}ms — the racing ` +
       'revoke never started, or it did not take the row lock it is supposed to wait for',
   )
 }
@@ -289,7 +297,7 @@ describe('DELETE /api/sessions/[id]', () => {
       .from(auditLog)
       .where(and(eq(auditLog.action, 'session.revoked'), eq(auditLog.entityId, other.sessionId)))
     expect(rows).toHaveLength(0)
-  })
+  }, LOCK_TEST_TIMEOUT_MS)
 
   it.each(['0', '-1', 'abc', '1.5'])('rejects a malformed session id (%s)', async (raw) => {
     const user = await createUser({ email: `rv-bad-${raw}@test.dev` })

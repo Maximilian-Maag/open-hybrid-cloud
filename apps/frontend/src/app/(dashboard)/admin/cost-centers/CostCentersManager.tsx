@@ -111,15 +111,15 @@ export function CostCentersManager() {
         ) : (
           <div className="space-y-2">
             {ccs.map((cc) => (
-              <div key={cc.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3">
-                <div className="flex items-center gap-3">
+              <div key={cc.id} className="flex flex-wrap items-center justify-between gap-y-2 rounded-lg border border-slate-100 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <span className={`inline-block h-2 w-2 rounded-full ${cc.active ? 'bg-green-500' : 'bg-slate-300'}`} />
                   <div>
                     <span className="font-mono text-sm font-medium text-slate-700">{cc.code}</span>
                     <span className="ml-2 text-slate-900">{cc.name}</span>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="ghost" onClick={() => toggleActive(cc)}>
                     {cc.active ? t('deactivate', lang) : t('activate', lang)}
                   </Button>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const push = vi.fn()
@@ -191,16 +191,26 @@ describe('Header account controls', () => {
     expect(screen.queryByText('Root Admin')).not.toBeInTheDocument()
   })
 
-  // redirectTo matters: signing out without it leaves the browser on a page the
-  // middleware then bounces, which reads as a hang.
+  // Landing somewhere the middleware then bounces reads as a hang, so the
+  // destination is part of the contract — but it is reached by navigating
+  // AFTER the sign-out rather than by handing next-auth a `redirectTo`, which
+  // would let the navigation cancel the request that clears the cookie (#389).
   it('signs out to the login page', async () => {
     const user = userEvent.setup()
-    render(<Header userName="Root Admin" lang="en" />)
+    const assign = vi.fn()
+    const original = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, assign } })
+    try {
+      render(<Header userName="Root Admin" lang="en" />)
 
-    await user.click(screen.getByText(/my account/i))
-    await user.click(screen.getByRole('button', { name: /sign out/i }))
+      await user.click(screen.getByText(/my account/i))
+      await user.click(screen.getByRole('button', { name: /sign out/i }))
 
-    expect(signOut).toHaveBeenCalledWith({ redirectTo: '/login' })
+      expect(signOut).toHaveBeenCalledWith({ redirect: false })
+      expect(assign).toHaveBeenCalledWith('/login')
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original })
+    }
   })
 })
 
@@ -362,12 +372,56 @@ describe('signing out', () => {
 
   it('ends the session and returns to the login page', async () => {
     const user = userEvent.setup()
-    render(<Header userName="Root Admin" lang="en" />)
-    await user.click(screen.getByText(/my account/i))
+    const assign = vi.fn()
+    const original = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, assign } })
+    try {
+      render(<Header userName="Root Admin" lang="en" />)
+      await user.click(screen.getByText(/my account/i))
 
-    await user.click(screen.getByRole('button', { name: /sign out/i }))
+      await user.click(screen.getByRole('button', { name: /sign out/i }))
 
-    expect(signOut).toHaveBeenCalledWith({ redirectTo: '/login' })
+      expect(signOut).toHaveBeenCalledWith({ redirect: false })
+      expect(assign).toHaveBeenCalledWith('/login')
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original })
+    }
+  })
+
+  /*
+   * The ordering #389 is about, asserted rather than assumed.
+   *
+   * `signOut({ redirectTo })` starts the POST and the navigation together, and
+   * the navigation can cancel the request whose response clears the cookie —
+   * leaving the user on /login with a live session. Only a navigation that
+   * happens AFTER the POST has resolved rules that out.
+   */
+  it('waits for the sign-out to finish before navigating', async () => {
+    const order: string[] = []
+    let releaseSignOut: () => void = () => {}
+    vi.mocked(signOut).mockImplementation((async () => {
+      await new Promise<void>((resolve) => { releaseSignOut = resolve })
+      order.push('signedOut')
+    }) as never)
+
+    const assign = vi.fn(() => { order.push('navigated') })
+    const original = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, assign } })
+    try {
+      const user = userEvent.setup()
+      render(<Header userName="Root Admin" lang="en" />)
+      await user.click(screen.getByText(/my account/i))
+      await user.click(screen.getByRole('button', { name: /sign out/i }))
+
+      // The POST has not come back yet, so nothing may have navigated.
+      expect(assign).not.toHaveBeenCalled()
+
+      releaseSignOut()
+      await waitFor(() => expect(assign).toHaveBeenCalledWith('/login'))
+      expect(order).toEqual(['signedOut', 'navigated'])
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original })
+    }
   })
 
   it('clears the caches before ending the session, not after', async () => {
@@ -394,6 +448,6 @@ describe('signing out', () => {
 
     await user.click(screen.getByRole('button', { name: /sign out/i }))
 
-    expect(signOut).toHaveBeenCalledWith({ redirectTo: '/login' })
+    expect(signOut).toHaveBeenCalledWith({ redirect: false })
   })
 })

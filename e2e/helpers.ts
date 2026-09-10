@@ -351,6 +351,31 @@ export function requireStack(ok: boolean, reason: string): void {
  * which is worse than not waiting, because it reads like a guarantee.
  * `data-hydrated-path` follows the route, so `hydrated(page, /^\/orders\/\d+$/)`
  * waits for the page you actually arrived at.
+ *
+ * ── AND the streamed copy has to be gone (#374) ──────────────────────────────
+ *
+ * A production build STREAMS. `next start` sends the shell first and delivers
+ * each Suspense boundary's real content later, parked in a `<div hidden
+ * id="S:0">` at the end of `<body>`, where an inline script then moves it into
+ * place. For the ~200ms between those two events the page's content is in the
+ * document TWICE — once where it belongs, once in the staging div.
+ *
+ * `getByRole` never saw this, because a `[hidden]` subtree is not in the
+ * accessibility tree. `getByText`, `getByLabel` and CSS locators do see it, and
+ * they see it as a strict mode violation: "resolved to 2 elements", one of them
+ * the same `<p>` or the same `<input>`. Duplicate `id`s too — `locator('#order')`
+ * matched two nodes.
+ *
+ * Which is how #374 presented. `next dev` does not stream like this, so moving
+ * the e2e jobs onto production builds failed fifteen tests across four specs
+ * that nobody had touched, plus `auth.setup` itself: its `Promise.race` on two
+ * locators got an instant rejection from the strict mode violation rather than a
+ * timeout, and reported "neither the dashboard nor the enrolment prompt
+ * appeared" about a page that was showing the enrolment prompt.
+ *
+ * So this waits for the staging divs to drain, and every page-level locator in
+ * the suite is sound again without being rewritten. Same reasoning as the `goto`
+ * wrapper in fixtures.ts: 249 call sites cannot each remember a rule.
  */
 export async function hydrated(page: Page, path?: RegExp): Promise<void> {
   await page
@@ -358,6 +383,11 @@ export async function hydrated(page: Page, path?: RegExp): Promise<void> {
       (source: string | null) => {
         const el = document.documentElement
         if (el.dataset.hydrated !== 'true') return false
+        // React's own staging containers for streamed Suspense content. Matched
+        // by the `S:` id prefix rather than by `[hidden]` alone: the root layout
+        // leaves an empty `<div hidden>` of its own in place permanently, and
+        // waiting for THAT to go would wait 15s on every single navigation.
+        if (document.querySelector('div[hidden][id^="S:"]') !== null) return false
         return source === null || new RegExp(source).test(el.dataset.hydratedPath ?? '')
       },
       path ? path.source : null,
@@ -602,4 +632,38 @@ export async function signOutViaMenu(page: Page): Promise<void> {
   await page.getByText(/my account/i).click()
   await page.getByRole('button', { name: /sign out/i }).click()
   await page.waitForURL(/\/login/, { timeout: 30_000 })
+
+  /*
+   * And then wait for the SESSION to be gone, not just the page.
+   *
+   * The redirect to /login is client-side, and `signout.spec` says so in its
+   * own comment: it can land while the cookie is still valid. So a caller that
+   * returns here on the URL alone has been told the sign-out finished when what
+   * finished was the navigation — and the next `goto` races the cookie.
+   *
+   * Latent until #374 served production builds. A navigation that took five
+   * seconds hid the gap; at under one it does not, and `signout.spec` failed on
+   * the first attempt and passed on the retry, which is exactly what a race
+   * looks like from the outside.
+   *
+   * The cookie is the thing the backend actually checks, so it is the thing to
+   * wait for. Matched by suffix because NextAuth prefixes it `__Secure-` when
+   * the cookie is secure, and this suite runs over http.
+   *
+   * A cookie that is still LISTED is not the same as a session that is still
+   * valid: NextAuth ends one by overwriting the value with an empty string
+   * rather than dropping the entry, and Playwright reports that as a cookie
+   * that exists. Waiting for it to disappear entirely therefore waited out the
+   * full 30s and failed on a session that had genuinely ended. What has to be
+   * gone is the VALUE — an empty token authenticates nothing.
+   */
+  await expect
+    .poll(
+      async () => {
+        const cookie = (await page.context().cookies()).find((c) => c.name.endsWith('session-token'))
+        return cookie !== undefined && cookie.value !== ''
+      },
+      { timeout: 30_000, message: 'the session cookie outlived the sign-out' },
+    )
+    .toBe(false)
 }

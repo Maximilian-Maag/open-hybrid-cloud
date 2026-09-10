@@ -1,6 +1,15 @@
 // Roles and enums
 export type Role = 'admin' | 'project_manager' | 'root'
-export type OrderStatus = 'pending' | 'provisioning' | 'completed' | 'failed' | 'rejected'
+/*
+ * `scheduled` sits between approval and provisioning (#330): an admin has
+ * decided, but the environment respects deployment windows and none is open.
+ *
+ * It reached the database enum with #330 and not this type, so for a while the
+ * contract the frontend compiles against said a scheduled order was impossible
+ * — the badge fell through to rendering the raw lowercase word in default grey,
+ * and every exhaustive switch silently had no branch for it.
+ */
+export type OrderStatus = 'pending' | 'scheduled' | 'provisioning' | 'completed' | 'failed' | 'rejected'
 export type InfraStatus = 'active' | 'decommissioning' | 'decommissioned'
 /**
  * What an element can be SHOWN as — the stored statuses plus the two that live
@@ -525,6 +534,13 @@ export interface DeploymentEnvironment {
    * fix omit it.
    */
   webhookTokenSet?: boolean
+  /**
+   * Whether an approved order for this environment waits for a deployment
+   * window (#330). Optional because responses predating the column omit it, and
+   * `false` is the default that matters: honouring windows everywhere at
+   * upgrade would strand every sandbox deploy after 18:00.
+   */
+  respectsDeploymentWindows?: boolean
 }
 
 // Response shape for GET/POST /api/admin/environments/:id/callback-secret.
@@ -548,6 +564,8 @@ export interface UpdateEnvironmentRequest {
   ciSourceId?: number
   webhookUrl?: string
   webhookToken?: string
+  /** #330: whether approved orders here wait for a deployment window. */
+  respectsDeploymentWindows?: boolean
 }
 
 /**
@@ -813,6 +831,16 @@ export interface Order {
   environmentId: number
   userId: number
   status: OrderStatus
+  /**
+   * When the deployment window that will release this order opens (#330).
+   *
+   * Null unless the order is waiting, and deliberately NOT cleared when it is
+   * released: it records which window let the order through, which is the
+   * context that makes a later override legible. Detail view only.
+   */
+  scheduledFor?: string | null
+  /** When root deployed it without waiting. Null unless somebody did. */
+  windowOverrideAt?: string | null
   parameters: Record<string, string>
   costCenterId: number | null
   rejectionNote: string | null

@@ -2,7 +2,7 @@
 
 import { useId, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Branding, UpdateBrandingRequest } from '@open-hybrid-cloud/types'
+import type { Branding, UpdateBrandingRequest } from '@infrashelf/types'
 import { put, apiRequest } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'

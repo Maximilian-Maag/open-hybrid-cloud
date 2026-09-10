@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/serverApi'
 import { redirect } from 'next/navigation'
-import type { CartItem, Project, CostCenter, ExchangeRate } from '@open-hybrid-cloud/types'
+import type { CartItem, Project, CostCenter, ExchangeRate } from '@infrashelf/types'
 import { CartView } from './CartView'
 import { getLang } from '@/lib/getLang'
 import { localeToCurrency } from '@/lib/locale'

@@ -20,6 +20,7 @@ import {
   totpIssuer,
   verifySecondFactor,
 } from './twoFactor'
+import { BLOCKED_WAIT_MS, LOCK_TEST_TIMEOUT_MS } from '@/test/timeouts'
 
 const auditActions = async (userId: number): Promise<string[]> => {
   const rows = await db
@@ -111,28 +112,26 @@ const blockedOnUserTotp = async (): Promise<number> => {
   return Number(rows[0]?.n ?? 0)
 }
 
-/**
- * How long to wait for the other statement to reach its blocking UPDATE.
+/*
+ * Backed off rather than a flat 10ms.
  *
- * Thirty seconds, not the three this used to allow. It is not a latency budget:
- * the wait ends the moment the lock is seen, so on an idle machine it costs
- * milliseconds and the ceiling is never approached. It is the point past which
- * "the runner is busy" stops being a possible explanation — and three seconds was
- * inside that, which is why CI failed this test on a loaded runner with
- * "the confirmation never reached its UPDATE" while the code was perfectly fine.
- *
- * A generous ceiling costs a slow failure only when something is genuinely
- * broken. A tight one costs a red build on working code, which is worse: it
- * teaches everyone to re-run.
+ * The first poll is what matters for speed — the lock is normally already there
+ * — so the interval starts short and the common case still returns in
+ * milliseconds. What it must not do is issue a `pg_stat_activity` query every
+ * 10ms for thirty seconds while waiting, because the reason a wait ever gets
+ * that long here is that the one Postgres four workers share is saturated, and
+ * three thousand probes are load applied to exactly the thing being waited on.
  */
-const BLOCKED_WAIT_MS = 30_000
-const BLOCKED_POLL_MS = 10
+const BLOCKED_POLL_START_MS = 10
+const BLOCKED_POLL_MAX_MS = 250
 
 const waitUntilBlocked = async (): Promise<void> => {
   const deadline = Date.now() + BLOCKED_WAIT_MS
+  let poll = BLOCKED_POLL_START_MS
   while (Date.now() < deadline) {
     if ((await blockedOnUserTotp()) > 0) return
-    await new Promise((r) => setTimeout(r, BLOCKED_POLL_MS))
+    await new Promise((r) => setTimeout(r, poll))
+    poll = Math.min(poll * 2, BLOCKED_POLL_MAX_MS)
   }
   // Named for what was actually being waited on, so the message does not send
   // the reader looking at `confirmEnrollment` when the truth is that nothing
@@ -149,7 +148,7 @@ const row = async (userId: number) =>
 
 /** Enroll and confirm through the real service, returning the secret and codes. */
 const fullyEnroll = async (userId: number, email = 'root@test.dev') => {
-  const offer = await startEnrollment(userId, email, 'Open Hybrid Cloud')
+  const offer = await startEnrollment(userId, email, 'InfraShelf')
   expect(offer.ok).toBe(true)
   if (!offer.ok) throw new Error('unreachable')
   const secret = base32Decode(offer.data.secret)
@@ -181,7 +180,7 @@ describe('requiresSecondFactor', () => {
 describe('startEnrollment', () => {
   it('stores the secret encrypted, never in the clear', async () => {
     const u = await createRoot({ email: 'enc@test.dev' })
-    const offer = await startEnrollment(u.id, u.email, 'Open Hybrid Cloud')
+    const offer = await startEnrollment(u.id, u.email, 'InfraShelf')
     expect(offer.ok).toBe(true)
     if (!offer.ok) return
 
@@ -195,7 +194,7 @@ describe('startEnrollment', () => {
 
   it('offers a QR code, a key URI and a typable secret that all describe the same key', async () => {
     const u = await createRoot({ email: 'qr@test.dev' })
-    const offer = await startEnrollment(u.id, u.email, 'Open Hybrid Cloud')
+    const offer = await startEnrollment(u.id, u.email, 'InfraShelf')
     if (!offer.ok) return expect.unreachable()
 
     const fromUrl = new URL(offer.data.otpauthUrl).searchParams.get('secret')
@@ -212,7 +211,7 @@ describe('startEnrollment', () => {
     const u = await createRoot({ email: 'reenroll@test.dev' })
     const { secret } = await fullyEnroll(u.id, u.email)
 
-    await startEnrollment(u.id, u.email, 'Open Hybrid Cloud')
+    await startEnrollment(u.id, u.email, 'InfraShelf')
 
     const stored = await row(u.id)
     expect(stored.secret).toBeTruthy()
@@ -228,8 +227,8 @@ describe('startEnrollment', () => {
 
   it('replaces an earlier pending secret rather than accumulating them', async () => {
     const u = await createRoot()
-    const first = await startEnrollment(u.id, u.email, 'OHC')
-    const second = await startEnrollment(u.id, u.email, 'OHC')
+    const first = await startEnrollment(u.id, u.email, 'ISF')
+    const second = await startEnrollment(u.id, u.email, 'ISF')
     if (!first.ok || !second.ok) return expect.unreachable()
     expect(second.data.secret).not.toBe(first.data.secret)
 
@@ -240,9 +239,61 @@ describe('startEnrollment', () => {
 
   it('records the start in the audit log', async () => {
     const u = await createRoot()
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
     expect(await auditActions(u.id)).toContain('auth.2fa.enroll_started')
   })
+
+  /*
+   * #195, leftovers. The route reads `requiresSecondFactor` and only asks for a
+   * code when it comes back true — the one branch a stolen session and a
+   * phished password alone can reach. `requireStillUnconfirmed` is what the
+   * route passes when it read false, and it has to keep meaning that all the
+   * way to the write: if the account's REAL owner finishes their own first
+   * enrollment in the gap, this call must not get to plant a pending secret it
+   * never had to prove it could replace — confirming that later would silently
+   * take the account over.
+   *
+   * Driven for real, the same way `does not promote its own secret over an
+   * enrollment that replaced it` is above: a transaction takes `FOR UPDATE` on
+   * the row a first (unraced) `startEnrollment` created, so the call under test
+   * gets past its own read and blocks on the write. Only once it is proven to
+   * be sitting there does the "owner" finish confirming, and release it.
+   */
+  it('refuses to plant a pending secret once a factor was confirmed after this call read none', async () => {
+    const u = await createRoot()
+    // The account's own first, unraced enrollment — there has to be a row for
+    // a second call to race against.
+    const first = await startEnrollment(u.id, u.email, 'ISF')
+    if (!first.ok) return expect.unreachable()
+
+    const ownerSecret = encryptTotpSecret(generateTotpSecret(), u.id)
+    const holder = db.transaction(async (tx) => {
+      await tx.select().from(userTotp).where(eq(userTotp.userId, u.id)).for('update')
+      await waitUntilBlocked()
+
+      // Stands in for the real owner confirming their OWN enrollment while the
+      // call under test was blocked behind it — a factor now exists that this
+      // call never asked to prove.
+      await tx
+        .update(userTotp)
+        .set({ secret: ownerSecret, pendingSecret: null, pendingCreatedAt: null, confirmedAt: new Date() })
+        .where(eq(userTotp.userId, u.id))
+    })
+
+    const racer = startEnrollment(u.id, u.email, 'ISF', { requireStillUnconfirmed: true })
+    const [result] = await Promise.all([racer, holder])
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.status).toBe(409)
+
+    // The owner's freshly confirmed factor is untouched — nothing was planted
+    // over it, and there is nothing left for a later `confirmEnrollment` with
+    // this call's code to promote.
+    const stored = await row(u.id)
+    expect(stored.secret).toBe(ownerSecret)
+    expect(stored.confirmedAt).not.toBeNull()
+    expect(stored.pendingSecret).toBeNull()
+  }, LOCK_TEST_TIMEOUT_MS)
 })
 
 describe('confirmEnrollment', () => {
@@ -295,7 +346,7 @@ describe('confirmEnrollment', () => {
 
   it('rejects a wrong code and does not activate the factor', async () => {
     const u = await createRoot()
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
     const result = await confirmEnrollment(u.id, '000000')
     expect(result.ok).toBe(false)
 
@@ -307,7 +358,7 @@ describe('confirmEnrollment', () => {
 
   it('spends the confirming code, so it cannot be replayed at the next login', async () => {
     const u = await createRoot()
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
     const secret = base32Decode(offer.data.secret)
     const code = currentTotpCode(secret)
@@ -321,7 +372,7 @@ describe('confirmEnrollment', () => {
 
   it('accepts a code exactly once even when two requests race (replay, concurrent)', async () => {
     const u = await createRoot()
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
     const secret = base32Decode(offer.data.secret)
 
@@ -346,7 +397,7 @@ describe('confirmEnrollment', () => {
     const first = await fullyEnroll(u.id)
 
     // Re-enroll from scratch.
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
     await confirmEnrollment(u.id, currentTotpCode(base32Decode(offer.data.secret), 1))
 
@@ -360,7 +411,7 @@ describe('confirmEnrollment', () => {
 
   it('refuses an enrollment that has gone stale', async () => {
     const u = await createRoot()
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
 
     await db
@@ -383,7 +434,7 @@ describe('confirmEnrollment', () => {
 
   it('does not promote its own secret over an enrollment that replaced it', async () => {
     const u = await createRoot()
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
     const code = currentTotpCode(base32Decode(offer.data.secret))
 
@@ -411,11 +462,11 @@ describe('confirmEnrollment', () => {
     expect(stored.pendingSecret).toBe(newer)
     expect(stored.secret).toBeNull()
     expect(stored.confirmedAt).toBeNull()
-  })
+  }, LOCK_TEST_TIMEOUT_MS)
 
   it('expiring a stale enrollment does not clear the one that replaced it', async () => {
     const u = await createRoot()
-    const offer = await startEnrollment(u.id, u.email, 'OHC')
+    const offer = await startEnrollment(u.id, u.email, 'ISF')
     if (!offer.ok) return expect.unreachable()
     await db
       .update(userTotp)
@@ -442,7 +493,7 @@ describe('confirmEnrollment', () => {
     // The expiry clear is conditional, so it wiped nothing: an unconditional
     // one would have thrown away a secret stored seconds ago.
     expect((await row(u.id)).pendingSecret).toBe(newer)
-  })
+  }, LOCK_TEST_TIMEOUT_MS)
 })
 
 describe('verifySecondFactor — TOTP', () => {
@@ -796,7 +847,7 @@ describe('rate limiting', () => {
     const u = await createRoot()
     await enrollTotp(u.id)
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS; i++) await verifySecondFactor(u.id, '000000')
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
 
     const result = await confirmEnrollment(u.id, '000000')
     expect(result.ok).toBe(false)
@@ -823,7 +874,7 @@ describe('getTwoFactorStatus', () => {
 
   it('reports a pending enrollment', async () => {
     const u = await createRoot()
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
     const status = await getTwoFactorStatus(u.id)
     if (!status.ok) return expect.unreachable()
     expect(status.data.pending).toBe(true)
@@ -832,7 +883,7 @@ describe('getTwoFactorStatus', () => {
 
   it('does not report a stale pending enrollment as pending', async () => {
     const u = await createRoot()
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
     await db
       .update(userTotp)
       .set({ pendingCreatedAt: new Date(Date.now() - PENDING_ENROLLMENT_TTL_MS - 1) })
@@ -910,9 +961,9 @@ describe('totpIssuer', () => {
   })
 
   it('falls back to the product name when branding is empty', () => {
-    expect(totpIssuer('')).toBe('Open Hybrid Cloud')
-    expect(totpIssuer(null)).toBe('Open Hybrid Cloud')
-    expect(totpIssuer('   ')).toBe('Open Hybrid Cloud')
+    expect(totpIssuer('')).toBe('InfraShelf')
+    expect(totpIssuer(null)).toBe('InfraShelf')
+    expect(totpIssuer('   ')).toBe('InfraShelf')
   })
 })
 
@@ -931,7 +982,7 @@ describe('administrators only (#36, widened by #197)', () => {
 
   it.each(ADMIN_ROLES)('starts an enrollment for a %s account', async (role) => {
     const u = await createUser({ role, secondFactor: false })
-    const result = await startEnrollment(u.id, u.email, 'OHC')
+    const result = await startEnrollment(u.id, u.email, 'ISF')
     expect(result.ok, role).toBe(true)
   })
 
@@ -956,7 +1007,7 @@ describe('administrators only (#36, widened by #197)', () => {
 
   it('refuses to start an enrollment for a project manager', async () => {
     const u = await createUser({ role: 'project_manager' })
-    const result = await startEnrollment(u.id, u.email, 'OHC')
+    const result = await startEnrollment(u.id, u.email, 'ISF')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.status).toBe(403)
     // And nothing was written, so a role check added later cannot be walked
@@ -1076,7 +1127,7 @@ describe('2FA cannot be disabled', () => {
 
     // A pile of failures, a lock, and an abandoned re-enrollment.
     for (let i = 0; i < MFA_MAX_FAILED_ATTEMPTS + 3; i++) await verifySecondFactor(u.id, '000000')
-    await startEnrollment(u.id, u.email, 'OHC')
+    await startEnrollment(u.id, u.email, 'ISF')
     await confirmEnrollment(u.id, '000000')
 
     expect(await requiresSecondFactor(u.id)).toBe(true)

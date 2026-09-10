@@ -24,7 +24,16 @@ export default async function globalSetup() {
 
     // Only create the database if it doesn't exist yet
     const probe = spawnSync('psql', [...psqlArgs, '-d', dbName, '-c', '\\q'], { env, stdio: 'pipe' })
-    if (probe.status !== 0 && probe.error?.code !== 'ENOENT') {
+    // `spawnSync`'s error is typed as plain `Error`; the `code` that says psql is
+    // not installed lives on the Node `SystemError` shape underneath it. Narrowed
+    // rather than asserted, so a future Node that stops setting it reads as
+    // "psql is present" instead of throwing on the property access.
+    const spawnFailedBecausePsqlIsMissing =
+      probe.error !== undefined &&
+      'code' in probe.error &&
+      (probe.error as NodeJS.ErrnoException).code === 'ENOENT'
+
+    if (probe.status !== 0 && !spawnFailedBecausePsqlIsMissing) {
       spawnSync('psql', [...psqlArgs, '-d', 'postgres', '-c', `CREATE DATABASE "${dbName}"`], { env, stdio: 'pipe' })
     }
   } catch {

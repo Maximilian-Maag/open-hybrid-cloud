@@ -401,6 +401,76 @@ Under **Administration → Cost Centers**:
 
 ---
 
+## 5a. Deployment Windows
+
+Under **Administration → Deployment Windows**:
+
+Provisioning normally happens the moment an order is approved. Where you would
+rather it happened while somebody is watching, define **deployment windows** —
+the hours during which provisioning may run.
+
+- A **time zone** (an IANA name such as `Europe/Berlin`), and any number of
+  windows, each a **start time** and a **duration in minutes**.
+- The same pattern applies every working day. There is no per-weekday editing:
+  the question being answered is "when is somebody watching", which is a
+  property of the working day rather than of Tuesday.
+- Windows may not overlap and may not cross midnight. They are saved as a set,
+  so a rearrangement is one save rather than a sequence of half-valid states.
+- **Saturdays, Sundays and public holidays are excluded automatically.**
+
+This changes nothing on its own. Each environment carries its own switch, under
+**Administration → Environments → Edit → "Waits for a deployment window"**, and
+it is **off by default** — Production honours the windows; a sandbox that stops
+deploying after 18:00 is an obstacle rather than a safeguard.
+
+**What happens to an order.** The approval never fails for being out of hours:
+the decision is recorded and the work is kept. Only the provisioning waits, and
+the order shows as **Scheduled** with the time its window opens.
+
+**Releasing them needs a scheduler.** The portal has no background worker, so
+something outside it must call
+`POST /api/internal/deployment-window-sweep` with the shared secret
+`DEPLOYMENT_WINDOW_SWEEP_SECRET` in the `X-Sweep-Secret` header. On Kubernetes
+set `deploymentWindowSweep.enabled`; on a Docker host add a cron entry. Call it
+every minute or two — that interval is the delay between a window opening and
+the orders in it deploying.
+
+> Without the sweep configured, an order that reaches **Scheduled** waits
+> indefinitely. If you turn the environment switch on, turn the sweep on too.
+
+**Holidays.** Under the same screen. Give a **feed URL** — an ICS calendar or a
+JSON list of holidays, both are read — and press **Preview** to see the dates
+before saving. The resolved dates are cached in the database, so deciding
+whether an order may deploy never waits on the feed.
+
+- The screen shows how old the last successful read is, and complains past 30
+  days. A failed refresh changes nothing: the last good set stays.
+- **Add a date by hand** for a company shutdown week no public calendar knows
+  about.
+- **Work through** un-ticks a public holiday this company does not take. Use
+  that rather than removing the row — a deleted feed date comes back on the next
+  refresh, because the feed is the source for those.
+
+> **If a feed is configured and has never been read successfully, deployment
+> windows are switched off entirely** and orders deploy immediately. With no
+> holiday data the portal cannot tell a holiday from a working day, and quietly
+> deploying on Christmas morning is the thing this feature exists to prevent —
+> so it stops claiming to do the job instead. The screen says so in red. Fix the
+> feed, or clear the URL.
+
+Refreshing needs the same scheduler as the sweep: `POST
+/api/internal/holiday-refresh` with `DEPLOYMENT_WINDOW_SWEEP_SECRET` in
+`X-Sweep-Secret`. On Kubernetes the chart ships a daily CronJob with the sweep;
+on a Docker host add a daily cron entry. You can also refresh from the screen.
+
+**Deploying early.** **Root only** — not admins, and not the person who placed
+the order. On a scheduled order the Root account sees a **Deploy now** button,
+which provisions it immediately. It is written to the
+audit log as `order.window_overridden`, naming you and the window that was
+skipped.
+
+---
+
 ## 6. User Management
 
 Under **Administration → Users**:
@@ -440,6 +510,22 @@ Logged action types (this list has grown since the feature was first documented 
 | `infra.decommission_scheduled` / `infra.decommission_schedule_cleared` | A future decommission time is set or cleared on an element |
 | `infra.retried` / `infra.retry_failed` | A failed deployment's triggers are retried, and whether that retry itself succeeded to start |
 | `product.version_recorded` | A product or one of its offerings is edited, recording a new version |
+| `product.updated` / `product.translation_updated` / `product.image_alt_updated` | A product, one of its translations, or an image's alt text is edited |
+| `product.webhook_updated` / `product.webhook_deleted` | An order callback on a product is saved or removed |
+| `category.created` / `category.updated` | A catalogue category is added or edited |
+| `cost_center.created` / `cost_center.updated` | A cost centre is added or edited |
+| `project.created` / `project.updated` | A project is added or edited |
+| `user.created` / `user.updated` | An account is created, or its role/details change |
+| `environment.updated` | A deployment environment is edited |
+| `environment.callback_secret_revealed` / `environment.callback_secret_rotated` | An environment's callback secret is shown or replaced — both, because seeing it is as sensitive as changing it |
+| `ci_source.updated` | A CI source is edited |
+| `pipeline_stack.deleted` | A pipeline stack is removed from an offering |
+| `config.smtp_updated` / `config.ai_updated` | SMTP or AI provider settings are saved |
+| `branding.updated` / `branding.logo_updated` | Branding colours/text are saved, or the logo is replaced |
+| `integration.probed` | An external integration's reachability is tested |
+| `category.deleted` / `cost_center.deleted` / `ci_source.deleted` / `environment.deleted` / `user.deleted` | A catalogue category, cost centre, CI source, environment or account is deleted — the entries an audit reader looks for first |
+| `product.offering_withdrawn` | A product's offering in one environment is withdrawn, so it can no longer be ordered there |
+| `exchange_rate.refreshed` | Currency rates are refreshed from the configured API |
 
 ---
 
@@ -472,7 +558,7 @@ Under **Administration → Shop Design** (or directly at `/admin/branding`):
 
 ### 9.3 Shop Name and Subtitle
 
-- **Shop name**: Displayed in the header and browser title. Defaults to "Open Hybrid Cloud" — there is no `APP_NAME` environment variable; the name lives only in this database-backed setting.
+- **Shop name**: Displayed in the header and browser title. Defaults to "InfraShelf" — there is no `APP_NAME` environment variable; the name lives only in this database-backed setting.
 - **Subtitle / Tagline**: Short description shown in the footer. Defaults to empty — likewise, there is no `APP_SUBTITLE` environment variable.
 
 ### 9.4 Imprint (Legal Notice)
@@ -603,7 +689,7 @@ provide.
 Docker Compose:
 
 ```sh
-docker exec -i ohc-postgres psql -U postgres -d open_hybrid_cloud <<'SQL'
+docker exec -i isf-postgres psql -U postgres -d infrashelf <<'SQL'
 BEGIN;
 DELETE FROM user_recovery_codes
   WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');
@@ -616,7 +702,7 @@ SQL
 Kubernetes:
 
 ```sh
-kubectl exec -n open-hybrid-cloud deploy/ohc-postgres --   psql -U postgres -d open_hybrid_cloud -c   "DELETE FROM user_recovery_codes WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');    DELETE FROM user_totp WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');"
+kubectl exec -n infrashelf deploy/isf-postgres --   psql -U postgres -d infrashelf -c   "DELETE FROM user_recovery_codes WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');    DELETE FROM user_totp WHERE user_id = (SELECT id FROM users WHERE email = 'root@example.com');"
 ```
 
 Replace `root@example.com` with the account's own address. Deleting the

@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Open Hybrid Cloud API Docs</title>
+  <title>InfraShelf API Docs</title>
   <link rel="stylesheet" href="/swagger-ui/swagger-ui.css" />
   <style>
     body { margin: 0; padding: 0; }

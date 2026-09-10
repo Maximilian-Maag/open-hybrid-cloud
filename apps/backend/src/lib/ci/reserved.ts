@@ -30,6 +30,13 @@ const RESERVED_CI_VARIABLES: ReadonlySet<string> = new Set([
   'TF_ACTION',
   'TF_STATE_NAME',
   STATE_KEY_NAMESPACE_VAR,
+  // WHOSE state, which is the same class of decision as which state. GitLab
+  // lets a trigger variable override a project CI/CD variable, so a parameter
+  // under either of these names replaces the credential the state API
+  // authenticates with — and a token the orderer chose reads and writes state
+  // the operator never granted. Reserved for the same reason TF_STATE_NAME is.
+  'GITLAB_STATE_TOKEN',
+  'GITLAB_STATE_USERNAME',
   // Which orchestrator template and step list execute.
   'TEMPLATE',
   'PIPELINE_STACK',
@@ -78,3 +85,35 @@ export const withoutReservedCiVariables = (
   parameters: Record<string, string>,
 ): Record<string, string> =>
   Object.fromEntries(Object.entries(parameters).filter(([name]) => !isReservedCiVariable(name)))
+
+/**
+ * Variables the pipeline supplies to itself. Not things a person chooses, and a
+ * parameter definition for one would be a field the run overwrites.
+ *
+ * Here rather than in `templateImport`, because it was in BOTH that file and
+ * `sync-parameters/route.ts` — two copies of one list, and the two import paths
+ * that turn a Terraform file into parameter definitions. A name added to one
+ * copy is a name the other still offers.
+ *
+ * Exact-match and lowercase, unlike `RESERVED_CI_VARIABLES` above: these are
+ * Terraform variable names as a template declares them, and the case-insensitive
+ * set is a security boundary that answers a different question. Both are
+ * consulted at the import path, so a name may safely be in one, the other or
+ * both — `gitlab_state_token` is in both, because it must neither be offered as
+ * a parameter nor accepted as one.
+ */
+const PIPELINE_SUPPLIED_VARIABLES: ReadonlySet<string> = new Set([
+  'ci_api_url',
+  'ci_project_id',
+  'ci_job_token',
+  'vm_state_name',
+  // The credentials for the GitLab-managed OpenTofu state API, promoted to
+  // TF_VARs by the base pipeline so a template that reads an upstream step's
+  // state with `terraform_remote_state` can declare them and nothing else.
+  'gitlab_state_token',
+  'gitlab_state_username',
+])
+
+/** Whether the base pipeline supplies this Terraform variable itself. */
+export const isPipelineSuppliedVariable = (name: string): boolean =>
+  PIPELINE_SUPPLIED_VARIABLES.has(name.trim())

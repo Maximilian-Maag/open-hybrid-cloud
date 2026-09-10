@@ -4,7 +4,7 @@ import { eq, and, ne, sql } from 'drizzle-orm'
 import { ok, err, type Result } from '@/lib/services/result'
 import { logAudit, changedFields } from '@/lib/audit'
 import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
-import type { PipelineStack, CreatePipelineStackRequest, UpdatePipelineStackRequest } from '@open-hybrid-cloud/types'
+import type { PipelineStack, CreatePipelineStackRequest, UpdatePipelineStackRequest } from '@infrashelf/types'
 
 const publicColumns = {
   id: pipelineStacks.id,

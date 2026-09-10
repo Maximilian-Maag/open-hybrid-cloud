@@ -247,8 +247,20 @@ describe('parameter changes record a product version', () => {
     return { admin, cat, product, env }
   }
 
+  /*
+   * Ordered explicitly, because the assertions below are about sequence.
+   *
+   * Without an ORDER BY, Postgres returns plan order — which held until it did
+   * not, and the three summaries came back exactly reversed on a loaded run.
+   * `id` is the insertion order these tests actually mean; `created_at` ties
+   * when several versions are written inside one call.
+   */
   const versionsFor = async (productId: number) =>
-    db.select().from(productVersions).where(eq(productVersions.productId, productId))
+    db
+      .select()
+      .from(productVersions)
+      .where(eq(productVersions.productId, productId))
+      .orderBy(productVersions.id)
 
   it('records one for a product-scoped parameter, with a snapshot to diff against', async () => {
     const { admin, product, env } = await offering()

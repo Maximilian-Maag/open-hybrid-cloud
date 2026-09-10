@@ -21,7 +21,7 @@ const ALG = 'HS256'
 /** Five minutes: long enough to fetch a phone, short enough to be uninteresting. */
 export const MFA_CHALLENGE_TTL_SECONDS = 5 * 60
 
-const CHALLENGE_TYPE = 'ohc-mfa-challenge-v1'
+const CHALLENGE_TYPE = 'isf-mfa-challenge-v1'
 
 let cachedSecret: Uint8Array | null = null
 

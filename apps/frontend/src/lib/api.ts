@@ -112,6 +112,23 @@ const endExpiredSession = async (): Promise<void> => {
   // Imported here, not at module scope: this module is used by server components
   // too, and `next-auth/react` is a client library.
   const { signOut } = await import('next-auth/react')
+  // The other way a session ends. Same reason as the menu item: the caches must
+  // not survive it (#148). Imported here for the same reason `signOut` is —
+  // this module is reachable from server components.
+  const { clearServiceWorkerCaches } = await import('@/lib/serviceWorker')
+  /*
+   * Guarded, and here it matters more than on the menu item (#359).
+   *
+   * `endingSession` latches to stop a burst of 401s each starting a sign-out,
+   * so a throw on this line would not merely skip one redirect — it would leave
+   * the latch set and every later expiry silently do nothing, for the life of
+   * the page. Cache-clearing is best-effort; ending the session is not.
+   */
+  try {
+    await clearServiceWorkerCaches()
+  } catch {
+    // Tidiness failed. The session still has to end.
+  }
   await signOut({ redirectTo: expiredLoginUrl(window.location.pathname) })
 }
 
@@ -152,5 +169,11 @@ export const post = <T>(path: string, body: unknown) =>
 
 export const put = <T>(path: string, body: unknown) =>
   apiRequest<T>(path, { method: 'PUT', body })
+
+// PATCH for a request that acts on a resource without replacing it — the
+// holiday feed's preview and refresh, which change nothing about the
+// representation a PUT would send (#330).
+export const patch = <T>(path: string, body: unknown) =>
+  apiRequest<T>(path, { method: 'PATCH', body })
 
 export const del = <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' })

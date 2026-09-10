@@ -1,4 +1,4 @@
-import type { CostBucket } from '@open-hybrid-cloud/types'
+import type { CostBucket } from '@infrashelf/types'
 
 /**
  * Shared data shaping for the cost charts (issue #106).

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import type { Product, Category, CatalogPage as CatalogPageData, FavoriteProduct } from '@open-hybrid-cloud/types'
+import type { Product, Category, CatalogPage as CatalogPageData, FavoriteProduct } from '@infrashelf/types'
 import { get, put, del } from '@/lib/api'
 import { t } from '@/lib/i18n'
 import { useLang } from '@/lib/useLang'

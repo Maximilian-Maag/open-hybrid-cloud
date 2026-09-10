@@ -1,4 +1,4 @@
-import type { SessionUser, OrderStatus } from '@open-hybrid-cloud/types'
+import type { SessionUser, OrderStatus } from '@infrashelf/types'
 import { db } from '@/lib/db/client'
 import {
   orders,
@@ -279,6 +279,11 @@ export const getOrderById = async (
       environmentId: orders.environmentId,
       userId: orders.userId,
       status: orders.status,
+      // #330. Only the detail view: the list shows a badge, and "Scheduled"
+      // without a time is still an honest badge, while a column that is null
+      // on every row but one is a column nobody reads.
+      scheduledFor: orders.scheduledFor,
+      windowOverrideAt: orders.windowOverrideAt,
       parameters: orders.parameters,
       costCenterId: orders.costCenterId,
       rejectionNote: orders.rejectionNote,

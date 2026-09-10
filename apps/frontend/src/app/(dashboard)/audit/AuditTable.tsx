@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { AuditEntry, PaginatedResponse } from '@open-hybrid-cloud/types'
+import type { AuditEntry, PaginatedResponse } from '@infrashelf/types'
 import { get, PROXY_PREFIX } from '@/lib/api'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'
@@ -227,7 +227,11 @@ export function AuditTable() {
       )}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
+        // Named so a test can scope to it. `getByRole('button', { name: /next/i })`
+        // at document level also matches the dev-tools button `next dev` injects,
+        // which is always on the page — audit.spec.ts read that instead of this
+        // pager for months and never ran the assertion underneath it.
+        <div data-testid="audit-pager" className="flex items-center justify-between">
           <p className="text-sm text-slate-500">
             {t('page', lang)} {page} / {totalPages} · {total} {t('entriesLower', lang)}
           </p>

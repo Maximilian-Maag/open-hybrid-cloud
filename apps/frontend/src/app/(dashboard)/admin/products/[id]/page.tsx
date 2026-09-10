@@ -7,7 +7,7 @@ import type {
   DeploymentEnvironment,
   ProductTranslation,
   CostCenter,
-} from '@open-hybrid-cloud/types'
+} from '@infrashelf/types'
 import { get } from '@/lib/serverApi'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'

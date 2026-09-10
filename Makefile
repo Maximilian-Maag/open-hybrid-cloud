@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check policy policy-facts policy-install-opa test-db test-db-prune test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio db-seed db-seed-demo handbook handbook-clean clean
+.PHONY: help install dev dev-down run run-backend run-frontend build lint type-check policy policy-facts policy-install-opa test-db test-db-prune test test-e2e docker-build-backend docker-build-frontend docker-build db-push db-studio db-seed db-seed-demo handbook handbook-clean diagrams diagrams-install diagrams-png diagrams-pdf diagrams-clean clean
 
 # pnpm is installed via standalone script — add its bin dir to PATH so make can find it
 PNPM_HOME ?= $(HOME)/.local/share/pnpm
@@ -84,21 +84,21 @@ policy-install-opa:
 # is only needed for the e2e database, which the Playwright stack expects to exist.
 # Idempotent, so it is safe to re-run.
 test-db:
-	@for db in open_hybrid_cloud_test open_hybrid_cloud_e2e; do \
-	  docker exec ohc-postgres psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$$db'" | grep -q 1 \
+	@for db in infrashelf_test infrashelf_e2e; do \
+	  docker exec isf-postgres psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$$db'" | grep -q 1 \
 	    && echo "  exists  $$db" \
-	    || { docker exec ohc-postgres createdb -U postgres "$$db" && echo "  created $$db"; }; \
+	    || { docker exec isf-postgres createdb -U postgres "$$db" && echo "  created $$db"; }; \
 	done
 
 # Drops the per-directory databases the backend suite created. They are cheap to
 # recreate (the schema is pushed on first run) and easy to forget about.
 test-db-prune:
-	@dbs="$$(docker exec ohc-postgres psql -U postgres -tAc \
-	  "SELECT datname FROM pg_database WHERE datname LIKE 'open_hybrid_cloud_test\_%'")" \
+	@dbs="$$(docker exec isf-postgres psql -U postgres -tAc \
+	  "SELECT datname FROM pg_database WHERE datname LIKE 'infrashelf_test\_%'")" \
 	  || { echo "  could not list databases — is the compose stack up?" >&2; exit 1; }; \
 	for db in $$dbs; do \
 	  [ -n "$$db" ] || continue; \
-	  docker exec ohc-postgres dropdb -U postgres --if-exists "$$db" && echo "  dropped $$db"; \
+	  docker exec isf-postgres dropdb -U postgres --if-exists "$$db" && echo "  dropped $$db"; \
 	done
 
 test:
@@ -109,10 +109,10 @@ test-e2e:
 	$(PNPM) test:e2e
 
 docker-build-backend:
-	docker build -t open-hybrid-cloud-backend:latest -f apps/backend/Dockerfile .
+	docker build -t infrashelf-backend:latest -f apps/backend/Dockerfile .
 
 docker-build-frontend:
-	docker build -t open-hybrid-cloud-frontend:latest -f apps/frontend/Dockerfile .
+	docker build -t infrashelf-frontend:latest -f apps/frontend/Dockerfile .
 
 docker-build: docker-build-backend docker-build-frontend
 
@@ -128,7 +128,27 @@ db-seed-demo:
 db-seed:
 	cd apps/backend && ../../node_modules/.bin/tsx --env-file=.env --tsconfig tsconfig.json src/seed.ts
 
-handbook:
+diagrams-install:
+	@node_modules/.bin/tsx scripts/diagramTools.ts
+
+# The C4 pictures, from docs/architecture/workspace.dsl — the model is the source
+# of truth and the handbook includes what this writes. Both formats by default:
+# --jpeg writes PNG (line art, so JPEG's block artefacts would land on the glyph
+# edges), --pdf writes ONE vector PDF of the C4 diagrams in reading order.
+diagrams: diagrams-install
+	@node_modules/.bin/tsx scripts/diagrams.ts --jpeg --pdf
+
+diagrams-png: diagrams-install
+	@node_modules/.bin/tsx scripts/diagrams.ts --jpeg
+
+diagrams-pdf: diagrams-install
+	@node_modules/.bin/tsx scripts/diagrams.ts --pdf
+
+diagrams-clean:
+	@rm -rf docs/architecture/diagrams .diagrams/puml
+	@echo "Removed generated diagrams (the pinned jars in .diagrams/ are kept)"
+
+handbook: diagrams-png
 	@command -v pdflatex >/dev/null 2>&1 || \
 	  { echo "ERROR: pdflatex not found. Install TeX Live: sudo pacman -S texlive-most"; exit 1; }
 	@echo "Compiling handbook (pass 1/2)..."

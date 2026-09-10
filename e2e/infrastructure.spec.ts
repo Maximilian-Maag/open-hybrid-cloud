@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot, expectNoServerError } from './helpers'
+import { appears, expectNoServerError, loginAsRoot, requireSeeded } from './helpers'
 
 test.describe('Infrastructure', () => {
   test.beforeEach(async ({ page }) => {
@@ -216,7 +216,7 @@ test.describe('Infrastructure quick reorder', () => {
     // (WCAG 2.4.9).
     const reorder = page.getByRole('link', { name: /^reorder\b/i }).first()
     await expect(reorder.or(emptyState)).toBeVisible({ timeout: 10000 })
-    if (await emptyState.isVisible()) { test.skip(); return }
+    requireSeeded(!(await emptyState.isVisible()), 'no infrastructure element on /infrastructure')
 
     // Reprovisioning a torn-down element is exactly when the original
     // parameters are hardest to reconstruct, so the link is not status-gated.
@@ -228,7 +228,7 @@ test.describe('Infrastructure quick reorder', () => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
     const reorder = page.getByRole('link', { name: /^reorder\b/i }).first()
     await expect(reorder.or(emptyState)).toBeVisible({ timeout: 10000 })
-    if (await emptyState.isVisible()) { test.skip(); return }
+    requireSeeded(!(await emptyState.isVisible()), 'no infrastructure element on /infrastructure')
 
     await reorder.click()
     // Generous, for the same reason auth.setup.ts waits 30s: the suite runs against
@@ -245,7 +245,7 @@ test.describe('Infrastructure quick reorder', () => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
     const reorder = page.getByRole('link', { name: /^reorder\b/i }).first()
     await expect(reorder.or(emptyState)).toBeVisible({ timeout: 10000 })
-    if (await emptyState.isVisible()) { test.skip(); return }
+    requireSeeded(!(await emptyState.isVisible()), 'no infrastructure element on /infrastructure')
 
     await reorder.click()
     const templates = page.getByLabel(/load parameters from existing/i)
@@ -270,7 +270,7 @@ test.describe('Infrastructure retry', () => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
     const anyRow = page.getByRole('link', { name: /^reorder\b/i }).first()
     await expect(anyRow.or(emptyState)).toBeVisible({ timeout: 10000 })
-    if (await emptyState.isVisible()) { test.skip(); return }
+    requireSeeded(!(await emptyState.isVisible()), 'no infrastructure element on /infrastructure')
 
     // Every row offering Retry must also be showing the failed badge.
     const retries = page.getByRole('button', { name: /^retry$/i })
@@ -280,7 +280,7 @@ test.describe('Infrastructure retry', () => {
 
   test('a failed deployment shows the failed state rather than claiming to be active', async ({ page }) => {
     const failedBadge = page.getByText(/deployment failed/i).first()
-    if (await failedBadge.count() === 0) { test.skip(); return }
+    requireSeeded(await appears(failedBadge), 'no failed deployment on /infrastructure')
     await expect(failedBadge).toBeVisible()
 
     // Decommission is not offered — tearing down something never provisioned
@@ -304,7 +304,18 @@ test.describe('Infrastructure retry', () => {
     const anyRow = page.getByRole('link', { name: /^reorder\b/i }).first()
     const nothingMatches = page.getByText(/no infrastructure matches|no infrastructure elements yet/i)
     await expect(anyRow.or(nothingMatches).first()).toBeVisible({ timeout: 10000 })
-    if (await nothingMatches.isVisible()) { test.skip(); return }
+    /*
+     * A reasoned skip and NOT `requireSeeded`, unlike every other guard in this
+     * file: this one is behind `?status=provisioning`, and the demo writes two
+     * elements that are both 'active'. An empty result here is the correct state
+     * of a seeded database, not a defect — which is exactly the distinction
+     * `requireSeeded` exists to make, so pointing it at a filtered view whose
+     * rows the seed never creates would report a working portal as broken.
+     */
+    test.skip(
+      await nothingMatches.isVisible(),
+      'the demo seeds no element in `provisioning` — nothing matches this filter',
+    )
 
     await expect(page.getByRole('button', { name: /^decommission$/i })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /automatic decommissioning/i })).toHaveCount(0)
@@ -312,7 +323,7 @@ test.describe('Infrastructure retry', () => {
 
   test('Retry asks for confirmation and says the parameters are reused', async ({ page }) => {
     const retry = page.getByRole('button', { name: /^retry$/i }).first()
-    if (await retry.count() === 0) { test.skip(); return }
+    requireSeeded(await appears(retry), 'no failed deployment on /infrastructure offering Retry')
 
     await retry.click()
     const dialog = page.locator('dialog[open]')
@@ -343,7 +354,7 @@ test.describe('Infrastructure scheduled decommissioning', () => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
     const schedule = page.getByRole('button', { name: /automatic decommissioning/i }).first()
     await expect(schedule.or(emptyState)).toBeVisible({ timeout: 10000 })
-    if (await emptyState.isVisible()) { test.skip(); return }
+    requireSeeded(!(await emptyState.isVisible()), 'no infrastructure element on /infrastructure')
 
     await schedule.click()
     const dialog = page.locator('dialog[open]')
@@ -362,7 +373,7 @@ test.describe('Infrastructure scheduled decommissioning', () => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
     const schedule = page.getByRole('button', { name: /automatic decommissioning/i }).first()
     await expect(schedule.or(emptyState)).toBeVisible({ timeout: 10000 })
-    if (await emptyState.isVisible()) { test.skip(); return }
+    requireSeeded(!(await emptyState.isVisible()), 'no infrastructure element on /infrastructure')
 
     await schedule.click()
     let dialog = page.locator('dialog[open]')
@@ -387,7 +398,7 @@ test.describe('Infrastructure scheduled decommissioning', () => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
     const schedule = page.getByRole('button', { name: /automatic decommissioning/i }).first()
     await expect(schedule.or(emptyState)).toBeVisible({ timeout: 10000 })
-    if (await emptyState.isVisible()) { test.skip(); return }
+    requireSeeded(!(await emptyState.isVisible()), 'no infrastructure element on /infrastructure')
 
     await schedule.click()
     const dialog = page.locator('dialog[open]')
@@ -414,7 +425,7 @@ test.describe('Infrastructure detail', () => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
     const firstRow = page.getByRole('link', { name: /^reorder\b/i }).first()
     await expect(firstRow.or(emptyState)).toBeVisible({ timeout: 10000 })
-    if (await emptyState.isVisible()) { test.skip(); return }
+    requireSeeded(!(await emptyState.isVisible()), 'no infrastructure element on /infrastructure')
 
     // The product name in the row, not the Reorder link beside it.
     await page.locator('a[href^="/infrastructure/"]').first().click()
@@ -425,7 +436,7 @@ test.describe('Infrastructure detail', () => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
     const link = page.locator('a[href^="/infrastructure/"]').first()
     await expect(link.or(emptyState)).toBeVisible({ timeout: 10000 })
-    if (await emptyState.isVisible()) { test.skip(); return }
+    requireSeeded(!(await emptyState.isVisible()), 'no infrastructure element on /infrastructure')
 
     await link.click()
     await expect(page.getByRole('heading', { name: /^outputs$/i })).toBeVisible({ timeout: 10000 })
@@ -439,7 +450,7 @@ test.describe('Infrastructure detail', () => {
     const emptyState = page.getByText(/no infrastructure elements yet/i)
     const link = page.locator('a[href^="/infrastructure/"]').first()
     await expect(link.or(emptyState)).toBeVisible({ timeout: 10000 })
-    if (await emptyState.isVisible()) { test.skip(); return }
+    requireSeeded(!(await emptyState.isVisible()), 'no infrastructure element on /infrastructure')
 
     await link.click()
     await expect(page.getByRole('heading', { name: /^parameters$/i })).toBeVisible({ timeout: 10000 })

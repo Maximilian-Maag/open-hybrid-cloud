@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { InfrastructureElement } from '@open-hybrid-cloud/types'
+import type { InfrastructureElement } from '@infrashelf/types'
 import { post } from '@/lib/api'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'

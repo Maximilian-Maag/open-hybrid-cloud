@@ -1,11 +1,20 @@
-# Sample GitLab CI/CD pipeline for Open Hybrid Cloud
+# Sample GitLab CI/CD pipeline for InfraShelf
 #
 # Copy this file to your infrastructure repository as .gitlab-ci.yml.
 # The portal triggers this pipeline via the GitLab Pipeline Trigger API and
 # reads results back via the GitLab webhook → /api/webhooks/gitlab/pipeline.
 #
 # Required CI/CD variables (set in GitLab → Settings → CI/CD → Variables):
-#   TF_VAR_gitlab_token  — GitLab personal/project access token for remote state reads
+#   GITLAB_STATE_TOKEN     — access token for the GitLab-managed OpenTofu state
+#                            API. Mark it MASKED, and do not mark it PROTECTED
+#                            unless every ref the portal triggers is protected —
+#                            a protected variable is absent from the job
+#                            otherwise, which fails exactly like not setting it.
+#   GITLAB_STATE_USERNAME  — the account the token belongs to. A PERSONAL access
+#                            token wants your GitLab username; a PROJECT or GROUP
+#                            access token wants the token's NAME. Defaults to
+#                            `gitlab-ci-token`, which is correct only for
+#                            CI_JOB_TOKEN — see the note by `tofu init` below.
 #
 # Variables injected by the portal on every trigger:
 #   ORDER_ID    — webshop order ID (provisioning)
@@ -22,6 +31,12 @@ variables:
   # GitLab managed Terraform/OpenTofu HTTP backend — no external state storage needed
   TF_STATE_NAME: "${CI_PROJECT_NAME}-${CI_COMMIT_REF_SLUG}"
   TF_ADDRESS: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
+  # Handed to templates that read an upstream step's state with
+  # `terraform_remote_state`, which authenticates against the same API and so
+  # needs the same token. Promoted to a TF_VAR here rather than in each template,
+  # so a template declares `variable "gitlab_state_token"` and nothing else.
+  TF_VAR_gitlab_state_token: "${GITLAB_STATE_TOKEN}"
+  TF_VAR_gitlab_state_username: "${GITLAB_STATE_USERNAME:-gitlab-ci-token}"
 
 # ── Shared base ────────────────────────────────────────────────────────────────
 
@@ -38,14 +53,50 @@ variables:
       domain   = "${DOMAIN:-}"
       size     = "${SIZE:-small}"
       EOF
+    # Fail with the name of what is missing, rather than with a symptom.
+    #
+    # Without this, an absent token reaches `tofu init` as an empty password and
+    # the whole pipeline dies on
+    #
+    #     Error: Error refreshing state
+    #     HTTP remote state endpoint requires auth
+    #
+    # which reads as an expired credential and sends you looking at GitLab's
+    # token settings. It is what a portal-triggered deploy reports today when
+    # GITLAB_STATE_TOKEN is unset, or is PROTECTED while the triggered ref is
+    # not — in both cases the variable is simply not in the job.
+    - |
+      if [ -z "${GITLAB_STATE_TOKEN}" ]; then
+        echo "GITLAB_STATE_TOKEN is not set in this job." >&2
+        echo "The GitLab-managed OpenTofu state API needs an access token with 'api' scope." >&2
+        echo "Set it under Settings → CI/CD → Variables (masked)." >&2
+        echo "If it IS set, check it is not marked Protected while this ref is unprotected." >&2
+        exit 1
+      fi
     # Initialise OpenTofu with the GitLab HTTP backend for remote state.
+    #
+    # NOT CI_JOB_TOKEN, which is what this used to send, and which does not
+    # authenticate against the state API on portal-triggered deploys: they fail
+    # at `tofu init` with "HTTP remote state endpoint requires auth".
+    #
+    # Whether a job token is accepted at all depends on the project's job-token
+    # access settings and on who owns the trigger, so it is not a credential this
+    # template can rely on being granted — and it dies with its job, so a state
+    # can never be inspected or recovered by hand with the same credential the
+    # pipeline used. A dedicated token with `api` scope is the supported way in.
+    #
+    # The username is not decoration: GitLab authenticates the token AS an
+    # account. `gitlab-ci-token` is the account name that pairs with
+    # CI_JOB_TOKEN specifically, so it is the wrong one for any other token, and
+    # the failure is the same "requires auth" with a token that is perfectly
+    # valid.
     - |
       tofu init \
         -backend-config="address=${TF_ADDRESS}" \
         -backend-config="lock_address=${TF_ADDRESS}/lock" \
         -backend-config="unlock_address=${TF_ADDRESS}/lock" \
-        -backend-config="username=gitlab-ci-token" \
-        -backend-config="password=${CI_JOB_TOKEN}" \
+        -backend-config="username=${GITLAB_STATE_USERNAME:-gitlab-ci-token}" \
+        -backend-config="password=${GITLAB_STATE_TOKEN}" \
         -backend-config="lock_method=POST" \
         -backend-config="unlock_method=DELETE"
   # Only run on portal-triggered pipelines — not on branch pushes

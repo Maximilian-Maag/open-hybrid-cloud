@@ -97,12 +97,31 @@ export const settleOrderIfComplete = async (
 
   await recordOutputs(order, infraElements)
 
-  // Compare-and-swap: only the caller that flips provisioning → completed runs
-  // the terminal effects, so concurrent final events don't double-notify.
+  /*
+   * Compare-and-swap on what was DECIDED, not merely on the status (#195,
+   * finding 7).
+   *
+   * `isSettled` above reads a snapshot, and `recordOutputs` then makes one
+   * network call per element — a gap #175 made proportional to quantity. In it,
+   * a duplicate or `canceled` event can flip the order to `failed` and mail the
+   * customer, and an admin can hit Retry, claiming `failed → provisioning`. On
+   * `status` alone this caller then wakes, sees `provisioning` — the RETRY's —
+   * completes the order, mails "ready", and stamps the PREVIOUS run's Terraform
+   * outputs onto the elements. The retry's own pipelines report into an order
+   * that is already terminal and are ignored.
+   *
+   * Adding `pipeline_status` to the predicate closes it: the retry rewrites that
+   * column, so the swap matches nothing and this caller returns false, which is
+   * exactly what it does for any other lost race. Compared as jsonb rather than
+   * text, so key order cannot make two equal snapshots miss each other.
+   */
+  const decided = JSON.stringify(tracking.pipelineStatus)
   const completed = await db
     .update(orders)
     .set({ status: 'completed', updatedAt: new Date() })
-    .where(sql`${orders.id} = ${order.id} AND ${orders.status} = 'provisioning'`)
+    .where(
+      sql`${orders.id} = ${order.id} AND ${orders.status} = 'provisioning' AND ${orders.pipelineStatus} = ${decided}::jsonb`,
+    )
     .returning({ id: orders.id })
   if (!completed.length) return false
 
@@ -218,11 +237,16 @@ export const settleElementIfComplete = async (
 ): Promise<boolean> => {
   if (!isSettled(tracking)) return false
 
+  // The same shape as the order swap above, and for the same reason (#195,
+  // finding 7). The window here is smaller — no per-element network call sits
+  // between the decision and the swap — but a re-triggered teardown rewrites
+  // `pipeline_status` just the same, and a stale caller must lose.
+  const decidedForElement = JSON.stringify(tracking.pipelineStatus)
   const done = await db
     .update(infrastructureElements)
     .set({ status: 'decommissioned' })
     .where(
-      sql`${infrastructureElements.id} = ${infra.id} AND ${infrastructureElements.status} = 'decommissioning'`,
+      sql`${infrastructureElements.id} = ${infra.id} AND ${infrastructureElements.status} = 'decommissioning' AND ${infrastructureElements.pipelineStatus} = ${decidedForElement}::jsonb`,
     )
     .returning({ id: infrastructureElements.id })
   if (!done.length) return false

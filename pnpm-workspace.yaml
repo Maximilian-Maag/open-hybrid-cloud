@@ -16,8 +16,16 @@ overrides:
   #   undici    >=7.29.0  CVE-2026-15157 / -14643 / -16729 / -16728
   #   @auth/core >=0.41.3 CVE-2026-73419  OAuth state/nonce/PKCE cookies not
   #                                       bound to the provider that set them
-  #   qs        >=6.15.2  GHSA (medium)   qs.stringify crashes on a null/undefined
-  #                                       prototype, a remotely triggerable DoS
+  #   qs        >=6.16.0  CVE-2026-82562  array-limit bypass via bracket-key
+  #                                       comma parsing
+  #             (also)    CVE-2026-82417  DoS via attacker-controlled isBuffer
+  #   fast-uri  >=3.1.6   CVE-2026-75899  SSRF via repeated hostname
+  #                                       percent-decoding
+  #             (also)    CVE-2026-75931  host confusion, skipped IDN
+  #                                       canonicalization on scheme-relative refs
+  #             (also)    CVE-2026-75975  SSRF via malformed IPv6 normalization
+  #             (also)    CVE-2026-76172  host confusion via percent-encoded
+  #                                       scheme normalization
   postcss: ">=8.5.23"
   # Constrained to the 7.x line: 7.29.0 is the patched release, and a major bump
   # to 8.x on a transitive fetch dependency is not something a security patch
@@ -25,9 +33,19 @@ overrides:
   undici: ">=7.29.0 <8"
   "@auth/core": ">=0.41.3"
   esbuild: ">=0.25.0"
-  # Reached only through @stryker-mutator/core -> typed-rest-client, so it is in
-  # the mutation-testing toolchain and not in either shipped app — no request
-  # from a user ever reaches this `qs`. Pinned anyway: a dev-only advisory is
-  # still an advisory, the fix is a patch release, and leaving one open trains
-  # people to skim the list.
-  qs: ">=6.15.2"
+  # Both of these are reached only through the mutation-testing toolchain —
+  # @stryker-mutator/core -> typed-rest-client for `qs`, and the same core -> ajv
+  # for `fast-uri`. Neither is in either shipped app, so no request from a user
+  # ever reaches them. Pinned anyway: a dev-only advisory is still an advisory,
+  # both fixes are patch releases, and leaving one open trains people to skim the
+  # list.
+  #
+  # `qs` was already pinned at >=6.15.2 for an earlier stringify DoS; 6.15.3
+  # satisfied that and is still vulnerable to the two 2026-82xxx advisories, so
+  # the floor moves rather than a new entry appearing.
+  qs: ">=6.16.0"
+  # Constrained to the 3.x line for the same reason as undici: ajv declares
+  # `fast-uri: ^3.0.1`, 3.1.6 is the patched release on that line, and a
+  # security patch should not be the thing that drags a major bump into a
+  # transitive dependency its parent never asked for.
+  fast-uri: ">=3.1.6 <4"

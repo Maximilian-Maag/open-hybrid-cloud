@@ -18,7 +18,7 @@ import {
   check,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-import type { StackStep } from '@open-hybrid-cloud/types'
+import type { StackStep } from '@infrashelf/types'
 import type { ProductSnapshot } from '@/lib/services/snapshot'
 
 const bytea = customType<{ data: Buffer }>({
@@ -571,6 +571,11 @@ export const deploymentEnvironments = pgTable('deployment_environments', {
   // legacy 0004 backfill from webhook_token made that possible, so migration
   // 0006 rotates duplicates and enforces uniqueness.
   callbackSecret: text('callback_secret').notNull().unique(),
+  // Whether deployment windows bind this environment (#330). Default FALSE, and
+  // that is the load-bearing part: switching windows on globally at upgrade
+  // would stop every sandbox deploy after 18:00 for a deployment that never
+  // asked for them. Production opts in; dev and test carry on.
+  respectsDeploymentWindows: boolean('respects_deployment_windows').notNull().default(false),
 })
 
 export const productEnvironments = pgTable('product_environments', {
@@ -730,7 +735,18 @@ export const orders = pgTable('orders', {
   productId: bigint('product_id', { mode: 'number' }).notNull().references(() => products.id, { onDelete: 'cascade' }),
   environmentId: bigint('environment_id', { mode: 'number' }).notNull().references(() => deploymentEnvironments.id),
   userId: bigint('user_id', { mode: 'number' }).notNull().references(() => users.id),
-  status: text({ enum: ['pending', 'provisioning', 'completed', 'failed', 'rejected'] }).notNull().default('pending'),
+  /*
+   * 'scheduled' sits between approval and provisioning (#330): an admin has
+   * decided, but the environment respects deployment windows and none is open.
+   * A lifecycle state, not a property — which is why it belongs here and drift
+   * did not (see `lastRefreshOutcome`).
+   */
+  status: text({ enum: ['pending', 'scheduled', 'provisioning', 'completed', 'failed', 'rejected'] }).notNull().default('pending'),
+  /** When the window that will release it opens. NULL unless it is waiting. */
+  scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
+  /** Root deployed it before its window. Who, and when — both or neither. */
+  windowOverrideBy: bigint('window_override_by', { mode: 'number' }).references(() => users.id),
+  windowOverrideAt: timestamp('window_override_at', { withTimezone: true }),
   parameters: jsonb().$type<Record<string, string>>().notNull().default({}),
   costCenterId: bigint('cost_center_id', { mode: 'number' }).references(() => costCenters.id),
   // Ordered as a time-boxed trial (issue #1). Recorded on the ORDER rather than
@@ -782,6 +798,25 @@ export const orders = pgTable('orders', {
   index('orders_status_created_at_idx').on(t.status, t.createdAt),
   // The cost report's project + date-range filter.
   index('orders_project_created_at_idx').on(t.projectId, t.createdAt.desc().nullsFirst()),
+  /*
+   * The sweep asks one question every time it runs: which scheduled orders are
+   * due? Partial, because 'scheduled' is a handful of rows out of every order
+   * ever placed — and migration 0040, declared here too for the reason the
+   * indexes above give.
+   */
+  index('orders_scheduled_for_idx').on(t.scheduledFor).where(sql`${t.status} = 'scheduled'`),
+  /*
+   * Only a scheduled order has a time to be released at, and only a released one
+   * has an overrider. A row carrying either without the other is a bug that
+   * surfaces as an order the sweep picks up for ever — see 0040. It is
+   * load-bearing in the tests too: a `pending` order with a `scheduled_for`
+   * cannot be constructed at all, which is the point.
+   */
+  check(
+    'orders_scheduled_consistency',
+    sql`(${t.scheduledFor} IS NULL OR ${t.status} IN ('scheduled', 'provisioning', 'completed', 'failed'))
+        AND (${t.windowOverrideBy} IS NULL) = (${t.windowOverrideAt} IS NULL)`,
+  ),
 ])
 
 // Items a user has collected but not yet ordered (issue #28).
@@ -889,6 +924,22 @@ export const infrastructureElements = pgTable('infrastructure_elements', {
   // becomes 'decommissioned' once EVERY id in pipeline_id succeeded.
   pipelineStatus: jsonb('pipeline_status').$type<Record<string, string>>().notNull().default({}),
   outputs: jsonb().$type<Record<string, string>>().notNull().default({}),
+  /*
+   * What the scheduled drift report last said about this element (#108).
+   *
+   * All nullable, and that is the point: NULL means "never heard", which is a
+   * different thing from "checked and clean". An element whose reports stopped
+   * arriving must not read as healthy — that is the same confusion #108 opens
+   * with, where `active` means "we once started a pipeline for this".
+   *
+   * There is no outbound pipeline tracking here because the portal does not
+   * trigger the refresh. A single scheduled pipeline POSTs what it found.
+   */
+  lastRefreshedAt: timestamp('last_refreshed_at', { withTimezone: true }),
+  lastRefreshOutcome: text('last_refresh_outcome', { enum: ['clean', 'drifted', 'locked', 'error'] }),
+  /** Set when drift is found and CLEARED when a later report is clean, so it describes current drift. */
+  driftDetectedAt: timestamp('drift_detected_at', { withTimezone: true }),
+  driftSummary: jsonb('drift_summary').$type<DriftSummary>(),
   /**
    * Why the LAST attempt to read the Terraform outputs did not produce any (#215).
    *
@@ -997,10 +1048,112 @@ export const branding = pgTable('branding', {
   logoMime: text('logo_mime'),
   primaryColor: text('primary_color').notNull().default('#131921'),
   secondaryColor: text('secondary_color').notNull().default('#febd69'),
-  shopName: text('shop_name').notNull().default('Open Hybrid Cloud'),
+  shopName: text('shop_name').notNull().default('InfraShelf'),
   shopSubtitle: text('shop_subtitle').notNull().default(''),
   imprintText: text('imprint_text').notNull().default(''),
 })
+
+/**
+ * When provisioning may run (#330).
+ *
+ * `startMinute` is minutes past local midnight in the zone
+ * `app_config.deploymentTimeZone` names — 08:00 is 480. A number rather than a
+ * `time` on purpose: it is arithmetic, not an instant, and a `time` column
+ * invites a reader to think it carries a zone when the whole difficulty is that
+ * it does not.
+ */
+export const deploymentWindows = pgTable('deployment_windows', {
+  id: bigserial({ mode: 'number' }).primaryKey(),
+  startMinute: integer('start_minute').notNull(),
+  durationMinutes: integer('duration_minutes').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  // `validateWindows` says the same thing in TypeScript, and says it better —
+  // it can also refuse an overlap, which one row cannot see. This is here for
+  // what TypeScript cannot promise: a row written by a migration, a fixture or
+  // a hand at psql is still a window that fits inside one day.
+  check('deployment_windows_within_day', sql`${t.startMinute} >= 0 AND ${t.startMinute} <= 1439 AND ${t.durationMinutes} > 0 AND ${t.startMinute} + ${t.durationMinutes} <= 1440`),
+])
+
+/**
+ * Non-working days, cached from the configured feed.
+ *
+ * Cached rather than fetched when an order is decided: whether a deployment may
+ * run must not depend on a third party answering. `source` is what makes a
+ * refresh safe — 'feed' rows are replaced wholesale, 'manual' rows survive it,
+ * so a company shutdown no public feed knows about and a public holiday the
+ * company works through are both expressible.
+ */
+export const holidays = pgTable('holidays', {
+  /** A local date in the deployment zone, not an instant. */
+  date: date().primaryKey(),
+  name: text().notNull(),
+  source: text({ enum: ['feed', 'manual'] }).notNull().default('feed'),
+  observed: boolean().notNull().default(true),
+}, (t) => [
+  // The Drizzle `enum` is a TypeScript type, not a database one; a refresh that
+  // wrote any other word would be accepted and then never matched again.
+  check('holidays_source', sql`${t.source} IN ('feed', 'manual')`),
+])
+
+/** What the holiday feed last did, so the admin UI can say how old the answer is. */
+export const holidayFeedState = pgTable('holiday_feed_state', {
+  id: integer().primaryKey().default(1),
+  url: text(),
+  lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+}, (t) => [
+  // One feed, so one row. Same shape as `branding` and `app_config`.
+  check('holiday_feed_state_singleton', sql`${t.id} = 1`),
+])
+
+/** One drifted resource, as the reporting pipeline saw it. */
+export interface DriftedResource {
+  /** Terraform address, e.g. `module.vm.linode_instance.this`. */
+  address: string
+  /** `update`, `delete`, `create` — what a plan would do to reconcile it. */
+  action: string
+}
+
+export interface DriftSummary {
+  resources: DriftedResource[]
+}
+
+/**
+ * Terraform states in the backend that no element claims (#108).
+ *
+ * NOT #109. That is about resources created outside Terraform altogether, which
+ * no state file mentions and which finding would need the modules to tag —
+ * `infra-templates` currently filters ORDER_ID and INFRA_ID out of the TF_VAR
+ * export, so nothing provisioned today carries either.
+ *
+ * This is the narrower case that IS detectable: a state file the reporting
+ * pipeline can see and the portal cannot account for — an element deleted from
+ * the portal while its infrastructure stayed up, or a stack renamed.
+ */
+export const unclaimedStates = pgTable('unclaimed_states', {
+  stateKey: text('state_key').primaryKey(),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  outcome: text({ enum: ['clean', 'drifted', 'locked', 'error'] }),
+  summary: jsonb().$type<DriftSummary>(),
+})
+
+/**
+ * When the portal last heard from the reporting pipeline at all.
+ *
+ * Per-element timestamps cannot answer this: if the pipeline stops, every
+ * element simply stops being updated and nothing says why. One row.
+ */
+export const driftReportState = pgTable('drift_report_state', {
+  id: integer().primaryKey().default(1),
+  lastReportAt: timestamp('last_report_at', { withTimezone: true }),
+  elementsReported: integer('elements_reported').notNull().default(0),
+  unclaimedReported: integer('unclaimed_reported').notNull().default(0),
+}, (t) => [
+  check('drift_report_state_singleton', sql`${t.id} = 1`),
+])
 
 export const appConfig = pgTable('app_config', {
   id: integer().primaryKey().default(1),
@@ -1014,6 +1167,10 @@ export const appConfig = pgTable('app_config', {
   aiEndpoint: text('ai_endpoint'),
   aiApiKey: text('ai_api_key'),
   aiModel: text('ai_model'),
+  // The zone `deployment_windows.start_minute` is read in. UTC until an
+  // operator says otherwise — a window means nothing without a zone, and no
+  // other default is defensible.
+  deploymentTimeZone: text('deployment_time_zone').notNull().default('UTC'),
 })
 
 export type User = typeof users.$inferSelect

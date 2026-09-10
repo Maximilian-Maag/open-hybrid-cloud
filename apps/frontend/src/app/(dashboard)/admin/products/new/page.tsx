@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import type { Role, Category, DeploymentEnvironment } from '@open-hybrid-cloud/types'
+import type { Role, Category, DeploymentEnvironment } from '@infrashelf/types'
 import { get } from '@/lib/serverApi'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'

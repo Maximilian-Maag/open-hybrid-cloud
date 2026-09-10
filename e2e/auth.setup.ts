@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import {
   rootEmail,
   rootPassword,
+  rootStorageStateFile,
   totpCode,
   totpSecretFile,
   totpStepOf,
@@ -11,7 +12,9 @@ import {
   completeSecondFactor,
 } from './helpers'
 
-export const rootAuthFile = path.join(__dirname, '.auth/root.json')
+// Re-exported under its original name so nothing that referred to it has to
+// change; the path itself now lives in helpers, where a spec can also reach it.
+export const rootAuthFile = rootStorageStateFile
 
 // Three times Playwright's 30s default. This one test pays the whole suite's
 // cold-start bill: `next dev` compiles /login, /api/login-challenge, the NextAuth

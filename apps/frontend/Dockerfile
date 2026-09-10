@@ -37,6 +37,12 @@ ENV NODE_ENV=production
 # copied to the same nested path, not to the image root.
 COPY --from=builder /app/apps/frontend/.next/standalone/. .
 COPY --from=builder /app/apps/frontend/.next/static ./apps/frontend/.next/static
+# public/ as well, and it is NOT covered by either line above: standalone output
+# deliberately excludes it, so everything in it 404s in production while working
+# perfectly in development. That is how the service worker shipped dead — /sw.js
+# was absent from the image, the worker never registered, and #359 rode on it
+# (issue #360).
+COPY --from=builder /app/apps/frontend/public ./apps/frontend/public
 
 EXPOSE 3000
 

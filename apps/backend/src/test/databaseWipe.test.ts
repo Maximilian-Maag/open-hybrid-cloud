@@ -81,15 +81,67 @@ beforeEach(async () => {
  * slowest statement in it and the likeliest to be blocked by a peer worker; a red
  * suite over cleanup that does not matter is exactly the kind of failure that
  * teaches everyone to re-run rather than to read.
+ *
+ * That applied to the DROP and not to the two `end()` calls around it, which is
+ * how this file first failed a green run: all four tests passed, then
+ * `probe.end()` exceeded its 5-second grace and took the file down with it.
+ *
+ * Catching was still not enough. The next green run failed the same way with
+ * the whole hook timing out at two minutes, because the thing that goes wrong
+ * under a loaded suite is not a rejection but a WAIT: DROP DATABASE blocks on a
+ * peer worker's connection and simply never returns. A `try` does not bound a
+ * hang.
+ *
+ * So every step is bounded as well as caught. Cleanup that cannot finish in a
+ * few seconds is cleanup that has to be abandoned — `make test-db-prune` sweeps
+ * the name, and a red suite over tidiness is exactly the failure that teaches
+ * everyone to re-run rather than to read.
  */
-afterAll(async () => {
-  await probe?.end({ timeout: 5 })
+const GRACE_MS = 5_000
+
+/**
+ * Best-effort: bounded, caught, and never a reason for the file to fail.
+ *
+ * Answers whether the step actually finished, because the caller has to know.
+ * `Promise.race` does not cancel the loser — a timed-out query is still pending
+ * on its connection — so a graceful close afterwards would sit and wait for the
+ * very thing that just proved it will not finish.
+ */
+const bestEffort = async (what: string, run: () => Promise<unknown>): Promise<boolean> => {
+  let timer: NodeJS.Timeout | undefined
   try {
-    await admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`)
+    await Promise.race([
+      run(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`did not finish within ${GRACE_MS}ms`)), GRACE_MS)
+        // Nothing should stay alive on account of a cleanup timer.
+        timer.unref?.()
+      }),
+    ])
+    return true
   } catch (e) {
-    console.warn(`[databaseWipe] could not drop the probe database ${PROBE}; \`make test-db-prune\` will: ${e}`)
+    console.warn(`[databaseWipe] ${what}: ${e instanceof Error ? e.message : String(e)}`)
+    return false
+  } finally {
+    if (timer) clearTimeout(timer)
   }
-  await admin.end({ timeout: 5 })
+}
+
+afterAll(async () => {
+  await bestEffort('the probe connection did not close; the worker tears the pool down anyway', () =>
+    probe?.end({ timeout: 5 }) ?? Promise.resolve(),
+  )
+  const dropped = await bestEffort(
+    `could not drop the probe database ${PROBE}; \`make test-db-prune\` will`,
+    () => admin.unsafe(`DROP DATABASE IF EXISTS "${PROBE}" WITH (FORCE)`),
+  )
+  // `timeout: 0` destroys rather than drains. Only reached when the DROP above
+  // is still pending on this pool, so draining would mean waiting out a second
+  // grace period for a query already abandoned — the whole cleanup would cost
+  // twice GRACE_MS while claiming to cost one.
+  await bestEffort('the admin connection did not close; the worker tears the pool down anyway', () =>
+    admin.end({ timeout: dropped ? 5 : 0 }),
+  )
 }, DB_HOOK_TIMEOUT_MS)
 
 const publicTables = async (db: postgres.Sql): Promise<number> => {

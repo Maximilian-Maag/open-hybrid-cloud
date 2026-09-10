@@ -72,3 +72,78 @@ test_alert_query_is_scoped_is_silent_when_the_suite_is_clean if {
 	denied := policy.deny with input as {"unscopedAlertQueries": []}
 	count(denied) == 0
 }
+
+# ---------------------------------------------------------------------------
+# rule 19 — a skip says why it skipped
+# ---------------------------------------------------------------------------
+
+skips(list) := {"skipCalls": list}
+
+test_a_bare_skip_is_warned if {
+	facts := skips([{
+		"file": "e2e/catalog.spec.ts",
+		"line": 95,
+		"text": "test.skip()",
+		"hasReason": false,
+	}])
+	denied := policy.deny with input as facts
+	some v in denied
+	v.rule == "skip_says_why"
+	v.file == "e2e/catalog.spec.ts"
+	v.line == 95
+	contains(v.detail, "skips without a reason")
+	contains(v.why, "#332")
+}
+
+test_a_skip_with_a_reason_is_not_warned if {
+	facts := skips([{
+		"file": "e2e/a11y.spec.ts",
+		"line": 1182,
+		"text": "test.skip(true, 'nothing on /orders to open')",
+		"hasReason": true,
+	}])
+	denied := policy.deny with input as facts
+	count([v | some v in denied; v.rule == "skip_says_why"]) == 0
+}
+
+# The message has to quote the call, because the fix is to edit that line and a
+# spec can hold fifteen of these.
+test_the_message_quotes_the_call if {
+	facts := skips([{
+		"file": "e2e/orders.spec.ts",
+		"line": 92,
+		"text": "test.skip()",
+		"hasReason": false,
+	}])
+	denied := policy.deny with input as facts
+	some v in denied
+	contains(v.detail, "test.skip()")
+}
+
+# Every one of them, not just the first: #332 counts 63 across nine files, and a
+# rule that reported one per run would take 63 runs to clear.
+test_every_unreasoned_skip_is_warned if {
+	facts := skips([
+		{"file": "a.spec.ts", "line": 1, "text": "test.skip()", "hasReason": false},
+		{"file": "a.spec.ts", "line": 2, "text": "test.skip()", "hasReason": false},
+		{"file": "b.spec.ts", "line": 3, "text": "test.skip()", "hasReason": false},
+	])
+	denied := policy.deny with input as facts
+	count([v | some v in denied; v.rule == "skip_says_why"]) == 3
+}
+
+# It denies now. It shipped as a warn because 63 violations existed; #332 cleared
+# them, and a rule that only reports is a rule the sixty-fourth skip walks past.
+test_an_unreasoned_skip_fails_the_build if {
+	facts := skips([{"file": "a.spec.ts", "line": 1, "text": "test.skip()", "hasReason": false}])
+	denied := policy.deny with input as facts
+	count([v | some v in denied; v.rule == "skip_says_why"]) == 1
+}
+
+# And it is no longer a warn — a rule that is both would report every violation
+# twice and make the counts in the summary wrong.
+test_an_unreasoned_skip_is_not_also_warned if {
+	facts := skips([{"file": "a.spec.ts", "line": 1, "text": "test.skip()", "hasReason": false}])
+	warned := policy.warn with input as facts
+	count([v | some v in warned; v.rule == "skip_says_why"]) == 0
+}

@@ -4,7 +4,7 @@ import { parameters, pipelineStacks, type Parameter } from '@/lib/db/schema'
 import { db } from '@/lib/db/client'
 import { and, eq } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
-import { isReservedCiVariable } from '@/lib/ci/reserved'
+import { isReservedCiVariable, isPipelineSuppliedVariable } from '@/lib/ci/reserved'
 
 type ParsedParameter = Omit<Parameter, 'id' | 'scope' | 'scopeId' | 'environmentId' | 'sizeValues'>
 
@@ -200,12 +200,6 @@ export const scanTemplate = async (
 }
 
 /**
- * Variables the pipeline supplies to itself. Not things a person chooses, and a
- * parameter definition for one would be a field the run overwrites.
- */
-const CI_INTERNAL_VARS = new Set(['ci_api_url', 'ci_project_id', 'ci_job_token', 'vm_state_name'])
-
-/**
  * The variables from a scan that may become product parameters.
  *
  * Three exclusions, and the third is the one with teeth: a template declaring
@@ -216,7 +210,7 @@ const CI_INTERNAL_VARS = new Set(['ci_api_url', 'ci_project_id', 'ci_job_token',
  */
 export const importableVariables = (scan: TemplateScan): ScannedVariable[] =>
   scan.variables.filter(
-    (v) => !v.sensitive && !CI_INTERNAL_VARS.has(v.name) && !isReservedCiVariable(v.name),
+    (v) => !v.sensitive && !isPipelineSuppliedVariable(v.name) && !isReservedCiVariable(v.name),
   )
 
 /**

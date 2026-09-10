@@ -1,14 +1,22 @@
 # Test Plan & Recommendations — 2026-08-12
 
-Recommended tests across the three levels. Snapshots below are the **pre-audit
-baseline** that motivated this plan; the **current** column reflects what this PR
-has since implemented.
+Recommended tests across the three levels. The **baseline** column is the
+pre-audit snapshot that motivated this plan and is frozen; the **at the time**
+column is what the PR this document accompanied left behind.
 
-| Level | Pre-audit baseline | Current (this PR) |
-|-------|--------------------|-------------------|
-| Backend unit/integration (`apps/backend`, vitest + real Postgres) | 94 files / ~719 tests — **strong** | **747 tests** |
-| Frontend unit/component (`apps/frontend`, vitest + jsdom + Testing Library) | 2 files / ~20 tests — **major gap** (no component/form/hook tests) | **53 tests / 11 files** (UI primitives, StatusBadge, AuditTable, i18n, locale added) |
-| E2E (`e2e`, Playwright, single worker) | 24 specs — **broad** | 24 specs (unchanged) |
+Neither is current, and the third column says how to ask. A number written down
+here is stale the week after — the ones below had drifted by 1.3x to 15x before
+anyone noticed — so the command is the part worth keeping.
+
+| Level | Pre-audit baseline | At the time of this plan | Now (2026-09-05) |
+|-------|--------------------|--------------------------|------------------|
+| Backend unit/integration (`apps/backend`, vitest + real Postgres) | 94 files / ~719 tests | 747 tests | **2,963 tests / 192 files** — `pnpm --filter backend test` |
+| Frontend unit/component (`apps/frontend`, vitest + jsdom + Testing Library) | 2 files / ~20 tests — **major gap** | 53 tests / 11 files | **890 tests / 74 files** — `pnpm --filter frontend test` |
+| E2E (`e2e`, Playwright, four shards) | 24 specs | 24 specs (unchanged) | **28 specs** — `ls e2e/*.spec.ts`; `make test-e2e` |
+
+The E2E suite no longer runs single-worker: it is sharded across four runners,
+each with its own Postgres and its own demo seed, and a following job merges the
+four blob reports into the one the skip budget judges.
 
 Legend: **[NEW]** no coverage at audit time · **[EXT]** extend an existing test ·
 **✅ DONE** implemented in this PR.
@@ -116,7 +124,7 @@ Almost nothing is tested. Establish component testing with a small render helper
 
 ---
 
-## 3. E2E (Playwright) — extend the existing 24 specs
+## 3. E2E (Playwright) — extend the existing specs
 
 Coverage is broad; add the flows the fixes introduced and cross-cutting concerns.
 
@@ -127,9 +135,32 @@ Coverage is broad; add the flows the fixes introduced and cross-cutting concerns
   end to end.
 - **Order validation** ([NEW] `order-validation.spec.ts`): submitting with a
   required parameter empty shows a validation error and does not create an order.
-- **Authorization** ([NEW] `authz.spec.ts`): a project_manager cannot see/act on
-  another PM's project, orders, or infrastructure (IDOR guard); admin-only pages
-  redirect/403 for a PM. (Add a second seeded non-root user in `global-setup`.)
+- **Authorization** (`roles.spec.ts` — DONE, planned here as `authz.spec.ts`): a
+  permission matrix asserted as each role, in three parts — every endpoint's
+  guard (allowed vs. 403), every page the role's nav offers rendering its own
+  data, and a page above the role not handing that data over. A project_manager
+  reading another PM's order is covered in `processes.spec.ts`.
+
+  Two notes for anyone extending it. The table is written as the set of roles
+  that ARE allowed, not as a minimum rank, because one endpoint needs "admin but
+  not root": `listDelegations` refuses root in the SERVICE, since the route's
+  `requireRole('admin')` admits it by rank and root does not participate in
+  approval delegation. And the accounts are created at run time through the API
+  rather than seeded — a seeded second user was the plan below, but it cannot
+  cover an admin, whose session only works after the mandatory second-factor
+  enrolment (#197) that `signInAsAccount` walks.
+
+  This is the coverage whose absence let #323 ship: the catalogue asked a
+  root-only route for the category filter, so the shop was an error page for
+  every role except the one the whole suite signs in as.
+- **Process journeys** (`processes.spec.ts` — DONE): the flows that cross
+  accounts, which no single-session spec can see — a project_manager orders and
+  the order WAITS, the orderer cannot approve their own order, an admin finds it
+  in the queue and rejects it with a note the orderer can read, root retires a
+  product and it leaves the shop, root deactivates an account and it can no
+  longer sign in. The post-approval half (CI fired, callback, element active)
+  needs a CI endpoint the suite can answer for and lives in `provisioning.spec.ts`
+  (#157).
 - **Localization** ([NEW] `i18n.spec.ts`): switch language via the switcher →
   `<html lang>` updates, nav/status labels change, cookie persists across reload;
   dates/prices render in the selected locale.
@@ -145,8 +176,14 @@ Coverage is broad; add the flows the fixes introduced and cross-cutting concerns
   effect immediately (send a test mail via Mailpit and assert receipt).
 
 ### E2E infrastructure notes
-- Add a non-root seeded user + a second storage state so authorization specs can
-  run as a project_manager.
+- ~~Add a non-root seeded user + a second storage state so authorization specs
+  can run as a project_manager.~~ Done differently, and deliberately:
+  `helpers.ts` creates each role's account through the API at run time and signs
+  it in from a context with NO stored state. A seeded user and a saved storage
+  state would have been cheaper for a project_manager and no help at all for an
+  admin — a fresh administrative account owes a second factor before its session
+  can reach anything, so the enrolment has to be walked, and a storage state
+  saved once would go stale against a database that is reseeded per run.
 - The dev stack already mocks CI (WireMock) and SMTP (Mailpit) — assert against
   Mailpit's API for email flows and WireMock for CI triggers.
 
@@ -159,7 +196,7 @@ Coverage is broad; add the flows the fixes introduced and cross-cutting concerns
   silently regress.
 - **CI already runs** typecheck, lint, unit/integration (with a Postgres service)
   and e2e — ensure new frontend component tests run in the same `test` job.
-- **Contract tests**: the shared `@open-hybrid-cloud/types` package is the
+- **Contract tests**: the shared `@infrashelf/types` package is the
   frontend/backend contract; consider a lightweight test asserting a sample of API
   responses match the exported types (zod schemas already exist in the backend —
   reuse them).

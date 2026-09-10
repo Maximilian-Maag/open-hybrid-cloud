@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import { type Page } from '@playwright/test'
-import { loginAsRoot, expectNoServerError } from './helpers'
+import { expectNoServerError, loginAsRoot, requireSeeded } from './helpers'
 
 async function goToCatalog(page: Page) {
   await loginAsRoot(page)
@@ -92,7 +92,7 @@ test.describe('Catalog favorites', () => {
     const noProducts = page.getByText(/no products/i)
     const firstStar = page.getByRole('button', { name: /add to favorites|remove from favorites/i }).first()
     await expect(firstStar.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product card on /catalog to carry a favourite toggle')
 
     // aria-pressed carries the state — the fill colour alone would not.
     await expect(firstStar).toHaveAttribute('aria-pressed', /true|false/)
@@ -102,7 +102,7 @@ test.describe('Catalog favorites', () => {
     const noProducts = page.getByText(/no products/i)
     const addStar = page.getByRole('button', { name: /add to favorites/i }).first()
     await expect(addStar.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product card on /catalog to star')
 
     await expect(page.getByRole('region', { name: /my favorites/i })).toBeHidden()
     await addStar.click()
@@ -129,7 +129,7 @@ test.describe('Catalog trial ordering', () => {
     const firstOrder = page.getByRole('link', { name: /^details\b/i }).first()
     const noProducts = page.getByText(/no products/i)
     await expect(firstOrder.or(noProducts).first()).toBeVisible({ timeout: 10000 })
-    if (await noProducts.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noProducts.isVisible()), 'no product on /catalog to open')
 
     await firstOrder.click()
     // The order form's select, not the buy box's: both are labelled "Environment".
@@ -137,7 +137,7 @@ test.describe('Catalog trial ordering', () => {
     await expect(envSelect).toBeVisible({ timeout: 10000 })
 
     const options = await envSelect.locator('option:not([disabled])').count()
-    if (options === 0) { test.skip(); return }
+    requireSeeded(options > 0, 'the order form offers no environment to choose')
     await envSelect.selectOption({ index: 1 })
 
     // Either the offering allows a trial and the toggle explains itself, or it

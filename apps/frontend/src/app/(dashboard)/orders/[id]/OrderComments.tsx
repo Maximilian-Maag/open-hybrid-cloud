@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { OrderComment, CreateOrderCommentRequest } from '@open-hybrid-cloud/types'
+import type { OrderComment, CreateOrderCommentRequest } from '@infrashelf/types'
 import { post, put, del } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'

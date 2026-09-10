@@ -414,8 +414,9 @@ available inside the module.
 
 terraform {
   backend "http" {
-    # All backend config is injected at runtime by base.gitlab-ci.yml
-    # using CI_PROJECT_ID and TF_STATE_NAME.
+    # All backend config is injected at runtime by base.gitlab-ci.yml —
+    # the address from CI_PROJECT_ID and TF_STATE_NAME, the credentials
+    # from GITLAB_STATE_USERNAME and GITLAB_STATE_TOKEN.
   }
 }
 ```
@@ -441,8 +442,8 @@ data "terraform_remote_state" "vm" {
   backend = "http"
   config = {
     address  = "${var.ci_api_url}/projects/${var.ci_project_id}/terraform/state/${var.vm_state_name}"
-    username = "gitlab-ci-token"
-    password = var.ci_job_token
+    username = var.gitlab_state_username
+    password = var.gitlab_state_token
   }
 }
 
@@ -454,7 +455,19 @@ resource "linode_domain_record" "a" {
 }
 ```
 
-`ci_api_url`, `ci_project_id`, `ci_job_token`, and `vm_state_name` are all exported automatically by the base CI — no manual variable wiring required.
+`ci_api_url`, `ci_project_id`, `gitlab_state_username`, `gitlab_state_token` and `vm_state_name` are all exported automatically by the base CI — no manual variable wiring required.
+
+> **Not `CI_JOB_TOKEN`.** A job token does not authenticate against the state
+> API on portal-triggered deploys — whether one is accepted at all depends on the
+> project's job-token access settings and on who owns the trigger, so it is not a
+> credential a template can rely on being granted. Both the backend and this data
+> source come back unauthenticated, and OpenTofu reports it as
+> `Error refreshing state: HTTP remote state endpoint requires auth` — which
+> reads as an expired credential rather than as the wrong kind of one. Set
+> `GITLAB_STATE_TOKEN` (an access token with `api` scope) and, unless it is a
+> personal token belonging to `gitlab-ci-token`, `GITLAB_STATE_USERNAME`
+> alongside it: GitLab authenticates the token AS an account, so a valid token
+> sent under the wrong username fails identically.
 
 ---
 
@@ -576,10 +589,18 @@ Verification
 
 ### Data Model
 
-A new `product_webhooks` table stores an ordered list of webhook endpoints per product+environment combination. The webshop fires them all on order approval or decommission.
+**This shipped.** The section below is written in the future tense because it was
+a proposal when it was drafted; `product_webhooks` has existed since the very
+first migration, `0000_steep_blizzard.sql` — not the `006` the snippet names, and
+`0006_unique_callback_secret.sql` is about something else entirely. The DDL is
+kept because it still describes the shape accurately.
+
+The `product_webhooks` table stores an ordered list of webhook endpoints per
+product+environment combination. The webshop fires them all on order approval or
+decommission.
 
 ```sql
--- migration: 006_product_webhooks.sql
+-- Shipped in 0000_steep_blizzard.sql; this is the shape, not a pending change.
 CREATE TABLE product_webhooks (
     id             BIGSERIAL PRIMARY KEY,
     product_id     BIGINT NOT NULL REFERENCES products(id)  ON DELETE CASCADE,
@@ -615,7 +636,7 @@ VM provisions first (order 10), then DNS and firewall in parallel (both order 20
 Because multiple pipelines run per order, the single `pipeline_id` column is extended to a JSON array:
 
 ```sql
--- included in 006_product_webhooks.sql
+-- shipped in 0000_steep_blizzard.sql alongside the table above, not in a separate migration
 ALTER TABLE orders ALTER COLUMN pipeline_id TYPE JSONB USING
     CASE WHEN pipeline_id = '' THEN '[]'::jsonb
          ELSE jsonb_build_array(pipeline_id)
@@ -627,9 +648,14 @@ The order is considered **completed** when all stored pipeline IDs reach `succes
 
 ### Root UI
 
-The product edit page (`Admin → Products → Edit`) gains a **Webhooks** section per environment where the admin can add, reorder, and delete webhook entries. This replaces the single webhook URL that is currently on the `DeploymentEnvironment`.
+The product edit page (`Admin → Products → Edit`) has a **Webhooks** section per environment where an admin can add, reorder and delete webhook entries.
 
-> **Note:** If `product_webhooks` rows exist for a product+environment, they take precedence over the environment's default `webhook_url`. This keeps existing single-webhook setups working without migration.
+> **Note:** there is no fallback to an environment-level webhook, and the
+> precedence rule this note used to claim never shipped. `hasSomethingToTrigger`
+> (`apps/backend/src/lib/services/orders.ts`) looks for `product_webhooks` rows
+> and for a pipeline stack, and for nothing else — an offering with neither is
+> simply not orderable, and the order is refused with an explanation rather than
+> accepted and left hanging. The two mechanisms are alternatives, not a chain.
 
 ### When to Use Which Pattern
 

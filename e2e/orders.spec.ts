@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot, expectNoServerError, hydrated } from './helpers'
+import { expectNoServerError, hydrated, loginAsRoot, requireSeeded } from './helpers'
 
 test.describe('Orders', () => {
   test.beforeEach(async ({ page }) => {
@@ -89,7 +89,7 @@ test.describe('Order comments', () => {
   }
 
   test('the order detail page carries a comment thread', async ({ page }) => {
-    if (!(await openFirstOrder(page))) { test.skip(); return }
+    requireSeeded(await openFirstOrder(page), 'no order on /orders to open')
 
     await expect(page.getByLabel(/add comment/i)).toBeVisible()
     // Empty box, nothing to post.
@@ -97,7 +97,7 @@ test.describe('Order comments', () => {
   })
 
   test('a posted comment appears immediately and survives a reload', async ({ page }) => {
-    if (!(await openFirstOrder(page))) { test.skip(); return }
+    requireSeeded(await openFirstOrder(page), 'no order on /orders to open')
 
     const body = `e2e comment ${Date.now()}`
     await page.getByLabel(/add comment/i).fill(body)
@@ -123,7 +123,7 @@ test.describe('Order comments', () => {
   })
 
   test('an edited comment is marked as edited', async ({ page }) => {
-    if (!(await openFirstOrder(page))) { test.skip(); return }
+    requireSeeded(await openFirstOrder(page), 'no order on /orders to open')
 
     const body = `e2e edit ${Date.now()}`
     await page.getByLabel(/add comment/i).fill(body)
@@ -146,7 +146,7 @@ test.describe('Order comments', () => {
   })
 
   test('root can post an internal note and it is labelled as one', async ({ page }) => {
-    if (!(await openFirstOrder(page))) { test.skip(); return }
+    requireSeeded(await openFirstOrder(page), 'no order on /orders to open')
 
     const body = `e2e internal ${Date.now()}`
     await page.getByLabel(/add comment/i).fill(body)
@@ -172,7 +172,7 @@ test.describe('Order product snapshot', () => {
     const detailLinks = page.getByRole('link', { name: /^#\d+$/ })
     const noOrders = page.getByText(/no orders/i)
     await expect(detailLinks.first().or(noOrders)).toBeVisible({ timeout: 10000 })
-    if (await noOrders.isVisible()) { test.skip(); return }
+    requireSeeded(!(await noOrders.isVisible()), 'no order on /orders to list')
 
     await detailLinks.first().click()
     await expect(page.getByRole('heading', { name: /order details/i })).toBeVisible({ timeout: 10000 })

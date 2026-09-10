@@ -173,7 +173,7 @@ Under **Projects**:
 
 Under **Audit Log**:
 
-- Compliance record: orders, approvals, rejections, deployments, decommissions, cart checkouts, order comments and product-version records. **Configuration changes are not audited** — saving SMTP, AI or branding settings writes no audit row (#137).
+- Compliance record: orders, approvals, rejections, deployments, decommissions, cart checkouts, order comments and product-version records. **Configuration changes are audited too** — saving SMTP or AI settings writes `config.smtp_updated` / `config.ai_updated`, and branding writes `branding.updated` / `branding.logo_updated`. This page used to say the opposite; #137 fixed it and the sentence was not updated.
 - Filterable by user, action type, and date range (from/to) — there is no project filter
 - Export as **CSV** or **PDF**
 

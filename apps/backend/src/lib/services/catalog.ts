@@ -10,7 +10,7 @@ import { productNameSql, productDescriptionSql, productLongDescriptionSql } from
 // declared its own identical `ProductImageMeta`, and admin/products.ts imported
 // that one while the frontend's ProductGallery imported the package's — two
 // definitions of one wire format, free to drift apart unnoticed.
-import type { ProductImageMeta } from '@open-hybrid-cloud/types'
+import type { ProductImageMeta } from '@infrashelf/types'
 
 /**
  * Load the parameter definitions that apply to a product in a given

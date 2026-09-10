@@ -9,8 +9,11 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 vi.mock('next-auth/react', () => ({ signOut: vi.fn() }))
+vi.mock('@/lib/serviceWorker', () => ({ clearServiceWorkerCaches: vi.fn() }))
 
 import { Header } from './Header'
+import { signOut } from 'next-auth/react'
+import { clearServiceWorkerCaches } from '@/lib/serviceWorker'
 
 const accountPanel = () => screen.getByRole('link', { name: /orders/i }).closest('div')
 const details = () => document.querySelector('details') as HTMLDetailsElement
@@ -84,13 +87,13 @@ describe('Header account menu', () => {
 describe('Header brand', () => {
   it('falls back to the product name when the operator set none', () => {
     render(<Header lang="en" />)
-    expect(screen.getByText('Open Hybrid Cloud')).toBeInTheDocument()
+    expect(screen.getByText('InfraShelf')).toBeInTheDocument()
   })
 
   it('renders the operator shop name instead when there is one', () => {
     render(<Header lang="en" shopName="Contoso Cloud" />)
     expect(screen.getByText('Contoso Cloud')).toBeInTheDocument()
-    expect(screen.queryByText('Open Hybrid Cloud')).not.toBeInTheDocument()
+    expect(screen.queryByText('InfraShelf')).not.toBeInTheDocument()
   })
 
   // The logo replaces the wordmark rather than joining it, and carries the shop
@@ -191,7 +194,6 @@ describe('Header account controls', () => {
   // redirectTo matters: signing out without it leaves the browser on a page the
   // middleware then bounces, which reads as a hang.
   it('signs out to the login page', async () => {
-    const { signOut } = await import('next-auth/react')
     const user = userEvent.setup()
     render(<Header userName="Root Admin" lang="en" />)
 
@@ -336,5 +338,62 @@ describe('Header account menu destinations', () => {
   it('points the brand at the dashboard', () => {
     render(<Header lang="en" shopName="Contoso" />)
     expect(screen.getByText('Contoso').closest('a')).toHaveAttribute('href', '/')
+  })
+})
+
+/*
+ * The only sign-out affordance in the app, and it did nothing (#359).
+ *
+ * The button awaits cache-clearing before ending the session, and
+ * `clearServiceWorkerCaches` awaited `navigator.serviceWorker.ready` — which
+ * never settles when no worker activates and never rejects. `signOut()` on the
+ * next line was unreachable, so on a shared machine the user believed they had
+ * signed out and had not.
+ *
+ * Cache-clearing is now time-boxed on its own side; this asserts the property
+ * that actually matters here, which is that the session ends regardless.
+ */
+describe('signing out', () => {
+  beforeEach(() => {
+    vi.mocked(signOut).mockReset()
+    vi.mocked(clearServiceWorkerCaches).mockReset()
+    vi.mocked(clearServiceWorkerCaches).mockResolvedValue(undefined)
+  })
+
+  it('ends the session and returns to the login page', async () => {
+    const user = userEvent.setup()
+    render(<Header userName="Root Admin" lang="en" />)
+    await user.click(screen.getByText(/my account/i))
+
+    await user.click(screen.getByRole('button', { name: /sign out/i }))
+
+    expect(signOut).toHaveBeenCalledWith({ redirectTo: '/login' })
+  })
+
+  it('clears the caches before ending the session, not after', async () => {
+    const order: string[] = []
+    vi.mocked(clearServiceWorkerCaches).mockImplementation(async () => { order.push('cleared') })
+    vi.mocked(signOut).mockImplementation((async () => { order.push('signedOut') }) as never)
+    const user = userEvent.setup()
+    render(<Header userName="Root Admin" lang="en" />)
+    await user.click(screen.getByText(/my account/i))
+
+    await user.click(screen.getByRole('button', { name: /sign out/i }))
+
+    // The redirect would otherwise race the clearing, and the shell and this
+    // operator's branding would survive on a shared device (#148).
+    expect(order).toEqual(['cleared', 'signedOut'])
+  })
+
+  // The regression itself: whatever cache-clearing does, the session ends.
+  it('still ends the session when cache-clearing fails', async () => {
+    vi.mocked(clearServiceWorkerCaches).mockRejectedValue(new Error('storage blocked'))
+    const user = userEvent.setup()
+    render(<Header userName="Root Admin" lang="en" />)
+    await user.click(screen.getByText(/my account/i))
+
+    await user.click(screen.getByRole('button', { name: /sign out/i }))
+
+    expect(signOut).toHaveBeenCalledWith({ redirectTo: '/login' })
   })
 })

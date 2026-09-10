@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
-import type { Parameter } from '@open-hybrid-cloud/types'
+import type { Parameter } from '@infrashelf/types'
 import { ProductSpecs } from './ProductSpecs'
 
 const param = (over: Partial<Parameter> = {}): Parameter => ({

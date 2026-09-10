@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { db } from '@/lib/db/client'
 import { productTranslations } from '@/lib/db/schema'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 import {
   createUser,
   createCategory,

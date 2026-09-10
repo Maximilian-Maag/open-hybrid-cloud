@@ -33,5 +33,16 @@ export const CHART_PRIMARY = CHART_FILL[0]
 /** A de-emphasised step, for the "previous period" half of a comparison. */
 export const CHART_MUTED = CHART_FILL[4]
 
-/** Hairline grid and axis rules: one step off the card, never dashed. */
+/** Hairline grid rules: one step off the card, never dashed. */
 export const CHART_GRID = '#e2e8f0'
+
+/**
+ * The baseline a chart sits on — one step darker than CHART_GRID.
+ *
+ * Deliberately not the same value: the axis is the chart's edge and has to read
+ * as more than the gridlines it terminates. It was a bare `#cbd5e1` in
+ * `CostTrend.tsx` while this file's doc claimed CHART_GRID covered "grid and
+ * axis rules", so the two disagreed and neither said which was intended
+ * (#195). Naming it is the whole fix; the painted colour is unchanged.
+ */
+export const CHART_AXIS = '#cbd5e1'

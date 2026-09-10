@@ -5,7 +5,7 @@ import { handlePipelineEvent } from '@/lib/webhook/handler'
 import { isUsableCallbackSecret } from '@/lib/webhook/callback-secret'
 import { db } from '@/lib/db/client'
 import { deploymentEnvironments } from '@/lib/db/schema'
-import type { PipelineEvent } from '@open-hybrid-cloud/types'
+import type { PipelineEvent } from '@infrashelf/types'
 
 interface GitHubWorkflowRunBody {
   action: string

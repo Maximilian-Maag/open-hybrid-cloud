@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ProductDetail, ProductEnvironment, OfferingSize } from '@open-hybrid-cloud/types'
+import type { ProductDetail, ProductEnvironment, OfferingSize } from '@infrashelf/types'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }))
 vi.mock('@/lib/api', () => ({ post: vi.fn(), get: vi.fn().mockResolvedValue([]) }))

@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { get } from '@/lib/serverApi'
 import { redirect, notFound } from 'next/navigation'
-import type { Order, OrderComment, Role } from '@open-hybrid-cloud/types'
+import type { Order, OrderComment, Role } from '@infrashelf/types'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { RefreshButton } from '@/components/ui/RefreshButton'
 import { AutoRefresh } from '@/components/ui/AutoRefresh'
@@ -11,6 +11,7 @@ import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { DeployNow } from './DeployNow'
 import { ButtonLink } from '@/components/ui/Button'
 import { getLang } from '@/lib/getLang'
 import { t } from '@/lib/i18n'
@@ -91,6 +92,12 @@ export default async function OrderDetailPage({ params }: Props) {
             {role === 'root' && order.status === 'provisioning' && (
               <WriteOffOrder orderId={order.id} />
             )}
+            {/* The only way out of `scheduled` other than waiting for the sweep
+                (#330). Root only, and the server checks the role and the status
+                again. */}
+            {role === 'root' && order.status === 'scheduled' && (
+              <DeployNow orderId={order.id} />
+            )}
             <ButtonLink href="/orders" variant="secondary" size="sm">
               {t('backToOrders', lang)}
             </ButtonLink>
@@ -139,8 +146,23 @@ export default async function OrderDetailPage({ params }: Props) {
           )}
           <div>
             <dt className="font-medium text-slate-500">{t('status', lang)}</dt>
-            <dd><StatusBadge status={order.status} lang={lang} /></dd>
+            {/* `data-testid` because "Pending" appears twice on this page with
+                two different meanings: the ORDER's status here, and the
+                placeholder for a pipeline that has not reported below. A test
+                asserting on the word alone reads the wrong one (#363). */}
+            <dd data-testid="order-status"><StatusBadge status={order.status} lang={lang} /></dd>
           </div>
+          {/* A badge reading "Scheduled" with no time is the same complaint
+              #330 opens with: the portal knows when, and not saying so leaves
+              the requester to ask. Shown only while it is still waiting —
+              `scheduled_for` survives release, so gating on the status is what
+              stops it lingering on an order that already deployed. */}
+          {order.status === 'scheduled' && order.scheduledFor && (
+            <div>
+              <dt className="font-medium text-slate-500">{t('provisioningStarts', lang)}</dt>
+              <dd className="text-slate-900">{new Date(order.scheduledFor).toLocaleString(lang)}</dd>
+            </div>
+          )}
           <div>
             <dt className="font-medium text-slate-500">{t('environment', lang)}</dt>
             <dd className="text-slate-900">{order.environmentName ?? `#${order.environmentId}`}</dd>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { CiSource, CiProvider, CreateCiSourceRequest, UpdateCiSourceRequest } from '@open-hybrid-cloud/types'
+import type { CiSource, CiProvider, CreateCiSourceRequest, UpdateCiSourceRequest } from '@infrashelf/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'

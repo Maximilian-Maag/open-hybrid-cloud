@@ -18,6 +18,7 @@ import {
   users,
 } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { isLoopback } from '@/lib/ci/transport'
 
 /**
  * A small, deterministic catalogue for a development database.
@@ -67,18 +68,6 @@ const refusedByEnvironment = (): boolean => {
   )
   return true
 }
-
-/**
- * Loopback, by the names a WireMock is actually reached on. `.localhost` is
- * loopback by RFC 6761, and `URL.hostname` hands back the IPv6 form still
- * bracketed — `new URL('http://[::1]:8080').hostname` is `'[::1]'`.
- */
-const isLoopback = (hostname: string): boolean =>
-  hostname === 'localhost' ||
-  hostname.endsWith('.localhost') ||
-  hostname === '::1' ||
-  hostname === '[::1]' ||
-  /^127\.\d+\.\d+\.\d+$/.test(hostname)
 
 /**
  * The GitLab the demo data points at.

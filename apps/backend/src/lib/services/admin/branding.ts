@@ -50,7 +50,7 @@ export const getBranding = async (): Promise<Result<BrandingConfig>> => {
     return ok({
       primaryColor: '#131921',
       secondaryColor: '#febd69',
-      shopName: 'Open Hybrid Cloud',
+      shopName: 'InfraShelf',
       shopSubtitle: '',
       imprintText: '',
       logoMime: null,

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { loginAsRoot, expectNoServerError } from './helpers'
+import { appears, expectNoServerError, loginAsRoot } from './helpers'
 
 test.describe('Approvals', () => {
   test.beforeEach(async ({ page }) => {
@@ -76,7 +76,29 @@ test.describe('Approvals', () => {
 
   test('approving a pending order removes it from the list', async ({ page }) => {
     const approveBtn = page.getByRole('button', { name: /^approve$/i }).first()
-    if (!await approveBtn.isVisible()) { test.skip(); return }
+    /*
+     * A reasoned skip and NOT `requireSeeded`, and the reason is narrower than
+     * "no pending order".
+     *
+     * `seedDemoData` writes exactly one pending order and writes it with
+     * `userId: root.id`. Nobody may approve their own order — the test above
+     * says so in its own comment — so signed in as root there IS a pending
+     * order on this page and there is no Approve button on it, for a reason the
+     * app is right about.
+     *
+     * So this cannot be a `requireSeeded`: the fixture is present and the
+     * absence is correct. What it must not be is silent, and the message has to
+     * describe the button rather than the order, or it contradicts the page it
+     * is looking at (#332).
+     */
+    // A short budget, not the default: this button is EXPECTED to be absent for
+    // the reason above, so a full wait would add it to every run for nothing —
+    // but a snapshot read would also skip on a list that simply had not painted
+    // yet, which is the failure this whole PR is about.
+    test.skip(
+      !(await appears(approveBtn, 3_000)),
+      'no order on /approvals offers Approve — the demo seeds one pending order and root placed it',
+    )
 
     // Count pending orders before approval
     const beforeCount = await page.getByRole('button', { name: /^approve$/i }).count()
@@ -91,7 +113,10 @@ test.describe('Approvals', () => {
 
   test('rejecting a pending order with a note removes it from the list', async ({ page }) => {
     const rejectBtn = page.getByRole('button', { name: /^reject$/i }).first()
-    if (!await rejectBtn.isVisible()) { test.skip(); return }
+    test.skip(
+      !(await appears(rejectBtn, 3_000)),
+      'no order on /approvals offers Reject — see the approval test above for why the seeded one may not be',
+    )
 
     const beforeCount = await page.getByRole('button', { name: /^reject$/i }).count()
     await rejectBtn.click()

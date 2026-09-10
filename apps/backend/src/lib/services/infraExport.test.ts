@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 import { EXPORT_MAX_ROWS } from './page'
 
 vi.mock('@/lib/services/infrastructure', () => ({ listInfrastructure: vi.fn() }))

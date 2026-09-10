@@ -22,7 +22,7 @@ import type {
   UpdateParameterRequest,
   CostCenter,
   SizeMatrix,
-} from '@open-hybrid-cloud/types'
+} from '@infrashelf/types'
 import { put, post, del, get } from '@/lib/api'
 import { generatePipelineYaml } from '@/lib/pipelineStackPreview'
 import { Card } from '@/components/ui/Card'

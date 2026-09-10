@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { AuditEntry, PaginatedResponse } from '@open-hybrid-cloud/types'
+import type { AuditEntry, PaginatedResponse } from '@infrashelf/types'
 import { get, PROXY_PREFIX } from '@/lib/api'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'

@@ -7,7 +7,7 @@ import {
   type MfaLoginRequest,
   type Role,
   isMfaChallenge,
-} from '@open-hybrid-cloud/types'
+} from '@infrashelf/types'
 import { SESSION_COOKIE_MAX_AGE_SECONDS, apiTokenExpiry } from '@/lib/session'
 import { MFA_LOCKED_OUT } from '@/lib/loginErrors'
 

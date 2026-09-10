@@ -32,7 +32,7 @@ import path from 'node:path'
 
 const REPO_ROOT = path.resolve(__dirname, '../../../..')
 const API_DIR = path.join(REPO_ROOT, 'apps/frontend/src/app/api')
-const INGRESS = path.join(REPO_ROOT, 'infra/helm/open-hybrid-cloud/templates/ingress.yaml')
+const INGRESS = path.join(REPO_ROOT, 'infra/helm/infrashelf/templates/ingress.yaml')
 const NGINX = path.join(REPO_ROOT, 'infra/docker-host/nginx.conf.template')
 
 /**

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Product } from '@open-hybrid-cloud/types'
+import type { Product } from '@infrashelf/types'
 import { del, put } from '@/lib/api'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'

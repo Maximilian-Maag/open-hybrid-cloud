@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth'
 import { Header } from '@/components/layout/Header'
 import { LangProvider } from '@/components/layout/LangProvider'
 import { TopNav } from '@/components/layout/TopNav'
-import type { Branding } from '@open-hybrid-cloud/types'
+import type { Branding } from '@infrashelf/types'
 import { getLang } from '@/lib/getLang'
 import { isApiTokenExpired, expiredLoginUrl } from '@/lib/session'
 import { t } from '@/lib/i18n'
@@ -39,7 +39,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   let branding: Branding = {
     primaryColor: '#131921',
     secondaryColor: '#febd69',
-    shopName: 'Open Hybrid Cloud',
+    shopName: 'InfraShelf',
     shopSubtitle: '',
     imprintText: '',
   }
@@ -82,7 +82,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const {
     primaryColor = '#131921',
     secondaryColor = '#febd69',
-    shopName = 'Open Hybrid Cloud',
+    shopName = 'InfraShelf',
     shopSubtitle = '',
     imprintText = '',
   } = branding

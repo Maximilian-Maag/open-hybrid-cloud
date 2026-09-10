@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, isNull, ne } from 'drizzle-orm'
-import type { SessionInfo } from '@open-hybrid-cloud/types'
+import type { SessionInfo } from '@infrashelf/types'
 import { db } from '@/lib/db/client'
 import { sessions } from '@/lib/db/schema'
 import { logAudit, logAuditWith } from '@/lib/audit'

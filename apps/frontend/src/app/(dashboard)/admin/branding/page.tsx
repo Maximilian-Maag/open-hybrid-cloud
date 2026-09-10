@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import type { Role, Branding } from '@open-hybrid-cloud/types'
+import type { Role, Branding } from '@infrashelf/types'
 import { get } from '@/lib/serverApi'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { BrandingForm } from './BrandingForm'
@@ -16,7 +16,7 @@ export default async function BrandingPage() {
   let branding: Branding = {
     primaryColor: '#1e40af',
     secondaryColor: '#3b82f6',
-    shopName: 'Open Hybrid Cloud',
+    shopName: 'InfraShelf',
     shopSubtitle: '',
     imprintText: '',
   }

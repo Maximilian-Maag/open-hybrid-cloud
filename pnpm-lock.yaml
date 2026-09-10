@@ -40,7 +40,7 @@ importers:
       '@asteasolutions/zod-to-openapi':
         specifier: ^7.2.0
         version: 7.3.4(zod@3.25.76)
-      '@open-hybrid-cloud/types':
+      '@infrashelf/types':
         specifier: workspace:*
         version: link:../../packages/types
       '@simplewebauthn/server':
@@ -131,7 +131,7 @@ importers:
 
   apps/frontend:
     dependencies:
-      '@open-hybrid-cloud/types':
+      '@infrashelf/types':
         specifier: workspace:*
         version: link:../../packages/types
       '@simplewebauthn/browser':

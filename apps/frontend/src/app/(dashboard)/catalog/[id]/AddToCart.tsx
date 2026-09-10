@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { ProductDetail, AddToCartRequest, CartItem } from '@open-hybrid-cloud/types'
+import type { ProductDetail, AddToCartRequest, CartItem } from '@infrashelf/types'
 import { post, get } from '@/lib/api'
 import { publishCartCount } from '@/components/layout/CartLink'
 import { Button } from '@/components/ui/Button'

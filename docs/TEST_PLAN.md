@@ -196,7 +196,7 @@ Coverage is broad; add the flows the fixes introduced and cross-cutting concerns
   silently regress.
 - **CI already runs** typecheck, lint, unit/integration (with a Postgres service)
   and e2e — ensure new frontend component tests run in the same `test` job.
-- **Contract tests**: the shared `@open-hybrid-cloud/types` package is the
+- **Contract tests**: the shared `@infrashelf/types` package is the
   frontend/backend contract; consider a lightweight test asserting a sample of API
   responses match the exported types (zod schemas already exist in the backend —
   reuse them).

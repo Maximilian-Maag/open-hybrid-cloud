@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { SignJWT } from 'jose'
 import { signToken, verifyToken } from './jwt'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 
 const user: SessionUser = { id: 1, email: 'test@example.com', name: 'Test User', role: 'admin' }
 

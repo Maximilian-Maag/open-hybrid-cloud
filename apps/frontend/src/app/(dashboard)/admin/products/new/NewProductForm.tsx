@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Category, CreateProductRequest, Product, DeploymentEnvironment } from '@open-hybrid-cloud/types'
+import type { Category, CreateProductRequest, Product, DeploymentEnvironment } from '@infrashelf/types'
 import { post, PROXY_PREFIX } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'

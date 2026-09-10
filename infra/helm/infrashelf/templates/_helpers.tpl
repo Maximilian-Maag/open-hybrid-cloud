@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "open-hybrid-cloud.name" -}}
+{{- define "infrashelf.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified base name.
 */}}
-{{- define "open-hybrid-cloud.fullname" -}}
+{{- define "infrashelf.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -24,30 +24,30 @@ Create a default fully qualified base name.
 {{/*
 Fully qualified name for the frontend component.
 */}}
-{{- define "open-hybrid-cloud.frontend.fullname" -}}
-{{- printf "%s-frontend" (include "open-hybrid-cloud.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- define "infrashelf.frontend.fullname" -}}
+{{- printf "%s-frontend" (include "infrashelf.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Fully qualified name for the backend component.
 */}}
-{{- define "open-hybrid-cloud.backend.fullname" -}}
-{{- printf "%s-backend" (include "open-hybrid-cloud.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- define "infrashelf.backend.fullname" -}}
+{{- printf "%s-backend" (include "infrashelf.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create chart label value.
 */}}
-{{- define "open-hybrid-cloud.chart" -}}
+{{- define "infrashelf.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels.
 */}}
-{{- define "open-hybrid-cloud.labels" -}}
-helm.sh/chart: {{ include "open-hybrid-cloud.chart" . }}
-{{ include "open-hybrid-cloud.selectorLabels" . }}
+{{- define "infrashelf.labels" -}}
+helm.sh/chart: {{ include "infrashelf.chart" . }}
+{{ include "infrashelf.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -57,16 +57,16 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels (base — without component).
 */}}
-{{- define "open-hybrid-cloud.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "open-hybrid-cloud.name" . }}
+{{- define "infrashelf.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "infrashelf.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Frontend selector labels.
 */}}
-{{- define "open-hybrid-cloud.frontend.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "open-hybrid-cloud.name" . }}
+{{- define "infrashelf.frontend.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "infrashelf.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: frontend
 {{- end }}
@@ -74,8 +74,8 @@ app.kubernetes.io/component: frontend
 {{/*
 Backend selector labels.
 */}}
-{{- define "open-hybrid-cloud.backend.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "open-hybrid-cloud.name" . }}
+{{- define "infrashelf.backend.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "infrashelf.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: backend
 {{- end }}
@@ -83,7 +83,7 @@ app.kubernetes.io/component: backend
 {{/*
 Frontend image reference.
 */}}
-{{- define "open-hybrid-cloud.frontend.image" -}}
+{{- define "infrashelf.frontend.image" -}}
 {{- $tag := .Values.frontend.image.tag | default .Chart.AppVersion }}
 {{- printf "%s:%s" .Values.frontend.image.repository $tag }}
 {{- end }}
@@ -91,7 +91,7 @@ Frontend image reference.
 {{/*
 Backend image reference.
 */}}
-{{- define "open-hybrid-cloud.backend.image" -}}
+{{- define "infrashelf.backend.image" -}}
 {{- $tag := .Values.backend.image.tag | default .Chart.AppVersion }}
 {{- printf "%s:%s" .Values.backend.image.repository $tag }}
 {{- end }}

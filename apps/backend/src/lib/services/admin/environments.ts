@@ -18,6 +18,11 @@ import { isEmptyUpdate, EMPTY_UPDATE_MESSAGE } from '@/lib/services/updates'
 // pipeline event webhook. 32 bytes → 64 hex chars, matches Linode-style
 // tokens and is comfortably URL-safe. Prefix `ohc-cb-` so it's obvious what
 // this is if it shows up in a log or a copy-paste error.
+//
+// The prefix keeps the portal's old name deliberately. Secrets already issued
+// live in customers' GitLab CI variables and in `callback_secret`, and
+// migrations 0006 and 0025 mint the same shape; renaming the prefix would only
+// split the stored format in two, since `isUsableCallbackSecret` never reads it.
 export const generateCallbackSecret = (): string => `ohc-cb-${randomBytes(32).toString('hex')}`
 
 export interface CreateEnvironmentInput {

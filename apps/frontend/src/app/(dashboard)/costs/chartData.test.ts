@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { CostBucket } from '@open-hybrid-cloud/types'
+import type { CostBucket } from '@infrashelf/types'
 import { monthLabel, foldTail, sharePercent } from './chartData'
 
 const bucket = (id: number, label: string, totalEur: number, orderCount = 1): CostBucket => ({

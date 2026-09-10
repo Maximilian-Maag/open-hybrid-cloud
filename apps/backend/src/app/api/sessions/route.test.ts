@@ -8,7 +8,7 @@ import { getSession } from '@/lib/auth/middleware'
 import { db } from '@/lib/db/client'
 import { auditLog, sessions } from '@/lib/db/schema'
 import { createUser, makeSession } from '@/test/helpers'
-import type { SessionInfo } from '@open-hybrid-cloud/types'
+import type { SessionInfo } from '@infrashelf/types'
 
 /**
  * The session list and revocation API (issue #37).

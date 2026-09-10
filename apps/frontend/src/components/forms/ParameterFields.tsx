@@ -1,6 +1,6 @@
 'use client'
 
-import type { Parameter } from '@open-hybrid-cloud/types'
+import type { Parameter } from '@infrashelf/types'
 import { Input } from '@/components/ui/Input'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'

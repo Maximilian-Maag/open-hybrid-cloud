@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import type { Role, AiConfig } from '@open-hybrid-cloud/types'
+import type { Role, AiConfig } from '@infrashelf/types'
 import { get } from '@/lib/serverApi'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { AiConfigForm } from './AiConfigForm'

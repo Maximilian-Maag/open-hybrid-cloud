@@ -851,7 +851,7 @@ describe('qrSvg', () => {
 
 describe('qrSvgFor', () => {
   it('matches encoding and rendering done separately', () => {
-    const text = 'otpauth://totp/ohc:root@example.org?secret=GEZDGNBVGY3TQOJQ&issuer=ohc'
+    const text = 'otpauth://totp/isf:root@example.org?secret=GEZDGNBVGY3TQOJQ&issuer=isf'
     const options = { ecc: 'Q' as const, moduleSize: 6, quietZone: 4, title: 'Enrolment code' }
     expect(qrSvgFor(text, options)).toBe(qrSvg(encodeQr(text, options).matrix, options))
   })

@@ -84,21 +84,21 @@ policy-install-opa:
 # is only needed for the e2e database, which the Playwright stack expects to exist.
 # Idempotent, so it is safe to re-run.
 test-db:
-	@for db in open_hybrid_cloud_test open_hybrid_cloud_e2e; do \
-	  docker exec ohc-postgres psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$$db'" | grep -q 1 \
+	@for db in infrashelf_test infrashelf_e2e; do \
+	  docker exec isf-postgres psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$$db'" | grep -q 1 \
 	    && echo "  exists  $$db" \
-	    || { docker exec ohc-postgres createdb -U postgres "$$db" && echo "  created $$db"; }; \
+	    || { docker exec isf-postgres createdb -U postgres "$$db" && echo "  created $$db"; }; \
 	done
 
 # Drops the per-directory databases the backend suite created. They are cheap to
 # recreate (the schema is pushed on first run) and easy to forget about.
 test-db-prune:
-	@dbs="$$(docker exec ohc-postgres psql -U postgres -tAc \
-	  "SELECT datname FROM pg_database WHERE datname LIKE 'open_hybrid_cloud_test\_%'")" \
+	@dbs="$$(docker exec isf-postgres psql -U postgres -tAc \
+	  "SELECT datname FROM pg_database WHERE datname LIKE 'infrashelf_test\_%'")" \
 	  || { echo "  could not list databases — is the compose stack up?" >&2; exit 1; }; \
 	for db in $$dbs; do \
 	  [ -n "$$db" ] || continue; \
-	  docker exec ohc-postgres dropdb -U postgres --if-exists "$$db" && echo "  dropped $$db"; \
+	  docker exec isf-postgres dropdb -U postgres --if-exists "$$db" && echo "  dropped $$db"; \
 	done
 
 test:
@@ -109,10 +109,10 @@ test-e2e:
 	$(PNPM) test:e2e
 
 docker-build-backend:
-	docker build -t open-hybrid-cloud-backend:latest -f apps/backend/Dockerfile .
+	docker build -t infrashelf-backend:latest -f apps/backend/Dockerfile .
 
 docker-build-frontend:
-	docker build -t open-hybrid-cloud-frontend:latest -f apps/frontend/Dockerfile .
+	docker build -t infrashelf-frontend:latest -f apps/frontend/Dockerfile .
 
 docker-build: docker-build-backend docker-build-frontend
 

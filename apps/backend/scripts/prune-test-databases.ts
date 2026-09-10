@@ -4,7 +4,7 @@
  * Every Vitest worker claims a database named after the working directory, and
  * every Stryker sandbox and every git worktree is a different working directory.
  * Nothing has ever removed them. A survey of one developer's Postgres found 328
- * `open_hybrid_cloud_test_*` databases holding about 3 GB between them, most of
+ * `infrashelf_test_*` databases holding about 3 GB between them, most of
  * them created before #147 and unusable ever since.
  *
  * Safe by construction, in three ways:
@@ -24,7 +24,7 @@ import { testDatabaseName } from '../src/test/database'
 
 // tsx compiles this to CJS, where a top-level await is a syntax error.
 async function main(): Promise<void> {
-  const PREFIX = 'open_hybrid_cloud_test'
+  const PREFIX = 'infrashelf_test'
   const commit = process.argv.includes('--yes')
 
 /** A report, not a log: it goes to stdout so it can be piped. */

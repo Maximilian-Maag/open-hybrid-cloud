@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import type { Role, Product, Category } from '@open-hybrid-cloud/types'
+import type { Role, Product, Category } from '@infrashelf/types'
 import { get } from '@/lib/serverApi'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Table } from '@/components/ui/Table'

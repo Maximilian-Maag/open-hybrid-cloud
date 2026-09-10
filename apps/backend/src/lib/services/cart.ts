@@ -1,4 +1,4 @@
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 import { db } from '@/lib/db/client'
 import {
   cartItems,

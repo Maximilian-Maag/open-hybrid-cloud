@@ -1,4 +1,4 @@
-import type { SessionUser, OrderStatus } from '@open-hybrid-cloud/types'
+import type { SessionUser, OrderStatus } from '@infrashelf/types'
 import { db } from '@/lib/db/client'
 import {
   orders,

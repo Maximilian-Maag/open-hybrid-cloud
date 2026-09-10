@@ -8,7 +8,7 @@ import type {
   UpdateParameterRequest,
   DeploymentEnvironment,
   Project,
-} from '@open-hybrid-cloud/types'
+} from '@infrashelf/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'

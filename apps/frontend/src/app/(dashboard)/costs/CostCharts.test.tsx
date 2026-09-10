@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
-import type { CostBucket, CostPeriod } from '@open-hybrid-cloud/types'
+import type { CostBucket, CostPeriod } from '@infrashelf/types'
 import { CostTrend } from './CostTrend'
 import { CostDistribution } from './CostDistribution'
 import { CostComparison } from './CostComparison'

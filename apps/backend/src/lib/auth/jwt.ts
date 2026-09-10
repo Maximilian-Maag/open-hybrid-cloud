@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify } from 'jose'
-import type { SessionUser } from '@open-hybrid-cloud/types'
+import type { SessionUser } from '@infrashelf/types'
 
 const ALG = 'HS256'
 

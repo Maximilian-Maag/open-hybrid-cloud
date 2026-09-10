@@ -72,7 +72,7 @@ describe('readLogoDataUri', () => {
 
 describe('initialsOf', () => {
   it.each([
-    ['Open Hybrid Cloud', 'OH'],
+    ['InfraShelf', 'IN'],
     ['Acme', 'AC'],
     ['a', 'A'],
     ['  spaced   out  ', 'SO'],
@@ -103,7 +103,7 @@ describe('shortNameFor', () => {
   it.each([
     ['Acme', 'Acme'],
     ['Acme Cloud Platform', 'Acme Cloud'],
-    ['Open Hybrid Cloud', 'Open Hybrid'],
+    ['InfraShelf', 'InfraShelf'],
     // Nowhere better to cut a single long word.
     ['Supercalifragilistic', 'Supercalifra'],
   ])('%s -> %s', (name, expected) => {

@@ -35,6 +35,7 @@ import { ProductVersionHistory } from './ProductVersionHistory'
 import { t, SUPPORTED_LANGUAGES } from '@/lib/i18n'
 import { parameterTypeOptions } from '@/lib/parameterTypes'
 import { sizeValuesToText, parseSizeValues } from '@/lib/sizeValues'
+import { upsertById } from '@/lib/upsertById'
 import { ImportFromRepo } from './ImportFromRepo'
 
 // All 25, from the single list `SUPPORTED_LANGUAGES` — not the four this used to
@@ -296,7 +297,10 @@ export function ProductEditForm({ product, categories, environments, translation
         execOrder: Number(whOrder),
       }
       const created = await post<ProductWebhook>(`/api/admin/products/${product.id}/webhooks`, body)
-      setWebhooks((prev) => [...prev, created])
+      // By identity, not a blind append: the mount fetch above replaces this
+      // list, and if it is served after the insert it already carries `created`
+      // (#384).
+      setWebhooks((prev) => upsertById(prev, created))
       setWebhookModal(false)
       setWhName(''); setWhUrl(''); setWhToken(''); setWhOrder('0')
     } catch (err) {
@@ -432,7 +436,10 @@ export function ProductEditForm({ product, categories, environments, translation
           steps,
         }
         const created = await post<PipelineStack>(`/api/admin/products/${product.id}/pipeline-stacks`, body)
-        setStacks((prev) => [...prev, created])
+        // Same race as the callbacks above, and this is the one CI caught:
+        // appending a record the mount fetch had already installed drew the
+        // stack twice, both copies sharing a React key (#384).
+        setStacks((prev) => upsertById(prev, created))
       }
       setStackModal(false)
     } catch (err) {

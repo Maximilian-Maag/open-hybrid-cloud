@@ -104,6 +104,7 @@ test-db-prune:
 test:
 	$(PNPM) --filter backend test
 	$(PNPM) --filter frontend test
+	$(PNPM) test:scripts
 
 test-e2e:
 	$(PNPM) test:e2e

@@ -1,7 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { CostCenter, CreateCostCenterRequest, UpdateCostCenterRequest } from '@infrashelf/types'
+import type {
+  BudgetState,
+  CostCenter,
+  CreateCostCenterRequest,
+  UpdateCostCenterRequest,
+} from '@infrashelf/types'
 import { get, post, put, del } from '@/lib/api'
 import { Card } from '@/components/ui/Card'
 import { Alert } from '@/components/ui/Alert'
@@ -10,6 +15,7 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
+import { BudgetModal, formatBudgetMoney } from './BudgetModal'
 
 export function CostCentersManager() {
   const lang = useLang()
@@ -18,6 +24,9 @@ export function CostCentersManager() {
   const [addOpen, setAddOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<CostCenter | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CostCenter | null>(null)
+  const [budgetTarget, setBudgetTarget] = useState<CostCenter | null>(null)
+  /** Budget state by cost-centre id, for the badges on the rows. */
+  const [budgets, setBudgets] = useState<Record<number, BudgetState>>({})
   const [formCode, setFormCode] = useState('')
   const [formName, setFormName] = useState('')
   const [formActive, setFormActive] = useState(true)
@@ -30,6 +39,20 @@ export function CostCentersManager() {
     try {
       setCcs((await get<CostCenter[]>('/api/admin/cost-centers')) ?? [])
       setDeleteError(null)
+      /*
+       * Budgets are a second request, and its failure is deliberately not the
+       * list's failure. This page is how a cost centre is renamed or retired,
+       * and none of that should become unreachable because the budget endpoint
+       * is unhappy — the rows simply show no badge, which is honest: an absent
+       * badge and an unknown budget look the same, and neither claims a limit
+       * that is not there.
+       */
+      try {
+        const states = (await get<BudgetState[]>('/api/admin/cost-centers/budgets')) ?? []
+        setBudgets(Object.fromEntries(states.map((b) => [b.costCenterId, b])))
+      } catch {
+        setBudgets({})
+      }
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : t('failedToLoadCostCenters', lang))
     } finally {
@@ -117,6 +140,7 @@ export function CostCentersManager() {
                   <div>
                     <span className="font-mono text-sm font-medium text-slate-700">{cc.code}</span>
                     <span className="ml-2 text-slate-900">{cc.name}</span>
+                    <BudgetBadge state={budgets[cc.id]} lang={lang} />
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -124,6 +148,7 @@ export function CostCentersManager() {
                     {cc.active ? t('deactivate', lang) : t('activate', lang)}
                   </Button>
                   <Button size="sm" variant="secondary" onClick={() => openEdit(cc)}>{t('edit', lang)}</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setBudgetTarget(cc)}>{t('budget', lang)}</Button>
                   <Button size="sm" variant="danger" onClick={() => { setDeleteError(null); setDeleteTarget(cc) }}>{t('delete', lang)}</Button>
                 </div>
               </div>
@@ -172,6 +197,38 @@ export function CostCentersManager() {
           <Button variant="danger" onClick={handleDelete} disabled={saving}>{saving ? t('deleting', lang) : t('delete', lang)}</Button>
         </div>
       </Modal>
+      <BudgetModal
+        target={budgetTarget}
+        onClose={() => setBudgetTarget(null)}
+        onSaved={() => void load()}
+        lang={lang}
+      />
     </>
+  )
+}
+
+/**
+ * What a row says about its budget, in one line.
+ *
+ * Spent-over-limit rather than a bare limit: "8,400.00 / 10,000.00 EUR" answers
+ * the question a person came to this screen with, where "10,000.00 EUR" only
+ * repeats what they set. Amber once the budget is gone, and the colour is never
+ * the only carrier — the text changes too (#185).
+ */
+function BudgetBadge({ state, lang }: { state: BudgetState | undefined; lang: string }) {
+  if (!state || state.amount === null || state.currency === null) return null
+  const tone = state.exhausted
+    ? 'bg-red-50 text-red-700 border-red-200'
+    : 'bg-slate-50 text-slate-600 border-slate-200'
+  return (
+    <span
+      className={`ml-2 inline-block whitespace-nowrap rounded border px-2 py-0.5 text-xs tabular-nums ${tone}`}
+    >
+      {state.exhausted && <span className="mr-1 font-medium">{t('budgetOverspent', lang)}:</span>}
+      {`${state.committed.toFixed(2)} / ${formatBudgetMoney(state.amount, state.currency)}`}
+      <span className="ml-1 text-slate-500">
+        ({t(state.period === 'monthly' ? 'budgetPeriodMonthlyShort' : 'budgetPeriodTotalShort', lang)})
+      </span>
+    </span>
   )
 }

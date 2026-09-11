@@ -2757,7 +2757,7 @@ The table below shows the current effective schema.
     \code{deployment\_environments} & Named environments linked to a CI source \\
     \code{product\_environments}    & Junction: which products are available in which environment (with price) \\
     \code{product\_webhooks}        & Optional per-product pipeline trigger overrides \\
-    \code{cost\_centers}            & Billing cost centres referenced by projects and orders \\
+    \code{cost\_centers}            & Billing cost centres referenced by projects and orders; optionally carry a budget (amount, currency, period, behaviour --- all four together or none, enforced by CHECK) \\
     \code{projects}                 & User-owned projects that group orders \\
     \code{orders}                   & Individual infrastructure provisioning requests \\
     \code{infrastructure\_elements} & Deployed instances tracked per order \\
@@ -4027,6 +4027,65 @@ allocate costs:
         order. Use for shared services (monitoring, DNS).
 \end{description}
 
+\subsection{Budgets}
+\label{sec:cost-centre-budgets}
+
+Every cost centre may carry a budget, set by \textbf{root} alone under
+\textbf{Administration → Cost Centers → Budget}. It is opt-in: a cost
+centre without one behaves exactly as it did before budgets existed. The
+guard is deliberately narrower than the rest of that screen, which is
+\code{admin} --- renaming a cost centre and deciding what the platform
+refuses to provision are different powers.
+
+A budget is an amount, a currency, a period and a behaviour:
+
+\begin{description}
+  \item[Total] One pot that never resets.
+  \item[Monthly] Resets each calendar month.
+  \item[Warn] The order goes through. The orderer is told at checkout,
+        the approver sees it on the queue row, and the audit log records
+        \code{order.budget\_warning}.
+  \item[Block] The order is refused with HTTP 409. Root, and only root,
+        may override a single order; that is audited as
+        \code{order.budget\_overridden} and the orderer is still told the
+        order went through over budget.
+\end{description}
+
+The check runs in \code{createPreparedOrder}, the one point both checkout
+and approval traverse, so an order approved next week cannot spend a
+budget that is already gone.
+
+\paragraph{Two definitions that are stated rather than hidden.}
+Both are consequences of what the data model actually records, and both
+are surfaced in the UI rather than left for a reader of the code:
+
+\begin{enumerate}
+  \item \textbf{``Committed'' includes \code{pending}.} The costs report
+        counts \code{provisioning} and \code{completed} --- what was
+        actually built --- which is the right question for a spend report
+        and the wrong one for a gate. An approval queue full of pending
+        orders would each see budget left, because none of them exists
+        yet, and then collectively blow it the moment they are approved.
+  \item \textbf{``Monthly'' means orders \emph{placed} in the calendar
+        month.} \code{product\_environments.price} records an amount and
+        a currency and no billing period, so no honest run rate can be
+        derived from it --- the costs report carries the same caveat for
+        the same reason. A machine ordered in January
+        and still running in June consumes budget in January only, and a
+        long-lived estate therefore looks cheaper than it is. Giving a
+        price a billing period is its own piece of work.
+\end{enumerate}
+
+Committed spend in other currencies is converted through
+\code{exchange\_rates} with EUR as the rate base. An amount with no
+stored rate is reported separately rather than folded into the total at a
+rate that does not exist --- the same choice the costs report makes.
+
+Attribution follows the costs report exactly: an order counts against its
+own \code{cost\_center\_id} where it has one (\emph{Select} and
+\emph{Overhead} modes) and against its project's in the default
+\emph{Project} mode, where the order deliberately stores none.
+
 % ─────────────────────────────────────────────────────────────
 %  APPENDICES
 % ─────────────────────────────────────────────────────────────
@@ -4343,7 +4402,11 @@ The \textbf{Role} column uses the following abbreviations:
   GET  & \code{/api/admin/cost-centers}                              & Cost center list                        & root \\
   POST & \code{/api/admin/cost-centers}                              & Create cost center                      & root \\
   PUT  & \code{/api/admin/cost-centers/\{id\}}                       & Update cost center                      & root \\
-  DELETE & \code{/api/admin/cost-centers/\{id\}}                     & Delete cost center                      & root \\[6pt]
+  DELETE & \code{/api/admin/cost-centers/\{id\}}                     & Delete cost center                      & root \\
+  GET  & \code{/api/admin/cost-centers/budgets}                      & Every cost centre's budget state        & root \\
+  GET  & \code{/api/admin/cost-centers/\{id\}/budget}                & Budget and committed spend              & root \\
+  PUT  & \code{/api/admin/cost-centers/\{id\}/budget}                & Set or change the budget                & root \\
+  DELETE & \code{/api/admin/cost-centers/\{id\}/budget}              & Remove the budget                       & root \\[6pt]
 
   \multicolumn{4}{@{}l}{\textit{Admin — Configuration (role: root)}} \\[2pt]
   GET  & \code{/api/admin/branding}                                  & Get branding settings                   & root \\

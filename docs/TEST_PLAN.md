@@ -105,6 +105,13 @@ Almost nothing is tested. Establish component testing with a small render helper
   users/categories): create/edit/delete happy paths; **delete failure surfaces an
   error and the modal doesn't get stuck** (guards the silent-failure fixes);
   load failure shows an error, not an empty state; toggle-active failure surfaces.
+- **Cost-centre budgets** ✅ (`CostCentersManager.test.tsx`, #325): the badge
+  shows committed-over-limit and says "Over budget" in words rather than colour
+  alone; a failed budgets request leaves the cost-centre list usable; the modal
+  prefills an existing budget, defaults a new one to `block`, uppercases the
+  currency, asks before removing, and shows the monthly caveat only for monthly.
+  One test covers the stale-response race — opening a second row before the
+  first fetch lands must not paint one centre's figures under another's name.
 - **ProductEditForm**: false-"Saved!" regression — a failed per-env save shows an
   error, not a success badge; AI-translate error surfaces; webhook/stack/param
   delete failures surface.

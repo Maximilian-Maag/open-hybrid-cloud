@@ -698,7 +698,38 @@ export const costCenters = pgTable('cost_centers', {
   code: text().notNull().unique(),
   name: text().notNull(),
   active: boolean().notNull().default(true),
-})
+  /**
+   * The budget, or nothing at all (#325).
+   *
+   * Four nullable columns rather than a table of their own: a cost centre has
+   * at most one budget, and `budget_amount IS NULL` is what "no budget" looks
+   * like — a row untouched by #325 behaves exactly as it did before it.
+   *
+   * A database CHECK keeps them all-or-nothing. An amount with no behaviour
+   * leaves the enforcement path guessing, and that is the kind of
+   * half-configured row that turns into "why did that order go through".
+   */
+  budgetAmount: numeric('budget_amount', { precision: 12, scale: 2 }),
+  budgetCurrency: text('budget_currency'),
+  /** 'total' is a pot that never resets; 'monthly' resets each calendar month. */
+  budgetPeriod: text('budget_period', { enum: ['total', 'monthly'] }),
+  /** 'warn' lets the order through and says so; 'block' refuses it. */
+  budgetBehaviour: text('budget_behaviour', { enum: ['warn', 'block'] }),
+}, (t) => [
+  // All four together or none of them. A budget with no amount is not a budget,
+  // and an amount with no behaviour leaves the enforcement path guessing.
+  check(
+    'cost_centers_budget_complete',
+    sql`(${t.budgetAmount} IS NULL AND ${t.budgetCurrency} IS NULL AND ${t.budgetPeriod} IS NULL AND ${t.budgetBehaviour} IS NULL) OR (${t.budgetAmount} IS NOT NULL AND ${t.budgetCurrency} IS NOT NULL AND ${t.budgetPeriod} IS NOT NULL AND ${t.budgetBehaviour} IS NOT NULL)`,
+  ),
+  // The TypeScript enums above are compile-time only; these are what hold for a
+  // row written by anything other than this codebase.
+  check('cost_centers_budget_period', sql`${t.budgetPeriod} IS NULL OR ${t.budgetPeriod} IN ('total','monthly')`),
+  check('cost_centers_budget_behaviour', sql`${t.budgetBehaviour} IS NULL OR ${t.budgetBehaviour} IN ('warn','block')`),
+  // A negative pot would refuse everything for a reason nobody chose; zero is
+  // how new spend is stopped deliberately, so zero is allowed and negative is not.
+  check('cost_centers_budget_amount_positive', sql`${t.budgetAmount} IS NULL OR ${t.budgetAmount} >= 0`),
+])
 
 export const projects = pgTable('projects', {
   id: bigserial({ mode: 'number' }).primaryKey(),

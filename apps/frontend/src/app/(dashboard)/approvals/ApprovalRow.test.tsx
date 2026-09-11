@@ -258,3 +258,58 @@ describe('ApprovalRow', () => {
     expect(container.querySelector('[data-order-id="2"]')).toBeTruthy()
   })
 })
+
+/**
+ * The approver's half of #325.
+ *
+ * The gate runs when the approval is GRANTED, so without this the approver
+ * learns about a `block` budget only by clicking Approve and being refused, and
+ * about a `warn` one not at all.
+ */
+describe('ApprovalRow budget notice (#325)', () => {
+  const budget = (over: Partial<NonNullable<Order['budget']>> = {}) => ({
+    costCenterId: 3,
+    costCenterLabel: 'IT-4711 — Platform',
+    amount: 1_000,
+    currency: 'EUR',
+    period: 'total' as const,
+    behaviour: 'block' as const,
+    committed: 1_400,
+    remaining: -400,
+    exhausted: true,
+    unconverted: [],
+    ...over,
+  })
+
+  it('says what is spent, against which cost centre', async () => {
+    render(<ApprovalRow order={order({ budget: budget() })} currentUserId={99} />)
+    expect(await screen.findByText(/IT-4711 — Platform/)).toBeInTheDocument()
+    expect(screen.getByText(/1400\.00 \/ 1000\.00 EUR/)).toBeInTheDocument()
+  })
+
+  it('distinguishes a block from a warn, because approving means different things', () => {
+    const { unmount } = render(<ApprovalRow order={order({ budget: budget() })} currentUserId={99} />)
+    expect(screen.getByText(/refused at the gate/i)).toBeInTheDocument()
+    unmount()
+
+    render(<ApprovalRow order={order({ budget: budget({ behaviour: 'warn' }) })} currentUserId={99} />)
+    expect(screen.getByText(/goes through and is recorded/i)).toBeInTheDocument()
+  })
+
+  it('stays quiet while the budget still has room', () => {
+    // A line on every row would be read past within a day. The decision only
+    // changes when there is none left.
+    render(
+      <ApprovalRow
+        order={order({ budget: budget({ committed: 100, remaining: 900, exhausted: false }) })}
+        currentUserId={99}
+      />,
+    )
+    expect(screen.queryByText(/Over budget/i)).not.toBeInTheDocument()
+  })
+
+  it('stays quiet when the cost centre has no budget at all', () => {
+    render(<ApprovalRow order={order({ budget: null })} currentUserId={99} />)
+    expect(screen.queryByText(/Over budget/i)).not.toBeInTheDocument()
+  })
+})

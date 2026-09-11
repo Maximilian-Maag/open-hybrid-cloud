@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 import type { Page } from '@playwright/test'
-import { loginAsRoot, requireSeeded, requireStack } from './helpers'
+import { firstToHappen, loginAsRoot, requireSeeded, requireStack } from './helpers'
 
 /**
  * The seam where an approved order becomes live infrastructure (#157).
@@ -113,13 +113,22 @@ test.describe('Provisioning, end to end', () => {
     // nor said why" about an order that had gone through perfectly well.
     const redirected = page.waitForURL(/\/orders(\?|$)/, { timeout: 30_000 }).then(() => 'redirected' as const)
     const explained = refused.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'refused' as const)
-    const outcome = await Promise.race([redirected, explained]).catch(() => 'neither' as const)
+    // `firstToHappen`, not `Promise.race`: a strict-mode violation on either
+    // locator rejects instantly and would otherwise beat the outcome that was
+    // actually about to happen, with its reason discarded (#399).
+    const { outcome, why } = await firstToHappen([
+      { outcome: 'redirected' as const, wait: redirected },
+      { outcome: 'refused' as const, wait: explained },
+    ])
 
     if (outcome === 'refused') {
       requireStack(false, 'the order was refused for want of a pipeline stack')
       return
     }
-    expect(outcome, 'the order neither went through nor said why').toBe('redirected')
+    expect(
+      outcome,
+      `the order neither went through nor said why${why.length ? `\n  ${why.join('\n  ')}` : ''}`,
+    ).toBe('redirected')
 
     // The newest order is the one just placed. Opened by href rather than by
     // clicking, for the hydration reason the rest of the suite already documents.

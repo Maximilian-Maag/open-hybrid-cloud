@@ -182,8 +182,18 @@ describe('redactParametersForOrders', () => {
   }
 
   it('returns an empty batch without touching the database', async () => {
+    // Asserted on the QUERY as well as the result, for the reason the sibling
+    // test above spells out: identity alone still passes if a later change
+    // starts reading the catalogue before the early return, and this guard
+    // exists so a page with no rows costs no round trips at all.
     const rows: { parameters: Record<string, string> }[] = []
-    expect(await redactParametersForOrders(rows, () => null)).toBe(rows)
+    const select = vi.spyOn(db, 'select')
+    try {
+      expect(await redactParametersForOrders(rows, () => null)).toBe(rows)
+      expect(select).not.toHaveBeenCalled()
+    } finally {
+      select.mockRestore()
+    }
   })
 
   it('redacts by the live catalogue when the row has no order', async () => {

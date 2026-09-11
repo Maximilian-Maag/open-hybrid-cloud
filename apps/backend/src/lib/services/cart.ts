@@ -352,6 +352,17 @@ export interface CheckoutResult {
   orderIds: number[]
   /** Items whose orders could not be created after validation passed. */
   failed: CheckoutFailure[]
+  /**
+   * Orders that went through with their cost centre over budget (#325).
+   *
+   * Not a failure — these orders exist. A `warn` budget is the setting that
+   * says "tell me, do not refuse me", and a warning the orderer never sees is
+   * the setting doing nothing at all.
+   *
+   * One entry per order rather than one for the checkout: a cart can span two
+   * projects' cost centres, and "something was over budget" does not say which.
+   */
+  warnings: { orderId: number; message: string }[]
 }
 
 /**
@@ -523,12 +534,16 @@ export const checkoutCart = async (
   // Phase two: create. Past this point failures are per item and cannot be undone.
   const orderIds: number[] = []
   const failed: CheckoutFailure[] = []
+  const warnings: { orderId: number; message: string }[] = []
 
   for (const { cartItemId, order } of prepared) {
     try {
       const created = await createPreparedOrder(session, order)
       if (created.ok) {
         orderIds.push(created.data.id)
+        if (created.data.budgetWarning) {
+          warnings.push({ orderId: created.data.id, message: created.data.budgetWarning })
+        }
       } else {
         failed.push({ cartItemId, message: created.message })
       }
@@ -556,7 +571,7 @@ export const checkoutCart = async (
     return err(502, `No order could be created: ${failed.map((f) => f.message).join('; ')}`)
   }
 
-  return ok({ orderIds, failed })
+  return ok({ orderIds, failed, warnings })
 }
 
 /** Whether the caller's cart contains anything, for badging the navigation. */

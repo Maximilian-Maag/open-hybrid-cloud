@@ -775,6 +775,56 @@ export interface CostCenter {
   active: boolean
 }
 
+/**
+ * How a cost centre's budget is measured (#325).
+ *
+ * 'total' is one pot that never resets. 'monthly' counts orders PLACED in the
+ * current calendar month — a price in this catalogue carries no billing period,
+ * so a machine ordered in January and still running in June is counted once, in
+ * January. That is a real limitation of monthly budgets here, and the screen
+ * says so rather than implying a recurring-cost model the data cannot support.
+ */
+export type BudgetPeriod = 'total' | 'monthly'
+
+/** What happens to an order once the budget is spent. */
+export type BudgetBehaviour = 'warn' | 'block'
+
+/** A cost centre's budget, together with what has been spent against it. */
+export interface BudgetState {
+  costCenterId: number
+  costCenterLabel: string
+  /** Null when this cost centre has no budget — every other field is then moot. */
+  amount: number | null
+  currency: string | null
+  period: BudgetPeriod | null
+  behaviour: BudgetBehaviour | null
+  /** Committed spend in the budget's currency, over the budget's window. */
+  committed: number
+  /** What is left. Negative once the budget is overspent. */
+  remaining: number
+  /** True when `committed` already meets or exceeds `amount`. */
+  exhausted: boolean
+  /** Amounts no exchange rate could convert into the budget's currency. */
+  unconverted: { currency: string; amount: number }[]
+  /**
+   * Committed orders with no recoverable price at all — no snapshot, and the
+   * offering they were placed against has since been withdrawn (#189).
+   *
+   * Their spend is missing from `committed`, so this is what says the figure
+   * beside it is incomplete. Not an amount, because there is no amount: the
+   * price is unknown, not small.
+   */
+  unpriced: number
+}
+
+/** The body of `PUT /api/admin/cost-centers/:id/budget`. */
+export interface SetCostCentreBudgetRequest {
+  amount: number
+  currency: string
+  period: BudgetPeriod
+  behaviour: BudgetBehaviour
+}
+
 export interface CreateCostCenterRequest {
   code: string
   name: string
@@ -882,6 +932,23 @@ export interface Order {
   environmentName?: string
   projectName?: string
   userName?: string
+  /**
+   * The budget of the cost centre this order is billed to (#325).
+   *
+   * Approvals queue only. The gate runs when the approval is granted, so a
+   * `warn` cost centre would tell the approver nothing and a `block` one would
+   * refuse them AFTER they clicked — the row is the last moment the decision
+   * can be taken.
+   */
+  budget?: BudgetState | null
+  /**
+   * Set when the order went through with its cost centre's budget already spent
+   * (#325) — either a `warn` budget, or a `block` one that root overrode.
+   *
+   * On the order that was just CREATED, not on one read back: it is what the
+   * person who placed it is told at the moment they placed it.
+   */
+  budgetWarning?: string
   /**
    * The cost centre as a person refers to it — `IT-4711 — Platform Networking`.
    *
@@ -1063,6 +1130,15 @@ export interface CheckoutResponse {
    * rather than hidden.
    */
   failed: { cartItemId: number; message: string }[]
+  /**
+   * Orders that went through with their cost centre over budget (#325).
+   *
+   * Not failures — these orders exist. A `warn` budget says "tell me, do not
+   * refuse me", and a warning the orderer never sees is the setting doing
+   * nothing at all. One entry per order, because a cart can span two projects'
+   * cost centres and "something was over budget" does not say which.
+   */
+  warnings?: { orderId: number; message: string }[]
 }
 
 /**

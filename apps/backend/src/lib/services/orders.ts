@@ -15,6 +15,7 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, sql, inArray } from 'drizzle-orm'
 import { logAudit } from '@/lib/audit'
+import { attachBudgets, checkBudgetForOrder, type BudgetState } from '@/lib/services/budgets'
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import {
@@ -75,6 +76,16 @@ export interface OrderRow {
   costCenterCode?: string | null
   costCenterName?: string | null
   /**
+   * The budget of the cost centre this order is billed to (#325).
+   *
+   * Filled by `listOrders` only for an admin or root caller asking for
+   * `status=pending` — the approvals queue. Absent everywhere else: a budget is
+   * a root-level figure with no business on a project manager's own orders, and
+   * the lookup aggregates committed spend per cost centre, which no other list
+   * should be paying for.
+   */
+  budget?: BudgetState | null
+  /**
    * Per-pipeline outcome, keyed by pipeline id — `{ "pipe-a": "success" }`.
    *
    * The column has always been written by the webhook handler and was never
@@ -109,6 +120,15 @@ export interface CreateOrderInput {
   productId: number
   environmentId: number
   costCenterId?: number
+  /**
+   * Place the order even though the cost centre's budget is spent (#325).
+   *
+   * Root only, and audited. A block with no way past it becomes an outage
+   * during an incident — the one time somebody genuinely needs to provision
+   * against an exhausted budget — so the escape exists and leaves a record,
+   * the way `order.window_overridden` already does for deployment windows.
+   */
+  overrideBudget?: boolean
   parameters: Record<string, string>
   /** Order as a time-boxed trial (issue #1). Requires a trial-enabled offering. */
   trial?: boolean
@@ -148,6 +168,11 @@ export interface CreatedOrder {
   infraId?: number
   /** Every element the order provisioned, in sequence order. */
   infraIds?: number[]
+  /**
+   * Set when the cost centre's budget is spent and its behaviour is `warn`
+   * (#325). The order exists — this is what the orderer is told about it.
+   */
+  budgetWarning?: string
 }
 
 /**
@@ -244,6 +269,10 @@ export const listOrders = async (
       // from a list whose whole job is to show everything the caller may see.
       projectName: projects.name,
       userName: users.name,
+      // A lookup input for the budget attachment below, stripped from the rows
+      // before they leave: an order in the default 'project' mode stores no cost
+      // centre of its own, so the fall-through needs the project's.
+      projectCostCenterId: projects.costCenterId,
     })
     .from(orders)
     .leftJoin(deploymentEnvironments, eq(orders.environmentId, deploymentEnvironments.id))
@@ -262,7 +291,22 @@ export const listOrders = async (
   // `def?.sensitive ? '••••••'` — which reads the definition off the order's
   // snapshot, so an order placed before snapshots existed rendered the secret in
   // plaintext, and the raw value was in the JSON either way (issue #131).
-  const items = await redactParametersForOrders(rows as OrderRow[], (row) => row.id)
+  /*
+   * The approver's budget notice (#325), and only for them.
+   *
+   * `status=pending` and an admin or root caller is exactly the approvals queue
+   * — the one list where a budget changes what the reader is about to do. Every
+   * other call gets `projectCostCenterId` stripped and no budget at all, which
+   * matters twice: a budget is a root-level figure and has no business on a
+   * project manager's own orders page, and the lookup aggregates committed
+   * spend per cost centre, which no other list should be paying for.
+   */
+  const withBudgets =
+    isAdmin && filters.status === 'pending'
+      ? await attachBudgets(rows)
+      : rows.map(({ projectCostCenterId: _dropped, ...row }) => row)
+
+  const items = await redactParametersForOrders(withBudgets as OrderRow[], (row) => row.id)
   return ok(toPage(items, total, window))
 }
 
@@ -545,6 +589,8 @@ export interface PreparedOrder {
   sizeCode: string | null
   /** How many elements to provision, validated against the cap (issue #104). */
   quantity: number
+  /** Root's audited escape from an exhausted budget (#325). */
+  overrideBudget?: boolean
 }
 
 /**
@@ -731,6 +777,7 @@ export const prepareOrder = async (
     isAdmin,
     sizeCode: priced.data.sizeCode,
     quantity: quantityResult.data,
+    overrideBudget: input.overrideBudget,
   })
 }
 
@@ -1099,8 +1146,66 @@ export const createPreparedOrder = async (
   const {
     projectId, productId, environmentId, parameters,
     costCenterId: resolvedCostCenterId, isTrial, trialDurationMinutes, productSnapshot, isAdmin,
-    sizeCode, quantity,
+    sizeCode, quantity, overrideBudget,
   } = prepared
+
+  /*
+   * The budget gate, at the single point both paths go through (#325).
+   *
+   * Here rather than in the route, because the approval path reaches this
+   * function too: a check in the checkout handler alone would let an order
+   * approved next week spend a budget that is already gone.
+   *
+   * `warn` deliberately does not stop anything — it is the setting that says
+   * "tell me, do not refuse me" — so only `block` returns early.
+   */
+  /*
+   * The order being placed is part of the question, not just the ones before it.
+   *
+   * Its line total comes from the snapshot captured for THIS order, which is
+   * the same figure `loadBudgetState` reads back for it once it exists — so the
+   * gate and the report cannot disagree about what it cost.
+   */
+  const budget = await checkBudgetForOrder(projectId, resolvedCostCenterId, new Date(), {
+    price: productSnapshot?.price ?? null,
+    currency: productSnapshot?.currency ?? null,
+    quantity,
+  })
+  if (budget.outcome === 'block') {
+    if (session.role !== 'root' || !overrideBudget) {
+      return err(409, budget.message ?? 'This cost centre is over budget.')
+    }
+    await logAudit(
+      session.id,
+      'order.budget_overridden',
+      undefined,
+      `${session.email} placed an order against ${budget.state?.costCenterLabel} with the budget already spent`,
+    )
+  }
+  /*
+   * A warning has to reach somebody, or it is not a warning (#325).
+   *
+   * `warn` is the setting that says "tell me, do not refuse me", and an
+   * over-budget order that passes silently is indistinguishable from one that
+   * was inside its budget. So it is recorded here, and `budget.message` is
+   * returned on the created order below, so the person who placed it is told at
+   * the moment they placed it. The approver is told separately, on the queue
+   * row, because by the time this runs for an approval the decision has already
+   * been taken.
+   *
+   * The notice on the way out is keyed on the MESSAGE, not on this branch: an
+   * order only reaches the returns below with a message when it went through
+   * over budget, which is `warn` or a root override. Both of those want saying.
+   * A `block` that was not overridden returned above.
+   */
+  if (budget.outcome === 'warn') {
+    await logAudit(
+      session.id,
+      'order.budget_warning',
+      undefined,
+      `${session.email} placed an order against ${budget.state?.costCenterLabel} with the budget already spent`,
+    )
+  }
 
   if (isAdmin) {
     const [order] = await db
@@ -1170,6 +1275,7 @@ export const createPreparedOrder = async (
       // an order of twenty actually produced.
       infraId: provisioned.elementIds[0],
       infraIds: provisioned.elementIds,
+      ...(budget.message ? { budgetWarning: budget.message } : {}),
     })
   } else {
     const [order] = await db
@@ -1217,6 +1323,9 @@ export const createPreparedOrder = async (
       )
     }
 
-    return ok(order as CreatedOrder)
+    return ok({
+      ...(order as CreatedOrder),
+      ...(budget.message ? { budgetWarning: budget.message } : {}),
+    })
   }
 }

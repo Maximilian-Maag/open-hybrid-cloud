@@ -267,6 +267,13 @@
       "when": 1789430400000,
       "tag": "0041_rename_default_shop_name",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1789516800000,
+      "tag": "0042_cost_centre_budgets",
+      "breakpoints": true
     }
   ]
 }

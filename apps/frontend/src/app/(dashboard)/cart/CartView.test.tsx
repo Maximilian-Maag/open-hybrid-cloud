@@ -220,6 +220,63 @@ describe('CartView', () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith('/orders'))
   })
 
+  it('holds on the over-budget warning instead of navigating away from it (#325)', async () => {
+    // The orders exist and the cart is empty either way — the only difference is
+    // whether the person who placed them is told. Pushing to /orders here would
+    // replace the message with rows that look like every other order, which is
+    // the outcome a `warn` budget exists to prevent.
+    const user = userEvent.setup()
+    mockedPost.mockResolvedValue({
+      orderIds: [31],
+      failed: [],
+      warnings: [{ orderId: 31, message: 'IT-4711 — Platform is over budget: 1400.00 of 1000.00 EUR committed' }],
+    } as CheckoutResponse as never)
+    renderCart([item()], [projects[0]])
+
+    await user.click(screen.getByRole('button', { name: /check out/i }))
+
+    expect(await screen.findByText(/went through with the cost centre over budget/i)).toBeInTheDocument()
+    expect(screen.getByText(/#31/)).toBeInTheDocument()
+    expect(screen.getByText(/1400\.00 of 1000\.00 EUR/)).toBeInTheDocument()
+    expect(push).not.toHaveBeenCalled()
+    // The orders were placed, so the cart really is empty — the notice is not a
+    // failure to retry.
+    expect(screen.queryByTestId('cart-item-1')).not.toBeInTheDocument()
+    // And there is still a way on from here.
+    expect(screen.getByRole('link', { name: /orders/i })).toHaveAttribute('href', '/orders')
+  })
+
+  it('navigates as usual when no order went over budget', async () => {
+    const user = userEvent.setup()
+    mockedPost.mockResolvedValue({ orderIds: [31], failed: [], warnings: [] } as CheckoutResponse as never)
+    renderCart([item()], [projects[0]])
+
+    await user.click(screen.getByRole('button', { name: /check out/i }))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/orders'))
+  })
+
+  it('keeps the budget warning when some items also failed (#325)', async () => {
+    // Both at once is the case that was lost: the failure branch returned before
+    // the warnings were recorded, so the orders that DID get placed — the ones
+    // somebody needs telling about — went unmentioned.
+    const user = userEvent.setup()
+    mockedPost.mockResolvedValue({
+      orderIds: [31],
+      failed: [{ cartItemId: 2, message: 'CI unreachable' }],
+      warnings: [{ orderId: 31, message: 'IT-4711 — Platform is over budget: 1400.00 of 1000.00 EUR committed' }],
+    } as CheckoutResponse as never)
+    renderCart([item(), item({ id: 2 })], [projects[0]])
+
+    await user.click(screen.getByRole('button', { name: /check out/i }))
+
+    expect(await screen.findByText(/some items were not ordered/i)).toBeInTheDocument()
+    expect(screen.getByText(/CI unreachable/)).toBeInTheDocument()
+    // And the warning for the order that went through, alongside it.
+    expect(screen.getByText(/went through with the cost centre over budget/i)).toBeInTheDocument()
+    expect(screen.getByText(/1400\.00 of 1000\.00 EUR/)).toBeInTheDocument()
+    expect(push).not.toHaveBeenCalled()
+  })
+
   it('keeps the failed items and names them on a partial checkout', async () => {
     // Some pipelines may already be running, so this is not an error to retry
     // wholesale — the user needs to know which items are still theirs to deal with.

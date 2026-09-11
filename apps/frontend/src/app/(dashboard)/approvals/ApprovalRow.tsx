@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Order } from '@infrashelf/types'
+import type { BudgetState, Order } from '@infrashelf/types'
 import { post } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Alert } from '@/components/ui/Alert'
@@ -19,6 +19,30 @@ interface Props {
    * out before clicking rather than after.
    */
   currentUserId: number
+}
+
+/**
+ * What this order's cost centre has left, when it has a budget at all (#325).
+ *
+ * Only rendered once the budget is exhausted. A line on every row saying how
+ * much room is left would be read past within a day, and the approver does not
+ * need it: the decision only changes when there is none.
+ *
+ * Which behaviour applies is the point. Approving a `warn` order goes through
+ * and is recorded; approving a `block` one is refused at the gate, with the
+ * approver's click wasted — so the row says which of the two it is before they
+ * spend it.
+ */
+function BudgetNotice({ budget, lang }: { budget?: BudgetState | null; lang: string }) {
+  if (!budget || budget.amount === null || budget.currency === null || !budget.exhausted) return null
+  return (
+    <p className="mt-1 text-sm font-medium text-amber-700">
+      {t('budgetOverspent', lang)}: {budget.costCenterLabel} —{' '}
+      {`${budget.committed.toFixed(2)} / ${budget.amount.toFixed(2)} ${budget.currency}`}
+      {' · '}
+      {t(budget.behaviour === 'block' ? 'budgetApprovalBlocked' : 'budgetApprovalWarned', lang)}
+    </p>
+  )
 }
 
 export function ApprovalRow({ order, currentUserId }: Props) {
@@ -82,6 +106,7 @@ export function ApprovalRow({ order, currentUserId }: Props) {
             <StatusBadge status={order.status} lang={lang} />
             {order.isTrial && <TrialBadge lang={lang} />}
           </div>
+          <BudgetNotice budget={order.budget} lang={lang} />
           <p className="text-sm text-slate-500">
             {order.environmentName}
             {/* Size and quantity change what the approver is agreeing to: one

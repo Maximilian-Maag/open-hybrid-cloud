@@ -28,6 +28,8 @@ import {
   productEnvironments,
   auditLog,
   approvalDelegations,
+  costCenters,
+  projects,
 } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import {
@@ -40,6 +42,7 @@ import {
   createOrder as seedOrder,
   createDelegation as seedDelegation,
   linkProductEnvironment,
+  createCostCenter,
 } from '@/test/helpers'
 
 const makeSession = (u: { id: number; email: string; name: string; role: string }): SessionUser =>
@@ -92,6 +95,99 @@ describe('listApprovals', () => {
     const result = await listApprovals()
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data).toEqual([])
+  })
+
+  /**
+   * The approver's half of #325.
+   *
+   * The gate runs when the approval is granted, so a `warn` cost centre would
+   * tell the approver nothing and a `block` one would refuse them AFTER they
+   * clicked. The queue row is the last moment the decision can be taken.
+   */
+  describe('budget on the queue row', () => {
+    const priced = async (price: string) => {
+      const base = await setup()
+      await linkProductEnvironment(base.product.id, base.env.id, { price, currency: 'EUR' })
+      return base
+    }
+
+    const budgeted = async (amount: string, behaviour: 'warn' | 'block' = 'block') => {
+      const centre = await createCostCenter()
+      await db.update(costCenters).set({
+        budgetAmount: amount, budgetCurrency: 'EUR', budgetPeriod: 'total', budgetBehaviour: behaviour,
+      }).where(eq(costCenters.id, centre.id))
+      return centre
+    }
+
+    it("follows the project's cost centre, not orders.cost_center_id alone", async () => {
+      // The default 'project' mode stores no centre on the order, so a row that
+      // read only `orders.cost_center_id` would report no budget for most of
+      // the queue — the same trap costs.ts documents.
+      const base = await priced('100.00')
+      const centre = await budgeted('500.00')
+      await db.update(projects).set({ costCenterId: centre.id }).where(eq(projects.id, base.project.id))
+      await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, { status: 'pending' })
+
+      const result = await listApprovals()
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data[0].budget?.amount).toBe(500)
+      expect(result.data[0].budget?.committed).toBe(100)
+    })
+
+    it('flags a row whose budget is already spent, with the behaviour that applies', async () => {
+      const base = await priced('600.00')
+      const centre = await budgeted('500.00', 'warn')
+      await db.update(projects).set({ costCenterId: centre.id }).where(eq(projects.id, base.project.id))
+      await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, { status: 'pending' })
+
+      const result = await listApprovals()
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data[0].budget?.exhausted).toBe(true)
+      // Which one it is changes what approving means: `warn` goes through,
+      // `block` is refused at the gate.
+      expect(result.data[0].budget?.behaviour).toBe('warn')
+    })
+
+    it('carries no budget for a cost centre that has none', async () => {
+      // A row saying "no limit" on every order would be noise on a queue where
+      // budgets are opt-in.
+      const base = await priced('100.00')
+      const centre = await createCostCenter()
+      await db.update(projects).set({ costCenterId: centre.id }).where(eq(projects.id, base.project.id))
+      await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, { status: 'pending' })
+
+      const result = await listApprovals()
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data[0].budget).toBeNull()
+    })
+
+    it('carries no budget for an order with no cost centre at all', async () => {
+      const base = await priced('100.00')
+      await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, { status: 'pending' })
+
+      const result = await listApprovals()
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data[0].budget).toBeNull()
+    })
+
+    it('does not leak the project cost centre it looked up onto the row', async () => {
+      // It is a lookup input, not part of the contract; shipping it would invite
+      // a client to read it instead of `budget` and reintroduce the attribution
+      // bug this whole path exists to avoid.
+      const base = await priced('100.00')
+      const centre = await budgeted('500.00')
+      await db.update(projects).set({ costCenterId: centre.id }).where(eq(projects.id, base.project.id))
+      await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, { status: 'pending' })
+
+      const result = await listApprovals()
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data[0]).not.toHaveProperty('projectCostCenterId')
+    })
   })
 })
 

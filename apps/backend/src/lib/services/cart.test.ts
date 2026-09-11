@@ -24,7 +24,7 @@ import {
 } from './cart'
 import { triggerProductWebhooksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { cartItems, orders, parameters, products, productEnvironments, auditLog } from '@/lib/db/schema'
+import { cartItems, orders, parameters, products, productEnvironments, auditLog, costCenters, projects } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import {
   createUser,
@@ -382,6 +382,50 @@ describe('checkoutCart', () => {
       items: [{ ...item(ctx.first.id), costCenterId: cc.id }, item(ctx.second.id)],
     })
     expect(withCc.ok).toBe(true)
+  })
+
+  it('reports an over-budget order as a warning, not a failure (#325)', async () => {
+    // The order exists and its pipeline may already be running, so this is not
+    // something to retry — it is something to say. A `warn` budget whose warning
+    // never leaves the service is the setting doing nothing at all.
+    const ctx = await stocked()
+    const cc = await createCostCenter()
+    await db.update(costCenters).set({
+      budgetAmount: '0.00', budgetCurrency: 'EUR', budgetPeriod: 'total', budgetBehaviour: 'warn',
+    }).where(eq(costCenters.id, cc.id))
+    await db.update(projects).set({ costCenterId: cc.id }).where(eq(projects.id, ctx.project.id))
+
+    const result = await checkoutCart(makeSession(ctx.pm), {
+      projectId: ctx.project.id,
+      items: [item(ctx.first.id)],
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.failed).toEqual([])
+    expect(result.data.orderIds).toHaveLength(1)
+    expect(result.data.warnings).toHaveLength(1)
+    // Keyed on the order, because a cart can span two projects' cost centres and
+    // "something was over budget" does not say which.
+    expect(result.data.warnings[0].orderId).toBe(result.data.orderIds[0])
+    expect(result.data.warnings[0].message).toMatch(/over budget/i)
+  })
+
+  it('warns about nothing when every order was inside its budget (#325)', async () => {
+    const ctx = await stocked()
+    const cc = await createCostCenter()
+    await db.update(costCenters).set({
+      budgetAmount: '100000.00', budgetCurrency: 'EUR', budgetPeriod: 'total', budgetBehaviour: 'warn',
+    }).where(eq(costCenters.id, cc.id))
+    await db.update(projects).set({ costCenterId: cc.id }).where(eq(projects.id, ctx.project.id))
+
+    const result = await checkoutCart(makeSession(ctx.pm), {
+      projectId: ctx.project.id,
+      items: [item(ctx.first.id)],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.warnings).toEqual([])
   })
 
   it('applies the parameters submitted at checkout, not the cart prefill', async () => {

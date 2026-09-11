@@ -124,6 +124,7 @@
 | FA-10.3 | The Root maintains a list of available cost centers. | Shipped — **Administration → Cost Centers** |
 | FA-10.4 | The Root can configure the cost center assignment mode per product: **Project** (cost center of the project), **Selection** (orderer selects from list), **Shared Cost Center** (fixed overhead). | Shipped — mode is set per product **environment**, not per product as a whole; UI labels are "From Project" / "User Selection" / "Overhead" |
 | FA-10.5 | The Root can set a mode as default and either enforce it or only suggest it. | Shipped — the **Forced CC** checkbox; see `docs/guides/root.md` §4.1 Step 6 |
+| FA-10.6 | The Root can set a budget per cost centre — a total or monthly cap — and choose whether exceeding it warns or blocks. | Shipped (#325) — **Administration → Cost Centers → Budget**, root-guarded separately from the rest of that screen; see `docs/guides/root.md` §5.1. **Two limits are stated rather than hidden**: "monthly" means orders *placed* in the calendar month, because `product_environments.price` carries no billing period and no honest run rate can be derived from it (the same constraint `costs.ts` documents); and "committed" counts `pending` as well as `provisioning`/`completed`, which is deliberately wider than the Costs page, so a queue of unapproved orders cannot collectively blow a budget on approval. Root can override a `block` for a single order, audited as `order.budget_overridden`. |
 
 ---
 

@@ -399,6 +399,81 @@ Under **Administration → Cost Centers**:
 - Edit and deactivate cost centers (deactivated cost centers are no longer selectable for new orders)
 - This list is shown to orderers when the cost center mode is "Select"
 
+### 5.1 Budgets
+
+Each cost centre can carry a budget. **Budget** on a row opens it; a cost centre
+without one behaves exactly as it did before budgets existed, so this is opt-in
+and nothing changes until you set one.
+
+A budget is four things:
+
+| Field | Meaning |
+| --- | --- |
+| **Amount** and **Currency** | The limit. Committed spend in other currencies is converted through the stored exchange rates; amounts with no rate are reported separately rather than folded in at a guessed rate. |
+| **Period** | **Total** — one pot that never resets. **Monthly** — resets each calendar month. |
+| **When the budget is spent** | **Block** — the order is refused. **Warn** — the order goes through, and the orderer, the approver and the audit log are all told. |
+
+The row shows committed-over-limit (`2500.00 / 10000.00 EUR`) once a budget is
+set, and says **Over budget** when it is gone. The modal shows the committed
+figure *before* you set a budget too, which is what tells you whether the limit
+you are about to type has already been spent.
+
+**What "committed" counts.** Orders that are **pending, provisioning or
+completed** — what has been *asked for*, not only what has been built. This is
+deliberately wider than the Costs page, which counts provisioning and completed
+only: an approval queue full of pending orders would each see budget left,
+because none of them exists yet, and then collectively blow it the moment they
+are approved.
+
+**What "monthly" counts, and what it does not.** Orders **placed** in the
+calendar month. A price in this catalogue records an amount and a currency and
+*no billing period*, so there is no honest way to derive a run rate from it — a
+machine ordered in January and still running in June consumes budget in January
+only, and a long-lived estate therefore looks cheaper than it is. The modal says
+so when you choose Monthly. Giving prices a billing period is its own piece of
+work (see the note in issue #325).
+
+**Who may set one.** Root only — separately from the rest of this screen, which
+is `admin`. Renaming a cost centre and deciding what the platform refuses to
+provision are different powers.
+
+**Overriding a block.** Root, and only root, can place a single order against a
+spent `block` budget. It is recorded as `order.budget_overridden` in the audit
+log, names the cost centre, and the orderer is still told the order went through
+over budget. A hard block with no way past it becomes an outage during the one
+incident where somebody genuinely needs to provision.
+
+**Where the check bites.** At order creation, which both checkout and approval go
+through — so an order approved next week cannot spend a budget that is already
+gone. A `warn` budget shows on the approvals queue row as well, because the gate
+runs when the approval is *granted*: without it the approver would learn about a
+block only by clicking Approve and being refused.
+
+**What the figures cannot tell you.** Two caveats are shown in the modal rather
+than left for you to discover:
+
+- *Orders with no recoverable price.* An order placed before price snapshots
+  existed, whose offering has since been withdrawn, has no price anywhere. Its
+  spend is missing from Committed, and there is no number to add — the price is
+  unknown, not zero. The count is shown so you know the figure beside it is
+  incomplete. These are not refused: the offering cannot be re-priced, so
+  blocking on them would make the cost centre permanently unorderable.
+- *Amounts in a currency with no exchange rate.* Reported separately rather than
+  folded in at a rate that does not exist. An **incoming** order in such a
+  currency is a different matter: a `block` budget refuses it, because with no
+  rate there is no way to show it fits. Adding the rate under
+  **Administration → Exchange Rates** is the remedy, and the message says so.
+
+**Under concurrent load the block is best-effort.** The check and the order are
+two steps, so two orders placed against the same cost centre within the same
+instant can both pass a check that only one of them should have. The overspend
+is bounded by one order's value. Making it strict means serialising every order
+against a cost centre, which costs throughput on checkout — see issue #403 for
+the trade-off.
+
+Removing a budget clears all four fields together and the cost centre stops
+refusing anything. Nothing already ordered changes.
+
 ---
 
 ## 5a. Deployment Windows
@@ -514,6 +589,9 @@ Logged action types (this list has grown since the feature was first documented 
 | `product.webhook_updated` / `product.webhook_deleted` | An order callback on a product is saved or removed |
 | `category.created` / `category.updated` | A catalogue category is added or edited |
 | `cost_center.created` / `cost_center.updated` | A cost centre is added or edited |
+| `cost_center.budget_set` / `cost_center.budget_cleared` | A cost centre's budget is set, changed or removed (5.1) |
+| `order.budget_warning` | An order went through with its cost centre's budget already spent, under a `warn` budget |
+| `order.budget_overridden` | Root placed an order against a spent `block` budget |
 | `project.created` / `project.updated` | A project is added or edited |
 | `user.created` / `user.updated` | An account is created, or its role/details change |
 | `environment.updated` | A deployment environment is edited |

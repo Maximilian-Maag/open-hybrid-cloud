@@ -1,4 +1,4 @@
-import type { SessionUser } from '@infrashelf/types'
+import type { BudgetState, SessionUser } from '@infrashelf/types'
 import { db } from '@/lib/db/client'
 import {
   orders,
@@ -15,6 +15,7 @@ import { ok, err, type Result } from '@/lib/services/result'
 import { redactParametersForOrders } from '@/lib/services/parameterRedaction'
 import { activeDelegationsHeldBy, type DelegationRow } from '@/lib/services/delegations'
 import { provisionOrderElements } from '@/lib/services/orders'
+import { attachBudgets } from '@/lib/services/budgets'
 import { whenMayItDeploy } from '@/lib/services/windowPolicy'
 import { productNameSql } from '@/lib/db/productText'
 
@@ -48,6 +49,16 @@ export interface ApprovalRow {
   environmentName: string | null
   userName: string | null
   projectName: string | null
+  /**
+   * The budget of the cost centre this order will be billed to (#325), or null
+   * when there is none — no budget set, or no cost centre resolvable at all.
+   *
+   * On the queue because this is the last moment the decision can be taken. The
+   * gate in `createPreparedOrder` runs when the approval is granted, so a `warn`
+   * cost centre tells the approver nothing unless it is on the row in front of
+   * them, and a `block` one refuses the approval AFTER they have clicked it.
+   */
+  budget: BudgetState | null
 }
 
 export const listApprovals = async (lang = 'en'): Promise<Result<ApprovalRow[]>> => {
@@ -72,6 +83,11 @@ export const listApprovals = async (lang = 'en'): Promise<Result<ApprovalRow[]>>
       environmentName: deploymentEnvironments.name,
       userName: users.name,
       projectName: projects.name,
+      // Not returned on the row: the fall-through input for the budget lookup
+      // below. An order in the default 'project' mode stores no cost centre of
+      // its own, and reading only `orders.cost_center_id` would report "no
+      // budget" for most of the queue.
+      projectCostCenterId: projects.costCenterId,
     })
     .from(orders)
     .leftJoin(deploymentEnvironments, eq(orders.environmentId, deploymentEnvironments.id))
@@ -80,10 +96,12 @@ export const listApprovals = async (lang = 'en'): Promise<Result<ApprovalRow[]>>
     .where(eq(orders.status, 'pending'))
     .orderBy(sql`${orders.createdAt} ASC`)
 
+  const withBudgets = await attachBudgets(rows)
+
   // The queue is every pending order, shown to every admin, and the approvals page
   // renders none of these values — so returning them in cleartext shipped every
   // orderer's secrets to every admin for nothing (issue #131).
-  return ok(await redactParametersForOrders(rows as ApprovalRow[], (row) => row.id))
+  return ok(await redactParametersForOrders(withBudgets as ApprovalRow[], (row) => row.id))
 }
 
 /**

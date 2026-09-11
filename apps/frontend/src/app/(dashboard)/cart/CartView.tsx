@@ -65,6 +65,8 @@ export function CartView({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [partial, setPartial] = useState<CheckoutResponse['failed']>([])
+  /** Orders that were created over budget (#325), shown instead of navigating. */
+  const [warnings, setWarnings] = useState<NonNullable<CheckoutResponse['warnings']>>([])
 
   // One fetch per item, on first render of that item's card. Failures degrade to an
   // unlabelled card rather than blocking checkout — the server validates anyway.
@@ -133,6 +135,7 @@ export function CartView({
     setBusy(true)
     setError(null)
     setPartial([])
+    setWarnings([])
     try {
       const body: CheckoutRequest = {
         projectId: Number(projectId),
@@ -143,6 +146,16 @@ export function CartView({
         })),
       }
       const result = await post<CheckoutResponse>('/api/cart/checkout', body)
+
+      /*
+       * Warnings are recorded before the partial-failure branch, not after it.
+       *
+       * A checkout can do both at once: some items fail and the ones that
+       * succeeded went through over budget. The failure branch returns, so
+       * setting warnings after it discarded exactly the case where the orders
+       * that DID get placed are the ones somebody needs to be told about.
+       */
+      setWarnings(result.warnings ?? [])
 
       if (result.failed.length > 0) {
         // Some orders exist and their pipelines may already be running, so this is
@@ -156,6 +169,19 @@ export function CartView({
         return
       }
       publishCartCount(0)
+      /*
+       * An over-budget order does not navigate away from its own warning (#325).
+       *
+       * The orders it created exist and the cart is empty either way — the only
+       * difference is whether the person who placed them is told. Pushing to
+       * /orders here would replace the message with a list of rows that look
+       * exactly like every other order, which is the outcome a `warn` budget
+       * exists to prevent. They leave when they have read it.
+       */
+      if (result.warnings && result.warnings.length > 0) {
+        setItems([])
+        return
+      }
       router.push('/orders')
       router.refresh()
     } catch (e) {
@@ -189,6 +215,29 @@ export function CartView({
                     <li key={f.cartItemId}>{f.message}</li>
                   ))}
                 </ul>
+              </Alert>
+            </div>
+          )}
+          {warnings.length > 0 && (
+            <div className="mt-4">
+              {/* `warning`, not `error`: the orders were placed. Still
+                  role="alert", because it replaces a navigation the user was
+                  expecting and has to be heard. */}
+              <Alert tone="warning">
+                <p className="font-medium">{t('budgetOverBudgetNotice', lang)}</p>
+                <ul className="mt-1 list-disc list-inside text-sm">
+                  {warnings.map((w) => (
+                    <li key={w.orderId}>#{w.orderId} — {w.message}</li>
+                  ))}
+                </ul>
+                <div className="mt-3">
+                  <Link
+                    href="/orders"
+                    className="inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium underline"
+                  >
+                    {t('orders', lang)}
+                  </Link>
+                </div>
               </Alert>
             </div>
           )}

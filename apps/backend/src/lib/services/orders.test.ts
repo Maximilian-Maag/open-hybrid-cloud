@@ -15,7 +15,7 @@ import { listOrders, getOrderById, createOrder, markOrderFailed, STUCK_ORDER_SIL
 import { sendOrderCreated, sendApprovalRequest } from '@/lib/notification'
 import { triggerProductWebhooksTracked, triggerPipelineStacksTracked } from '@/lib/ci/webhooks'
 import { db } from '@/lib/db/client'
-import { orders, infrastructureElements, parameters, productEnvironments, products, auditLog } from '@/lib/db/schema'
+import { orders, infrastructureElements, parameters, productEnvironments, products, auditLog, costCenters, projects } from '@/lib/db/schema'
 import { STATE_KEY_NAMESPACE_VAR, stateKeyNamespaceFor } from '@/lib/ci/stateKey'
 import { LIST_MAX_LIMIT } from '@/lib/services/page'
 import { eq, desc } from 'drizzle-orm'
@@ -60,6 +60,103 @@ const buildBase = async () => {
   const project = await createProject(pm.id)
   return { admin, pm, cat, product, ci, env, project }
 }
+
+/**
+ * The approver's budget notice on the pending list (#325).
+ *
+ * The approvals screen reads `/api/orders?status=pending`, not `/api/approvals`,
+ * so this is the path that actually reaches a human. Both are covered, because
+ * a notice that shows up depending on which endpoint the page happens to call
+ * is not a notice.
+ */
+describe('listOrders — budget on the approvals queue', () => {
+  const scene = async (over?: { amount?: string; behaviour?: 'warn' | 'block' }) => {
+    const base = await buildBase()
+    await db.update(productEnvironments)
+      .set({ price: '600.00', currency: 'EUR' })
+      .where(eq(productEnvironments.productId, base.product.id))
+    const centre = await createCostCenter()
+    await db.update(costCenters).set({
+      budgetAmount: over?.amount ?? '500.00',
+      budgetCurrency: 'EUR',
+      budgetPeriod: 'total',
+      budgetBehaviour: over?.behaviour ?? 'block',
+    }).where(eq(costCenters.id, centre.id))
+    await db.update(projects).set({ costCenterId: centre.id }).where(eq(projects.id, base.project.id))
+    await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, { status: 'pending' })
+    return { ...base, centre }
+  }
+
+  it('gives an admin the budget of the order\'s cost centre', async () => {
+    const base = await scene()
+    const result = await listOrders(makeSession(base.admin), 'en', { status: 'pending' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.items[0].budget?.amount).toBe(500)
+    expect(result.data.items[0].budget?.committed).toBe(600)
+    expect(result.data.items[0].budget?.exhausted).toBe(true)
+  })
+
+  it("follows the project's cost centre, not orders.cost_center_id alone", async () => {
+    // The default 'project' mode stores no centre on the order, so a lookup that
+    // read only `orders.cost_center_id` would report no budget for most of the
+    // queue — the trap costs.ts documents.
+    const base = await scene()
+    const result = await listOrders(makeSession(base.admin), 'en', { status: 'pending' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.items[0].costCenterId).toBeNull()
+    expect(result.data.items[0].budget?.costCenterLabel).toContain(base.centre.code)
+  })
+
+  it('does not give a project manager the budget of their own pending order', async () => {
+    // A budget is a root-level figure. The approver needs it to decide; the
+    // person who placed the order has no business reading the cost centre's
+    // remaining spend off their own orders page.
+    const base = await scene()
+    const result = await listOrders(makeSession(base.pm), 'en', { status: 'pending' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.items[0].budget).toBeUndefined()
+  })
+
+  it('does not attach a budget to a list that is not the approvals queue', async () => {
+    // The lookup aggregates committed spend per cost centre. Every other list
+    // would pay for it and no reader would use it.
+    const base = await scene()
+    const result = await listOrders(makeSession(base.admin), 'en', {})
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.items[0].budget).toBeUndefined()
+  })
+
+  it('never leaks the project cost centre it looked up', async () => {
+    // It is a lookup input, not part of the contract — shipping it would invite
+    // a client to read it instead of `budget`.
+    const base = await scene()
+    for (const [session, filters] of [
+      [base.admin, { status: 'pending' as const }],
+      [base.pm, {}],
+    ] as const) {
+      const result = await listOrders(makeSession(session), 'en', filters)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.data.items[0]).not.toHaveProperty('projectCostCenterId')
+    }
+  })
+
+  it('leaves the budget null when the cost centre has no limit', async () => {
+    const base = await buildBase()
+    const centre = await createCostCenter()
+    await db.update(projects).set({ costCenterId: centre.id }).where(eq(projects.id, base.project.id))
+    await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, { status: 'pending' })
+
+    const result = await listOrders(makeSession(base.admin), 'en', { status: 'pending' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.items[0].budget).toBeNull()
+  })
+})
 
 describe('listOrders', () => {
   /*
@@ -1933,5 +2030,171 @@ describe('getOrderById cost centre naming', () => {
 
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.data.costCenterCode).toBe('OLD-1')
+  })
+})
+
+/**
+ * The budget gate (#325), tested where it actually sits.
+ *
+ * In `createPreparedOrder` rather than in a route, because the approval path
+ * comes through here too — a check in the checkout handler alone would let an
+ * order approved next week spend a budget that is already gone.
+ */
+describe('createOrder — budget enforcement', () => {
+  const withBudget = async (
+    behaviour: 'warn' | 'block',
+    amount: string,
+  ) => {
+    const base = await buildBase()
+    const centre = await createCostCenter()
+    await db.update(projects).set({ costCenterId: centre.id }).where(eq(projects.id, base.project.id))
+    await db.update(costCenters).set({
+      budgetAmount: amount, budgetCurrency: 'EUR', budgetPeriod: 'total', budgetBehaviour: behaviour,
+    }).where(eq(costCenters.id, centre.id))
+    return { ...base, centre }
+  }
+
+  const order = (base: Awaited<ReturnType<typeof withBudget>>, over?: { overrideBudget?: boolean }) => ({
+    projectId: base.project.id,
+    productId: base.product.id,
+    environmentId: base.env.id,
+    parameters: {},
+    ...(over ?? {}),
+  })
+
+  it('refuses an order against a spent budget', async () => {
+    const base = await withBudget('block', '0.00')
+    const result = await createOrder(makeSession(base.admin), order(base))
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(409)
+    expect(result.message).toContain('over budget')
+  })
+
+  it('lets the order through when the behaviour is warn', async () => {
+    // The whole point of the setting being configurable: over budget is not
+    // automatically a refusal, and a `warn` centre that blocked would be the
+    // feature doing the opposite of what root asked for.
+    mockedTriggerWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-warn'], failures: [] })
+    const base = await withBudget('warn', '0.00')
+    const result = await createOrder(makeSession(base.admin), order(base))
+    expect(result.ok).toBe(true)
+  })
+
+  it('lets the order through while the budget still has room', async () => {
+    mockedTriggerWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-room'], failures: [] })
+    const base = await withBudget('block', '100000.00')
+    const result = await createOrder(makeSession(base.admin), order(base))
+    expect(result.ok).toBe(true)
+  })
+
+  it('refuses even root without the override, so the escape is deliberate', async () => {
+    const base = await withBudget('block', '0.00')
+    const root = await createUser({ role: 'root' })
+    const result = await createOrder(makeSession(root), order(base))
+    expect(result.ok).toBe(false)
+  })
+
+  it('lets root through WITH the override, and writes it to the audit log', async () => {
+    // A hard block with no way past it becomes an outage during an incident —
+    // the one time somebody genuinely needs to provision against a spent
+    // budget. The record is what makes that acceptable.
+    mockedTriggerWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-override'], failures: [] })
+    const base = await withBudget('block', '0.00')
+    const root = await createUser({ role: 'root' })
+
+    const result = await createOrder(makeSession(root), order(base, { overrideBudget: true }))
+    expect(result.ok).toBe(true)
+
+    const entries = await db.select().from(auditLog).where(eq(auditLog.action, 'order.budget_overridden'))
+    expect(entries).toHaveLength(1)
+    expect(entries[0].details).toContain(base.centre.code)
+    // And root is told, like any other orderer who went through over budget.
+    // The override says they meant to; it does not say they wanted it silent.
+    if (!result.ok) return
+    expect(result.data.budgetWarning).toContain('over budget')
+  })
+
+  it('does not let a non-root user override', async () => {
+    // Otherwise the setting is advisory for anyone who knows the flag exists.
+    const base = await withBudget('block', '0.00')
+    const result = await createOrder(makeSession(base.admin), order(base, { overrideBudget: true }))
+    expect(result.ok).toBe(false)
+  })
+
+  it('refuses an order that would blow an untouched budget on its own', async () => {
+    /*
+     * The gate used to ask only "is the budget already spent?", so against an
+     * untouched budget of 500 the FIRST order could be for any amount and go
+     * through — the budget then refused the SECOND, after the money that broke
+     * it had gone. The order being placed is part of the question.
+     */
+    const base = await withBudget('block', '500.00')
+    await db.update(productEnvironments)
+      .set({ price: '10000.00', currency: 'EUR' })
+      .where(eq(productEnvironments.productId, base.product.id))
+
+    const result = await createOrder(makeSession(base.admin), order(base))
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(409)
+    expect(result.message).toMatch(/over the 500\.00 EUR budget/i)
+  })
+
+  it('lets an order through when it fits the budget that is left', async () => {
+    mockedTriggerWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-fits'], failures: [] })
+    const base = await withBudget('block', '500.00')
+    await db.update(productEnvironments)
+      .set({ price: '100.00', currency: 'EUR' })
+      .where(eq(productEnvironments.productId, base.product.id))
+
+    const result = await createOrder(makeSession(base.admin), order(base))
+    expect(result.ok).toBe(true)
+  })
+
+  it('counts the whole order, not one element of it', async () => {
+    // One approval covers all N elements (#104), so N x price is what lands
+    // against the budget.
+    const base = await withBudget('block', '500.00')
+    await db.update(productEnvironments)
+      .set({ price: '100.00', currency: 'EUR' })
+      .where(eq(productEnvironments.productId, base.product.id))
+
+    const result = await createOrder(makeSession(base.admin), { ...order(base), quantity: 20 })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.message).toMatch(/budget/i)
+  })
+
+  it('tells the orderer the order went through over budget', async () => {
+    // A warning nobody receives is not a warning: an over-budget order that
+    // passes silently is indistinguishable from one that was inside its budget.
+    mockedTriggerWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-warned'], failures: [] })
+    const base = await withBudget('warn', '0.00')
+    const result = await createOrder(makeSession(base.admin), order(base))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.budgetWarning).toContain('over budget')
+  })
+
+  it('records the warning in the audit log', async () => {
+    mockedTriggerWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-warn-audit'], failures: [] })
+    const base = await withBudget('warn', '0.00')
+    await createOrder(makeSession(base.admin), order(base))
+
+    const entries = await db.select().from(auditLog).where(eq(auditLog.action, 'order.budget_warning'))
+    expect(entries).toHaveLength(1)
+    expect(entries[0].details).toContain(base.centre.code)
+  })
+
+  it('says nothing about a budget when the order was inside it', async () => {
+    // Otherwise every order carries a notice and the one that matters is lost.
+    mockedTriggerWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-quiet'], failures: [] })
+    const base = await withBudget('warn', '100000.00')
+    const result = await createOrder(makeSession(base.admin), order(base))
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.budgetWarning).toBeUndefined()
+    expect(await db.select().from(auditLog).where(eq(auditLog.action, 'order.budget_warning'))).toHaveLength(0)
   })
 })

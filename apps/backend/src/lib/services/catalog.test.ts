@@ -21,6 +21,7 @@ import {
   createCiSource,
   createEnvironment,
   createProductImage,
+  linkProductEnvironment,
 } from '@/test/helpers'
 
 describe('listCatalog', () => {
@@ -378,6 +379,37 @@ describe('getProduct — the product page payload (#107)', () => {
       // The alt the tiles and the cart read is the first picture's.
       expect(result.data.imageAlt).toBe('The front')
     }
+  })
+
+  it('lists the environments by name, so the picker does not reshuffle itself', async () => {
+    /*
+     * This list IS the environment picker on the product page, and it had no
+     * ORDER BY: the order was whatever plan Postgres chose, which is not stable
+     * across schema changes. Adding four columns to `cost_centers` — the table
+     * this query left-joins for the overhead account's name — was enough to flip
+     * it, and an e2e journey that ordered into "the first environment" started
+     * landing on a different one (#325).
+     *
+     * Inserted in reverse so a plan that returns insertion order fails this.
+     */
+    const cat = await createCategory()
+    const product = await createProduct(cat.id, 'Picker')
+    const ci = await createCiSource()
+    const zurich = await createEnvironment(ci.id, undefined, 'Zurich')
+    const amsterdam = await createEnvironment(ci.id, undefined, 'Amsterdam')
+    const munich = await createEnvironment(ci.id, undefined, 'Munich')
+    for (const env of [zurich, munich, amsterdam]) {
+      await linkProductEnvironment(product.id, env.id)
+    }
+
+    const result = await getProduct(product.id, 'en')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.environments.map((e) => (e as { environmentName: string }).environmentName)).toEqual([
+      'Amsterdam',
+      'Munich',
+      'Zurich',
+    ])
   })
 
   it('has an empty gallery and a null imageAlt on a product with no picture', async () => {

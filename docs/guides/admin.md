@@ -57,6 +57,13 @@ Add one or more products (each with its environment already chosen) to the cart,
 - **Empty cart** removes everything without ordering it; the ✕ on an item removes just that one
 - An item whose product/environment is no longer offered is flagged and blocks checkout until removed
 
+**Over budget at checkout.** If a cost centre's budget is set to **warn** and it
+is already spent, the orders are still placed — but checkout stops on a notice
+naming each order and what is committed against what limit, rather than moving
+straight to the orders list. The cart is empty at that point; the notice is
+information, not a failure to retry. A **block** budget refuses the order
+instead, and the message says which cost centre and by how much.
+
 ### 2.4 Favourites
 
 Click the star on any catalog card to add or remove a product from your favourites (`GET /api/favorites`; `PUT` and `DELETE` on `/api/favorites/{productId}`). Favourited products appear in a shelf at the top of the catalog page independent of pagination/filtering, so a favourite stays reachable even if it would otherwise be on a later page.
@@ -78,6 +85,22 @@ Incoming orders from project managers appear under **Approvals**.
 3. Click **Approve**
 4. The configured CI provider's provisioning pipeline(s) are triggered immediately (GitLab, GitHub or Bitbucket, whichever the deployment environment's CI source uses)
 5. The project leader receives a confirmation email
+
+**Over-budget orders.** If the order's cost centre has a budget and that budget
+is already spent, the row says so before you decide — the cost centre, what is
+committed against what limit, and which of the two behaviours root configured:
+
+- **"approving this will be refused at the gate"** — the budget is set to
+  **block**. Approving will fail; the order stays pending. Only root can place an
+  order against a spent block budget, and it is recorded when they do.
+- **"approving this goes through and is recorded"** — the budget is set to
+  **warn**. Approving works normally and the audit log gets an
+  `order.budget_warning` entry.
+
+Rows whose budget still has room say nothing, and so do orders against a cost
+centre with no budget at all. The check runs when the approval is *granted*, so
+without this notice a block would only announce itself after you clicked. See
+the root guide §5.1 for how budgets are set.
 
 ### 3.2 Rejecting an Order
 

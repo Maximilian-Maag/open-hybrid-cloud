@@ -9,10 +9,11 @@
     "db:generate": "pnpm --filter backend db:generate",
     "db:migrate": "pnpm --filter backend db:migrate",
     "db:push": "pnpm --filter backend db:push",
-    "test": "pnpm --filter backend test && pnpm --filter frontend test",
+    "test": "pnpm --filter backend test && pnpm --filter frontend test && pnpm test:scripts",
     "test:coverage": "pnpm --filter backend test:coverage && pnpm --filter frontend test:coverage",
     "test:mutation": "pnpm --filter backend test:mutation && pnpm --filter frontend test:mutation",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:scripts": "vitest run"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -20,6 +21,7 @@
     "@types/node": "^22.20.0",
     "axe-core": "^4.13.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.9"
   }
 }

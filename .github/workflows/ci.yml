@@ -150,6 +150,14 @@ jobs:
   # One leg per app, so the seven-minute backend suite and the twenty-second
   # frontend one stop being the same seven and a half minutes. Only the backend
   # leg needs a database.
+  #
+  # The third leg is `scripts/`, which neither app collects because both vitest
+  # configs are rooted at their own package (#377). `skip-budget.mjs` is a
+  # REQUIRED gate — it is what makes a green e2e run mean anything — and it had
+  # no tests, which is how it shipped a false failure in #374.
+  #
+  # `include` rather than a bare list because the command differs: `scripts` is
+  # not a workspace package, so there is no `--filter` for it.
   test-matrix:
     name: Test (${{ matrix.app }})
     runs-on: ubuntu-latest
@@ -158,12 +166,18 @@ jobs:
       # is the point of splitting them.
       fail-fast: false
       matrix:
-        app: [backend, frontend]
+        include:
+          - app: backend
+            command: pnpm --filter backend test
+          - app: frontend
+            command: pnpm --filter frontend test
+          - app: scripts
+            command: pnpm test:scripts
     services:
-      # Present for both legs because a service block cannot be conditional per
-      # matrix leg. The frontend suite ignores it, and an unused Postgres costs a
-      # few seconds of startup — cheaper than hand-rolling `docker run` to avoid
-      # it. The test database tunes itself for durability-free speed (see
+      # Present for every leg because a service block cannot be conditional per
+      # matrix leg. The frontend and scripts suites ignore it, and an unused
+      # Postgres costs a few seconds of startup — cheaper than hand-rolling
+      # `docker run` to avoid it. The test database tunes itself for durability-free speed (see
       # src/test/database.ts), so nothing is needed on the server's command line.
       postgres:
         image: postgres:16-alpine
@@ -186,7 +200,7 @@ jobs:
       - uses: ./.github/actions/setup
 
       - name: Test ${{ matrix.app }}
-        run: pnpm --filter ${{ matrix.app }} test
+        run: ${{ matrix.command }}
 
   # The name branch protection knows. It stays green/red with the legs, so the
   # matrix can be reshaped without touching the protection rules.

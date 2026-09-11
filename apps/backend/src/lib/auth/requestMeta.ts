@@ -34,6 +34,19 @@ export const clientIp = (req: NextRequest): string | null => {
  * nothing about that belongs in a table cell or in the database.
  */
 export const clientUserAgent = (req: NextRequest): string | null => {
+  /*
+   * Three equivalent mutants live in the two lines below, and they are worth
+   * naming so the next reader of a mutation report does not hunt for tests
+   * that cannot exist:
+   *
+   *   - dropping `.trim()`. The `Headers` API trims header values on the way
+   *     in — `new Headers({'user-agent': '   '}).get(...)` is `''` — so by the
+   *     time this sees it there is nothing left to trim. Kept as a guard for
+   *     callers that hand us a plain object rather than real `Headers`.
+   *   - the `>` becoming `>=`, and the whole conditional becoming "always
+   *     slice". `slice(0, n)` on a string no longer than `n` returns that same
+   *     string, so all three arms agree on every input.
+   */
   const ua = req.headers.get('user-agent')?.trim()
   if (!ua) return null
   return ua.length > USER_AGENT_MAX_LENGTH ? ua.slice(0, USER_AGENT_MAX_LENGTH) : ua

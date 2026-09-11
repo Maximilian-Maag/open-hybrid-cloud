@@ -433,6 +433,19 @@ export const getProduct = async (
       eq(productEnvironments.overheadCostCenterId, costCenters.id),
     )
     .where(eq(productEnvironments.productId, productId))
+    /*
+     * Ordered, because this list IS the environment picker.
+     *
+     * Without it the order is whatever plan Postgres chose, which is not stable
+     * across schema changes: adding four columns and four CHECK constraints to
+     * `cost_centers` — the table this left-joins — was enough to flip it, and a
+     * product whose first offering was orderable stopped being so. Whoever reads
+     * the picker sees the same reshuffle for no reason they can see.
+     *
+     * By name, because that is what the picker displays, with the id as the
+     * tie-break. Same expression `admin/sizes.ts` already uses for this join.
+     */
+    .orderBy(deploymentEnvironments.name, productEnvironments.environmentId)
 
   // The sizes of every offering in one query, attached to their environment. The
   // buy box and the order form both need them per environment, and a query per

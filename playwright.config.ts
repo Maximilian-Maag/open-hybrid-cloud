@@ -63,12 +63,24 @@ export default defineConfig({
    * project at `--workers=1` in a second pass while everything else runs
    * parallel.
    *
-   * A note the old comment got right and worth keeping: the specs do NOT
-   * conflict over the saved root session. Each test gets an independent
+   * The coupling was always the database, and the wrong reason would have
+   * justified the wrong fix (#156). Each test does get an independent
    * BrowserContext seeded FROM `e2e/.auth/root.json`, and signing out in one
-   * neither rewrites that file nor invalidates another's cookie. The coupling
-   * was always the database, and the wrong reason would have justified the
-   * wrong fix (#156).
+   * neither rewrites that file nor touches another context's cookie.
+   *
+   * What is NO LONGER true, and used to be stated here as a reassurance: that
+   * signing out therefore cannot affect another spec. Since #391 a sign-out
+   * REVOKES the session server-side — a cleared cookie was never proof the
+   * session had ended — and every context seeded from that file is holding the
+   * SAME session. Revoke it once and the rest render signed-in from their
+   * cookies while every API call is refused, which shows up as empty pages
+   * rather than errors.
+   *
+   * So a spec that signs out must own the session it ends. `loginAsRoot` will
+   * not give it one: it has a fast path that returns immediately when the
+   * context is already authenticated, which here it always is. Create an
+   * account and sign in as it, the way `signout.spec` and the sign-out test in
+   * `dashboard.spec` do.
    *
    * Sharding stays as the second axis: `ci.yml` runs four `--shard`s, each a
    * whole machine with its own Postgres, seed and servers. Four remains right —

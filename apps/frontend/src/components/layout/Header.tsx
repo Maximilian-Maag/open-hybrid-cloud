@@ -5,10 +5,15 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from 'next-auth/react'
 import { clearServiceWorkerCaches } from '@/lib/serviceWorker'
+import { get, del } from '@/lib/api'
+import type { SessionInfo } from '@infrashelf/types'
 import { LanguageSwitcher } from './LanguageSwitcher'
 import { CartLink } from './CartLink'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
+
+/** Ceiling on the sign-out revoke, so it can never delay the sign-out itself. */
+const REVOKE_BUDGET_MS = 3_000
 
 interface HeaderProps {
   userName?: string | null
@@ -172,6 +177,55 @@ export function Header({
                     await clearServiceWorkerCaches()
                   } catch {
                     // Tidiness failed. Ending the session is what was asked for.
+                  }
+                  /*
+                   * End the session on the SERVER, not only in this browser.
+                   *
+                   * Clearing the cookie is not the same as ending the session,
+                   * and #391 is the gap between them: a `/api/auth/session`
+                   * read that was already in flight when sign-out landed still
+                   * carries the old cookie, so NextAuth validates it and mints
+                   * a FRESH one. The trace is unambiguous —
+                   * `set-cookie: authjs.session-token=; Max-Age=0` from the
+                   * sign-out, and a full token back from the very next read.
+                   * The session came back to life, on a machine whose user had
+                   * just left.
+                   *
+                   * A JWT cannot be un-issued, so the fix is to make the
+                   * resurrected one worthless: the backend checks every token
+                   * against the `sessions` table, and a revoked row fails that
+                   * check whatever the browser is still holding.
+                   *
+                   * Best-effort, by the same rule as the caches above (#359):
+                   * this must not become a second way for the only sign-out
+                   * affordance in the app to do nothing. A revoke that fails
+                   * leaves the old race exactly as it was and no worse.
+                   */
+                  try {
+                    /*
+                     * One deadline across both calls, and it is not optional.
+                     *
+                     * `catch` handles a rejection; it does nothing about a
+                     * connection that is accepted and then silent, where the
+                     * promise never settles and the `await` below never runs.
+                     * That is #359 exactly — the only sign-out affordance in
+                     * the app waiting on a call that could hang for ever — and
+                     * putting a network round trip in front of `signOut`
+                     * without a bound would have reintroduced it.
+                     *
+                     * Three seconds rather than the one the cache clearing
+                     * gets: that is a local operation, this is a round trip to
+                     * another host, and a revoke that would have worked on a
+                     * slow connection is worth waiting a little longer for.
+                     * Both are far below the point where a person stops
+                     * believing the button.
+                     */
+                    const signal = AbortSignal.timeout(REVOKE_BUDGET_MS)
+                    const current = (await get<SessionInfo[]>('/api/sessions', signal)).find((s) => s.current)
+                    if (current) await del(`/api/sessions/${current.id}`, signal)
+                  } catch {
+                    // Timed out, refused, or offline. The cookie still goes, and
+                    // the token still expires on its own.
                   }
                   /*
                    * `redirect: false`, then navigate ourselves.

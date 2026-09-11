@@ -634,36 +634,46 @@ export async function signOutViaMenu(page: Page): Promise<void> {
   await page.waitForURL(/\/login/, { timeout: 30_000 })
 
   /*
-   * And then wait for the SESSION to be gone, not just the page.
+   * And then wait for the SESSION to be REFUSED, not just for the page to move.
    *
-   * The redirect to /login is client-side, and `signout.spec` says so in its
-   * own comment: it can land while the cookie is still valid. So a caller that
-   * returns here on the URL alone has been told the sign-out finished when what
-   * finished was the navigation — and the next `goto` races the cookie.
+   * Two things this deliberately does not assert. Not the URL alone: the
+   * redirect to /login is client-side and `signout.spec` says in its own
+   * comment that it can land while the cookie is still valid. And not the
+   * absence of the cookie either, which is what this checked first and was the
+   * wrong question — under #391 a `/api/auth/session` read already in flight
+   * re-mints the cookie after sign-out has cleared it, so a browser can be
+   * holding a token that authenticates nothing.
    *
-   * Latent until #374 served production builds. A navigation that took five
-   * seconds hid the gap; at under one it does not, and `signout.spec` failed on
-   * the first attempt and passed on the retry, which is exactly what a race
-   * looks like from the outside.
+   * What matters is whether the session still opens doors. The backend checks
+   * every token against the `sessions` table, so once the row is revoked the
+   * answer is 401 whatever the cookie says — and that is the property worth
+   * waiting for, because it is the one a user walking away depends on.
+   */
+  /*
+   * `/api/proxy/api/orders`, and the status checked exactly.
    *
-   * The cookie is the thing the backend actually checks, so it is the thing to
-   * wait for. Matched by suffix because NextAuth prefixes it `__Secure-` when
-   * the cookie is secure, and this suite runs over http.
+   * Both halves were wrong first time round, and wrong in the direction that
+   * makes a check pass while proving nothing. The proxy forwards
+   * `/api/proxy/<path>` to `<API_URL>/<path>`, so `/api/proxy/orders` asks the
+   * backend for `/orders`, which does not exist:
    *
-   * A cookie that is still LISTED is not the same as a session that is still
-   * valid: NextAuth ends one by overwriting the value with an empty string
-   * rather than dropping the entry, and Playwright reports that as a cookie
-   * that exists. Waiting for it to disappear entirely therefore waited out the
-   * full 30s and failed on a session that had genuinely ended. What has to be
-   * gone is the VALUE — an empty token authenticates nothing.
+   *   /api/proxy/orders      signed in -> 404   signed out -> 401
+   *   /api/proxy/api/orders  signed in -> 200   signed out -> 401
+   *
+   * A `>= 401` poll against the first therefore succeeded IMMEDIATELY against
+   * a perfectly valid session, on a 404 that says nothing about the session at
+   * all. Caught in review of this PR.
    */
   await expect
     .poll(
       async () => {
-        const cookie = (await page.context().cookies()).find((c) => c.name.endsWith('session-token'))
-        return cookie !== undefined && cookie.value !== ''
+        const status = (await page.context().request.get('/api/proxy/api/orders', { failOnStatusCode: false })).status()
+        // Mapped to a boolean rather than compared with `>=`: only these two
+        // mean "refused". A 404 or a 500 is the probe going wrong, and letting
+        // either satisfy the wait is how this passed against a live session.
+        return status === 401 || status === 403
       },
-      { timeout: 30_000, message: 'the session cookie outlived the sign-out' },
+      { timeout: 30_000, message: 'the session still opened the API after the sign-out' },
     )
-    .toBe(false)
+    .toBe(true)
 }

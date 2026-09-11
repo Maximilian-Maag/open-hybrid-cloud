@@ -176,4 +176,13 @@ export const put = <T>(path: string, body: unknown) =>
 export const patch = <T>(path: string, body: unknown) =>
   apiRequest<T>(path, { method: 'PATCH', body })
 
-export const del = <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' })
+/**
+ * `signal` for the same reason `get` has one: a caller that must not hang.
+ *
+ * The sign-out menu revokes this session before ending it, and a `catch` is no
+ * defence against a connection that is accepted and then says nothing — the
+ * promise simply never settles, which is exactly how #359 turned the only
+ * sign-out affordance in the app into a button that did nothing.
+ */
+export const del = <T>(path: string, signal?: AbortSignal) =>
+  apiRequest<T>(path, { method: 'DELETE', signal })

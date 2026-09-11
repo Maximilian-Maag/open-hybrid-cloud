@@ -132,7 +132,13 @@ test.describe('signing out', () => {
 
         // And through the API, which does not care what the router did. The
         // browser reaches the backend only via /api/proxy (#146).
-        const refused = await context.request.get('/api/proxy/orders', { failOnStatusCode: false })
+        //
+        // `/api/proxy/api/orders`, not `/api/proxy/orders`: the proxy forwards
+        // `/api/proxy/<path>` to `<API_URL>/<path>`, so the shorter form asks
+        // the backend for `/orders` and gets a 404 that says nothing about the
+        // session. It only looked right because a signed-OUT request is
+        // refused by the proxy before the path matters.
+        const refused = await context.request.get('/api/proxy/api/orders', { failOnStatusCode: false })
         expect(
           [401, 403].includes(refused.status()),
           `the proxy still served this session (HTTP ${refused.status()})`,

@@ -35,17 +35,6 @@ const config = {
   // runtime. Reported as "ignored" instead, the same call the backend config
   // already made. The cost is real: module-level constants and configuration
   // objects are no longer covered by the score.
-  // Our own sources only, matching the backend, where the default cost every
-  // nightly its score: Stryker prepends `// @ts-nocheck` to each file its
-  // `disableTypeChecks` glob matches, the default reaches past `src`, and a
-  // vendored asset a test compared byte-for-byte came back sixteen bytes long.
-  //
-  // Nothing is broken here — this sandbox does not currently copy `public/` at
-  // all, so `sw.js` was never rewritten. Pinned anyway, because the two configs
-  // disagreeing on which files Stryker may edit is the kind of difference that
-  // is only ever noticed by the next person to lose a night's run to it.
-  disableTypeChecks: 'src/**/*.{ts,tsx}',
-
   ignoreStatic: true,
 
   // The dry run is its own clock, defaulting to five minutes for the whole

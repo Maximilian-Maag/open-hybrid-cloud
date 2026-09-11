@@ -29,26 +29,6 @@ const config = {
     '!src/**/*.test.ts',
   ],
 
-  // Only our own TypeScript, and this is why the backend had no score at all.
-  //
-  // Stryker prepends `// @ts-nocheck` to every file it copies that its
-  // `disableTypeChecks` glob matches — and the default reaches beyond `src`. It
-  // was rewriting `public/swagger-ui/swagger-ui-bundle.js`, a VENDORED asset
-  // committed so the docs page serves same-origin files, and
-  // `api/docs/route.test.ts` compares that file byte-for-byte against the copy
-  // in node_modules to catch a swagger-ui bump that skipped the vendoring
-  // script. Sixteen bytes of banner, inserted after the license comment, and
-  // the comparison was false:
-  //
-  //   repo    …LICENSE.txt */\n!function webpackUniversalModuleDefinition
-  //   sandbox …LICENSE.txt */\n// @ts-nocheck\n\n!function webpackUniversal…
-  //
-  // One failed test in the dry run aborts the whole run — "There were failed
-  // tests in the initial test run" — so every nightly since this test was
-  // written died before mutating anything, and `thresholds.break` was enforcing
-  // nothing at all. The test was right; the sandbox was lying to it.
-  disableTypeChecks: 'src/**/*.{ts,tsx}',
-
   // A static mutant (module-level code, e.g. a zod schema built at import time)
   // cannot be attributed to individual tests, so Stryker reruns the whole suite
   // for each one — hours against a live database. They are reported as "ignored"

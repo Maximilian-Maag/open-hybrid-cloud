@@ -24,10 +24,18 @@ jobs:
   mutate:
     name: Mutate (${{ matrix.app }})
     runs-on: ubuntu-latest
-    # The backend leg is hours, the frontend leg is minutes. Neither should be
-    # cut short by the other, and neither should be cut short by the six-hour
+    # The backend leg is hours, the frontend leg is over an hour. Neither should
+    # be cut short by the other, and neither should be cut short by the six-hour
     # default: say the limit out loud so a run that dies says why.
-    timeout-minutes: ${{ matrix.app == 'backend' && 330 || 60 }}
+    #
+    # The frontend was 60 and that is why it has had no completed score since
+    # 2026-08-24: the run is CANCELLED part-way, which looks like an
+    # infrastructure hiccup rather than a budget. The 2026-09-11 nightly reached
+    # 57% at 57 minutes with ~42 more to go — about 100 minutes for the whole
+    # thing, against a limit of 60. 180 matches what the release gate already
+    # allows it, and a cancelled run reports nothing at all, which is the
+    # failure mode #245 is trying to get out of.
+    timeout-minutes: ${{ matrix.app == 'backend' && 330 || 180 }}
     strategy:
       fail-fast: false
       matrix:

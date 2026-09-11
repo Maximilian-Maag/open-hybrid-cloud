@@ -649,10 +649,31 @@ export async function signOutViaMenu(page: Page): Promise<void> {
    * answer is 401 whatever the cookie says — and that is the property worth
    * waiting for, because it is the one a user walking away depends on.
    */
+  /*
+   * `/api/proxy/api/orders`, and the status checked exactly.
+   *
+   * Both halves were wrong first time round, and wrong in the direction that
+   * makes a check pass while proving nothing. The proxy forwards
+   * `/api/proxy/<path>` to `<API_URL>/<path>`, so `/api/proxy/orders` asks the
+   * backend for `/orders`, which does not exist:
+   *
+   *   /api/proxy/orders      signed in -> 404   signed out -> 401
+   *   /api/proxy/api/orders  signed in -> 200   signed out -> 401
+   *
+   * A `>= 401` poll against the first therefore succeeded IMMEDIATELY against
+   * a perfectly valid session, on a 404 that says nothing about the session at
+   * all. Caught in review of this PR.
+   */
   await expect
     .poll(
-      async () => (await page.context().request.get('/api/proxy/orders', { failOnStatusCode: false })).status(),
+      async () => {
+        const status = (await page.context().request.get('/api/proxy/api/orders', { failOnStatusCode: false })).status()
+        // Mapped to a boolean rather than compared with `>=`: only these two
+        // mean "refused". A 404 or a 500 is the probe going wrong, and letting
+        // either satisfy the wait is how this passed against a live session.
+        return status === 401 || status === 403
+      },
       { timeout: 30_000, message: 'the session still opened the API after the sign-out' },
     )
-    .toBeGreaterThanOrEqual(401)
+    .toBe(true)
 }

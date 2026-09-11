@@ -459,7 +459,8 @@ describe('signing out', () => {
     await user.click(screen.getByText(/my account/i))
     await user.click(screen.getByRole('button', { name: /sign out/i }))
 
-    await waitFor(() => expect(del).toHaveBeenCalledWith('/api/sessions/7'))
+    // The second argument is the deadline signal; this cares about the path.
+    await waitFor(() => expect(del).toHaveBeenCalledWith('/api/sessions/7', expect.anything()))
     // The OTHER session is someone else's problem — "sign out everywhere" is a
     // different affordance, and taking it here would be a surprise.
     expect(del).toHaveBeenCalledTimes(1)
@@ -476,6 +477,31 @@ describe('signing out', () => {
 
     await waitFor(() => expect(order).toEqual(['revoked', 'signedOut']))
   })
+
+  /*
+   * A HANG, not a rejection — the case a `catch` does nothing about.
+   *
+   * #359 was precisely this: the only sign-out affordance in the app awaiting
+   * a call that never settled, so the session did not end and the user was
+   * told it had. Putting a network round trip in front of `signOut` without a
+   * deadline would have reintroduced it, which is why the revoke carries one.
+   */
+  it('ends the session even if the revoke never answers', async () => {
+    // Never settles on its own; only the deadline's abort ends it — which is
+    // the whole point, and what a `catch` cannot do. Real timers, because the
+    // budget is 3s and this asserts that it actually elapses and releases.
+    vi.mocked(get).mockImplementation((async (_path: string, signal?: AbortSignal) =>
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('aborted')))
+      })) as never)
+
+    const user = userEvent.setup()
+    render(<Header userName="Root Admin" lang="en" />)
+    await user.click(screen.getByText(/my account/i))
+    await user.click(screen.getByRole('button', { name: /sign out/i }))
+
+    await waitFor(() => expect(signOut).toHaveBeenCalledWith({ redirect: false }), { timeout: 10_000 })
+  }, 15_000)
 
   /*
    * Same rule as the caches above (#359). This is the only sign-out affordance

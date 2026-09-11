@@ -12,6 +12,9 @@ import { CartLink } from './CartLink'
 import { useLang } from '@/lib/useLang'
 import { t } from '@/lib/i18n'
 
+/** Ceiling on the sign-out revoke, so it can never delay the sign-out itself. */
+const REVOKE_BUDGET_MS = 3_000
+
 interface HeaderProps {
   userName?: string | null
   shopName?: string
@@ -199,10 +202,30 @@ export function Header({
                    * leaves the old race exactly as it was and no worse.
                    */
                   try {
-                    const current = (await get<SessionInfo[]>('/api/sessions')).find((s) => s.current)
-                    if (current) await del(`/api/sessions/${current.id}`)
+                    /*
+                     * One deadline across both calls, and it is not optional.
+                     *
+                     * `catch` handles a rejection; it does nothing about a
+                     * connection that is accepted and then silent, where the
+                     * promise never settles and the `await` below never runs.
+                     * That is #359 exactly — the only sign-out affordance in
+                     * the app waiting on a call that could hang for ever — and
+                     * putting a network round trip in front of `signOut`
+                     * without a bound would have reintroduced it.
+                     *
+                     * Three seconds rather than the one the cache clearing
+                     * gets: that is a local operation, this is a round trip to
+                     * another host, and a revoke that would have worked on a
+                     * slow connection is worth waiting a little longer for.
+                     * Both are far below the point where a person stops
+                     * believing the button.
+                     */
+                    const signal = AbortSignal.timeout(REVOKE_BUDGET_MS)
+                    const current = (await get<SessionInfo[]>('/api/sessions', signal)).find((s) => s.current)
+                    if (current) await del(`/api/sessions/${current.id}`, signal)
                   } catch {
-                    // The cookie still goes, and the token still expires on its own.
+                    // Timed out, refused, or offline. The cookie still goes, and
+                    // the token still expires on its own.
                   }
                   /*
                    * `redirect: false`, then navigate ourselves.

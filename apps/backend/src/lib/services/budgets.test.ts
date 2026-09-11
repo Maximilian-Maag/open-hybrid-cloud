@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { costCenters, orders, projects, exchangeRates } from '@/lib/db/schema'
+import { costCenters, orders, projects, exchangeRates, productEnvironments, auditLog } from '@/lib/db/schema'
 import {
   createCategory, createProduct, createCiSource, createEnvironment,
   linkProductEnvironment, createProject, createUser, createCostCenter, createOrder,
 } from '@/test/helpers'
-import { checkBudget, loadAllBudgetStates, loadBudgetState } from './budgets'
+import { checkBudget, loadAllBudgetStates, loadBudgetState, setCostCentreBudget } from './budgets'
 
 /**
  * A budget decides whether an order is refused, so each case below is written
@@ -237,6 +237,161 @@ describe('currency', () => {
     const state = await loadBudgetState(s.centre.id)
     expect(state?.committed).toBe(0)
     expect(state?.unconverted).toEqual([{ currency: 'XYZ', amount: 100 }])
+  })
+})
+
+describe('the order being placed counts against its own budget', () => {
+  /*
+   * Only "is it already spent?" was asked, and on its own that is a much weaker
+   * control than the feature claims: against an untouched budget of 500 the
+   * FIRST order may be for 10,000 and sail through, because nothing was
+   * committed when it was checked. The budget would then refuse the second
+   * order — after the money that broke it had already gone.
+   */
+  const line = (price: number, currency = 'EUR', quantity = 1) => ({
+    price: price.toFixed(2), currency, quantity,
+  })
+
+  it('blocks an order that would take an untouched budget over on its own', async () => {
+    const s = await scene()
+    await setBudget(s.centre.id, { amount: '500.00', currency: 'EUR', period: 'total', behaviour: 'block' })
+
+    const verdict = await checkBudget(s.centre.id, undefined, line(10_000))
+    expect(verdict.outcome).toBe('block')
+    expect(verdict.message).toMatch(/over the 500\.00 EUR budget/i)
+  })
+
+  it('multiplies the incoming line by its quantity', async () => {
+    // 20 x 30 is 600 against a 500 budget; one of them is not.
+    const s = await scene()
+    await setBudget(s.centre.id, { amount: '500.00', currency: 'EUR', period: 'total', behaviour: 'block' })
+
+    expect((await checkBudget(s.centre.id, undefined, line(30, 'EUR', 1))).outcome).toBe('ok')
+    expect((await checkBudget(s.centre.id, undefined, line(30, 'EUR', 20))).outcome).toBe('block')
+  })
+
+  it('lets an order that lands exactly on the limit through, and the next one not', async () => {
+    // "A budget of 500" means you may spend up to 500, so 500 is inside it.
+    const s = await scene('500.00')
+    await db.update(projects).set({ costCenterId: s.centre.id }).where(eq(projects.id, s.project.id))
+    await setBudget(s.centre.id, { amount: '500.00', currency: 'EUR', period: 'total', behaviour: 'block' })
+
+    expect((await checkBudget(s.centre.id, undefined, line(500))).outcome).toBe('ok')
+    await placeOrder(s)
+    expect((await checkBudget(s.centre.id, undefined, line(1))).outcome).toBe('block')
+  })
+
+  it('still refuses a free order against a budget that is already spent', async () => {
+    // `amount: 0` is how new spend is stopped deliberately, and a rule that only
+    // asked "would this order take you over?" would let a zero-price one past.
+    const s = await scene()
+    await setBudget(s.centre.id, { amount: '0.00', currency: 'EUR', period: 'total', behaviour: 'block' })
+    expect((await checkBudget(s.centre.id, undefined, line(0))).outcome).toBe('block')
+  })
+
+  it('converts the incoming line into the budget currency before comparing', async () => {
+    // 900 CHF at 2 CHF per EUR is 450 EUR, which fits a 500 EUR budget; the raw
+    // number would not.
+    await db.insert(exchangeRates).values({ currencyCode: 'CHF', rate: '2.0' }).onConflictDoUpdate({
+      target: exchangeRates.currencyCode, set: { rate: '2.0' },
+    })
+    const s = await scene()
+    await setBudget(s.centre.id, { amount: '500.00', currency: 'EUR', period: 'total', behaviour: 'block' })
+
+    expect((await checkBudget(s.centre.id, undefined, line(900, 'CHF'))).outcome).toBe('ok')
+    expect((await checkBudget(s.centre.id, undefined, line(1100, 'CHF'))).outcome).toBe('block')
+  })
+
+  it('fails closed when the incoming line cannot be converted at all', async () => {
+    /*
+     * With no rate there is no way to show the order fits, and the amount is
+     * unknown rather than zero. Letting it through would make "block" mean
+     * "block, unless the currency is one we have no rate for".
+     */
+    await db.delete(exchangeRates).where(eq(exchangeRates.currencyCode, 'XYZ'))
+    const s = await scene()
+    await setBudget(s.centre.id, { amount: '100000.00', currency: 'EUR', period: 'total', behaviour: 'block' })
+
+    const verdict = await checkBudget(s.centre.id, undefined, line(1, 'XYZ'))
+    expect(verdict.outcome).toBe('block')
+    // And it names the remedy rather than just refusing.
+    expect(verdict.message).toMatch(/exchange rate/i)
+  })
+
+  it('warns rather than refusing an unconvertible line when the behaviour is warn', async () => {
+    await db.delete(exchangeRates).where(eq(exchangeRates.currencyCode, 'XYZ'))
+    const s = await scene()
+    await setBudget(s.centre.id, { amount: '100000.00', currency: 'EUR', period: 'total', behaviour: 'warn' })
+    expect((await checkBudget(s.centre.id, undefined, line(1, 'XYZ'))).outcome).toBe('warn')
+  })
+
+  it('says nothing when the order fits', async () => {
+    const s = await scene()
+    await setBudget(s.centre.id, { amount: '500.00', currency: 'EUR', period: 'total', behaviour: 'block' })
+    const verdict = await checkBudget(s.centre.id, undefined, line(10))
+    expect(verdict.outcome).toBe('ok')
+    expect(verdict.message).toBeNull()
+  })
+})
+
+describe('committed spend that cannot be priced is reported, not hidden', () => {
+  it('counts an order with no recoverable price instead of skipping it silently', async () => {
+    /*
+     * An order that predates snapshots whose offering has since been withdrawn
+     * has no price anywhere. Skipping it leaves `committed` under-reporting and
+     * a `block` budget claiming room it may not have — the same lie as counting
+     * it at zero, in a quieter form. There is no honest number to add, so it is
+     * reported instead.
+     */
+    const s = await scene()
+    await db.update(projects).set({ costCenterId: s.centre.id }).where(eq(projects.id, s.project.id))
+    await setBudget(s.centre.id, { amount: '500.00', currency: 'EUR', period: 'total', behaviour: 'block' })
+    await placeOrder(s)
+    // Withdraw the offering, leaving the order with no snapshot and no fallback.
+    await db.delete(productEnvironments).where(eq(productEnvironments.productId, s.product.id))
+
+    const state = await loadBudgetState(s.centre.id)
+    expect(state?.unpriced).toBe(1)
+    expect(state?.committed).toBe(0)
+  })
+
+  it('reports none when every committed order has a price', async () => {
+    const s = await scene()
+    await db.update(projects).set({ costCenterId: s.centre.id }).where(eq(projects.id, s.project.id))
+    await setBudget(s.centre.id, { amount: '500.00', currency: 'EUR', period: 'total', behaviour: 'block' })
+    await placeOrder(s)
+    expect((await loadBudgetState(s.centre.id))?.unpriced).toBe(0)
+  })
+})
+
+describe('setting a budget records who did it, atomically', () => {
+  it('writes the audit entry in the same transaction as the change', async () => {
+    // A control that can be changed without the entry saying who changed it is
+    // not auditable, and these used to be two statements.
+    const actor = await createUser({ role: 'root' })
+    const centre = await createCostCenter()
+
+    const result = await setCostCentreBudget(
+      centre.id,
+      { amount: 250, currency: 'EUR', period: 'monthly', behaviour: 'warn' },
+      actor.id,
+    )
+    expect(result.ok).toBe(true)
+
+    const [row] = await db.select().from(costCenters).where(eq(costCenters.id, centre.id))
+    expect(row.budgetAmount).toBe('250.00')
+    const entries = await db.select().from(auditLog).where(eq(auditLog.action, 'cost_center.budget_set'))
+    expect(entries).toHaveLength(1)
+    expect(entries[0].entityId).toBe(centre.id)
+  })
+
+  it('records nothing for a cost centre that does not exist', async () => {
+    const actor = await createUser({ role: 'root' })
+    const result = await setCostCentreBudget(
+      999_999, { amount: 10, currency: 'EUR', period: 'total', behaviour: 'block' }, actor.id,
+    )
+    expect(result.ok).toBe(false)
+    expect(await db.select().from(auditLog).where(eq(auditLog.action, 'cost_center.budget_set'))).toHaveLength(0)
   })
 })
 

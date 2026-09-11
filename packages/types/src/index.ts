@@ -806,6 +806,15 @@ export interface BudgetState {
   exhausted: boolean
   /** Amounts no exchange rate could convert into the budget's currency. */
   unconverted: { currency: string; amount: number }[]
+  /**
+   * Committed orders with no recoverable price at all — no snapshot, and the
+   * offering they were placed against has since been withdrawn (#189).
+   *
+   * Their spend is missing from `committed`, so this is what says the figure
+   * beside it is incomplete. Not an amount, because there is no amount: the
+   * price is unknown, not small.
+   */
+  unpriced: number
 }
 
 /** The body of `PUT /api/admin/cost-centers/:id/budget`. */

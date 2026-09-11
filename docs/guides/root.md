@@ -449,6 +449,28 @@ gone. A `warn` budget shows on the approvals queue row as well, because the gate
 runs when the approval is *granted*: without it the approver would learn about a
 block only by clicking Approve and being refused.
 
+**What the figures cannot tell you.** Two caveats are shown in the modal rather
+than left for you to discover:
+
+- *Orders with no recoverable price.* An order placed before price snapshots
+  existed, whose offering has since been withdrawn, has no price anywhere. Its
+  spend is missing from Committed, and there is no number to add — the price is
+  unknown, not zero. The count is shown so you know the figure beside it is
+  incomplete. These are not refused: the offering cannot be re-priced, so
+  blocking on them would make the cost centre permanently unorderable.
+- *Amounts in a currency with no exchange rate.* Reported separately rather than
+  folded in at a rate that does not exist. An **incoming** order in such a
+  currency is a different matter: a `block` budget refuses it, because with no
+  rate there is no way to show it fits. Adding the rate under
+  **Administration → Exchange Rates** is the remedy, and the message says so.
+
+**Under concurrent load the block is best-effort.** The check and the order are
+two steps, so two orders placed against the same cost centre within the same
+instant can both pass a check that only one of them should have. The overspend
+is bounded by one order's value. Making it strict means serialising every order
+against a cost centre, which costs throughput on checkout — see issue #403 for
+the trade-off.
+
 Removing a budget clears all four fields together and the cost centre stops
 refusing anything. Nothing already ordered changes.
 

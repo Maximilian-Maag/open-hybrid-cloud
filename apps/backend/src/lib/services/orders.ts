@@ -1159,7 +1159,18 @@ export const createPreparedOrder = async (
    * `warn` deliberately does not stop anything — it is the setting that says
    * "tell me, do not refuse me" — so only `block` returns early.
    */
-  const budget = await checkBudgetForOrder(projectId, resolvedCostCenterId)
+  /*
+   * The order being placed is part of the question, not just the ones before it.
+   *
+   * Its line total comes from the snapshot captured for THIS order, which is
+   * the same figure `loadBudgetState` reads back for it once it exists — so the
+   * gate and the report cannot disagree about what it cost.
+   */
+  const budget = await checkBudgetForOrder(projectId, resolvedCostCenterId, new Date(), {
+    price: productSnapshot?.price ?? null,
+    currency: productSnapshot?.currency ?? null,
+    quantity,
+  })
   if (budget.outcome === 'block') {
     if (session.role !== 'root' || !overrideBudget) {
       return err(409, budget.message ?? 'This cost centre is over budget.')

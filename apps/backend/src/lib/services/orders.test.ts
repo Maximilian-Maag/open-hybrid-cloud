@@ -103,6 +103,7 @@ describe('listOrders — budget on the approvals queue', () => {
     // queue — the trap costs.ts documents.
     const base = await scene()
     const result = await listOrders(makeSession(base.admin), 'en', { status: 'pending' })
+    expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data.items[0].costCenterId).toBeNull()
     expect(result.data.items[0].budget?.costCenterLabel).toContain(base.centre.code)
@@ -138,6 +139,7 @@ describe('listOrders — budget on the approvals queue', () => {
       [base.pm, {}],
     ] as const) {
       const result = await listOrders(makeSession(session), 'en', filters)
+      expect(result.ok).toBe(true)
       if (!result.ok) return
       expect(result.data.items[0]).not.toHaveProperty('projectCostCenterId')
     }
@@ -150,6 +152,7 @@ describe('listOrders — budget on the approvals queue', () => {
     await seedOrder(base.project.id, base.product.id, base.env.id, base.pm.id, { status: 'pending' })
 
     const result = await listOrders(makeSession(base.admin), 'en', { status: 'pending' })
+    expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.data.items[0].budget).toBeNull()
   })
@@ -2117,6 +2120,50 @@ describe('createOrder — budget enforcement', () => {
     const base = await withBudget('block', '0.00')
     const result = await createOrder(makeSession(base.admin), order(base, { overrideBudget: true }))
     expect(result.ok).toBe(false)
+  })
+
+  it('refuses an order that would blow an untouched budget on its own', async () => {
+    /*
+     * The gate used to ask only "is the budget already spent?", so against an
+     * untouched budget of 500 the FIRST order could be for any amount and go
+     * through — the budget then refused the SECOND, after the money that broke
+     * it had gone. The order being placed is part of the question.
+     */
+    const base = await withBudget('block', '500.00')
+    await db.update(productEnvironments)
+      .set({ price: '10000.00', currency: 'EUR' })
+      .where(eq(productEnvironments.productId, base.product.id))
+
+    const result = await createOrder(makeSession(base.admin), order(base))
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.status).toBe(409)
+    expect(result.message).toMatch(/over the 500\.00 EUR budget/i)
+  })
+
+  it('lets an order through when it fits the budget that is left', async () => {
+    mockedTriggerWebhooks.mockResolvedValueOnce({ pipelineIds: ['pipe-fits'], failures: [] })
+    const base = await withBudget('block', '500.00')
+    await db.update(productEnvironments)
+      .set({ price: '100.00', currency: 'EUR' })
+      .where(eq(productEnvironments.productId, base.product.id))
+
+    const result = await createOrder(makeSession(base.admin), order(base))
+    expect(result.ok).toBe(true)
+  })
+
+  it('counts the whole order, not one element of it', async () => {
+    // One approval covers all N elements (#104), so N x price is what lands
+    // against the budget.
+    const base = await withBudget('block', '500.00')
+    await db.update(productEnvironments)
+      .set({ price: '100.00', currency: 'EUR' })
+      .where(eq(productEnvironments.productId, base.product.id))
+
+    const result = await createOrder(makeSession(base.admin), { ...order(base), quantity: 20 })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.message).toMatch(/budget/i)
   })
 
   it('tells the orderer the order went through over budget', async () => {

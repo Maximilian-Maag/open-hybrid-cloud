@@ -255,6 +255,28 @@ describe('CartView', () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith('/orders'))
   })
 
+  it('keeps the budget warning when some items also failed (#325)', async () => {
+    // Both at once is the case that was lost: the failure branch returned before
+    // the warnings were recorded, so the orders that DID get placed — the ones
+    // somebody needs telling about — went unmentioned.
+    const user = userEvent.setup()
+    mockedPost.mockResolvedValue({
+      orderIds: [31],
+      failed: [{ cartItemId: 2, message: 'CI unreachable' }],
+      warnings: [{ orderId: 31, message: 'IT-4711 — Platform is over budget: 1400.00 of 1000.00 EUR committed' }],
+    } as CheckoutResponse as never)
+    renderCart([item(), item({ id: 2 })], [projects[0]])
+
+    await user.click(screen.getByRole('button', { name: /check out/i }))
+
+    expect(await screen.findByText(/some items were not ordered/i)).toBeInTheDocument()
+    expect(screen.getByText(/CI unreachable/)).toBeInTheDocument()
+    // And the warning for the order that went through, alongside it.
+    expect(screen.getByText(/went through with the cost centre over budget/i)).toBeInTheDocument()
+    expect(screen.getByText(/1400\.00 of 1000\.00 EUR/)).toBeInTheDocument()
+    expect(push).not.toHaveBeenCalled()
+  })
+
   it('keeps the failed items and names them on a partial checkout', async () => {
     // Some pipelines may already be running, so this is not an error to retry
     // wholesale — the user needs to know which items are still theirs to deal with.

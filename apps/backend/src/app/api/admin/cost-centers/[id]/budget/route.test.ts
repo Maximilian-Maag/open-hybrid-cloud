@@ -42,6 +42,65 @@ describe('the guard is root, not admin', () => {
   })
 })
 
+describe('the currency is normalised at the boundary', () => {
+  /*
+   * `exchange_rates.currency_code` is upper-case and `convert` looks it up
+   * exactly, so a budget stored as `eur` matches no rate: every order in another
+   * currency lands as unconvertible, `committed` stays at zero, and a `block`
+   * budget silently stops blocking. The screen uppercases — the screen is not
+   * the only caller.
+   */
+  it('stores a lower-case code upper-cased', async () => {
+    const root = await createUser({ role: 'root' })
+    const cc = await createCostCenter()
+    const res = await PUT(
+      makeReq(String(cc.id), 'PUT', { ...budget, currency: 'chf' }, await makeAuthHeader(root)),
+      params(cc.id),
+    )
+    expect(res.status).toBe(200)
+
+    const [row] = await db.select().from(costCenters).where(eq(costCenters.id, cc.id))
+    expect(row.budgetCurrency).toBe('CHF')
+  })
+
+  it('trims surrounding whitespace', async () => {
+    const root = await createUser({ role: 'root' })
+    const cc = await createCostCenter()
+    await PUT(
+      makeReq(String(cc.id), 'PUT', { ...budget, currency: ' usd ' }, await makeAuthHeader(root)),
+      params(cc.id),
+    )
+    const [row] = await db.select().from(costCenters).where(eq(costCenters.id, cc.id))
+    expect(row.budgetCurrency).toBe('USD')
+  })
+
+  it('refuses a three-character value that is not a currency code', async () => {
+    const root = await createUser({ role: 'root' })
+    const cc = await createCostCenter()
+    for (const currency of ['$$$', '1 2', 'e€r']) {
+      const res = await PUT(
+        makeReq(String(cc.id), 'PUT', { ...budget, currency }, await makeAuthHeader(root)),
+        params(cc.id),
+      )
+      expect(res.status, `${currency} should be refused`).toBe(400)
+    }
+    const [row] = await db.select().from(costCenters).where(eq(costCenters.id, cc.id))
+    expect(row.budgetCurrency).toBeNull()
+  })
+
+  it('still refuses the wrong length', async () => {
+    const root = await createUser({ role: 'root' })
+    const cc = await createCostCenter()
+    for (const currency of ['EU', 'EURO', '']) {
+      const res = await PUT(
+        makeReq(String(cc.id), 'PUT', { ...budget, currency }, await makeAuthHeader(root)),
+        params(cc.id),
+      )
+      expect(res.status, `${currency} should be refused`).toBe(400)
+    }
+  })
+})
+
 describe('setting a budget', () => {
   it('stores all four columns together', async () => {
     // The database CHECK requires it and the enforcement path depends on it: an

@@ -873,6 +873,7 @@ export type Translations = {
   budgetApprovalBlocked: string
   budgetApprovalWarned: string
   budgetOverBudgetNotice: string
+  budgetUnpriced: string
 }
 
 // English is the complete reference table, and `t()` falls back to it per key
@@ -889,6 +890,7 @@ export type Translations = {
 // the string and not afterwards.
 const translations: { en: Translations } & Record<string, Partial<Translations>> = {
   bg: {
+    budgetUnpriced: 'За някои ангажирани поръчки не може да се установи цена, затова тази стойност е непълна:',
     budgetApprovalBlocked: 'одобрението ще бъде отхвърлено при проверката',
     budgetApprovalWarned: 'одобрението минава и се записва',
     budgetOverBudgetNotice: 'Тази поръчка премина, въпреки че разходният център е надхвърлил бюджета си.',
@@ -1680,6 +1682,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Въведете цял брой елементи в допустимия диапазон.',
   },
   cs: {
+    budgetUnpriced: 'U některých závazně vyčerpaných objednávek nelze zjistit cenu, proto je tento údaj neúplný:',
     budgetApprovalBlocked: 'schválení bude na kontrole odmítnuto',
     budgetApprovalWarned: 'schválení projde a bude zaznamenáno',
     budgetOverBudgetNotice: 'Tato objednávka prošla, ačkoli nákladové středisko překročilo rozpočet.',
@@ -2471,6 +2474,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Zadejte celý počet prvků v povoleném rozsahu.',
   },
   da: {
+    budgetUnpriced: 'Nogle bundne ordrer har ingen genfindelig pris, så dette tal er ufuldstændigt:',
     budgetApprovalBlocked: 'godkendelse vil blive afvist ved kontrollen',
     budgetApprovalWarned: 'godkendelse går igennem og registreres',
     budgetOverBudgetNotice: 'Denne ordre gik igennem, selv om omkostningsstedet er over budget.',
@@ -3262,6 +3266,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Angiv et helt antal elementer inden for det tilladte interval.',
   },
   de: {
+    budgetUnpriced: 'Für einige gebundene Bestellungen ist kein Preis mehr ermittelbar, daher ist dieser Wert unvollständig:',
     budgetApprovalBlocked: 'Die Genehmigung wird beim Prüfpunkt abgelehnt',
     budgetApprovalWarned: 'Die Genehmigung geht durch und wird protokolliert',
     budgetOverBudgetNotice: 'Diese Bestellung ging durch, obwohl die Kostenstelle das Budget überschritten hat.',
@@ -4053,6 +4058,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Bitte eine ganze Anzahl von Elementen im zulässigen Bereich eingeben.',
   },
   el: {
+    budgetUnpriced: 'Για ορισμένες δεσμευμένες παραγγελίες δεν είναι δυνατή η ανάκτηση τιμής, οπότε το μέγεθος αυτό είναι ελλιπές:',
     budgetApprovalBlocked: 'η έγκριση θα απορριφθεί στον έλεγχο',
     budgetApprovalWarned: 'η έγκριση προχωρά και καταγράφεται',
     budgetOverBudgetNotice: 'Αυτή η παραγγελία προχώρησε ενώ το κέντρο κόστους έχει υπερβεί τον προϋπολογισμό του.',
@@ -4844,6 +4850,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Εισαγάγετε ακέραιο αριθμό στοιχείων εντός του επιτρεπτού εύρους.',
   },
   en: {
+    budgetUnpriced: 'Some committed orders have no recoverable price, so this figure is incomplete:',
     budgetApprovalBlocked: 'approving this will be refused at the gate',
     budgetApprovalWarned: 'approving this goes through and is recorded',
     budgetOverBudgetNotice: 'This order went through with the cost centre over budget.',
@@ -5635,6 +5642,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Enter a whole number of elements within the permitted range.',
   },
   es: {
+    budgetUnpriced: 'Algunos pedidos comprometidos no tienen precio recuperable, por lo que esta cifra está incompleta:',
     budgetApprovalBlocked: 'la aprobación será rechazada en el control',
     budgetApprovalWarned: 'la aprobación se cursa y queda registrada',
     budgetOverBudgetNotice: 'Este pedido se cursó con el centro de coste por encima de su presupuesto.',
@@ -6426,6 +6434,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Introduzca un número entero de elementos dentro del intervalo permitido.',
   },
   et: {
+    budgetUnpriced: 'Mõne seotud tellimuse hinda ei ole võimalik taastada, seega on see näitaja puudulik:',
     budgetApprovalBlocked: 'kinnitamine lükatakse kontrollis tagasi',
     budgetApprovalWarned: 'kinnitamine läheb läbi ja logitakse',
     budgetOverBudgetNotice: 'See tellimus läks läbi, kuigi kulukoht on eelarve ületanud.',
@@ -7217,6 +7226,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Sisestage täisarv elemente lubatud vahemikus.',
   },
   fi: {
+    budgetUnpriced: 'Joillekin sidotuille tilauksille ei löydy hintaa, joten tämä luku on epätäydellinen:',
     budgetApprovalBlocked: 'hyväksyntä hylätään tarkistuksessa',
     budgetApprovalWarned: 'hyväksyntä menee läpi ja kirjataan',
     budgetOverBudgetNotice: 'Tämä tilaus meni läpi, vaikka kustannuspaikka on budjetin yli.',
@@ -8008,6 +8018,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Anna kokonaisluku elementtejä sallitulla välillä.',
   },
   fr: {
+    budgetUnpriced: 'Le prix de certaines commandes engagées n\'est plus récupérable, ce chiffre est donc incomplet :',
     budgetApprovalBlocked: 'l\'approbation sera refusée au contrôle',
     budgetApprovalWarned: 'l\'approbation passe et est enregistrée',
     budgetOverBudgetNotice: 'Cette commande est passée alors que le centre de coûts dépasse son budget.',
@@ -8799,6 +8810,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Saisissez un nombre entier d\'éléments dans la plage autorisée.',
   },
   ga: {
+    budgetUnpriced: 'Níl praghas inaisghabhála ag roinnt orduithe geallta, mar sin tá an figiúr seo neamhiomlán:',
     budgetApprovalBlocked: 'diúltófar don cheadú ag an seiceáil',
     budgetApprovalWarned: 'téann an ceadú tríd agus taifeadtar é',
     budgetOverBudgetNotice: 'Chuaigh an t-ordú seo tríd agus an t-ionad costais thar a bhuiséad.',
@@ -9590,6 +9602,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Cuir isteach slánuimhir eilimintí laistigh den raon ceadaithe.',
   },
   hr: {
+    budgetUnpriced: 'Za neke obvezane narudžbe cijena se više ne može utvrditi, pa je ovaj iznos nepotpun:',
     budgetApprovalBlocked: 'odobrenje će biti odbijeno na provjeri',
     budgetApprovalWarned: 'odobrenje prolazi i bilježi se',
     budgetOverBudgetNotice: 'Ova je narudžba prošla iako je mjesto troška premašilo proračun.',
@@ -10381,6 +10394,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Unesite cijeli broj elemenata unutar dopuštenog raspona.',
   },
   hu: {
+    budgetUnpriced: 'Néhány lekötött rendelés ára nem állapítható meg, ezért ez az érték hiányos:',
     budgetApprovalBlocked: 'a jóváhagyást az ellenőrzés elutasítja',
     budgetApprovalWarned: 'a jóváhagyás átmegy, és naplózzuk',
     budgetOverBudgetNotice: 'Ez a rendelés úgy ment át, hogy a költséghely túllépte a keretét.',
@@ -11172,6 +11186,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Adjon meg egész számú elemet a megengedett tartományon belül.',
   },
   it: {
+    budgetUnpriced: 'Per alcuni ordini impegnati il prezzo non è più recuperabile, quindi questa cifra è incompleta:',
     budgetApprovalBlocked: 'l\'approvazione verrà rifiutata al controllo',
     budgetApprovalWarned: 'l\'approvazione passa e viene registrata',
     budgetOverBudgetNotice: 'Questo ordine è passato con il centro di costo oltre il budget.',
@@ -11963,6 +11978,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Inserire un numero intero di elementi entro l\'intervallo consentito.',
   },
   lt: {
+    budgetUnpriced: 'Kai kurių įsipareigotų užsakymų kainos nustatyti nepavyksta, todėl šis skaičius nepilnas:',
     budgetApprovalBlocked: 'patvirtinimas bus atmestas patikroje',
     budgetApprovalWarned: 'patvirtinimas praeina ir yra užfiksuojamas',
     budgetOverBudgetNotice: 'Šis užsakymas praėjo, nors išlaidų centras viršijo biudžetą.',
@@ -12754,6 +12770,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Įveskite sveikąjį elementų skaičių leistiname intervale.',
   },
   lv: {
+    budgetUnpriced: 'Dažiem rezervētajiem pasūtījumiem cena nav atgūstama, tāpēc šis skaitlis ir nepilnīgs:',
     budgetApprovalBlocked: 'apstiprinājums tiks noraidīts pārbaudē',
     budgetApprovalWarned: 'apstiprinājums tiek izpildīts un reģistrēts',
     budgetOverBudgetNotice: 'Šis pasūtījums tika izpildīts, lai gan izmaksu centrs ir pārsniedzis budžetu.',
@@ -13545,6 +13562,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Ievadiet veselu elementu skaitu atļautajā diapazonā.',
   },
   mt: {
+    budgetUnpriced: 'Xi ordnijiet impenjati m’għandhomx prezz li jista’ jinstab, għalhekk din iċ-ċifra hija mhux kompluta:',
     budgetApprovalBlocked: 'l-approvazzjoni tiġi rifjutata fil-verifika',
     budgetApprovalWarned: 'l-approvazzjoni tgħaddi u tiġi rreġistrata',
     budgetOverBudgetNotice: 'Din l-ordni għaddiet biċ-ċentru tal-ispejjeż lil hinn mill-baġit tiegħu.',
@@ -14336,6 +14354,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Daħħal numru sħiħ ta\' elementi fil-medda permessa.',
   },
   nl: {
+    budgetUnpriced: 'Van sommige vastgelegde bestellingen is geen prijs meer te achterhalen, dus dit getal is onvolledig:',
     budgetApprovalBlocked: 'goedkeuren wordt bij de controle geweigerd',
     budgetApprovalWarned: 'goedkeuren gaat door en wordt vastgelegd',
     budgetOverBudgetNotice: 'Deze bestelling is doorgegaan terwijl de kostenplaats over budget is.',
@@ -15127,6 +15146,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Voer een geheel aantal elementen in binnen het toegestane bereik.',
   },
   pl: {
+    budgetUnpriced: 'Dla części zaangażowanych zamówień nie da się odtworzyć ceny, więc ta wartość jest niepełna:',
     budgetApprovalBlocked: 'zatwierdzenie zostanie odrzucone przy kontroli',
     budgetApprovalWarned: 'zatwierdzenie przechodzi i zostaje odnotowane',
     budgetOverBudgetNotice: 'To zamówienie przeszło, mimo że miejsce powstawania kosztów przekroczyło budżet.',
@@ -15918,6 +15938,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Podaj całkowitą liczbę elementów z dozwolonego zakresu.',
   },
   pt: {
+    budgetUnpriced: 'Algumas encomendas comprometidas não têm preço recuperável, pelo que este valor está incompleto:',
     budgetApprovalBlocked: 'a aprovação será recusada na verificação',
     budgetApprovalWarned: 'a aprovação passa e fica registada',
     budgetOverBudgetNotice: 'Esta encomenda passou com o centro de custo acima do orçamento.',
@@ -16709,6 +16730,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Introduza um número inteiro de elementos dentro do intervalo permitido.',
   },
   ro: {
+    budgetUnpriced: 'Pentru unele comenzi angajate prețul nu mai poate fi recuperat, deci această cifră este incompletă:',
     budgetApprovalBlocked: 'aprobarea va fi refuzată la verificare',
     budgetApprovalWarned: 'aprobarea trece și este înregistrată',
     budgetOverBudgetNotice: 'Această comandă a trecut deși centrul de cost și-a depășit bugetul.',
@@ -17500,6 +17522,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Introduceți un număr întreg de elemente în intervalul permis.',
   },
   ru: {
+    budgetUnpriced: 'Для части заказов в обязательствах цену восстановить нельзя, поэтому эта величина неполная:',
     budgetApprovalBlocked: 'согласование будет отклонено на проверке',
     budgetApprovalWarned: 'согласование проходит и записывается',
     budgetOverBudgetNotice: 'Этот заказ прошёл, хотя центр затрат превысил бюджет.',
@@ -18291,6 +18314,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Введите целое число элементов в допустимом диапазоне.',
   },
   sk: {
+    budgetUnpriced: 'Pri niektorých viazaných objednávkach sa cena nedá zistiť, preto je tento údaj neúplný:',
     budgetApprovalBlocked: 'schválenie bude pri kontrole zamietnuté',
     budgetApprovalWarned: 'schválenie prejde a zaznamená sa',
     budgetOverBudgetNotice: 'Táto objednávka prešla, hoci nákladové stredisko prekročilo rozpočet.',
@@ -19082,6 +19106,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Zadajte celý počet prvkov v povolenom rozsahu.',
   },
   sl: {
+    budgetUnpriced: 'Pri nekaterih zavezanih naročilih cene ni mogoče ugotoviti, zato je ta številka nepopolna:',
     budgetApprovalBlocked: 'odobritev bo pri preverjanju zavrnjena',
     budgetApprovalWarned: 'odobritev gre skozi in se zabeleži',
     budgetOverBudgetNotice: 'To naročilo je šlo skozi, čeprav je stroškovno mesto preseglo proračun.',
@@ -19873,6 +19898,7 @@ const translations: { en: Translations } & Record<string, Partial<Translations>>
     quantityInvalid: 'Vnesite celo število elementov v dovoljenem obsegu.',
   },
   sv: {
+    budgetUnpriced: 'För vissa bundna ordrar går priset inte att få fram, så denna siffra är ofullständig:',
     budgetApprovalBlocked: 'godkännandet avvisas vid kontrollen',
     budgetApprovalWarned: 'godkännandet går igenom och registreras',
     budgetOverBudgetNotice: 'Den här beställningen gick igenom trots att kostnadsstället är över budget.',

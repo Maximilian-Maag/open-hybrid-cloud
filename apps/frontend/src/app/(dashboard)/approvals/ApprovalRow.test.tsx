@@ -278,6 +278,7 @@ describe('ApprovalRow budget notice (#325)', () => {
     remaining: -400,
     exhausted: true,
     unconverted: [],
+    unpriced: 0,
     ...over,
   })
 

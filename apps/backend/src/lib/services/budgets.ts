@@ -1,7 +1,7 @@
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '@/lib/db/client'
-import { logAudit } from '@/lib/audit'
+import { logAuditWith } from '@/lib/audit'
 import { ok, err, type Result } from '@/lib/services/result'
 import { costCenters, orders, projects, exchangeRates, productEnvironments } from '@/lib/db/schema'
 import { linePriceSql, lineCurrencySql } from '@/lib/services/sizes'
@@ -70,6 +70,14 @@ const convert = (
 
 const round = (value: number): number => Math.round(value * 100) / 100
 
+/** Every stored rate, keyed by currency code. EUR is the base and has no row. */
+const loadRates = async (): Promise<Record<string, number>> => {
+  const rows = await db
+    .select({ code: exchangeRates.currencyCode, rate: exchangeRates.rate })
+    .from(exchangeRates)
+  return Object.fromEntries(rows.map((r) => [r.code, parseFloat(r.rate)]))
+}
+
 /**
  * The budget state of one cost centre.
  *
@@ -104,7 +112,7 @@ export const loadBudgetState = async (costCenterId: number, now = new Date()): P
     return {
       costCenterId: centre.id, costCenterLabel: label,
       amount: null, currency: null, period: null, behaviour: null,
-      committed: 0, remaining: 0, exhausted: false, unconverted: [],
+      committed: 0, remaining: 0, exhausted: false, unconverted: [], unpriced: 0,
     }
   }
 
@@ -149,21 +157,36 @@ export const loadBudgetState = async (costCenterId: number, now = new Date()): P
     )
     .where(and(...conditions))
 
-  const rateRows = await db
-    .select({ code: exchangeRates.currencyCode, rate: exchangeRates.rate })
-    .from(exchangeRates)
-  const rates = Object.fromEntries(rateRows.map((r) => [r.code, parseFloat(r.rate)]))
+  const rates = await loadRates()
 
   let committed = 0
+  let unpriced = 0
   const unconverted = new Map<string, number>()
   for (const row of rows) {
     const usingSnapshot = row.snapshotPrice !== null && row.snapshotCurrency !== null
     const rawPrice = usingSnapshot ? row.snapshotPrice : row.livePrice
     const from = (usingSnapshot ? row.snapshotCurrency : row.liveCurrency) ?? 'EUR'
-    // `null` is not `'0'`: an order whose offering has been withdrawn and which
-    // predates snapshots is UNPRICED, and counting it as free would quietly give
-    // budget back (#189).
-    if (rawPrice === null || rawPrice === undefined) continue
+    /*
+     * `null` is not `'0'`: an order whose offering has been withdrawn and which
+     * predates snapshots is UNPRICED, and counting it as free would quietly give
+     * budget back (#189).
+     *
+     * Counted rather than merely skipped, because skipping silently is the same
+     * lie in a quieter form — `committed` then under-reports and a `block`
+     * budget reports room it may not have. There is no honest number to add:
+     * the price is not small, it is UNKNOWN. So it is reported, the way
+     * `costs.ts` reports its own unpriced orders, and the screen says the figure
+     * beside it is incomplete.
+     *
+     * Deliberately NOT a refusal. These are historical rows, and an offering
+     * withdrawn years ago cannot be re-priced — blocking on them would make the
+     * cost centre permanently unorderable with no remedy an operator could
+     * apply. Visible and wrong-by-a-known-amount beats invisible.
+     */
+    if (rawPrice === null || rawPrice === undefined) {
+      unpriced += 1
+      continue
+    }
     const line = Number(rawPrice) * (row.quantity ?? 1)
     const converted = convert(line, from, currency, rates)
     if (converted === null) {
@@ -185,6 +208,7 @@ export const loadBudgetState = async (costCenterId: number, now = new Date()): P
     remaining: round(amount - committed),
     exhausted: committed >= amount,
     unconverted: [...unconverted].map(([c, a]) => ({ currency: c, amount: round(a) })),
+    unpriced,
   }
 }
 
@@ -273,24 +297,112 @@ export interface BudgetVerdict {
  * a budget that nobody set cannot refuse anything, and refusing here would block
  * every order in an estate that has not adopted budgets at all.
  */
+export interface IncomingLine {
+  /** Unit price as recorded, or null when the order has no recoverable price. */
+  price: string | number | null
+  currency: string | null
+  quantity: number
+}
+
 export const checkBudget = async (
   costCenterId: number | null,
   now = new Date(),
+  incoming?: IncomingLine | null,
 ): Promise<BudgetVerdict> => {
   if (costCenterId === null) return { outcome: 'ok', state: null, message: null }
 
   const state = await loadBudgetState(costCenterId, now)
-  if (!state || state.amount === null) return { outcome: 'ok', state, message: null }
-  if (!state.exhausted) return { outcome: 'ok', state, message: null }
+  if (!state || state.amount === null || state.currency === null) {
+    return { outcome: 'ok', state, message: null }
+  }
+
+  /*
+   * TWO questions, not one — and the second is what makes this a gate rather
+   * than a report of one.
+   *
+   *   1. Is the budget already spent?   `committed >= amount`
+   *   2. Would THIS order take it over? `committed + this line > amount`
+   *
+   * Only (1) existed, and on its own it is much weaker than the feature claims:
+   * against an untouched budget of 500 the FIRST order may be for 10,000 and
+   * sails through, because nothing was committed when it was checked. The
+   * budget would then block the second order — after the money that broke it
+   * was already spent.
+   *
+   * (2) alone would be wrong the other way: it would let a zero-price order
+   * through against a budget that is already gone, and `amount: 0` is exactly
+   * how an operator stops new spend on a cost centre deliberately. So both.
+   *
+   * Strictly greater in (2): a budget of 500 means "you may spend up to 500",
+   * so an order that lands exactly on the limit is inside it and the next one
+   * is not.
+   */
+  const line = await convertIncoming(incoming, state.currency)
+  const wouldExceed = line.amount !== null && state.committed + line.amount > state.amount
+
+  /*
+   * An incoming line we could not convert fails CLOSED for a `block` budget.
+   *
+   * A budget's job is to refuse when it cannot show there is room, and with no
+   * rate there is no way to show it — the amount is unknown, not zero. Letting
+   * it through would make "block" mean "block, unless the currency is one we
+   * have no rate for", which is not a control anybody asked for. The message
+   * names the missing rate, so the remedy is to add it.
+   */
+  const unpricedIncoming = line.amount === null && line.reason !== null
+
+  if (!state.exhausted && !wouldExceed && !unpricedIncoming) {
+    return { outcome: 'ok', state, message: null }
+  }
 
   const window = state.period === 'monthly' ? 'this month' : 'in total'
   const spent = `${state.committed.toFixed(2)} ${state.currency} of ${state.amount.toFixed(2)} ${state.currency}`
-  const message =
-    state.behaviour === 'block'
-      ? `${state.costCenterLabel} is over budget: ${spent} committed ${window}. This order was not placed.`
-      : `${state.costCenterLabel} is over budget: ${spent} committed ${window}.`
+  const blocking = state.behaviour === 'block'
 
-  return { outcome: state.behaviour === 'block' ? 'block' : 'warn', state, message }
+  if (unpricedIncoming) {
+    // Warn budgets say so and let it pass, exactly as they do for being over.
+    const message =
+      `${state.costCenterLabel} has a budget in ${state.currency}, and this order's price ` +
+      `(${line.reason}) could not be converted into it — there is no exchange rate, so whether ` +
+      `it fits cannot be established.` +
+      (blocking ? ' This order was not placed. Add the rate under Administration → Exchange Rates.' : '')
+    return { outcome: blocking ? 'block' : 'warn', state, message }
+  }
+
+  const message = state.exhausted
+    ? `${state.costCenterLabel} is over budget: ${spent} committed ${window}.` +
+      (blocking ? ' This order was not placed.' : '')
+    : `${state.costCenterLabel} has ${state.remaining.toFixed(2)} ${state.currency} left ${window} ` +
+      `and this order costs ${line.amount?.toFixed(2)} ${state.currency}, which is over the ` +
+      `${state.amount.toFixed(2)} ${state.currency} budget.` +
+      (blocking ? ' This order was not placed.' : '')
+
+  return { outcome: blocking ? 'block' : 'warn', state, message }
+}
+
+/**
+ * The order's own line total in the budget's currency.
+ *
+ * `amount: null` with a `reason` means there IS a price and it could not be
+ * converted; `amount: null` with no reason means the caller passed no line at
+ * all, which is how every read-only caller uses this.
+ */
+const convertIncoming = async (
+  incoming: IncomingLine | null | undefined,
+  budgetCurrency: string,
+): Promise<{ amount: number | null; reason: string | null }> => {
+  if (!incoming || incoming.price === null || incoming.price === undefined) {
+    return { amount: null, reason: null }
+  }
+  const from = incoming.currency ?? 'EUR'
+  const total = Number(incoming.price) * (incoming.quantity || 1)
+  if (!Number.isFinite(total)) return { amount: null, reason: null }
+  if (from === budgetCurrency) return { amount: round(total), reason: null }
+
+  const converted = convert(total, from, budgetCurrency, await loadRates())
+  return converted === null
+    ? { amount: null, reason: `${total.toFixed(2)} ${from}` }
+    : { amount: round(converted), reason: null }
 }
 
 /**
@@ -305,8 +417,9 @@ export const checkBudgetForOrder = async (
   projectId: number,
   orderCostCenterId: number | null,
   now = new Date(),
+  incoming?: IncomingLine | null,
 ): Promise<BudgetVerdict> => {
-  if (orderCostCenterId !== null) return checkBudget(orderCostCenterId, now)
+  if (orderCostCenterId !== null) return checkBudget(orderCostCenterId, now, incoming)
 
   const [project] = await db
     .select({ costCenterId: projects.costCenterId })
@@ -314,7 +427,7 @@ export const checkBudgetForOrder = async (
     .where(eq(projects.id, projectId))
     .limit(1)
 
-  return checkBudget(project?.costCenterId ?? null, now)
+  return checkBudget(project?.costCenterId ?? null, now, incoming)
 }
 
 export type BudgetInput = SetCostCentreBudgetRequest
@@ -334,7 +447,16 @@ export const setCostCentreBudget = async (
   budget: BudgetInput | null,
   actorId: number,
 ): Promise<Result<BudgetState>> => {
-  const [updated] = await db
+  /*
+   * One transaction for the change and its record.
+   *
+   * A budget is a control, and a control that can be changed without the entry
+   * saying who changed it is not auditable. These were two statements, so an
+   * audit insert that failed left the new budget in place and reported an error
+   * — the one combination that must not happen.
+   */
+  const updated = await db.transaction(async (tx) => {
+  const [row] = await tx
     .update(costCenters)
     .set(
       budget === null
@@ -349,16 +471,23 @@ export const setCostCentreBudget = async (
     .where(eq(costCenters.id, costCenterId))
     .returning({ id: costCenters.id })
 
-  if (!updated) return err(404, 'Not found')
+    // Nothing updated means no such cost centre; roll back rather than record an
+    // audit entry for a change that did not happen.
+    if (!row) return null
 
-  await logAudit(
-    actorId,
-    budget === null ? 'cost_center.budget_cleared' : 'cost_center.budget_set',
-    costCenterId,
-    budget === null
-      ? 'Budget removed'
-      : `Budget set to ${budget.amount.toFixed(2)} ${budget.currency} per ${budget.period}, ${budget.behaviour} when spent`,
-  )
+    await logAuditWith(
+      tx,
+      actorId,
+      budget === null ? 'cost_center.budget_cleared' : 'cost_center.budget_set',
+      costCenterId,
+      budget === null
+        ? 'Budget removed'
+        : `Budget set to ${budget.amount.toFixed(2)} ${budget.currency} per ${budget.period}, ${budget.behaviour} when spent`,
+    )
+    return row
+  })
+
+  if (!updated) return err(404, 'Not found')
 
   // The state rather than the row: whoever just set a budget wants to know what
   // is already committed against it, which is the number that decides whether

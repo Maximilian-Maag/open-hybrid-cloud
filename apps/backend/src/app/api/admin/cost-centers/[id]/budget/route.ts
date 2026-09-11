@@ -17,7 +17,28 @@ import { loadBudgetState, setCostCentreBudget } from '@/lib/services/budgets'
  */
 const BudgetSchema = z.object({
   amount: z.number().min(0),
-  currency: z.string().length(3),
+  /*
+   * Upper-cased and shape-checked, not merely three characters long.
+   *
+   * `exchange_rates.currency_code` is upper-case ISO-4217, and `convert` does an
+   * exact lookup. So a budget stored as `eur` matches no rate: every order in a
+   * different currency lands as "unconvertible", `committed` stays at zero, and
+   * a `block` budget silently stops blocking. The screen already uppercases —
+   * this is the same rule at the boundary that actually enforces it, because the
+   * screen is not the only caller.
+   *
+   * Deliberately NOT "must already exist in exchange_rates". A budget in a
+   * currency with no stored rate is legitimate as long as the spend is in that
+   * same currency — `convert` short-circuits when the two match — and refusing
+   * it would reject a working configuration to guard against a different one.
+   * The unconvertible case is handled where it actually bites, in `checkBudget`,
+   * which now fails closed and names the missing rate.
+   */
+  currency: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .pipe(z.string().regex(/^[A-Z]{3}$/, 'Expected a three-letter currency code, such as EUR')),
   period: z.enum(['total', 'monthly']),
   behaviour: z.enum(['warn', 'block']),
 })

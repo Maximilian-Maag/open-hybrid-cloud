@@ -44,6 +44,7 @@ const budgetState = (over: Partial<BudgetState> = {}): BudgetState => ({
   remaining: 7_500,
   exhausted: false,
   unconverted: [],
+  unpriced: 0,
   ...over,
 })
 
@@ -190,6 +191,52 @@ describe('CostCentersManager budget modal (#325)', () => {
     await user.click((await screen.findAllByRole('button', { name: 'Budget' }))[0])
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).queryByRole('button', { name: 'Remove budget' })).not.toBeInTheDocument()
+  })
+
+  it('does not carry one cost centre\'s budget into another whose load failed', async () => {
+    /*
+     * `cancelled` handles a late response. It does nothing about a FAILED one:
+     * open A, open B, B's GET fails, and the form still held A's amount — so
+     * Save would have written A's budget onto B, under B's own heading.
+     */
+    const user = userEvent.setup()
+    mockedGet.mockReset().mockImplementation((async (url: string) => {
+      if (url === '/api/admin/cost-centers') return costCenters
+      if (url === '/api/admin/cost-centers/budgets') return []
+      if (url === '/api/admin/cost-centers/1/budget') return budgetState({ amount: 9999, committed: 12 })
+      throw new Error('the budget service is down')
+    }) as never)
+    render(<CostCentersManager />)
+
+    const buttons = await screen.findAllByRole('button', { name: 'Budget' })
+    await user.click(buttons[0])
+    let dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText(/Amount/)).toHaveValue(9999)
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await user.click((await screen.findAllByRole('button', { name: 'Budget' }))[1])
+    dialog = await screen.findByRole('dialog')
+
+    expect(await within(dialog).findByText(/the budget service is down/)).toBeInTheDocument()
+    // Not 9999 — the previous centre's figure is gone.
+    expect(within(dialog).getByLabelText(/Amount/)).toHaveValue(null)
+    // And there is nothing to save it against, so saving is refused outright.
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(mockedPut).not.toHaveBeenCalled()
+  })
+
+  it('says when committed spend is missing orders it could not price', async () => {
+    // `committed` excludes them entirely and there is no number to add, so the
+    // only honest thing is to say the figure beside it is incomplete.
+    const user = userEvent.setup()
+    const state = budgetState({ unpriced: 3 })
+    mockApi([state], state)
+    render(<CostCentersManager />)
+
+    await user.click((await screen.findAllByRole('button', { name: 'Budget' }))[0])
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/no recoverable price/i)).toBeInTheDocument()
+    expect(within(dialog).getByText(/no recoverable price[^]*3|3/)).toBeInTheDocument()
   })
 
   it('names the currencies it could not convert instead of folding them into the total', async () => {

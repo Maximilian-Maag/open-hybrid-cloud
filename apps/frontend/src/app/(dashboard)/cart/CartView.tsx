@@ -147,6 +147,16 @@ export function CartView({
       }
       const result = await post<CheckoutResponse>('/api/cart/checkout', body)
 
+      /*
+       * Warnings are recorded before the partial-failure branch, not after it.
+       *
+       * A checkout can do both at once: some items fail and the ones that
+       * succeeded went through over budget. The failure branch returns, so
+       * setting warnings after it discarded exactly the case where the orders
+       * that DID get placed are the ones somebody needs to be told about.
+       */
+      setWarnings(result.warnings ?? [])
+
       if (result.failed.length > 0) {
         // Some orders exist and their pipelines may already be running, so this is
         // not an error to retry wholesale — say which items are still in the cart.
@@ -170,7 +180,6 @@ export function CartView({
        */
       if (result.warnings && result.warnings.length > 0) {
         setItems([])
-        setWarnings(result.warnings)
         return
       }
       router.push('/orders')

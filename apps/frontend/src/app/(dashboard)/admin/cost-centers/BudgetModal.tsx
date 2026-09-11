@@ -55,6 +55,23 @@ export function BudgetModal({ target, onClose, onSaved, lang }: Props) {
     setLoading(true)
     setError(null)
     setConfirmingRemove(false)
+    /*
+     * Clear the PREVIOUS centre's answer before asking about this one.
+     *
+     * `cancelled` handles the race — a late response for a centre the user has
+     * already navigated away from. It does nothing about a FAILURE: open centre
+     * A, open centre B, B's GET fails, and the catch below sets an error while
+     * `state` and the form still hold A's budget. Saving then wrote A's amount
+     * onto B under B's own heading.
+     *
+     * `state: null` is also what disables the save below, so the form cannot be
+     * submitted against a centre whose budget never arrived.
+     */
+    setState(null)
+    setAmount('')
+    setCurrency('EUR')
+    setPeriod('total')
+    setBehaviour('block')
     void (async () => {
       try {
         const loaded = await get<BudgetState>(`/api/admin/cost-centers/${id}/budget`)
@@ -82,7 +99,9 @@ export function BudgetModal({ target, onClose, onSaved, lang }: Props) {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
-    if (id === null) return
+    // Guarded here as well as on the button: Enter in a text field submits a
+    // form without going near it.
+    if (id === null || !state) return
     setSaving(true)
     setError(null)
     try {
@@ -162,6 +181,14 @@ export function BudgetModal({ target, onClose, onSaved, lang }: Props) {
                 </div>
               )}
               <p className="mt-2 text-xs text-slate-500">{t('budgetCommittedHint', lang)}</p>
+              {/* A caveat nobody sees is not a caveat: `committed` is missing
+                  these orders' spend entirely, and there is no number to add —
+                  the price is unknown, not small. */}
+              {state.unpriced > 0 && (
+                <p className="mt-1 text-xs text-amber-700">
+                  {t('budgetUnpriced', lang)} {state.unpriced}
+                </p>
+              )}
               {state.unconverted.length > 0 && (
                 <p className="mt-1 text-xs text-amber-700">
                   {t('budgetUnconverted', lang)}{' '}
@@ -248,7 +275,9 @@ export function BudgetModal({ target, onClose, onSaved, lang }: Props) {
             <Button type="button" variant="secondary" onClick={onClose}>
               {t('cancel', lang)}
             </Button>
-            <Button type="submit" disabled={saving}>
+            {/* `!state` means this centre's budget never arrived, so there is
+                nothing to save it against — see the reset in the effect. */}
+            <Button type="submit" disabled={saving || !state}>
               {saving ? t('saving', lang) : t('save', lang)}
             </Button>
           </div>

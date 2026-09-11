@@ -108,12 +108,22 @@ export const redactParametersForOrders = async <T extends { parameters: Record<s
   if (rows.length === 0) return rows
 
   const catalogue = await loadSensitiveParameterNames()
+  /*
+   * The `filter` is for the TYPE, not for the query: `IN (NULL, 5)` matches
+   * exactly what `IN (5)` matches, so dropping it changes no answer. Stryker
+   * reports both mutants of this line as survivors and no test can honestly
+   * kill them — noted here so the next reader of that report does not go
+   * looking for the assertion that is missing. The narrowing predicate is what
+   * lets this be `number[]`.
+   */
   const perOrder = await loadSnapshotSensitiveNames(
     rows.map(orderIdOf).filter((id): id is number => id !== null),
   )
 
   return rows.map((row) => {
     const orderId = orderIdOf(row)
+    // Equivalent-mutant territory again: `perOrder.get(null)` is `undefined`
+    // too, so the guard is for the reader rather than the result.
     const sensitive = union(catalogue, orderId === null ? undefined : perOrder.get(orderId))
     return { ...row, parameters: redactParameters(row.parameters, sensitive) }
   })

@@ -621,6 +621,49 @@ export async function signInAsAccount(
 }
 
 /**
+ * The first of several waits to SUCCEED, and why each of the others gave up.
+ *
+ * `Promise.race` is the wrong primitive for "whichever of these happens
+ * first", and this suite has paid for that twice. It settles on the first
+ * settle — including a rejection — and a Playwright strict-mode violation
+ * rejects INSTANTLY rather than waiting out its timeout. So an ambiguous
+ * locator on one side returns in milliseconds and beats a redirect that was
+ * about to happen on the other, and `.catch(() => 'neither')` then throws away
+ * the one sentence that said what was really wrong. `auth.setup.ts` reported
+ * "neither screen appeared" about a page plainly showing the enrolment prompt
+ * (#374), and `provisioning.spec.ts` reported "neither went through nor said
+ * why" about an order that had gone through (#399).
+ *
+ * `Promise.any` is the primitive that matches the question: the first
+ * FULFILMENT wins, and it rejects only once every candidate has failed. The
+ * reasons come back alongside so the caller's failure message can carry them
+ * instead of guessing at the application.
+ */
+export async function firstToHappen<T extends string>(
+  candidates: { outcome: T; wait: Promise<unknown> }[],
+): Promise<{ outcome: T | null; why: string[] }> {
+  const why: string[] = []
+  try {
+    const outcome = await Promise.any(
+      candidates.map((c) =>
+        c.wait.then(
+          () => c.outcome,
+          (e: unknown) => {
+            why.push(`${c.outcome}: ${e instanceof Error ? e.message : String(e)}`)
+            throw e
+          },
+        ),
+      ),
+    )
+    return { outcome, why }
+  } catch {
+    // Every candidate failed. `why` holds each one's reason, in the order they
+    // gave up, which is what the caller needs to say something true.
+    return { outcome: null, why }
+  }
+}
+
+/**
  * Sign out through the account menu, the way a user does.
  *
  * Generous timeout, and deliberately so: the button awaits cache-clearing

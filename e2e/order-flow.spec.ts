@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { appears, expectNoServerError, loginAsRoot, requireSeeded, requireStack } from './helpers'
+import { appears, expectNoServerError, firstToHappen, loginAsRoot, requireSeeded, requireStack } from './helpers'
 
 /**
  * Open the first catalogue product, or say the catalogue is empty.
@@ -130,7 +130,13 @@ test.describe('Order Placement Flow', () => {
     const refused = page.getByText(/nothing to provision it|no pipeline configured/i).first()
     const redirected = page.waitForURL(/\/orders/, { timeout: 30_000 }).then(() => 'redirected' as const)
     const explained = refused.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'refused' as const)
-    const outcome = await Promise.race([redirected, explained]).catch(() => 'neither' as const)
+    // `firstToHappen`, not `Promise.race`: a strict-mode violation on either
+    // locator rejects instantly and would otherwise beat the outcome that was
+    // actually about to happen, with its reason discarded (#399).
+    const { outcome, why } = await firstToHappen([
+      { outcome: 'redirected' as const, wait: redirected },
+      { outcome: 'refused' as const, wait: explained },
+    ])
 
     if (outcome === 'refused') {
       await expect(refused).toBeVisible()
@@ -141,7 +147,10 @@ test.describe('Order Placement Flow', () => {
       requireStack(false, 'the order was refused for want of a pipeline stack')
       return
     }
-    expect(outcome, 'the order neither went through nor said why').toBe('redirected')
+    expect(
+      outcome,
+      `the order neither went through nor said why${why.length ? `\n  ${why.join('\n  ')}` : ''}`,
+    ).toBe('redirected')
     await expect(page).toHaveURL(/\/orders/)
   })
 
